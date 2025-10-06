@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import {
   CheckCircle2,
   Circle,
@@ -11,7 +11,12 @@ import { taskService } from '../services/task.service';
 import { useAuth } from '../contexts/AuthContext';
 import type { Task } from '../types/task.types';
 
-const TasksModule = () => {
+interface TasksModuleProps {
+  focusNewTask?: boolean;
+  onParamConsumed?: () => void;
+}
+
+const TasksModule = ({ focusNewTask = false, onParamConsumed }: TasksModuleProps) => {
   const [tasks, setTasks] = useState<Task[]>([]);
   const [loading, setLoading] = useState(false);
   const [newTaskTitle, setNewTaskTitle] = useState('');
@@ -20,6 +25,7 @@ const TasksModule = () => {
   const [editingTaskId, setEditingTaskId] = useState<string | null>(null);
   const [editingTitle, setEditingTitle] = useState('');
   const [completedSearch, setCompletedSearch] = useState('');
+  const newTaskInputRef = useRef<HTMLInputElement | null>(null);
   const { user } = useAuth();
   const fallbackCreatorName =
     (user?.user_metadata?.full_name && user.user_metadata.full_name.trim()) || 'usuário';
@@ -27,6 +33,18 @@ const TasksModule = () => {
   useEffect(() => {
     loadTasks();
   }, []);
+
+  useEffect(() => {
+    if (!focusNewTask) return;
+
+    const handleFocus = () => {
+      newTaskInputRef.current?.focus();
+      onParamConsumed?.();
+    };
+
+    const timeout = window.setTimeout(handleFocus, 0);
+    return () => window.clearTimeout(timeout);
+  }, [focusNewTask, onParamConsumed]);
 
   const loadTasks = async () => {
     try {
@@ -192,6 +210,7 @@ const TasksModule = () => {
           value={newTaskTitle}
           onChange={(e) => setNewTaskTitle(e.target.value)}
           placeholder="Digite uma nova tarefa..."
+          ref={newTaskInputRef}
           className="flex-1 px-4 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
         />
         <button

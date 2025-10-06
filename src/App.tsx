@@ -70,6 +70,7 @@ function App() {
   const [notifications, setNotifications] = useState<NotificationItem[]>([]);
   const [notificationsOpen, setNotificationsOpen] = useState(false);
   const [notificationsLoading, setNotificationsLoading] = useState(false);
+  const [leadToConvert, setLeadToConvert] = useState<Lead | null>(null);
 
   const showSidebarLabels = sidebarOpen || isMobileNavOpen;
   const unreadCount = useMemo(() => notifications.filter((n) => !n.read).length, [notifications]);

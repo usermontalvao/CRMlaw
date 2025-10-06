@@ -13,7 +13,7 @@ import {
 } from 'lucide-react';
 import { djeService } from '../services/dje.service';
 import { processService } from '../services/process.service';
-import type { Intimation, IntimationFilters } from '../types/intimation.types';
+import type { Intimation } from '../types/intimation.types';
 import type { Process } from '../types/process.types';
 
 const IntimationsModule: React.FC = () => {
