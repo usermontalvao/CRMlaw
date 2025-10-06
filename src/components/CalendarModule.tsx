@@ -584,11 +584,12 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({ onNavigateToModule }) =
         deadline: 'Prazo',
         requirement: 'Requerimento',
       };
+      const client = event.client_id ? clientMap.get(event.client_id) : null;
       rows.push({
         Tipo: eventTypeLabels[event.event_type] || event.event_type,
         Título: truncateForExcel(event.title),
-        Cliente: '',
-        Telefone: '',
+        Cliente: truncateForExcel(client?.full_name ?? 'Sem cliente'),
+        Telefone: truncateForExcel(client?.mobile ?? client?.phone ?? ''),
         Status: truncateForExcel(event.status),
         Prioridade: '',
         'Data de Vencimento': formatDateTime(event.start_at),
