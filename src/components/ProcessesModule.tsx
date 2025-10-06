@@ -220,6 +220,7 @@ const ProcessesModule: React.FC<ProcessesModuleProps> = ({ forceCreate, onParamC
   const [formData, setFormData] = useState(emptyForm);
   const [selectedProcess, setSelectedProcess] = useState<Process | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
+  const [statusFilter, setStatusFilter] = useState<ProcessStatus | 'todos'>('todos');
   const [viewMode, setViewMode] = useState<'list' | 'details'>('list');
   const [selectedProcessForView, setSelectedProcessForView] = useState<Process | null>(null);
   const [noteDraft, setNoteDraft] = useState('');
@@ -273,9 +274,14 @@ const ProcessesModule: React.FC<ProcessesModuleProps> = ({ forceCreate, onParamC
 
   const filteredProcesses = useMemo(() => {
     const term = searchTerm.trim().toLowerCase();
-    if (!term) return processes;
+    const baseList =
+      statusFilter === 'todos'
+        ? processes
+        : processes.filter((process) => process.status === statusFilter);
 
-    return processes.filter((process) => {
+    if (!term) return baseList;
+
+    return baseList.filter((process) => {
       const client = clientMap.get(process.client_id);
       const responsibleProfile = resolveResponsibleLawyer(process);
       const lawyerName = responsibleProfile?.name;
@@ -291,7 +297,7 @@ const ProcessesModule: React.FC<ProcessesModuleProps> = ({ forceCreate, onParamC
 
       return composite.includes(term);
     });
-  }, [processes, searchTerm, clientMap, members]);
+  }, [processes, statusFilter, searchTerm, clientMap, members]);
 
   useEffect(() => {
     const fetchProcesses = async () => {
@@ -1381,56 +1387,86 @@ const ProcessesModule: React.FC<ProcessesModuleProps> = ({ forceCreate, onParamC
 
   return (
     <div className="space-y-6">
-      <div className="bg-white border border-gray-200 rounded-xl p-6">
-        <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
-          <div>
-            <h3 className="text-xl font-semibold text-slate-900">Gestão de Processos</h3>
-            <p className="text-sm text-slate-600 mt-1">
-              Cadastre e acompanhe todos os processos jurídicos
-            </p>
-          </div>
-
-          <div className="flex gap-3">
-            <div className="relative">
-              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-slate-400 w-5 h-5" />
-              <input
-                type="text"
-                value={searchTerm}
-                onChange={(event) => setSearchTerm(event.target.value)}
-                className="w-full md:w-80 pl-10 pr-4 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-500 text-sm"
-                placeholder="Buscar por cliente, código ou vara..."
-              />
+      <div className="bg-gradient-to-br from-white to-slate-50 border border-gray-200 rounded-2xl shadow-sm overflow-hidden">
+        <div className="p-6 pb-4">
+          <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4 mb-6">
+            <div>
+              <h3 className="text-2xl font-bold text-slate-900">Gestão de Processos</h3>
+              <p className="text-sm text-slate-600 mt-1">
+                Cadastre e acompanhe todos os processos jurídicos
+              </p>
             </div>
 
             <button
-              onClick={() => setKanbanMode(!kanbanMode)}
-              className={`inline-flex items-center gap-2 font-medium px-4 py-2.5 rounded-lg shadow-sm transition ${
-                kanbanMode
-                  ? 'bg-purple-600 hover:bg-purple-700 text-white'
-                  : 'bg-white hover:bg-slate-50 text-slate-700 border border-gray-300'
-              }`}
-              title={kanbanMode ? 'Modo Lista' : 'Modo Kanban'}
-            >
-              {kanbanMode ? <List className="w-4 h-4" /> : <LayoutGrid className="w-4 h-4" />}
-              {kanbanMode ? 'Lista' : 'Kanban'}
-            </button>
-
-            <button
-              onClick={handleExportExcel}
-              disabled={exportingExcel}
-              className="inline-flex items-center gap-2 bg-green-600 hover:bg-green-700 disabled:bg-green-400 text-white font-medium px-4 py-2.5 rounded-lg shadow-sm transition disabled:cursor-not-allowed"
-            >
-              {exportingExcel ? <Loader2 className="w-4 h-4 animate-spin" /> : <FileSpreadsheet className="w-4 h-4" />}
-              {exportingExcel ? 'Gerando Excel...' : 'Exportar Excel'}
-            </button>
-
-            <button
               onClick={() => handleOpenModal()}
-              className="inline-flex items-center gap-2 bg-amber-600 hover:bg-amber-700 text-white font-medium px-5 py-2.5 rounded-lg shadow-sm transition"
+              className="inline-flex items-center justify-center gap-2 bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 text-white font-semibold px-6 py-3 rounded-xl shadow-lg hover:shadow-xl transition-all duration-200 transform hover:scale-105"
             >
-              <Plus className="w-4 h-4" />
+              <Plus className="w-5 h-5" />
               Novo Processo
             </button>
+          </div>
+
+          <div className="bg-white border border-slate-200 rounded-xl p-4 shadow-sm">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+              <div className="lg:col-span-2">
+                <label className="block text-xs font-semibold uppercase tracking-wide text-slate-600 mb-2">
+                  Buscar Processo
+                </label>
+                <div className="relative">
+                  <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-slate-400 w-5 h-5" />
+                  <input
+                    type="text"
+                    value={searchTerm}
+                    onChange={(event) => setSearchTerm(event.target.value)}
+                    className="w-full pl-11 pr-4 py-3 rounded-lg border-2 border-slate-200 bg-slate-50 text-sm text-slate-700 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-amber-500 focus:border-amber-500 focus:bg-white transition-all"
+                    placeholder="Cliente, código do processo ou vara..."
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold uppercase tracking-wide text-slate-600 mb-2">
+                  Filtrar por Status
+                </label>
+                <select
+                  value={statusFilter}
+                  onChange={(event) => setStatusFilter(event.target.value as ProcessStatus | 'todos')}
+                  className="w-full px-4 py-3 rounded-lg border-2 border-slate-200 bg-slate-50 text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-amber-500 focus:border-amber-500 focus:bg-white transition-all"
+                >
+                  <option value="todos">Todos os status</option>
+                  {STATUS_OPTIONS.map((status) => (
+                    <option key={status.key} value={status.key}>
+                      {status.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="flex items-end gap-2">
+                <button
+                  onClick={() => setKanbanMode(!kanbanMode)}
+                  className={`flex-1 inline-flex items-center justify-center gap-2 font-medium px-4 py-3 rounded-lg transition-all duration-200 ${
+                    kanbanMode
+                      ? 'bg-purple-600 hover:bg-purple-700 text-white shadow-md'
+                      : 'bg-white hover:bg-slate-100 text-slate-700 border-2 border-slate-200'
+                  }`}
+                  title={kanbanMode ? 'Modo Lista' : 'Modo Kanban'}
+                >
+                  {kanbanMode ? <List className="w-5 h-5" /> : <LayoutGrid className="w-5 h-5" />}
+                  <span className="hidden sm:inline">{kanbanMode ? 'Lista' : 'Kanban'}</span>
+                </button>
+
+                <button
+                  onClick={handleExportExcel}
+                  disabled={exportingExcel}
+                  className="flex-1 inline-flex items-center justify-center gap-2 bg-green-600 hover:bg-green-700 disabled:bg-green-400 text-white font-medium px-4 py-3 rounded-lg shadow-md hover:shadow-lg transition-all duration-200 disabled:cursor-not-allowed"
+                  title="Exportar para Excel"
+                >
+                  {exportingExcel ? <Loader2 className="w-5 h-5 animate-spin" /> : <FileSpreadsheet className="w-5 h-5" />}
+                  <span className="hidden sm:inline">{exportingExcel ? 'Gerando...' : 'Excel'}</span>
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       </div>

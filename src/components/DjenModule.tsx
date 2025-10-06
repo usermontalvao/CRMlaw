@@ -971,20 +971,6 @@ Resumo: ${resumo}`;
             >
               {viewMode === 'api' ? 'Ver Locais' : 'Ver Busca API'}
             </button>
-            {viewMode === 'api' && comunicacoes.length > 0 && (
-              <button
-                onClick={handleImportarParaLocal}
-                disabled={saving}
-                className="inline-flex items-center gap-2 px-5 py-2.5 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 transition disabled:opacity-50 font-medium shadow-sm"
-              >
-                {saving ? (
-                  <Loader2 className="w-4 h-4 animate-spin" />
-                ) : (
-                  <Download className="w-4 h-4" />
-                )}
-                Importar para Local
-              </button>
-            )}
             <button
               onClick={handleBuscarPorProcessosCadastrados}
               disabled={loading || processes.length === 0}
