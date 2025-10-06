@@ -61,7 +61,7 @@ class LeadService {
     return this.updateLead(leadId, {
       converted_to_client_id: clientId,
       converted_at: new Date().toISOString(),
-      stage: 'ganho',
+      stage: 'qualificado',
     });
   }
 }

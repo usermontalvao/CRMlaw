@@ -11,7 +11,6 @@ import {
   X,
   LayoutGrid,
   List,
-  MessageCircle,
   Reply,
   FileSpreadsheet,
 } from 'lucide-react';
@@ -46,8 +45,6 @@ const HEARING_MODE_LABELS: Record<HearingMode, string> = {
   presencial: 'Presencial',
   online: 'Online',
 };
-
-const DEFAULT_AVATAR = 'https://www.gravatar.com/avatar/?d=mp&s=80';
 
 const emptyForm = {
   client_id: '',

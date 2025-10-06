@@ -4,7 +4,8 @@
  */
 
 import { supabase } from '../config/supabase.js';
-import type { Client, CreateClientDTO, UpdateClientDTO, ClientFilters } from '../types/client.types.js';
+import type { Client, CreateClientDTO } from '../types/client.types.js';
+import type { ClientFilters } from '../types/client.types.js';
 
 export class ClientService {
   private tableName = 'clients';
