@@ -222,33 +222,45 @@ const NotificationsModule: React.FC<NotificationsModuleProps> = ({ onNavigateToM
     };
   }, [allNotifications, intimations, deadlines, appointments, readNotifications]);
 
-  const markAsRead = (notificationId: string) => {
+  const markAsRead = async (notificationId: string) => {
     const newReadSet = new Set(readNotifications);
     newReadSet.add(notificationId);
     setReadNotifications(newReadSet);
     localStorage.setItem('read_notifications', JSON.stringify([...newReadSet]));
+    
+    // Se for intimação, marcar no banco sem recarregar
+    if (notificationId.startsWith('intimation-')) {
+      const intimationId = notificationId.replace('intimation-', '');
+      try {
+        await djenLocalService.marcarComoLida(intimationId);
+        // Atualizar estado local da intimação
+        setIntimations(prev => prev.map(int => 
+          int.id === intimationId ? { ...int, lida: true } : int
+        ));
+      } catch (error) {
+        console.error('Erro ao marcar intimação como lida:', error);
+      }
+    }
   };
 
-  const markAllAsRead = () => {
-    const allIds = allNotifications
-      .filter((n) => n.type !== 'intimation') // Não marcar intimações aqui
-      .map((n) => n.id);
+  const markAllAsRead = async () => {
+    const allIds = allNotifications.map((n) => n.id);
     const newReadSet = new Set([...readNotifications, ...allIds]);
     setReadNotifications(newReadSet);
     localStorage.setItem('read_notifications', JSON.stringify([...newReadSet]));
     
-    // Marcar intimações como lidas
-    intimations.forEach(async (int) => {
-      if (!int.lida) {
-        try {
-          await djenLocalService.marcarComoLida(int.id);
-        } catch (error) {
-          console.error('Erro ao marcar intimação como lida:', error);
-        }
+    // Marcar intimações como lidas sem recarregar
+    const intimationsToMark = intimations.filter(int => !int.lida);
+    for (const int of intimationsToMark) {
+      try {
+        await djenLocalService.marcarComoLida(int.id);
+      } catch (error) {
+        console.error('Erro ao marcar intimação como lida:', error);
       }
-    });
+    }
     
-    loadNotifications();
+    // Atualizar estado local
+    setIntimations(prev => prev.map(int => ({ ...int, lida: true })));
   };
 
   const clearAllRead = () => {
@@ -259,16 +271,10 @@ const NotificationsModule: React.FC<NotificationsModuleProps> = ({ onNavigateToM
     }
   };
 
-  const handleNotificationClick = (notification: NotificationItem) => {
-    // Marcar como lida
+  const handleNotificationClick = async (notification: NotificationItem) => {
+    // Marcar como lida sem recarregar
     if (!notification.read) {
-      markAsRead(notification.id);
-      
-      // Se for intimação, marcar no banco
-      if (notification.type === 'intimation') {
-        const intimationId = notification.id.replace('intimation-', '');
-        djenLocalService.marcarComoLida(intimationId).catch(console.error);
-      }
+      await markAsRead(notification.id);
     }
     
     // Navegar para o módulo
@@ -479,9 +485,9 @@ const NotificationsModule: React.FC<NotificationsModuleProps> = ({ onNavigateToM
                           </h4>
                           {!isRead && (
                             <button
-                              onClick={(e) => {
+                              onClick={async (e) => {
                                 e.stopPropagation();
-                                markAsRead(notification.id);
+                                await markAsRead(notification.id);
                               }}
                               className="p-2 hover:bg-slate-200 rounded-lg transition opacity-0 group-hover:opacity-100"
                               title="Marcar como lido"

@@ -27,8 +27,11 @@ import DeadlinesModule from './components/DeadlinesModule';
 import CalendarModule from './components/CalendarModule';
 import TasksModule from './components/TasksModule';
 import NotificationsModule from './components/NotificationsModule';
+import ProfileModal from './components/ProfileModal';
 import { NotificationCenter } from './components/NotificationCenter';
 import { NotificationPermissionBanner } from './components/NotificationPermissionBanner';
+import { useNotifications } from './hooks/useNotifications';
+import { pushNotifications } from './utils/pushNotifications';
 import Login from './components/Login';
 import { useAuth } from './contexts/AuthContext';
 import { profileService } from './services/profile.service';
@@ -62,16 +65,9 @@ function App() {
   });
 
   const [isProfileModalOpen, setIsProfileModalOpen] = useState(false);
-  const [profileForm, setProfileForm] = useState(profile);
-  const [savingProfile, setSavingProfile] = useState(false);
-  const [profileMessage, setProfileMessage] = useState<string | null>(null);
   const [profileBanner, setProfileBanner] = useState<string | null>(null);
   const [profileLoading, setProfileLoading] = useState(false);
   const [profileError, setProfileError] = useState<string | null>(null);
-  const [passwordForm, setPasswordForm] = useState({ newPassword: '', confirmPassword: '' });
-  const [passwordSaving, setPasswordSaving] = useState(false);
-  const [passwordMessage, setPasswordMessage] = useState<string | null>(null);
-  const [clearingIntimations, setClearingIntimations] = useState(false);
   const [clientPrefill, setClientPrefill] = useState<Partial<CreateClientDTO> | null>(null);
   const [notifications, setNotifications] = useState<NotificationItem[]>([]);
   const [notificationsOpen, setNotificationsOpen] = useState(false);
@@ -97,7 +93,6 @@ function App() {
           try {
             const parsed = JSON.parse(cachedProfile);
             setProfile(parsed);
-            setProfileForm(parsed);
           } catch (error) {
             sessionStorage.removeItem(PROFILE_CACHE_KEY);
           }
@@ -121,7 +116,6 @@ function App() {
               avatarUrl: data.avatar_url || GENERIC_AVATAR,
             };
             setProfile(normalized);
-            setProfileForm(normalized);
             if (cacheAvailable) {
               sessionStorage.setItem(PROFILE_CACHE_KEY, JSON.stringify(normalized));
             }
@@ -147,7 +141,6 @@ function App() {
               avatar_url: fallback.avatarUrl,
             });
             setProfile(fallback);
-            setProfileForm(fallback);
             if (cacheAvailable) {
               sessionStorage.setItem(PROFILE_CACHE_KEY, JSON.stringify(fallback));
             }
@@ -224,22 +217,6 @@ function App() {
     }
   };
 
-  const handleClearIntimations = async () => {
-    const confirmed = window.confirm(
-      'Tem certeza que deseja remover todas as intimações salvas? Esta ação não pode ser desfeita.'
-    );
-    if (!confirmed) return;
-
-    try {
-      setClearingIntimations(true);
-      await djenLocalService.clearAll();
-      setProfileMessage('Todas as intimações locais foram removidas com sucesso.');
-    } catch (error: any) {
-      setProfileMessage(error.message || 'Não foi possível remover as intimações.');
-    } finally {
-      setClearingIntimations(false);
-    }
-  };
 
   const handleMarkAllAsRead = async () => {
     try {
@@ -261,7 +238,7 @@ function App() {
 
   const handleNavigateToModule = (moduleString: string) => {
     const [moduleKey, paramString] = moduleString.split('?');
-    setActiveModule(moduleKey);
+    setActiveModule(moduleKey as any);
     
     if (paramString) {
       const params: Record<string, string> = {};
@@ -321,134 +298,17 @@ function App() {
 
   const openProfileModal = () => {
     if (profileLoading) return;
-    setProfileForm({
-      ...profile,
-      avatarUrl: profile.avatarUrl || GENERIC_AVATAR,
-    });
-    setProfileMessage(null);
-    setPasswordForm({ newPassword: '', confirmPassword: '' });
-    setPasswordMessage(null);
     setIsProfileModalOpen(true);
   };
 
   const closeProfileModal = () => {
-    if (savingProfile) return;
     setIsProfileModalOpen(false);
   };
 
-  const handleProfileChange = (field: string, value: string) => {
-    setProfileForm((prev) => ({
-      ...prev,
-      [field]: value,
-    }));
-  };
-
-  const handleAvatarUpload = async (file: File) => {
-    return new Promise<string>((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onload = () => {
-        resolve(reader.result as string);
-      };
-      reader.onerror = () => {
-        reject(new Error('Não foi possível processar a imagem.'));
-      };
-      reader.readAsDataURL(file);
-    });
-  };
-
-  const handleAvatarChange = async (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
-    if (!file) return;
-
-    if (!file.type.startsWith('image/')) {
-      setProfileMessage('Selecione um arquivo de imagem válido.');
-      return;
-    }
-
-    try {
-      const preview = await handleAvatarUpload(file);
-      setProfileForm((prev) => ({
-        ...prev,
-        avatarUrl: preview,
-      }));
-      setProfileMessage('Pré-visualização atualizada. Lembre-se de salvar as alterações.');
-    } catch (error: any) {
-      setProfileMessage(error.message || 'Não foi possível carregar a imagem.');
-    } finally {
-      event.target.value = '';
-    }
-  };
-
-  const handleSaveProfile = async (event: React.FormEvent) => {
-    event.preventDefault();
-    setSavingProfile(true);
-    setProfileMessage(null);
-
-    try {
-      if (!user) throw new Error('Usuário não autenticado.');
-
-      const payload = {
-        name: profileForm.name,
-        email: profile.email || user.email || '',
-        role: profileForm.role,
-        phone: profileForm.phone || null,
-        oab: profileForm.oab || null,
-        lawyer_full_name: profileForm.lawyerFullName || null,
-        bio: profileForm.bio || null,
-        avatar_url: profileForm.avatarUrl || GENERIC_AVATAR,
-      };
-
-      await profileService.upsertProfile(user.id, payload);
-
-      setProfile({
-        ...profileForm,
-        avatarUrl: profileForm.avatarUrl || GENERIC_AVATAR,
-        email: payload.email,
-      });
-      setProfileMessage('Perfil atualizado com sucesso.');
-      setProfileBanner('Perfil atualizado com sucesso.');
-      setTimeout(() => {
-        setIsProfileModalOpen(false);
-        setProfileMessage(null);
-      }, 800);
-    } catch (error: any) {
-      const message = error.message || 'Não foi possível atualizar o perfil. Tente novamente.';
-      setProfileMessage(message);
-      setProfileBanner(message);
-    } finally {
-      setSavingProfile(false);
-    }
-  };
-
-  const handlePasswordSubmit = async (event: React.FormEvent) => {
-    event.preventDefault();
-    if (!user) {
-      setPasswordMessage('Usuário não autenticado.');
-      return;
-    }
-
-    if (!passwordForm.newPassword || passwordForm.newPassword.length < 8) {
-      setPasswordMessage('A senha deve ter pelo menos 8 caracteres.');
-      return;
-    }
-
-    if (passwordForm.newPassword !== passwordForm.confirmPassword) {
-      setPasswordMessage('As senhas informadas não coincidem.');
-      return;
-    }
-
-    try {
-      setPasswordSaving(true);
-      setPasswordMessage(null);
-      const { error } = await supabase.auth.updateUser({ password: passwordForm.newPassword });
-      if (error) throw error;
-      setPasswordMessage('Senha atualizada com sucesso.');
-      setPasswordForm({ newPassword: '', confirmPassword: '' });
-    } catch (error: any) {
-      setPasswordMessage(error.message || 'Não foi possível atualizar a senha.');
-    } finally {
-      setPasswordSaving(false);
-    }
+  const handleProfileUpdate = (updatedProfile: any) => {
+    setProfile(updatedProfile);
+    setProfileBanner('Perfil atualizado com sucesso!');
+    setTimeout(() => setProfileBanner(null), 3000);
   };
 
   if (loading) {
@@ -706,7 +566,7 @@ function App() {
               
               <div className="flex items-center gap-3">
                 <button
-                  onClick={() => setActiveModule('tasks')}
+                  onClick={() => setActiveModule('tasks' as any)}
                   className={`relative p-2 rounded-lg transition-colors ${
                     activeModule === 'tasks'
                       ? 'text-blue-600 bg-blue-50'
@@ -723,7 +583,7 @@ function App() {
                 </button>
                 <NotificationCenter 
                   onNavigateToModule={(moduleKey, params) => {
-                    setActiveModule(moduleKey);
+                    setActiveModule(moduleKey as any);
                     if (params) {
                       setModuleParams(prev => ({
                         ...prev,
@@ -852,7 +712,7 @@ function App() {
           {activeModule === 'notifications' && (
             <NotificationsModule
               onNavigateToModule={(moduleKey, params) => {
-                setActiveModule(moduleKey);
+                setActiveModule(moduleKey as any);
                 if (params) {
                   setModuleParams(prev => ({
                     ...prev,
@@ -865,208 +725,13 @@ function App() {
           {activeModule === 'documents' && <DocumentsModule />}
         </main>
 
-
-        {isProfileModalOpen && (
-          <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-            <div className="bg-white rounded-2xl shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
-              <div className="px-6 py-4 border-b border-gray-200 flex items-center justify-between">
-                <div>
-                  <h3 className="text-xl font-semibold text-slate-900">Meu Perfil</h3>
-                  <p className="text-sm text-slate-600">Atualize suas informações profissionais</p>
-                </div>
-                <button
-                  onClick={closeProfileModal}
-                  className="text-slate-400 hover:text-slate-600"
-                  title="Fechar"
-                >
-                  <X className="w-5 h-5" />
-                </button>
-              </div>
-
-              <form onSubmit={handleSaveProfile} className="grid grid-cols-1 lg:grid-cols-5 gap-6 p-6">
-                <div className="lg:col-span-2 space-y-6">
-                  <div className="space-y-4">
-                    <div className="relative w-32 h-32 mx-auto rounded-2xl overflow-hidden border-2 border-amber-500 shadow-lg">
-                      <img src={profileForm.avatarUrl || GENERIC_AVATAR} alt={profileForm.name} className="w-full h-full object-cover" />
-                      <label className="absolute inset-0 bg-black/0 hover:bg-black/40 flex items-center justify-center text-xs font-semibold text-white uppercase tracking-wide cursor-pointer transition-colors">
-                        Alterar foto
-                        <input type="file" accept="image/*" onChange={handleAvatarChange} className="hidden" />
-                      </label>
-                    </div>
-                    <p className="text-xs text-slate-500 text-center">Formatos suportados: JPG, PNG ou WEBP.</p>
-                  </div>
-
-                  <div className="bg-slate-50 border border-slate-100 rounded-xl p-4 space-y-2 text-sm text-slate-600">
-                    <p><strong>E-mail:</strong> {profile.email || user.email || 'Não informado'}</p>
-                    <p><strong>Telefone:</strong> {profileForm.phone || 'Não informado'}</p>
-                    <p><strong>OAB:</strong> {profileForm.oab || 'Não informado'}</p>
-                  </div>
-                </div>
-
-                <div className="lg:col-span-3 space-y-5">
-                  {profileMessage && (
-                    <div className="bg-emerald-50 border border-emerald-200 text-emerald-700 px-4 py-3 rounded-lg text-sm">
-                      {profileMessage}
-                    </div>
-                  )}
-
-                  <div>
-                    <label className="block text-sm font-medium text-slate-700 mb-2">Nome completo</label>
-                    <input
-                      value={profileForm.name}
-                      onChange={(event) => handleProfileChange('name', event.target.value)}
-                      className="input-field"
-                      placeholder="Digite seu nome"
-                      required
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-sm font-medium text-slate-700 mb-2">Cargo</label>
-                    <select
-                      value={profileForm.role}
-                      onChange={(event) => handleProfileChange('role', event.target.value)}
-                      className="input-field"
-                    >
-                      <option value="Advogado">Advogado</option>
-                      <option value="Auxiliar">Auxiliar</option>
-                      <option value="Estagiário">Estagiário</option>
-                      <option value="Administrador">Administrador</option>
-                    </select>
-                  </div>
-
-                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-                    <div>
-                      <label className="block text-sm font-medium text-slate-700 mb-2">Telefone</label>
-                      <input
-                        value={profileForm.phone}
-                        onChange={(event) => handleProfileChange('phone', event.target.value)}
-                        className="input-field"
-                        placeholder="(00) 00000-0000"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium text-slate-700 mb-2">Registro OAB</label>
-                      <input
-                        value={profileForm.oab}
-                        onChange={(event) => handleProfileChange('oab', event.target.value)}
-                        className="input-field"
-                        placeholder="Ex: OAB/UF 12345"
-                      />
-                    </div>
-                  </div>
-
-                  <div>
-                    <label className="block text-sm font-medium text-slate-700 mb-2">
-                      Nome Completo para DJEN
-                      <span className="text-xs text-slate-500 ml-2">(Opcional - para pesquisa no Diário Oficial)</span>
-                    </label>
-                    <input
-                      value={profileForm.lawyerFullName}
-                      onChange={(event) => handleProfileChange('lawyerFullName', event.target.value)}
-                      className="input-field"
-                      placeholder="Ex: João da Silva Santos"
-                    />
-                    <p className="text-xs text-slate-500 mt-1">
-                      Use este campo se o nome para pesquisa no DJEN for diferente do nome de exibição.
-                    </p>
-                  </div>
-
-                  <div>
-                    <label className="block text-sm font-medium text-slate-700 mb-2">Sobre</label>
-                    <textarea
-                      value={profileForm.bio}
-                      onChange={(event) => handleProfileChange('bio', event.target.value)}
-                      rows={4}
-                      className="input-field"
-                      placeholder="Escreva um breve resumo sobre sua experiência."
-                    />
-                  </div>
-
-                  <div className="flex justify-end gap-3 pt-2">
-                    <button
-                      type="button"
-                      onClick={closeProfileModal}
-                      className="px-4 py-2.5 rounded-lg text-sm font-medium text-slate-600 bg-slate-100 hover:bg-slate-200 transition-colors"
-                      disabled={savingProfile}
-                    >
-                      Cancelar
-                    </button>
-                    <button
-                      type="submit"
-                      disabled={savingProfile}
-                      className="px-4 py-2.5 rounded-lg text-sm font-semibold text-white bg-amber-600 hover:bg-amber-700 transition-colors flex items-center gap-2 disabled:opacity-60"
-                    >
-                      {savingProfile ? (
-                        <>
-                          <Loader2 className="w-4 h-4 animate-spin" />
-                          Salvando...
-                        </>
-                      ) : (
-                        'Salvar alterações'
-                      )}
-                    </button>
-                  </div>
-                </div>
-              </form>
-
-              <div className="border-t border-gray-200" />
-
-              <form onSubmit={handlePasswordSubmit} className="p-6 space-y-5 bg-slate-50">
-                <div>
-                  <h4 className="text-sm font-semibold text-slate-900">Segurança</h4>
-                  <p className="text-xs text-slate-500">Atualize sua senha de acesso</p>
-                </div>
-
-                {passwordMessage && (
-                  <div className={`px-4 py-3 rounded-lg text-sm ${passwordMessage.includes('sucesso') ? 'bg-emerald-50 border border-emerald-200 text-emerald-700' : 'bg-red-50 border border-red-200 text-red-600'}`}>
-                    {passwordMessage}
-                  </div>
-                )}
-
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-sm font-medium text-slate-700 mb-2">Nova senha</label>
-                    <input
-                      type="password"
-                      value={passwordForm.newPassword}
-                      onChange={(e) => setPasswordForm((prev) => ({ ...prev, newPassword: e.target.value }))}
-                      className="input-field"
-                      placeholder="Mínimo 8 caracteres"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-slate-700 mb-2">Confirmar nova senha</label>
-                    <input
-                      type="password"
-                      value={passwordForm.confirmPassword}
-                      onChange={(e) => setPasswordForm((prev) => ({ ...prev, confirmPassword: e.target.value }))}
-                      className="input-field"
-                      placeholder="Repita a nova senha"
-                    />
-                  </div>
-                </div>
-
-                <div className="flex justify-end">
-                  <button
-                    type="submit"
-                    disabled={passwordSaving}
-                    className="px-4 py-2.5 rounded-lg text-sm font-semibold text-white bg-slate-900 hover:bg-slate-800 transition-colors flex items-center gap-2 disabled:opacity-60"
-                  >
-                    {passwordSaving ? (
-                      <>
-                        <Loader2 className="w-4 h-4 animate-spin" />
-                        Atualizando...
-                      </>
-                    ) : (
-                      'Atualizar senha'
-                    )}
-                  </button>
-                </div>
-              </form>
-            </div>
-          </div>
-        )}
+        {/* Profile Modal */}
+        <ProfileModal 
+          isOpen={isProfileModalOpen}
+          onClose={closeProfileModal}
+          profile={profile}
+          onProfileUpdate={handleProfileUpdate}
+        />
       </div>
     </div>
   );

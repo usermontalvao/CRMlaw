@@ -8,6 +8,7 @@ import {
   CheckCircle,
   AlertTriangle,
   ChevronRight,
+  ChevronDown,
   Loader2,
   Check,
   Eye,
@@ -43,6 +44,7 @@ export const NotificationCenter: React.FC<NotificationCenterProps> = ({ onNaviga
   const [appointments, setAppointments] = useState<CalendarEvent[]>([]);
   const [hasViewed, setHasViewed] = useState(false);
   const [readNotifications, setReadNotifications] = useState<Set<string>>(new Set());
+  const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set(['intimation', 'deadline', 'appointment']));
 
   // Carregar dados
   const loadNotifications = async () => {
@@ -112,6 +114,68 @@ export const NotificationCenter: React.FC<NotificationCenterProps> = ({ onNaviga
       localStorage.setItem('notifications_viewed', 'false');
     }
   }, [intimations, deadlines, appointments]);
+
+  // Agrupar notificações por tipo
+  const groupedNotifications = useMemo(() => {
+    const groups: Record<string, NotificationItem[]> = {
+      intimation: [],
+      deadline: [],
+      appointment: [],
+    };
+
+    // Intimações
+    intimations.forEach((int) => {
+      groups.intimation.push({
+        id: `intimation-${int.id}`,
+        type: 'intimation',
+        title: `Nova Intimação - ${int.tipo_comunicacao || 'DJEN'}`,
+        description: `Processo ${int.numero_processo_mascara || int.numero_processo}`,
+        date: int.data_disponibilizacao,
+        priority: 'urgent',
+        unread: !int.lida,
+        data: int,
+      });
+    });
+
+    // Prazos
+    deadlines.forEach((deadline) => {
+      const daysUntil = Math.ceil(
+        (new Date(deadline.due_date).getTime() - new Date().getTime()) / (1000 * 60 * 60 * 24)
+      );
+      
+      const notifId = `deadline-${deadline.id}`;
+      groups.deadline.push({
+        id: notifId,
+        type: 'deadline',
+        title: deadline.title,
+        description: `Vence em ${daysUntil} dia${daysUntil !== 1 ? 's' : ''}`,
+        date: deadline.due_date,
+        priority: daysUntil <= 2 ? 'urgent' : daysUntil <= 5 ? 'high' : 'normal',
+        unread: true,
+        data: deadline,
+        read: readNotifications.has(notifId),
+      });
+    });
+
+    // Compromissos
+    appointments.forEach((appt) => {
+      const startDate = new Date(appt.start_at);
+      const notifId = `appointment-${appt.id}`;
+      groups.appointment.push({
+        id: notifId,
+        type: 'appointment',
+        title: appt.title,
+        description: `${startDate.toLocaleDateString('pt-BR')} às ${startDate.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}`,
+        date: appt.start_at,
+        priority: 'normal',
+        unread: true,
+        data: appt,
+        read: readNotifications.has(notifId),
+      });
+    });
+
+    return groups;
+  }, [intimations, deadlines, appointments, readNotifications]);
 
   // Transformar dados em notificações unificadas
   const notifications = useMemo((): NotificationItem[] => {
@@ -197,6 +261,20 @@ export const NotificationCenter: React.FC<NotificationCenterProps> = ({ onNaviga
     newReadSet.add(notificationId);
     setReadNotifications(newReadSet);
     localStorage.setItem('read_notifications', JSON.stringify([...newReadSet]));
+    
+    // Se for intimação, marcar no banco
+    if (notificationId.startsWith('intimation-')) {
+      const intimationId = notificationId.replace('intimation-', '');
+      try {
+        await djenLocalService.marcarComoLida(intimationId);
+        // Atualizar estado local
+        setIntimations(prev => prev.map(int => 
+          int.id === intimationId ? { ...int, lida: true } : int
+        ));
+      } catch (error) {
+        console.error('Erro ao marcar intimação como lida:', error);
+      }
+    }
   };
 
   const handleNotificationClick = async (notification: NotificationItem) => {
@@ -206,6 +284,19 @@ export const NotificationCenter: React.FC<NotificationCenterProps> = ({ onNaviga
       newReadSet.add(notification.id);
       setReadNotifications(newReadSet);
       localStorage.setItem('read_notifications', JSON.stringify([...newReadSet]));
+      
+      // Se for intimação, marcar no banco
+      if (notification.type === 'intimation') {
+        const intimationId = notification.id.replace('intimation-', '');
+        try {
+          await djenLocalService.marcarComoLida(intimationId);
+          setIntimations(prev => prev.map(int => 
+            int.id === intimationId ? { ...int, lida: true } : int
+          ));
+        } catch (error) {
+          console.error('Erro ao marcar intimação como lida:', error);
+        }
+      }
     }
     
     setIsOpen(false);
@@ -287,89 +378,123 @@ export const NotificationCenter: React.FC<NotificationCenterProps> = ({ onNaviga
                   <p className="text-slate-500 text-sm">Sem novas notificações</p>
                 </div>
               ) : (
-                <div className="divide-y divide-gray-50">
-                  {notifications.map((notification) => {
-                    const Icon = getNotificationIcon(notification.type);
-                    const isRead = notification.read || false;
+                <div className="divide-y divide-gray-100">
+                  {/* Grupos de notificações */}
+                  {Object.entries(groupedNotifications).map(([type, items]) => {
+                    if (items.length === 0) return null;
+                    
+                    const isExpanded = expandedGroups.has(type);
+                    const unreadInGroup = items.filter(n => !n.read).length;
+                    const Icon = getNotificationIcon(type as any);
+                    const typeLabel = type === 'intimation' ? 'Intimações' : type === 'deadline' ? 'Prazos' : 'Compromissos';
+                    
                     return (
-                      <div
-                        key={notification.id}
-                        className={`relative group cursor-pointer transition-all ${
-                          isRead ? 'bg-white hover:bg-slate-50' : 'bg-blue-50/30 hover:bg-blue-50/50'
-                        }`}
-                      >
-                        <div
-                          onClick={() => handleNotificationClick(notification)}
-                          className="p-4"
+                      <div key={type}>
+                        {/* Header do grupo - CLIQUE AQUI PARA EXPANDIR */}
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            console.log('Clicou no grupo:', type, 'Expandido:', isExpanded);
+                            const newExpanded = new Set(expandedGroups);
+                            if (isExpanded) {
+                              newExpanded.delete(type);
+                              console.log('Recolhendo grupo:', type);
+                            } else {
+                              newExpanded.add(type);
+                              console.log('Expandindo grupo:', type);
+                            }
+                            setExpandedGroups(newExpanded);
+                            console.log('Novos grupos expandidos:', Array.from(newExpanded));
+                          }}
+                          className="w-full p-4 bg-gradient-to-r from-slate-50 to-slate-100 hover:from-slate-100 hover:to-slate-200 transition-all flex items-center justify-between border-b-2 border-slate-200"
                         >
-                          <div className="flex items-start gap-3">
-                            {/* Ícone */}
-                            <div className="relative flex-shrink-0">
-                              <div className={`w-12 h-12 rounded-full flex items-center justify-center ${
-                                notification.priority === 'urgent' && !isRead
-                                  ? 'bg-gradient-to-br from-red-500 to-red-600 text-white shadow-lg shadow-red-500/30'
-                                  : notification.priority === 'high' && !isRead
-                                  ? 'bg-gradient-to-br from-orange-500 to-orange-600 text-white shadow-lg shadow-orange-500/30'
-                                  : !isRead
-                                  ? 'bg-gradient-to-br from-indigo-500 to-indigo-600 text-white shadow-lg shadow-indigo-500/30'
-                                  : 'bg-gray-200 text-gray-600'
-                              }`}>
-                                <Icon className="w-5 h-5" />
-                              </div>
-                              {!isRead && (
-                                <div className="absolute -top-0.5 -right-0.5 w-3 h-3 bg-blue-600 rounded-full border-2 border-white"></div>
-                              )}
+                          <div className="flex items-center gap-3">
+                            <div className="w-10 h-10 rounded-full bg-gradient-to-br from-indigo-500 to-indigo-600 text-white flex items-center justify-center shadow-md">
+                              <Icon className="w-5 h-5" />
                             </div>
-
-                            {/* Conteúdo */}
-                            <div className="flex-1 min-w-0">
-                              <div className="flex items-start justify-between gap-2 mb-1">
-                                <h4 className={`text-sm leading-tight ${
-                                  isRead ? 'font-normal text-gray-700' : 'font-semibold text-slate-900'
-                                }`}>
-                                  {notification.title}
-                                </h4>
-                                {!isRead && (
-                                  <button
-                                    onClick={(e) => markAsRead(notification.id, e)}
-                                    className="p-1.5 hover:bg-blue-100 rounded-full transition opacity-0 group-hover:opacity-100 flex-shrink-0"
-                                    title="Marcar como lido"
-                                  >
-                                    <Check className="w-3.5 h-3.5 text-blue-600" />
-                                  </button>
-                                )}
-                              </div>
-                              <p className={`text-xs leading-relaxed mb-2 ${
-                                isRead ? 'text-gray-500' : 'text-slate-600'
-                              }`}>
-                                {notification.description}
-                              </p>
-                              <div className="flex items-center gap-2">
-                                <span className="text-xs font-medium text-blue-600">
-                                  {(() => {
-                                    const date = new Date(notification.date);
-                                    const now = new Date();
-                                    const diff = now.getTime() - date.getTime();
-                                    const minutes = Math.floor(diff / 60000);
-                                    const hours = Math.floor(minutes / 60);
-                                    const days = Math.floor(hours / 24);
-                                    
-                                    if (minutes < 1) return 'Agora';
-                                    if (minutes < 60) return `${minutes}m`;
-                                    if (hours < 24) return `${hours}h`;
-                                    if (days < 7) return `${days}d`;
-                                    return date.toLocaleDateString('pt-BR', { day: '2-digit', month: 'short' });
-                                  })()}
-                                </span>
-                                {notification.priority === 'urgent' && !isRead && (
-                                  <span className="text-xs font-semibold text-red-600">
-                                    • Urgente
-                                  </span>
-                                )}
-                              </div>
+                            <div className="text-left">
+                              <h4 className="text-sm font-bold text-slate-900">{typeLabel}</h4>
+                              <p className="text-xs text-slate-600 font-medium">{items.length} {items.length === 1 ? 'notificação' : 'notificações'} • Clique para {isExpanded ? 'recolher' : 'expandir'}</p>
                             </div>
                           </div>
-                        </div>
+                          <div className="flex items-center gap-2">
+                            {unreadInGroup > 0 && (
+                              <span className="bg-blue-600 text-white text-xs font-bold rounded-full min-w-[1.5rem] h-6 px-2 flex items-center justify-center shadow-md">
+                                {unreadInGroup}
+                              </span>
+                            )}
+                            <div className={`p-1.5 rounded-full transition-colors ${isExpanded ? 'bg-indigo-100' : 'bg-slate-200'}`}>
+                              {isExpanded ? <ChevronDown className="w-5 h-5 text-indigo-600" /> : <ChevronRight className="w-5 h-5 text-slate-600" />}
+                            </div>
+                          </div>
+                        </button>
+                        
+                        {/* Itens expandidos */}
+                        {isExpanded && (
+                          <div className="divide-y divide-gray-50 bg-white">
+                            {items.map((notification) => {
+                              const isRead = notification.read || false;
+                              return (
+                                <div
+                                  key={notification.id}
+                                  onClick={() => handleNotificationClick(notification)}
+                                  className={`relative group cursor-pointer transition-all p-4 pl-16 ${
+                                    isRead ? 'bg-white hover:bg-slate-50' : 'bg-blue-50/30 hover:bg-blue-100/50'
+                                  }`}
+                                >
+                                  <div className="flex-1 min-w-0">
+                                    <div className="flex items-start justify-between gap-2 mb-1">
+                                      <h4 className={`text-sm leading-tight ${
+                                        isRead ? 'font-normal text-gray-700' : 'font-semibold text-slate-900'
+                                      }`}>
+                                        {notification.title}
+                                      </h4>
+                                      {!isRead && (
+                                        <button
+                                          onClick={(e) => markAsRead(notification.id, e)}
+                                          className="p-1.5 hover:bg-blue-100 rounded-full transition opacity-0 group-hover:opacity-100 flex-shrink-0"
+                                          title="Marcar como lido"
+                                        >
+                                          <Check className="w-3.5 h-3.5 text-blue-600" />
+                                        </button>
+                                      )}
+                                    </div>
+                                    <p className={`text-xs leading-relaxed mb-2 ${
+                                      isRead ? 'text-gray-500' : 'text-slate-600'
+                                    }`}>
+                                      {notification.description}
+                                    </p>
+                                    <div className="flex items-center gap-2">
+                                      <span className="text-xs font-medium text-blue-600">
+                                        {(() => {
+                                          const date = new Date(notification.date);
+                                          const now = new Date();
+                                          const diff = now.getTime() - date.getTime();
+                                          const minutes = Math.floor(diff / 60000);
+                                          const hours = Math.floor(minutes / 60);
+                                          const days = Math.floor(hours / 24);
+                                          
+                                          if (minutes < 1) return 'Agora';
+                                          if (minutes < 60) return `${minutes}m`;
+                                          if (hours < 24) return `${hours}h`;
+                                          if (days < 7) return `${days}d`;
+                                          return date.toLocaleDateString('pt-BR', { day: '2-digit', month: 'short' });
+                                        })()}
+                                      </span>
+                                      {notification.priority === 'urgent' && !isRead && (
+                                        <span className="text-xs font-semibold text-red-600">
+                                          • Urgente
+                                        </span>
+                                      )}
+                                    </div>
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        )}
                       </div>
                     );
                   })}

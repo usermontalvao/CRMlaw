@@ -248,7 +248,12 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
   const handleMarkAsRead = async (id: string) => {
     try {
       await djenLocalService.marcarComoLida(id);
-      await loadData();
+      
+      // Atualizar estado local sem recarregar tudo
+      setIntimations(prev => prev.map(int => 
+        int.id === id ? { ...int, lida: true, lida_em: new Date().toISOString() } : int
+      ));
+      
       setSuccess('Intimação marcada como lida');
       setTimeout(() => setSuccess(null), 2000);
     } catch (err: any) {
@@ -828,53 +833,98 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
                 )}
               </div>
               <div className="space-y-2">
-                {group.map((intimation) => (
+                {group.map((intimation) => {
+                  const isExpanded = expandedIntimationIds.has(intimation.id);
+                  return (
                   <div
                     key={intimation.id}
-                    className={`border rounded-lg p-4 cursor-pointer transition ${
+                    className={`border rounded-lg overflow-hidden transition ${
                       intimation.lida
                         ? 'border-slate-200 hover:border-slate-300 bg-slate-50'
                         : 'border-amber-200 hover:border-amber-300 bg-amber-50/30'
                     }`}
-                    onClick={() => setSelectedIntimation(intimation)}
                   >
-                    <div className="flex items-start justify-between gap-3">
-                      <div className="flex-1">
-                        <div className="flex items-center gap-2 mb-2">
-                          <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
-                            {intimation.sigla_tribunal}
-                          </span>
-                          {intimation.tipo_comunicacao && (
-                            <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-purple-100 text-purple-800">
-                              {intimation.tipo_comunicacao}
-                            </span>
-                          )}
-                          <span className="text-xs text-slate-500">
-                            {formatDate(intimation.data_disponibilizacao)}
-                          </span>
-                          {!intimation.lida && (
-                            <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold bg-amber-100 text-amber-700">
-                              NÃO LIDA
-                            </span>
-                          )}
+                    {/* Header clicável para expandir */}
+                    <div
+                      className="p-4 cursor-pointer"
+                      onClick={() => {
+                        const newExpanded = new Set(expandedIntimationIds);
+                        if (isExpanded) {
+                          newExpanded.delete(intimation.id);
+                        } else {
+                          newExpanded.add(intimation.id);
+                        }
+                        setExpandedIntimationIds(newExpanded);
+                      }}
+                    >
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="flex items-center gap-2">
+                          {isExpanded ? <ChevronDown className="w-4 h-4 text-slate-600 flex-shrink-0" /> : <ChevronRight className="w-4 h-4 text-slate-600 flex-shrink-0" />}
                         </div>
-                        <p className="text-sm text-slate-700 line-clamp-2">{intimation.texto}</p>
+                        <div className="flex-1">
+                          <div className="flex items-center gap-2 mb-2 flex-wrap">
+                            <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
+                              {intimation.sigla_tribunal}
+                            </span>
+                            {intimation.tipo_comunicacao && (
+                              <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-purple-100 text-purple-800">
+                                {intimation.tipo_comunicacao}
+                              </span>
+                            )}
+                            <span className="text-xs text-slate-500">
+                              {formatDate(intimation.data_disponibilizacao)}
+                            </span>
+                            {!intimation.lida && (
+                              <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold bg-amber-100 text-amber-700">
+                                NÃO LIDA
+                              </span>
+                            )}
+                          </div>
+                          <p className={`text-sm text-slate-700 ${!isExpanded ? 'line-clamp-2' : ''}`}>
+                            {intimation.texto}
+                          </p>
+                        </div>
+                        <div className="flex items-center gap-2 flex-shrink-0">
+                          {!intimation.lida && (
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleMarkAsRead(intimation.id);
+                              }}
+                              className="inline-flex items-center gap-1 px-2 py-1 text-xs font-medium text-emerald-600 hover:text-emerald-700 border border-emerald-200 rounded hover:bg-emerald-50 transition"
+                            >
+                              <CheckCircle className="w-3 h-3" />
+                              Marcar
+                            </button>
+                          )}
+                          {intimation.link && (
+                            <a
+                              href={intimation.link}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              onClick={(e) => e.stopPropagation()}
+                              className="inline-flex items-center gap-1 px-2 py-1 text-xs font-medium text-purple-600 hover:text-purple-700 border border-purple-200 rounded hover:bg-purple-50 transition"
+                            >
+                              <ExternalLink className="w-3 h-3" />
+                              Diário
+                            </a>
+                          )}
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setSelectedIntimation(intimation);
+                            }}
+                            className="inline-flex items-center gap-1 px-2 py-1 text-xs font-medium text-blue-600 hover:text-blue-700 border border-blue-200 rounded hover:bg-blue-50 transition"
+                          >
+                            <Eye className="w-3 h-3" />
+                            Detalhes
+                          </button>
+                        </div>
                       </div>
-                      {!intimation.lida && (
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleMarkAsRead(intimation.id);
-                          }}
-                          className="inline-flex items-center gap-1 px-2 py-1 text-xs font-medium text-emerald-600 hover:text-emerald-700 border border-emerald-200 rounded hover:bg-emerald-50 transition"
-                        >
-                          <CheckCircle className="w-3 h-3" />
-                          Marcar
-                        </button>
-                      )}
                     </div>
                   </div>
-                ))}
+                  );
+                })}
               </div>
             </div>
           ))
