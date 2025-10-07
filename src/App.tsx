@@ -32,6 +32,7 @@ import { useAuth } from './contexts/AuthContext';
 import { profileService } from './services/profile.service';
 import { leadService } from './services/lead.service';
 import { notificationService } from './services/notification.service';
+import { taskService } from './services/task.service';
 import { supabase } from './config/supabase';
 import type { Lead } from './types/lead.types';
 import type { CreateClientDTO } from './types/client.types';
@@ -71,6 +72,7 @@ function App() {
   const [notificationsOpen, setNotificationsOpen] = useState(false);
   const [notificationsLoading, setNotificationsLoading] = useState(false);
   const [leadToConvert, setLeadToConvert] = useState<Lead | null>(null);
+  const [pendingTasksCount, setPendingTasksCount] = useState(0);
 
   const showSidebarLabels = sidebarOpen || isMobileNavOpen;
   const unreadCount = useMemo(() => notifications.filter((n) => !n.read).length, [notifications]);
@@ -155,6 +157,24 @@ function App() {
     };
 
     loadProfile();
+  }, [user]);
+
+  useEffect(() => {
+    if (!user) {
+      setPendingTasksCount(0);
+      return;
+    }
+
+    const loadPendingTasks = async () => {
+      try {
+        const items = await taskService.listTasks();
+        setPendingTasksCount(items.filter((task) => task.status === 'pending').length);
+      } catch (error) {
+        console.error('Erro ao carregar tarefas pendentes:', error);
+      }
+    };
+
+    loadPendingTasks();
   }, [user]);
 
   useEffect(() => {
@@ -671,9 +691,14 @@ function App() {
                   title="Tarefas"
                 >
                   <CheckSquare className="w-5 h-5" />
+                  {pendingTasksCount > 0 && (
+                    <span className="absolute -top-1 -right-1 min-w-[1.25rem] rounded-full bg-emerald-500 px-1.5 py-0.5 text-xs font-semibold text-white text-center">
+                      {pendingTasksCount > 99 ? '99+' : pendingTasksCount}
+                    </span>
+                  )}
                 </button>
                 <button
-                  onClick={() => setNotificationsOpen(true)}
+                  onClick={() => setNotificationsOpen((prev) => !prev)}
                   className="relative p-2 text-slate-600 hover:text-slate-900 hover:bg-gray-100 rounded-lg transition-colors"
                 >
                   <Bell className="w-5 h-5" />
@@ -782,10 +807,12 @@ function App() {
             <TasksModule 
               focusNewTask={moduleParams['tasks'] ? JSON.parse(moduleParams['tasks']).mode === 'create' : false}
               onParamConsumed={() => setModuleParams(prev => { const updated = {...prev}; delete updated['tasks']; return updated; })}
+              onPendingTasksChange={setPendingTasksCount}
             />
           )}
           {activeModule === 'documents' && <DocumentsModule />}
         </main>
+
 
         {isProfileModalOpen && (
           <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center z-50 p-4">

@@ -90,10 +90,17 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({ onNavigateToModule }) =
   const [clientSearchTerm, setClientSearchTerm] = useState('');
   const [showClientSuggestions, setShowClientSuggestions] = useState(false);
   const [editingEventId, setEditingEventId] = useState<string | null>(null);
+  const [feedback, setFeedback] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
   const linkedClient = useMemo(
     () => clients.find((client) => client.id === newEventForm.client_id) || null,
     [clients, newEventForm.client_id],
   );
+
+  useEffect(() => {
+    if (!feedback) return;
+    const timeout = window.setTimeout(() => setFeedback(null), 4000);
+    return () => window.clearTimeout(timeout);
+  }, [feedback]);
   const clientMap = useMemo(() => {
     const map = new Map<string, Client>();
     clients.forEach((client) => {
@@ -430,7 +437,7 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({ onNavigateToModule }) =
             allDay: isAllDay,
           });
         }
-        alert(`Compromisso "${newEventForm.title}" atualizado com sucesso!`);
+        setFeedback({ type: 'success', message: `Compromisso "${newEventForm.title}" atualizado com sucesso!` });
       } else {
         const createdEvent = await calendarService.createEvent({
           ...basePayload,
@@ -445,13 +452,13 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({ onNavigateToModule }) =
           start: createdEvent.start_at,
           allDay: isAllDay,
         });
-        alert(`Compromisso "${newEventForm.title}" criado com sucesso!`);
+        setFeedback({ type: 'success', message: `Compromisso "${newEventForm.title}" criado com sucesso!` });
       }
 
       await loadData();
       handleCloseCreateModal();
     } catch (err: any) {
-      alert(err.message || 'Erro ao salvar compromisso.');
+      setFeedback({ type: 'error', message: err.message || 'Erro ao salvar compromisso.' });
     } finally {
       setSavingEvent(false);
     }
@@ -476,9 +483,9 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({ onNavigateToModule }) =
 
       await loadData();
       handleCloseCreateModal();
-      alert('Compromisso excluído com sucesso!');
+      setFeedback({ type: 'success', message: 'Compromisso excluído com sucesso!' });
     } catch (err: any) {
-      alert(err.message || 'Não foi possível excluir o compromisso.');
+      setFeedback({ type: 'error', message: err.message || 'Não foi possível excluir o compromisso.' });
     } finally {
       setSavingEvent(false);
     }
@@ -526,13 +533,13 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({ onNavigateToModule }) =
       if (!viewFilters.deadline) return;
       const client = deadline.client_id ? clientMap.get(deadline.client_id) : null;
       rows.push({
+        Data: formatDateTime(deadline.due_date),
         Tipo: 'Prazo',
         Título: truncateForExcel(deadline.title),
         Cliente: truncateForExcel(client?.full_name ?? 'Sem cliente'),
         Telefone: truncateForExcel(client?.mobile ?? client?.phone ?? ''),
         Status: truncateForExcel(deadline.status),
         Prioridade: truncateForExcel(deadline.priority),
-        'Data de Vencimento': formatDateTime(deadline.due_date),
         Descrição: truncateForExcel(deadline.description ?? ''),
       });
     });
@@ -543,17 +550,17 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({ onNavigateToModule }) =
         if (!viewFilters.hearing) return;
         const client = process.client_id ? clientMap.get(process.client_id) : null;
         rows.push({
+          Data: formatDateTime(
+            process.hearing_time
+              ? `${process.hearing_date}T${process.hearing_time}`
+              : process.hearing_date ?? undefined,
+          ),
           Tipo: 'Audiência',
           Título: truncateForExcel(`Audiência - ${process.hearing_mode ?? 'Sem modo'}`),
           Cliente: truncateForExcel(client?.full_name ?? 'Sem cliente'),
           Telefone: truncateForExcel(client?.mobile ?? client?.phone ?? ''),
           Status: truncateForExcel(process.status),
           Prioridade: '',
-          'Data de Vencimento': formatDateTime(
-            process.hearing_time
-              ? `${process.hearing_date}T${process.hearing_time}`
-              : process.hearing_date ?? undefined,
-          ),
           Descrição: truncateForExcel(process.notes ?? ''),
         });
       });
@@ -563,13 +570,13 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({ onNavigateToModule }) =
       .forEach((requirement) => {
         if (!viewFilters.requirement) return;
         rows.push({
+          Data: formatDateTime(requirement.exigency_due_date ?? undefined),
           Tipo: 'Requerimento',
           Título: truncateForExcel(`Requerimento - ${requirement.beneficiary}`),
           Cliente: truncateForExcel(requirement.beneficiary),
           Telefone: truncateForExcel(requirement.phone ?? ''),
           Status: truncateForExcel(requirement.status),
           Prioridade: '',
-          'Data de Vencimento': formatDateTime(requirement.exigency_due_date ?? undefined),
           Descrição: truncateForExcel(requirement.observations ?? requirement.notes ?? ''),
         });
       });
@@ -586,13 +593,13 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({ onNavigateToModule }) =
       };
       const client = event.client_id ? clientMap.get(event.client_id) : null;
       rows.push({
+        Data: formatDateTime(event.start_at),
         Tipo: eventTypeLabels[event.event_type] || event.event_type,
         Título: truncateForExcel(event.title),
         Cliente: truncateForExcel(client?.full_name ?? 'Sem cliente'),
         Telefone: truncateForExcel(client?.mobile ?? client?.phone ?? ''),
         Status: truncateForExcel(event.status),
         Prioridade: '',
-        'Data de Vencimento': formatDateTime(event.start_at),
         Descrição: truncateForExcel(event.description ?? ''),
       });
     });
@@ -605,20 +612,20 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({ onNavigateToModule }) =
       const rows = buildAgendaRows();
 
       if (!rows.length) {
-        alert('Não há compromissos para exportar.');
+        setFeedback({ type: 'error', message: 'Não há compromissos para exportar.' });
         return;
       }
 
       const workbook = XLSX.utils.book_new();
       const worksheet = XLSX.utils.json_to_sheet(rows);
       worksheet['!cols'] = [
-        { wch: 15 },
+        { wch: 22 },
+        { wch: 18 },
         { wch: 50 },
         { wch: 35 },
         { wch: 18 },
         { wch: 12 },
         { wch: 10 },
-        { wch: 22 },
         { wch: 40 },
       ];
       XLSX.utils.book_append_sheet(workbook, worksheet, 'Agenda');
@@ -626,7 +633,7 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({ onNavigateToModule }) =
       XLSX.writeFile(workbook, `agenda_${today}.xlsx`);
     } catch (err: any) {
       console.error(err);
-      alert(err.message || 'Não foi possível exportar a agenda.');
+      setFeedback({ type: 'error', message: err.message || 'Não foi possível exportar a agenda.' });
     }
   };
 
@@ -657,7 +664,7 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({ onNavigateToModule }) =
     try {
       const rows = buildAgendaRows();
       if (!rows.length) {
-        alert('Não há compromissos para exportar.');
+        setFeedback({ type: 'error', message: 'Não há compromissos para exportar.' });
         return;
       }
 
@@ -675,23 +682,23 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({ onNavigateToModule }) =
       (doc as any).autoTable({
         startY: 80,
         head: [[
+          'Data',
           'Tipo',
           'Título',
           'Cliente',
           'Telefone',
           'Status',
           'Prioridade',
-          'Data',
           'Descrição',
         ]],
         body: rows.map((row) => [
+          row['Data'],
           row['Tipo'],
           row['Título'],
           row['Cliente'],
           row['Telefone'],
           row['Status'],
           row['Prioridade'],
-          row['Data de Vencimento'],
           row['Descrição'],
         ]),
         styles: {
@@ -713,13 +720,13 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({ onNavigateToModule }) =
           fillColor: [248, 250, 255],
         },
         columnStyles: {
-          0: { cellWidth: 50 },
-          1: { cellWidth: 120 },
-          2: { cellWidth: 80 },
-          3: { cellWidth: 70 },
-          4: { cellWidth: 60 },
-          5: { cellWidth: 50 },
-          6: { cellWidth: 80 },
+          0: { cellWidth: 80 },
+          1: { cellWidth: 50 },
+          2: { cellWidth: 120 },
+          3: { cellWidth: 80 },
+          4: { cellWidth: 70 },
+          5: { cellWidth: 60 },
+          6: { cellWidth: 50 },
           7: { cellWidth: 'auto' },
         },
         margin: { top: 80, left: 20, right: 20 },
@@ -728,7 +735,7 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({ onNavigateToModule }) =
       doc.save(`agenda_${today.replace(/\//g, '-')}.pdf`);
     } catch (err: any) {
       console.error(err);
-      alert(err.message || 'Não foi possível exportar a agenda em PDF.');
+      setFeedback({ type: 'error', message: err.message || 'Não foi possível exportar a agenda em PDF.' });
     }
   };
 
@@ -787,6 +794,17 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({ onNavigateToModule }) =
 
   return (
     <div className="calendar-page">
+      {feedback && (
+        <div
+          className={`fixed bottom-6 right-6 z-[9999] max-w-sm rounded-xl border px-4 py-3 shadow-lg transition transform ${
+            feedback.type === 'success'
+              ? 'bg-emerald-50 border-emerald-200 text-emerald-700'
+              : 'bg-red-50 border-red-200 text-red-700'
+          }`}
+        >
+          {feedback.message}
+        </div>
+      )}
       <div className="bg-white border border-gray-200 rounded-2xl p-4 lg:p-5 shadow-sm flex flex-col gap-3">
         <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3">
           <div className="flex flex-col gap-0.5">

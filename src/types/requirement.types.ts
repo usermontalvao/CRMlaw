@@ -59,4 +59,5 @@ export interface RequirementFilters {
   beneficiary?: string;
   cpf?: string;
   benefit_type?: BenefitType;
+  client_id?: string;
 }

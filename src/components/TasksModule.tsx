@@ -6,6 +6,7 @@ import {
   AlertCircle,
   Loader2,
   Pencil,
+  RotateCcw,
 } from 'lucide-react';
 import { taskService } from '../services/task.service';
 import { useAuth } from '../contexts/AuthContext';
@@ -14,9 +15,10 @@ import type { Task } from '../types/task.types';
 interface TasksModuleProps {
   focusNewTask?: boolean;
   onParamConsumed?: () => void;
+  onPendingTasksChange?: (count: number) => void;
 }
 
-const TasksModule = ({ focusNewTask = false, onParamConsumed }: TasksModuleProps) => {
+const TasksModule = ({ focusNewTask = false, onParamConsumed, onPendingTasksChange }: TasksModuleProps) => {
   const [tasks, setTasks] = useState<Task[]>([]);
   const [loading, setLoading] = useState(false);
   const [newTaskTitle, setNewTaskTitle] = useState('');
@@ -51,6 +53,7 @@ const TasksModule = ({ focusNewTask = false, onParamConsumed }: TasksModuleProps
       setLoading(true);
       const data = await taskService.listTasks();
       setTasks(data);
+      onPendingTasksChange?.(data.filter((task) => task.status === 'pending').length);
     } catch (error) {
       console.error('Erro ao carregar tarefas:', error);
     } finally {
@@ -160,6 +163,7 @@ const TasksModule = ({ focusNewTask = false, onParamConsumed }: TasksModuleProps
 
     try {
       await taskService.updateTaskPositions(updates);
+      await loadTasks();
     } catch (error) {
       console.error('Erro ao atualizar posições das tarefas:', error);
       await loadTasks();
@@ -391,6 +395,16 @@ const TasksModule = ({ focusNewTask = false, onParamConsumed }: TasksModuleProps
               >
                 <Pencil className="w-4 h-4" />
               </button>
+
+              {task.status === 'completed' && (
+                <button
+                  onClick={() => handleToggleStatus(task)}
+                  className="p-2 text-emerald-600 hover:text-emerald-700 hover:bg-emerald-50 rounded-lg transition flex-shrink-0"
+                  title="Restaurar tarefa"
+                >
+                  <RotateCcw className="w-4 h-4" />
+                </button>
+              )}
 
               <button
                 onClick={() => handleDelete(task.id)}

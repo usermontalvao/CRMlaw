@@ -6,6 +6,10 @@ import type { Client, ClientFilters, CreateClientDTO } from '../types/client.typ
 import ClientList from './ClientList';
 import ClientForm from './ClientForm';
 import ClientDetails from './ClientDetails';
+import { processService } from '../services/process.service';
+import { requirementService } from '../services/requirement.service';
+import type { Process } from '../types/process.types';
+import type { Requirement } from '../types/requirement.types';
 
 type ViewMode = 'list' | 'form' | 'details';
 
@@ -25,6 +29,9 @@ const ClientsModule: React.FC<ClientsModuleProps> = ({ prefillData, onClientSave
   const [searchTerm, setSearchTerm] = useState('');
   const [filters, setFilters] = useState<ClientFilters>({});
   const [exporting, setExporting] = useState(false);
+  const [clientProcesses, setClientProcesses] = useState<Process[]>([]);
+  const [clientRequirements, setClientRequirements] = useState<Requirement[]>([]);
+  const [relationsLoading, setRelationsLoading] = useState(false);
   const [stats, setStats] = useState({
     total: 0,
     active: 0,
@@ -114,6 +121,24 @@ const ClientsModule: React.FC<ClientsModuleProps> = ({ prefillData, onClientSave
     };
   }, [searchTerm]);
 
+  const loadClientRelations = async (clientId: string) => {
+    try {
+      setRelationsLoading(true);
+      const [processData, requirementData] = await Promise.all([
+        processService.listProcesses({ client_id: clientId }),
+        requirementService.listRequirements({ client_id: clientId }),
+      ]);
+      setClientProcesses(processData);
+      setClientRequirements(requirementData);
+    } catch (error) {
+      console.error('Erro ao carregar dados relacionados ao cliente:', error);
+      setClientProcesses([]);
+      setClientRequirements([]);
+    } finally {
+      setRelationsLoading(false);
+    }
+  };
+
   // Criar novo cliente
   const handleNewClient = () => {
     setSelectedClient(null);
@@ -130,12 +155,15 @@ const ClientsModule: React.FC<ClientsModuleProps> = ({ prefillData, onClientSave
   const handleViewClient = (client: Client) => {
     setSelectedClient(client);
     setViewMode('details');
+    loadClientRelations(client.id);
   };
 
   // Voltar para lista
   const handleBackToList = (saved: boolean = false) => {
     setViewMode('list');
     setSelectedClient(null);
+    setClientProcesses([]);
+    setClientRequirements([]);
     loadClients();
     
     // Notificar App.tsx sobre o resultado
@@ -385,6 +413,9 @@ const ClientsModule: React.FC<ClientsModuleProps> = ({ prefillData, onClientSave
       {viewMode === 'details' && selectedClient && (
         <ClientDetails
           client={selectedClient}
+          processes={clientProcesses}
+          requirements={clientRequirements}
+          relationsLoading={relationsLoading}
           onBack={handleBackToList}
           onEdit={() => handleEditClient(selectedClient)}
         />

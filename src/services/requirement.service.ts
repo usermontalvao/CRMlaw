@@ -36,6 +36,10 @@ class RequirementService {
       query = query.eq('benefit_type', filters.benefit_type);
     }
 
+    if (filters?.client_id) {
+      query = query.eq('client_id', filters.client_id);
+    }
+
     const { data, error } = await query;
 
     if (error) {

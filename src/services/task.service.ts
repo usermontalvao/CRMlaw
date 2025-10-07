@@ -145,10 +145,20 @@ export const taskService = {
   async updateTaskPositions(updates: { id: string; position: number }[]): Promise<void> {
     if (updates.length === 0) return;
 
-    const { error } = await supabase
-      .from('tasks')
-      .upsert(updates, { onConflict: 'id' });
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) throw new Error('Usuário não autenticado');
 
-    if (error) throw error;
+    const results = await Promise.all(
+      updates.map((update) =>
+        supabase
+          .from('tasks')
+          .update({ position: update.position })
+          .eq('id', update.id)
+          .eq('user_id', user.id)
+      )
+    );
+
+    const firstError = results.find((result) => result.error)?.error;
+    if (firstError) throw firstError;
   },
 };

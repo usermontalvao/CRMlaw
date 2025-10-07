@@ -1,14 +1,40 @@
 import React from 'react';
-import { ArrowLeft, Edit, User, Building2, Mail, Phone, MapPin, Calendar, FileText, AlertCircle, MessageCircle } from 'lucide-react';
+import {
+  ArrowLeft,
+  Edit,
+  User,
+  Building2,
+  Mail,
+  Phone,
+  MapPin,
+  Calendar,
+  FileText,
+  AlertCircle,
+  MessageCircle,
+  Loader2,
+  Gavel,
+  ClipboardList,
+} from 'lucide-react';
 import type { Client } from '../types/client.types';
+import type { Process } from '../types/process.types';
+import type { Requirement } from '../types/requirement.types';
 
 interface ClientDetailsProps {
   client: Client;
+  processes: Process[];
+  requirements: Requirement[];
+  relationsLoading?: boolean;
   onBack: () => void;
   onEdit: () => void;
 }
 
-const ClientDetails: React.FC<ClientDetailsProps> = ({ client, onBack, onEdit }) => {
+const capitalizeSentence = (value: string) =>
+  value
+    .split('_')
+    .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+    .join(' ');
+
+const ClientDetails: React.FC<ClientDetailsProps> = ({ client, processes, requirements, relationsLoading, onBack, onEdit }) => {
   const formatDate = (dateString?: string) => {
     if (!dateString) return 'N/A';
     return new Date(dateString).toLocaleDateString('pt-BR');
@@ -235,6 +261,106 @@ const ClientDetails: React.FC<ClientDetailsProps> = ({ client, onBack, onEdit })
           <p className="text-gray-700 whitespace-pre-wrap">{client.notes}</p>
         </div>
       )}
+
+      {/* Processos vinculados */}
+      <div className="card">
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="text-xl font-semibold text-gray-900 flex items-center gap-2">
+            <Gavel className="w-6 h-6 text-primary-600" />
+            Processos vinculados
+          </h2>
+        </div>
+        {relationsLoading ? (
+          <div className="py-6 flex items-center justify-center text-gray-500 gap-2 text-sm">
+            <Loader2 className="w-5 h-5 animate-spin" />
+            Carregando processos...
+          </div>
+        ) : processes.length === 0 ? (
+          <p className="text-sm text-gray-500">Nenhum processo vinculado a este cliente.</p>
+        ) : (
+          <div className="space-y-3">
+            {processes.map((process) => (
+              <div key={process.id} className="border border-gray-200 rounded-xl p-4 hover:bg-gray-50 transition">
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <div>
+                    <p className="text-sm font-semibold text-gray-900">{process.process_code || 'Código não informado'}</p>
+                    <p className="text-xs text-gray-500">{capitalizeSentence(process.practice_area)}</p>
+                  </div>
+                  <span className="px-3 py-1 inline-flex text-xs leading-5 font-semibold rounded-full bg-blue-100 text-blue-700">
+                    {capitalizeSentence(process.status)}
+                  </span>
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 text-xs text-gray-600 mt-3">
+                  <div>
+                    <span className="font-medium text-gray-700 block">Distribuído</span>
+                    {process.distributed_at ? formatDate(process.distributed_at) : '—'}
+                  </div>
+                  <div>
+                    <span className="font-medium text-gray-700 block">Responsável</span>
+                    {process.responsible_lawyer || 'Não informado'}
+                  </div>
+                  <div>
+                    <span className="font-medium text-gray-700 block">Vara / Comarca</span>
+                    {process.court || 'Não informado'}
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* Requerimentos vinculados */}
+      <div className="card">
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="text-xl font-semibold text-gray-900 flex items-center gap-2">
+            <ClipboardList className="w-6 h-6 text-primary-600" />
+            Requerimentos vinculados
+          </h2>
+        </div>
+        {relationsLoading ? (
+          <div className="py-6 flex items-center justify-center text-gray-500 gap-2 text-sm">
+            <Loader2 className="w-5 h-5 animate-spin" />
+            Carregando requerimentos...
+          </div>
+        ) : requirements.length === 0 ? (
+          <p className="text-sm text-gray-500">Nenhum requerimento vinculado a este cliente.</p>
+        ) : (
+          <div className="space-y-3">
+            {requirements.map((requirement) => (
+              <div key={requirement.id} className="border border-gray-200 rounded-xl p-4 hover:bg-gray-50 transition">
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <div>
+                    <p className="text-sm font-semibold text-gray-900">
+                      {requirement.protocol || 'Sem protocolo'}
+                    </p>
+                    <p className="text-xs text-gray-500">
+                      Beneficiário: {requirement.beneficiary}
+                    </p>
+                  </div>
+                  <span className="px-3 py-1 inline-flex text-xs leading-5 font-semibold rounded-full bg-emerald-100 text-emerald-700">
+                    {capitalizeSentence(requirement.status)}
+                  </span>
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 text-xs text-gray-600 mt-3">
+                  <div>
+                    <span className="font-medium text-gray-700 block">CPF</span>
+                    {requirement.cpf || '—'}
+                  </div>
+                  <div>
+                    <span className="font-medium text-gray-700 block">Tipo de benefício</span>
+                    {capitalizeSentence(requirement.benefit_type)}
+                  </div>
+                  <div>
+                    <span className="font-medium text-gray-700 block">Entrada</span>
+                    {requirement.entry_date ? formatDate(requirement.entry_date) : '—'}
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
 
       {/* Informações do Sistema */}
       <div className="card bg-gray-50">
