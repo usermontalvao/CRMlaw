@@ -8,6 +8,7 @@ export interface Profile {
   email: string;
   phone?: string | null;
   oab?: string | null;
+  lawyer_full_name?: string | null; // Nome completo para pesquisa no DJEN
   bio?: string | null;
   avatar_url?: string | null;
   updated_at: string;
@@ -20,6 +21,7 @@ export interface UpdateProfileInput {
   role: string;
   phone?: string | null;
   oab?: string | null;
+  lawyer_full_name?: string | null;
   bio?: string | null;
   avatar_url?: string | null;
 }
@@ -64,6 +66,16 @@ class ProfileService {
 
     if (error) throw new Error(error.message);
     return data ?? [];
+  }
+
+  async getMyProfile(): Promise<Profile | null> {
+    const { data: { user } } = await supabase.auth.getUser();
+    
+    if (!user) {
+      throw new Error('Usuário não autenticado');
+    }
+
+    return this.getProfile(user.id);
   }
 }
 

@@ -244,6 +244,17 @@ class DjenLocalService {
           continue;
         }
 
+        // Extrai polos das partes
+        const poloAtivo = comunicacao.destinatarios
+          ?.filter(d => d.polo && (d.polo.toLowerCase().includes('ativo') || d.polo.toLowerCase().includes('autor') || d.polo.toLowerCase().includes('requerente')))
+          .map(d => d.nome)
+          .join(', ') || null;
+        
+        const poloPassivo = comunicacao.destinatarios
+          ?.filter(d => d.polo && (d.polo.toLowerCase().includes('passivo') || d.polo.toLowerCase().includes('réu') || d.polo.toLowerCase().includes('requerido')))
+          .map(d => d.nome)
+          .join(', ') || null;
+
         const payload: CreateDjenComunicacaoDTO = {
           djen_id: comunicacao.id,
           hash: comunicacao.hash,
@@ -261,6 +272,8 @@ class DjenLocalService {
           meio_completo: comunicacao.meiocompleto || null,
           link: comunicacao.link || null,
           data_disponibilizacao: comunicacao.data_disponibilizacao,
+          polo_ativo: poloAtivo,
+          polo_passivo: poloPassivo,
         };
 
         const processMatch = await getProcessMatch(comunicacao.numero_processo);
@@ -312,7 +325,92 @@ class DjenLocalService {
       }
     }
 
+    // Após salvar, propaga vínculos para intimações do mesmo processo
+    if (saved > 0) {
+      await this.propagarVinculosDoMesmoProcesso();
+    }
+
     return { saved, skipped };
+  }
+
+  /**
+   * Propaga vínculos de process_id e client_id para comunicações do mesmo número de processo
+   * Útil quando múltiplas intimações do mesmo processo são recebidas
+   */
+  async propagarVinculosDoMesmoProcesso(): Promise<void> {
+    try {
+      // Busca todas as comunicações ativas
+      const { data: comunicacoes, error } = await supabase
+        .from(this.tableName)
+        .select('id, numero_processo, process_id, client_id')
+        .eq('ativo', true);
+
+      if (error || !comunicacoes) {
+        console.error('Erro ao buscar comunicações para propagação:', error);
+        return;
+      }
+
+      // Agrupa por número de processo
+      const grupos = new Map<string, typeof comunicacoes>();
+      for (const com of comunicacoes) {
+        if (!com.numero_processo) continue;
+        
+        const normalized = com.numero_processo.replace(/\D/g, '');
+        if (!normalized) continue;
+
+        if (!grupos.has(normalized)) {
+          grupos.set(normalized, []);
+        }
+        grupos.get(normalized)!.push(com);
+      }
+
+      // Para cada grupo de processo, propaga vínculos
+      for (const [processNum, grupo] of grupos.entries()) {
+        if (grupo.length <= 1) continue; // Só 1 intimação, não precisa propagar
+
+        // Encontra o vínculo mais completo do grupo
+        let bestProcessId: string | null = null;
+        let bestClientId: string | null = null;
+
+        for (const com of grupo) {
+          if (com.process_id && !bestProcessId) {
+            bestProcessId = com.process_id;
+          }
+          if (com.client_id && !bestClientId) {
+            bestClientId = com.client_id;
+          }
+          if (bestProcessId && bestClientId) break;
+        }
+
+        // Se encontrou vínculos, propaga para todas as intimações do mesmo processo
+        if (bestProcessId || bestClientId) {
+          for (const com of grupo) {
+            const needsUpdate = 
+              (bestProcessId && com.process_id !== bestProcessId) ||
+              (bestClientId && com.client_id !== bestClientId);
+
+            if (needsUpdate) {
+              const updatePayload: UpdateDjenComunicacaoDTO = {};
+              if (bestProcessId && com.process_id !== bestProcessId) {
+                updatePayload.process_id = bestProcessId;
+              }
+              if (bestClientId && com.client_id !== bestClientId) {
+                updatePayload.client_id = bestClientId;
+              }
+
+              await supabase
+                .from(this.tableName)
+                .update(updatePayload)
+                .eq('id', com.id);
+            }
+          }
+        }
+      }
+
+      console.log(`✓ Vínculos propagados com sucesso para ${grupos.size} grupo(s) de processos`);
+    } catch (error) {
+      console.error('Erro ao propagar vínculos:', error);
+    }
   }
 
   /**
@@ -348,19 +446,33 @@ class DjenLocalService {
   }
 
   /**
+   * Remove todas as intimações locais
+   */
+  async clearAll(): Promise<void> {
+    const { error } = await supabase
+      .from(this.tableName)
+      .delete()
+      .not('id', 'is', null);
+
+    if (error) {
+      console.error('Erro ao limpar intimações locais:', error);
+      throw new Error(error.message);
+    }
+  }
+
+  /**
    * Vincula comunicação a um cliente
    */
   async vincularCliente(id: string, clientId: string): Promise<DjenComunicacaoLocal> {
-    return this.updateComunicacao(id, { client_id: clientId });
+    return this.updateComunicacao(id, { client_id: clientId, lida: false });
   }
 
   /**
    * Vincula comunicação a um processo
    */
   async vincularProcesso(id: string, processId: string): Promise<DjenComunicacaoLocal> {
-    return this.updateComunicacao(id, { process_id: processId });
+    return this.updateComunicacao(id, { process_id: processId, lida: false });
   }
-
   /**
    * Agrupa comunicações por cliente
    */

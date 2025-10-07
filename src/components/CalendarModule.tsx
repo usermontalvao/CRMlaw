@@ -38,6 +38,15 @@ type NewEventForm = {
 
 interface CalendarModuleProps {
   onNavigateToModule?: (moduleKey: string) => void;
+  prefillData?: {
+    title?: string;
+    description?: string;
+    client_id?: string;
+    process_code?: string;
+    client_name?: string;
+  };
+  forceCreate?: boolean;
+  onParamConsumed?: () => void;
 }
 
 type SelectedEvent = {
@@ -58,7 +67,7 @@ type SelectedEvent = {
   };
 };
 
-const CalendarModule: React.FC<CalendarModuleProps> = ({ onNavigateToModule }) => {
+const CalendarModule: React.FC<CalendarModuleProps> = ({ onNavigateToModule, prefillData, forceCreate, onParamConsumed }) => {
   const calendarRef = useRef<FullCalendar | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -166,6 +175,29 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({ onNavigateToModule }) =
     loadData();
     loadClients();
   }, []);
+
+  useEffect(() => {
+    if (forceCreate && !isCreateModalOpen) {
+      const initialValues: Partial<NewEventForm> = {};
+      
+      if (prefillData) {
+        if (prefillData.title) initialValues.title = prefillData.title;
+        if (prefillData.description) initialValues.description = prefillData.description;
+        if (prefillData.client_id) initialValues.client_id = prefillData.client_id;
+        
+        // Define data/hora para hoje
+        const now = new Date();
+        initialValues.date = formatDateInputValue(now);
+        initialValues.time = formatTimeInputValue(now);
+      }
+      
+      openEventForm(initialValues);
+      
+      if (onParamConsumed) {
+        onParamConsumed();
+      }
+    }
+  }, [forceCreate, isCreateModalOpen, prefillData, onParamConsumed, openEventForm, formatDateInputValue, formatTimeInputValue]);
 
   const loadClients = async () => {
     try {

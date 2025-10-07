@@ -169,11 +169,10 @@ const formatDateTime = (value?: string | null) => {
 
 const toDateInputValue = (value?: string | null) => {
   if (!value) return '';
+  // Extrai apenas a parte da data (YYYY-MM-DD) sem conversão de timezone
   if (value.includes('T')) return value.split('T')[0];
-  const parsed = new Date(value);
-  if (!Number.isNaN(parsed.getTime())) {
-    return parsed.toISOString().split('T')[0];
-  }
+  // Se já está no formato YYYY-MM-DD, retorna direto
+  if (/^\d{4}-\d{2}-\d{2}$/.test(value)) return value;
   return value;
 };
 
@@ -212,9 +211,17 @@ const isDueSoon = (dueDate: string): boolean => {
 interface DeadlinesModuleProps {
   forceCreate?: boolean;
   onParamConsumed?: () => void;
+  prefillData?: {
+    title?: string;
+    description?: string;
+    client_id?: string;
+    process_id?: string;
+    process_code?: string;
+    client_name?: string;
+  };
 }
 
-const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, onParamConsumed }) => {
+const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, onParamConsumed, prefillData }) => {
   const [deadlines, setDeadlines] = useState<Deadline[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -449,13 +456,36 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, onParamC
   useEffect(() => {
     if (forceCreate && !isModalOpen) {
       setSelectedDeadline(null);
-      setFormData(emptyForm);
+      
+      // Aplica dados prefill se fornecidos
+      if (prefillData) {
+        setFormData({
+          ...emptyForm,
+          title: prefillData.title || emptyForm.title,
+          description: prefillData.description || emptyForm.description,
+          client_id: prefillData.client_id || emptyForm.client_id,
+          process_id: prefillData.process_id || emptyForm.process_id,
+        });
+        
+        // Se tem nome do cliente, atualiza o clientSearchTerm
+        if (prefillData.client_name) {
+          setClientSearchTerm(prefillData.client_name);
+        }
+        
+        // Se tem código do processo, atualiza o processSearchTerm
+        if (prefillData.process_code) {
+          setProcessSearchTerm(prefillData.process_code);
+        }
+      } else {
+        setFormData(emptyForm);
+      }
+      
       setIsModalOpen(true);
       if (onParamConsumed) {
         onParamConsumed();
       }
     }
-  }, [forceCreate, isModalOpen, onParamConsumed]);
+  }, [forceCreate, isModalOpen, onParamConsumed, prefillData]);
 
   useEffect(() => {
     if (currentPage > totalPages) {

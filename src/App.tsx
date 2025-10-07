@@ -21,18 +21,21 @@ import ClientsModule from './components/ClientsModule';
 import DocumentsModule from './components/DocumentsModule';
 import LeadsModule from './components/LeadsModule';
 import ProcessesModule from './components/ProcessesModule';
-import DjenModule from './components/DjenModule';
+import IntimationsModule from './components/IntimationsModule';
 import RequirementsModule from './components/RequirementsModule';
 import DeadlinesModule from './components/DeadlinesModule';
 import CalendarModule from './components/CalendarModule';
 import TasksModule from './components/TasksModule';
-import { NotificationPanel } from './components/NotificationPanel';
+import NotificationsModule from './components/NotificationsModule';
+import { NotificationCenter } from './components/NotificationCenter';
+import { NotificationPermissionBanner } from './components/NotificationPermissionBanner';
 import Login from './components/Login';
 import { useAuth } from './contexts/AuthContext';
 import { profileService } from './services/profile.service';
 import { leadService } from './services/lead.service';
 import { notificationService } from './services/notification.service';
 import { taskService } from './services/task.service';
+import { djenLocalService } from './services/djenLocal.service';
 import { supabase } from './config/supabase';
 import type { Lead } from './types/lead.types';
 import type { CreateClientDTO } from './types/client.types';
@@ -55,6 +58,7 @@ function App() {
     oab: '',
     phone: '',
     bio: '',
+    lawyerFullName: '',
   });
 
   const [isProfileModalOpen, setIsProfileModalOpen] = useState(false);
@@ -67,6 +71,7 @@ function App() {
   const [passwordForm, setPasswordForm] = useState({ newPassword: '', confirmPassword: '' });
   const [passwordSaving, setPasswordSaving] = useState(false);
   const [passwordMessage, setPasswordMessage] = useState<string | null>(null);
+  const [clearingIntimations, setClearingIntimations] = useState(false);
   const [clientPrefill, setClientPrefill] = useState<Partial<CreateClientDTO> | null>(null);
   const [notifications, setNotifications] = useState<NotificationItem[]>([]);
   const [notificationsOpen, setNotificationsOpen] = useState(false);
@@ -102,19 +107,18 @@ function App() {
       const loadProfileFromAPI = async () => {
         try {
           setProfileLoading(true);
-          setProfileError(null);
-
           const data = await profileService.getProfile(user.id);
 
           if (data) {
             const normalized = {
-              name: data.name || 'Usuário',
+              name: data.name || 'Área Jurídica',
               email: data.email || user.email || '',
-              avatarUrl: data.avatar_url || GENERIC_AVATAR,
               role: data.role || 'Advogado',
-              oab: data.oab ?? '',
-              phone: data.phone ?? '',
-              bio: data.bio ?? '',
+              oab: data.oab || '',
+              phone: data.phone || '',
+              bio: data.bio || '',
+              lawyerFullName: data.lawyer_full_name || '',
+              avatarUrl: data.avatar_url || GENERIC_AVATAR,
             };
             setProfile(normalized);
             setProfileForm(normalized);
@@ -130,6 +134,7 @@ function App() {
               phone: '',
               oab: '',
               bio: '',
+              lawyerFullName: '',
             };
             await profileService.upsertProfile(user.id, {
               name: fallback.name,
@@ -137,6 +142,7 @@ function App() {
               role: fallback.role,
               phone: fallback.phone,
               oab: fallback.oab,
+              lawyer_full_name: fallback.lawyerFullName,
               bio: fallback.bio,
               avatar_url: fallback.avatarUrl,
             });
@@ -215,6 +221,23 @@ function App() {
       setNotifications((prev) => prev.map((n) => (n.id === id ? { ...n, read: true } : n)));
     } catch (error) {
       console.error('Erro ao marcar notificação como lida:', error);
+    }
+  };
+
+  const handleClearIntimations = async () => {
+    const confirmed = window.confirm(
+      'Tem certeza que deseja remover todas as intimações salvas? Esta ação não pode ser desfeita.'
+    );
+    if (!confirmed) return;
+
+    try {
+      setClearingIntimations(true);
+      await djenLocalService.clearAll();
+      setProfileMessage('Todas as intimações locais foram removidas com sucesso.');
+    } catch (error: any) {
+      setProfileMessage(error.message || 'Não foi possível remover as intimações.');
+    } finally {
+      setClearingIntimations(false);
     }
   };
 
@@ -370,6 +393,7 @@ function App() {
         role: profileForm.role,
         phone: profileForm.phone || null,
         oab: profileForm.oab || null,
+        lawyer_full_name: profileForm.lawyerFullName || null,
         bio: profileForm.bio || null,
         avatar_url: profileForm.avatarUrl || GENERIC_AVATAR,
       };
@@ -697,15 +721,17 @@ function App() {
                     </span>
                   )}
                 </button>
-                <button
-                  onClick={() => setNotificationsOpen((prev) => !prev)}
-                  className="relative p-2 text-slate-600 hover:text-slate-900 hover:bg-gray-100 rounded-lg transition-colors"
-                >
-                  <Bell className="w-5 h-5" />
-                  {unreadCount > 0 && (
-                    <span className="absolute top-1 right-1 w-2 h-2 bg-red-500 rounded-full"></span>
-                  )}
-                </button>
+                <NotificationCenter 
+                  onNavigateToModule={(moduleKey, params) => {
+                    setActiveModule(moduleKey);
+                    if (params) {
+                      setModuleParams(prev => ({
+                        ...prev,
+                        [moduleKey]: JSON.stringify(params),
+                      }));
+                    }
+                  }}
+                />
                 
                 <div className="flex items-center gap-3 pl-3 border-l border-gray-200">
                   <div className="hidden sm:block text-right">
@@ -745,18 +771,11 @@ function App() {
           </div>
         </header>
 
-        <NotificationPanel
-          open={notificationsOpen}
-          notifications={notifications}
-          loading={notificationsLoading}
-          onClose={() => setNotificationsOpen(false)}
-          onMarkAsRead={handleMarkAsRead}
-          onMarkAllAsRead={handleMarkAllAsRead}
-          onClearAll={handleClearAll}
-        />
-
         {/* Main Content */}
         <main className="px-4 sm:px-6 lg:px-8 py-6 space-y-6">
+          {/* Banner de Permissão de Notificações */}
+          <NotificationPermissionBanner />
+          
           {profileBanner && (
             <div className="bg-emerald-50 border border-emerald-200 text-emerald-700 px-4 py-3 rounded-lg text-sm flex justify-between items-center">
               <span>{profileBanner}</span>
@@ -798,16 +817,49 @@ function App() {
           {activeModule === 'deadlines' && (
             <DeadlinesModule 
               forceCreate={moduleParams['deadlines'] ? JSON.parse(moduleParams['deadlines']).mode === 'create' : false}
+              prefillData={moduleParams['deadlines'] ? JSON.parse(moduleParams['deadlines']).prefill : undefined}
               onParamConsumed={() => setModuleParams(prev => { const updated = {...prev}; delete updated['deadlines']; return updated; })}
             />
           )}
-          {activeModule === 'intimations' && <DjenModule />}
-          {activeModule === 'calendar' && <CalendarModule onNavigateToModule={setActiveModule} />}
+          {activeModule === 'intimations' && (
+            <IntimationsModule 
+              onNavigateToModule={(moduleKey, params) => {
+                setActiveModule(moduleKey);
+                if (params) {
+                  setModuleParams(prev => ({
+                    ...prev,
+                    [moduleKey]: JSON.stringify(params),
+                  }));
+                }
+              }}
+            />
+          )}
+          {activeModule === 'calendar' && (
+            <CalendarModule 
+              onNavigateToModule={setActiveModule}
+              forceCreate={moduleParams['calendar'] ? JSON.parse(moduleParams['calendar']).mode === 'create' : false}
+              prefillData={moduleParams['calendar'] ? JSON.parse(moduleParams['calendar']).prefill : undefined}
+              onParamConsumed={() => setModuleParams(prev => { const updated = {...prev}; delete updated['calendar']; return updated; })}
+            />
+          )}
           {activeModule === 'tasks' && (
             <TasksModule 
               focusNewTask={moduleParams['tasks'] ? JSON.parse(moduleParams['tasks']).mode === 'create' : false}
               onParamConsumed={() => setModuleParams(prev => { const updated = {...prev}; delete updated['tasks']; return updated; })}
               onPendingTasksChange={setPendingTasksCount}
+            />
+          )}
+          {activeModule === 'notifications' && (
+            <NotificationsModule
+              onNavigateToModule={(moduleKey, params) => {
+                setActiveModule(moduleKey);
+                if (params) {
+                  setModuleParams(prev => ({
+                    ...prev,
+                    [moduleKey]: JSON.stringify(params),
+                  }));
+                }
+              }}
             />
           )}
           {activeModule === 'documents' && <DocumentsModule />}
@@ -902,6 +954,22 @@ function App() {
                         placeholder="Ex: OAB/UF 12345"
                       />
                     </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700 mb-2">
+                      Nome Completo para DJEN
+                      <span className="text-xs text-slate-500 ml-2">(Opcional - para pesquisa no Diário Oficial)</span>
+                    </label>
+                    <input
+                      value={profileForm.lawyerFullName}
+                      onChange={(event) => handleProfileChange('lawyerFullName', event.target.value)}
+                      className="input-field"
+                      placeholder="Ex: João da Silva Santos"
+                    />
+                    <p className="text-xs text-slate-500 mt-1">
+                      Use este campo se o nome para pesquisa no DJEN for diferente do nome de exibição.
+                    </p>
                   </div>
 
                   <div>

@@ -99,6 +99,8 @@ export interface DjenComunicacaoLocal {
   meio_completo: string | null;
   link: string | null;
   data_disponibilizacao: string;
+  polo_ativo: string | null;
+  polo_passivo: string | null;
   lida: boolean;
   lida_em: string | null;
   client_id: string | null;
@@ -136,6 +138,8 @@ export interface CreateDjenComunicacaoDTO {
   meio_completo: string | null;
   link: string | null;
   data_disponibilizacao: string;
+  polo_ativo?: string | null;
+  polo_passivo?: string | null;
   client_id?: string | null;
   process_id?: string | null;
 }
