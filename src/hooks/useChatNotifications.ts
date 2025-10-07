@@ -75,6 +75,8 @@ export const useChatNotifications = (opts: Options = {}) => {
       if (typeof Notification === "undefined") return null;
       if (permission !== "granted") return null;
 
+      const vibratePattern = args.vibrate ?? vibrate;
+
       const n = new Notification(args.title ?? "Nova mensagem", {
         body: args.body,
         icon: args.icon ?? icon,
@@ -82,9 +84,12 @@ export const useChatNotifications = (opts: Options = {}) => {
         requireInteraction:
           args.requireInteraction ?? requireInteraction ?? false,
         silent: args.silent ?? false,
-        vibrate: args.vibrate ?? vibrate,
         data: args.data,
       });
+
+      if (vibratePattern && typeof navigator !== "undefined") {
+        navigator.vibrate?.(vibratePattern);
+      }
 
       n.onclick = () => {
         window.focus?.();
