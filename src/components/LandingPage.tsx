@@ -1,5 +1,3 @@
-import { Link } from "react-router-dom";
-
 const wrapperStyle: React.CSSProperties = {
   minHeight: "100vh",
   display: "flex",
@@ -29,6 +27,11 @@ const navStyle: React.CSSProperties = {
   fontWeight: 500,
 };
 
+const linkStyle: React.CSSProperties = {
+  color: "inherit",
+  textDecoration: "none",
+};
+
 const heroStyle: React.CSSProperties = {
   display: "grid",
   gap: "2rem",
@@ -51,6 +54,7 @@ const ctaStyle: React.CSSProperties = {
   textDecoration: "none",
   marginTop: "1.5rem",
   boxShadow: "0 15px 30px -12px rgba(37, 99, 235, 0.5)",
+  cursor: "pointer",
 };
 
 const highlightGridStyle: React.CSSProperties = {
@@ -80,8 +84,8 @@ const LandingPage = () => {
       <header style={headerStyle}>
         <span style={logoStyle}>CRM Jurídico</span>
         <nav style={navStyle}>
-          <Link to="/login">Entrar</Link>
-          <Link to="/register">Criar conta</Link>
+          <a href="/login" style={linkStyle}>Entrar</a>
+          <a href="/register" style={linkStyle}>Criar conta</a>
         </nav>
       </header>
 
@@ -93,9 +97,9 @@ const LandingPage = () => {
           <p style={{ maxWidth: "36rem", lineHeight: 1.6, fontSize: "1.05rem" }}>
             Centralize processos, intimações e tarefas em um só lugar. Mantenha sua equipe informada com notificações em tempo real e garanta que nenhum prazo seja perdido.
           </p>
-          <Link to="/login" style={ctaStyle}>
+          <a href="/login" style={ctaStyle}>
             Começar agora
-          </Link>
+          </a>
         </div>
 
         <div style={highlightGridStyle} aria-hidden>

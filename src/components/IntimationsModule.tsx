@@ -1275,7 +1275,7 @@ const DeadlineCreationModal: React.FC<DeadlineCreationModalProps> = ({
       return;
     }
 
-    if (syncing) {
+    if (saving) {
       return;
     }
 
