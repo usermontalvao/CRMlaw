@@ -660,12 +660,22 @@ function App() {
               onClientCancelled={handleClientCancelled}
               forceCreate={moduleParams['clients'] ? JSON.parse(moduleParams['clients']).mode === 'create' : false}
               onParamConsumed={() => setModuleParams(prev => { const updated = {...prev}; delete updated['clients']; return updated; })}
+              onNavigateToModule={(moduleKey, params) => {
+                setActiveModule(moduleKey as any);
+                if (params) {
+                  setModuleParams(prev => ({
+                    ...prev,
+                    [moduleKey]: JSON.stringify(params),
+                  }));
+                }
+              }}
             />
           )}
           {activeModule === 'cases' && (
             <ProcessesModule 
               forceCreate={moduleParams['cases'] ? JSON.parse(moduleParams['cases']).mode === 'create' : false}
               entityId={moduleParams['cases'] ? JSON.parse(moduleParams['cases']).entityId : undefined}
+              prefillData={moduleParams['cases'] ? JSON.parse(moduleParams['cases']).prefill : undefined}
               onParamConsumed={() => setModuleParams(prev => { const updated = {...prev}; delete updated['cases']; return updated; })}
             />
           )}
@@ -673,6 +683,7 @@ function App() {
             <RequirementsModule 
               forceCreate={moduleParams['requirements'] ? JSON.parse(moduleParams['requirements']).mode === 'create' : false}
               entityId={moduleParams['requirements'] ? JSON.parse(moduleParams['requirements']).entityId : undefined}
+              prefillData={moduleParams['requirements'] ? JSON.parse(moduleParams['requirements']).prefill : undefined}
               onParamConsumed={() => setModuleParams(prev => { const updated = {...prev}; delete updated['requirements']; return updated; })}
             />
           )}

@@ -203,10 +203,14 @@ const toTimeInputValue = (value?: string | null) => {
 interface ProcessesModuleProps {
   forceCreate?: boolean;
   entityId?: string;
+  prefillData?: {
+    client_id?: string;
+    client_name?: string;
+  };
   onParamConsumed?: () => void;
 }
 
-const ProcessesModule: React.FC<ProcessesModuleProps> = ({ forceCreate, entityId, onParamConsumed }) => {
+const ProcessesModule: React.FC<ProcessesModuleProps> = ({ forceCreate, entityId, prefillData, onParamConsumed }) => {
   const { user } = useAuth();
   const [processes, setProcesses] = useState<Process[]>([]);
   const [loading, setLoading] = useState(true);
@@ -353,11 +357,24 @@ const ProcessesModule: React.FC<ProcessesModuleProps> = ({ forceCreate, entityId
   useEffect(() => {
     if (forceCreate && !isModalOpen) {
       handleOpenModal();
+      
+      // Aplicar prefill se fornecido
+      if (prefillData) {
+        setFormData(prev => ({
+          ...prev,
+          client_id: prefillData.client_id || prev.client_id,
+        }));
+        
+        if (prefillData.client_name) {
+          setClientSearchTerm(prefillData.client_name);
+        }
+      }
+      
       if (onParamConsumed) {
         onParamConsumed();
       }
     }
-  }, [forceCreate, isModalOpen, onParamConsumed]);
+  }, [forceCreate, isModalOpen, onParamConsumed, prefillData]);
 
   useEffect(() => {
     if (entityId && processes.length > 0) {

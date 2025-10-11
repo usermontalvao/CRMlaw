@@ -7,7 +7,7 @@ interface ClientFormProps {
   client: Client | null;
   prefill?: Partial<CreateClientDTO> | null;
   onBack: () => void;
-  onSave: () => void;
+  onSave: (savedClient: Client) => void;
 }
 
 const ClientForm: React.FC<ClientFormProps> = ({ client, prefill, onBack, onSave }) => {
@@ -147,12 +147,13 @@ const ClientForm: React.FC<ClientFormProps> = ({ client, prefill, onBack, onSave
       if (!cleanedData.profession) delete cleanedData.profession;
       if (!cleanedData.nationality) delete cleanedData.nationality;
 
+      let savedClient: Client;
       if (client) {
-        await clientService.updateClient(client.id, cleanedData);
+        savedClient = await clientService.updateClient(client.id, cleanedData);
       } else {
-        await clientService.createClient(cleanedData);
+        savedClient = await clientService.createClient(cleanedData);
       }
-      onSave();
+      onSave(savedClient);
     } catch (error: any) {
       console.error('Erro ao salvar cliente:', error);
       alert(error.message || 'Erro ao salvar cliente');

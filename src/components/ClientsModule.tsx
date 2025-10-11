@@ -19,9 +19,10 @@ interface ClientsModuleProps {
   onClientCancelled?: () => void;
   forceCreate?: boolean;
   onParamConsumed?: () => void;
+  onNavigateToModule?: (moduleKey: string, params?: any) => void;
 }
 
-const ClientsModule: React.FC<ClientsModuleProps> = ({ prefillData, onClientSaved, onClientCancelled, forceCreate, onParamConsumed }) => {
+const ClientsModule: React.FC<ClientsModuleProps> = ({ prefillData, onClientSaved, onClientCancelled, forceCreate, onParamConsumed, onNavigateToModule }) => {
   const [clients, setClients] = useState<Client[]>([]);
   const [loading, setLoading] = useState(true);
   const [viewMode, setViewMode] = useState<ViewMode>('list');
@@ -406,7 +407,14 @@ const ClientsModule: React.FC<ClientsModuleProps> = ({ prefillData, onClientSave
           client={selectedClient}
           prefill={!selectedClient ? prefillData : null}
           onBack={() => handleBackToList(false)}
-          onSave={() => handleBackToList(true)}
+          onSave={(savedClient) => {
+            setSelectedClient(savedClient);
+            setViewMode('details');
+            loadClientRelations(savedClient.id);
+            if (onClientSaved) {
+              onClientSaved();
+            }
+          }}
         />
       )}
 
@@ -418,6 +426,37 @@ const ClientsModule: React.FC<ClientsModuleProps> = ({ prefillData, onClientSave
           relationsLoading={relationsLoading}
           onBack={handleBackToList}
           onEdit={() => handleEditClient(selectedClient)}
+          onCreateProcess={onNavigateToModule ? () => {
+            onNavigateToModule('cases', {
+              mode: 'create',
+              prefill: {
+                client_id: selectedClient.id,
+                client_name: selectedClient.full_name,
+              }
+            });
+          } : undefined}
+          onCreateRequirement={onNavigateToModule ? () => {
+            const prefillData = {
+              client_id: selectedClient.id,
+              beneficiary: selectedClient.full_name,
+              cpf: selectedClient.cpf_cnpj,
+            };
+            console.log('=== CLIENTS MODULE ===');
+            console.log('Enviando para requirements:', prefillData);
+            onNavigateToModule('requirements', {
+              mode: 'create',
+              prefill: prefillData
+            });
+          } : undefined}
+          onCreateDeadline={onNavigateToModule ? () => {
+            onNavigateToModule('deadlines', {
+              mode: 'create',
+              prefill: {
+                client_id: selectedClient.id,
+                client_name: selectedClient.full_name,
+              }
+            });
+          } : undefined}
         />
       )}
     </div>

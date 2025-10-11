@@ -1,20 +1,5 @@
 import React from 'react';
-import {
-  ArrowLeft,
-  Edit,
-  User,
-  Building2,
-  Mail,
-  Phone,
-  MapPin,
-  Calendar,
-  FileText,
-  AlertCircle,
-  MessageCircle,
-  Loader2,
-  Gavel,
-  ClipboardList,
-} from 'lucide-react';
+import { ArrowLeft, User, Building2, Mail, Phone, MapPin, Calendar, FileText, Edit, MessageCircle, Briefcase, Scale, FileCheck, Plus, Clock, FolderPlus, Gavel, Loader2, ClipboardList, AlertCircle } from 'lucide-react';
 import type { Client } from '../types/client.types';
 import type { Process } from '../types/process.types';
 import type { Requirement } from '../types/requirement.types';
@@ -26,6 +11,9 @@ interface ClientDetailsProps {
   relationsLoading?: boolean;
   onBack: () => void;
   onEdit: () => void;
+  onCreateProcess?: () => void;
+  onCreateRequirement?: () => void;
+  onCreateDeadline?: () => void;
 }
 
 const capitalizeSentence = (value: string) =>
@@ -34,7 +22,7 @@ const capitalizeSentence = (value: string) =>
     .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
     .join(' ');
 
-const ClientDetails: React.FC<ClientDetailsProps> = ({ client, processes, requirements, relationsLoading, onBack, onEdit }) => {
+const ClientDetails: React.FC<ClientDetailsProps> = ({ client, processes, requirements, relationsLoading, onBack, onEdit, onCreateProcess, onCreateRequirement, onCreateDeadline }) => {
   const formatDate = (dateString?: string) => {
     if (!dateString) return 'N/A';
     return new Date(dateString).toLocaleDateString('pt-BR');
@@ -64,10 +52,44 @@ const ClientDetails: React.FC<ClientDetailsProps> = ({ client, processes, requir
             <ArrowLeft className="w-5 h-5" />
             Voltar
           </button>
-          <button onClick={onEdit} className="btn-primary flex items-center gap-2">
-            <Edit className="w-5 h-5" />
-            Editar Cliente
-          </button>
+          <div className="flex items-center gap-2">
+            <button onClick={onEdit} className="btn-primary flex items-center gap-2">
+              <Edit className="w-5 h-5" />
+              Editar Cliente
+            </button>
+          </div>
+        </div>
+
+        {/* Ações Rápidas */}
+        <div className="flex flex-wrap items-center gap-3 mb-6 pb-6 border-b border-gray-200">
+          <p className="text-sm font-semibold text-gray-700">Ações Rápidas:</p>
+          {onCreateProcess && (
+            <button
+              onClick={onCreateProcess}
+              className="inline-flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-blue-500 to-blue-600 text-white text-sm font-semibold rounded-lg hover:from-blue-600 hover:to-blue-700 transition-all shadow-sm hover:shadow-md"
+            >
+              <Scale className="w-4 h-4" />
+              Novo Processo
+            </button>
+          )}
+          {onCreateRequirement && (
+            <button
+              onClick={onCreateRequirement}
+              className="inline-flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-purple-500 to-purple-600 text-white text-sm font-semibold rounded-lg hover:from-purple-600 hover:to-purple-700 transition-all shadow-sm hover:shadow-md"
+            >
+              <FileCheck className="w-4 h-4" />
+              Novo Requerimento
+            </button>
+          )}
+          {onCreateDeadline && (
+            <button
+              onClick={onCreateDeadline}
+              className="inline-flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-amber-500 to-amber-600 text-white text-sm font-semibold rounded-lg hover:from-amber-600 hover:to-amber-700 transition-all shadow-sm hover:shadow-md"
+            >
+              <Clock className="w-4 h-4" />
+              Novo Prazo
+            </button>
+          )}
         </div>
 
         <div className="flex items-start gap-6">

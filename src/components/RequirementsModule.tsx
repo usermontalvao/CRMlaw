@@ -314,10 +314,15 @@ const formatPhone = (value: string) => {
 interface RequirementsModuleProps {
   forceCreate?: boolean;
   entityId?: string;
+  prefillData?: {
+    client_id?: string;
+    beneficiary?: string;
+    cpf?: string;
+  };
   onParamConsumed?: () => void;
 }
 
-const RequirementsModule: React.FC<RequirementsModuleProps> = ({ forceCreate, entityId, onParamConsumed }) => {
+const RequirementsModule: React.FC<RequirementsModuleProps> = ({ forceCreate, entityId, prefillData, onParamConsumed }) => {
   const { user } = useAuth();
   const [requirements, setRequirements] = useState<Requirement[]>([]);
   const [loading, setLoading] = useState(true);
@@ -478,13 +483,42 @@ const RequirementsModule: React.FC<RequirementsModuleProps> = ({ forceCreate, en
   useEffect(() => {
     if (forceCreate && !isModalOpen) {
       setSelectedRequirement(null);
-      setFormData(emptyForm);
+      
+      // Aplicar prefill se fornecido
+      if (prefillData) {
+        console.log('=== REQUIREMENTS MODULE ===');
+        console.log('Aplicando prefill:', prefillData);
+        
+        const formattedCpf = prefillData.cpf ? formatCPF(prefillData.cpf) : '';
+        
+        const newFormData = {
+          ...emptyForm,
+          client_id: prefillData.client_id || emptyForm.client_id,
+          beneficiary: prefillData.beneficiary || emptyForm.beneficiary,
+          cpf: formattedCpf || emptyForm.cpf,
+        };
+        
+        console.log('FormData que será aplicado:', newFormData);
+        
+        setFormData(newFormData);
+        
+        if (prefillData.beneficiary) {
+          setBeneficiarySearchTerm(prefillData.beneficiary);
+        }
+      } else {
+        console.log('=== REQUIREMENTS MODULE ===');
+        console.log('Nenhum prefillData fornecido');
+        setFormData(emptyForm);
+        setBeneficiarySearchTerm('');
+      }
+      
       setIsModalOpen(true);
+      
       if (onParamConsumed) {
         onParamConsumed();
       }
     }
-  }, [forceCreate, isModalOpen, onParamConsumed]);
+  }, [forceCreate, isModalOpen, onParamConsumed, prefillData]);
 
   useEffect(() => {
     if (entityId && requirements.length > 0) {
@@ -539,6 +573,11 @@ const RequirementsModule: React.FC<RequirementsModuleProps> = ({ forceCreate, en
         const match = data.find((client) => (client.cpf_cnpj || '').replace(/\D/g, '') === sanitized);
         if (!match) return;
 
+        // Vincular o cliente encontrado
+        if (match.id && formData.client_id !== match.id) {
+          handleFormChange('client_id', match.id);
+        }
+        
         const formattedCpf = match.cpf_cnpj ? formatCPF(match.cpf_cnpj) : formData.cpf;
         if (match.full_name && formData.beneficiary !== match.full_name) {
           handleFormChange('beneficiary', match.full_name);
@@ -774,7 +813,7 @@ const RequirementsModule: React.FC<RequirementsModuleProps> = ({ forceCreate, en
       setError(null);
 
       const payloadBase = {
-        protocol: requiresProtocol ? trimmedProtocol : null,
+        protocol: trimmedProtocol || null,
         beneficiary: formData.beneficiary.trim(),
         cpf: formData.cpf.trim(),
         benefit_type: formData.benefit_type as BenefitType,
