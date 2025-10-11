@@ -202,10 +202,11 @@ const toTimeInputValue = (value?: string | null) => {
 
 interface ProcessesModuleProps {
   forceCreate?: boolean;
+  entityId?: string;
   onParamConsumed?: () => void;
 }
 
-const ProcessesModule: React.FC<ProcessesModuleProps> = ({ forceCreate, onParamConsumed }) => {
+const ProcessesModule: React.FC<ProcessesModuleProps> = ({ forceCreate, entityId, onParamConsumed }) => {
   const { user } = useAuth();
   const [processes, setProcesses] = useState<Process[]>([]);
   const [loading, setLoading] = useState(true);
@@ -357,6 +358,19 @@ const ProcessesModule: React.FC<ProcessesModuleProps> = ({ forceCreate, onParamC
       }
     }
   }, [forceCreate, isModalOpen, onParamConsumed]);
+
+  useEffect(() => {
+    if (entityId && processes.length > 0) {
+      const process = processes.find(p => p.id === entityId);
+      if (process) {
+        setSelectedProcessForView(process);
+        setViewMode('details');
+        if (onParamConsumed) {
+          onParamConsumed();
+        }
+      }
+    }
+  }, [entityId, processes, onParamConsumed]);
 
   useEffect(() => {
     let active = true;

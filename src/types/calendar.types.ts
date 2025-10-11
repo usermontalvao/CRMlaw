@@ -21,7 +21,6 @@ export interface CalendarEvent {
   requirement_id?: string | null;
   process_id?: string | null;
   client_id?: string | null;
-  responsible_id?: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -38,7 +37,6 @@ export interface CreateCalendarEventDTO {
   requirement_id?: string | null;
   process_id?: string | null;
   client_id?: string | null;
-  responsible_id?: string | null;
 }
 
 export interface UpdateCalendarEventDTO extends Partial<CreateCalendarEventDTO> {}

@@ -665,18 +665,21 @@ function App() {
           {activeModule === 'cases' && (
             <ProcessesModule 
               forceCreate={moduleParams['cases'] ? JSON.parse(moduleParams['cases']).mode === 'create' : false}
+              entityId={moduleParams['cases'] ? JSON.parse(moduleParams['cases']).entityId : undefined}
               onParamConsumed={() => setModuleParams(prev => { const updated = {...prev}; delete updated['cases']; return updated; })}
             />
           )}
           {activeModule === 'requirements' && (
             <RequirementsModule 
               forceCreate={moduleParams['requirements'] ? JSON.parse(moduleParams['requirements']).mode === 'create' : false}
+              entityId={moduleParams['requirements'] ? JSON.parse(moduleParams['requirements']).entityId : undefined}
               onParamConsumed={() => setModuleParams(prev => { const updated = {...prev}; delete updated['requirements']; return updated; })}
             />
           )}
           {activeModule === 'deadlines' && (
             <DeadlinesModule 
               forceCreate={moduleParams['deadlines'] ? JSON.parse(moduleParams['deadlines']).mode === 'create' : false}
+              entityId={moduleParams['deadlines'] ? JSON.parse(moduleParams['deadlines']).entityId : undefined}
               prefillData={moduleParams['deadlines'] ? JSON.parse(moduleParams['deadlines']).prefill : undefined}
               onParamConsumed={() => setModuleParams(prev => { const updated = {...prev}; delete updated['deadlines']; return updated; })}
             />
@@ -696,7 +699,15 @@ function App() {
           )}
           {activeModule === 'calendar' && (
             <CalendarModule 
-              onNavigateToModule={({ module }) => setActiveModule(module as any)}
+              onNavigateToModule={({ module, entityId }) => {
+                setActiveModule(module as any);
+                if (entityId) {
+                  setModuleParams(prev => ({
+                    ...prev,
+                    [module]: JSON.stringify({ mode: 'edit', entityId }),
+                  }));
+                }
+              }}
               forceCreate={moduleParams['calendar'] ? JSON.parse(moduleParams['calendar']).mode === 'create' : false}
               prefillData={moduleParams['calendar'] ? JSON.parse(moduleParams['calendar']).prefill : undefined}
               onParamConsumed={() => setModuleParams(prev => { const updated = {...prev}; delete updated['calendar']; return updated; })}

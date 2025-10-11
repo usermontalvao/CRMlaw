@@ -509,12 +509,12 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({
 
     if (timeValue) {
       const normalized = normalizeTime(timeValue);
-      const localDateTime = new Date(`${dateValue}T${normalized}`);
-      return localDateTime.toISOString();
+      // Retorna no formato ISO sem conversão de fuso horário
+      return `${dateValue}T${normalized}`;
     }
 
-    const localDate = new Date(`${dateValue}T00:00:00`);
-    return localDate.toISOString();
+    // Para eventos sem hora específica (dia inteiro)
+    return `${dateValue}T00:00:00`;
   };
 
   const handleCloseCreateModal = useCallback(() => {
@@ -1191,10 +1191,11 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({
             plugins={[dayGridPlugin, timeGridPlugin, interactionPlugin, listPlugin]}
             initialView="dayGridMonth"
             locale={ptLocale}
+            timeZone="local"
             headerToolbar={{
               left: 'prev today next',
               center: 'title',
-              right: 'dayGridMonth,timeGridWeek,timeGridDay,listWeek calendarExpand calendarFilter',
+              right: 'dayGridMonth,timeGridWeek,timeGridDay,listWeek,calendarExpand,calendarFilter',
             }}
             customButtons={{
               calendarExpand: {

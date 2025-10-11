@@ -1248,7 +1248,7 @@ const DeadlineCreationModal: React.FC<DeadlineCreationModalProps> = ({
 
   const [formData, setFormData] = useState({
     title: `Prazo ${intimation.tipo_comunicacao || 'Intimação'} - Processo ${intimation.numero_processo_mascara || intimation.numero_processo}`,
-    description: intimation.texto?.slice(0, 500) || '',
+    description: intimation.texto || '',
     due_date: '',
     type: 'processo' as DeadlineType,
     priority: 'alta' as DeadlinePriority,
@@ -1596,7 +1596,7 @@ const AppointmentCreationModal: React.FC<AppointmentCreationModalProps> = ({
 
   const [formData, setFormData] = useState({
     title: `Compromisso ${intimation.tipo_comunicacao || 'Intimação'} - Processo ${intimation.numero_processo_mascara || intimation.numero_processo}`,
-    description: intimation.texto?.slice(0, 500) || '',
+    description: intimation.texto || '',
     date: '',
     time: '',
     type: 'meeting' as CalendarEventType,
@@ -1636,7 +1636,6 @@ const AppointmentCreationModal: React.FC<AppointmentCreationModalProps> = ({
         start_at: startAt,
         client_id: formData.client_id || null,
         process_id: intimation.process_id || null,
-        responsible_id: formData.responsible_id || null,
       };
 
       const createdAppointment = await calendarService.createEvent(payload);

@@ -210,6 +210,7 @@ const isDueSoon = (dueDate: string): boolean => {
 
 interface DeadlinesModuleProps {
   forceCreate?: boolean;
+  entityId?: string;
   onParamConsumed?: () => void;
   prefillData?: {
     title?: string;
@@ -221,7 +222,7 @@ interface DeadlinesModuleProps {
   };
 }
 
-const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, onParamConsumed, prefillData }) => {
+const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId, onParamConsumed, prefillData }) => {
   const [deadlines, setDeadlines] = useState<Deadline[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -486,6 +487,19 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, onParamC
       }
     }
   }, [forceCreate, isModalOpen, onParamConsumed, prefillData]);
+
+  useEffect(() => {
+    if (entityId && deadlines.length > 0) {
+      const deadline = deadlines.find(d => d.id === entityId);
+      if (deadline) {
+        setSelectedDeadlineForView(deadline);
+        setViewMode('details');
+        if (onParamConsumed) {
+          onParamConsumed();
+        }
+      }
+    }
+  }, [entityId, deadlines, onParamConsumed]);
 
   useEffect(() => {
     if (currentPage > totalPages) {

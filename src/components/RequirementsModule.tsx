@@ -313,10 +313,11 @@ const formatPhone = (value: string) => {
 
 interface RequirementsModuleProps {
   forceCreate?: boolean;
+  entityId?: string;
   onParamConsumed?: () => void;
 }
 
-const RequirementsModule: React.FC<RequirementsModuleProps> = ({ forceCreate, onParamConsumed }) => {
+const RequirementsModule: React.FC<RequirementsModuleProps> = ({ forceCreate, entityId, onParamConsumed }) => {
   const { user } = useAuth();
   const [requirements, setRequirements] = useState<Requirement[]>([]);
   const [loading, setLoading] = useState(true);
@@ -484,6 +485,19 @@ const RequirementsModule: React.FC<RequirementsModuleProps> = ({ forceCreate, on
       }
     }
   }, [forceCreate, isModalOpen, onParamConsumed]);
+
+  useEffect(() => {
+    if (entityId && requirements.length > 0) {
+      const requirement = requirements.find(r => r.id === entityId);
+      if (requirement) {
+        setSelectedRequirementForView(requirement);
+        setViewMode('details');
+        if (onParamConsumed) {
+          onParamConsumed();
+        }
+      }
+    }
+  }, [entityId, requirements, onParamConsumed]);
 
   useEffect(() => {
     let active = true;
