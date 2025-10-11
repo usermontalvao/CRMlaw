@@ -31,6 +31,9 @@ export interface Process {
   hearing_time?: string | null;
   hearing_mode?: HearingMode | null;
   notes?: string | null;
+  djen_synced?: boolean | null;
+  djen_last_sync?: string | null;
+  djen_has_data?: boolean | null;
   created_at: string;
   updated_at: string;
 }
@@ -49,6 +52,9 @@ export interface CreateProcessDTO {
   hearing_time?: string | null;
   hearing_mode?: HearingMode | null;
   notes?: string | null;
+  djen_synced?: boolean | null;
+  djen_last_sync?: string | null;
+  djen_has_data?: boolean | null;
 }
 
 export interface UpdateProcessDTO extends Partial<CreateProcessDTO> {}

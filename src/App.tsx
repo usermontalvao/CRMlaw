@@ -35,6 +35,7 @@ import { pushNotifications } from './utils/pushNotifications';
 import Login from './components/Login';
 import { useAuth } from './contexts/AuthContext';
 import { CacheProvider } from './contexts/CacheContext';
+import { useDjenSync } from './hooks/useDjenSync';
 import { profileService } from './services/profile.service';
 import { leadService } from './services/lead.service';
 import { notificationService } from './services/notification.service';
@@ -51,6 +52,9 @@ function App() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [isMobileNavOpen, setIsMobileNavOpen] = useState(false);
   const { user, loading, signIn, signOut, resetPassword } = useAuth();
+  
+  // Ativar sincronização automática com DJEN
+  useDjenSync();
 
   const GENERIC_AVATAR = 'https://www.gravatar.com/avatar/?d=mp&s=300';
 

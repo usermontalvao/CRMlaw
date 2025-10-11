@@ -18,6 +18,8 @@ import * as XLSX from 'xlsx';
 import { processService } from '../services/process.service';
 import { clientService } from '../services/client.service';
 import { profileService } from '../services/profile.service';
+import { djenService } from '../services/djen.service';
+import { processDjenSyncService } from '../services/processDjenSync.service';
 import { useAuth } from '../contexts/AuthContext';
 import type { Process, ProcessStatus, ProcessPracticeArea, HearingMode } from '../types/process.types';
 import type { Client } from '../types/client.types';
@@ -64,9 +66,14 @@ const emptyForm = {
 
 const formatDate = (value?: string | null) => {
   if (!value) return 'Pendente';
-  const parsed = new Date(value);
-  if (Number.isNaN(parsed.getTime())) return value;
-  return parsed.toLocaleDateString('pt-BR');
+  try {
+    const parsed = new Date(value);
+    if (Number.isNaN(parsed.getTime())) return 'Data inválida';
+    return parsed.toLocaleDateString('pt-BR');
+  } catch (error) {
+    console.error('Erro ao formatar data:', value, error);
+    return 'Data inválida';
+  }
 };
 
 type ProcessNote = {
@@ -82,15 +89,20 @@ type ProcessNote = {
 };
 
 const formatDateTime = (value: string) => {
-  const parsed = new Date(value);
-  if (Number.isNaN(parsed.getTime())) return value;
-  return parsed.toLocaleString('pt-BR', {
-    day: '2-digit',
-    month: '2-digit',
-    year: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-  });
+  try {
+    const parsed = new Date(value);
+    if (Number.isNaN(parsed.getTime())) return 'Data inválida';
+    return parsed.toLocaleString('pt-BR', {
+      day: '2-digit',
+      month: '2-digit',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+    });
+  } catch (error) {
+    console.error('Erro ao formatar data/hora:', value, error);
+    return 'Data inválida';
+  }
 };
 
 const generateId = () => {
@@ -186,18 +198,26 @@ const buildNoteThreads = (notes: ProcessNote[]): ProcessNote[] => {
 
 const toDateInputValue = (value?: string | null) => {
   if (!value) return '';
-  if (value.includes('T')) return value.split('T')[0];
-  const parsed = new Date(value);
-  if (!Number.isNaN(parsed.getTime())) {
-    return parsed.toISOString().split('T')[0];
+  try {
+    if (value.includes('T')) return value.split('T')[0];
+    const parsed = new Date(value);
+    if (!Number.isNaN(parsed.getTime())) {
+      return parsed.toISOString().split('T')[0];
+    }
+  } catch (error) {
+    console.error('Erro ao converter data:', value, error);
   }
-  return value;
+  return '';
 };
 
 const toTimeInputValue = (value?: string | null) => {
   if (!value) return '';
-  if (value.includes(':')) return value.slice(0, 5);
-  return value;
+  try {
+    if (value.includes(':')) return value.slice(0, 5);
+  } catch (error) {
+    console.error('Erro ao converter hora:', value, error);
+  }
+  return '';
 };
 
 interface ProcessesModuleProps {
@@ -224,6 +244,8 @@ const ProcessesModule: React.FC<ProcessesModuleProps> = ({ forceCreate, entityId
   const [saving, setSaving] = useState(false);
   const [formData, setFormData] = useState(emptyForm);
   const [selectedProcess, setSelectedProcess] = useState<Process | null>(null);
+  const [searchingDjen, setSearchingDjen] = useState(false);
+  const [djenData, setDjenData] = useState<any>(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState<ProcessStatus | 'todos'>('todos');
   const [viewMode, setViewMode] = useState<'list' | 'details'>('list');
@@ -456,6 +478,10 @@ const ProcessesModule: React.FC<ProcessesModuleProps> = ({ forceCreate, entityId
   };
 
   const handleOpenModal = (process?: Process) => {
+    console.log('=== ABRINDO MODAL ===');
+    console.log('Processo:', process?.id);
+    console.log('Modo:', process ? 'EDITAR' : 'CRIAR');
+    
     if (process) {
       setSelectedProcess(process);
       setFormData({
@@ -477,13 +503,19 @@ const ProcessesModule: React.FC<ProcessesModuleProps> = ({ forceCreate, entityId
       if (client) {
         setClientSearchTerm(client.full_name);
       }
+      console.log('FormData preenchido:', {
+        process_code: process.process_code,
+        client_id: process.client_id,
+      });
     } else {
       setSelectedProcess(null);
       setFormData(emptyForm);
       setClientSearchTerm('');
+      console.log('FormData limpo para novo processo');
     }
 
     setIsModalOpen(true);
+    console.log('Modal aberto: isModalOpen = true');
   };
 
   const handleCloseModal = () => {
@@ -492,6 +524,7 @@ const ProcessesModule: React.FC<ProcessesModuleProps> = ({ forceCreate, entityId
     setSelectedProcess(null);
     setFormData(emptyForm);
     setClientSearchTerm('');
+    setDjenData(null); // Limpar dados do DJEN
   };
 
   const handleFormChange = (field: keyof typeof formData, value: string) => {
@@ -538,6 +571,111 @@ const ProcessesModule: React.FC<ProcessesModuleProps> = ({ forceCreate, entityId
     };
   };
 
+  // Buscar dados do processo no DJEN
+  const handleSearchDjen = async () => {
+    const processNumber = formData.process_code.replace(/\D/g, '');
+    
+    console.log('=== BUSCA DJEN ===');
+    console.log('Número digitado:', formData.process_code);
+    console.log('Número limpo:', processNumber);
+    console.log('Tamanho:', processNumber.length);
+    
+    if (processNumber.length < 20) {
+      setError('Número do processo inválido. Deve ter 20 dígitos.');
+      return;
+    }
+
+    try {
+      setSearchingDjen(true);
+      setError(null);
+      
+      // Extrair ano do número do processo (posições 9-12)
+      // Formato: NNNNNNN-DD.AAAA.J.TT.OOOO
+      const yearMatch = formData.process_code.match(/\d{7}-\d{2}\.(\d{4})\./);
+      const year = yearMatch ? yearMatch[1] : null;
+      
+      console.log('Ano extraído do processo:', year);
+      
+      // Se tiver ano, buscar desde o início do ano
+      const searchParams: any = {
+        numeroProcesso: processNumber,
+        itensPorPagina: 100, // Aumentar para pegar mais resultados
+      };
+      
+      if (year) {
+        searchParams.dataDisponibilizacaoInicio = `${year}-01-01`;
+        console.log('Buscando desde:', searchParams.dataDisponibilizacaoInicio);
+      }
+      
+      console.log('Iniciando busca no DJEN com parâmetros:', searchParams);
+      
+      const response = await djenService.consultarComunicacoes(searchParams);
+
+      console.log('Resposta DJEN:', response);
+      console.log('Status:', response.status);
+      console.log('Count:', response.count);
+      console.log('Items:', response.items?.length || 0);
+
+      if (response.items && response.items.length > 0) {
+        const firstItem = response.items[0];
+        console.log('Primeiro item:', firstItem);
+        
+        setDjenData(firstItem);
+        
+        // Preencher dados automaticamente
+        setFormData(prev => ({
+          ...prev,
+          court: firstItem.nomeOrgao || prev.court,
+          practice_area: mapClasseToArea(firstItem.nomeClasse) || prev.practice_area,
+        }));
+        
+        console.log('Dados preenchidos - Vara:', firstItem.nomeOrgao);
+        console.log('Dados preenchidos - Classe:', firstItem.nomeClasse);
+        
+        // Buscar partes envolvidas
+        if (firstItem.destinatarios && firstItem.destinatarios.length > 0) {
+          const partes = firstItem.destinatarios.map(d => `${d.nome} (${d.polo})`).join(', ');
+          console.log('Partes envolvidas:', partes);
+        }
+      } else {
+        console.log('Nenhum item encontrado na resposta');
+        setError('Nenhuma comunicação encontrada no DJEN para este processo. Possíveis motivos: processo muito recente, sem publicações ainda, ou tribunal não integrado ao DJEN.');
+        
+        // Mostrar mensagem informativa mesmo sem dados
+        setDjenData({
+          _noData: true,
+          message: 'Processo consultado mas sem comunicações no DJEN',
+        });
+      }
+    } catch (err: any) {
+      console.error('=== ERRO DJEN ===');
+      console.error('Tipo:', err.constructor.name);
+      console.error('Mensagem:', err.message);
+      console.error('Stack:', err.stack);
+      console.error('Erro completo:', err);
+      setError(`Erro ao buscar dados no DJEN: ${err.message || 'Erro desconhecido'}`);
+    } finally {
+      setSearchingDjen(false);
+      console.log('=== FIM BUSCA DJEN ===');
+    }
+  };
+
+  // Mapear classe do processo para área de atuação
+  const mapClasseToArea = (nomeClasse?: string): ProcessPracticeArea | undefined => {
+    if (!nomeClasse) return undefined;
+    
+    const classe = nomeClasse.toLowerCase();
+    
+    if (classe.includes('trabalh')) return 'trabalhista';
+    if (classe.includes('cível') || classe.includes('civil')) return 'civel';
+    if (classe.includes('família') || classe.includes('familia')) return 'familia';
+    if (classe.includes('previdenc')) return 'previdenciario';
+    if (classe.includes('consumidor')) return 'consumidor';
+    
+    // Padrão para casos não mapeados
+    return 'civel';
+  };
+
   const handleSubmit = async (event: React.FormEvent) => {
     event.preventDefault();
 
@@ -562,11 +700,39 @@ const ProcessesModule: React.FC<ProcessesModuleProps> = ({ forceCreate, entityId
         ? memberMap.get(formData.responsible_lawyer_id)
         : null;
 
+      // Preencher data de distribuição automaticamente se não foi informada
+      let distributedAt = formData.distributed_at;
+      if (!distributedAt && trimmedProcessCode) {
+        const autoDate = processDjenSyncService.extractDistributedDate(trimmedProcessCode);
+        if (autoDate) {
+          distributedAt = autoDate;
+          console.log('Data de distribuição extraída automaticamente:', autoDate);
+        }
+      }
+
+      // Converter data de distribuição com validação
+      let distributedAtISO: string | null = null;
+      if (distributedAt) {
+        try {
+          const dateObj = new Date(distributedAt);
+          if (!Number.isNaN(dateObj.getTime())) {
+            distributedAtISO = dateObj.toISOString();
+          } else {
+            console.error('Data de distribuição inválida:', distributedAt);
+          }
+        } catch (error) {
+          console.error('Erro ao converter data de distribuição:', distributedAt, error);
+        }
+      }
+
+      // Marcar como sincronizado se tiver dados do DJEN
+      const hasDjenData = djenData && !djenData._noData;
+      
       const payloadBase = {
         client_id: formData.client_id,
         process_code: requiresProcessCode ? trimmedProcessCode : null,
         status: formData.status,
-        distributed_at: formData.distributed_at ? new Date(formData.distributed_at).toISOString() : null,
+        distributed_at: distributedAtISO,
         practice_area: formData.practice_area,
         court: formData.court?.trim() || null,
         responsible_lawyer: responsibleMember?.name || formData.responsible_lawyer?.trim() || null,
@@ -575,6 +741,9 @@ const ProcessesModule: React.FC<ProcessesModuleProps> = ({ forceCreate, entityId
         hearing_date: formData.hearing_scheduled === 'sim' && formData.hearing_date ? formData.hearing_date : null,
         hearing_time: formData.hearing_scheduled === 'sim' && formData.hearing_time ? formData.hearing_time : null,
         hearing_mode: formData.hearing_scheduled === 'sim' ? formData.hearing_mode : null,
+        djen_synced: hasDjenData ? true : undefined,
+        djen_has_data: hasDjenData ? true : undefined,
+        djen_last_sync: hasDjenData ? new Date().toISOString() : undefined,
       };
 
       const trimmedNote = formData.notes.trim();
@@ -628,7 +797,23 @@ const ProcessesModule: React.FC<ProcessesModuleProps> = ({ forceCreate, entityId
           createPayload.notes = serializeNotes([newNote]);
         }
 
-        await processService.createProcess(createPayload as any);
+        const newProcess = await processService.createProcess(createPayload as any);
+        
+        // Buscar dados no DJEN automaticamente após criar
+        if (newProcess && trimmedProcessCode) {
+          console.log('Iniciando sincronização automática com DJEN...');
+          processDjenSyncService.syncProcessWithDjen(newProcess as Process)
+            .then(result => {
+              if (result.updated) {
+                console.log('Processo atualizado com dados do DJEN!');
+                handleReload(); // Recarregar para mostrar dados atualizados
+              } else {
+                console.log('DJEN consultado, mas sem dados para preencher');
+              }
+            })
+            .catch(err => console.error('Erro na sincronização automática:', err));
+        }
+        
         await handleReload();
       }
       setIsModalOpen(false);
@@ -1083,13 +1268,67 @@ const ProcessesModule: React.FC<ProcessesModuleProps> = ({ forceCreate, entityId
 
               <div>
                 <label className="text-sm font-medium text-slate-700">Código do Processo *</label>
-                <input
-                  value={formData.process_code}
-                  onChange={(event) => handleFormChange('process_code', event.target.value)}
-                  className="input-field"
-                  placeholder="Ex: 0001234-56.2024.8.26.0100"
-                  required
-                />
+                <div className="flex gap-2">
+                  <input
+                    value={formData.process_code}
+                    onChange={(event) => handleFormChange('process_code', event.target.value)}
+                    className="input-field flex-1"
+                    placeholder="Ex: 0001234-56.2024.8.26.0100"
+                    required
+                  />
+                  <button
+                    type="button"
+                    onClick={handleSearchDjen}
+                    disabled={searchingDjen || formData.process_code.replace(/\D/g, '').length < 20}
+                    className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:bg-gray-300 disabled:cursor-not-allowed flex items-center gap-2 whitespace-nowrap"
+                  >
+                    {searchingDjen ? (
+                      <>
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                        Buscando...
+                      </>
+                    ) : (
+                      <>
+                        <Search className="w-4 h-4" />
+                        Buscar DJEN
+                      </>
+                    )}
+                  </button>
+                </div>
+                {djenData && (
+                  <div className={`mt-2 p-3 rounded-lg text-sm ${
+                    djenData._noData 
+                      ? 'bg-yellow-50 border border-yellow-200' 
+                      : 'bg-green-50 border border-green-200'
+                  }`}>
+                    {djenData._noData ? (
+                      <>
+                        <p className="font-semibold text-yellow-800">⚠️ Processo consultado no DJEN</p>
+                        <p className="text-yellow-700 mt-1">
+                          Nenhuma comunicação encontrada. O processo pode ser muito recente ou ainda não ter publicações.
+                        </p>
+                        <p className="text-yellow-600 text-xs mt-2">
+                          💡 Dica: Preencha os dados manualmente ou tente novamente mais tarde.
+                        </p>
+                      </>
+                    ) : (
+                      <>
+                        <p className="font-semibold text-green-800">✓ Dados encontrados no DJEN:</p>
+                        <p className="text-green-700 mt-1">
+                          <strong>Vara:</strong> {djenData.nomeOrgao}
+                        </p>
+                        <p className="text-green-700">
+                          <strong>Classe:</strong> {djenData.nomeClasse}
+                        </p>
+                        {djenData.destinatarios && djenData.destinatarios.length > 0 && (
+                          <p className="text-green-700">
+                            <strong>Partes:</strong> {djenData.destinatarios.map((d: any) => `${d.nome} (${d.polo})`).join(', ')}
+                          </p>
+                        )}
+                      </>
+                    )}
+                  </div>
+                )}
               </div>
 
               <div>
@@ -1291,7 +1530,23 @@ const ProcessesModule: React.FC<ProcessesModuleProps> = ({ forceCreate, entityId
 
             <div>
               <label className="text-xs font-semibold text-slate-500 uppercase">Código do Processo</label>
-              <p className="text-base text-slate-900 mt-1 font-mono">{selectedProcessForView.process_code}</p>
+              <div className="flex items-center gap-2 mt-1">
+                <p className="text-base text-slate-900 font-mono">{selectedProcessForView.process_code}</p>
+                {selectedProcessForView.djen_synced === false || (selectedProcessForView.djen_synced && !selectedProcessForView.djen_has_data) ? (
+                  <span className="px-2 py-1 text-xs font-medium bg-yellow-100 text-yellow-800 rounded-full flex items-center gap-1">
+                    ⏳ Aguardando DJEN
+                  </span>
+                ) : selectedProcessForView.djen_has_data ? (
+                  <span className="px-2 py-1 text-xs font-medium bg-green-100 text-green-800 rounded-full flex items-center gap-1">
+                    ✓ Sincronizado
+                  </span>
+                ) : null}
+              </div>
+              {selectedProcessForView.djen_synced === false || (selectedProcessForView.djen_synced && !selectedProcessForView.djen_has_data) ? (
+                <p className="text-xs text-yellow-700 mt-1">
+                  💡 Este processo será sincronizado automaticamente com o DJEN nas próximas 24 horas
+                </p>
+              ) : null}
             </div>
 
             <div>
@@ -1587,9 +1842,20 @@ const ProcessesModule: React.FC<ProcessesModuleProps> = ({ forceCreate, entityId
                               <p className="text-xs font-semibold text-slate-900 truncate">
                                 {client?.full_name || 'Cliente removido'}
                               </p>
-                              <p className="text-xs text-slate-500 font-mono truncate">
-                                {process.process_code}
-                              </p>
+                              <div className="flex items-center gap-2">
+                                <p className="text-xs text-slate-500 font-mono truncate">
+                                  {process.process_code}
+                                </p>
+                                {process.djen_synced === false || (process.djen_synced && !process.djen_has_data) ? (
+                                  <span className="px-1.5 py-0.5 text-xs font-medium bg-yellow-100 text-yellow-800 rounded" title="Aguardando dados do DJEN">
+                                    ⏳
+                                  </span>
+                                ) : process.djen_has_data ? (
+                                  <span className="px-1.5 py-0.5 text-xs font-medium bg-green-100 text-green-800 rounded" title="Sincronizado com DJEN">
+                                    ✓
+                                  </span>
+                                ) : null}
+                              </div>
                             </div>
                           </div>
                         </div>
@@ -1689,7 +1955,18 @@ const ProcessesModule: React.FC<ProcessesModuleProps> = ({ forceCreate, entityId
                         </div>
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap">
-                        <div className="text-sm font-mono text-gray-900">{process.process_code}</div>
+                        <div className="flex items-center gap-2">
+                          <div className="text-sm font-mono text-gray-900">{process.process_code}</div>
+                          {process.djen_synced === false || (process.djen_synced && !process.djen_has_data) ? (
+                            <span className="px-2 py-0.5 text-xs font-medium bg-yellow-100 text-yellow-800 rounded-full" title="Aguardando dados do DJEN">
+                              ⏳ DJEN
+                            </span>
+                          ) : process.djen_has_data ? (
+                            <span className="px-2 py-0.5 text-xs font-medium bg-green-100 text-green-800 rounded-full" title="Dados sincronizados com DJEN">
+                              ✓ DJEN
+                            </span>
+                          ) : null}
+                        </div>
                         {process.court && (
                           <div className="text-xs text-gray-500 mt-1">{process.court}</div>
                         )}
