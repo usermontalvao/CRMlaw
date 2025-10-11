@@ -34,6 +34,7 @@ import { useNotifications } from './hooks/useNotifications';
 import { pushNotifications } from './utils/pushNotifications';
 import Login from './components/Login';
 import { useAuth } from './contexts/AuthContext';
+import { CacheProvider } from './contexts/CacheContext';
 import { profileService } from './services/profile.service';
 import { leadService } from './services/lead.service';
 import { notificationService } from './services/notification.service';
@@ -327,7 +328,8 @@ function App() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-100">
+    <CacheProvider>
+      <div className="min-h-screen bg-gray-100">
       {/* Sidebar */}
       {isMobileNavOpen && <div className="fixed inset-0 bg-black/40 z-40 md:hidden" onClick={() => setIsMobileNavOpen(false)} />}
       <aside
@@ -755,7 +757,8 @@ function App() {
           onProfileUpdate={handleProfileUpdate}
         />
       </div>
-    </div>
+      </div>
+    </CacheProvider>
   );
 }
 
