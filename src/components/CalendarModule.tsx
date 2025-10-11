@@ -37,7 +37,8 @@ type NewEventForm = {
 };
 
 interface CalendarModuleProps {
-  onNavigateToModule?: (moduleKey: string) => void;
+  onNavigateToModule?: (params: { module: string; entityId?: string }) => void;
+  onEditSystemEntity?: (payload: { module: string; entityId: string; data?: any }) => void;
   prefillData?: {
     title?: string;
     description?: string;
@@ -53,6 +54,7 @@ type SelectedEvent = {
   title: string;
   start: string;
   end?: string;
+  allDay?: boolean;
   extendedProps: {
     type?: string;
     priority?: string;
@@ -64,10 +66,17 @@ type SelectedEvent = {
     clientName?: string;
     clientPhone?: string;
     calendarEventId?: string;
+    entityId?: string;
   };
 };
 
-const CalendarModule: React.FC<CalendarModuleProps> = ({ onNavigateToModule, prefillData, forceCreate, onParamConsumed }) => {
+const CalendarModule: React.FC<CalendarModuleProps> = ({
+  onNavigateToModule,
+  onEditSystemEntity,
+  prefillData,
+  forceCreate,
+  onParamConsumed,
+}) => {
   const calendarRef = useRef<FullCalendar | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -171,6 +180,85 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({ onNavigateToModule, pre
     }
   };
 
+  const moduleLabels: Record<string, string> = useMemo(
+    () => ({
+      deadlines: 'Prazos',
+      cases: 'Processos',
+      requirements: 'Requerimentos',
+      payments: 'Financeiro',
+      meetings: 'Reuniões',
+    }),
+    [],
+  );
+
+  const formatDateTime = useCallback((value?: string | null) => {
+    if (!value) return '';
+    try {
+      const date = new Date(value);
+      if (isNaN(date.getTime())) return '';
+      return date.toLocaleString('pt-BR', {
+        day: '2-digit',
+        month: '2-digit',
+        year: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit',
+      });
+    } catch {
+      return '';
+    }
+  }, []);
+
+  const selectedEventModuleLabel = useMemo(() => {
+    if (!selectedEvent?.extendedProps?.moduleLink) return null;
+    const moduleKey = selectedEvent.extendedProps.moduleLink;
+    return moduleLabels[moduleKey] ?? moduleKey;
+  }, [moduleLabels, selectedEvent]);
+
+  const selectedEventDataDetails = useMemo(() => {
+    if (!selectedEvent?.extendedProps?.data) return [] as { label: string; value: string }[];
+    const data = selectedEvent.extendedProps.data as Record<string, any>;
+    const details: { label: string; value: string }[] = [];
+
+    const pushDetail = (label: string, value?: any, formatter?: (value: any) => string) => {
+      if (value === undefined || value === null || value === '') return;
+      const formatted = formatter ? formatter(value) : String(value);
+      details.push({ label, value: formatted });
+    };
+
+    pushDetail('Processo', data.process_code);
+    pushDetail('Protocolo', data.protocol);
+    pushDetail('Responsável', data.responsible_lawyer);
+    pushDetail('Vara/Órgão', data.court);
+    pushDetail('Beneficiário', data.beneficiary);
+    pushDetail('Prazo original', data.due_date, formatDateTime);
+    pushDetail('Agendado para', data.hearing_date, (date: string) => {
+      const combined = data.hearing_time ? `${date}T${data.hearing_time}` : date;
+      return formatDateTime(combined);
+    });
+
+    return details;
+  }, [formatDateTime, selectedEvent]);
+
+  const canCreateLinkedEvent = Boolean(
+    selectedEvent &&
+      !selectedEvent.extendedProps.calendarEventId &&
+      !selectedEvent.extendedProps.moduleLink,
+  );
+  const showEditButton = Boolean(
+    selectedEvent &&
+      (selectedEvent.extendedProps.calendarEventId ||
+        (selectedEvent.extendedProps.moduleLink &&
+          selectedEvent.extendedProps.entityId &&
+          onEditSystemEntity)),
+  );
+  const editButtonLabel = selectedEvent
+    ? selectedEvent.extendedProps.calendarEventId
+      ? 'Editar compromisso'
+      : selectedEventModuleLabel
+      ? `Editar ${selectedEventModuleLabel}`
+      : 'Editar registro'
+    : 'Editar';
+
   useEffect(() => {
     loadData();
     loadClients();
@@ -264,6 +352,7 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({ onNavigateToModule, pre
             moduleLink: 'deadlines',
             clientName: relatedClient?.full_name,
             clientPhone: relatedClient?.mobile || relatedClient?.phone,
+            entityId: deadline.id,
           },
         });
       });
@@ -292,6 +381,7 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({ onNavigateToModule, pre
             moduleLink: 'cases',
             clientName: relatedClient?.full_name,
             clientPhone: relatedClient?.mobile || relatedClient?.phone,
+            entityId: process.id,
           },
         });
       });
@@ -321,6 +411,7 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({ onNavigateToModule, pre
             moduleLink: 'requirements',
             clientName: requirement.beneficiary,
             clientPhone: requirement.phone || undefined,
+            entityId: requirement.id,
           },
         });
       });
@@ -399,6 +490,7 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({ onNavigateToModule, pre
         title: info.event.title,
         start: info.event.startStr,
         end: info.event.endStr,
+        allDay: info.event.allDay,
         extendedProps,
       });
     },
@@ -523,32 +615,78 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({ onNavigateToModule, pre
     }
   };
 
-  const handleNavigateToModule = (moduleLink?: string) => {
-    if (!moduleLink) return;
-    setSelectedEvent(null);
-    if (onNavigateToModule) {
-      onNavigateToModule(moduleLink);
+  const handleNavigateToModule = useCallback(
+    (moduleLink?: string, entityId?: string) => {
+      if (!moduleLink) return;
+      setSelectedEvent(null);
+      if (onNavigateToModule) {
+        onNavigateToModule({ module: moduleLink, entityId });
+      }
+    },
+    [onNavigateToModule]
+  );
+
+  const handleEditSelectedEvent = useCallback(() => {
+    if (!selectedEvent) return;
+
+    const { extendedProps, start } = selectedEvent;
+    const calendarEventId = extendedProps.calendarEventId;
+
+    if (calendarEventId) {
+      const existing = calendarEventsData.find((event) => event.id === calendarEventId);
+      if (!existing) return;
+
+      const startDate = existing.start_at ? new Date(existing.start_at) : new Date();
+      const validDate = !Number.isNaN(startDate.getTime());
+      const hasTime = validDate && existing.start_at?.includes('T');
+
+      openEventForm(
+        {
+          title: existing.title,
+          date: validDate ? formatDateInputValue(startDate) : '',
+          time: hasTime ? formatTimeInputValue(startDate) : '',
+          type: (existing.event_type as EventType) || 'meeting',
+          description: existing.description ?? '',
+          client_id: existing.client_id ?? '',
+        },
+        calendarEventId,
+      );
+      setSelectedEvent(null);
       return;
     }
-    alert(`Navegação para o módulo "${moduleLink}" em desenvolvimento.`);
-  };
 
-  const formatDateTime = (value?: string | null) => {
-    if (!value) return '';
-    try {
-      const date = new Date(value);
-      if (isNaN(date.getTime())) return '';
-      return date.toLocaleString('pt-BR', {
-        day: '2-digit',
-        month: '2-digit',
-        year: 'numeric',
-        hour: '2-digit',
-        minute: '2-digit',
-      });
-    } catch {
-      return '';
+    const moduleLink = extendedProps.moduleLink;
+    const entityId = extendedProps.entityId;
+
+    if (moduleLink && entityId && onEditSystemEntity) {
+      onEditSystemEntity({ module: moduleLink, entityId, data: extendedProps.data });
+      setSelectedEvent(null);
+      return;
     }
-  };
+
+    // Fallback: open creation flow using event info
+    if (start) {
+      const startDate = new Date(start);
+      const validDate = !Number.isNaN(startDate.getTime());
+      openEventForm({
+        title: selectedEvent.title,
+        date: validDate ? formatDateInputValue(startDate) : '',
+        time: !selectedEvent.allDay && validDate ? formatTimeInputValue(startDate) : '',
+        type: (extendedProps.type as EventType) || 'meeting',
+        description: extendedProps.description ?? '',
+        client_id: extendedProps.data?.client_id ?? '',
+      });
+      setSelectedEvent(null);
+    }
+  }, [
+    calendarEventsData,
+    formatDateInputValue,
+    formatTimeInputValue,
+    handleNavigateToModule,
+    onEditSystemEntity,
+    openEventForm,
+    selectedEvent,
+  ]);
 
   const decodeBase64IfNeeded = useCallback((raw: string) => {
     const sanitized = raw.trim();
@@ -1120,6 +1258,11 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({ onNavigateToModule, pre
               </button>
             </div>
             <div className="space-y-3 text-sm">
+              {selectedEventModuleLabel && (
+                <div className="inline-flex items-center gap-2 rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-600">
+                  {selectedEventModuleLabel}
+                </div>
+              )}
               <div className="flex items-center gap-2">
                 <span className="font-semibold text-slate-700">Data:</span>
                 <span className="text-slate-600">
@@ -1149,25 +1292,88 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({ onNavigateToModule, pre
                 </div>
               )}
 
+              {selectedEvent.extendedProps.status && (
+                <div className="flex items-center gap-2">
+                  <span className="font-semibold text-slate-700">Status:</span>
+                  <span className="text-slate-600 capitalize">{selectedEvent.extendedProps.status}</span>
+                </div>
+              )}
+
+              {selectedEvent.extendedProps.clientName && (
+                <div className="flex items-center gap-2">
+                  <span className="font-semibold text-slate-700">Cliente:</span>
+                  <span className="text-slate-600">{selectedEvent.extendedProps.clientName}</span>
+                </div>
+              )}
+
+              {selectedEvent.extendedProps.clientPhone && (
+                <div className="flex items-center gap-2">
+                  <span className="font-semibold text-slate-700">Telefone:</span>
+                  <span className="text-slate-600">{selectedEvent.extendedProps.clientPhone}</span>
+                </div>
+              )}
+
               {selectedEvent.extendedProps.description && (
                 <div>
                   <span className="font-semibold text-slate-700">Descrição:</span>{' '}
-                  <p className="text-slate-600 mt-1">{selectedEvent.extendedProps.description}</p>
+                  <p className="text-slate-600 mt-1 whitespace-pre-wrap">{selectedEvent.extendedProps.description}</p>
+                </div>
+              )}
+
+              {selectedEventDataDetails.length > 0 && (
+                <div className="space-y-1">
+                  {selectedEventDataDetails.map((detail) => (
+                    <div key={`${detail.label}-${detail.value}`} className="flex items-center gap-2 text-xs text-slate-600">
+                      <span className="font-semibold text-slate-700">{detail.label}:</span>
+                      <span>{detail.value}</span>
+                    </div>
+                  ))}
                 </div>
               )}
             </div>
 
-            <div className="mt-6 flex justify-end gap-3">
+            <div className="mt-6 flex flex-wrap items-center justify-end gap-3">
               <button
                 onClick={() => setSelectedEvent(null)}
                 className="px-4 py-2 text-sm font-medium text-slate-600 hover:text-slate-800 transition"
               >
                 Fechar
               </button>
+              {showEditButton && (
+                <button
+                  onClick={handleEditSelectedEvent}
+                  className="px-4 py-2 text-sm font-semibold bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition"
+                >
+                  {editButtonLabel}
+                </button>
+              )}
+              {canCreateLinkedEvent && (
+                <button
+                  onClick={() => {
+                    const startDate = selectedEvent.start ? new Date(selectedEvent.start) : new Date();
+                    const validDate = !Number.isNaN(startDate.getTime());
+                    openEventForm({
+                      title: selectedEvent.title,
+                      date: validDate ? formatDateInputValue(startDate) : '',
+                      time: !selectedEvent.allDay && validDate ? formatTimeInputValue(startDate) : '',
+                      type: (selectedEvent.extendedProps.type as EventType) || 'meeting',
+                      description: selectedEvent.extendedProps.description ?? '',
+                      client_id: selectedEvent.extendedProps.data?.client_id ?? '',
+                    });
+                    setSelectedEvent(null);
+                  }}
+                  className="px-4 py-2 text-sm font-semibold bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg transition"
+                >
+                  Criar compromisso
+                </button>
+              )}
               {selectedEvent.extendedProps.moduleLink && (
                 <button
-                  onClick={() => handleNavigateToModule(selectedEvent.extendedProps.moduleLink)}
-                  className="px-4 py-2 text-sm font-semibold bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition"
+                  onClick={() => handleNavigateToModule(
+                    selectedEvent.extendedProps.moduleLink,
+                    selectedEvent.extendedProps.entityId
+                  )}
+                  className="px-4 py-2 text-sm font-semibold bg-slate-700 hover:bg-slate-800 text-white rounded-lg transition"
                 >
                   Ir para Módulo
                 </button>

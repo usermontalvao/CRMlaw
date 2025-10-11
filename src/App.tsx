@@ -696,7 +696,7 @@ function App() {
           )}
           {activeModule === 'calendar' && (
             <CalendarModule 
-              onNavigateToModule={setActiveModule}
+              onNavigateToModule={({ module }) => setActiveModule(module as any)}
               forceCreate={moduleParams['calendar'] ? JSON.parse(moduleParams['calendar']).mode === 'create' : false}
               prefillData={moduleParams['calendar'] ? JSON.parse(moduleParams['calendar']).prefill : undefined}
               onParamConsumed={() => setModuleParams(prev => { const updated = {...prev}; delete updated['calendar']; return updated; })}
