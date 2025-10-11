@@ -550,11 +550,124 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({ onNavigateToModule, pre
     }
   };
 
+  const decodeBase64IfNeeded = useCallback((raw: string) => {
+    const sanitized = raw.trim();
+    if (sanitized.length < 16) return raw;
+    if (sanitized.length % 4 !== 0) return raw;
+    if (!/^[A-Za-z0-9+/=\s]+$/.test(sanitized)) return raw;
+
+    const tryDecode = (input: string) => {
+      const normalized = input.replace(/\s+/g, '');
+      try {
+        if (typeof window !== 'undefined' && typeof window.atob === 'function') {
+          return window.atob(normalized);
+        }
+        if (typeof globalThis !== 'undefined' && typeof (globalThis as any).atob === 'function') {
+          return (globalThis as any).atob(normalized);
+        }
+      } catch {
+        return null;
+      }
+      return null;
+    };
+
+    let current = sanitized;
+    for (let i = 0; i < 2; i += 1) {
+      const decoded = tryDecode(current);
+      if (!decoded || decoded === current) break;
+
+      const nonPrintableRatio = decoded.replace(/[\x20-\x7E\s]/g, '').length / decoded.length;
+      if (nonPrintableRatio > 0.2) break;
+
+      current = decoded;
+    }
+
+    return current;
+  }, []);
+
+  const parseNotesIfJson = useCallback((raw: string) => {
+    const trimmed = raw.trim();
+    if (!trimmed.startsWith('[') && !trimmed.startsWith('{')) return raw;
+
+    try {
+      const parsed = JSON.parse(trimmed);
+      if (Array.isArray(parsed)) {
+        return parsed
+          .map((item: any) => {
+            if (typeof item === 'string') return item;
+            if (item && typeof item === 'object') {
+              const parts: string[] = [];
+              if (item.author_name) parts.push(`[${item.author_name}]`);
+              if (item.text) parts.push(item.text);
+              if (item.created_at) {
+                const date = new Date(item.created_at);
+                if (!isNaN(date.getTime())) {
+                  parts.push(`(${date.toLocaleDateString('pt-BR')})`);
+                }
+              }
+              return parts.join(' ');
+            }
+            return String(item);
+          })
+          .filter(Boolean)
+          .join(' | ');
+      }
+      if (parsed && typeof parsed === 'object') {
+        return Object.entries(parsed)
+          .map(([k, v]) => `${k}: ${v}`)
+          .join(', ');
+      }
+    } catch {
+      return raw;
+    }
+    return raw;
+  }, []);
+
+  const convertRichTextToPlainText = useCallback(
+    (value?: string | null) => {
+      if (!value) return '';
+
+      let text = decodeBase64IfNeeded(value);
+      text = parseNotesIfJson(text);
+
+      text = text.replace(/<br\s*\/?>/gi, '\n');
+      text = text.replace(
+        /<a [^>]*href="([^"#]+)"[^>]*>(.*?)<\/a>/gi,
+        (_, href: string, inner: string = '') => {
+          const cleaned = inner.replace(/<[^>]+>/g, '').trim();
+          if (cleaned && cleaned !== href) {
+            return `${cleaned} (${href})`;
+          }
+          return href;
+        },
+      );
+      text = text.replace(
+        /<a [^>]*href='#'[^>]*>(.*?)<\/a>/gi,
+        (_, inner: string = '') => inner.replace(/<[^>]+>/g, '').trim(),
+      );
+      text = text.replace(/<\/?[^>]+>/g, '');
+
+      if (typeof window !== 'undefined') {
+        const textarea = document.createElement('textarea');
+        textarea.innerHTML = text;
+        text = textarea.value;
+      }
+
+      return text.replace(/\s+/g, ' ').trim();
+    },
+    [decodeBase64IfNeeded, parseNotesIfJson],
+  );
+
   const truncateForExcel = (value?: string | null) => {
     if (!value) return '';
     const str = value.toString();
     return str.length > 32760 ? `${str.slice(0, 32757)}...` : str;
   };
+
+  const prepareDescriptionForExport = useCallback(
+    (value?: string | null) => truncateForExcel(convertRichTextToPlainText(value)),
+    [convertRichTextToPlainText],
+  );
 
 
   const buildAgendaRows = () => {
@@ -572,7 +685,7 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({ onNavigateToModule, pre
         Telefone: truncateForExcel(client?.mobile ?? client?.phone ?? ''),
         Status: truncateForExcel(deadline.status),
         Prioridade: truncateForExcel(deadline.priority),
-        Descrição: truncateForExcel(deadline.description ?? ''),
+        Descrição: prepareDescriptionForExport(deadline.description),
       });
     });
 
@@ -593,7 +706,7 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({ onNavigateToModule, pre
           Telefone: truncateForExcel(client?.mobile ?? client?.phone ?? ''),
           Status: truncateForExcel(process.status),
           Prioridade: '',
-          Descrição: truncateForExcel(process.notes ?? ''),
+          Descrição: prepareDescriptionForExport(process.notes),
         });
       });
 
@@ -609,7 +722,7 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({ onNavigateToModule, pre
           Telefone: truncateForExcel(requirement.phone ?? ''),
           Status: truncateForExcel(requirement.status),
           Prioridade: '',
-          Descrição: truncateForExcel(requirement.observations ?? requirement.notes ?? ''),
+          Descrição: prepareDescriptionForExport(requirement.observations ?? requirement.notes ?? ''),
         });
       });
 
@@ -632,7 +745,7 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({ onNavigateToModule, pre
         Telefone: truncateForExcel(client?.mobile ?? client?.phone ?? ''),
         Status: truncateForExcel(event.status),
         Prioridade: '',
-        Descrição: truncateForExcel(event.description ?? ''),
+        Descrição: prepareDescriptionForExport(event.description),
       });
     });
 
