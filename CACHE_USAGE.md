@@ -156,30 +156,32 @@ useEffect(() => {
 
 ### Depois (com cache):
 ```typescript
-const { data: clients, isLoading } = useCachedQuery(
-  QUERY_KEYS.CLIENTS,
+const { data: clients, isLoading } = useCachedData(
+  'clients',
   () => clientService.listClients({})
-); // ✅ Cache de 5 minutos, revalida automaticamente
+); // ✅ Cache de 5 minutos, carrega instantaneamente
 ```
 
 ---
 
 ## 📊 Configuração do Cache
 
-Configurado em `App.tsx`:
+Configurado em `src/contexts/CacheContext.tsx`:
 
 ```typescript
-const queryClient = new QueryClient({
-  defaultOptions: {
-    queries: {
-      staleTime: 5 * 60 * 1000,      // 5 minutos - dados "frescos"
-      gcTime: 10 * 60 * 1000,         // 10 minutos - tempo no cache
-      refetchOnWindowFocus: false,    // Não recarregar ao focar
-      retry: 1,                       // 1 tentativa em caso de erro
-    },
-  },
-});
+const DEFAULT_TTL = 5 * 60 * 1000; // 5 minutos
+
+// Cache em memória (Map)
+// Verifica expiração automaticamente ao buscar
+// Suporta wildcards para invalidação em massa
 ```
+
+**Características**:
+- ✅ Cache em memória (não persiste ao recarregar página)
+- ✅ TTL de 5 minutos por padrão
+- ✅ Limpeza automática de cache expirado
+- ✅ Suporte a wildcards (`clients*`)
+- ✅ Zero dependências externas
 
 ---
 
@@ -187,9 +189,14 @@ const queryClient = new QueryClient({
 
 Para implementar em um módulo:
 
-1. Substitua `useState` + `useEffect` por `useCachedQuery`
+1. Substitua `useState` + `useEffect` por `useCachedData`
 2. Substitua funções de create/update por `useCachedMutation`
-3. Use as `QUERY_KEYS` constantes
+3. Use strings simples como cache keys
 4. O cache será gerenciado automaticamente!
 
-**Exemplo completo em:** `src/hooks/useQueryCache.ts`
+**Arquivos criados:**
+- `src/contexts/CacheContext.tsx` - Provider do cache
+- `src/hooks/useQueryCache.ts` - Hooks customizados
+- `src/constants/queryKeys.ts` - Constantes de keys (opcional)
+
+✅ **Sistema pronto para uso!**
