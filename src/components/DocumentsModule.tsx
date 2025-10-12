@@ -236,9 +236,9 @@ const DocumentsModule: React.FC = () => {
     registerPlaceholder('cidade', client.address_city);
     registerPlaceholder('estado', client.address_state);
     registerPlaceholder('CEP', client.address_zip_code);
-    registerPlaceholder('celular', client.mobile);
-    registerPlaceholder('telefone', client.phone);
-    registerPlaceholder('reu', defendantInput);
+    const primaryPhone = client.phone || client.mobile || '';
+    registerPlaceholder('telefone', primaryPhone);
+    registerPlaceholder('celular', primaryPhone);
     registerPlaceholder('réu', defendantInput);
     registerPlaceholder('data', formatDate(currentDate.toISOString()));
 

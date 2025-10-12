@@ -28,9 +28,8 @@ const ClientDetails: React.FC<ClientDetailsProps> = ({ client, processes, requir
     return new Date(dateString).toLocaleDateString('pt-BR');
   };
 
-  const whatsappLink = client.mobile
-    ? `https://wa.me/${client.mobile.replace(/\D/g, '')}`
-    : null;
+  const primaryPhone = client.phone || client.mobile || '';
+  const whatsappLink = primaryPhone ? `https://wa.me/${primaryPhone.replace(/\D/g, '')}` : null;
 
   const getMaritalStatusLabel = (status?: string) => {
     const labels: Record<string, string> = {
@@ -200,31 +199,15 @@ const ClientDetails: React.FC<ClientDetailsProps> = ({ client, processes, requir
             </div>
 
             <div className="flex items-start gap-3">
-              <div className="inline-flex items-center justify-center w-10 h-10 rounded-full bg-slate-100 text-slate-600">
+              <div className="inline-flex items-center justify-center w-10 h-10 rounded-full bg-emerald-50 text-emerald-600">
                 <Phone className="w-5 h-5" />
               </div>
               <div>
-                <p className="text-sm font-medium text-gray-500">Telefone</p>
-                {client.phone ? (
-                  <a href={`tel:${client.phone.replace(/\s/g, '')}`} className="text-gray-900 hover:text-primary-600 transition-colors">
-                    {client.phone}
-                  </a>
-                ) : (
-                  <p className="text-sm text-gray-400">Não informado</p>
-                )}
-              </div>
-            </div>
-
-            <div className="flex items-start gap-3">
-              <div className="inline-flex items-center justify-center w-10 h-10 rounded-full bg-emerald-50 text-emerald-600">
-                <MessageCircle className="w-5 h-5" />
-              </div>
-              <div>
-                <p className="text-sm font-medium text-gray-500">Celular / WhatsApp</p>
-                {client.mobile ? (
+                <p className="text-sm font-medium text-gray-500">Telefone / WhatsApp</p>
+                {primaryPhone ? (
                   <div className="flex items-center gap-2">
-                    <a href={`tel:${client.mobile.replace(/\s/g, '')}`} className="text-gray-900 hover:text-primary-600 transition-colors">
-                      {client.mobile}
+                    <a href={`tel:${primaryPhone.replace(/\s/g, '')}`} className="text-gray-900 hover:text-primary-600 transition-colors">
+                      {primaryPhone}
                     </a>
                     {whatsappLink && (
                       <a

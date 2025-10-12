@@ -108,18 +108,18 @@ const ClientList: React.FC<ClientListProps> = ({ clients, loading, onView, onEdi
                       <span className="text-xs text-gray-400">Sem email</span>
                     )}
 
-                    {client.mobile ? (
+                    {(client.phone || client.mobile) ? (
                       <a
-                        href={`https://wa.me/${client.mobile.replace(/\D/g, '')}`}
+                        href={`https://wa.me/${(client.phone || client.mobile || '').replace(/\D/g, '')}`}
                         target="_blank"
                         rel="noopener noreferrer"
                         className="inline-flex items-center justify-center w-9 h-9 rounded-full bg-emerald-50 text-emerald-600 hover:bg-emerald-100 transition-colors"
-                        title={client.mobile}
+                        title={client.phone || client.mobile || ''}
                       >
                         <MessageCircle className="w-4 h-4" />
                       </a>
                     ) : (
-                      <span className="text-xs text-gray-400">Sem WhatsApp</span>
+                      <span className="text-xs text-gray-400">Sem contato</span>
                     )}
                   </div>
                 </td>

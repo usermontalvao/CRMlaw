@@ -205,28 +205,30 @@ const ClientsModule: React.FC<ClientsModuleProps> = ({
       const allClients = await clientService.listClients({});
       
       // Preparar dados para o Excel
-      const exportData = allClients.map(client => ({
-        Nome: client.full_name,
-        Email: client.email || '',
-        Telefone: client.phone || '',
-        Celular: client.mobile || '',
-        CPF_CNPJ: client.cpf_cnpj || '',
-        RG: client.rg || '',
-        'Data de Nascimento': client.birth_date || '',
-        Nacionalidade: client.nationality || '',
-        Profissão: client.profession || '',
-        Tipo: client.client_type === 'pessoa_fisica' ? 'Pessoa Física' : 'Pessoa Jurídica',
-        Status: client.status,
-        CEP: client.address_zip_code || '',
-        Endereço: `${client.address_street || ''} ${client.address_number || ''}`.trim(),
-        Complemento: client.address_complement || '',
-        Bairro: client.address_neighborhood || '',
-        Cidade: client.address_city || '',
-        Estado: client.address_state || '',
-        Observações: client.notes || '',
-        'Criado em': new Date(client.created_at).toLocaleDateString('pt-BR'),
-        'Atualizado em': new Date(client.updated_at).toLocaleDateString('pt-BR'),
-      }));
+      const exportData = allClients.map((client) => {
+        const primaryPhone = client.phone || client.mobile || '';
+        return {
+          Nome: client.full_name,
+          Email: client.email || '',
+          'Telefone / WhatsApp': primaryPhone,
+          CPF_CNPJ: client.cpf_cnpj || '',
+          RG: client.rg || '',
+          'Data de Nascimento': client.birth_date || '',
+          Nacionalidade: client.nationality || '',
+          Profissão: client.profession || '',
+          Tipo: client.client_type === 'pessoa_fisica' ? 'Pessoa Física' : 'Pessoa Jurídica',
+          Status: client.status,
+          CEP: client.address_zip_code || '',
+          Endereço: `${client.address_street || ''} ${client.address_number || ''}`.trim(),
+          Complemento: client.address_complement || '',
+          Bairro: client.address_neighborhood || '',
+          Cidade: client.address_city || '',
+          Estado: client.address_state || '',
+          Observações: client.notes || '',
+          'Criado em': new Date(client.created_at).toLocaleDateString('pt-BR'),
+          'Atualizado em': new Date(client.updated_at).toLocaleDateString('pt-BR'),
+        };
+      });
       
       // Criar workbook e worksheet
       const wb = XLSX.utils.book_new();

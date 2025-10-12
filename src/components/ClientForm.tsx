@@ -50,8 +50,8 @@ const ClientForm: React.FC<ClientFormProps> = ({ client, prefill, onBack, onSave
         marital_status: client.marital_status,
         profession: client.profession,
         email: client.email,
-        phone: client.phone,
-        mobile: client.mobile,
+        phone: client.phone || client.mobile || '',
+        mobile: client.phone || client.mobile || '',
         address_street: client.address_street,
         address_number: client.address_number,
         address_complement: client.address_complement,
@@ -74,6 +74,8 @@ const ClientForm: React.FC<ClientFormProps> = ({ client, prefill, onBack, onSave
         ...prefill,
         client_type: prefill.client_type ?? prev.client_type,
         status: prefill.status ?? prev.status,
+        phone: prefill.phone || prefill.mobile || prev.phone,
+        mobile: prefill.phone || prefill.mobile || prev.mobile,
       }));
     }
   }, [client, prefill]);
@@ -148,6 +150,11 @@ const ClientForm: React.FC<ClientFormProps> = ({ client, prefill, onBack, onSave
       if (!cleanedData.nationality) delete cleanedData.nationality;
 
       let savedClient: Client;
+      cleanedData.mobile = cleanedData.phone || cleanedData.mobile || '';
+
+      if (!cleanedData.phone) delete cleanedData.phone;
+      if (!cleanedData.mobile) delete cleanedData.mobile;
+
       if (client) {
         savedClient = await clientService.updateClient(client.id, cleanedData);
       } else {
@@ -174,6 +181,16 @@ const ClientForm: React.FC<ClientFormProps> = ({ client, prefill, onBack, onSave
     if (field === 'address_state') {
       const uf = (value as string).toUpperCase().slice(0, 2);
       setFormData((prev) => ({ ...prev, address_state: uf }));
+      return;
+    }
+
+    if (field === 'phone') {
+      setFormData((prev) => ({ ...prev, phone: value, mobile: value }));
+      return;
+    }
+
+    if (field === 'mobile') {
+      setFormData((prev) => ({ ...prev, phone: value, mobile: value }));
       return;
     }
 
@@ -319,7 +336,7 @@ const ClientForm: React.FC<ClientFormProps> = ({ client, prefill, onBack, onSave
         {/* Dados de Contato */}
         <div>
           <h3 className="text-lg font-semibold text-gray-900 mb-4">Dados de Contato</h3>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Email</label>
               <input
@@ -331,23 +348,12 @@ const ClientForm: React.FC<ClientFormProps> = ({ client, prefill, onBack, onSave
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Telefone Fixo</label>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Telefone / WhatsApp</label>
               <input
                 type="tel"
                 className="input-field"
                 value={formData.phone}
                 onChange={(e) => handleChange('phone', e.target.value)}
-                placeholder="(00) 0000-0000"
-              />
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Celular</label>
-              <input
-                type="tel"
-                className="input-field"
-                value={formData.mobile}
-                onChange={(e) => handleChange('mobile', e.target.value)}
                 placeholder="(00) 00000-0000"
               />
             </div>

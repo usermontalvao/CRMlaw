@@ -703,18 +703,21 @@ function App() {
                       {!clientSearchLoading && clientSearchResults.length === 0 && (
                         <div className="px-3 py-2 text-slate-400">Nenhum cliente encontrado</div>
                       )}
-                      {!clientSearchLoading && clientSearchResults.map((client) => (
-                        <button
-                          key={client.id}
-                          type="button"
-                          onMouseDown={(event) => event.preventDefault()}
-                          onClick={() => handleClientSearchSelect(client.id)}
-                          className="w-full text-left px-3 py-2 hover:bg-amber-50 transition"
-                        >
-                          <p className="text-sm font-semibold text-slate-900 truncate">{client.full_name}</p>
-                          <p className="text-xs text-slate-500 truncate">{client.email || client.phone || 'Sem contato cadastrado'}</p>
-                        </button>
-                      ))}
+                      {!clientSearchLoading && clientSearchResults.map((client) => {
+                        const primaryPhone = client.phone || client.mobile || '';
+                        return (
+                          <button
+                            key={client.id}
+                            type="button"
+                            onMouseDown={(event) => event.preventDefault()}
+                            onClick={() => handleClientSearchSelect(client.id)}
+                            className="w-full text-left px-3 py-2 hover:bg-amber-50 transition"
+                          >
+                            <p className="text-sm font-semibold text-slate-900 truncate">{client.full_name}</p>
+                            <p className="text-xs text-slate-500 truncate">{client.email || primaryPhone || 'Sem contato cadastrado'}</p>
+                          </button>
+                        );
+                      })}
                     </div>
                   )}
                 </div>

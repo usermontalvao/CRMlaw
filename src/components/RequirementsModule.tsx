@@ -1397,7 +1397,7 @@ const RequirementsModule: React.FC<RequirementsModuleProps> = ({ forceCreate, en
                             if (client.cpf_cnpj) {
                               handleFormChange('cpf', formatCPF(client.cpf_cnpj));
                             }
-                            const phoneValue = client.mobile || client.phone || '';
+                            const phoneValue = client.phone || client.mobile || '';
                             if (phoneValue) {
                               handleFormChange('phone', phoneValue);
                             }
