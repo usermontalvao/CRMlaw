@@ -3,7 +3,7 @@ import { processDjenSyncService } from '../services/processDjenSync.service';
 
 /**
  * Hook para sincronização automática com DJEN
- * Executa a cada 24 horas
+ * Executa a cada 1 hora
  */
 export function useDjenSync() {
   const syncIntervalRef = useRef<NodeJS.Timeout | null>(null);
@@ -33,10 +33,10 @@ export function useDjenSync() {
       runSync();
     }, 5000);
 
-    // Executar a cada 24 horas
+    // Executar a cada 1 hora
     syncIntervalRef.current = setInterval(() => {
       runSync();
-    }, 24 * 60 * 60 * 1000); // 24 horas
+    }, 60 * 60 * 1000); // 1 hora
 
     // Cleanup
     return () => {

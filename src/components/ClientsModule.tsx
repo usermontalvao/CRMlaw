@@ -20,9 +20,18 @@ interface ClientsModuleProps {
   forceCreate?: boolean;
   onParamConsumed?: () => void;
   onNavigateToModule?: (moduleKey: string, params?: any) => void;
+  focusClientId?: string;
 }
 
-const ClientsModule: React.FC<ClientsModuleProps> = ({ prefillData, onClientSaved, onClientCancelled, forceCreate, onParamConsumed, onNavigateToModule }) => {
+const ClientsModule: React.FC<ClientsModuleProps> = ({
+  prefillData,
+  onClientSaved,
+  onClientCancelled,
+  forceCreate,
+  onParamConsumed,
+  onNavigateToModule,
+  focusClientId,
+}) => {
   const [clients, setClients] = useState<Client[]>([]);
   const [loading, setLoading] = useState(true);
   const [viewMode, setViewMode] = useState<ViewMode>('list');
@@ -81,6 +90,19 @@ const ClientsModule: React.FC<ClientsModuleProps> = ({ prefillData, onClientSave
       }
     }
   }, [forceCreate, viewMode, onParamConsumed]);
+
+  useEffect(() => {
+    if (!focusClientId) return;
+    const client = clients.find((item) => item.id === focusClientId);
+    if (!client) return;
+
+    setSelectedClient(client);
+    setViewMode('details');
+    loadClientRelations(client.id);
+    if (onParamConsumed) {
+      onParamConsumed();
+    }
+  }, [focusClientId, clients, onParamConsumed]);
 
   // Buscar clientes
   const handleSearch = () => {

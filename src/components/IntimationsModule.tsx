@@ -20,6 +20,9 @@ import {
   Eye,
   EyeOff,
   Trash2,
+  Sparkles,
+  Lightbulb,
+  AlertTriangle,
 } from 'lucide-react';
 import { djenService } from '../services/djen.service';
 import { djenLocalService } from '../services/djenLocal.service';
@@ -29,12 +32,15 @@ import { deadlineService } from '../services/deadline.service';
 import { calendarService } from '../services/calendar.service';
 import { profileService } from '../services/profile.service';
 import { userNotificationService } from '../services/userNotification.service';
+import { aiService } from '../services/ai.service';
+import { useToastContext } from '../contexts/ToastContext';
 import type { DjenComunicacaoLocal, DjenConsultaParams } from '../types/djen.types';
 import type { Client } from '../types/client.types';
 import type { Process } from '../types/process.types';
 import type { CreateDeadlineDTO, DeadlineType, DeadlinePriority } from '../types/deadline.types';
 import type { CreateCalendarEventDTO, CalendarEventType } from '../types/calendar.types';
 import type { Profile } from '../services/profile.service';
+import type { IntimationAnalysis } from '../types/ai.types';
 
 const AUTO_SYNC_INTERVAL = 2 * 60 * 60 * 1000; // 2 horas em ms
 
@@ -43,6 +49,8 @@ interface IntimationsModuleProps {
 }
 
 const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModule }) => {
+  const toast = useToastContext();
+  
   // Estados principais
   const [intimations, setIntimations] = useState<DjenComunicacaoLocal[]>([]);
   const [clients, setClients] = useState<Client[]>([]);
@@ -52,8 +60,6 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
   const [loading, setLoading] = useState(true);
   const [syncing, setSyncing] = useState(false);
   const [clearingAll, setClearingAll] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [success, setSuccess] = useState<string | null>(null);
   const [lastAutoSyncAt, setLastAutoSyncAt] = useState<string | null>(null);
 
   // Filtros e busca
@@ -81,7 +87,95 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
   const [selectionMode, setSelectionMode] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
 
-  const loadData = useCallback(async () => {
+  // IA Analysis
+  const [aiAnalysis, setAiAnalysis] = useState<Map<string, IntimationAnalysis>>(new Map());
+  const [analyzingIds, setAnalyzingIds] = useState<Set<string>>(new Set());
+  const [aiEnabled, setAiEnabled] = useState(false);
+
+  // Verificar se IA está habilitada
+  useEffect(() => {
+    setAiEnabled(aiService.isEnabled());
+  }, []);
+
+  // Analisar intimação com IA (definido antes para evitar erro de referência)
+  const handleAnalyzeWithAI = async (intimation: DjenComunicacaoLocal, silent: boolean = false) => {
+    if (!aiService.isEnabled()) {
+      if (!silent) {
+        toast.warning('IA não configurada', 'Configure VITE_OPENAI_API_KEY no arquivo .env');
+      }
+      return;
+    }
+
+    setAnalyzingIds(prev => new Set(prev).add(intimation.id));
+
+    try {
+      const analysis = await aiService.analyzeIntimation(
+        intimation.texto,
+        intimation.numero_processo,
+        intimation.data_disponibilizacao,
+        intimation.tipo_documento || undefined,
+        intimation.tipo_comunicacao || undefined
+      );
+
+      setAiAnalysis(prev => new Map(prev).set(intimation.id, analysis));
+      
+      if (!silent) {
+        setExpandedIntimationIds(prev => new Set(prev).add(intimation.id));
+        toast.success('Análise concluída', `Intimação analisada com urgência ${analysis.urgency}`);
+      }
+    } catch (err: any) {
+      console.error('Erro ao analisar com IA:', err);
+      if (!silent) {
+        toast.error('Erro ao analisar', err.message || 'Não foi possível analisar a intimação');
+      }
+    } finally {
+      setAnalyzingIds(prev => {
+        const newSet = new Set(prev);
+        newSet.delete(intimation.id);
+        return newSet;
+      });
+    }
+  };
+
+  // Analisar automaticamente intimações não lidas
+  const autoAnalyzeNewIntimations = async (intimationsList: DjenComunicacaoLocal[]) => {
+    if (!aiService.isEnabled()) return;
+
+    const toAnalyze = intimationsList.filter(
+      (intimation) => !intimation.lida && !aiAnalysis.has(intimation.id)
+    );
+
+    if (toAnalyze.length === 0) return;
+
+    console.log(`🤖 Analisando automaticamente ${toAnalyze.length} intimação(ões) com IA...`);
+
+    const batch = toAnalyze.slice(0, 5);
+
+    for (const intimation of batch) {
+      await handleAnalyzeWithAI(intimation, true);
+      await new Promise(resolve => setTimeout(resolve, 2000));
+    }
+
+    console.log(`✅ Análise automática concluída: ${batch.length} intimação(ões)`);
+  };
+
+  // Recarregar apenas intimações (sem flash/reload)
+  const reloadIntimations = useCallback(async (runAutoAnalysis: boolean = false) => {
+    try {
+      const intimationsData = await djenLocalService.listComunicacoes();
+      setIntimations(intimationsData);
+
+      // Analisar automaticamente intimações não lidas (se solicitado)
+      if (runAutoAnalysis && intimationsData.length > 0) {
+        setTimeout(() => autoAnalyzeNewIntimations(intimationsData), 1000);
+      }
+    } catch (err: any) {
+      console.error('Erro ao recarregar intimações:', err);
+      toast.error('Erro ao atualizar', 'Não foi possível recarregar as intimações');
+    }
+  }, []);
+
+  const loadData = useCallback(async (runAutoAnalysis: boolean = false) => {
     try {
       setLoading(true);
       const [intimationsData, clientsData, processesData, membersData, userProfile] = await Promise.all([
@@ -96,8 +190,13 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
       setProcesses(processesData);
       setMembers(membersData);
       setCurrentUserProfile(userProfile);
+
+      // Analisar automaticamente intimações não lidas (se solicitado)
+      if (runAutoAnalysis && intimationsData.length > 0) {
+        setTimeout(() => autoAnalyzeNewIntimations(intimationsData), 1000);
+      }
     } catch (err: any) {
-      setError(err.message || 'Erro ao carregar dados');
+      toast.error('Erro ao carregar dados', err.message);
     } finally {
       setLoading(false);
     }
@@ -121,10 +220,6 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
 
       syncingRef.current = true;
       setSyncing(true);
-      setError(null);
-      if (mode === 'manual') {
-        setSuccess(null);
-      }
 
       try {
         // Obtém nome do advogado do perfil
@@ -182,27 +277,27 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
           }
         }
 
-        await loadData();
+        // Recarregar apenas intimações (sem flash) e analisar automaticamente
+        const totalSaved = savedFromAdvocate + savedFromProcesses;
+        await reloadIntimations(totalSaved > 0); // Analisar apenas se houver novas intimações
 
         if (mode === 'manual') {
-          const totalSaved = savedFromAdvocate + savedFromProcesses;
           if (totalSaved > 0) {
-            setSuccess(
-              `Sincronização concluída: ${totalSaved} nova(s) intimação(ões) importada(s).`,
+            toast.success(
+              'Sincronização concluída',
+              `${totalSaved} nova(s) intimação(ões) importada(s). ${aiEnabled ? '🤖 IA analisando...' : ''}`,
             );
           } else {
-            setSuccess('Sincronização concluída. Nenhuma intimação nova encontrada.');
+            toast.info('Sincronização concluída', 'Nenhuma intimação nova encontrada');
           }
-          setTimeout(() => setSuccess(null), 4000);
         } else {
           setLastAutoSyncAt(new Date().toISOString());
         }
       } catch (err: any) {
         if (mode === 'manual') {
-          setError(err.message || 'Erro ao sincronizar');
+          toast.error('Erro ao sincronizar', err.message);
         } else {
           console.error('Erro na sincronização automática:', err);
-          setError((prev) => prev ?? (err.message || 'Erro ao sincronizar'));
         }
       } finally {
         syncingRef.current = false;
@@ -254,10 +349,9 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
         int.id === id ? { ...int, lida: true, lida_em: new Date().toISOString() } : int
       ));
       
-      setSuccess('Intimação marcada como lida');
-      setTimeout(() => setSuccess(null), 2000);
+      toast.success('Marcado como lida');
     } catch (err: any) {
-      setError(err.message || 'Erro ao marcar como lida');
+      toast.error('Erro ao marcar', err.message);
     }
   };
 
@@ -274,13 +368,11 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
 
     try {
       setClearingAll(true);
-      setError(null);
-      setSuccess(null);
       await djenLocalService.clearAll();
-      await loadData();
-      setSuccess('Todas as intimações foram removidas com sucesso. Faça uma nova sincronização quando desejar.');
+      await reloadIntimations();
+      toast.success('Intimações removidas', 'Faça uma nova sincronização quando desejar');
     } catch (err: any) {
-      setError(err.message || 'Não foi possível remover as intimações.');
+      toast.error('Erro ao remover', err.message);
     } finally {
       setClearingAll(false);
     }
@@ -331,12 +423,11 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
         await djenLocalService.vincularProcesso(linkingIntimation.id, selectedProcessId);
       }
 
-      await loadData();
+      await reloadIntimations();
       setLinkModalOpen(false);
-      setSuccess('Vínculos salvos com sucesso');
-      setTimeout(() => setSuccess(null), 3000);
+      toast.success('Vínculos salvos');
     } catch (err: any) {
-      setError(err.message || 'Erro ao salvar vínculos');
+      toast.error('Erro ao salvar', err.message);
     }
   };
 
@@ -619,21 +710,6 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
 
   return (
     <div className="space-y-6">
-      {/* Mensagens */}
-      {success && (
-        <div className="bg-emerald-50 border border-emerald-200 text-emerald-700 px-4 py-3 rounded-lg flex items-center gap-2">
-          <CheckCircle className="w-5 h-5" />
-          {success}
-        </div>
-      )}
-
-      {error && (
-        <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg flex items-center gap-2">
-          <AlertCircle className="w-5 h-5" />
-          {error}
-        </div>
-      )}
-
       {/* Header */}
       <div className="bg-white border border-gray-200 rounded-xl p-6">
         <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
@@ -885,6 +961,22 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
                           </p>
                         </div>
                         <div className="flex items-center gap-2 flex-shrink-0">
+                          {aiEnabled && !aiAnalysis.has(intimation.id) && (
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleAnalyzeWithAI(intimation);
+                              }}
+                              disabled={analyzingIds.has(intimation.id)}
+                              className="inline-flex items-center gap-1 px-2 py-1 text-xs font-medium text-purple-600 hover:text-purple-700 border border-purple-200 rounded hover:bg-purple-50 transition disabled:opacity-50"
+                            >
+                              {analyzingIds.has(intimation.id) ? (
+                                <Loader2 className="w-3 h-3 animate-spin" />
+                              ) : (
+                                <Sparkles className="w-3 h-3" />
+                              )}
+                            </button>
+                          )}
                           {!intimation.lida && (
                             <button
                               onClick={(e) => {
@@ -922,6 +1014,48 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
                         </div>
                       </div>
                     </div>
+                    
+                    {/* Conteúdo Expandido - Visualização Agrupada */}
+                    {isExpanded && (
+                      <div className="px-4 pb-4 border-t border-slate-200">
+                        {aiAnalysis.has(intimation.id) && (
+                          <div className="mt-3 bg-gradient-to-r from-purple-50 to-blue-50 border border-purple-200 rounded-lg p-3 space-y-2">
+                            <div className="flex items-center gap-2 mb-1">
+                              <Sparkles className="w-4 h-4 text-purple-600" />
+                              <h6 className="text-xs font-bold text-purple-900">Análise IA</h6>
+                            </div>
+                            {(() => {
+                              const analysis = aiAnalysis.get(intimation.id)!;
+                              const urgencyColors = {
+                                'critica': 'bg-red-100 text-red-800 border-red-300',
+                                'alta': 'bg-orange-100 text-orange-800 border-orange-300',
+                                'media': 'bg-yellow-100 text-yellow-800 border-yellow-300',
+                                'baixa': 'bg-green-100 text-green-800 border-green-300',
+                              };
+                              return (
+                                <>
+                                  <div className="flex items-center gap-2">
+                                    <span className="text-xs font-medium text-slate-700">Urgência:</span>
+                                    <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold border ${urgencyColors[analysis.urgency]}`}>
+                                      {analysis.urgency.toUpperCase()}
+                                    </span>
+                                  </div>
+                                  <p className="text-xs text-slate-700"><strong>Resumo:</strong> {analysis.summary}</p>
+                                  {analysis.deadline && (
+                                    <div className="bg-white/70 border border-amber-200 rounded p-2 text-xs">
+                                      <p><strong>{analysis.deadline.days} dias úteis</strong> - {analysis.deadline.description}</p>
+                                      {analysis.deadline.dueDate && (
+                                        <p className="text-slate-600 mt-1">Vencimento: {new Date(analysis.deadline.dueDate).toLocaleDateString('pt-BR')}</p>
+                                      )}
+                                    </div>
+                                  )}
+                                </>
+                              );
+                            })()}
+                          </div>
+                        )}
+                      </div>
+                    )}
                   </div>
                   );
                 })}
@@ -1022,6 +1156,104 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
                   {/* Conteúdo Expandido */}
                   {isExpanded && (
                     <div className="mt-4 pt-4 border-t border-slate-200 space-y-4">
+                      {/* Análise de IA */}
+                      {aiAnalysis.has(intimation.id) && (
+                        <div className="bg-gradient-to-r from-purple-50 to-blue-50 border border-purple-200 rounded-lg p-4 space-y-3">
+                          <div className="flex items-center gap-2 mb-2">
+                            <Sparkles className="w-5 h-5 text-purple-600" />
+                            <h5 className="text-sm font-bold text-purple-900">Análise com IA</h5>
+                          </div>
+                          
+                          {(() => {
+                            const analysis = aiAnalysis.get(intimation.id)!;
+                            const urgencyColors = {
+                              'critica': 'bg-red-100 text-red-800 border-red-300',
+                              'alta': 'bg-orange-100 text-orange-800 border-orange-300',
+                              'media': 'bg-yellow-100 text-yellow-800 border-yellow-300',
+                              'baixa': 'bg-green-100 text-green-800 border-green-300',
+                            };
+                            
+                            return (
+                              <>
+                                {/* Urgência */}
+                                <div className="flex items-center gap-2">
+                                  <AlertTriangle className="w-4 h-4" />
+                                  <span className="text-xs font-medium text-slate-700">Urgência:</span>
+                                  <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold border ${urgencyColors[analysis.urgency]}`}>
+                                    {analysis.urgency.toUpperCase()}
+                                  </span>
+                                </div>
+
+                                {/* Resumo */}
+                                <div>
+                                  <h6 className="text-xs font-semibold text-slate-900 mb-1">📋 Resumo:</h6>
+                                  <p className="text-sm text-slate-700">{analysis.summary}</p>
+                                </div>
+
+                                {/* Prazo */}
+                                {analysis.deadline && (
+                                  <div className="bg-white/70 border border-amber-200 rounded p-3 space-y-2">
+                                    <h6 className="text-xs font-semibold text-amber-900 mb-1 flex items-center gap-1">
+                                      <Clock className="w-3.5 h-3.5" />
+                                      Prazo Detectado:
+                                    </h6>
+                                    <p className="text-sm text-slate-700">
+                                      <strong>{analysis.deadline.days} dias úteis</strong> - {analysis.deadline.description}
+                                    </p>
+                                    {analysis.deadline.dueDate && (
+                                      <>
+                                        <p className="text-xs text-slate-600">
+                                          📰 Publicado em: {new Date(intimation.data_disponibilizacao).toLocaleDateString('pt-BR', { weekday: 'short', day: '2-digit', month: '2-digit', year: 'numeric' })}
+                                        </p>
+                                        <p className="text-xs text-slate-700 font-medium">
+                                          📅 Vencimento estimado: {new Date(analysis.deadline.dueDate).toLocaleDateString('pt-BR', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
+                                        </p>
+                                        <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded px-2 py-1">
+                                          ⚠️ Cálculo a partir da data de publicação, considerando apenas dias úteis (seg-sex). Feriados não estão inclusos - confira o calendário oficial!
+                                        </p>
+                                      </>
+                                    )}
+                                  </div>
+                                )}
+
+                                {/* Ações Sugeridas */}
+                                {analysis.suggestedActions && analysis.suggestedActions.length > 0 && (
+                                  <div>
+                                    <h6 className="text-xs font-semibold text-slate-900 mb-2 flex items-center gap-1">
+                                      <Lightbulb className="w-3.5 h-3.5 text-yellow-600" />
+                                      Ações Sugeridas:
+                                    </h6>
+                                    <ul className="space-y-1">
+                                      {analysis.suggestedActions.map((action, idx) => (
+                                        <li key={idx} className="text-sm text-slate-700 flex items-start gap-2">
+                                          <span className="text-purple-600 font-bold">•</span>
+                                          <span>{action}</span>
+                                        </li>
+                                      ))}
+                                    </ul>
+                                  </div>
+                                )}
+
+                                {/* Pontos-chave */}
+                                {analysis.keyPoints && analysis.keyPoints.length > 0 && (
+                                  <div>
+                                    <h6 className="text-xs font-semibold text-slate-900 mb-2">🎯 Pontos-chave:</h6>
+                                    <ul className="space-y-1">
+                                      {analysis.keyPoints.map((point, idx) => (
+                                        <li key={idx} className="text-sm text-slate-700 flex items-start gap-2">
+                                          <span className="text-blue-600 font-bold">→</span>
+                                          <span>{point}</span>
+                                        </li>
+                                      ))}
+                                    </ul>
+                                  </div>
+                                )}
+                              </>
+                            );
+                          })()}
+                        </div>
+                      )}
+
                       <div>
                         <h5 className="text-sm font-semibold text-slate-900 mb-2">Conteúdo da Intimação:</h5>
                         <p className="text-sm text-slate-700 whitespace-pre-wrap">{intimation.texto}</p>
@@ -1053,6 +1285,28 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
 
                 {!selectionMode && (
                   <div className="flex flex-col gap-2">
+                    {aiEnabled && !aiAnalysis.has(intimation.id) && (
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleAnalyzeWithAI(intimation);
+                        }}
+                        disabled={analyzingIds.has(intimation.id)}
+                        className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-purple-600 hover:text-purple-700 border border-purple-200 rounded-lg hover:bg-purple-50 transition disabled:opacity-50 disabled:cursor-not-allowed"
+                      >
+                        {analyzingIds.has(intimation.id) ? (
+                          <>
+                            <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                            Analisando...
+                          </>
+                        ) : (
+                          <>
+                            <Sparkles className="w-3.5 h-3.5" />
+                            Analisar IA
+                          </>
+                        )}
+                      </button>
+                    )}
                     <button
                       onClick={(e) => {
                         e.stopPropagation();
@@ -1196,8 +1450,7 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
           onSuccess={() => {
             setDeadlineModalOpen(false);
             setCurrentIntimationForAction(null);
-            setSuccess('Prazo criado com sucesso!');
-            setTimeout(() => setSuccess(null), 3000);
+            toast.success('Prazo criado', 'Prazo cadastrado com sucesso');
           }}
         />
       )}
@@ -1216,8 +1469,7 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
           onSuccess={() => {
             setAppointmentModalOpen(false);
             setCurrentIntimationForAction(null);
-            setSuccess('Compromisso criado com sucesso!');
-            setTimeout(() => setSuccess(null), 3000);
+            toast.success('Compromisso criado', 'Compromisso cadastrado com sucesso');
           }}
         />
       )}

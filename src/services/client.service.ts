@@ -42,7 +42,7 @@ export class ClientService {
         throw new Error(`Erro ao listar clientes: ${error.message}`);
       }
 
-      return data || [];
+      return (data as Client[]) || [];
     } catch (error) {
       console.error('Erro ao listar clientes:', error);
       throw error;
@@ -238,6 +238,35 @@ export class ClientService {
       return count || 0;
     } catch (error) {
       console.error('Erro ao contar clientes:', error);
+      throw error;
+    }
+  }
+
+  async searchClients(
+    query: string,
+    limit: number = 8
+  ): Promise<Array<Pick<Client, 'id' | 'full_name' | 'email' | 'phone' | 'status' | 'client_type'>>> {
+    const term = query.trim();
+    if (!term) {
+      return [];
+    }
+
+    try {
+      const { data, error } = await supabase
+        .from(this.tableName)
+        .select('id, full_name, email, phone, status, client_type')
+        .or(`full_name.ilike.%${term}%,cpf_cnpj.ilike.%${term}%,email.ilike.%${term}%`)
+        .order('full_name', { ascending: true })
+        .limit(limit);
+
+      if (error) {
+        console.error('Erro ao buscar clientes:', error);
+        throw new Error(`Erro ao buscar clientes: ${error.message}`);
+      }
+
+      return (data as Array<Pick<Client, 'id' | 'full_name' | 'email' | 'phone' | 'status' | 'client_type'>>) || [];
+    } catch (error) {
+      console.error('Erro ao buscar clientes:', error);
       throw error;
     }
   }

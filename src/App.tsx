@@ -15,6 +15,8 @@ import {
   AlarmClock,
   Menu,
   CheckSquare,
+  PiggyBank,
+  Search,
 } from 'lucide-react';
 import Dashboard from './components/Dashboard';
 import ClientsModule from './components/ClientsModule';
@@ -26,9 +28,10 @@ import RequirementsModule from './components/RequirementsModule';
 import DeadlinesModule from './components/DeadlinesModule';
 import CalendarModule from './components/CalendarModule';
 import TasksModule from './components/TasksModule';
-import NotificationsModule from './components/NotificationsModule';
+import NotificationsModuleNew from './components/NotificationsModuleNew';
+import FinancialModule from './components/FinancialModule';
 import ProfileModal from './components/ProfileModal';
-import { NotificationCenter } from './components/NotificationCenter';
+import { NotificationCenterNew as NotificationCenter } from './components/NotificationCenterNew';
 import { NotificationPermissionBanner } from './components/NotificationPermissionBanner';
 import { useNotifications } from './hooks/useNotifications';
 import { pushNotifications } from './utils/pushNotifications';
@@ -42,9 +45,12 @@ import { notificationService } from './services/notification.service';
 import { taskService } from './services/task.service';
 import { djenLocalService } from './services/djenLocal.service';
 import { supabase } from './config/supabase';
+import { clientService } from './services/client.service';
 import type { Lead } from './types/lead.types';
 import type { CreateClientDTO } from './types/client.types';
 import type { NotificationItem } from './types/notification.types';
+
+type ClientSearchResult = Awaited<ReturnType<typeof clientService.searchClients>>[number];
 
 function App() {
   const [activeModule, setActiveModule] = useState('dashboard');
@@ -79,9 +85,26 @@ function App() {
   const [notificationsLoading, setNotificationsLoading] = useState(false);
   const [leadToConvert, setLeadToConvert] = useState<Lead | null>(null);
   const [pendingTasksCount, setPendingTasksCount] = useState(0);
+  const [clientSearchTerm, setClientSearchTerm] = useState('');
+  const [clientSearchResults, setClientSearchResults] = useState<ClientSearchResult[]>([]);
+  const [clientSearchLoading, setClientSearchLoading] = useState(false);
+  const [clientSearchOpen, setClientSearchOpen] = useState(false);
 
   const showSidebarLabels = sidebarOpen || isMobileNavOpen;
   const unreadCount = useMemo(() => notifications.filter((n) => !n.read).length, [notifications]);
+
+  const clientsParams = useMemo(() => {
+    if (!moduleParams['clients']) return null;
+    try {
+      return JSON.parse(moduleParams['clients']);
+    } catch (error) {
+      console.error('Erro ao interpretar parâmetros de clientes:', error);
+      return null;
+    }
+  }, [moduleParams]);
+
+  const clientsForceCreate = clientsParams?.mode === 'create';
+  const clientsFocusClientId = clientsParams?.mode === 'details' ? clientsParams.entityId : undefined;
 
   const PROFILE_CACHE_KEY = 'crm-profile-cache';
   const NOTIFICATIONS_CACHE_KEY = 'crm-notifications-cache';
@@ -182,6 +205,39 @@ function App() {
   }, [user]);
 
   useEffect(() => {
+    const term = clientSearchTerm.trim();
+
+    if (term.length < 2) {
+      setClientSearchResults([]);
+      setClientSearchLoading(false);
+      return;
+    }
+
+    setClientSearchLoading(true);
+    let isActive = true;
+    const handler = setTimeout(async () => {
+      try {
+        const results = await clientService.searchClients(term);
+        if (!isActive) return;
+        setClientSearchResults(results);
+      } catch (error) {
+        if (!isActive) return;
+        console.error('Erro ao buscar clientes:', error);
+        setClientSearchResults([]);
+      } finally {
+        if (isActive) {
+          setClientSearchLoading(false);
+        }
+      }
+    }, 350);
+
+    return () => {
+      isActive = false;
+      clearTimeout(handler);
+    };
+  }, [clientSearchTerm]);
+
+  useEffect(() => {
     const cacheAvailable = typeof window !== 'undefined';
 
     if (cacheAvailable) {
@@ -213,6 +269,7 @@ function App() {
 
     loadNotifications();
   }, []);
+
   const handleMarkAsRead = async (id: string) => {
     try {
       await notificationService.markAsRead(id);
@@ -221,7 +278,6 @@ function App() {
       console.error('Erro ao marcar notificação como lida:', error);
     }
   };
-
 
   const handleMarkAllAsRead = async () => {
     try {
@@ -300,6 +356,41 @@ function App() {
     setLeadToConvert(null);
     setClientPrefill(null);
   };
+
+  const handleClientSearchSelect = (clientId: string) => {
+    setActiveModule('clients');
+    setModuleParams((prev) => ({
+      ...prev,
+      clients: JSON.stringify({ mode: 'details', entityId: clientId }),
+    }));
+    setIsMobileNavOpen(false);
+    setClientSearchTerm('');
+    setClientSearchResults([]);
+    setClientSearchOpen(false);
+  };
+
+  const handleClientSearchKeyDown = (event: React.KeyboardEvent<HTMLInputElement>) => {
+    if (event.key === 'Enter') {
+      event.preventDefault();
+      if (clientSearchResults.length > 0) {
+        handleClientSearchSelect(clientSearchResults[0].id);
+      }
+    }
+
+    if (event.key === 'Escape') {
+      setClientSearchOpen(false);
+    }
+  };
+
+  const clearClientParams = useMemo(
+    () => () =>
+      setModuleParams((prev) => {
+        const updated = { ...prev };
+        delete updated['clients'];
+        return updated;
+      }),
+    []
+  );
 
   const openProfileModal = () => {
     if (profileLoading) return;
@@ -504,6 +595,22 @@ function App() {
             <button
               onClick={() => {
                 setClientPrefill(null);
+                setActiveModule('financial');
+                setIsMobileNavOpen(false);
+              }}
+              className={`w-full flex items-center space-x-3 px-4 py-3 rounded-lg transition-all ${
+                activeModule === 'financial'
+                  ? 'bg-emerald-600 text-white shadow-lg'
+                  : 'text-slate-300 hover:bg-slate-800 hover:text-white'
+              }`}
+            >
+              <PiggyBank className="w-5 h-5 flex-shrink-0" />
+              {showSidebarLabels && <span className="font-medium">Financeiro</span>}
+            </button>
+
+            <button
+              onClick={() => {
+                setClientPrefill(null);
                 setActiveModule('calendar');
                 setIsMobileNavOpen(false);
               }}
@@ -546,23 +653,27 @@ function App() {
                 </button>
                 <div>
                   <h2 className="text-xl sm:text-2xl font-bold text-slate-900">
+                    {activeModule === 'dashboard' && 'Dashboard'}
                     {activeModule === 'leads' && 'Pipeline de Leads'}
                     {activeModule === 'clients' && 'Gestão de Clientes'}
                     {activeModule === 'cases' && 'Gestão de Processos'}
                     {activeModule === 'requirements' && 'Sistema de Requerimentos'}
                     {activeModule === 'deadlines' && 'Gestão de Prazos'}
                     {activeModule === 'intimations' && 'Diário de Justiça Eletrônico'}
+                    {activeModule === 'financial' && 'Gestão Financeira'}
                     {activeModule === 'calendar' && 'Agenda'}
                     {activeModule === 'tasks' && 'Tarefas'}
                     {activeModule === 'documents' && 'Documentos'}
                   </h2>
                   <p className="hidden sm:block text-sm text-slate-600 mt-1">
+                    {activeModule === 'dashboard' && 'Visão geral do escritório e atividades recentes'}
                     {activeModule === 'leads' && 'Gerencie leads e converta em clientes'}
                     {activeModule === 'clients' && 'Gerencie todos os seus clientes e informações'}
                     {activeModule === 'cases' && 'Acompanhe processos e andamentos'}
                     {activeModule === 'requirements' && 'Gerencie requerimentos administrativos do INSS'}
                     {activeModule === 'deadlines' && 'Controle compromissos e prazos vinculados aos seus casos'}
                     {activeModule === 'intimations' && 'Consulte comunicações processuais do DJEN'}
+                    {activeModule === 'financial' && 'Acompanhe acordos, parcelas e honorários do escritório'}
                     {activeModule === 'calendar' && 'Organize compromissos e prazos'}
                     {activeModule === 'tasks' && 'Gerencie suas tarefas e lembretes'}
                     {activeModule === 'documents' && 'Crie modelos e gere documentos personalizados'}
@@ -571,6 +682,42 @@ function App() {
               </div>
               
               <div className="flex items-center gap-3">
+                <div className="hidden md:block relative w-64">
+                  <div className="absolute inset-y-0 left-3 flex items-center pointer-events-none text-slate-400">
+                    <Search className="w-4 h-4" />
+                  </div>
+                  <input
+                    type="text"
+                    value={clientSearchTerm}
+                    onChange={(event) => setClientSearchTerm(event.target.value)}
+                    onFocus={() => setClientSearchOpen(true)}
+                    onKeyDown={handleClientSearchKeyDown}
+                    placeholder="Buscar clientes..."
+                    className="w-full rounded-lg border border-gray-200 pl-9 pr-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-500 focus:border-amber-500"
+                  />
+                  {(clientSearchOpen && (clientSearchLoading || clientSearchResults.length > 0)) && (
+                    <div className="absolute left-0 right-0 mt-1 bg-white border border-slate-200 rounded-lg shadow-lg z-40 max-h-72 overflow-y-auto text-sm">
+                      {clientSearchLoading && (
+                        <div className="px-3 py-2 text-slate-500">Buscando...</div>
+                      )}
+                      {!clientSearchLoading && clientSearchResults.length === 0 && (
+                        <div className="px-3 py-2 text-slate-400">Nenhum cliente encontrado</div>
+                      )}
+                      {!clientSearchLoading && clientSearchResults.map((client) => (
+                        <button
+                          key={client.id}
+                          type="button"
+                          onMouseDown={(event) => event.preventDefault()}
+                          onClick={() => handleClientSearchSelect(client.id)}
+                          className="w-full text-left px-3 py-2 hover:bg-amber-50 transition"
+                        >
+                          <p className="text-sm font-semibold text-slate-900 truncate">{client.full_name}</p>
+                          <p className="text-xs text-slate-500 truncate">{client.email || client.phone || 'Sem contato cadastrado'}</p>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
                 <button
                   onClick={() => setActiveModule('tasks' as any)}
                   className={`relative p-2 rounded-lg transition-colors ${
@@ -664,8 +811,9 @@ function App() {
               prefillData={clientPrefill} 
               onClientSaved={handleClientSaved}
               onClientCancelled={handleClientCancelled}
-              forceCreate={moduleParams['clients'] ? JSON.parse(moduleParams['clients']).mode === 'create' : false}
-              onParamConsumed={() => setModuleParams(prev => { const updated = {...prev}; delete updated['clients']; return updated; })}
+              forceCreate={clientsForceCreate}
+              focusClientId={clientsFocusClientId}
+              onParamConsumed={clearClientParams}
               onNavigateToModule={(moduleKey, params) => {
                 setActiveModule(moduleKey as any);
                 if (params) {
@@ -737,19 +885,8 @@ function App() {
               onPendingTasksChange={setPendingTasksCount}
             />
           )}
-          {activeModule === 'notifications' && (
-            <NotificationsModule
-              onNavigateToModule={(moduleKey, params) => {
-                setActiveModule(moduleKey as any);
-                if (params) {
-                  setModuleParams(prev => ({
-                    ...prev,
-                    [moduleKey]: JSON.stringify(params),
-                  }));
-                }
-              }}
-            />
-          )}
+          {activeModule === 'notifications' && <NotificationsModuleNew onNavigateToModule={handleNavigateToModule} />}
+          {activeModule === 'financial' && <FinancialModule />}
           {activeModule === 'documents' && <DocumentsModule />}
         </main>
 
