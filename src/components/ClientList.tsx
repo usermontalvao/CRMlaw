@@ -1,5 +1,5 @@
 import React from 'react';
-import { Eye, Edit, Trash2, User, Building2, Mail, MessageCircle } from 'lucide-react';
+import { Eye, Edit, Trash2, User, Building2, Mail, MessageCircle, AlertTriangle, Clock, Search } from 'lucide-react';
 import type { Client } from '../types/client.types';
 
 interface ClientListProps {
@@ -8,9 +8,12 @@ interface ClientListProps {
   onView: (client: Client) => void;
   onEdit: (client: Client) => void;
   onDelete: (id: string) => void;
+  missingFieldsMap?: Map<string, string[]>;
+  outdatedSet?: Set<string>;
+  isFiltered?: boolean;
 }
 
-const ClientList: React.FC<ClientListProps> = ({ clients, loading, onView, onEdit, onDelete }) => {
+const ClientList: React.FC<ClientListProps> = ({ clients, loading, onView, onEdit, onDelete, missingFieldsMap, outdatedSet, isFiltered }) => {
   if (loading) {
     return (
       <div className="bg-white rounded-xl border border-gray-200 p-12">
@@ -23,6 +26,18 @@ const ClientList: React.FC<ClientListProps> = ({ clients, loading, onView, onEdi
   }
 
   if (clients.length === 0) {
+    if (isFiltered) {
+      return (
+        <div className="bg-white rounded-xl border border-gray-200 p-10 text-center">
+          <div className="w-16 h-16 bg-slate-100 rounded-full flex items-center justify-center mx-auto mb-4">
+            <Search className="w-8 h-8 text-slate-400" />
+          </div>
+          <h3 className="text-lg font-semibold text-slate-900 mb-1">Nenhum cliente corresponde aos filtros</h3>
+          <p className="text-slate-600 text-sm">Ajuste os filtros ou limpe-os para visualizar todos os cadastros.</p>
+        </div>
+      );
+    }
+
     return (
       <div className="bg-white rounded-xl border border-gray-200 p-12 text-center">
         <div className="w-20 h-20 bg-slate-100 rounded-full flex items-center justify-center mx-auto mb-6">
@@ -61,7 +76,10 @@ const ClientList: React.FC<ClientListProps> = ({ clients, loading, onView, onEdi
             </tr>
           </thead>
           <tbody className="bg-white divide-y divide-gray-200">
-            {clients.map((client) => (
+            {clients.map((client) => {
+              const missingFields = missingFieldsMap?.get(client.id) || [];
+              const isOutdated = outdatedSet?.has(client.id) ?? false;
+              return (
               <tr key={client.id} className="hover:bg-gray-50 transition-colors">
                 <td className="px-6 py-4 whitespace-nowrap">
                   <div className="flex items-center">
@@ -79,6 +97,20 @@ const ClientList: React.FC<ClientListProps> = ({ clients, loading, onView, onEdi
                     <div className="ml-4">
                       <div className="text-sm font-medium text-gray-900">{client.full_name}</div>
                       <div className="text-sm text-gray-500">{client.profession || 'N/A'}</div>
+                      <div className="mt-1 flex flex-wrap items-center gap-2">
+                        {missingFields.length > 0 && (
+                          <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-semibold text-amber-700">
+                            <AlertTriangle className="w-3 h-3" />
+                            {missingFields.length === 1 ? '1 campo obrigatório pendente' : `${missingFields.length} campos pendentes`}
+                          </span>
+                        )}
+                        {isOutdated && (
+                          <span className="inline-flex items-center gap-1 rounded-full bg-sky-100 px-2 py-0.5 text-[11px] font-semibold text-sky-700">
+                            <Clock className="w-3 h-3" />
+                            Cadastro desatualizado
+                          </span>
+                        )}
+                      </div>
                     </div>
                   </div>
                 </td>
@@ -160,7 +192,7 @@ const ClientList: React.FC<ClientListProps> = ({ clients, loading, onView, onEdi
                   </div>
                 </td>
               </tr>
-            ))}
+            );})}
           </tbody>
         </table>
       </div>

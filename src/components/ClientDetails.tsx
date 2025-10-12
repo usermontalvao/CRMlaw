@@ -14,6 +14,8 @@ interface ClientDetailsProps {
   onCreateProcess?: () => void;
   onCreateRequirement?: () => void;
   onCreateDeadline?: () => void;
+  missingFields?: string[];
+  isOutdated?: boolean;
 }
 
 const capitalizeSentence = (value: string) =>
@@ -22,7 +24,7 @@ const capitalizeSentence = (value: string) =>
     .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
     .join(' ');
 
-const ClientDetails: React.FC<ClientDetailsProps> = ({ client, processes, requirements, relationsLoading, onBack, onEdit, onCreateProcess, onCreateRequirement, onCreateDeadline }) => {
+const ClientDetails: React.FC<ClientDetailsProps> = ({ client, processes, requirements, relationsLoading, onBack, onEdit, onCreateProcess, onCreateRequirement, onCreateDeadline, missingFields = [], isOutdated = false }) => {
   const formatDate = (dateString?: string) => {
     if (!dateString) return 'N/A';
     return new Date(dateString).toLocaleDateString('pt-BR');
@@ -58,6 +60,27 @@ const ClientDetails: React.FC<ClientDetailsProps> = ({ client, processes, requir
             </button>
           </div>
         </div>
+
+        {(missingFields.length > 0 || isOutdated) && (
+          <div className="space-y-3 mb-6">
+            {missingFields.length > 0 && (
+              <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-amber-800">
+                <p className="font-semibold flex items-center gap-2">
+                  <AlertCircle className="w-4 h-4" /> Dados obrigatórios pendentes
+                </p>
+                <p className="text-sm mt-1">Complete os seguintes campos: {missingFields.join(', ')}.</p>
+              </div>
+            )}
+            {isOutdated && (
+              <div className="rounded-lg border border-sky-200 bg-sky-50 px-4 py-3 text-sky-800">
+                <p className="font-semibold flex items-center gap-2">
+                  <Clock className="w-4 h-4" /> Cadastro desatualizado
+                </p>
+                <p className="text-sm mt-1">Última atualização antiga. Revise e confirme os dados do cliente.</p>
+              </div>
+            )}
+          </div>
+        )}
 
         {/* Ações Rápidas */}
         <div className="flex flex-wrap items-center gap-3 mb-6 pb-6 border-b border-gray-200">
