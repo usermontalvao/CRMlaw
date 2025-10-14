@@ -1,4 +1,5 @@
 import { useEffect, useState, useMemo } from 'react';
+import { Routes, Route, Link, Navigate, useNavigate, useLocation } from 'react-router-dom';
 import {
   Scale,
   Users,
@@ -53,11 +54,15 @@ import type { NotificationItem } from './types/notification.types';
 type ClientSearchResult = Awaited<ReturnType<typeof clientService.searchClients>>[number];
 
 function App() {
-  const [activeModule, setActiveModule] = useState('dashboard');
+  const navigate = useNavigate();
+  const location = useLocation();
   const [moduleParams, setModuleParams] = useState<Record<string, string>>({});
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [isMobileNavOpen, setIsMobileNavOpen] = useState(false);
   const { user, loading, signIn, signOut, resetPassword } = useAuth();
+  
+  // Extrai o módulo ativo da URL
+  const activeModule = location.pathname.split('/')[1] || 'dashboard';
   
   // Ativar sincronização automática com DJEN
   useDjenSync();
@@ -299,21 +304,20 @@ function App() {
 
   const handleNavigateToModule = (moduleString: string) => {
     const [moduleKey, paramString] = moduleString.split('?');
-    setActiveModule(moduleKey as any);
     
     if (paramString) {
       const params: Record<string, string> = {};
       paramString.split('&').forEach(pair => {
         const [key, value] = pair.split('=');
-        if (key && value) params[key] = value;
+        params[key] = value;
       });
-      setModuleParams(prev => ({ ...prev, [moduleKey]: JSON.stringify(params) }));
+      setModuleParams(prev => ({
+        ...prev,
+        [moduleKey]: JSON.stringify(params)
+      }));
+      navigate(`/${moduleKey}`);
     } else {
-      setModuleParams(prev => {
-        const updated = { ...prev };
-        delete updated[moduleKey];
-        return updated;
-      });
+      navigate(`/${moduleKey}`);
     }
   };
 
@@ -335,7 +339,7 @@ function App() {
     // Guardar referência do lead para remover apenas quando cliente for salvo
     setLeadToConvert(lead);
     setClientPrefill(prefill);
-    setActiveModule('clients');
+    navigate('/clientes');
   };
 
   const handleClientSaved = async () => {
@@ -358,15 +362,12 @@ function App() {
   };
 
   const handleClientSearchSelect = (clientId: string) => {
-    setActiveModule('clients');
     setModuleParams((prev) => ({
       ...prev,
       clients: JSON.stringify({ mode: 'details', entityId: clientId }),
     }));
-    setIsMobileNavOpen(false);
-    setClientSearchTerm('');
-    setClientSearchResults([]);
     setClientSearchOpen(false);
+    navigate('/clientes');
   };
 
   const handleClientSearchKeyDown = (event: React.KeyboardEvent<HTMLInputElement>) => {
@@ -464,10 +465,10 @@ function App() {
 
           {/* Navigation */}
           <nav className="flex-1 p-4 space-y-2 overflow-y-auto">
-            <button
+            <Link
+              to="/dashboard"
               onClick={() => {
                 setClientPrefill(null);
-                setActiveModule('dashboard');
                 setIsMobileNavOpen(false);
               }}
               className={`w-full flex items-center space-x-3 px-4 py-3 rounded-lg transition-all ${
@@ -478,12 +479,12 @@ function App() {
             >
               <Layers className="w-5 h-5 flex-shrink-0" />
               {showSidebarLabels && <span className="font-medium">Dashboard</span>}
-            </button>
+            </Link>
 
-            <button
+            <Link
+              to="/leads"
               onClick={() => {
                 setClientPrefill(null);
-                setActiveModule('leads');
                 setIsMobileNavOpen(false);
               }}
               className={`w-full flex items-center space-x-3 px-4 py-3 rounded-lg transition-all ${
@@ -494,135 +495,135 @@ function App() {
             >
               <Target className="w-5 h-5 flex-shrink-0" />
               {showSidebarLabels && <span className="font-medium">Leads</span>}
-            </button>
+            </Link>
 
-            <button
+            <Link
+              to="/clientes"
               onClick={() => {
                 setClientPrefill(null);
-                setActiveModule('clients');
                 setIsMobileNavOpen(false);
               }}
               className={`w-full flex items-center space-x-3 px-4 py-3 rounded-lg transition-all ${
-                activeModule === 'clients'
+                activeModule === 'clientes'
                   ? 'bg-amber-600 text-white shadow-lg'
                   : 'text-slate-300 hover:bg-slate-800 hover:text-white'
               }`}
             >
               <Users className="w-5 h-5 flex-shrink-0" />
               {showSidebarLabels && <span className="font-medium">Clientes</span>}
-            </button>
+            </Link>
 
-            <button
+            <Link
+              to="/documentos"
               onClick={() => {
                 setClientPrefill(null);
-                setActiveModule('documents');
                 setIsMobileNavOpen(false);
               }}
               className={`w-full flex items-center space-x-3 px-4 py-3 rounded-lg transition-all ${
-                activeModule === 'documents'
+                activeModule === 'documentos'
                   ? 'bg-amber-600 text-white shadow-lg'
                   : 'text-slate-300 hover:bg-slate-800 hover:text-white'
               }`}
             >
               <Library className="w-5 h-5 flex-shrink-0" />
               {showSidebarLabels && <span className="font-medium">Documentos</span>}
-            </button>
+            </Link>
 
-            <button
+            <Link
+              to="/processos"
               onClick={() => {
                 setClientPrefill(null);
-                setActiveModule('cases');
                 setIsMobileNavOpen(false);
               }}
               className={`w-full flex items-center space-x-3 px-4 py-3 rounded-lg transition-all ${
-                activeModule === 'cases'
+                activeModule === 'processos'
                   ? 'bg-amber-600 text-white shadow-lg'
                   : 'text-slate-300 hover:bg-slate-800 hover:text-white'
               }`}
             >
               <Layers className="w-5 h-5 flex-shrink-0" />
               {showSidebarLabels && <span className="font-medium">Processos</span>}
-            </button>
+            </Link>
 
-            <button
+            <Link
+              to="/requerimentos"
               onClick={() => {
                 setClientPrefill(null);
-                setActiveModule('requirements');
                 setIsMobileNavOpen(false);
               }}
               className={`w-full flex items-center space-x-3 px-4 py-3 rounded-lg transition-all ${
-                activeModule === 'requirements'
+                activeModule === 'requerimentos'
                   ? 'bg-amber-600 text-white shadow-lg'
                   : 'text-slate-300 hover:bg-slate-800 hover:text-white'
               }`}
             >
               <Briefcase className="w-5 h-5 flex-shrink-0" />
               {showSidebarLabels && <span className="font-medium">Requerimentos</span>}
-            </button>
+            </Link>
 
-            <button
+            <Link
+              to="/prazos"
               onClick={() => {
                 setClientPrefill(null);
-                setActiveModule('deadlines');
                 setIsMobileNavOpen(false);
               }}
               className={`w-full flex items-center space-x-3 px-4 py-3 rounded-lg transition-all ${
-                activeModule === 'deadlines'
+                activeModule === 'prazos'
                   ? 'bg-amber-600 text-white shadow-lg'
                   : 'text-slate-300 hover:bg-slate-800 hover:text-white'
               }`}
             >
               <AlarmClock className="w-5 h-5 flex-shrink-0" />
               {showSidebarLabels && <span className="font-medium">Prazos</span>}
-            </button>
+            </Link>
 
-            <button
+            <Link
+              to="/intimacoes"
               onClick={() => {
                 setClientPrefill(null);
-                setActiveModule('intimations');
                 setIsMobileNavOpen(false);
               }}
               className={`w-full flex items-center space-x-3 px-4 py-3 rounded-lg transition-all ${
-                activeModule === 'intimations'
+                activeModule === 'intimacoes'
                   ? 'bg-amber-600 text-white shadow-lg'
                   : 'text-slate-300 hover:bg-slate-800 hover:text-white'
               }`}
             >
               <Bell className="w-5 h-5 flex-shrink-0" />
               {showSidebarLabels && <span className="font-medium">Intimações</span>}
-            </button>
+            </Link>
 
-            <button
+            <Link
+              to="/financeiro"
               onClick={() => {
                 setClientPrefill(null);
-                setActiveModule('financial');
                 setIsMobileNavOpen(false);
               }}
               className={`w-full flex items-center space-x-3 px-4 py-3 rounded-lg transition-all ${
-                activeModule === 'financial'
+                activeModule === 'financeiro'
                   ? 'bg-emerald-600 text-white shadow-lg'
                   : 'text-slate-300 hover:bg-slate-800 hover:text-white'
               }`}
             >
               <PiggyBank className="w-5 h-5 flex-shrink-0" />
               {showSidebarLabels && <span className="font-medium">Financeiro</span>}
-            </button>
+            </Link>
 
-            <button
+            <Link
+              to="/agenda"
               onClick={() => {
                 setClientPrefill(null);
-                setActiveModule('calendar');
                 setIsMobileNavOpen(false);
               }}
               className={`w-full flex items-center space-x-3 px-4 py-3 rounded-lg transition-all ${
-                activeModule === 'calendar'
+                activeModule === 'agenda'
                   ? 'bg-amber-600 text-white shadow-lg'
                   : 'text-slate-300 hover:bg-slate-800 hover:text-white'
               }`}
             >
               <Calendar className="w-5 h-5 flex-shrink-0" />
               {showSidebarLabels && <span className="font-medium">Agenda</span>}
-            </button>
+            </Link>
 
           </nav>
 
@@ -641,48 +642,48 @@ function App() {
       >
         {/* Top Bar */}
         <header className="bg-white border-b border-gray-200 sticky top-0 z-30">
-          <div className="px-4 sm:px-6 lg:px-8 py-4">
-            <div className="flex items-center justify-between gap-4">
-              <div className="flex items-center gap-3">
+          <div className="px-3 sm:px-4 lg:px-8 py-3 sm:py-4">
+            <div className="flex items-center justify-between gap-2 sm:gap-4">
+              <div className="flex items-center gap-2 sm:gap-3 min-w-0 flex-1">
                 <button
-                  className="md:hidden inline-flex items-center justify-center p-2 rounded-lg text-slate-600 hover:text-white hover:bg-slate-800 transition"
+                  className="md:hidden inline-flex items-center justify-center p-2 rounded-lg text-slate-600 hover:text-white hover:bg-slate-800 transition flex-shrink-0"
                   onClick={() => setIsMobileNavOpen((prev) => !prev)}
                   aria-label="Alternar menu"
                 >
                   {isMobileNavOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
                 </button>
-                <div>
-                  <h2 className="text-xl sm:text-2xl font-bold text-slate-900">
+                <div className="min-w-0 flex-1">
+                  <h2 className="text-base sm:text-xl lg:text-2xl font-bold text-slate-900 truncate">
                     {activeModule === 'dashboard' && 'Dashboard'}
                     {activeModule === 'leads' && 'Pipeline de Leads'}
-                    {activeModule === 'clients' && 'Gestão de Clientes'}
-                    {activeModule === 'cases' && 'Gestão de Processos'}
-                    {activeModule === 'requirements' && 'Sistema de Requerimentos'}
-                    {activeModule === 'deadlines' && 'Gestão de Prazos'}
-                    {activeModule === 'intimations' && 'Diário de Justiça Eletrônico'}
-                    {activeModule === 'financial' && 'Gestão Financeira'}
-                    {activeModule === 'calendar' && 'Agenda'}
-                    {activeModule === 'tasks' && 'Tarefas'}
-                    {activeModule === 'documents' && 'Documentos'}
+                    {activeModule === 'clientes' && 'Gestão de Clientes'}
+                    {activeModule === 'processos' && 'Gestão de Processos'}
+                    {activeModule === 'requerimentos' && 'Sistema de Requerimentos'}
+                    {activeModule === 'prazos' && 'Gestão de Prazos'}
+                    {activeModule === 'intimacoes' && 'Diário de Justiça Eletrônico'}
+                    {activeModule === 'financeiro' && 'Gestão Financeira'}
+                    {activeModule === 'agenda' && 'Agenda'}
+                    {activeModule === 'tarefas' && 'Tarefas'}
+                    {activeModule === 'documentos' && 'Documentos'}
                   </h2>
-                  <p className="hidden sm:block text-sm text-slate-600 mt-1">
+                  <p className="hidden md:block text-xs sm:text-sm text-slate-600 mt-1 truncate">
                     {activeModule === 'dashboard' && 'Visão geral do escritório e atividades recentes'}
                     {activeModule === 'leads' && 'Gerencie leads e converta em clientes'}
-                    {activeModule === 'clients' && 'Gerencie todos os seus clientes e informações'}
-                    {activeModule === 'cases' && 'Acompanhe processos e andamentos'}
-                    {activeModule === 'requirements' && 'Gerencie requerimentos administrativos do INSS'}
-                    {activeModule === 'deadlines' && 'Controle compromissos e prazos vinculados aos seus casos'}
-                    {activeModule === 'intimations' && 'Consulte comunicações processuais do DJEN'}
-                    {activeModule === 'financial' && 'Acompanhe acordos, parcelas e honorários do escritório'}
-                    {activeModule === 'calendar' && 'Organize compromissos e prazos'}
-                    {activeModule === 'tasks' && 'Gerencie suas tarefas e lembretes'}
-                    {activeModule === 'documents' && 'Crie modelos e gere documentos personalizados'}
+                    {activeModule === 'clientes' && 'Gerencie todos os seus clientes e informações'}
+                    {activeModule === 'processos' && 'Acompanhe processos e andamentos'}
+                    {activeModule === 'requerimentos' && 'Gerencie requerimentos administrativos do INSS'}
+                    {activeModule === 'prazos' && 'Controle compromissos e prazos vinculados aos seus casos'}
+                    {activeModule === 'intimacoes' && 'Consulte comunicações processuais do DJEN'}
+                    {activeModule === 'financeiro' && 'Acompanhe acordos, parcelas e honorários do escritório'}
+                    {activeModule === 'agenda' && 'Organize compromissos e prazos'}
+                    {activeModule === 'tarefas' && 'Gerencie suas tarefas e lembretes'}
+                    {activeModule === 'documentos' && 'Crie modelos e gere documentos personalizados'}
                   </p>
                 </div>
               </div>
               
-              <div className="flex items-center gap-3">
-                <div className="hidden md:block relative w-64">
+              <div className="flex items-center gap-1.5 sm:gap-2 lg:gap-3 flex-shrink-0">
+                <div className="hidden lg:block relative w-48 xl:w-64">
                   <div className="absolute inset-y-0 left-3 flex items-center pointer-events-none text-slate-400">
                     <Search className="w-4 h-4" />
                   </div>
@@ -721,37 +722,37 @@ function App() {
                     </div>
                   )}
                 </div>
-                <button
-                  onClick={() => setActiveModule('tasks' as any)}
-                  className={`relative p-2 rounded-lg transition-colors ${
-                    activeModule === 'tasks'
+                <Link
+                  to="/tarefas"
+                  className={`relative p-1.5 sm:p-2 rounded-lg transition-colors ${
+                    activeModule === 'tarefas'
                       ? 'text-blue-600 bg-blue-50'
                       : 'text-slate-600 hover:text-slate-900 hover:bg-gray-100'
                   }`}
                   title="Tarefas"
                 >
-                  <CheckSquare className="w-5 h-5" />
+                  <CheckSquare className="w-4 h-4 sm:w-5 sm:h-5" />
                   {pendingTasksCount > 0 && (
-                    <span className="absolute -top-1 -right-1 min-w-[1.25rem] rounded-full bg-emerald-500 px-1.5 py-0.5 text-xs font-semibold text-white text-center">
+                    <span className="absolute -top-0.5 -right-0.5 min-w-[1.1rem] sm:min-w-[1.25rem] rounded-full bg-emerald-500 px-1 sm:px-1.5 py-0.5 text-[10px] sm:text-xs font-semibold text-white text-center leading-none">
                       {pendingTasksCount > 99 ? '99+' : pendingTasksCount}
                     </span>
                   )}
-                </button>
+                </Link>
                 <NotificationCenter 
                   onNavigateToModule={(moduleKey, params) => {
-                    setActiveModule(moduleKey as any);
                     if (params) {
                       setModuleParams(prev => ({
                         ...prev,
                         [moduleKey]: JSON.stringify(params),
                       }));
                     }
+                    navigate(`/${moduleKey}`);
                   }}
                 />
                 
-                <div className="flex items-center gap-3 pl-3 border-l border-gray-200">
-                  <div className="hidden sm:block text-right">
-                    <p className="text-sm font-semibold text-slate-900">{profile.name}</p>
+                <div className="flex items-center gap-2 sm:gap-3 pl-2 sm:pl-3 border-l border-gray-200">
+                  <div className="hidden lg:block text-right">
+                    <p className="text-sm font-semibold text-slate-900 truncate max-w-[150px]">{profile.name}</p>
                     <p className="text-xs text-slate-600">{profile.role}</p>
                   </div>
                   <div className="relative group">
@@ -760,7 +761,7 @@ function App() {
                       className="focus:outline-none"
                       title="Meu Perfil"
                     >
-                      <div className="relative w-12 h-12 rounded-full overflow-hidden border-2 border-amber-500 shadow-md">
+                      <div className="relative w-9 h-9 sm:w-10 sm:h-10 lg:w-12 lg:h-12 rounded-full overflow-hidden border-2 border-amber-500 shadow-md">
                         <img src={profile.avatarUrl || GENERIC_AVATAR} alt={profile.name} className="w-full h-full object-cover" />
                       </div>
                     </button>
@@ -776,10 +777,10 @@ function App() {
                   </div>
                   <button
                     onClick={() => signOut()}
-                    className="p-2 text-slate-600 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                    className="p-1.5 sm:p-2 text-slate-600 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
                     title="Sair"
                   >
-                    <LogOut className="w-5 h-5" />
+                    <LogOut className="w-4 h-4 sm:w-5 sm:h-5" />
                   </button>
                 </div>
               </div>
@@ -788,7 +789,7 @@ function App() {
         </header>
 
         {/* Main Content */}
-        <main className="px-4 sm:px-6 lg:px-8 py-6 space-y-6">
+        <main className="px-3 sm:px-4 lg:px-6 xl:px-8 py-4 sm:py-6 space-y-4 sm:space-y-6">
           {/* Banner de Permissão de Notificações */}
           <NotificationPermissionBanner />
           
@@ -807,90 +808,94 @@ function App() {
             </div>
           )}
 
-          {activeModule === 'dashboard' && <Dashboard onNavigateToModule={handleNavigateToModule} />}
-          {activeModule === 'leads' && <LeadsModule onConvertLead={handleConvertLead} />}
-          {activeModule === 'clients' && (
-            <ClientsModule 
-              prefillData={clientPrefill} 
-              onClientSaved={handleClientSaved}
-              onClientCancelled={handleClientCancelled}
-              forceCreate={clientsForceCreate}
-              focusClientId={clientsFocusClientId}
-              onParamConsumed={clearClientParams}
-              onNavigateToModule={(moduleKey, params) => {
-                setActiveModule(moduleKey as any);
-                if (params) {
-                  setModuleParams(prev => ({
-                    ...prev,
-                    [moduleKey]: JSON.stringify(params),
-                  }));
-                }
-              }}
-            />
-          )}
-          {activeModule === 'cases' && (
-            <ProcessesModule 
-              forceCreate={moduleParams['cases'] ? JSON.parse(moduleParams['cases']).mode === 'create' : false}
-              entityId={moduleParams['cases'] ? JSON.parse(moduleParams['cases']).entityId : undefined}
-              prefillData={moduleParams['cases'] ? JSON.parse(moduleParams['cases']).prefill : undefined}
-              onParamConsumed={() => setModuleParams(prev => { const updated = {...prev}; delete updated['cases']; return updated; })}
-            />
-          )}
-          {activeModule === 'requirements' && (
-            <RequirementsModule 
-              forceCreate={moduleParams['requirements'] ? JSON.parse(moduleParams['requirements']).mode === 'create' : false}
-              entityId={moduleParams['requirements'] ? JSON.parse(moduleParams['requirements']).entityId : undefined}
-              prefillData={moduleParams['requirements'] ? JSON.parse(moduleParams['requirements']).prefill : undefined}
-              onParamConsumed={() => setModuleParams(prev => { const updated = {...prev}; delete updated['requirements']; return updated; })}
-            />
-          )}
-          {activeModule === 'deadlines' && (
-            <DeadlinesModule 
-              forceCreate={moduleParams['deadlines'] ? JSON.parse(moduleParams['deadlines']).mode === 'create' : false}
-              entityId={moduleParams['deadlines'] ? JSON.parse(moduleParams['deadlines']).entityId : undefined}
-              prefillData={moduleParams['deadlines'] ? JSON.parse(moduleParams['deadlines']).prefill : undefined}
-              onParamConsumed={() => setModuleParams(prev => { const updated = {...prev}; delete updated['deadlines']; return updated; })}
-            />
-          )}
-          {activeModule === 'intimations' && (
-            <IntimationsModule 
-              onNavigateToModule={(moduleKey, params) => {
-                setActiveModule(moduleKey);
-                if (params) {
-                  setModuleParams(prev => ({
-                    ...prev,
-                    [moduleKey]: JSON.stringify(params),
-                  }));
-                }
-              }}
-            />
-          )}
-          {activeModule === 'calendar' && (
-            <CalendarModule 
-              onNavigateToModule={({ module, entityId }) => {
-                setActiveModule(module as any);
-                if (entityId) {
-                  setModuleParams(prev => ({
-                    ...prev,
-                    [module]: JSON.stringify({ mode: 'edit', entityId }),
-                  }));
-                }
-              }}
-              forceCreate={moduleParams['calendar'] ? JSON.parse(moduleParams['calendar']).mode === 'create' : false}
-              prefillData={moduleParams['calendar'] ? JSON.parse(moduleParams['calendar']).prefill : undefined}
-              onParamConsumed={() => setModuleParams(prev => { const updated = {...prev}; delete updated['calendar']; return updated; })}
-            />
-          )}
-          {activeModule === 'tasks' && (
-            <TasksModule 
-              focusNewTask={moduleParams['tasks'] ? JSON.parse(moduleParams['tasks']).mode === 'create' : false}
-              onParamConsumed={() => setModuleParams(prev => { const updated = {...prev}; delete updated['tasks']; return updated; })}
-              onPendingTasksChange={setPendingTasksCount}
-            />
-          )}
-          {activeModule === 'notifications' && <NotificationsModuleNew onNavigateToModule={handleNavigateToModule} />}
-          {activeModule === 'financial' && <FinancialModule />}
-          {activeModule === 'documents' && <DocumentsModule />}
+          <Routes>
+            <Route path="/" element={<Navigate to="/dashboard" replace />} />
+            <Route path="/dashboard" element={<Dashboard onNavigateToModule={handleNavigateToModule} />} />
+            <Route path="/leads" element={<LeadsModule onConvertLead={handleConvertLead} />} />
+            <Route path="/clientes" element={
+              <ClientsModule 
+                prefillData={clientPrefill} 
+                onClientSaved={handleClientSaved}
+                onClientCancelled={handleClientCancelled}
+                forceCreate={clientsForceCreate}
+                focusClientId={clientsFocusClientId}
+                onParamConsumed={clearClientParams}
+                onNavigateToModule={(moduleKey, params) => {
+                  if (params) {
+                    setModuleParams(prev => ({
+                      ...prev,
+                      [moduleKey]: JSON.stringify(params),
+                    }));
+                  }
+                  navigate(`/${moduleKey}`);
+                }}
+              />
+            } />
+            <Route path="/processos" element={
+              <ProcessesModule 
+                forceCreate={moduleParams['cases'] ? JSON.parse(moduleParams['cases']).mode === 'create' : false}
+                entityId={moduleParams['cases'] ? JSON.parse(moduleParams['cases']).entityId : undefined}
+                prefillData={moduleParams['cases'] ? JSON.parse(moduleParams['cases']).prefill : undefined}
+                onParamConsumed={() => setModuleParams(prev => { const updated = {...prev}; delete updated['cases']; return updated; })}
+              />
+            } />
+            <Route path="/requerimentos" element={
+              <RequirementsModule 
+                forceCreate={moduleParams['requirements'] ? JSON.parse(moduleParams['requirements']).mode === 'create' : false}
+                entityId={moduleParams['requirements'] ? JSON.parse(moduleParams['requirements']).entityId : undefined}
+                prefillData={moduleParams['requirements'] ? JSON.parse(moduleParams['requirements']).prefill : undefined}
+                onParamConsumed={() => setModuleParams(prev => { const updated = {...prev}; delete updated['requirements']; return updated; })}
+              />
+            } />
+            <Route path="/prazos" element={
+              <DeadlinesModule 
+                forceCreate={moduleParams['deadlines'] ? JSON.parse(moduleParams['deadlines']).mode === 'create' : false}
+                entityId={moduleParams['deadlines'] ? JSON.parse(moduleParams['deadlines']).entityId : undefined}
+                prefillData={moduleParams['deadlines'] ? JSON.parse(moduleParams['deadlines']).prefill : undefined}
+                onParamConsumed={() => setModuleParams(prev => { const updated = {...prev}; delete updated['deadlines']; return updated; })}
+              />
+            } />
+            <Route path="/intimacoes" element={
+              <IntimationsModule 
+                onNavigateToModule={(moduleKey, params) => {
+                  if (params) {
+                    setModuleParams(prev => ({
+                      ...prev,
+                      [moduleKey]: JSON.stringify(params),
+                    }));
+                  }
+                  navigate(`/${moduleKey}`);
+                }}
+              />
+            } />
+            <Route path="/agenda" element={
+              <CalendarModule 
+                onNavigateToModule={({ module, entityId }) => {
+                  if (entityId) {
+                    setModuleParams(prev => ({
+                      ...prev,
+                      [module]: JSON.stringify({ mode: 'edit', entityId }),
+                    }));
+                  }
+                  navigate(`/${module}`);
+                }}
+                forceCreate={moduleParams['calendar'] ? JSON.parse(moduleParams['calendar']).mode === 'create' : false}
+                prefillData={moduleParams['calendar'] ? JSON.parse(moduleParams['calendar']).prefill : undefined}
+                onParamConsumed={() => setModuleParams(prev => { const updated = {...prev}; delete updated['calendar']; return updated; })}
+              />
+            } />
+            <Route path="/tarefas" element={
+              <TasksModule 
+                focusNewTask={moduleParams['tasks'] ? JSON.parse(moduleParams['tasks']).mode === 'create' : false}
+                onParamConsumed={() => setModuleParams(prev => { const updated = {...prev}; delete updated['tasks']; return updated; })}
+                onPendingTasksChange={setPendingTasksCount}
+              />
+            } />
+            <Route path="/notificacoes" element={<NotificationsModuleNew onNavigateToModule={handleNavigateToModule} />} />
+            <Route path="/financeiro" element={<FinancialModule />} />
+            <Route path="/documentos" element={<DocumentsModule />} />
+            <Route path="*" element={<Navigate to="/dashboard" replace />} />
+          </Routes>
         </main>
 
         {/* Profile Modal */}

@@ -486,7 +486,7 @@ const ProcessesModule: React.FC<ProcessesModuleProps> = ({ forceCreate, entityId
       setSelectedProcess(process);
       setFormData({
         client_id: process.client_id,
-        process_code: process.process_code,
+        process_code: process.process_code || '',
         status: process.status,
         distributed_at: toDateInputValue(process.distributed_at),
         practice_area: process.practice_area,
@@ -1180,27 +1180,27 @@ const ProcessesModule: React.FC<ProcessesModuleProps> = ({ forceCreate, entityId
 
   const processModal =
     isModalOpen && (
-      <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center z-50 p-4 overflow-y-auto">
-        <div className="bg-white rounded-2xl shadow-2xl max-w-3xl w-full my-8 max-h-[90vh] overflow-y-auto">
-          <div className="px-6 py-4 border-b border-gray-200 flex items-center justify-between">
+      <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center z-50 p-2 sm:p-4 overflow-y-auto">
+        <div className="bg-white rounded-2xl shadow-2xl max-w-3xl w-full my-4 sm:my-8 max-h-[95vh] sm:max-h-[90vh] overflow-y-auto">
+          <div className="px-4 sm:px-6 py-3 sm:py-4 border-b border-gray-200 flex items-center justify-between">
             <div>
-              <h3 className="text-lg font-semibold text-slate-900">
+              <h3 className="text-base sm:text-lg font-semibold text-slate-900">
                 {selectedProcess ? 'Editar Processo' : 'Novo Processo'}
               </h3>
-              <p className="text-sm text-slate-600">
+              <p className="text-xs sm:text-sm text-slate-600 hidden sm:block">
                 Vincule o processo a um cliente e defina o status atual.
               </p>
             </div>
             <button
               onClick={handleCloseModal}
-              className="text-slate-400 hover:text-slate-600"
+              className="text-slate-400 hover:text-slate-600 flex-shrink-0"
               title="Fechar"
             >
               <X className="w-5 h-5" />
             </button>
           </div>
 
-          <form onSubmit={handleSubmit} className="p-6 space-y-5">
+          <form onSubmit={handleSubmit} className="p-4 sm:p-6 space-y-4 sm:space-y-5">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div className="space-y-2">
                 <label className="text-sm font-medium text-slate-700">Cliente *</label>
@@ -1266,9 +1266,9 @@ const ProcessesModule: React.FC<ProcessesModuleProps> = ({ forceCreate, entityId
                 )}
               </div>
 
-              <div>
+              <div className="md:col-span-2">
                 <label className="text-sm font-medium text-slate-700">Código do Processo *</label>
-                <div className="flex gap-2">
+                <div className="flex flex-col sm:flex-row gap-2">
                   <input
                     value={formData.process_code}
                     onChange={(event) => handleFormChange('process_code', event.target.value)}
@@ -1280,17 +1280,17 @@ const ProcessesModule: React.FC<ProcessesModuleProps> = ({ forceCreate, entityId
                     type="button"
                     onClick={handleSearchDjen}
                     disabled={searchingDjen || formData.process_code.replace(/\D/g, '').length < 20}
-                    className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:bg-gray-300 disabled:cursor-not-allowed flex items-center gap-2 whitespace-nowrap"
+                    className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:bg-gray-300 disabled:cursor-not-allowed flex items-center justify-center gap-2 whitespace-nowrap sm:w-auto w-full"
                   >
                     {searchingDjen ? (
                       <>
                         <Loader2 className="w-4 h-4 animate-spin" />
-                        Buscando...
+                        <span>Buscando...</span>
                       </>
                     ) : (
                       <>
                         <Search className="w-4 h-4" />
-                        Buscar DJEN
+                        <span>Buscar DJEN</span>
                       </>
                     )}
                   </button>
@@ -1692,9 +1692,9 @@ const ProcessesModule: React.FC<ProcessesModuleProps> = ({ forceCreate, entityId
             </button>
           </div>
 
-          <div className="bg-white border border-slate-200 rounded-xl p-4 shadow-sm">
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-              <div className="lg:col-span-2">
+          <div className="bg-white border border-slate-200 rounded-xl p-3 sm:p-4 shadow-sm">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
+              <div className="sm:col-span-2">
                 <label className="block text-xs font-semibold uppercase tracking-wide text-slate-600 mb-2">
                   Buscar Processo
                 </label>
@@ -1728,28 +1728,28 @@ const ProcessesModule: React.FC<ProcessesModuleProps> = ({ forceCreate, entityId
                 </select>
               </div>
 
-              <div className="flex items-end gap-2">
+              <div className="sm:col-span-2 flex items-end gap-2">
                 <button
                   onClick={() => setKanbanMode(!kanbanMode)}
-                  className={`flex-1 inline-flex items-center justify-center gap-2 font-medium px-4 py-3 rounded-lg transition-all duration-200 ${
+                  className={`flex-1 inline-flex items-center justify-center gap-1 sm:gap-2 font-medium px-3 sm:px-4 py-3 rounded-lg transition-all duration-200 ${
                     kanbanMode
                       ? 'bg-purple-600 hover:bg-purple-700 text-white shadow-md'
                       : 'bg-white hover:bg-slate-100 text-slate-700 border-2 border-slate-200'
                   }`}
                   title={kanbanMode ? 'Modo Lista' : 'Modo Kanban'}
                 >
-                  {kanbanMode ? <List className="w-5 h-5" /> : <LayoutGrid className="w-5 h-5" />}
-                  <span className="hidden sm:inline">{kanbanMode ? 'Lista' : 'Kanban'}</span>
+                  {kanbanMode ? <List className="w-4 h-4 sm:w-5 sm:h-5" /> : <LayoutGrid className="w-4 h-4 sm:w-5 sm:h-5" />}
+                  <span className="text-xs sm:text-sm">{kanbanMode ? 'Lista' : 'Kanban'}</span>
                 </button>
 
                 <button
                   onClick={handleExportExcel}
                   disabled={exportingExcel}
-                  className="flex-1 inline-flex items-center justify-center gap-2 bg-green-600 hover:bg-green-700 disabled:bg-green-400 text-white font-medium px-4 py-3 rounded-lg shadow-md hover:shadow-lg transition-all duration-200 disabled:cursor-not-allowed"
+                  className="flex-1 inline-flex items-center justify-center gap-1 sm:gap-2 bg-green-600 hover:bg-green-700 disabled:bg-green-400 text-white font-medium px-3 sm:px-4 py-3 rounded-lg shadow-md hover:shadow-lg transition-all duration-200 disabled:cursor-not-allowed"
                   title="Exportar para Excel"
                 >
-                  {exportingExcel ? <Loader2 className="w-5 h-5 animate-spin" /> : <FileSpreadsheet className="w-5 h-5" />}
-                  <span className="hidden sm:inline">{exportingExcel ? 'Gerando...' : 'Excel'}</span>
+                  {exportingExcel ? <Loader2 className="w-4 h-4 sm:w-5 sm:h-5 animate-spin" /> : <FileSpreadsheet className="w-4 h-4 sm:w-5 sm:h-5" />}
+                  <span className="text-xs sm:text-sm">{exportingExcel ? 'Gerando...' : 'Excel'}</span>
                 </button>
               </div>
             </div>
@@ -1773,7 +1773,7 @@ const ProcessesModule: React.FC<ProcessesModuleProps> = ({ forceCreate, entityId
           <p className="text-slate-600">Nenhum processo encontrado.</p>
         </div>
       ) : kanbanMode ? (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-6 gap-3 sm:gap-4">
           {STATUS_OPTIONS.map((statusOption) => {
             const processesInColumn = processesByStatus[statusOption.key] || [];
             return (
@@ -1894,7 +1894,94 @@ const ProcessesModule: React.FC<ProcessesModuleProps> = ({ forceCreate, entityId
         </div>
       ) : (
         <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
-          <div className="overflow-x-auto">
+          {/* Mobile Cards */}
+          <div className="block lg:hidden divide-y divide-gray-200">
+            {filteredProcesses.map((process) => {
+              const client = clientMap.get(process.client_id);
+              return (
+                <div key={process.id} className="p-4 hover:bg-gray-50 transition-colors">
+                  <div className="flex items-start gap-3 mb-3">
+                    <div className={`flex-shrink-0 h-10 w-10 rounded-full flex items-center justify-center ${
+                      client?.client_type === 'pessoa_fisica'
+                        ? 'bg-blue-100 text-blue-600'
+                        : 'bg-purple-100 text-purple-600'
+                    }`}>
+                      {client?.client_type === 'pessoa_fisica' ? (
+                        <User className="w-5 h-5" />
+                      ) : (
+                        <Building2 className="w-5 h-5" />
+                      )}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="text-sm font-medium text-gray-900 mb-1">
+                        {client?.full_name || 'Cliente removido'}
+                      </div>
+                      <div className="flex items-center gap-2 mb-1">
+                        <div className="text-xs font-mono text-gray-700">{process.process_code}</div>
+                        {process.djen_synced === false || (process.djen_synced && !process.djen_has_data) ? (
+                          <span className="px-1.5 py-0.5 text-xs font-medium bg-yellow-100 text-yellow-800 rounded" title="Aguardando dados do DJEN">
+                            ⏳
+                          </span>
+                        ) : process.djen_has_data ? (
+                          <span className="px-1.5 py-0.5 text-xs font-medium bg-green-100 text-green-800 rounded" title="Dados sincronizados com DJEN">
+                            ✓
+                          </span>
+                        ) : null}
+                      </div>
+                      {process.court && (
+                        <div className="text-xs text-gray-500 mb-2">{process.court}</div>
+                      )}
+                      <div className="flex flex-wrap gap-2 text-xs text-gray-500">
+                        <span className="inline-flex items-center gap-1">
+                          Área:
+                          <span className="font-medium">
+                            {PRACTICE_AREAS.find((area) => area.key === process.practice_area)?.label ?? process.practice_area}
+                          </span>
+                        </span>
+                        {process.responsible_lawyer && (
+                          <span className="inline-flex items-center gap-1">
+                            Advogado:
+                            <span className="font-medium">{process.responsible_lawyer}</span>
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                  <div className="flex items-center justify-between gap-2 mb-3">
+                    <span className={`px-2 py-1 inline-flex text-xs leading-5 font-semibold rounded-full ${getStatusBadge(process.status)}`}>
+                      {getStatusLabel(process.status)}
+                    </span>
+                    <span className="text-xs text-gray-600">{formatDate(process.distributed_at)}</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={() => handleViewProcess(process)}
+                      className="flex-1 inline-flex items-center justify-center gap-2 px-3 py-2 bg-blue-50 text-blue-700 rounded-lg hover:bg-blue-100 transition-colors text-sm font-medium"
+                    >
+                      <Eye className="w-4 h-4" />
+                      Ver
+                    </button>
+                    <button
+                      onClick={() => handleOpenModal(process)}
+                      className="flex-1 inline-flex items-center justify-center gap-2 px-3 py-2 bg-amber-50 text-amber-700 rounded-lg hover:bg-amber-100 transition-colors text-sm font-medium"
+                    >
+                      <Edit2 className="w-4 h-4" />
+                      Editar
+                    </button>
+                    <button
+                      onClick={() => handleDeleteProcess(process.id)}
+                      className="px-3 py-2 bg-red-50 text-red-700 rounded-lg hover:bg-red-100 transition-colors"
+                      title="Excluir"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+          {/* Desktop Table */}
+          <div className="hidden lg:block overflow-x-auto">
             <table className="min-w-full divide-y divide-gray-200">
               <thead className="bg-slate-50">
                 <tr>
