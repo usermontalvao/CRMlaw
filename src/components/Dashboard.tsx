@@ -32,7 +32,7 @@ import type { Requirement } from '../types/requirement.types';
 import type { FinancialStats, Installment, Agreement } from '../types/financial.types';
 
 interface DashboardProps {
-  onNavigateToModule?: (moduleKey: string) => void;
+  onNavigateToModule?: (moduleKey: string, params?: Record<string, string>) => void;
 }
 
 type StatCardProps = {
@@ -210,8 +210,21 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToModule }) => {
     })
     .slice(0, 5);
 
-  const handleNavigate = (module: string) => {
-    if (onNavigateToModule) {
+  const handleNavigate = (moduleWithParams: string) => {
+    if (!onNavigateToModule) return;
+    
+    // Extrair módulo e parâmetros da string (ex: "clients?mode=create")
+    const [module, queryString] = moduleWithParams.split('?');
+    
+    if (queryString) {
+      // Parsear query string em objeto de parâmetros
+      const params: Record<string, string> = {};
+      queryString.split('&').forEach(pair => {
+        const [key, value] = pair.split('=');
+        params[key] = value;
+      });
+      onNavigateToModule(module, params);
+    } else {
       onNavigateToModule(module);
     }
   };
@@ -235,86 +248,108 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToModule }) => {
   }
 
   return (
-    <div className="space-y-3 bg-slate-50 -m-6 p-4 min-h-screen">
-      {/* Header Mínimo */}
-      <div className="flex items-center justify-between">
-        <h1 className="text-xl font-bold text-slate-900">Dashboard</h1>
+    <div className="space-y-6 bg-gradient-to-br from-slate-50 to-slate-100 -m-6 p-6 min-h-screen">
+      {/* Header Melhorado */}
+      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 bg-white rounded-xl p-6 shadow-sm border border-slate-200">
+        <div>
+          <h1 className="text-2xl font-bold text-slate-900">Dashboard</h1>
+          <p className="text-sm text-slate-600 mt-1">Visão geral do escritório</p>
+        </div>
         {financialStats && (
-          <p className="text-xs text-slate-500">
-            Honorários do mês: <span className="font-semibold text-slate-900">{formatCurrency(financialStats.monthly_fees_received)}</span>
-          </p>
+          <div className="bg-emerald-50 border border-emerald-200 rounded-lg px-4 py-3">
+            <p className="text-xs text-emerald-700 font-medium">Honorários do mês</p>
+            <p className="text-xl font-bold text-emerald-900">{formatCurrency(financialStats.monthly_fees_received)}</p>
+          </div>
         )}
       </div>
 
-      {/* Linha Principal: Estatísticas + Financeiro */}
-      <div className="grid grid-cols-2 lg:grid-cols-5 gap-2">
+      {/* Estatísticas Principais */}
+      <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
         <button
-          onClick={() => handleNavigate('clients')}
-          className="group flex items-center gap-2 rounded-lg border border-slate-200 bg-white p-2.5 text-left hover:border-blue-400 hover:shadow transition"
+          onClick={() => handleNavigate('clientes')}
+          className="group flex flex-col gap-3 rounded-xl border-2 border-slate-200 bg-white p-4 text-left hover:border-blue-400 hover:shadow-lg transition-all"
         >
-          <div className="h-8 w-8 rounded bg-blue-500 flex items-center justify-center text-white">
-            <Users className="h-4 w-4" />
+          <div className="flex items-center justify-between">
+            <div className="h-12 w-12 rounded-lg bg-gradient-to-br from-blue-500 to-blue-600 flex items-center justify-center text-white shadow-lg">
+              <Users className="h-6 w-6" />
+            </div>
+            <ArrowRight className="h-5 w-5 text-slate-400 group-hover:text-blue-500 group-hover:translate-x-1 transition-all" />
           </div>
           <div>
-            <p className="text-[10px] uppercase tracking-wide text-slate-500">Clientes</p>
-            <p className="text-lg font-bold text-slate-900">{activeClients}</p>
+            <p className="text-xs font-medium text-slate-500 uppercase tracking-wide">Clientes Ativos</p>
+            <p className="text-3xl font-bold text-slate-900 mt-1">{activeClients}</p>
           </div>
         </button>
 
         <button
-          onClick={() => handleNavigate('cases')}
-          className="group flex items-center gap-2 rounded-lg border border-slate-200 bg-white p-2.5 text-left hover:border-indigo-400 hover:shadow transition"
+          onClick={() => handleNavigate('processos')}
+          className="group flex flex-col gap-3 rounded-xl border-2 border-slate-200 bg-white p-4 text-left hover:border-indigo-400 hover:shadow-lg transition-all"
         >
-          <div className="h-8 w-8 rounded bg-indigo-500 flex items-center justify-center text-white">
-            <Briefcase className="h-4 w-4" />
+          <div className="flex items-center justify-between">
+            <div className="h-12 w-12 rounded-lg bg-gradient-to-br from-indigo-500 to-indigo-600 flex items-center justify-center text-white shadow-lg">
+              <Briefcase className="h-6 w-6" />
+            </div>
+            <ArrowRight className="h-5 w-5 text-slate-400 group-hover:text-indigo-500 group-hover:translate-x-1 transition-all" />
           </div>
           <div>
-            <p className="text-[10px] uppercase tracking-wide text-slate-500">Processos</p>
-            <p className="text-lg font-bold text-slate-900">{activeProcesses}</p>
+            <p className="text-xs font-medium text-slate-500 uppercase tracking-wide">Processos</p>
+            <p className="text-3xl font-bold text-slate-900 mt-1">{activeProcesses}</p>
           </div>
         </button>
 
         <button
-          onClick={() => handleNavigate('deadlines')}
-          className="group flex items-center gap-2 rounded-lg border border-slate-200 bg-white p-2.5 text-left hover:border-amber-400 hover:shadow transition"
+          onClick={() => handleNavigate('prazos')}
+          className="group flex flex-col gap-3 rounded-xl border-2 border-slate-200 bg-white p-4 text-left hover:border-amber-400 hover:shadow-lg transition-all"
         >
-          <div className="h-8 w-8 rounded bg-amber-500 flex items-center justify-center text-white">
-            <Clock className="h-4 w-4" />
+          <div className="flex items-center justify-between">
+            <div className="h-12 w-12 rounded-lg bg-gradient-to-br from-amber-500 to-amber-600 flex items-center justify-center text-white shadow-lg">
+              <Clock className="h-6 w-6" />
+            </div>
+            <ArrowRight className="h-5 w-5 text-slate-400 group-hover:text-amber-500 group-hover:translate-x-1 transition-all" />
           </div>
           <div>
-            <p className="text-[10px] uppercase tracking-wide text-slate-500">Prazos</p>
-            <p className="text-lg font-bold text-slate-900">{pendingDeadlines}</p>
+            <p className="text-xs font-medium text-slate-500 uppercase tracking-wide">Prazos Pendentes</p>
+            <p className="text-3xl font-bold text-slate-900 mt-1">{pendingDeadlines}</p>
           </div>
         </button>
 
         <button
-          onClick={() => handleNavigate('tasks')}
-          className="group flex items-center gap-2 rounded-lg border border-slate-200 bg-white p-2.5 text-left hover:border-emerald-400 hover:shadow transition"
+          onClick={() => handleNavigate('tarefas')}
+          className="group flex flex-col gap-3 rounded-xl border-2 border-slate-200 bg-white p-4 text-left hover:border-emerald-400 hover:shadow-lg transition-all"
         >
-          <div className="h-8 w-8 rounded bg-emerald-500 flex items-center justify-center text-white">
-            <CheckSquare className="h-4 w-4" />
+          <div className="flex items-center justify-between">
+            <div className="h-12 w-12 rounded-lg bg-gradient-to-br from-emerald-500 to-emerald-600 flex items-center justify-center text-white shadow-lg">
+              <CheckSquare className="h-6 w-6" />
+            </div>
+            <ArrowRight className="h-5 w-5 text-slate-400 group-hover:text-emerald-500 group-hover:translate-x-1 transition-all" />
           </div>
           <div>
-            <p className="text-[10px] uppercase tracking-wide text-slate-500">Tarefas</p>
-            <p className="text-lg font-bold text-slate-900">{pendingTasks}</p>
+            <p className="text-xs font-medium text-slate-500 uppercase tracking-wide">Tarefas Pendentes</p>
+            <p className="text-3xl font-bold text-slate-900 mt-1">{pendingTasks}</p>
           </div>
         </button>
 
-        <div className="flex items-center gap-2 rounded-lg border border-slate-200 bg-white p-2.5">
-          <div className="h-8 w-8 rounded bg-emerald-500/20 flex items-center justify-center text-emerald-600">
-            <DollarSign className="h-4 w-4" />
+        <button
+          onClick={() => handleNavigate('financeiro')}
+          className="group flex flex-col gap-3 rounded-xl border-2 border-slate-200 bg-white p-4 text-left hover:border-green-400 hover:shadow-lg transition-all"
+        >
+          <div className="flex items-center justify-between">
+            <div className="h-12 w-12 rounded-lg bg-gradient-to-br from-green-500 to-green-600 flex items-center justify-center text-white shadow-lg">
+              <DollarSign className="h-6 w-6" />
+            </div>
+            <ArrowRight className="h-5 w-5 text-slate-400 group-hover:text-green-500 group-hover:translate-x-1 transition-all" />
           </div>
           <div>
-            <p className="text-[10px] uppercase tracking-wide text-slate-500">Financeiro</p>
-            <p className="text-lg font-bold text-slate-900">
+            <p className="text-xs font-medium text-slate-500 uppercase tracking-wide">A Receber</p>
+            <p className="text-2xl font-bold text-slate-900 mt-1">
               {financialStats ? formatCurrency(financialStats.monthly_fees_pending) : '--'}
             </p>
           </div>
-        </div>
+        </button>
       </div>
 
       {/* Layout 2 Colunas - Financeiro e Parcelas Vencidas */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-3">
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Widget Financeiro Compacto - 2/3 */}
         {financialStats && (
           <div className="lg:col-span-2 bg-white rounded-lg border border-slate-200 p-4">
@@ -418,43 +453,46 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToModule }) => {
         )}
       </div>
 
-      {/* Ações Rápidas - Mínimas e Dinâmicas */}
-      <div className="flex gap-2 overflow-x-auto pb-1">
-        <button
-          onClick={() => handleNavigate('clients?mode=create')}
-          className="group flex items-center gap-2 px-3 py-2 rounded-lg bg-blue-500 hover:bg-blue-600 text-white transition flex-shrink-0"
-        >
-          <Users className="h-4 w-4" />
-          <span className="text-xs font-semibold">Cliente</span>
-        </button>
-        <button
-          onClick={() => handleNavigate('cases?mode=create')}
-          className="group flex items-center gap-2 px-3 py-2 rounded-lg bg-indigo-500 hover:bg-indigo-600 text-white transition flex-shrink-0"
-        >
-          <Briefcase className="h-4 w-4" />
-          <span className="text-xs font-semibold">Processo</span>
-        </button>
-        <button
-          onClick={() => handleNavigate('deadlines?mode=create')}
-          className="group flex items-center gap-2 px-3 py-2 rounded-lg bg-amber-500 hover:bg-amber-600 text-white transition flex-shrink-0"
-        >
-          <Clock className="h-4 w-4" />
-          <span className="text-xs font-semibold">Prazo</span>
-        </button>
-        <button
-          onClick={() => handleNavigate('tasks?mode=create')}
-          className="group flex items-center gap-2 px-3 py-2 rounded-lg bg-emerald-500 hover:bg-emerald-600 text-white transition flex-shrink-0"
-        >
-          <CheckSquare className="h-4 w-4" />
-          <span className="text-xs font-semibold">Tarefa</span>
-        </button>
-        <button
-          onClick={() => handleNavigate('financial')}
-          className="group flex items-center gap-2 px-3 py-2 rounded-lg bg-green-600 hover:bg-green-700 text-white transition flex-shrink-0"
-        >
-          <CircleDollarSign className="h-4 w-4" />
-          <span className="text-xs font-semibold">Financeiro</span>
-        </button>
+      {/* Ações Rápidas */}
+      <div className="bg-white rounded-xl p-6 shadow-sm border border-slate-200">
+        <h2 className="text-lg font-bold text-slate-900 mb-4">Ações Rápidas</h2>
+        <div className="flex gap-3 overflow-x-auto pb-1">
+          <button
+            onClick={() => handleNavigate('clientes?mode=create')}
+            className="group flex items-center gap-3 px-4 py-3 rounded-lg bg-gradient-to-r from-blue-500 to-blue-600 hover:from-blue-600 hover:to-blue-700 text-white transition shadow-md hover:shadow-lg flex-shrink-0"
+          >
+            <Users className="h-5 w-5" />
+            <span className="text-sm font-semibold">Novo Cliente</span>
+          </button>
+          <button
+            onClick={() => handleNavigate('processos?mode=create')}
+            className="group flex items-center gap-3 px-4 py-3 rounded-lg bg-gradient-to-r from-indigo-500 to-indigo-600 hover:from-indigo-600 hover:to-indigo-700 text-white transition shadow-md hover:shadow-lg flex-shrink-0"
+          >
+            <Briefcase className="h-5 w-5" />
+            <span className="text-sm font-semibold">Novo Processo</span>
+          </button>
+          <button
+            onClick={() => handleNavigate('prazos?mode=create')}
+            className="group flex items-center gap-3 px-4 py-3 rounded-lg bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 text-white transition shadow-md hover:shadow-lg flex-shrink-0"
+          >
+            <Clock className="h-5 w-5" />
+            <span className="text-sm font-semibold">Novo Prazo</span>
+          </button>
+          <button
+            onClick={() => handleNavigate('tarefas?mode=create')}
+            className="group flex items-center gap-3 px-4 py-3 rounded-lg bg-gradient-to-r from-emerald-500 to-emerald-600 hover:from-emerald-600 hover:to-emerald-700 text-white transition shadow-md hover:shadow-lg flex-shrink-0"
+          >
+            <CheckSquare className="h-5 w-5" />
+            <span className="text-sm font-semibold">Nova Tarefa</span>
+          </button>
+          <button
+            onClick={() => handleNavigate('financeiro')}
+            className="group flex items-center gap-3 px-4 py-3 rounded-lg bg-gradient-to-r from-green-600 to-green-700 hover:from-green-700 hover:to-green-800 text-white transition shadow-md hover:shadow-lg flex-shrink-0"
+          >
+            <CircleDollarSign className="h-5 w-5" />
+            <span className="text-sm font-semibold">Financeiro</span>
+          </button>
+        </div>
       </div>
 
       {/* Main Content - 2 Columns */}

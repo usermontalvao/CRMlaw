@@ -307,23 +307,14 @@ function App() {
     }
   };
 
-  const handleNavigateToModule = (moduleString: string) => {
-    const [moduleKey, paramString] = moduleString.split('?');
-    
-    if (paramString) {
-      const params: Record<string, string> = {};
-      paramString.split('&').forEach(pair => {
-        const [key, value] = pair.split('=');
-        params[key] = value;
-      });
+  const handleNavigateToModule = (moduleKey: string, params?: Record<string, string>) => {
+    if (params) {
       setModuleParams(prev => ({
         ...prev,
         [moduleKey]: JSON.stringify(params)
       }));
-      navigate(`/${moduleKey}`);
-    } else {
-      navigate(`/${moduleKey}`);
     }
+    navigate(`/${moduleKey}`);
   };
 
   const handleConvertLead = async (lead: Lead) => {
