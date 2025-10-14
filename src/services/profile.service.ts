@@ -1,5 +1,7 @@
 import { supabase } from '../config/supabase';
 
+export type PresenceStatus = 'online' | 'away' | 'offline';
+
 export interface Profile {
   id: string;
   user_id: string;
@@ -11,6 +13,8 @@ export interface Profile {
   lawyer_full_name?: string | null; // Nome completo para pesquisa no DJEN
   bio?: string | null;
   avatar_url?: string | null;
+  presence_status?: PresenceStatus;
+  last_seen_at?: string | null;
   updated_at: string;
   created_at: string;
 }
@@ -76,6 +80,62 @@ class ProfileService {
     }
 
     return this.getProfile(user.id);
+  }
+
+  async setPresenceStatus(userId: string, status: PresenceStatus): Promise<void> {
+    const { error } = await supabase.rpc(`set_user_${status}`, { p_user_id: userId });
+    if (error) throw new Error(error.message);
+  }
+
+  async setOnline(userId: string): Promise<void> {
+    await this.setPresenceStatus(userId, 'online');
+  }
+
+  async setAway(userId: string): Promise<void> {
+    await this.setPresenceStatus(userId, 'away');
+  }
+
+  async setOffline(userId: string): Promise<void> {
+    await this.setPresenceStatus(userId, 'offline');
+  }
+
+  getPresenceLabel(status?: PresenceStatus): string {
+    switch (status) {
+      case 'online':
+        return 'Online agora';
+      case 'away':
+        return 'Ausente';
+      case 'offline':
+        return 'Offline';
+      default:
+        return 'Offline';
+    }
+  }
+
+  getPresenceColor(status?: PresenceStatus): string {
+    switch (status) {
+      case 'online':
+        return 'bg-emerald-400';
+      case 'away':
+        return 'bg-yellow-400';
+      case 'offline':
+        return 'bg-gray-400';
+      default:
+        return 'bg-gray-400';
+    }
+  }
+
+  getPresenceTextColor(status?: PresenceStatus): string {
+    switch (status) {
+      case 'online':
+        return 'text-emerald-400';
+      case 'away':
+        return 'text-yellow-400';
+      case 'offline':
+        return 'text-gray-400';
+      default:
+        return 'text-gray-400';
+    }
   }
 }
 

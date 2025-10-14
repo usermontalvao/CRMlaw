@@ -227,6 +227,37 @@ class ChatService {
     return data;
   }
 
+  async uploadAttachment(
+    conversationId: string,
+    file: File
+  ): Promise<{ url: string; type: string; originalName: string; size: number }> {
+    const sanitizedName = file.name.replace(/[^a-zA-Z0-9.\-_]/g, '_');
+    const filePath = `${conversationId}/${Date.now()}-${sanitizedName}`;
+    const storage = supabase.storage.from('chat-attachments');
+    const { error } = await storage.upload(filePath, file, {
+      cacheControl: '3600',
+      upsert: false,
+      contentType: file.type,
+    });
+
+    if (error) {
+      console.error('Erro ao enviar anexo:', error);
+      throw new Error(error.message);
+    }
+
+    const { data: publicUrlData } = storage.getPublicUrl(filePath);
+    if (!publicUrlData?.publicUrl) {
+      throw new Error('Não foi possível obter a URL pública do anexo');
+    }
+
+    return {
+      url: publicUrlData.publicUrl,
+      type: file.type || 'application/octet-stream',
+      originalName: file.name,
+      size: file.size,
+    };
+  }
+
   async updateMessage(messageId: string, dto: UpdateMessageDTO): Promise<Message> {
     const { data, error } = await supabase
       .from('messages')

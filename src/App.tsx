@@ -32,9 +32,11 @@ import TasksModule from './components/TasksModule';
 import NotificationsModuleNew from './components/NotificationsModuleNew';
 import FinancialModule from './components/FinancialModule';
 import ProfileModal from './components/ProfileModal';
+import FloatingMessenger from './components/FloatingMessenger';
 import { NotificationCenterNew as NotificationCenter } from './components/NotificationCenterNew';
 import { NotificationPermissionBanner } from './components/NotificationPermissionBanner';
 import { useNotifications } from './hooks/useNotifications';
+import { usePresence } from './hooks/usePresence';
 import { pushNotifications } from './utils/pushNotifications';
 import Login from './components/Login';
 import { useAuth } from './contexts/AuthContext';
@@ -66,6 +68,9 @@ function App() {
   
   // Ativar sincronização automática com DJEN
   useDjenSync();
+  
+  // Ativar sistema de presença
+  usePresence();
 
   const GENERIC_AVATAR = 'https://www.gravatar.com/avatar/?d=mp&s=300';
 
@@ -905,6 +910,7 @@ function App() {
           profile={profile}
           onProfileUpdate={handleProfileUpdate}
         />
+        <FloatingMessenger />
       </div>
       </div>
     </CacheProvider>
