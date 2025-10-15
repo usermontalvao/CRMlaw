@@ -814,7 +814,7 @@ function App() {
         </header>
 
         {/* Main Content */}
-        <main className="px-3 sm:px-4 lg:px-6 xl:px-8 py-4 sm:py-6 space-y-4 sm:space-y-6">
+        <main className={`px-3 sm:px-4 lg:px-6 xl:px-8 space-y-4 sm:space-y-6 ${activeModule === 'agenda' ? 'py-0' : 'py-4 sm:py-6'}`}>
           {/* Banner de Permissão de Notificações */}
           <NotificationPermissionBanner />
           

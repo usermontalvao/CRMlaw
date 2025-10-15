@@ -116,6 +116,9 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({
   const [exportStartDate, setExportStartDate] = useState('');
   const [exportEndDate, setExportEndDate] = useState('');
   const [exportFormat, setExportFormat] = useState<'excel' | 'pdf'>('excel');
+  const [showTodayPanel, setShowTodayPanel] = useState(true);
+  const [calendarTitle, setCalendarTitle] = useState('');
+  const [calendarView, setCalendarView] = useState<'dayGridMonth' | 'timeGridWeek' | 'timeGridDay' | 'listWeek'>('dayGridMonth');
   const linkedClient = useMemo(
     () => clients.find((client) => client.id === newEventForm.client_id) || null,
     [clients, newEventForm.client_id],
@@ -135,6 +138,74 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({
     });
     return map;
   }, [clients]);
+
+  // Calcular estatísticas
+  const stats = useMemo(() => {
+    // Usar timezone de Cuiabá (UTC-4)
+    const now = new Date();
+    const cuiabaOffset = -4 * 60; // UTC-4 em minutos
+    const localOffset = now.getTimezoneOffset();
+    const diff = (cuiabaOffset - localOffset) * 60 * 1000;
+    
+    const today = new Date(now.getTime() + diff);
+    today.setHours(0, 0, 0, 0);
+    const tomorrow = new Date(today);
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    const weekEnd = new Date(today);
+    weekEnd.setDate(weekEnd.getDate() + 7);
+    
+    // Mês atual (do dia 1 até o último dia do mês)
+    const monthStart = new Date(today.getFullYear(), today.getMonth(), 1);
+    const monthEnd = new Date(today.getFullYear(), today.getMonth() + 1, 0, 23, 59, 59);
+
+    let todayCount = 0;
+    let weekCount = 0;
+    let monthCount = 0;
+    let totalCount = 0;
+
+    // Prazos
+    deadlines.forEach((d) => {
+      if (d.status === 'cumprido' || d.status === 'cancelado') return;
+      if (!d.due_date) return;
+      const dueDate = new Date(d.due_date);
+      totalCount++;
+      if (dueDate >= today && dueDate < tomorrow) todayCount++;
+      if (dueDate >= today && dueDate < weekEnd) weekCount++;
+      if (dueDate >= monthStart && dueDate <= monthEnd) monthCount++;
+    });
+
+    // Audiências
+    processes.forEach((p) => {
+      if (!p.hearing_scheduled || !p.hearing_date) return;
+      const hearingDate = new Date(p.hearing_date);
+      totalCount++;
+      if (hearingDate >= today && hearingDate < tomorrow) todayCount++;
+      if (hearingDate >= today && hearingDate < weekEnd) weekCount++;
+      if (hearingDate >= monthStart && hearingDate <= monthEnd) monthCount++;
+    });
+
+    // Requerimentos
+    requirements.forEach((r) => {
+      if (r.status !== 'em_exigencia' || !r.exigency_due_date) return;
+      const exigencyDate = new Date(r.exigency_due_date);
+      totalCount++;
+      if (exigencyDate >= today && exigencyDate < tomorrow) todayCount++;
+      if (exigencyDate >= today && exigencyDate < weekEnd) weekCount++;
+      if (exigencyDate >= monthStart && exigencyDate <= monthEnd) monthCount++;
+    });
+
+    // Eventos do calendário
+    calendarEventsData.forEach((e) => {
+      if (!e.start_at) return;
+      const eventDate = new Date(e.start_at);
+      totalCount++;
+      if (eventDate >= today && eventDate < tomorrow) todayCount++;
+      if (eventDate >= today && eventDate < weekEnd) weekCount++;
+      if (eventDate >= monthStart && eventDate <= monthEnd) monthCount++;
+    });
+
+    return { todayCount, weekCount, monthCount, totalCount };
+  }, [deadlines, processes, requirements, calendarEventsData]);
 
   const openEventForm = useCallback(
     (initialValues?: Partial<NewEventForm>, editingId: string | null = null) => {
@@ -922,6 +993,13 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({
       });
     });
 
+    // Ordenar por data (mais recente primeiro)
+    rows.sort((a, b) => {
+      const dateA = new Date(a['Data'].split(',')[0].split('/').reverse().join('-'));
+      const dateB = new Date(b['Data'].split(',')[0].split('/').reverse().join('-'));
+      return dateA.getTime() - dateB.getTime(); // Crescente (mais próximo primeiro)
+    });
+
     return rows;
   };
 
@@ -1177,22 +1255,27 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({
     );
   }, []);
 
-  const handleDayCellDidMount = useCallback((arg: { date: Date; el: HTMLElement }) => {
-    const today = new Date();
-    const isToday = today.toDateString() === arg.date.toDateString();
-    if (!isToday) return;
-
-    const badge = document.createElement('span');
-    badge.className = 'calendar-today-badge';
-    badge.textContent = 'HOJE';
-
-    const header = arg.el.querySelector('.fc-daygrid-day-top');
-    if (header) {
-      header.appendChild(badge);
-    } else {
-      arg.el.appendChild(badge);
-    }
+  const handleDayCellDidMount = useCallback(() => {
+    // Sem badge personalizado para "hoje"
   }, []);
+
+  useEffect(() => {
+    const api = calendarRef.current?.getApi();
+    if (!api) return;
+    setCalendarTitle(api.view.title);
+    setCalendarView(api.view.type as typeof calendarView);
+  }, []);
+
+  const handleChangeView = useCallback(
+    (view: typeof calendarView) => {
+      const api = calendarRef.current?.getApi();
+      if (!api) return;
+      api.changeView(view);
+      setCalendarView(view);
+      setCalendarTitle(api.view.title);
+    },
+    [],
+  );
 
   if (loading) {
     return (
@@ -1226,45 +1309,131 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({
           {feedback.message}
         </div>
       )}
-      <div className="bg-white border border-gray-200 rounded-2xl p-4 lg:p-5 shadow-sm flex flex-col gap-3">
-        <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3">
-          <div className="flex flex-col gap-0.5">
-            <h3 className="text-lg font-semibold text-slate-900 flex items-center gap-2">
-              <CalendarIcon className="w-6 h-6" />
-              Calendário de Compromissos
-            </h3>
-            <p className="text-xs text-slate-600">
-              Visualize prazos, audiências e compromissos em um só lugar
-            </p>
-          </div>
-          <div className="flex flex-wrap items-center gap-2">
-            <button
-              type="button"
-              onClick={() => setLegendExpanded((prev) => !prev)}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-full border border-slate-200 text-slate-600 hover:text-slate-900 hover:border-slate-300 transition"
-            >
-              {legendExpanded ? 'Recolher legenda' : 'Exibir legenda'}
-            </button>
-            <button
-              type="button"
-              onClick={() => handleOpenExportModal('excel')}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-full bg-emerald-500 text-white hover:bg-emerald-600 transition"
-            >
-              Exportar Excel
-            </button>
-            <button
-              type="button"
-              onClick={() => handleOpenExportModal('pdf')}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-full bg-purple-500 text-white hover:bg-purple-600 transition"
-            >
-              Exportar PDF
-            </button>
-          </div>
-        </div>
 
-        {legendExpanded && (
-          <div className="flex flex-col gap-2 text-xs">
-            <div className="flex flex-wrap items-center gap-2">
+      {/* Header Premium Full Width */}
+      <div className="relative -mx-3 sm:-mx-4 lg:-mx-6 xl:-mx-8 bg-gradient-to-r from-[#1e40af] via-[#4338ca] to-[#7c3aed] shadow-lg">
+        <div className="absolute inset-0 bg-white/5 mix-blend-overlay" />
+
+        <div className="relative px-3 sm:px-4 lg:px-6 xl:px-8 py-2.5">
+          {/* Linha única com tudo */}
+          <div className="flex flex-wrap items-center justify-between gap-4">
+            {/* Esquerda: Título + Stats */}
+            <div className="flex items-center gap-4">
+              <div className="flex items-center gap-2.5">
+                <div className="w-8 h-8 rounded-lg bg-white/15 flex items-center justify-center">
+                  <CalendarIcon className="w-4 h-4 text-white" />
+                </div>
+                <div>
+                  <h3 className="text-base font-bold text-white leading-tight">Agenda</h3>
+                  <p className="text-[10px] text-white/60">Compromissos e prazos</p>
+                </div>
+              </div>
+
+              {/* Stats */}
+              <div className="hidden lg:flex items-center gap-2 ml-2">
+                <div
+                  className="flex items-center gap-1.5 rounded-md border border-white/10 bg-white/10 px-2.5 py-1 cursor-help"
+                  title="Compromissos nos próximos 7 dias"
+                >
+                  <span className="text-[10px] font-semibold uppercase tracking-wide text-amber-200">7d</span>
+                  <span className="text-sm font-bold text-white">{stats.weekCount}</span>
+                </div>
+                <div
+                  className="flex items-center gap-1.5 rounded-md border border-white/10 bg-white/10 px-2.5 py-1 cursor-help"
+                  title="Compromissos no mês atual"
+                >
+                  <span className="text-[10px] font-semibold uppercase tracking-wide text-sky-200">Mês</span>
+                  <span className="text-sm font-bold text-white">{stats.monthCount}</span>
+                </div>
+              </div>
+
+              {/* Navegação */}
+              <div className="hidden lg:flex items-center gap-1.5 ml-4 pl-4 border-l border-white/10">
+                <button
+                  type="button"
+                  onClick={() => calendarRef.current?.getApi().prev()}
+                  className="flex h-7 w-7 items-center justify-center rounded-md bg-white/10 text-white text-sm transition hover:bg-white/20"
+                >
+                  ‹
+                </button>
+                <button
+                  type="button"
+                  onClick={() => calendarRef.current?.getApi().today()}
+                  className="px-2.5 py-1 text-[10px] font-semibold text-white rounded-md bg-white/10 transition hover:bg-white/15"
+                >
+                  Hoje
+                </button>
+                <button
+                  type="button"
+                  onClick={() => calendarRef.current?.getApi().next()}
+                  className="flex h-7 w-7 items-center justify-center rounded-md bg-white/10 text-white text-sm transition hover:bg-white/20"
+                >
+                  ›
+                </button>
+                <span className="ml-2 text-xs font-semibold capitalize text-white/80">
+                  {calendarTitle}
+                </span>
+              </div>
+            </div>
+
+            {/* Direita: Views + Ações */}
+            <div className="flex items-center gap-3">
+              {/* Seletores de View */}
+              <div className="hidden lg:flex items-center gap-1">
+                {([
+                  { label: 'Mês', view: 'dayGridMonth' },
+                  { label: 'Semana', view: 'timeGridWeek' },
+                  { label: 'Dia', view: 'timeGridDay' },
+                ] as const).map(({ label, view }) => {
+                  const isActive = calendarView === view;
+                  return (
+                    <button
+                      key={view}
+                      type="button"
+                      onClick={() => handleChangeView(view)}
+                      className={`px-2.5 py-1 text-[10px] font-bold rounded-md transition ${
+                        isActive
+                          ? 'bg-white text-[#1e40af]'
+                          : 'bg-white/10 text-white hover:bg-white/15'
+                      }`}
+                    >
+                      {label}
+                    </button>
+                  );
+                })}
+              </div>
+
+              {/* Ações */}
+              <div className="flex items-center gap-1.5">
+                <button
+                  type="button"
+                  onClick={() => setLegendExpanded((prev) => !prev)}
+                  className="px-2.5 py-1 text-[10px] font-semibold text-white rounded-md border border-white/15 bg-white/10 transition hover:bg-white/15"
+                >
+                  Filtros
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleOpenExportModal('excel')}
+                  className="px-2.5 py-1 text-[10px] font-bold text-white rounded-md bg-emerald-600 hover:bg-emerald-500 transition"
+                >
+                  Excel
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleOpenExportModal('pdf')}
+                  className="px-2.5 py-1 text-[10px] font-bold text-white rounded-md bg-fuchsia-600 hover:bg-fuchsia-500 transition"
+                >
+                  PDF
+                </button>
+              </div>
+            </div>
+          </div>
+
+          {/* Filtros e Legenda */}
+          {legendExpanded && (
+            <div className="border-t border-white/10 pt-3 mt-3">
+              <div className="flex flex-wrap items-center gap-2">
               <label className="calendar-legend-chip calendar-legend-chip--deadline cursor-pointer">
                 <input
                   type="checkbox"
@@ -1320,21 +1489,20 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({
                 Reuniões
               </label>
             </div>
-          </div>
-        )}
+            </div>
+          )}
+        </div>
 
-        <div className="calendar-container">
+        {/* Calendário com recuo */}
+        <div className="relative bg-white mt-6">
+          <div className="calendar-container px-6 py-6">
           <FullCalendar
             ref={calendarRef}
             plugins={[dayGridPlugin, timeGridPlugin, interactionPlugin, listPlugin]}
             initialView="dayGridMonth"
             locale={ptLocale}
-            timeZone="local"
-            headerToolbar={{
-              left: 'prev today next',
-              center: 'title',
-              right: 'dayGridMonth,timeGridWeek,timeGridDay,listWeek,calendarExpand,calendarFilter',
-            }}
+            timeZone="America/Cuiaba"
+            headerToolbar={false}
             customButtons={{
               calendarExpand: {
                 text: 'Expandir',
@@ -1362,6 +1530,10 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({
             dateClick={handleDateClick}
             eventContent={renderEventContent}
             eventDisplay="block"
+            datesSet={(arg) => {
+              setCalendarTitle(arg.view.title);
+              setCalendarView(arg.view.type as typeof calendarView);
+            }}
             editable={false}
             selectable={true}
             selectMirror={true}
@@ -1374,6 +1546,7 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({
             nowIndicator={true}
             dayCellDidMount={handleDayCellDidMount}
           />
+          </div>
         </div>
       </div>
 
@@ -1715,71 +1888,61 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({
         .calendar-container .fc {
           font-family: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
         }
-        .calendar-container .fc-header-toolbar {
-          background: #ffffff;
-          border: 1px solid #e2e8f0;
-          border-radius: 1rem;
-          padding: 0.75rem 1rem;
-          margin-bottom: 1.5rem;
-          box-shadow: 0 8px 25px -18px rgba(30, 41, 59, 0.4);
-        }
-        .calendar-container .fc-toolbar-title {
-          font-size: 1.2rem;
-          font-weight: 700;
-          color: #0f172a;
-          letter-spacing: -0.01em;
-        }
-        .calendar-container .fc-button-primary {
-          background: #e4edff;
-          border: none;
-          color: #1d4ed8;
-          font-weight: 600;
-          text-transform: none;
-          border-radius: 0.75rem;
-          padding: 0.35rem 0.75rem;
-          transition: all 0.2s ease;
-        }
-        .calendar-container .fc-button-primary:hover {
-          background: #d2defc;
-          color: #1e3a8a;
-        }
-        .calendar-container .fc-button-primary:not(:disabled).fc-button-active,
-        .calendar-container .fc-button-primary:not(:disabled):active {
-          background: #1d4ed8;
-          color: #fff;
-        }
         .calendar-container .fc-daygrid-day-number {
           color: #475569;
-          font-weight: 600;
+          font-weight: 700;
+          font-size: 0.875rem;
         }
         .calendar-container .fc-col-header-cell-cushion {
-          color: #334155;
-          font-weight: 600;
-          font-size: 0.72rem;
+          color: #1e293b;
+          font-weight: 700;
+          font-size: 0.75rem;
+          text-transform: uppercase;
+          letter-spacing: 0.05em;
+        }
+        .calendar-container .fc-col-header-cell {
+          background: linear-gradient(180deg, #f8fafc 0%, #f1f5f9 100%);
+          border-color: #e2e8f0;
         }
         .calendar-container .fc-daygrid-day {
           background: #ffffff;
-          border: 1px solid #f1f5f9;
+          border: 1px solid #e2e8f0;
+          transition: all 0.2s ease;
         }
         .calendar-container .fc-daygrid-day-frame {
-          padding: 4px;
-          border-radius: 14px;
-          transition: background 0.2s ease;
+          padding: 6px;
+          min-height: 100px;
         }
-        .calendar-container .fc-daygrid-day:hover .fc-daygrid-day-frame {
+        .calendar-container .fc-daygrid-day:hover {
           background: #f8fafc;
+          border-color: #cbd5e1;
+          box-shadow: inset 0 0 0 1px #cbd5e1;
         }
         .calendar-container .fc-day-today {
-          background: rgba(59, 130, 246, 0.08) !important;
-          border-color: rgba(37, 99, 235, 0.2) !important;
+          background: linear-gradient(135deg, #dbeafe 0%, #bfdbfe 100%) !important;
+          border: 2px solid #3b82f6 !important;
+          box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+        }
+        .calendar-container .fc-day-today .fc-daygrid-day-number {
+          background: #3b82f6;
+          color: white;
+          border-radius: 50%;
+          width: 28px;
+          height: 28px;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          font-weight: 800;
         }
         .calendar-container .fc-scrollgrid {
           border-radius: 1rem;
-          border: 1px solid #e2e8f0;
+          border: 2px solid #e2e8f0;
+          overflow: hidden;
+          box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
         }
         .calendar-container .fc-list {
           border-radius: 1rem;
-          border: 1px solid #e2e8f0;
+          border: 2px solid #e2e8f0;
         }
         .calendar-container .fc-event {
           border: none !important;
