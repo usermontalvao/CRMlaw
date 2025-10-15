@@ -1,9 +1,11 @@
 import OpenAI from 'openai';
 import type { IntimationAnalysis, AIServiceConfig, DeadlineExtraction } from '../types/ai.types';
+import { supabase } from '../config/supabase';
 
 class AIService {
   private openai: OpenAI | null = null;
   private enabled: boolean = false;
+  private useEdgeFunction: boolean = false; // TEMPORÁRIO: Desabilitado até implantar Edge Function
 
   constructor() {
     this.initialize();
@@ -57,6 +59,21 @@ class AIService {
   }
 
   /**
+   * Chama a OpenAI API através da Edge Function do Supabase (evita CORS)
+   */
+  private async callOpenAIViaEdgeFunction(messages: any[], model: string = 'gpt-4o-mini'): Promise<any> {
+    const { data, error } = await supabase.functions.invoke('openai-proxy', {
+      body: { messages, model },
+    });
+
+    if (error) {
+      throw new Error(`Edge Function error: ${error.message}`);
+    }
+
+    return data;
+  }
+
+  /**
    * Analisa uma intimação do DJEN e extrai informações relevantes
    */
   async analyzeIntimation(
@@ -105,18 +122,29 @@ Tipo de Comunicação: ${tipoComunicacao || 'Não especificado'}
 Texto da Intimação:
 ${texto}`;
 
-      const response = await this.openai!.chat.completions.create({
-        model: 'gpt-4o-mini',
-        messages: [
+      let content: string | null;
+
+      if (this.useEdgeFunction) {
+        // Usa Edge Function para evitar CORS
+        const response = await this.callOpenAIViaEdgeFunction([
           { role: 'system', content: systemPrompt },
           { role: 'user', content: userPrompt },
-        ],
-        temperature: 0.3, // Baixa temperatura para respostas mais consistentes
-        max_tokens: 1000,
-        response_format: { type: 'json_object' },
-      });
-
-      const content = response.choices[0].message.content;
+        ], 'gpt-4o-mini');
+        content = response.choices[0].message.content;
+      } else {
+        // Usa OpenAI diretamente (pode ter problema de CORS)
+        const response = await this.openai!.chat.completions.create({
+          model: 'gpt-4o-mini',
+          messages: [
+            { role: 'system', content: systemPrompt },
+            { role: 'user', content: userPrompt },
+          ],
+          temperature: 0.3,
+          max_tokens: 1000,
+          response_format: { type: 'json_object' },
+        });
+        content = response.choices[0].message.content;
+      }
       if (!content) {
         throw new Error('Resposta vazia da API');
       }
