@@ -32,7 +32,6 @@ import TasksModule from './components/TasksModule';
 import NotificationsModuleNew from './components/NotificationsModuleNew';
 import FinancialModule from './components/FinancialModule';
 import ProfileModal from './components/ProfileModal';
-import FloatingMessenger from './components/FloatingMessenger';
 import { NotificationCenterNew as NotificationCenter } from './components/NotificationCenterNew';
 import { NotificationPermissionBanner } from './components/NotificationPermissionBanner';
 import { useNotifications } from './hooks/useNotifications';
@@ -195,6 +194,36 @@ function App() {
 
     loadProfile();
   }, [user]);
+
+  // Detectar quando usuário perde autenticação e limpar estado
+  useEffect(() => {
+    if (!user && !loading) {
+      // Limpar cache ao fazer logout/expiração de sessão
+      sessionStorage.removeItem(PROFILE_CACHE_KEY);
+      sessionStorage.removeItem(NOTIFICATIONS_CACHE_KEY);
+      
+      // Reset estado
+      setProfile({
+        name: 'Usuário',
+        email: '',
+        avatarUrl: GENERIC_AVATAR,
+        role: 'Advogado',
+        oab: '',
+        phone: '',
+        bio: '',
+        lawyerFullName: '',
+      });
+      setNotifications([]);
+      setPendingTasksCount(0);
+      setModuleParams({});
+      setClientPrefill(null);
+      
+      // Redirecionar para raiz se estiver em uma rota protegida
+      if (location.pathname !== '/' && location.pathname !== '/login') {
+        navigate('/', { replace: true });
+      }
+    }
+  }, [user, loading, location.pathname, navigate]);
 
   useEffect(() => {
     if (!user) {
@@ -901,7 +930,6 @@ function App() {
           profile={profile}
           onProfileUpdate={handleProfileUpdate}
         />
-        <FloatingMessenger />
       </div>
       </div>
     </CacheProvider>
