@@ -15,6 +15,8 @@ import {
   PiggyBank,
   CircleDollarSign,
   ArrowRight,
+  X,
+  UserPlus,
 } from 'lucide-react';
 import { clientService } from '../services/client.service';
 import { processService } from '../services/process.service';
@@ -248,575 +250,433 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToModule }) => {
   }
 
   return (
-    <div className="space-y-6 bg-gradient-to-br from-slate-50 to-slate-100 -m-6 p-6 min-h-screen">
-      {/* Header Melhorado */}
-      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 bg-white rounded-xl p-6 shadow-sm border border-slate-200">
-        <div>
-          <h1 className="text-2xl font-bold text-slate-900">Dashboard</h1>
-          <p className="text-sm text-slate-600 mt-1">Visão geral do escritório</p>
+    <div className="space-y-5 bg-slate-50 -m-6 p-6 min-h-screen">
+      {/* Grid Layout Principal */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
+        {/* Estatísticas Gerais */}
+        <div className="bg-white rounded-xl p-5 shadow-sm border border-slate-200">
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-sm font-bold text-slate-700 uppercase tracking-wide">Estatísticas Gerais</h2>
+            <button className="text-amber-500 hover:text-amber-600">
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 5v.01M12 12v.01M12 19v.01M12 6a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2z" />
+              </svg>
+            </button>
+          </div>
+          
+          <div className="grid grid-cols-2 gap-4">
+            <div className="flex items-center gap-3 p-3 rounded-lg bg-blue-50 border border-blue-100">
+              <div className="w-10 h-10 rounded-lg bg-blue-100 flex items-center justify-center">
+                <Users className="w-5 h-5 text-blue-600" />
+              </div>
+              <div>
+                <p className="text-2xl font-bold text-slate-900">{activeClients}</p>
+                <p className="text-xs text-slate-600">Clientes Ativos</p>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-3 p-3 rounded-lg bg-purple-50 border border-purple-100">
+              <div className="w-10 h-10 rounded-lg bg-purple-100 flex items-center justify-center">
+                <Briefcase className="w-5 h-5 text-purple-600" />
+              </div>
+              <div>
+                <p className="text-2xl font-bold text-slate-900">{activeProcesses}</p>
+                <p className="text-xs text-slate-600">Processos</p>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-3 p-3 rounded-lg bg-red-50 border border-red-100">
+              <div className="w-10 h-10 rounded-lg bg-red-100 flex items-center justify-center">
+                <AlertCircle className="w-5 h-5 text-red-600" />
+              </div>
+              <div>
+                <p className="text-2xl font-bold text-slate-900">{pendingDeadlines}</p>
+                <p className="text-xs text-slate-600">Prazos Pendentes</p>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-3 p-3 rounded-lg bg-amber-50 border border-amber-100">
+              <div className="w-10 h-10 rounded-lg bg-amber-100 flex items-center justify-center">
+                <Clock className="w-5 h-5 text-amber-600" />
+              </div>
+              <div>
+                <p className="text-2xl font-bold text-slate-900">{pendingTasks}</p>
+                <p className="text-xs text-slate-600">Tarefas Pendentes</p>
+              </div>
+            </div>
+          </div>
         </div>
+
+        {/* Controle Financeiro */}
         {financialStats && (
-          <div className="bg-emerald-50 border border-emerald-200 rounded-lg px-4 py-3">
-            <p className="text-xs text-emerald-700 font-medium">Honorários do mês</p>
-            <p className="text-xl font-bold text-emerald-900">{formatCurrency(financialStats.monthly_fees_received)}</p>
-          </div>
-        )}
-      </div>
-
-      {/* Estatísticas Principais */}
-      <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
-        <button
-          onClick={() => handleNavigate('clientes')}
-          className="group flex flex-col gap-3 rounded-xl border-2 border-slate-200 bg-white p-4 text-left hover:border-blue-400 hover:shadow-lg transition-all"
-        >
-          <div className="flex items-center justify-between">
-            <div className="h-12 w-12 rounded-lg bg-gradient-to-br from-blue-500 to-blue-600 flex items-center justify-center text-white shadow-lg">
-              <Users className="h-6 w-6" />
-            </div>
-            <ArrowRight className="h-5 w-5 text-slate-400 group-hover:text-blue-500 group-hover:translate-x-1 transition-all" />
-          </div>
-          <div>
-            <p className="text-xs font-medium text-slate-500 uppercase tracking-wide">Clientes Ativos</p>
-            <p className="text-3xl font-bold text-slate-900 mt-1">{activeClients}</p>
-          </div>
-        </button>
-
-        <button
-          onClick={() => handleNavigate('processos')}
-          className="group flex flex-col gap-3 rounded-xl border-2 border-slate-200 bg-white p-4 text-left hover:border-indigo-400 hover:shadow-lg transition-all"
-        >
-          <div className="flex items-center justify-between">
-            <div className="h-12 w-12 rounded-lg bg-gradient-to-br from-indigo-500 to-indigo-600 flex items-center justify-center text-white shadow-lg">
-              <Briefcase className="h-6 w-6" />
-            </div>
-            <ArrowRight className="h-5 w-5 text-slate-400 group-hover:text-indigo-500 group-hover:translate-x-1 transition-all" />
-          </div>
-          <div>
-            <p className="text-xs font-medium text-slate-500 uppercase tracking-wide">Processos</p>
-            <p className="text-3xl font-bold text-slate-900 mt-1">{activeProcesses}</p>
-          </div>
-        </button>
-
-        <button
-          onClick={() => handleNavigate('prazos')}
-          className="group flex flex-col gap-3 rounded-xl border-2 border-slate-200 bg-white p-4 text-left hover:border-amber-400 hover:shadow-lg transition-all"
-        >
-          <div className="flex items-center justify-between">
-            <div className="h-12 w-12 rounded-lg bg-gradient-to-br from-amber-500 to-amber-600 flex items-center justify-center text-white shadow-lg">
-              <Clock className="h-6 w-6" />
-            </div>
-            <ArrowRight className="h-5 w-5 text-slate-400 group-hover:text-amber-500 group-hover:translate-x-1 transition-all" />
-          </div>
-          <div>
-            <p className="text-xs font-medium text-slate-500 uppercase tracking-wide">Prazos Pendentes</p>
-            <p className="text-3xl font-bold text-slate-900 mt-1">{pendingDeadlines}</p>
-          </div>
-        </button>
-
-        <button
-          onClick={() => handleNavigate('tarefas')}
-          className="group flex flex-col gap-3 rounded-xl border-2 border-slate-200 bg-white p-4 text-left hover:border-emerald-400 hover:shadow-lg transition-all"
-        >
-          <div className="flex items-center justify-between">
-            <div className="h-12 w-12 rounded-lg bg-gradient-to-br from-emerald-500 to-emerald-600 flex items-center justify-center text-white shadow-lg">
-              <CheckSquare className="h-6 w-6" />
-            </div>
-            <ArrowRight className="h-5 w-5 text-slate-400 group-hover:text-emerald-500 group-hover:translate-x-1 transition-all" />
-          </div>
-          <div>
-            <p className="text-xs font-medium text-slate-500 uppercase tracking-wide">Tarefas Pendentes</p>
-            <p className="text-3xl font-bold text-slate-900 mt-1">{pendingTasks}</p>
-          </div>
-        </button>
-
-        <button
-          onClick={() => handleNavigate('financeiro')}
-          className="group flex flex-col gap-3 rounded-xl border-2 border-slate-200 bg-white p-4 text-left hover:border-green-400 hover:shadow-lg transition-all"
-        >
-          <div className="flex items-center justify-between">
-            <div className="h-12 w-12 rounded-lg bg-gradient-to-br from-green-500 to-green-600 flex items-center justify-center text-white shadow-lg">
-              <DollarSign className="h-6 w-6" />
-            </div>
-            <ArrowRight className="h-5 w-5 text-slate-400 group-hover:text-green-500 group-hover:translate-x-1 transition-all" />
-          </div>
-          <div>
-            <p className="text-xs font-medium text-slate-500 uppercase tracking-wide">A Receber</p>
-            <p className="text-2xl font-bold text-slate-900 mt-1">
-              {financialStats ? formatCurrency(financialStats.monthly_fees_pending) : '--'}
-            </p>
-          </div>
-        </button>
-      </div>
-
-      {/* Layout 2 Colunas - Financeiro e Parcelas Vencidas */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Widget Financeiro Compacto - 2/3 */}
-        {financialStats && (
-          <div className="lg:col-span-2 bg-white rounded-lg border border-slate-200 p-4">
-            <div className="flex items-center justify-between mb-3">
-              <h2 className="text-sm font-bold text-slate-900">Financeiro</h2>
-              <button
-                onClick={() => handleNavigate('financial')}
-                className="text-xs text-blue-600 hover:text-blue-700 font-medium"
-              >
-                Ver tudo
+          <div className="bg-white rounded-xl p-5 shadow-sm border border-slate-200">
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-sm font-bold text-slate-700 uppercase tracking-wide">Controle Financeiro</h2>
+              <button className="text-amber-500 hover:text-amber-600">
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 5v.01M12 12v.01M12 19v.01M12 6a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2z" />
+                </svg>
               </button>
             </div>
 
-            <div className="grid grid-cols-3 gap-2">
-              <div className="border border-emerald-200 rounded-lg p-2.5">
-                <div className="flex items-center gap-1.5 mb-1.5">
-                  <div className="h-6 w-6 rounded bg-emerald-100 flex items-center justify-center">
-                    <TrendingUp className="w-3 h-3 text-emerald-600" />
+            <div className="grid grid-cols-2 gap-4">
+              <div className="p-3 rounded-lg bg-amber-50 border border-amber-100">
+                <div className="flex items-center gap-2 mb-2">
+                  <div className="w-6 h-6 rounded bg-amber-100 flex items-center justify-center">
+                    <DollarSign className="w-4 h-4 text-amber-600" />
                   </div>
-                  <span className="text-xs font-semibold text-slate-600">Recebidos</span>
+                  <p className="text-xs font-semibold text-slate-600">Honorários do mês</p>
                 </div>
-                <p className="text-lg font-bold text-slate-900">{formatCurrency(financialStats.monthly_fees_received)}</p>
-                <p className="text-xs text-slate-500">{financialStats.paid_installments} parc.</p>
+                <p className="text-xl font-bold text-slate-900">{formatCurrency(financialStats.monthly_fees_received)}</p>
               </div>
 
-              <div className="border border-amber-200 rounded-lg p-2.5">
-                <div className="flex items-center gap-1.5 mb-1.5">
-                  <div className="h-6 w-6 rounded bg-amber-100 flex items-center justify-center">
-                    <Clock className="w-3 h-3 text-amber-600" />
+              <div className="p-3 rounded-lg bg-emerald-50 border border-emerald-100">
+                <div className="flex items-center gap-2 mb-2">
+                  <div className="w-6 h-6 rounded bg-emerald-100 flex items-center justify-center">
+                    <TrendingUp className="w-4 h-4 text-emerald-600" />
                   </div>
-                  <span className="text-xs font-semibold text-slate-600">Pendentes</span>
+                  <p className="text-xs font-semibold text-slate-600">Recebidos ({financialStats.paid_installments} parc.)</p>
                 </div>
-                <p className="text-lg font-bold text-slate-900">{formatCurrency(financialStats.monthly_fees_pending)}</p>
-                <p className="text-xs text-slate-500">{financialStats.pending_installments} parc.</p>
+                <p className="text-xl font-bold text-slate-900">{formatCurrency(financialStats.monthly_fees_received)}</p>
               </div>
 
-              <div className="border border-red-200 rounded-lg p-2.5">
-                <div className="flex items-center gap-1.5 mb-1.5">
-                  <div className="h-6 w-6 rounded bg-red-100 flex items-center justify-center">
-                    <AlertCircle className="w-3 h-3 text-red-600" />
+              <div className="p-3 rounded-lg bg-amber-50 border border-amber-100">
+                <div className="flex items-center gap-2 mb-2">
+                  <div className="w-6 h-6 rounded bg-amber-100 flex items-center justify-center">
+                    <Clock className="w-4 h-4 text-amber-600" />
                   </div>
-                  <span className="text-xs font-semibold text-slate-600">Vencidos</span>
+                  <p className="text-xs font-semibold text-slate-600">Pendentes ({financialStats.pending_installments} parc.)</p>
                 </div>
-                <p className="text-lg font-bold text-slate-900">{formatCurrency(financialStats.total_overdue)}</p>
-                <p className="text-xs text-slate-500">{financialStats.overdue_installments} parc.</p>
+                <p className="text-xl font-bold text-slate-900">{formatCurrency(financialStats.monthly_fees_pending)}</p>
               </div>
-            </div>
-          </div>
-        )}
 
-        {/* Widget Parcelas Vencidas Compacto - 1/3 - COM URGÊNCIA */}
-        {overdueInstallments.length > 0 && (
-          <div className="lg:col-span-1 bg-gradient-to-br from-red-50 to-red-100 rounded-lg border-2 border-red-300 p-4">
-            <div className="flex items-center gap-2 mb-3">
-              <div className="h-7 w-7 rounded-lg bg-red-600 flex items-center justify-center animate-pulse">
-                <AlertCircle className="w-3.5 h-3.5 text-white" />
-              </div>
-              <div className="flex-1">
-                <h3 className="text-xs font-bold text-red-900">Parcelas Vencidas</h3>
-                <p className="text-xs text-red-700">{overdueInstallments.length} pend.</p>
-              </div>
-            </div>
-            
-            <div className="space-y-1.5">
-              {overdueInstallments.map((inst) => {
-                const client = inst.agreement?.client_id ? clientMap.get(inst.agreement.client_id) : null;
-                const clientName = client?.full_name || (client as any)?.name || 'Cliente não identificado';
-                const daysOverdue = Math.floor((new Date().getTime() - new Date(inst.due_date).getTime()) / (1000 * 60 * 60 * 24));
-                const feeValue = inst.agreement ? inst.agreement.fee_value / inst.agreement.installments_count : 0;
-                
-                return (
-                  <div 
-                    key={inst.id} 
-                    onClick={() => handleNavigate('financial')}
-                    className="bg-white rounded-lg border border-red-200 p-2 hover:border-red-400 hover:shadow-md transition cursor-pointer"
-                  >
-                    <div className="flex items-center gap-2">
-                      <div className="h-5 w-5 rounded-full bg-red-600 flex items-center justify-center flex-shrink-0">
-                        <span className="text-xs font-bold text-white">{daysOverdue}</span>
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <p className="font-semibold text-slate-900 text-xs truncate">{clientName}</p>
-                        <p className="text-xs text-slate-600">Parc. {inst.installment_number}/{inst.agreement?.installments_count || '?'}</p>
-                      </div>
-                      <div className="text-right flex-shrink-0">
-                        <p className="text-sm font-bold text-slate-900">{formatCurrency(feeValue)}</p>
-                      </div>
-                    </div>
+              <div className="p-3 rounded-lg bg-red-50 border border-red-100">
+                <div className="flex items-center gap-2 mb-2">
+                  <div className="w-6 h-6 rounded bg-red-100 flex items-center justify-center">
+                    <X className="w-4 h-4 text-red-600" />
                   </div>
-                );
-              })}
+                  <p className="text-xs font-semibold text-slate-600">Vencidos ({financialStats.overdue_installments} parc.)</p>
+                </div>
+                <p className="text-xl font-bold text-slate-900">{formatCurrency(financialStats.total_overdue)}</p>
+              </div>
             </div>
-            
-            <button
-              onClick={() => handleNavigate('financial')}
-              className="w-full mt-2 bg-red-600 hover:bg-red-700 text-white py-1.5 px-3 rounded-lg text-xs font-semibold transition"
-            >
-              Ver todas
-            </button>
           </div>
         )}
       </div>
 
       {/* Ações Rápidas */}
-      <div className="bg-white rounded-xl p-6 shadow-sm border border-slate-200">
-        <h2 className="text-lg font-bold text-slate-900 mb-4">Ações Rápidas</h2>
-        <div className="flex gap-3 overflow-x-auto pb-1">
+      <div className="bg-white rounded-xl p-5 shadow-sm border border-slate-200">
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="text-sm font-bold text-slate-700 uppercase tracking-wide">Ações Rápidas</h2>
+          <button className="text-amber-500 hover:text-amber-600">
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 5v.01M12 12v.01M12 19v.01M12 6a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2z" />
+            </svg>
+          </button>
+        </div>
+        
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
           <button
             onClick={() => handleNavigate('clientes?mode=create')}
-            className="group flex items-center gap-3 px-4 py-3 rounded-lg bg-gradient-to-r from-blue-500 to-blue-600 hover:from-blue-600 hover:to-blue-700 text-white transition shadow-md hover:shadow-lg flex-shrink-0"
+            className="flex items-center justify-center gap-2 p-3 rounded-lg bg-amber-500 hover:bg-amber-600 text-white transition-colors"
           >
-            <Users className="h-5 w-5" />
+            <UserPlus className="w-4 h-4" />
             <span className="text-sm font-semibold">Novo Cliente</span>
           </button>
+          
           <button
             onClick={() => handleNavigate('processos?mode=create')}
-            className="group flex items-center gap-3 px-4 py-3 rounded-lg bg-gradient-to-r from-indigo-500 to-indigo-600 hover:from-indigo-600 hover:to-indigo-700 text-white transition shadow-md hover:shadow-lg flex-shrink-0"
+            className="flex items-center justify-center gap-2 p-3 rounded-lg border border-slate-200 hover:border-slate-300 hover:bg-slate-50 text-slate-700 transition-colors"
           >
-            <Briefcase className="h-5 w-5" />
-            <span className="text-sm font-semibold">Novo Processo</span>
+            <FileText className="w-4 h-4" />
+            <span className="text-sm font-semibold">Processo</span>
           </button>
+          
           <button
             onClick={() => handleNavigate('prazos?mode=create')}
-            className="group flex items-center gap-3 px-4 py-3 rounded-lg bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 text-white transition shadow-md hover:shadow-lg flex-shrink-0"
+            className="flex items-center justify-center gap-2 p-3 rounded-lg border border-slate-200 hover:border-slate-300 hover:bg-slate-50 text-slate-700 transition-colors"
           >
-            <Clock className="h-5 w-5" />
-            <span className="text-sm font-semibold">Novo Prazo</span>
+            <Calendar className="w-4 h-4" />
+            <span className="text-sm font-semibold">Prazo</span>
           </button>
+          
           <button
             onClick={() => handleNavigate('tarefas?mode=create')}
-            className="group flex items-center gap-3 px-4 py-3 rounded-lg bg-gradient-to-r from-emerald-500 to-emerald-600 hover:from-emerald-600 hover:to-emerald-700 text-white transition shadow-md hover:shadow-lg flex-shrink-0"
+            className="flex items-center justify-center gap-2 p-3 rounded-lg border border-slate-200 hover:border-slate-300 hover:bg-slate-50 text-slate-700 transition-colors"
           >
-            <CheckSquare className="h-5 w-5" />
-            <span className="text-sm font-semibold">Nova Tarefa</span>
+            <CheckSquare className="w-4 h-4" />
+            <span className="text-sm font-semibold">Tarefa</span>
           </button>
+          
           <button
             onClick={() => handleNavigate('financeiro')}
-            className="group flex items-center gap-3 px-4 py-3 rounded-lg bg-gradient-to-r from-green-600 to-green-700 hover:from-green-700 hover:to-green-800 text-white transition shadow-md hover:shadow-lg flex-shrink-0"
+            className="flex items-center justify-center gap-2 p-3 rounded-lg border border-slate-200 hover:border-slate-300 hover:bg-slate-50 text-slate-700 transition-colors"
           >
-            <CircleDollarSign className="h-5 w-5" />
+            <DollarSign className="w-4 h-4" />
             <span className="text-sm font-semibold">Financeiro</span>
           </button>
         </div>
       </div>
 
-      {/* Main Content - 2 Columns */}
-      <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
-        {/* Left Column */}
-        <div className="space-y-6">
-          {/* Upcoming Events */}
-          <div className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
+      {/* Grid de 3 Colunas */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
+        {/* Próximos Compromissos */}
+        <div className="bg-white rounded-xl p-5 shadow-sm border border-slate-200">
             <div className="mb-4 flex items-center justify-between">
-              <h2 className="text-lg font-bold text-slate-900">Próximos Compromissos</h2>
+              <h2 className="text-sm font-bold text-slate-700 uppercase tracking-wide">Próximos Compromissos</h2>
               <button
                 onClick={() => handleNavigate('calendar')}
-                className="text-sm font-medium text-amber-600 hover:text-amber-700"
+                className="text-blue-500 hover:text-blue-600"
               >
-                Ver agenda
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                </svg>
               </button>
             </div>
             {upcomingEvents.length === 0 ? (
               <p className="text-center text-sm text-slate-500">Nenhum compromisso agendado</p>
             ) : (
-              <div className="space-y-3">
-                {upcomingEvents.map((event) => (
-                  <div
-                    key={event.id}
-                    className="flex items-start gap-3 rounded-lg border border-slate-100 bg-slate-50 p-3"
-                  >
-                    <div className="rounded-lg bg-purple-100 p-2 text-purple-600">
-                      <Calendar className="h-4 w-4" />
+              <div className="space-y-2">
+                {upcomingEvents.slice(0, 6).map((event) => (
+                  <div key={event.id} className="flex items-center gap-3 p-2 rounded-lg hover:bg-slate-50 transition-colors">
+                    <div className="w-8 h-8 rounded-lg bg-blue-100 flex items-center justify-center flex-shrink-0">
+                      <Calendar className="w-4 h-4 text-blue-600" />
                     </div>
-                    <div className="flex-1">
-                      <p className="font-medium text-slate-900">{event.title}</p>
-                      <p className="text-xs text-slate-600">
-                        {new Date(event.start_at).toLocaleString('pt-BR', {
-                          day: '2-digit',
-                          month: '2-digit',
-                          year: 'numeric',
-                          hour: '2-digit',
-                          minute: '2-digit',
-                        })}
+                    <div className="flex-1 min-w-0">
+                      <p className="text-xs font-medium text-slate-900 truncate">
+                        {new Date(event.start_at).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' })} - {event.title}
                       </p>
                     </div>
-                    <span
-                      className={`rounded-full px-2 py-1 text-xs font-medium ${
-                        event.event_type === 'hearing'
-                          ? 'bg-red-100 text-red-700'
-                          : event.event_type === 'meeting'
-                          ? 'bg-blue-100 text-blue-700'
-                          : 'bg-purple-100 text-purple-700'
-                      }`}
-                    >
-                      {event.event_type === 'hearing' ? 'Audiência' : event.event_type === 'meeting' ? 'Reunião' : event.event_type}
-                    </span>
                   </div>
                 ))}
               </div>
             )}
           </div>
 
-          {/* Upcoming Deadlines */}
-          <div className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
+          {/* Próximos Prazos */}
+          <div className="bg-white rounded-xl p-5 shadow-sm border border-slate-200">
             <div className="mb-4 flex items-center justify-between">
-              <h2 className="text-lg font-bold text-slate-900">Próximos Prazos</h2>
+              <h2 className="text-sm font-bold text-slate-700 uppercase tracking-wide">Próximos Prazos</h2>
               <button
-                onClick={() => handleNavigate('deadlines')}
-                className="text-sm font-medium text-amber-600 hover:text-amber-700"
+                onClick={() => handleNavigate('prazos')}
+                className="text-red-500 hover:text-red-600"
               >
-                Ver todos
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                </svg>
               </button>
             </div>
             {upcomingDeadlines.length === 0 ? (
               <p className="text-center text-sm text-slate-500">Nenhum prazo pendente</p>
             ) : (
               <div className="space-y-3">
-                {upcomingDeadlines.map((deadline) => (
-                  <div
-                    key={deadline.id}
-                    className="flex items-start gap-3 rounded-lg border border-slate-100 bg-slate-50 p-3"
-                  >
-                    <div className="rounded-lg bg-amber-100 p-2 text-amber-600">
-                      <AlertCircle className="h-4 w-4" />
-                    </div>
-                    <div className="flex-1">
-                      <p className="font-medium text-slate-900">{deadline.title}</p>
-                      <p className="text-xs text-slate-600">
-                        Vencimento: {new Date(deadline.due_date!).toLocaleDateString('pt-BR')}
-                      </p>
-                    </div>
-                    <span
-                      className={`rounded-full px-2 py-1 text-xs font-medium ${
-                        deadline.priority === 'alta'
-                          ? 'bg-red-100 text-red-700'
-                          : deadline.priority === 'media'
-                          ? 'bg-amber-100 text-amber-700'
-                          : 'bg-blue-100 text-blue-700'
-                      }`}
+                {upcomingDeadlines.map((deadline) => {
+                  const client = deadline.client_id ? clientMap.get(deadline.client_id) : null;
+                  return (
+                    <div
+                      key={deadline.id}
+                      className="flex items-start gap-3 rounded-lg border border-slate-100 bg-slate-50 p-3"
                     >
-                      {deadline.priority}
-                    </span>
-                  </div>
-                ))}
+                      <div className="rounded-lg bg-amber-100 p-2 text-amber-600">
+                        <AlertCircle className="h-4 w-4" />
+                      </div>
+                      <div className="flex-1">
+                        <p className="font-medium text-slate-900">{deadline.title}</p>
+                        <p className="text-xs text-slate-600">
+                          {client?.full_name || 'Sem cliente'} • Vencimento: {new Date(deadline.due_date!).toLocaleDateString('pt-BR')}
+                        </p>
+                      </div>
+                      <span
+                        className={`rounded-full px-2 py-1 text-xs font-medium ${
+                          deadline.priority === 'alta'
+                            ? 'bg-red-100 text-red-700'
+                            : deadline.priority === 'media'
+                            ? 'bg-amber-100 text-amber-700'
+                            : 'bg-blue-100 text-blue-700'
+                        }`}
+                      >
+                        {deadline.priority}
+                      </span>
+                    </div>
+                  );
+                })}
               </div>
             )}
           </div>
 
-          {/* Recent Tasks */}
-          <div className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
+          {/* Tarefas Recentes */}
+          <div className="bg-white rounded-xl p-5 shadow-sm border border-slate-200">
             <div className="mb-4 flex items-center justify-between">
-              <h2 className="text-lg font-bold text-slate-900">Tarefas Recentes</h2>
+              <h2 className="text-sm font-bold text-slate-700 uppercase tracking-wide">Tarefas Recentes</h2>
               <button
-                onClick={() => handleNavigate('tasks')}
-                className="text-sm font-medium text-amber-600 hover:text-amber-700"
+                onClick={() => handleNavigate('tarefas')}
+                className="text-emerald-500 hover:text-emerald-600"
               >
-                Ver todas
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                </svg>
               </button>
             </div>
             {recentTasks.length === 0 ? (
               <p className="text-center text-sm text-slate-500">Nenhuma tarefa pendente</p>
             ) : (
-              <div className="space-y-3">
+              <div className="space-y-2">
                 {recentTasks.map((task) => (
-                  <div
-                    key={task.id}
-                    className="flex items-start gap-3 rounded-lg border border-slate-100 bg-slate-50 p-3"
-                  >
-                    <div className="rounded-lg bg-emerald-100 p-2 text-emerald-600">
-                      <CheckSquare className="h-4 w-4" />
+                  <div key={task.id} className="flex items-center gap-3 p-2 rounded-lg hover:bg-slate-50 transition-colors">
+                    <div className="w-8 h-8 rounded-lg bg-emerald-100 flex items-center justify-center flex-shrink-0">
+                      <CheckSquare className="w-4 h-4 text-emerald-600" />
                     </div>
-                    <div className="flex-1">
-                      <p className="font-medium text-slate-900">{task.title}</p>
-                      <p className="text-xs text-slate-600">
-                        Criado em {new Date(task.created_at).toLocaleDateString('pt-BR')}
-                      </p>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-xs font-medium text-slate-900 truncate">{task.title}</p>
                     </div>
                   </div>
                 ))}
               </div>
             )}
           </div>
+      </div>
+
+      {/* Grid de 3 Colunas - Processos e Requerimentos */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
+        {/* Processos Aguardando Confecção */}
+        <div className="bg-white rounded-xl p-5 shadow-sm border border-slate-200">
+          <div className="mb-4 flex items-center justify-between">
+            <h2 className="text-sm font-bold text-slate-700 uppercase tracking-wide">Processos Aguardando Confecção</h2>
+            <button
+              onClick={() => handleNavigate('processos')}
+              className="text-amber-500 hover:text-amber-600"
+            >
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+              </svg>
+            </button>
+          </div>
+          {awaitingDraftProcessesList.length === 0 ? (
+            <p className="text-center text-sm text-slate-500">Nenhum processo aguardando</p>
+          ) : (
+            <div className="space-y-2">
+              {awaitingDraftProcessesList.map((process) => {
+                const client = process.client_id ? clientMap.get(process.client_id) : null;
+                return (
+                  <div key={process.id} className="p-3 rounded-lg bg-amber-50 border border-amber-100">
+                    <div className="flex items-center justify-between mb-1">
+                      <p className="text-xs font-semibold text-slate-900">{client?.full_name || 'Cliente não informado'}</p>
+                      <button
+                        onClick={() => handleNavigate('processos')}
+                        className="text-amber-600 hover:text-amber-700"
+                      >
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                        </svg>
+                      </button>
+                    </div>
+                    <p className="text-xs text-slate-600">{process.process_code || 'Processo sem código'}</p>
+                  </div>
+                );
+              })}
+            </div>
+          )}
         </div>
 
-        {/* Right Column */}
-        <div className="space-y-6">
-          {/* Pending Requirements */}
-        <div className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
+        {/* Requerimentos Aguardando Confecção */}
+        <div className="bg-white rounded-xl p-5 shadow-sm border border-slate-200">
           <div className="mb-4 flex items-center justify-between">
-            <h2 className="text-lg font-bold text-slate-900">Requerimentos aguardando confecção</h2>
+            <h2 className="text-sm font-bold text-slate-700 uppercase tracking-wide">Requerimentos Aguardando Confecção</h2>
             <button
               onClick={() => handleNavigate('requirements')}
-              className="text-sm font-medium text-amber-600 hover:text-amber-700"
+              className="text-purple-500 hover:text-purple-600"
             >
-              Ver requerimentos
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+              </svg>
             </button>
           </div>
           {pendingRequirementsList.length === 0 ? (
-            <p className="text-center text-sm text-slate-500">Nenhum requerimento aguardando confecção</p>
+            <p className="text-center text-sm text-slate-500">Nenhum requerimento aguardando</p>
           ) : (
-            <div className="space-y-3">
+            <div className="space-y-2">
               {pendingRequirementsList.map((requirement) => (
-                <div
-                  key={requirement.id}
-                  className="flex items-start gap-3 rounded-lg border border-slate-100 bg-slate-50 p-3"
-                >
-                  <div className="rounded-lg bg-amber-100 p-2 text-amber-600">
-                    <FileText className="h-4 w-4" />
+                <div key={requirement.id} className="p-3 rounded-lg bg-purple-50 border border-purple-100">
+                  <div className="flex items-center justify-between mb-1">
+                    <p className="text-xs font-semibold text-slate-900">{requirement.beneficiary || 'Sem beneficiário'}</p>
+                    <button
+                      onClick={() => handleNavigate('requirements')}
+                      className="text-purple-600 hover:text-purple-700"
+                    >
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                      </svg>
+                    </button>
                   </div>
-                  <div className="flex-1">
-                    <p className="font-medium text-slate-900">{requirement.beneficiary || 'Requerimento sem beneficiário'}</p>
-                    <p className="text-xs text-slate-600">
-                      Entrada: {requirement.entry_date ? new Date(requirement.entry_date).toLocaleDateString('pt-BR') : 'não informada'}
-                    </p>
-                  </div>
-                  <button
-                    onClick={() => handleNavigate('requirements')}
-                    className="text-xs font-semibold text-amber-600 hover:text-amber-700"
-                  >
-                    Ver
-                  </button>
+                  <p className="text-xs text-slate-600">Cliente: {requirement.beneficiary}</p>
                 </div>
               ))}
             </div>
           )}
         </div>
 
-        {/* Processes Awaiting Draft */}
-        <div className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
+        {/* Processos em Andamento */}
+        <div className="bg-white rounded-xl p-5 shadow-sm border border-slate-200">
           <div className="mb-4 flex items-center justify-between">
-            <h2 className="text-lg font-bold text-slate-900">Processos aguardando confecção</h2>
+            <h2 className="text-sm font-bold text-slate-700 uppercase tracking-wide">Processos em Andamento</h2>
             <button
-              onClick={() => handleNavigate('cases')}
-              className="text-sm font-medium text-amber-600 hover:text-amber-700"
+              onClick={() => handleNavigate('processos')}
+              className="text-blue-500 hover:text-blue-600"
             >
-              Ver processos
-            </button>
-          </div>
-          {awaitingDraftProcessesList.length === 0 ? (
-            <p className="text-center text-sm text-slate-500">Nenhum processo aguardando confecção</p>
-          ) : (
-            <div className="space-y-3">
-              {awaitingDraftProcessesList.map((process) => {
-                const client = process.client_id ? clientMap.get(process.client_id) : null;
-                const displayDate = process.distributed_at || process.created_at;
-
-                return (
-                  <div
-                    key={process.id}
-                    className="flex items-start gap-3 rounded-lg border border-slate-100 bg-slate-50 p-3"
-                  >
-                    <div className="rounded-lg bg-blue-100 p-2 text-blue-600">
-                      <Briefcase className="h-4 w-4" />
-                    </div>
-                    <div className="flex-1">
-                      <p className="font-medium text-slate-900">{process.process_code || 'Processo sem código'}</p>
-                      <p className="text-xs text-slate-600">
-                        Cliente: {client?.full_name || 'Não informado'}
-                      </p>
-                      {displayDate && (
-                        <p className="text-xs text-slate-500">
-                          Distribuído em {new Date(displayDate).toLocaleDateString('pt-BR')}
-                        </p>
-                      )}
-                    </div>
-                    <button
-                      onClick={() => handleNavigate('cases')}
-                      className="text-xs font-semibold text-amber-600 hover:text-amber-700"
-                    >
-                      Ver
-                    </button>
-                  </div>
-                );
-              })}
-            </div>
-          )}
-        </div>
-
-        {/* Pending Processes */}
-        <div className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
-          <div className="mb-4 flex items-center justify-between">
-            <h2 className="text-lg font-bold text-slate-900">Processos em andamento</h2>
-            <button
-              onClick={() => handleNavigate('cases')}
-              className="text-sm font-medium text-amber-600 hover:text-amber-700"
-            >
-              Ver todos
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+              </svg>
             </button>
           </div>
           {pendingProcessesList.length === 0 ? (
             <p className="text-center text-sm text-slate-500">Nenhum processo em andamento</p>
           ) : (
-            <div className="space-y-3">
+            <div className="space-y-2">
               {pendingProcessesList.map((process) => {
                 const client = process.client_id ? clientMap.get(process.client_id) : null;
-
                 return (
-                  <div
-                    key={process.id}
-                    className="flex items-start gap-3 rounded-lg border border-slate-100 bg-slate-50 p-3"
-                  >
-                    <div className="rounded-lg bg-purple-100 p-2 text-purple-600">
-                      <Briefcase className="h-4 w-4" />
+                  <div key={process.id} className="p-3 rounded-lg bg-blue-50 border border-blue-100">
+                    <div className="flex items-center justify-between mb-1">
+                      <p className="text-xs font-semibold text-slate-900">{client?.full_name || 'Cliente não informado'}</p>
+                      <button
+                        onClick={() => handleNavigate('processos')}
+                        className="text-blue-600 hover:text-blue-700"
+                      >
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                        </svg>
+                      </button>
                     </div>
-                    <div className="flex-1">
-                      <p className="font-medium text-slate-900">{process.process_code || 'Processo sem código'}</p>
-                      <p className="text-xs text-slate-600">
-                        Cliente: {client?.full_name || 'Não informado'}
-                      </p>
-                      <p className="text-xs text-slate-500">
-                        Status: {process.status === 'andamento' ? 'Em andamento' : 'Distribuído'}
-                      </p>
-                    </div>
-                    <button
-                      onClick={() => handleNavigate('cases')}
-                      className="text-xs font-semibold text-amber-600 hover:text-amber-700"
-                    >
-                      Ver
-                    </button>
+                    <p className="text-xs text-slate-600">{process.process_code || 'Processo sem código'}</p>
                   </div>
                 );
               })}
             </div>
           )}
         </div>
-        </div>
       </div>
 
-      {/* Activity Summary */}
-      <div className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
-        <h2 className="mb-4 text-lg font-bold text-slate-900">Resumo de Atividades</h2>
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-          <div className="flex items-center gap-3 rounded-lg bg-blue-50 p-4">
-            <FileText className="h-8 w-8 text-blue-600" />
-            <div>
-              <p className="text-2xl font-bold text-blue-900">{clients.length}</p>
-              <p className="text-sm text-blue-700">Total de Clientes</p>
-            </div>
+      {/* Footer Stats */}
+      <div className="bg-white rounded-xl p-4 shadow-sm border border-slate-200">
+        <div className="flex flex-wrap items-center justify-center gap-6 text-xs text-slate-600">
+          <div className="flex items-center gap-2">
+            <span className="font-semibold text-slate-900">{clients.length}</span>
+            <span>Clientes</span>
           </div>
-          <div className="flex items-center gap-3 rounded-lg bg-purple-50 p-4">
-            <Briefcase className="h-8 w-8 text-purple-600" />
-            <div>
-              <p className="text-2xl font-bold text-purple-900">{processes.length}</p>
-              <p className="text-sm text-purple-700">Total de Processos</p>
-            </div>
+          <div className="w-px h-4 bg-slate-300"></div>
+          <div className="flex items-center gap-2">
+            <span className="font-semibold text-slate-900">{processes.length}</span>
+            <span>Processos</span>
           </div>
-          <div className="flex items-center gap-3 rounded-lg bg-emerald-50 p-4">
-            <Target className="h-8 w-8 text-emerald-600" />
-            <div>
-              <p className="text-2xl font-bold text-emerald-900">
-                {tasks.filter((t) => t.status === 'completed').length}
-              </p>
-              <p className="text-sm text-emerald-700">Tarefas Concluídas</p>
-            </div>
+          <div className="w-px h-4 bg-slate-300"></div>
+          <div className="flex items-center gap-2">
+            <span className="font-semibold text-slate-900">{tasks.filter((t) => t.status === 'completed').length}</span>
+            <span>Tarefas Concluídas</span>
           </div>
-          <div className="flex items-center gap-3 rounded-lg bg-amber-50 p-4">
-            <FileText className="h-8 w-8 text-amber-600" />
-            <div>
-              <p className="text-2xl font-bold text-amber-900">{awaitingRequirements.length}</p>
-              <p className="text-sm text-amber-700">Requerimentos em Confecção</p>
-            </div>
-          </div>
-          <div className="flex items-center gap-3 rounded-lg bg-blue-50 p-4">
-            <Briefcase className="h-8 w-8 text-blue-600" />
-            <div>
-              <p className="text-2xl font-bold text-blue-900">{awaitingDraftProcesses.length}</p>
-              <p className="text-sm text-blue-700">Processos aguardando confecção</p>
-            </div>
+          <div className="w-px h-4 bg-slate-300"></div>
+          <div className="flex items-center gap-2">
+            <span className="font-semibold text-slate-900">{awaitingRequirements.length}</span>
+            <span>Aguardando Confecção</span>
           </div>
         </div>
       </div>

@@ -20,6 +20,8 @@ class DjenLocalService {
     lida?: boolean;
     client_id?: string;
     process_id?: string;
+    data_inicio?: string;
+    data_fim?: string;
   }): Promise<DjenComunicacaoLocal[]> {
     let query = supabase
       .from(this.tableName)
@@ -41,6 +43,14 @@ class DjenLocalService {
 
     if (filters?.process_id) {
       query = query.eq('process_id', filters.process_id);
+    }
+
+    if (filters?.data_inicio) {
+      query = query.gte('data_disponibilizacao', filters.data_inicio);
+    }
+
+    if (filters?.data_fim) {
+      query = query.lte('data_disponibilizacao', filters.data_fim);
     }
 
     const { data, error } = await query;
@@ -507,6 +517,60 @@ class DjenLocalService {
     }
 
     return count ?? 0;
+  }
+
+  /**
+   * Remove intimações antigas (mais de X dias)
+   * @param days Número de dias para manter (padrão: 30)
+   */
+  async cleanOldIntimations(days: number = 30): Promise<{ deleted: number }> {
+    const cutoffDate = new Date();
+    cutoffDate.setDate(cutoffDate.getDate() - days);
+    const cutoffISO = cutoffDate.toISOString();
+
+    const { data, error } = await supabase
+      .from(this.tableName)
+      .delete()
+      .lt('data_disponibilizacao', cutoffISO)
+      .select('id');
+
+    if (error) {
+      console.error('Erro ao limpar intimações antigas:', error);
+      throw new Error(error.message);
+    }
+
+    const deleted = data?.length || 0;
+    console.log(`🗑️ ${deleted} intimação(ões) antiga(s) removida(s) (mais de ${days} dias)`);
+    
+    return { deleted };
+  }
+
+  /**
+   * Busca intimações arquivadas (antigas)
+   * @param days Número de dias atrás para buscar
+   */
+  async getArchivedIntimations(days: number = 30): Promise<DjenComunicacaoLocal[]> {
+    const cutoffDate = new Date();
+    cutoffDate.setDate(cutoffDate.getDate() - days);
+    const cutoffISO = cutoffDate.toISOString();
+
+    const { data, error } = await supabase
+      .from(this.tableName)
+      .select(
+        `*,
+        djen_destinatarios (id, nome, polo),
+        djen_advogados (id, nome, numero_oab, uf_oab)`
+      )
+      .eq('ativo', true)
+      .lt('data_disponibilizacao', cutoffISO)
+      .order('data_disponibilizacao', { ascending: false });
+
+    if (error) {
+      console.error('Erro ao buscar intimações arquivadas:', error);
+      throw new Error(error.message);
+    }
+
+    return data ?? [];
   }
 }
 

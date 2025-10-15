@@ -33,6 +33,7 @@ import { calendarService } from '../services/calendar.service';
 import { profileService } from '../services/profile.service';
 import { userNotificationService } from '../services/userNotification.service';
 import { aiService } from '../services/ai.service';
+import { intimationAnalysisService } from '../services/intimationAnalysis.service';
 import { useToastContext } from '../contexts/ToastContext';
 import type { DjenComunicacaoLocal, DjenConsultaParams } from '../types/djen.types';
 import type { Client } from '../types/client.types';
@@ -65,6 +66,9 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
   // Filtros e busca
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState<'all' | 'unread' | 'read'>('unread');
+  const [dateFilter, setDateFilter] = useState<'30days' | '60days' | '90days' | 'all'>('30days');
+  const [customDateStart, setCustomDateStart] = useState('');
+  const [customDateEnd, setCustomDateEnd] = useState('');
   const [showFilters, setShowFilters] = useState(false);
   const [groupByProcess, setGroupByProcess] = useState(false);
 
@@ -117,7 +121,21 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
         intimation.tipo_comunicacao || undefined
       );
 
+      // Atualizar estado local
       setAiAnalysis(prev => new Map(prev).set(intimation.id, analysis));
+      
+      // Salvar análise no banco de dados
+      try {
+        await intimationAnalysisService.saveAnalysis(
+          intimation.id,
+          analysis,
+          currentUserProfile?.id
+        );
+        console.log('✅ Análise salva no banco de dados');
+      } catch (saveErr: any) {
+        console.error('Erro ao salvar análise no banco:', saveErr);
+        // Não bloqueia o fluxo se falhar ao salvar
+      }
       
       if (!silent) {
         setExpandedIntimationIds(prev => new Set(prev).add(intimation.id));
@@ -165,6 +183,25 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
       const intimationsData = await djenLocalService.listComunicacoes();
       setIntimations(intimationsData);
 
+      // Carregar análises salvas do banco de dados
+      if (intimationsData.length > 0) {
+        try {
+          const intimationIds = intimationsData.map(int => int.id);
+          const savedAnalyses = await intimationAnalysisService.getAnalysesByIntimationIds(intimationIds);
+          
+          // Converter para o formato usado pela aplicação
+          const analysisMap = new Map<string, IntimationAnalysis>();
+          savedAnalyses.forEach((dbAnalysis, intimationId) => {
+            analysisMap.set(intimationId, intimationAnalysisService.convertToIntimationAnalysis(dbAnalysis));
+          });
+          
+          setAiAnalysis(analysisMap);
+          console.log(`✅ ${analysisMap.size} análise(s) recarregada(s)`);
+        } catch (err: any) {
+          console.error('Erro ao carregar análises salvas:', err);
+        }
+      }
+
       // Analisar automaticamente intimações não lidas (se solicitado)
       if (runAutoAnalysis && intimationsData.length > 0) {
         setTimeout(() => autoAnalyzeNewIntimations(intimationsData), 1000);
@@ -190,6 +227,26 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
       setProcesses(processesData);
       setMembers(membersData);
       setCurrentUserProfile(userProfile);
+
+      // Carregar análises salvas do banco de dados
+      if (intimationsData.length > 0) {
+        try {
+          const intimationIds = intimationsData.map(int => int.id);
+          const savedAnalyses = await intimationAnalysisService.getAnalysesByIntimationIds(intimationIds);
+          
+          // Converter para o formato usado pela aplicação
+          const analysisMap = new Map<string, IntimationAnalysis>();
+          savedAnalyses.forEach((dbAnalysis, intimationId) => {
+            analysisMap.set(intimationId, intimationAnalysisService.convertToIntimationAnalysis(dbAnalysis));
+          });
+          
+          setAiAnalysis(analysisMap);
+          console.log(`✅ ${analysisMap.size} análise(s) carregada(s) do banco de dados`);
+        } catch (err: any) {
+          console.error('Erro ao carregar análises salvas:', err);
+          // Não bloqueia o carregamento se falhar
+        }
+      }
 
       // Analisar automaticamente intimações não lidas (se solicitado)
       if (runAutoAnalysis && intimationsData.length > 0) {
@@ -275,6 +332,17 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
             });
             savedFromProcesses = result.saved;
           }
+        }
+
+        // Limpar intimações antigas (mais de 30 dias)
+        try {
+          const cleanResult = await djenLocalService.cleanOldIntimations(30);
+          if (cleanResult.deleted > 0 && mode === 'manual') {
+            console.log(`🗑️ ${cleanResult.deleted} intimação(ões) antiga(s) removida(s)`);
+          }
+        } catch (cleanErr: any) {
+          console.error('Erro ao limpar intimações antigas:', cleanErr);
+          // Não bloqueia o fluxo se falhar
         }
 
         // Recarregar apenas intimações (sem flash) e analisar automaticamente
@@ -442,6 +510,41 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
       filtered = filtered.filter((i) => i.lida);
     }
 
+    // Filtro de data
+    if (dateFilter !== 'all') {
+      const now = new Date();
+      let daysAgo = 30;
+      
+      if (dateFilter === '60days') daysAgo = 60;
+      else if (dateFilter === '90days') daysAgo = 90;
+      
+      const cutoffDate = new Date(now);
+      cutoffDate.setDate(cutoffDate.getDate() - daysAgo);
+      
+      filtered = filtered.filter((i) => {
+        const intimationDate = new Date(i.data_disponibilizacao);
+        return intimationDate >= cutoffDate;
+      });
+    }
+
+    // Filtro de data customizado
+    if (customDateStart) {
+      const startDate = new Date(customDateStart);
+      filtered = filtered.filter((i) => {
+        const intimationDate = new Date(i.data_disponibilizacao);
+        return intimationDate >= startDate;
+      });
+    }
+
+    if (customDateEnd) {
+      const endDate = new Date(customDateEnd);
+      endDate.setHours(23, 59, 59, 999); // Fim do dia
+      filtered = filtered.filter((i) => {
+        const intimationDate = new Date(i.data_disponibilizacao);
+        return intimationDate <= endDate;
+      });
+    }
+
     // Busca
     if (searchTerm.trim()) {
       const term = searchTerm.toLowerCase();
@@ -455,7 +558,7 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
     }
 
     return filtered;
-  }, [intimations, statusFilter, searchTerm]);
+  }, [intimations, statusFilter, dateFilter, customDateStart, customDateEnd, searchTerm]);
 
   // Contadores
   const unreadCount = intimations.filter((i) => !i.lida).length;
@@ -822,6 +925,29 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
             <option value="read">Lidas ({readCount})</option>
           </select>
 
+          <select
+            value={dateFilter}
+            onChange={(e) => setDateFilter(e.target.value as any)}
+            className="px-4 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm min-w-[160px]"
+          >
+            <option value="30days">Últimos 30 dias</option>
+            <option value="60days">Últimos 60 dias</option>
+            <option value="90days">Últimos 90 dias</option>
+            <option value="all">Todas as datas</option>
+          </select>
+
+          <button
+            onClick={() => setShowFilters(!showFilters)}
+            className={`inline-flex items-center gap-2 px-4 py-2.5 rounded-lg transition text-sm font-medium ${
+              showFilters
+                ? 'bg-indigo-100 text-indigo-700 border border-indigo-300'
+                : 'border border-gray-300 text-slate-700 hover:bg-slate-50'
+            }`}
+          >
+            <Filter className="w-4 h-4" />
+            {showFilters ? 'Ocultar Filtros' : 'Filtros Avançados'}
+          </button>
+
           <button
             onClick={() => {
               setSelectionMode(!selectionMode);
@@ -847,6 +973,43 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
             {groupByProcess ? 'Desagrupar Processos' : 'Agrupar por Processo'}
           </button>
         </div>
+
+        {showFilters && (
+          <div className="mt-4 pt-4 border-t border-gray-200">
+            <h4 className="text-sm font-semibold text-slate-700 mb-3">Filtro por Data Personalizado</h4>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-xs font-medium text-slate-600 mb-1">Data Início</label>
+                <input
+                  type="date"
+                  value={customDateStart}
+                  onChange={(e) => setCustomDateStart(e.target.value)}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-slate-600 mb-1">Data Fim</label>
+                <input
+                  type="date"
+                  value={customDateEnd}
+                  onChange={(e) => setCustomDateEnd(e.target.value)}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+                />
+              </div>
+            </div>
+            {(customDateStart || customDateEnd) && (
+              <button
+                onClick={() => {
+                  setCustomDateStart('');
+                  setCustomDateEnd('');
+                }}
+                className="mt-3 text-xs text-blue-600 hover:text-blue-700 font-medium"
+              >
+                Limpar filtro personalizado
+              </button>
+            )}
+          </div>
+        )}
 
         {selectionMode && selectedIds.size > 0 && (
           <div className="mt-4 pt-4 border-t border-gray-200 flex items-center justify-between">
@@ -1098,7 +1261,7 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
                 </button>
 
                 <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2 mb-3">
+                  <div className="flex items-center gap-2 mb-3 flex-wrap">
                     <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
                       {intimation.sigla_tribunal}
                     </span>
@@ -1113,6 +1276,12 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
                     {!intimation.lida && (
                       <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold bg-amber-100 text-amber-700">
                         NÃO LIDA
+                      </span>
+                    )}
+                    {aiAnalysis.has(intimation.id) && (
+                      <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-gradient-to-r from-violet-100 to-purple-100 text-violet-700 border border-violet-200">
+                        <Sparkles className="w-3 h-3" />
+                        Analisado por IA
                       </span>
                     )}
                   </div>

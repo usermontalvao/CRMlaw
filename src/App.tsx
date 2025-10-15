@@ -195,6 +195,49 @@ function App() {
     loadProfile();
   }, [user]);
 
+  // Monitorar mudanças de autenticação e renovar sessão automaticamente
+  useEffect(() => {
+    const { data: authListener } = supabase.auth.onAuthStateChange(async (event, session) => {
+      console.log('Auth state changed:', event);
+      
+      if (event === 'TOKEN_REFRESHED') {
+        console.log('✅ Token renovado automaticamente');
+      }
+      
+      if (event === 'SIGNED_OUT' || (event === 'USER_UPDATED' && !session)) {
+        console.log('🔒 Sessão expirada ou logout detectado');
+        // Limpar cache
+        sessionStorage.removeItem(PROFILE_CACHE_KEY);
+        sessionStorage.removeItem(NOTIFICATIONS_CACHE_KEY);
+        
+        // Reset estado
+        setProfile({
+          name: 'Usuário',
+          email: '',
+          avatarUrl: GENERIC_AVATAR,
+          role: 'Advogado',
+          oab: '',
+          phone: '',
+          bio: '',
+          lawyerFullName: '',
+        });
+        setNotifications([]);
+        setPendingTasksCount(0);
+        setModuleParams({});
+        setClientPrefill(null);
+        
+        // Redirecionar para login
+        if (location.pathname !== '/' && location.pathname !== '/login') {
+          navigate('/', { replace: true });
+        }
+      }
+    });
+
+    return () => {
+      authListener.subscription.unsubscribe();
+    };
+  }, [location.pathname, navigate]);
+
   // Detectar quando usuário perde autenticação e limpar estado
   useEffect(() => {
     if (!user && !loading) {
