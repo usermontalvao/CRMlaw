@@ -1673,53 +1673,70 @@ const ProcessesModule: React.FC<ProcessesModuleProps> = ({ forceCreate, entityId
 
   return (
     <div className="space-y-6">
-      <div className="bg-gradient-to-br from-white to-slate-50 border border-gray-200 rounded-2xl shadow-sm overflow-hidden">
-        <div className="p-6 pb-4">
-          <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4 mb-6">
-            <div>
-              <h3 className="text-2xl font-bold text-slate-900">Gestão de Processos</h3>
-              <p className="text-sm text-slate-600 mt-1">
-                Cadastre e acompanhe todos os processos jurídicos
-              </p>
+      {/* Header Moderno com Gradiente */}
+      <div className="relative bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 rounded-2xl shadow-2xl overflow-hidden">
+        {/* Padrão de fundo decorativo */}
+        <div className="absolute inset-0 bg-[url('data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNjAiIGhlaWdodD0iNjAiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+PGRlZnM+PHBhdHRlcm4gaWQ9ImdyaWQiIHdpZHRoPSI2MCIgaGVpZ2h0PSI2MCIgcGF0dGVyblVuaXRzPSJ1c2VyU3BhY2VPblVzZSI+PHBhdGggZD0iTSAxMCAwIEwgMCAwIDAgMTAiIGZpbGw9Im5vbmUiIHN0cm9rZT0icmdiYSgyNTUsMjU1LDI1NSwwLjAzKSIgc3Ryb2tlLXdpZHRoPSIxIi8+PC9wYXR0ZXJuPjwvZGVmcz48cmVjdCB3aWR0aD0iMTAwJSIgaGVpZ2h0PSIxMDAlIiBmaWxsPSJ1cmwoI2dyaWQpIi8+PC9zdmc+')] opacity-40"></div>
+        
+        {/* Efeito de brilho */}
+        <div className="absolute top-0 right-0 w-96 h-96 bg-amber-500/10 rounded-full blur-3xl"></div>
+        <div className="absolute bottom-0 left-0 w-96 h-96 bg-blue-500/10 rounded-full blur-3xl"></div>
+        
+        <div className="relative p-6 sm:p-8">
+          {/* Título e Ações */}
+          <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-6 mb-8">
+            <div className="flex items-center gap-4">
+              <div className="flex-shrink-0 w-14 h-14 bg-gradient-to-br from-amber-400 to-amber-600 rounded-xl flex items-center justify-center shadow-lg">
+                <Building2 className="w-7 h-7 text-white" />
+              </div>
+              <div>
+                <h3 className="text-3xl font-bold text-white mb-1">Gestão de Processos</h3>
+                <p className="text-sm text-slate-300">
+                  Cadastre e acompanhe todos os processos jurídicos do escritório
+                </p>
+              </div>
             </div>
 
             <button
               onClick={() => handleOpenModal()}
-              className="inline-flex items-center justify-center gap-2 bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 text-white font-semibold px-6 py-3 rounded-xl shadow-lg hover:shadow-xl transition-all duration-200 transform hover:scale-105"
+              className="inline-flex items-center justify-center gap-2 bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-white font-bold px-8 py-4 rounded-xl shadow-xl hover:shadow-2xl transition-all duration-300 transform hover:scale-105 hover:-translate-y-0.5"
             >
               <Plus className="w-5 h-5" />
-              Novo Processo
+              <span>Novo Processo</span>
             </button>
           </div>
 
-          <div className="bg-white border border-slate-200 rounded-xl p-3 sm:p-4 shadow-sm">
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
-              <div className="sm:col-span-2">
-                <label className="block text-xs font-semibold uppercase tracking-wide text-slate-600 mb-2">
-                  Buscar Processo
+          {/* Barra de Filtros e Busca */}
+          <div className="bg-white/95 backdrop-blur-sm rounded-xl p-4 sm:p-5 shadow-xl border border-white/20">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-12 gap-4">
+              {/* Busca */}
+              <div className="sm:col-span-2 lg:col-span-5">
+                <label className="block text-xs font-bold uppercase tracking-wider text-slate-700 mb-2">
+                  🔍 Buscar Processo
                 </label>
-                <div className="relative">
-                  <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-slate-400 w-5 h-5" />
+                <div className="relative group">
+                  <Search className="absolute left-4 top-1/2 transform -translate-y-1/2 text-slate-400 group-focus-within:text-amber-500 w-5 h-5 transition-colors" />
                   <input
                     type="text"
                     value={searchTerm}
                     onChange={(event) => setSearchTerm(event.target.value)}
-                    className="w-full pl-11 pr-4 py-3 rounded-lg border-2 border-slate-200 bg-slate-50 text-sm text-slate-700 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-amber-500 focus:border-amber-500 focus:bg-white transition-all"
+                    className="w-full pl-12 pr-4 py-3.5 rounded-xl border-2 border-slate-200 bg-white text-sm text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-amber-500 focus:border-transparent transition-all shadow-sm hover:shadow-md"
                     placeholder="Cliente, código do processo ou vara..."
                   />
                 </div>
               </div>
 
-              <div>
-                <label className="block text-xs font-semibold uppercase tracking-wide text-slate-600 mb-2">
-                  Filtrar por Status
+              {/* Filtro de Status */}
+              <div className="lg:col-span-3">
+                <label className="block text-xs font-bold uppercase tracking-wider text-slate-700 mb-2">
+                  📊 Status
                 </label>
                 <select
                   value={statusFilter}
                   onChange={(event) => setStatusFilter(event.target.value as ProcessStatus | 'todos')}
-                  className="w-full px-4 py-3 rounded-lg border-2 border-slate-200 bg-slate-50 text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-amber-500 focus:border-amber-500 focus:bg-white transition-all"
+                  className="w-full px-4 py-3.5 rounded-xl border-2 border-slate-200 bg-white text-sm text-slate-800 font-medium focus:outline-none focus:ring-2 focus:ring-amber-500 focus:border-transparent transition-all shadow-sm hover:shadow-md cursor-pointer"
                 >
-                  <option value="todos">Todos os status</option>
+                  <option value="todos">📋 Todos os status</option>
                   {STATUS_OPTIONS.map((status) => (
                     <option key={status.key} value={status.key}>
                       {status.label}
@@ -1728,28 +1745,29 @@ const ProcessesModule: React.FC<ProcessesModuleProps> = ({ forceCreate, entityId
                 </select>
               </div>
 
-              <div className="sm:col-span-2 flex items-end gap-2">
+              {/* Ações */}
+              <div className="sm:col-span-2 lg:col-span-4 flex items-end gap-3">
                 <button
                   onClick={() => setKanbanMode(!kanbanMode)}
-                  className={`flex-1 inline-flex items-center justify-center gap-1 sm:gap-2 font-medium px-3 sm:px-4 py-3 rounded-lg transition-all duration-200 ${
+                  className={`flex-1 inline-flex items-center justify-center gap-2 font-bold px-4 py-3.5 rounded-xl transition-all duration-300 shadow-md hover:shadow-lg transform hover:-translate-y-0.5 ${
                     kanbanMode
-                      ? 'bg-purple-600 hover:bg-purple-700 text-white shadow-md'
-                      : 'bg-white hover:bg-slate-100 text-slate-700 border-2 border-slate-200'
+                      ? 'bg-gradient-to-r from-purple-600 to-purple-700 hover:from-purple-500 hover:to-purple-600 text-white'
+                      : 'bg-white hover:bg-slate-50 text-slate-700 border-2 border-slate-300 hover:border-slate-400'
                   }`}
-                  title={kanbanMode ? 'Modo Lista' : 'Modo Kanban'}
+                  title={kanbanMode ? 'Alternar para Modo Lista' : 'Alternar para Modo Kanban'}
                 >
-                  {kanbanMode ? <List className="w-4 h-4 sm:w-5 sm:h-5" /> : <LayoutGrid className="w-4 h-4 sm:w-5 sm:h-5" />}
-                  <span className="text-xs sm:text-sm">{kanbanMode ? 'Lista' : 'Kanban'}</span>
+                  {kanbanMode ? <List className="w-5 h-5" /> : <LayoutGrid className="w-5 h-5" />}
+                  <span className="text-sm">{kanbanMode ? 'Lista' : 'Kanban'}</span>
                 </button>
 
                 <button
                   onClick={handleExportExcel}
                   disabled={exportingExcel}
-                  className="flex-1 inline-flex items-center justify-center gap-1 sm:gap-2 bg-green-600 hover:bg-green-700 disabled:bg-green-400 text-white font-medium px-3 sm:px-4 py-3 rounded-lg shadow-md hover:shadow-lg transition-all duration-200 disabled:cursor-not-allowed"
+                  className="flex-1 inline-flex items-center justify-center gap-2 bg-gradient-to-r from-emerald-600 to-emerald-700 hover:from-emerald-500 hover:to-emerald-600 disabled:from-emerald-400 disabled:to-emerald-500 text-white font-bold px-4 py-3.5 rounded-xl shadow-md hover:shadow-lg transition-all duration-300 disabled:cursor-not-allowed transform hover:-translate-y-0.5 disabled:transform-none"
                   title="Exportar para Excel"
                 >
-                  {exportingExcel ? <Loader2 className="w-4 h-4 sm:w-5 sm:h-5 animate-spin" /> : <FileSpreadsheet className="w-4 h-4 sm:w-5 sm:h-5" />}
-                  <span className="text-xs sm:text-sm">{exportingExcel ? 'Gerando...' : 'Excel'}</span>
+                  {exportingExcel ? <Loader2 className="w-5 h-5 animate-spin" /> : <FileSpreadsheet className="w-5 h-5" />}
+                  <span className="text-sm">{exportingExcel ? 'Gerando...' : 'Excel'}</span>
                 </button>
               </div>
             </div>

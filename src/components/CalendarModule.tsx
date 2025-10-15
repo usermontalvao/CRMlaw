@@ -37,6 +37,7 @@ type NewEventForm = {
 };
 
 interface CalendarModuleProps {
+  userName?: string;
   onNavigateToModule?: (params: { module: string; entityId?: string }) => void;
   onEditSystemEntity?: (payload: { module: string; entityId: string; data?: any }) => void;
   prefillData?: {
@@ -71,6 +72,7 @@ type SelectedEvent = {
 };
 
 const CalendarModule: React.FC<CalendarModuleProps> = ({
+  userName,
   onNavigateToModule,
   onEditSystemEntity,
   prefillData,
@@ -109,6 +111,11 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({
   const [showClientSuggestions, setShowClientSuggestions] = useState(false);
   const [editingEventId, setEditingEventId] = useState<string | null>(null);
   const [feedback, setFeedback] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
+  const [isExportModalOpen, setIsExportModalOpen] = useState(false);
+  const [exportPeriod, setExportPeriod] = useState<'7' | '15' | '30' | '60' | 'custom'>('30');
+  const [exportStartDate, setExportStartDate] = useState('');
+  const [exportEndDate, setExportEndDate] = useState('');
+  const [exportFormat, setExportFormat] = useState<'excel' | 'pdf'>('excel');
   const linkedClient = useMemo(
     () => clients.find((client) => client.id === newEventForm.client_id) || null,
     [clients, newEventForm.client_id],
@@ -808,12 +815,19 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({
   );
 
 
-  const buildAgendaRows = () => {
+  const buildAgendaRows = (startDate?: Date, endDate?: Date) => {
     const rows: Record<string, string>[] = [];
 
     deadlines.forEach((deadline) => {
       if (deadline.status === 'cumprido' || deadline.status === 'cancelado') return;
       if (!viewFilters.deadline) return;
+      
+      // Filtrar por período se especificado
+      if (startDate && endDate && deadline.due_date) {
+        const dueDate = new Date(deadline.due_date);
+        if (dueDate < startDate || dueDate > endDate) return;
+      }
+      
       const client = deadline.client_id ? clientMap.get(deadline.client_id) : null;
       rows.push({
         Data: formatDateTime(deadline.due_date),
@@ -831,6 +845,13 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({
       .filter((p) => p.hearing_scheduled && p.hearing_date)
       .forEach((process) => {
         if (!viewFilters.hearing) return;
+        
+        // Filtrar por período se especificado
+        if (startDate && endDate && process.hearing_date) {
+          const hearingDate = new Date(process.hearing_date);
+          if (hearingDate < startDate || hearingDate > endDate) return;
+        }
+        
         const client = process.client_id ? clientMap.get(process.client_id) : null;
         rows.push({
           Data: formatDateTime(
@@ -852,6 +873,13 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({
       .filter((r) => r.status === 'em_exigencia' && r.exigency_due_date)
       .forEach((requirement) => {
         if (!viewFilters.requirement) return;
+        
+        // Filtrar por período se especificado
+        if (startDate && endDate && requirement.exigency_due_date) {
+          const exigencyDate = new Date(requirement.exigency_due_date);
+          if (exigencyDate < startDate || exigencyDate > endDate) return;
+        }
+        
         rows.push({
           Data: formatDateTime(requirement.exigency_due_date ?? undefined),
           Tipo: 'Requerimento',
@@ -866,6 +894,13 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({
 
     calendarEventsData.forEach((event) => {
       if (!viewFilters[event.event_type]) return;
+      
+      // Filtrar por período se especificado
+      if (startDate && endDate && event.start_at) {
+        const eventDate = new Date(event.start_at);
+        if (eventDate < startDate || eventDate > endDate) return;
+      }
+      
       const eventTypeLabels: Record<string, string> = {
         payment: 'Pagamento',
         meeting: 'Reunião',
@@ -890,30 +925,211 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({
     return rows;
   };
 
+  const handleOpenExportModal = (format: 'excel' | 'pdf' = 'excel') => {
+    const today = new Date();
+    setExportStartDate(today.toISOString().split('T')[0]);
+    const endDate = new Date(today);
+    endDate.setDate(endDate.getDate() + 30);
+    setExportEndDate(endDate.toISOString().split('T')[0]);
+    setExportFormat(format);
+    setIsExportModalOpen(true);
+  };
+
   const handleExportCalendar = async () => {
     try {
-      const rows = buildAgendaRows();
+      let startDate: Date | undefined;
+      let endDate: Date | undefined;
+
+      if (exportPeriod === 'custom') {
+        if (!exportStartDate || !exportEndDate) {
+          setFeedback({ type: 'error', message: 'Selecione as datas de início e fim.' });
+          return;
+        }
+        // Corrigir timezone: adicionar 'T00:00:00' para forçar horário local
+        startDate = new Date(exportStartDate + 'T00:00:00');
+        endDate = new Date(exportEndDate + 'T23:59:59');
+      } else {
+        startDate = new Date();
+        startDate.setHours(0, 0, 0, 0);
+        endDate = new Date();
+        endDate.setDate(endDate.getDate() + parseInt(exportPeriod));
+        endDate.setHours(23, 59, 59, 999);
+      }
+
+      const rows = buildAgendaRows(startDate, endDate);
 
       if (!rows.length) {
-        setFeedback({ type: 'error', message: 'Não há compromissos para exportar.' });
+        setFeedback({ type: 'error', message: 'Não há compromissos no período selecionado.' });
         return;
       }
 
-      const workbook = XLSX.utils.book_new();
-      const worksheet = XLSX.utils.json_to_sheet(rows);
-      worksheet['!cols'] = [
-        { wch: 22 },
-        { wch: 18 },
-        { wch: 50 },
-        { wch: 35 },
-        { wch: 18 },
-        { wch: 12 },
-        { wch: 10 },
-        { wch: 40 },
-      ];
-      XLSX.utils.book_append_sheet(workbook, worksheet, 'Agenda');
-      const today = new Date().toISOString().split('T')[0];
-      XLSX.writeFile(workbook, `agenda_${today}.xlsx`);
+      if (exportFormat === 'pdf') {
+        // Exportar PDF
+        const jspdfModule = await loadJsPdf();
+        const doc = new jspdfModule.jsPDF('landscape', 'pt', 'a4');
+        const today = new Date().toLocaleDateString('pt-BR');
+        const pageWidth = doc.internal.pageSize.getWidth();
+
+        // Adicionar logo
+        try {
+          const logoImg = new Image();
+          logoImg.src = '/icon-512.png';
+          await new Promise((resolve, reject) => {
+            logoImg.onload = resolve;
+            logoImg.onerror = reject;
+            setTimeout(reject, 3000); // timeout de 3s
+          });
+          doc.addImage(logoImg, 'PNG', 40, 30, 50, 50);
+        } catch (err) {
+          console.warn('Logo não carregada:', err);
+        }
+
+        // Cabeçalho - Título e Informações
+        doc.setFillColor(15, 23, 42); // slate-900
+        doc.rect(0, 0, pageWidth, 25, 'F');
+        
+        doc.setTextColor(255, 255, 255);
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(10);
+        doc.text('ADVOGADO.WEB - GESTÃO JURÍDICA', pageWidth / 2, 16, { align: 'center' });
+
+        // Título Principal
+        doc.setTextColor(15, 23, 42);
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(24);
+        doc.text('Agenda de Compromissos', 110, 55);
+
+        // Linha decorativa
+        doc.setDrawColor(245, 158, 11); // amber-500
+        doc.setLineWidth(3);
+        doc.line(110, 62, 280, 62);
+
+        // Informações do período e data
+        doc.setFont('helvetica', 'normal');
+        doc.setFontSize(11);
+        doc.setTextColor(71, 85, 105); // slate-600
+        
+        const periodText = exportPeriod === 'custom'
+          ? `Período: ${new Date(exportStartDate + 'T00:00:00').toLocaleDateString('pt-BR')} a ${new Date(exportEndDate + 'T00:00:00').toLocaleDateString('pt-BR')}`
+          : `Próximos ${exportPeriod} dias`;
+        doc.text(periodText, 110, 75);
+        
+        doc.setFontSize(9);
+        doc.setTextColor(100, 116, 139);
+        doc.text(`Gerado em: ${today} às ${new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}`, 110, 88);
+        
+        // Nome do usuário
+        const exportedBy = userName || 'Usuário do Sistema';
+        doc.text(`Exportado por: ${exportedBy}`, 110, 100);
+
+        // Tabela de compromissos
+        (doc as any).autoTable({
+          startY: 115,
+          head: [['Data', 'Tipo', 'Título', 'Cliente', 'Telefone', 'Status', 'Prioridade', 'Descrição']],
+          body: rows.map((row) => [
+            row['Data'],
+            row['Tipo'],
+            row['Título'],
+            row['Cliente'],
+            row['Telefone'],
+            row['Status'],
+            row['Prioridade'],
+            row['Descrição'],
+          ]),
+          styles: {
+            font: 'helvetica',
+            fontSize: 8,
+            cellPadding: 4,
+            lineWidth: 0.5,
+            lineColor: [226, 232, 240], // slate-200
+            overflow: 'linebreak',
+            cellWidth: 'wrap',
+            textColor: [30, 41, 59], // slate-800
+          },
+          headStyles: {
+            fillColor: [15, 23, 42], // slate-900
+            textColor: [255, 255, 255],
+            fontStyle: 'bold',
+            fontSize: 9,
+            halign: 'center',
+            cellPadding: 5,
+          },
+          alternateRowStyles: {
+            fillColor: [248, 250, 252], // slate-50
+          },
+          columnStyles: {
+            0: { cellWidth: 75, halign: 'center' },
+            1: { cellWidth: 55, halign: 'center', fontStyle: 'bold' },
+            2: { cellWidth: 130 },
+            3: { cellWidth: 90 },
+            4: { cellWidth: 70, halign: 'center' },
+            5: { cellWidth: 65, halign: 'center' },
+            6: { cellWidth: 50, halign: 'center' },
+            7: { cellWidth: 'auto' },
+          },
+          margin: { top: 115, left: 30, right: 30, bottom: 40 },
+          didDrawPage: (data: any) => {
+            // Rodapé
+            const pageCount = doc.internal.pages.length - 1;
+            const pageNumber = doc.internal.getCurrentPageInfo().pageNumber;
+            
+            doc.setFontSize(8);
+            doc.setTextColor(148, 163, 184); // slate-400
+            doc.text(
+              `Página ${pageNumber} de ${pageCount}`,
+              pageWidth / 2,
+              doc.internal.pageSize.getHeight() - 20,
+              { align: 'center' }
+            );
+            
+            // Linha no rodapé
+            doc.setDrawColor(226, 232, 240);
+            doc.setLineWidth(0.5);
+            doc.line(30, doc.internal.pageSize.getHeight() - 30, pageWidth - 30, doc.internal.pageSize.getHeight() - 30);
+            
+            doc.setFontSize(7);
+            doc.text(
+              'Advogado.Web - Sistema de Gestão Jurídica',
+              30,
+              doc.internal.pageSize.getHeight() - 20
+            );
+            doc.text(
+              `Gerado em ${today}`,
+              pageWidth - 30,
+              doc.internal.pageSize.getHeight() - 20,
+              { align: 'right' }
+            );
+          },
+        });
+
+        const periodLabel = exportPeriod === 'custom' 
+          ? `${exportStartDate}_${exportEndDate}`
+          : `proximos_${exportPeriod}_dias`;
+        doc.save(`agenda_${periodLabel}.pdf`);
+      } else {
+        // Exportar Excel
+        const workbook = XLSX.utils.book_new();
+        const worksheet = XLSX.utils.json_to_sheet(rows);
+        worksheet['!cols'] = [
+          { wch: 22 },
+          { wch: 18 },
+          { wch: 50 },
+          { wch: 35 },
+          { wch: 18 },
+          { wch: 12 },
+          { wch: 10 },
+          { wch: 40 },
+        ];
+        XLSX.utils.book_append_sheet(workbook, worksheet, 'Agenda');
+        
+        const periodLabel = exportPeriod === 'custom' 
+          ? `${exportStartDate}_${exportEndDate}`
+          : `proximos_${exportPeriod}_dias`;
+        XLSX.writeFile(workbook, `agenda_${periodLabel}.xlsx`);
+      }
+      
+      setIsExportModalOpen(false);
+      setFeedback({ type: 'success', message: `Agenda exportada com sucesso! ${rows.length} compromissos.` });
     } catch (err: any) {
       console.error(err);
       setFeedback({ type: 'error', message: err.message || 'Não foi possível exportar a agenda.' });
@@ -943,84 +1159,6 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({
       });
   };
 
-  const handleExportPdf = async () => {
-    try {
-      const rows = buildAgendaRows();
-      if (!rows.length) {
-        setFeedback({ type: 'error', message: 'Não há compromissos para exportar.' });
-        return;
-      }
-
-      const jspdfModule = await loadJsPdf();
-      const doc = new jspdfModule.jsPDF('landscape', 'pt', 'a4');
-      const today = new Date().toLocaleDateString('pt-BR');
-
-      doc.setFont('helvetica', 'bold');
-      doc.setFontSize(18);
-      doc.text('Agenda de Compromissos', 40, 50);
-      doc.setFontSize(11);
-      doc.setFont('helvetica', 'normal');
-      doc.text(`Gerado em ${today}`, 40, 65);
-
-      (doc as any).autoTable({
-        startY: 80,
-        head: [[
-          'Data',
-          'Tipo',
-          'Título',
-          'Cliente',
-          'Telefone',
-          'Status',
-          'Prioridade',
-          'Descrição',
-        ]],
-        body: rows.map((row) => [
-          row['Data'],
-          row['Tipo'],
-          row['Título'],
-          row['Cliente'],
-          row['Telefone'],
-          row['Status'],
-          row['Prioridade'],
-          row['Descrição'],
-        ]),
-        styles: {
-          font: 'helvetica',
-          fontSize: 8,
-          cellPadding: 3,
-          lineWidth: 0.1,
-          lineColor: [230, 232, 240],
-          overflow: 'linebreak',
-          cellWidth: 'wrap',
-        },
-        headStyles: {
-          fillColor: [123, 97, 255],
-          textColor: 255,
-          fontStyle: 'bold',
-          fontSize: 9,
-        },
-        alternateRowStyles: {
-          fillColor: [248, 250, 255],
-        },
-        columnStyles: {
-          0: { cellWidth: 80 },
-          1: { cellWidth: 50 },
-          2: { cellWidth: 120 },
-          3: { cellWidth: 80 },
-          4: { cellWidth: 70 },
-          5: { cellWidth: 60 },
-          6: { cellWidth: 50 },
-          7: { cellWidth: 'auto' },
-        },
-        margin: { top: 80, left: 20, right: 20 },
-      });
-
-      doc.save(`agenda_${today.replace(/\//g, '-')}.pdf`);
-    } catch (err: any) {
-      console.error(err);
-      setFeedback({ type: 'error', message: err.message || 'Não foi possível exportar a agenda em PDF.' });
-    }
-  };
 
   const renderEventContent = useCallback(({ event, timeText }: EventContentArg) => {
     const extendedProps = event.extendedProps as Record<string, any>;
@@ -1109,14 +1247,14 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({
             </button>
             <button
               type="button"
-              onClick={handleExportCalendar}
+              onClick={() => handleOpenExportModal('excel')}
               className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-full bg-emerald-500 text-white hover:bg-emerald-600 transition"
             >
-              Exportar agenda
+              Exportar Excel
             </button>
             <button
               type="button"
-              onClick={handleExportPdf}
+              onClick={() => handleOpenExportModal('pdf')}
               className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-full bg-purple-500 text-white hover:bg-purple-600 transition"
             >
               Exportar PDF
@@ -1779,12 +1917,121 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({
           background: #f8fafc;
           border: 1px solid #e2e8f0;
           color: #334155;
-          font-weight: 600;
         }
         .export-filter input {
           accent-color: #6366f1;
         }
       `}</style>
+
+      {/* Modal de Exportação */}
+      {isExportModalOpen && (
+      <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+        <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full p-6 animate-in fade-in zoom-in duration-200">
+          <h3 className="text-2xl font-bold text-slate-900 mb-2">Exportar Agenda</h3>
+          <p className="text-sm text-slate-600 mb-6">Selecione o período que deseja exportar</p>
+
+          <div className="space-y-4">
+            {/* Opções de Período */}
+            <div className="space-y-2">
+              <label className="block text-xs font-bold uppercase tracking-wider text-slate-700 mb-2">
+                📅 Período
+              </label>
+              
+              <div className="grid grid-cols-2 gap-2">
+                {[
+                  { value: '7', label: 'Próximos 7 dias' },
+                  { value: '15', label: 'Próximos 15 dias' },
+                  { value: '30', label: 'Próximos 30 dias' },
+                  { value: '60', label: 'Próximos 60 dias' },
+                ].map((option) => (
+                  <button
+                    key={option.value}
+                    type="button"
+                    onClick={() => setExportPeriod(option.value as any)}
+                    className={`px-4 py-2.5 rounded-lg border-2 font-medium text-sm transition-all ${
+                      exportPeriod === option.value
+                        ? 'border-emerald-500 bg-emerald-50 text-emerald-700'
+                        : 'border-slate-200 text-slate-700 hover:border-slate-300'
+                    }`}
+                  >
+                    {option.label}
+                  </button>
+                ))}
+              </div>
+
+              <button
+                type="button"
+                onClick={() => setExportPeriod('custom')}
+                className={`w-full px-4 py-2.5 rounded-lg border-2 font-medium text-sm transition-all ${
+                  exportPeriod === 'custom'
+                    ? 'border-blue-500 bg-blue-50 text-blue-700'
+                    : 'border-slate-200 text-slate-700 hover:border-slate-300'
+                }`}
+              >
+                📆 Período Personalizado
+              </button>
+            </div>
+
+            {/* Datas Personalizadas */}
+            {exportPeriod === 'custom' && (
+              <div className="grid grid-cols-2 gap-3 p-4 bg-blue-50 rounded-lg border border-blue-200">
+                <div>
+                  <label className="block text-xs font-semibold text-blue-900 mb-1.5">
+                    Data Início
+                  </label>
+                  <input
+                    type="date"
+                    value={exportStartDate}
+                    onChange={(e) => setExportStartDate(e.target.value)}
+                    className="w-full px-3 py-2 rounded-lg border-2 border-blue-200 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-blue-900 mb-1.5">
+                    Data Fim
+                  </label>
+                  <input
+                    type="date"
+                    value={exportEndDate}
+                    onChange={(e) => setExportEndDate(e.target.value)}
+                    className="w-full px-3 py-2 rounded-lg border-2 border-blue-200 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  />
+                </div>
+              </div>
+            )}
+
+            {/* Informação */}
+            <div className="bg-slate-50 border border-slate-200 rounded-lg p-3">
+              <p className="text-xs text-slate-600">
+                💡 <strong>Dica:</strong> A exportação incluirá todos os compromissos visíveis (prazos, audiências, reuniões, etc.) dentro do período selecionado.
+              </p>
+            </div>
+
+            {/* Botões */}
+            <div className="flex gap-3 pt-2">
+              <button
+                type="button"
+                onClick={() => setIsExportModalOpen(false)}
+                className="flex-1 px-4 py-2.5 rounded-lg border-2 border-slate-300 text-slate-700 font-semibold hover:bg-slate-50 transition-colors"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={handleExportCalendar}
+                className={`flex-1 px-4 py-2.5 rounded-lg ${
+                  exportFormat === 'pdf'
+                    ? 'bg-gradient-to-r from-purple-600 to-purple-700 hover:from-purple-500 hover:to-purple-600'
+                    : 'bg-gradient-to-r from-emerald-600 to-emerald-700 hover:from-emerald-500 hover:to-emerald-600'
+                } text-white font-bold shadow-lg hover:shadow-xl transition-all transform hover:-translate-y-0.5`}
+              >
+                {exportFormat === 'pdf' ? '📄 Exportar PDF' : '📥 Exportar Excel'}
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+      )}
     </div>
   );
 };

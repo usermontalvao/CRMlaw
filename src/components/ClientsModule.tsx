@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Plus, Search, UserPlus, Building2, User, Download, AlertTriangle, Clock } from 'lucide-react';
+import { Plus, Search, UserPlus, Building2, User, Users, Download, AlertTriangle, Clock } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { clientService } from '../services/client.service';
 import type { Client, ClientFilters, CreateClientDTO } from '../types/client.types';
@@ -348,57 +348,191 @@ const ClientsModule: React.FC<ClientsModuleProps> = ({
 
   return (
     <div className="space-y-6">
-      {/* Estatísticas */}
+      {/* Header Moderno com Gradiente */}
       {viewMode === 'list' && (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4">
-          <div className="bg-white rounded-xl border border-slate-200 p-4 shadow-sm">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-slate-500 text-xs font-semibold uppercase tracking-wide">Total de Clientes</p>
-                <p className="text-2xl font-bold text-slate-900 mt-1">{stats.total}</p>
+        <div className="relative bg-gradient-to-br from-blue-900 via-blue-800 to-blue-900 rounded-2xl shadow-2xl overflow-hidden">
+          {/* Padrão de fundo decorativo */}
+          <div className="absolute inset-0 bg-[url('data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNjAiIGhlaWdodD0iNjAiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+PGRlZnM+PHBhdHRlcm4gaWQ9ImdyaWQiIHdpZHRoPSI2MCIgaGVpZ2h0PSI2MCIgcGF0dGVyblVuaXRzPSJ1c2VyU3BhY2VPblVzZSI+PHBhdGggZD0iTSAxMCAwIEwgMCAwIDAgMTAiIGZpbGw9Im5vbmUiIHN0cm9rZT0icmdiYSgyNTUsMjU1LDI1NSwwLjAzKSIgc3Ryb2tlLXdpZHRoPSIxIi8+PC9wYXR0ZXJuPjwvZGVmcz48cmVjdCB3aWR0aD0iMTAwJSIgaGVpZ2h0PSIxMDAlIiBmaWxsPSJ1cmwoI2dyaWQpIi8+PC9zdmc+')] opacity-40"></div>
+          
+          {/* Efeito de brilho */}
+          <div className="absolute top-0 right-0 w-96 h-96 bg-cyan-500/10 rounded-full blur-3xl"></div>
+          <div className="absolute bottom-0 left-0 w-96 h-96 bg-blue-500/10 rounded-full blur-3xl"></div>
+          
+          <div className="relative p-5">
+            {/* Título e Ações */}
+            <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4 mb-5">
+              <div className="flex items-center gap-3">
+                <div className="flex-shrink-0 w-11 h-11 bg-gradient-to-br from-cyan-400 to-blue-600 rounded-lg flex items-center justify-center shadow-lg">
+                  <Users className="w-6 h-6 text-white" />
+                </div>
+                <div>
+                  <h3 className="text-2xl font-bold text-white">Gestão de Clientes</h3>
+                  <p className="text-xs text-blue-200">
+                    Gerencie todos os seus clientes
+                  </p>
+                </div>
               </div>
-              <div className="w-10 h-10 bg-slate-100 rounded-lg flex items-center justify-center">
-                <User className="w-5 h-5 text-slate-600" />
+
+              <button
+                onClick={handleNewClient}
+                className="inline-flex items-center justify-center gap-2 bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-white font-bold px-6 py-2.5 rounded-lg shadow-lg hover:shadow-xl transition-all duration-300 transform hover:scale-105"
+              >
+                <Plus className="w-4 h-4" />
+                <span className="text-sm">Novo Cliente</span>
+              </button>
+            </div>
+
+            {/* Cards de Estatísticas */}
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2.5 mb-4">
+              <div className="bg-white/95 backdrop-blur-sm rounded-lg p-3 shadow-md border border-white/20 hover:shadow-lg transition-shadow">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-slate-600 text-[10px] font-bold uppercase tracking-wide">Total</p>
+                    <p className="text-2xl font-black text-slate-900 mt-0.5">{stats.total}</p>
+                  </div>
+                  <div className="w-9 h-9 bg-gradient-to-br from-slate-100 to-slate-200 rounded-lg flex items-center justify-center">
+                    <User className="w-4 h-4 text-slate-700" />
+                  </div>
+                </div>
+              </div>
+
+              <div className="bg-white/95 backdrop-blur-sm rounded-lg p-3 shadow-md border border-white/20 hover:shadow-lg transition-shadow">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-emerald-600 text-[10px] font-bold uppercase tracking-wide">Ativos</p>
+                    <p className="text-2xl font-black text-emerald-600 mt-0.5">{stats.active}</p>
+                  </div>
+                  <div className="w-9 h-9 bg-gradient-to-br from-emerald-100 to-emerald-200 rounded-lg flex items-center justify-center">
+                    <UserPlus className="w-4 h-4 text-emerald-700" />
+                  </div>
+                </div>
+              </div>
+
+              <div className="bg-white/95 backdrop-blur-sm rounded-lg p-3 shadow-md border border-white/20 hover:shadow-lg transition-shadow">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-blue-600 text-[10px] font-bold uppercase tracking-wide">P. Física</p>
+                    <p className="text-2xl font-black text-blue-600 mt-0.5">{stats.pessoaFisica}</p>
+                  </div>
+                  <div className="w-9 h-9 bg-gradient-to-br from-blue-100 to-blue-200 rounded-lg flex items-center justify-center">
+                    <User className="w-4 h-4 text-blue-700" />
+                  </div>
+                </div>
+              </div>
+
+              <div className="bg-white/95 backdrop-blur-sm rounded-lg p-3 shadow-md border border-white/20 hover:shadow-lg transition-shadow">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-purple-600 text-[10px] font-bold uppercase tracking-wide">P. Jurídica</p>
+                    <p className="text-2xl font-black text-purple-600 mt-0.5">{stats.pessoaJuridica}</p>
+                  </div>
+                  <div className="w-9 h-9 bg-gradient-to-br from-purple-100 to-purple-200 rounded-lg flex items-center justify-center">
+                    <Building2 className="w-4 h-4 text-purple-700" />
+                  </div>
+                </div>
+              </div>
+
+              <div className="bg-white/95 backdrop-blur-sm rounded-lg p-3 shadow-md border border-white/20 hover:shadow-lg transition-shadow">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-amber-600 text-[10px] font-bold uppercase tracking-wide">Incompletos</p>
+                    <p className="text-2xl font-black text-amber-600 mt-0.5">{stats.incomplete}</p>
+                  </div>
+                  <div className="w-9 h-9 bg-gradient-to-br from-amber-100 to-amber-200 rounded-lg flex items-center justify-center">
+                    <AlertTriangle className="w-4 h-4 text-amber-700" />
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Barra de Filtros e Busca */}
+            <div className="bg-white/95 backdrop-blur-sm rounded-lg p-3.5 shadow-lg border border-white/20">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-12 gap-3">
+                {/* Busca */}
+                <div className="sm:col-span-2 lg:col-span-4">
+                  <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-700 mb-1.5">
+                    🔍 Buscar Cliente
+                  </label>
+                  <div className="relative group">
+                    <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-slate-400 group-focus-within:text-blue-500 w-4 h-4 transition-colors" />
+                    <input
+                      type="text"
+                      value={searchTerm}
+                      onChange={(e) => setSearchTerm(e.target.value)}
+                      onKeyPress={(e) => e.key === 'Enter' && handleSearch()}
+                      className="w-full pl-10 pr-3 py-2 rounded-lg border-2 border-slate-200 bg-white text-sm text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all shadow-sm hover:shadow-md"
+                      placeholder="Nome, CPF, e-mail..."
+                    />
+                  </div>
+                </div>
+
+                {/* Filtro de Status */}
+                <div className="lg:col-span-2">
+                  <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-700 mb-1.5">
+                    📊 Status
+                  </label>
+                  <select
+                    value={filters.status || ''}
+                    onChange={(e) => setFilters({ ...filters, status: e.target.value as any })}
+                    className="w-full px-3 py-2 rounded-lg border-2 border-slate-200 bg-white text-sm text-slate-800 font-medium focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all shadow-sm hover:shadow-md cursor-pointer"
+                  >
+                    <option value="">Todos</option>
+                    <option value="ativo">✅ Ativos</option>
+                    <option value="inativo">❌ Inativos</option>
+                    <option value="suspenso">⏸️ Suspensos</option>
+                  </select>
+                </div>
+
+                {/* Filtro de Tipo */}
+                <div className="lg:col-span-2">
+                  <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-700 mb-1.5">
+                    👤 Tipo
+                  </label>
+                  <select
+                    value={filters.client_type || ''}
+                    onChange={(e) => setFilters({ ...filters, client_type: e.target.value as any })}
+                    className="w-full px-3 py-2 rounded-lg border-2 border-slate-200 bg-white text-sm text-slate-800 font-medium focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all shadow-sm hover:shadow-md cursor-pointer"
+                  >
+                    <option value="">Todos</option>
+                    <option value="pessoa_fisica">👤 Pessoa Física</option>
+                    <option value="pessoa_juridica">🏢 Pessoa Jurídica</option>
+                  </select>
+                </div>
+
+                {/* Ações */}
+                <div className="sm:col-span-2 lg:col-span-4 flex items-end gap-2">
+                  <label className="flex-1 inline-flex items-center justify-center gap-1.5 text-sm font-bold text-slate-700 border-2 border-slate-300 hover:border-slate-400 rounded-lg px-3 py-2 bg-white cursor-pointer transition-all shadow-sm hover:shadow-md">
+                    <input
+                      type="checkbox"
+                      className="rounded border-slate-300 text-amber-600 focus:ring-amber-500 w-3.5 h-3.5"
+                      checked={showIncompleteOnly}
+                      onChange={(e) => setShowIncompleteOnly(e.target.checked)}
+                    />
+                    <span className="text-xs">Incompletos</span>
+                  </label>
+
+                  <button
+                    onClick={handleExportToExcel}
+                    disabled={exporting}
+                    className="flex-1 inline-flex items-center justify-center gap-1.5 bg-gradient-to-r from-emerald-600 to-emerald-700 hover:from-emerald-500 hover:to-emerald-600 disabled:from-emerald-400 disabled:to-emerald-500 text-white font-bold px-3 py-2 rounded-lg shadow-md hover:shadow-lg transition-all duration-300 disabled:cursor-not-allowed transform hover:-translate-y-0.5 disabled:transform-none"
+                    title="Exportar para Excel"
+                  >
+                    {exporting ? (
+                      <>
+                        <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                        <span className="text-xs">Gerando...</span>
+                      </>
+                    ) : (
+                      <>
+                        <Download className="w-4 h-4" />
+                        <span className="text-xs">Excel</span>
+                      </>
+                    )}
+                  </button>
+                </div>
               </div>
             </div>
           </div>
-
-          <div className="bg-white rounded-xl border border-slate-200 p-4 shadow-sm">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-slate-500 text-xs font-semibold uppercase tracking-wide">Clientes Ativos</p>
-                <p className="text-2xl font-bold text-emerald-600 mt-1">{stats.active}</p>
-              </div>
-              <div className="w-10 h-10 bg-emerald-50 rounded-lg flex items-center justify-center">
-                <UserPlus className="w-5 h-5 text-emerald-600" />
-              </div>
-            </div>
-          </div>
-
-          <div className="bg-white rounded-xl border border-slate-200 p-4 shadow-sm">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-slate-500 text-xs font-semibold uppercase tracking-wide">Pessoa Física</p>
-                <p className="text-2xl font-bold text-blue-600 mt-1">{stats.pessoaFisica}</p>
-              </div>
-              <div className="w-10 h-10 bg-blue-50 rounded-lg flex items-center justify-center">
-                <User className="w-5 h-5 text-blue-600" />
-              </div>
-            </div>
-          </div>
-
-          <div className="bg-white rounded-xl border border-slate-200 p-4 shadow-sm">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-slate-500 text-xs font-semibold uppercase tracking-wide">Pessoa Jurídica</p>
-                <p className="text-2xl font-bold text-purple-600 mt-1">{stats.pessoaJuridica}</p>
-              </div>
-              <div className="w-10 h-10 bg-purple-50 rounded-lg flex items-center justify-center">
-                <Building2 className="w-5 h-5 text-purple-600" />
-              </div>
-            </div>
-          </div>
-
         </div>
       )}
 
@@ -432,86 +566,6 @@ const ClientsModule: React.FC<ClientsModuleProps> = ({
               </div>
             </div>
           )}
-        </div>
-      )}
-
-      {/* Barra de ações */}
-      {viewMode === 'list' && (
-        <div className="bg-white rounded-xl border border-slate-200 p-4 shadow-sm">
-          <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3">
-            <div className="flex-1 flex gap-3">
-              <div className="relative flex-1 max-w-xl">
-                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-slate-400 w-5 h-5" />
-                <input
-                  type="text"
-                  placeholder="Buscar clientes..."
-                  className="w-full pl-10 pr-4 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-500 focus:border-transparent text-sm"
-                  value={searchTerm}
-                  onChange={(e) => setSearchTerm(e.target.value)}
-                  onKeyPress={(e) => e.key === 'Enter' && handleSearch()}
-                />
-              </div>
-            </div>
-
-            <div className="flex flex-col sm:flex-row sm:flex-wrap gap-2 w-full lg:w-auto">
-              <select
-                className="w-full sm:w-44 px-3 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-500 text-sm bg-white"
-                value={filters.status || ''}
-                onChange={(e) => setFilters({ ...filters, status: e.target.value as any })}
-              >
-                <option value="">Status</option>
-                <option value="ativo">Ativos</option>
-                <option value="inativo">Inativos</option>
-                <option value="suspenso">Suspensos</option>
-              </select>
-
-              <select
-                className="w-full sm:w-44 px-3 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-500 text-sm bg-white"
-                value={filters.client_type || ''}
-                onChange={(e) => setFilters({ ...filters, client_type: e.target.value as any })}
-              >
-                <option value="">Tipo</option>
-                <option value="pessoa_fisica">Pessoa Física</option>
-                <option value="pessoa_juridica">Pessoa Jurídica</option>
-              </select>
-
-              <label className="inline-flex items-center gap-2 text-sm text-slate-600 border border-slate-200 rounded-lg px-3 py-2 bg-white">
-                <input
-                  type="checkbox"
-                  className="rounded border-slate-300 text-sky-600 focus:ring-sky-500"
-                  checked={showIncompleteOnly}
-                  onChange={(e) => setShowIncompleteOnly(e.target.checked)}
-                />
-                Mostrar apenas incompletos
-              </label>
-
-              <button 
-                onClick={handleExportToExcel}
-                disabled={exporting}
-                className="w-full sm:w-auto justify-center bg-green-600 hover:bg-green-700 disabled:bg-green-400 text-white font-medium px-3 py-2 rounded-lg flex items-center gap-2 transition-colors shadow-sm"
-              >
-                {exporting ? (
-                  <>
-                    <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                    Exportando...
-                  </>
-                ) : (
-                  <>
-                    <Download className="w-4 h-4" />
-                    Exportar Excel
-                  </>
-                )}
-              </button>
-
-              <button 
-                onClick={handleNewClient} 
-                className="w-full sm:w-auto justify-center bg-amber-600 hover:bg-amber-700 text-white font-medium px-4 py-2 rounded-lg flex items-center gap-2 transition-colors shadow-sm"
-              >
-                <Plus className="w-5 h-5" />
-                Novo Cliente
-              </button>
-            </div>
-          </div>
         </div>
       )}
 

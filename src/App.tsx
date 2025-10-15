@@ -895,14 +895,24 @@ function App() {
             } />
             <Route path="/agenda" element={
               <CalendarModule 
+                userName={profile.name}
                 onNavigateToModule={({ module, entityId }) => {
+                  // Mapear nomes de módulos internos para rotas
+                  const moduleRouteMap: Record<string, string> = {
+                    'cases': 'processos',
+                    'deadlines': 'prazos',
+                    'requirements': 'requerimentos',
+                  };
+                  
+                  const targetRoute = moduleRouteMap[module] || module;
+                  
                   if (entityId) {
                     setModuleParams(prev => ({
                       ...prev,
-                      [module]: JSON.stringify({ mode: 'edit', entityId }),
+                      [module]: JSON.stringify({ entityId }),
                     }));
                   }
-                  navigate(`/${module}`);
+                  navigate(`/${targetRoute}`);
                 }}
                 forceCreate={moduleParams['calendar'] ? JSON.parse(moduleParams['calendar']).mode === 'create' : false}
                 prefillData={moduleParams['calendar'] ? JSON.parse(moduleParams['calendar']).prefill : undefined}
