@@ -587,7 +587,8 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({
 
     if (timeValue) {
       const normalized = normalizeTime(timeValue);
-      // Retorna no formato ISO sem conversão de fuso horário
+      // Retorna no formato ISO LOCAL sem conversão
+      // Ex: 2024-01-15T08:30:00 será salvo exatamente assim
       return `${dateValue}T${normalized}`;
     }
 
@@ -1501,7 +1502,7 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({
             plugins={[dayGridPlugin, timeGridPlugin, interactionPlugin, listPlugin]}
             initialView="dayGridMonth"
             locale={ptLocale}
-            timeZone="America/Cuiaba"
+            timeZone="local"
             headerToolbar={false}
             customButtons={{
               calendarExpand: {
