@@ -4,8 +4,7 @@
   "main": "dist/index.js",
   "scripts": {
     "dev": "vite",
-    "build": "tsc && vite build && npm run copy-redirects",
-    "copy-redirects": "cp public/_redirects dist/_redirects || copy public\\_redirects dist\\_redirects",
+    "build": "tsc && vite build",
     "preview": "vite preview",
     "test-api": "tsc && node dist/example.js"
   },

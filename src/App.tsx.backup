@@ -57,9 +57,14 @@ import type { NotificationItem } from './types/notification.types';
 type ClientSearchResult = Awaited<ReturnType<typeof clientService.searchClients>>[number];
 
 function App() {
-  const { currentModule: activeModule, moduleParams, navigateTo, setModuleParams, clearModuleParams } = useNavigation();
+  const navigate = useNavigate();
+  const location = useLocation();
+  const [moduleParams, setModuleParams] = useState<Record<string, string>>({});
   const [isMobileNavOpen, setIsMobileNavOpen] = useState(false);
   const { user, loading, signIn, signOut, resetPassword } = useAuth();
+  
+  // Extrai o módulo ativo da URL
+  const activeModule = location.pathname.split('/')[1] || 'dashboard';
   
   // Ativar sincronização automática com DJEN
   useDjenSync();
@@ -222,8 +227,8 @@ function App() {
         setClientPrefill(null);
         
         // Redirecionar para login
-        if (activeModule !== 'login') {
-          navigateTo('login');
+        if (location.pathname !== '/' && location.pathname !== '/login') {
+          navigate('/', { replace: true });
         }
       }
     });
@@ -231,7 +236,7 @@ function App() {
     return () => {
       authListener.subscription.unsubscribe();
     };
-  }, [activeModule, navigateTo]);
+  }, [location.pathname, navigate]);
 
   // Detectar quando usuário perde autenticação e limpar estado
   useEffect(() => {
@@ -256,12 +261,12 @@ function App() {
       setModuleParams({});
       setClientPrefill(null);
       
-      // Redirecionar para login se não estiver autenticado
-      if (activeModule !== 'login') {
-        navigateTo('login');
+      // Redirecionar para raiz se estiver em uma rota protegida
+      if (location.pathname !== '/' && location.pathname !== '/login') {
+        navigate('/', { replace: true });
       }
     }
-  }, [user, loading, activeModule, navigateTo]);
+  }, [user, loading, location.pathname, navigate]);
 
   useEffect(() => {
     if (!user) {
@@ -375,7 +380,13 @@ function App() {
   };
 
   const handleNavigateToModule = (moduleKey: string, params?: Record<string, string>) => {
-    navigateTo(moduleKey as any, params);
+    if (params) {
+      setModuleParams(prev => ({
+        ...prev,
+        [moduleKey]: JSON.stringify(params)
+      }));
+    }
+    navigate(`/${moduleKey}`);
   };
 
   const handleConvertLead = async (lead: Lead) => {
@@ -396,7 +407,7 @@ function App() {
     // Guardar referência do lead para remover apenas quando cliente for salvo
     setLeadToConvert(lead);
     setClientPrefill(prefill);
-    navigateTo('clientes');
+    navigate('/clientes');
   };
 
   const handleClientSaved = async () => {
@@ -419,8 +430,12 @@ function App() {
   };
 
   const handleClientSearchSelect = (clientId: string) => {
+    setModuleParams((prev) => ({
+      ...prev,
+      clients: JSON.stringify({ mode: 'details', entityId: clientId }),
+    }));
     setClientSearchOpen(false);
-    navigateTo('clientes', { mode: 'details', entityId: clientId });
+    navigate('/clientes');
   };
 
   const handleClientSearchKeyDown = (event: React.KeyboardEvent<HTMLInputElement>) => {
@@ -496,11 +511,11 @@ function App() {
 
           {/* Navigation */}
           <nav className="flex-1 py-2 flex flex-col items-stretch gap-1 overflow-y-auto scrollbar-hide">
-            <button
+            <Link
+              to="/dashboard"
               onClick={() => {
                 setClientPrefill(null);
                 setIsMobileNavOpen(false);
-                navigateTo('dashboard');
               }}
               className={`flex flex-col items-center justify-center py-2.5 px-2 rounded-lg transition-all border-l-4 ${
                 activeModule === 'dashboard'
@@ -510,13 +525,13 @@ function App() {
             >
               <Layers className="w-5 h-5 mb-1.5" />
               <span className="text-[10px] font-medium text-center leading-tight">Dashboard</span>
-            </button>
+            </Link>
 
-            <button
+            <Link
+              to="/leads"
               onClick={() => {
                 setClientPrefill(null);
                 setIsMobileNavOpen(false);
-                navigateTo('leads');
               }}
               className={`flex flex-col items-center justify-center py-2.5 px-2 rounded-lg transition-all border-l-4 ${
                 activeModule === 'leads'
@@ -526,13 +541,13 @@ function App() {
             >
               <Target className="w-5 h-5 mb-1.5" />
               <span className="text-[10px] font-medium text-center leading-tight">Leads</span>
-            </button>
+            </Link>
 
-            <button
+            <Link
+              to="/clientes"
               onClick={() => {
                 setClientPrefill(null);
                 setIsMobileNavOpen(false);
-                navigateTo('clientes');
               }}
               className={`flex flex-col items-center justify-center py-2.5 px-2 rounded-lg transition-all border-l-4 ${
                 activeModule === 'clientes'
@@ -542,13 +557,13 @@ function App() {
             >
               <Users className="w-5 h-5 mb-1.5" />
               <span className="text-[10px] font-medium text-center leading-tight">Clientes</span>
-            </button>
+            </Link>
 
-            <button
+            <Link
+              to="/documentos"
               onClick={() => {
                 setClientPrefill(null);
                 setIsMobileNavOpen(false);
-                navigateTo('documentos');
               }}
               className={`flex flex-col items-center justify-center py-2.5 px-2 rounded-lg transition-all border-l-4 ${
                 activeModule === 'documentos'
@@ -558,13 +573,13 @@ function App() {
             >
               <Library className="w-5 h-5 mb-1.5" />
               <span className="text-[10px] font-medium text-center leading-tight">Documentos</span>
-            </button>
+            </Link>
 
-            <button
+            <Link
+              to="/processos"
               onClick={() => {
                 setClientPrefill(null);
                 setIsMobileNavOpen(false);
-                navigateTo('processos');
               }}
               className={`flex flex-col items-center justify-center py-2.5 px-2 rounded-lg transition-all border-l-4 ${
                 activeModule === 'processos'
@@ -574,13 +589,13 @@ function App() {
             >
               <Scale className="w-5 h-5 mb-1.5" />
               <span className="text-[10px] font-medium text-center leading-tight">Processos</span>
-            </button>
+            </Link>
 
-            <button
+            <Link
+              to="/requerimentos"
               onClick={() => {
                 setClientPrefill(null);
                 setIsMobileNavOpen(false);
-                navigateTo('requerimentos');
               }}
               className={`flex flex-col items-center justify-center py-2.5 px-2 rounded-lg transition-all border-l-4 ${
                 activeModule === 'requerimentos'
@@ -590,13 +605,13 @@ function App() {
             >
               <Briefcase className="w-5 h-5 mb-1.5" />
               <span className="text-[10px] font-medium text-center leading-tight">Requerimentos</span>
-            </button>
+            </Link>
 
-            <button
+            <Link
+              to="/prazos"
               onClick={() => {
                 setClientPrefill(null);
                 setIsMobileNavOpen(false);
-                navigateTo('prazos');
               }}
               className={`flex flex-col items-center justify-center py-2.5 px-2 rounded-lg transition-all border-l-4 ${
                 activeModule === 'prazos'
@@ -606,13 +621,13 @@ function App() {
             >
               <AlarmClock className="w-5 h-5 mb-1.5" />
               <span className="text-[10px] font-medium text-center leading-tight">Prazos</span>
-            </button>
+            </Link>
 
-            <button
+            <Link
+              to="/intimacoes"
               onClick={() => {
                 setClientPrefill(null);
                 setIsMobileNavOpen(false);
-                navigateTo('intimacoes');
               }}
               className={`flex flex-col items-center justify-center py-2.5 px-2 rounded-lg transition-all border-l-4 ${
                 activeModule === 'intimacoes'
@@ -622,13 +637,13 @@ function App() {
             >
               <Bell className="w-5 h-5 mb-1.5" />
               <span className="text-[10px] font-medium text-center leading-tight">Intimações</span>
-            </button>
+            </Link>
 
-            <button
+            <Link
+              to="/financeiro"
               onClick={() => {
                 setClientPrefill(null);
                 setIsMobileNavOpen(false);
-                navigateTo('financeiro');
               }}
               className={`flex flex-col items-center justify-center py-2.5 px-2 rounded-lg transition-all border-l-4 ${
                 activeModule === 'financeiro'
@@ -638,13 +653,13 @@ function App() {
             >
               <PiggyBank className="w-5 h-5 mb-1.5" />
               <span className="text-[10px] font-medium text-center leading-tight">Financeiro</span>
-            </button>
+            </Link>
 
-            <button
+            <Link
+              to="/agenda"
               onClick={() => {
                 setClientPrefill(null);
                 setIsMobileNavOpen(false);
-                navigateTo('agenda');
               }}
               className={`flex flex-col items-center justify-center py-2.5 px-2 rounded-lg transition-all border-l-4 ${
                 activeModule === 'agenda'
@@ -654,7 +669,7 @@ function App() {
             >
               <Calendar className="w-5 h-5 mb-1.5" />
               <span className="text-[10px] font-medium text-center leading-tight">Agenda</span>
-            </button>
+            </Link>
           </nav>
 
           {/* Indicador de mais itens */}
@@ -759,8 +774,8 @@ function App() {
                     </div>
                   )}
                 </div>
-                <button
-                  onClick={() => navigateTo('tarefas')}
+                <Link
+                  to="/tarefas"
                   className={`relative p-1.5 sm:p-2 rounded-lg transition-colors ${
                     activeModule === 'tarefas'
                       ? 'text-blue-600 bg-blue-50'
@@ -774,10 +789,16 @@ function App() {
                       {pendingTasksCount > 99 ? '99+' : pendingTasksCount}
                     </span>
                   )}
-                </button>
+                </Link>
                 <NotificationCenter 
                   onNavigateToModule={(moduleKey, params) => {
-                    navigateTo(moduleKey as any, params);
+                    if (params) {
+                      setModuleParams(prev => ({
+                        ...prev,
+                        [moduleKey]: JSON.stringify(params),
+                      }));
+                    }
+                    navigate(`/${moduleKey}`);
                   }}
                 />
                 
@@ -839,78 +860,95 @@ function App() {
             </div>
           )}
 
-          {/* Renderização condicional baseada no módulo ativo */}
-          {activeModule === 'dashboard' && <Dashboard onNavigateToModule={handleNavigateToModule} />}
-          {activeModule === 'leads' && <LeadsModule onConvertLead={handleConvertLead} />}
-          {activeModule === 'clientes' && (
-            <ClientsModule 
-              prefillData={clientPrefill} 
-              onClientSaved={handleClientSaved}
-              onClientCancelled={handleClientCancelled}
-              forceCreate={clientsForceCreate}
-              focusClientId={clientsFocusClientId}
-              onParamConsumed={clearClientParams}
-              onNavigateToModule={(moduleKey, params) => {
-                navigateTo(moduleKey as any, params);
-              }}
-            />
-          )}
-          {activeModule === 'documentos' && <DocumentsModule />}
-          {activeModule === 'processos' && (
-            <ProcessesModule 
-              forceCreate={moduleParams['processos'] ? JSON.parse(moduleParams['processos']).mode === 'create' : false}
-              entityId={moduleParams['processos'] ? JSON.parse(moduleParams['processos']).entityId : undefined}
-              prefillData={moduleParams['processos'] ? JSON.parse(moduleParams['processos']).prefill : undefined}
-              onParamConsumed={() => clearModuleParams('processos')}
-            />
-          )}
-          {activeModule === 'requerimentos' && (
-            <RequirementsModule 
-              forceCreate={moduleParams['requerimentos'] ? JSON.parse(moduleParams['requerimentos']).mode === 'create' : false}
-              entityId={moduleParams['requerimentos'] ? JSON.parse(moduleParams['requerimentos']).entityId : undefined}
-              prefillData={moduleParams['requerimentos'] ? JSON.parse(moduleParams['requerimentos']).prefill : undefined}
-              onParamConsumed={() => clearModuleParams('requerimentos')}
-            />
-          )}
-          {activeModule === 'prazos' && (
-            <DeadlinesModule 
-              forceCreate={moduleParams['prazos'] ? JSON.parse(moduleParams['prazos']).mode === 'create' : false}
-              entityId={moduleParams['prazos'] ? JSON.parse(moduleParams['prazos']).entityId : undefined}
-              prefillData={moduleParams['prazos'] ? JSON.parse(moduleParams['prazos']).prefill : undefined}
-              onParamConsumed={() => clearModuleParams('prazos')}
-            />
-          )}
-          {activeModule === 'intimacoes' && (
-            <IntimationsModule 
-              onNavigateToModule={(moduleKey, params) => {
-                navigateTo(moduleKey as any, params);
-              }}
-            />
-          )}
-          {activeModule === 'agenda' && (
-            <CalendarModule 
-              userName={profile.name}
-              onNavigateToModule={({ module, entityId }) => {
-                if (entityId) {
-                  navigateTo(module as any, { entityId });
-                } else {
-                  navigateTo(module as any);
-                }
-              }}
-              forceCreate={moduleParams['calendar'] ? JSON.parse(moduleParams['calendar']).mode === 'create' : false}
-              prefillData={moduleParams['calendar'] ? JSON.parse(moduleParams['calendar']).prefill : undefined}
-              onParamConsumed={() => clearModuleParams('calendar')}
-            />
-          )}
-          {activeModule === 'tarefas' && (
-            <TasksModule 
-              focusNewTask={moduleParams['tasks'] ? JSON.parse(moduleParams['tasks']).mode === 'create' : false}
-              onParamConsumed={() => clearModuleParams('tasks')}
-              onPendingTasksChange={setPendingTasksCount}
-            />
-          )}
-          {activeModule === 'notificacoes' && <NotificationsModuleNew onNavigateToModule={handleNavigateToModule} />}
-          {activeModule === 'financeiro' && <FinancialModule />}
+          <Routes>
+            <Route path="/" element={<Navigate to="/dashboard" replace />} />
+            <Route path="/dashboard" element={<Dashboard onNavigateToModule={handleNavigateToModule} />} />
+            <Route path="/leads" element={<LeadsModule onConvertLead={handleConvertLead} />} />
+            <Route path="/clientes" element={
+              <ClientsModule 
+                prefillData={clientPrefill} 
+                onClientSaved={handleClientSaved}
+                onClientCancelled={handleClientCancelled}
+                forceCreate={clientsForceCreate}
+                focusClientId={clientsFocusClientId}
+                onParamConsumed={clearClientParams}
+                onNavigateToModule={(moduleKey, params) => {
+                  if (params) {
+                    setModuleParams(prev => ({
+                      ...prev,
+                      [moduleKey]: JSON.stringify(params),
+                    }));
+                  }
+                  navigate(`/${moduleKey}`);
+                }}
+              />
+            } />
+            <Route path="/processos" element={
+              <ProcessesModule 
+                forceCreate={moduleParams['processos'] ? JSON.parse(moduleParams['processos']).mode === 'create' : false}
+                entityId={moduleParams['processos'] ? JSON.parse(moduleParams['processos']).entityId : undefined}
+                prefillData={moduleParams['processos'] ? JSON.parse(moduleParams['processos']).prefill : undefined}
+                onParamConsumed={() => setModuleParams(prev => { const updated = {...prev}; delete updated['processos']; return updated; })}
+              />
+            } />
+            <Route path="/requerimentos" element={
+              <RequirementsModule 
+                forceCreate={moduleParams['requerimentos'] ? JSON.parse(moduleParams['requerimentos']).mode === 'create' : false}
+                entityId={moduleParams['requerimentos'] ? JSON.parse(moduleParams['requerimentos']).entityId : undefined}
+                prefillData={moduleParams['requerimentos'] ? JSON.parse(moduleParams['requerimentos']).prefill : undefined}
+                onParamConsumed={() => setModuleParams(prev => { const updated = {...prev}; delete updated['requerimentos']; return updated; })}
+              />
+            } />
+            <Route path="/prazos" element={
+              <DeadlinesModule 
+                forceCreate={moduleParams['prazos'] ? JSON.parse(moduleParams['prazos']).mode === 'create' : false}
+                entityId={moduleParams['prazos'] ? JSON.parse(moduleParams['prazos']).entityId : undefined}
+                prefillData={moduleParams['prazos'] ? JSON.parse(moduleParams['prazos']).prefill : undefined}
+                onParamConsumed={() => setModuleParams(prev => { const updated = {...prev}; delete updated['prazos']; return updated; })}
+              />
+            } />
+            <Route path="/intimacoes" element={
+              <IntimationsModule 
+                onNavigateToModule={(moduleKey, params) => {
+                  if (params) {
+                    setModuleParams(prev => ({
+                      ...prev,
+                      [moduleKey]: JSON.stringify(params),
+                    }));
+                  }
+                  navigate(`/${moduleKey}`);
+                }}
+              />
+            } />
+            <Route path="/agenda" element={
+              <CalendarModule 
+                userName={profile.name}
+                onNavigateToModule={({ module, entityId }) => {
+                  if (entityId) {
+                    setModuleParams(prev => ({
+                      ...prev,
+                      [module]: JSON.stringify({ entityId }),
+                    }));
+                  }
+                  navigate(`/${module}`);
+                }}
+                forceCreate={moduleParams['calendar'] ? JSON.parse(moduleParams['calendar']).mode === 'create' : false}
+                prefillData={moduleParams['calendar'] ? JSON.parse(moduleParams['calendar']).prefill : undefined}
+                onParamConsumed={() => setModuleParams(prev => { const updated = {...prev}; delete updated['calendar']; return updated; })}
+              />
+            } />
+            <Route path="/tarefas" element={
+              <TasksModule 
+                focusNewTask={moduleParams['tasks'] ? JSON.parse(moduleParams['tasks']).mode === 'create' : false}
+                onParamConsumed={() => setModuleParams(prev => { const updated = {...prev}; delete updated['tasks']; return updated; })}
+                onPendingTasksChange={setPendingTasksCount}
+              />
+            } />
+            <Route path="/notificacoes" element={<NotificationsModuleNew onNavigateToModule={handleNavigateToModule} />} />
+            <Route path="/financeiro" element={<FinancialModule />} />
+            <Route path="/documentos" element={<DocumentsModule />} />
+            <Route path="*" element={<Navigate to="/dashboard" replace />} />
+          </Routes>
         </main>
 
         {/* Profile Modal */}

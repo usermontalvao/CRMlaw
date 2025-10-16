@@ -1,3 +1,5 @@
+import { useNavigation } from '../contexts/NavigationContext';
+
 const wrapperStyle: React.CSSProperties = {
   minHeight: "100vh",
   display: "flex",
@@ -79,13 +81,15 @@ const footerStyle: React.CSSProperties = {
 };
 
 const LandingPage = () => {
+  const { navigateTo } = useNavigation();
+
   return (
     <div style={wrapperStyle}>
       <header style={headerStyle}>
         <span style={logoStyle}>CRM Jurídico</span>
         <nav style={navStyle}>
-          <a href="/login" style={linkStyle}>Entrar</a>
-          <a href="/register" style={linkStyle}>Criar conta</a>
+          <button onClick={() => navigateTo('login')} style={{...linkStyle, background: 'none', border: 'none', cursor: 'pointer'}}>Entrar</button>
+          <button onClick={() => navigateTo('login')} style={{...linkStyle, background: 'none', border: 'none', cursor: 'pointer'}}>Criar conta</button>
         </nav>
       </header>
 
@@ -97,9 +101,9 @@ const LandingPage = () => {
           <p style={{ maxWidth: "36rem", lineHeight: 1.6, fontSize: "1.05rem" }}>
             Centralize processos, intimações e tarefas em um só lugar. Mantenha sua equipe informada com notificações em tempo real e garanta que nenhum prazo seja perdido.
           </p>
-          <a href="/login" style={ctaStyle}>
+          <button onClick={() => navigateTo('login')} style={{...ctaStyle, border: 'none'}}>
             Começar agora
-          </a>
+          </button>
         </div>
 
         <div style={highlightGridStyle} aria-hidden>
