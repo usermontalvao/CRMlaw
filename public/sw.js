@@ -1,6 +1,6 @@
 // Service Worker para Push Notifications
 
-const CACHE_NAME = 'crm-cache-v1';
+const CACHE_NAME = 'crm-cache-v2';
 
 // Install event
 self.addEventListener('install', (event) => {
@@ -11,7 +11,30 @@ self.addEventListener('install', (event) => {
 // Activate event
 self.addEventListener('activate', (event) => {
   console.log('Service Worker ativado');
-  event.waitUntil(clients.claim());
+  event.waitUntil(
+    caches.keys().then((cacheNames) => {
+      return Promise.all(
+        cacheNames
+          .filter((name) => name !== CACHE_NAME)
+          .map((name) => caches.delete(name))
+      );
+    }).then(() => clients.claim())
+  );
+});
+
+// Fetch event - estratégia de fallback para navegação SPA
+self.addEventListener('fetch', (event) => {
+  // Apenas interceptar requisições de navegação (HTML)
+  if (event.request.mode === 'navigate') {
+    event.respondWith(
+      fetch(event.request).catch(() => {
+        // Se falhar (offline ou erro), retornar index.html do cache ou network
+        return caches.match('/index.html').then((response) => {
+          return response || fetch('/index.html');
+        });
+      })
+    );
+  }
 });
 
 // Push event - recebe notificações push

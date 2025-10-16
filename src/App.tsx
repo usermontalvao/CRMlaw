@@ -901,26 +901,26 @@ function App() {
             } />
             <Route path="/processos" element={
               <ProcessesModule 
-                forceCreate={moduleParams['cases'] ? JSON.parse(moduleParams['cases']).mode === 'create' : false}
-                entityId={moduleParams['cases'] ? JSON.parse(moduleParams['cases']).entityId : undefined}
-                prefillData={moduleParams['cases'] ? JSON.parse(moduleParams['cases']).prefill : undefined}
-                onParamConsumed={() => setModuleParams(prev => { const updated = {...prev}; delete updated['cases']; return updated; })}
+                forceCreate={moduleParams['processos'] ? JSON.parse(moduleParams['processos']).mode === 'create' : false}
+                entityId={moduleParams['processos'] ? JSON.parse(moduleParams['processos']).entityId : undefined}
+                prefillData={moduleParams['processos'] ? JSON.parse(moduleParams['processos']).prefill : undefined}
+                onParamConsumed={() => setModuleParams(prev => { const updated = {...prev}; delete updated['processos']; return updated; })}
               />
             } />
             <Route path="/requerimentos" element={
               <RequirementsModule 
-                forceCreate={moduleParams['requirements'] ? JSON.parse(moduleParams['requirements']).mode === 'create' : false}
-                entityId={moduleParams['requirements'] ? JSON.parse(moduleParams['requirements']).entityId : undefined}
-                prefillData={moduleParams['requirements'] ? JSON.parse(moduleParams['requirements']).prefill : undefined}
-                onParamConsumed={() => setModuleParams(prev => { const updated = {...prev}; delete updated['requirements']; return updated; })}
+                forceCreate={moduleParams['requerimentos'] ? JSON.parse(moduleParams['requerimentos']).mode === 'create' : false}
+                entityId={moduleParams['requerimentos'] ? JSON.parse(moduleParams['requerimentos']).entityId : undefined}
+                prefillData={moduleParams['requerimentos'] ? JSON.parse(moduleParams['requerimentos']).prefill : undefined}
+                onParamConsumed={() => setModuleParams(prev => { const updated = {...prev}; delete updated['requerimentos']; return updated; })}
               />
             } />
             <Route path="/prazos" element={
               <DeadlinesModule 
-                forceCreate={moduleParams['deadlines'] ? JSON.parse(moduleParams['deadlines']).mode === 'create' : false}
-                entityId={moduleParams['deadlines'] ? JSON.parse(moduleParams['deadlines']).entityId : undefined}
-                prefillData={moduleParams['deadlines'] ? JSON.parse(moduleParams['deadlines']).prefill : undefined}
-                onParamConsumed={() => setModuleParams(prev => { const updated = {...prev}; delete updated['deadlines']; return updated; })}
+                forceCreate={moduleParams['prazos'] ? JSON.parse(moduleParams['prazos']).mode === 'create' : false}
+                entityId={moduleParams['prazos'] ? JSON.parse(moduleParams['prazos']).entityId : undefined}
+                prefillData={moduleParams['prazos'] ? JSON.parse(moduleParams['prazos']).prefill : undefined}
+                onParamConsumed={() => setModuleParams(prev => { const updated = {...prev}; delete updated['prazos']; return updated; })}
               />
             } />
             <Route path="/intimacoes" element={
@@ -940,22 +940,13 @@ function App() {
               <CalendarModule 
                 userName={profile.name}
                 onNavigateToModule={({ module, entityId }) => {
-                  // Mapear nomes de módulos internos para rotas
-                  const moduleRouteMap: Record<string, string> = {
-                    'cases': 'processos',
-                    'deadlines': 'prazos',
-                    'requirements': 'requerimentos',
-                  };
-                  
-                  const targetRoute = moduleRouteMap[module] || module;
-                  
                   if (entityId) {
                     setModuleParams(prev => ({
                       ...prev,
                       [module]: JSON.stringify({ entityId }),
                     }));
                   }
-                  navigate(`/${targetRoute}`);
+                  navigate(`/${module}`);
                 }}
                 forceCreate={moduleParams['calendar'] ? JSON.parse(moduleParams['calendar']).mode === 'create' : false}
                 prefillData={moduleParams['calendar'] ? JSON.parse(moduleParams['calendar']).prefill : undefined}

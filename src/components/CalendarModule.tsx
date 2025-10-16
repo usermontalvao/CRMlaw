@@ -427,7 +427,7 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({
             status: deadline.status,
             description: deadline.description,
             data: deadline,
-            moduleLink: 'deadlines',
+            moduleLink: 'prazos',
             clientName: relatedClient?.full_name,
             clientPhone: relatedClient?.mobile || relatedClient?.phone,
             entityId: deadline.id,
@@ -456,7 +456,7 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({
             type: 'hearing',
             description: `Processo: ${process.process_code}`,
             data: process,
-            moduleLink: 'cases',
+            moduleLink: 'processos',
             clientName: relatedClient?.full_name,
             clientPhone: relatedClient?.mobile || relatedClient?.phone,
             entityId: process.id,
@@ -486,7 +486,7 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({
             type: 'requirement',
             description: `Protocolo: ${requirement.protocol || 'N/A'}`,
             data: requirement,
-            moduleLink: 'requirements',
+            moduleLink: 'requerimentos',
             clientName: requirement.beneficiary,
             clientPhone: requirement.phone || undefined,
             entityId: requirement.id,
@@ -517,11 +517,11 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({
           data: item,
           moduleLink:
             item.event_type === 'deadline'
-              ? 'deadlines'
+              ? 'prazos'
               : item.event_type === 'hearing'
-              ? 'cases'
+              ? 'processos'
               : item.event_type === 'requirement'
-              ? 'requirements'
+              ? 'requerimentos'
               : undefined,
           clientName: relatedClient?.full_name,
           clientPhone: relatedClient?.mobile || relatedClient?.phone,
@@ -1312,75 +1312,75 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({
       )}
 
       {/* Header Premium Full Width */}
-      <div className="relative -mx-3 sm:-mx-4 lg:-mx-6 xl:-mx-8 bg-gradient-to-r from-[#1e40af] via-[#4338ca] to-[#7c3aed] shadow-lg">
-        <div className="absolute inset-0 bg-white/5 mix-blend-overlay" />
+      <div className="relative -mx-3 sm:-mx-4 lg:-mx-6 xl:-mx-8 bg-gradient-to-r from-slate-900 via-slate-800 to-slate-900 shadow-xl">
+        <div className="absolute inset-0 bg-gradient-to-r from-blue-600/10 via-transparent to-purple-600/10" />
 
-        <div className="relative px-3 sm:px-4 lg:px-6 xl:px-8 py-2.5">
-          {/* Linha única com tudo */}
-          <div className="flex flex-wrap items-center justify-between gap-4">
-            {/* Esquerda: Título + Stats */}
+        <div className="relative px-4 sm:px-6 lg:px-8 py-4">
+          <div className="flex items-center justify-between gap-4">
+            {/* Esquerda: Título + Navegação + Mês + Stats */}
             <div className="flex items-center gap-4">
-              <div className="flex items-center gap-2.5">
-                <div className="w-8 h-8 rounded-lg bg-white/15 flex items-center justify-center">
-                  <CalendarIcon className="w-4 h-4 text-white" />
+              {/* Título */}
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-blue-500 to-blue-600 flex items-center justify-center shadow-lg">
+                  <CalendarIcon className="w-5 h-5 text-white" />
                 </div>
                 <div>
-                  <h3 className="text-base font-bold text-white leading-tight">Agenda</h3>
-                  <p className="text-[10px] text-white/60">Compromissos e prazos</p>
-                </div>
-              </div>
-
-              {/* Stats */}
-              <div className="hidden lg:flex items-center gap-2 ml-2">
-                <div
-                  className="flex items-center gap-1.5 rounded-md border border-white/10 bg-white/10 px-2.5 py-1 cursor-help"
-                  title="Compromissos nos próximos 7 dias"
-                >
-                  <span className="text-[10px] font-semibold uppercase tracking-wide text-amber-200">7d</span>
-                  <span className="text-sm font-bold text-white">{stats.weekCount}</span>
-                </div>
-                <div
-                  className="flex items-center gap-1.5 rounded-md border border-white/10 bg-white/10 px-2.5 py-1 cursor-help"
-                  title="Compromissos no mês atual"
-                >
-                  <span className="text-[10px] font-semibold uppercase tracking-wide text-sky-200">Mês</span>
-                  <span className="text-sm font-bold text-white">{stats.monthCount}</span>
+                  <h3 className="text-lg font-bold text-white leading-none">Agenda Jurídica</h3>
+                  <p className="text-xs text-white/70 mt-1">Compromissos e prazos</p>
                 </div>
               </div>
 
               {/* Navegação */}
-              <div className="hidden lg:flex items-center gap-1.5 ml-4 pl-4 border-l border-white/10">
+              <div className="hidden md:flex items-center gap-2 bg-white/10 rounded-xl p-1">
                 <button
                   type="button"
                   onClick={() => calendarRef.current?.getApi().prev()}
-                  className="flex h-7 w-7 items-center justify-center rounded-md bg-white/10 text-white text-sm transition hover:bg-white/20"
+                  className="flex h-8 w-8 items-center justify-center rounded-lg bg-white/20 text-white text-lg font-bold hover:bg-white/30 transition-all duration-200 hover:scale-105"
                 >
                   ‹
                 </button>
                 <button
                   type="button"
                   onClick={() => calendarRef.current?.getApi().today()}
-                  className="px-2.5 py-1 text-[10px] font-semibold text-white rounded-md bg-white/10 transition hover:bg-white/15"
+                  className="px-3 py-1.5 text-xs font-bold text-white rounded-lg bg-white/20 hover:bg-white/30 transition-all duration-200 hover:scale-105"
                 >
                   Hoje
                 </button>
                 <button
                   type="button"
                   onClick={() => calendarRef.current?.getApi().next()}
-                  className="flex h-7 w-7 items-center justify-center rounded-md bg-white/10 text-white text-sm transition hover:bg-white/20"
+                  className="flex h-8 w-8 items-center justify-center rounded-lg bg-white/20 text-white text-lg font-bold hover:bg-white/30 transition-all duration-200 hover:scale-105"
                 >
                   ›
                 </button>
-                <span className="ml-2 text-xs font-semibold capitalize text-white/80">
-                  {calendarTitle}
-                </span>
+              </div>
+
+              {/* Título do Mês */}
+              <div className="hidden lg:block">
+                <div className="bg-white/10 rounded-xl px-4 py-2">
+                  <span className="text-sm font-bold text-white capitalize">
+                    {calendarTitle}
+                  </span>
+                </div>
+              </div>
+
+              {/* Stats */}
+              <div className="hidden lg:flex items-center gap-2">
+                <div className="flex items-center gap-2 px-3 py-2 rounded-xl bg-gradient-to-r from-amber-500/20 to-amber-600/20 border border-amber-400/30">
+                  <span className="text-xs font-bold uppercase text-amber-200">Semana</span>
+                  <span className="text-sm font-bold text-white bg-amber-500 rounded-full w-6 h-6 flex items-center justify-center">{stats.weekCount}</span>
+                </div>
+                <div className="flex items-center gap-2 px-3 py-2 rounded-xl bg-gradient-to-r from-cyan-500/20 to-cyan-600/20 border border-cyan-400/30">
+                  <span className="text-xs font-bold uppercase text-cyan-200">Mês</span>
+                  <span className="text-sm font-bold text-white bg-cyan-500 rounded-full w-6 h-6 flex items-center justify-center">{stats.monthCount}</span>
+                </div>
               </div>
             </div>
 
             {/* Direita: Views + Ações */}
             <div className="flex items-center gap-3">
               {/* Seletores de View */}
-              <div className="hidden lg:flex items-center gap-1">
+              <div className="hidden lg:flex items-center gap-1 bg-white/10 rounded-xl p-1">
                 {([
                   { label: 'Mês', view: 'dayGridMonth' },
                   { label: 'Semana', view: 'timeGridWeek' },
@@ -1392,10 +1392,10 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({
                       key={view}
                       type="button"
                       onClick={() => handleChangeView(view)}
-                      className={`px-2.5 py-1 text-[10px] font-bold rounded-md transition ${
+                      className={`px-4 py-2 text-xs font-bold rounded-lg transition-all duration-200 ${
                         isActive
-                          ? 'bg-white text-[#1e40af]'
-                          : 'bg-white/10 text-white hover:bg-white/15'
+                          ? 'bg-white text-slate-900 shadow-lg'
+                          : 'text-white hover:bg-white/20 hover:scale-105'
                       }`}
                     >
                       {label}
@@ -1405,98 +1405,122 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({
               </div>
 
               {/* Ações */}
-              <div className="flex items-center gap-1.5">
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => openEventForm()}
+                  className="px-4 py-2 text-xs font-bold text-white rounded-xl bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-500 hover:to-blue-600 transition-all duration-200 shadow-lg hover:shadow-xl hover:scale-105"
+                >
+                  + Novo
+                </button>
                 <button
                   type="button"
                   onClick={() => setLegendExpanded((prev) => !prev)}
-                  className="px-2.5 py-1 text-[10px] font-semibold text-white rounded-md border border-white/15 bg-white/10 transition hover:bg-white/15"
+                  className="px-3 py-2 text-xs font-bold text-white rounded-xl bg-white/15 hover:bg-white/25 transition-all duration-200 hover:scale-105"
                 >
                   Filtros
                 </button>
-                <button
-                  type="button"
-                  onClick={() => handleOpenExportModal('excel')}
-                  className="px-2.5 py-1 text-[10px] font-bold text-white rounded-md bg-emerald-600 hover:bg-emerald-500 transition"
-                >
-                  Excel
-                </button>
-                <button
-                  type="button"
-                  onClick={() => handleOpenExportModal('pdf')}
-                  className="px-2.5 py-1 text-[10px] font-bold text-white rounded-md bg-fuchsia-600 hover:bg-fuchsia-500 transition"
-                >
-                  PDF
-                </button>
+                <div className="flex items-center gap-1">
+                  <button
+                    type="button"
+                    onClick={() => handleOpenExportModal('excel')}
+                    className="px-3 py-2 text-xs font-bold text-white rounded-xl bg-emerald-600 hover:bg-emerald-500 transition-all duration-200 shadow-md hover:shadow-lg hover:scale-105"
+                  >
+                    Excel
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleOpenExportModal('pdf')}
+                    className="px-3 py-2 text-xs font-bold text-white rounded-xl bg-rose-600 hover:bg-rose-500 transition-all duration-200 shadow-md hover:shadow-lg hover:scale-105"
+                  >
+                    PDF
+                  </button>
+                </div>
               </div>
             </div>
           </div>
 
           {/* Filtros e Legenda */}
           {legendExpanded && (
-            <div className="border-t border-white/10 pt-3 mt-3">
-              <div className="flex flex-wrap items-center gap-2">
-              <label className="calendar-legend-chip calendar-legend-chip--deadline cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={viewFilters.deadline}
-                  onChange={() => setViewFilters((prev) => ({ ...prev, deadline: !prev.deadline }))}
-                  className="mr-1.5"
-                />
-                Prazos
-              </label>
-              <label className="calendar-legend-chip calendar-legend-chip--hearing cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={viewFilters.hearing}
-                  onChange={() => setViewFilters((prev) => ({ ...prev, hearing: !prev.hearing }))}
-                  className="mr-1.5"
-                />
-                Audiências
-              </label>
-              <label className="calendar-legend-chip calendar-legend-chip--requirement cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={viewFilters.requirement}
-                  onChange={() => setViewFilters((prev) => ({ ...prev, requirement: !prev.requirement }))}
-                  className="mr-1.5"
-                />
-                Exigências
-              </label>
-              <label className="calendar-legend-chip calendar-legend-chip--payment cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={viewFilters.payment}
-                  onChange={() => setViewFilters((prev) => ({ ...prev, payment: !prev.payment }))}
-                  className="mr-1.5"
-                />
-                Recebimentos
-              </label>
-              <label className="calendar-legend-chip calendar-legend-chip--pericia cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={viewFilters.pericia}
-                  onChange={() => setViewFilters((prev) => ({ ...prev, pericia: !prev.pericia }))}
-                  className="mr-1.5"
-                />
-                Perícias
-              </label>
-              <label className="calendar-legend-chip calendar-legend-chip--meeting cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={viewFilters.meeting}
-                  onChange={() => setViewFilters((prev) => ({ ...prev, meeting: !prev.meeting }))}
-                  className="mr-1.5"
-                />
-                Reuniões
-              </label>
-            </div>
+            <div className="border-t border-white/20 pt-4 mt-4">
+              <div className="bg-white/10 rounded-xl p-4">
+                <h4 className="text-sm font-bold text-white mb-3">Filtrar por Tipo de Compromisso</h4>
+                <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
+                  <label className="flex items-center gap-2 cursor-pointer group">
+                    <input
+                      type="checkbox"
+                      checked={viewFilters.deadline}
+                      onChange={() => setViewFilters((prev) => ({ ...prev, deadline: !prev.deadline }))}
+                      className="w-4 h-4 rounded border-2 border-white/30 text-blue-600 focus:ring-2 focus:ring-blue-500"
+                    />
+                    <span className="calendar-legend-chip calendar-legend-chip--deadline group-hover:scale-105 transition-transform">
+                      Prazos
+                    </span>
+                  </label>
+                  <label className="flex items-center gap-2 cursor-pointer group">
+                    <input
+                      type="checkbox"
+                      checked={viewFilters.hearing}
+                      onChange={() => setViewFilters((prev) => ({ ...prev, hearing: !prev.hearing }))}
+                      className="w-4 h-4 rounded border-2 border-white/30 text-blue-600 focus:ring-2 focus:ring-blue-500"
+                    />
+                    <span className="calendar-legend-chip calendar-legend-chip--hearing group-hover:scale-105 transition-transform">
+                      Audiências
+                    </span>
+                  </label>
+                  <label className="flex items-center gap-2 cursor-pointer group">
+                    <input
+                      type="checkbox"
+                      checked={viewFilters.requirement}
+                      onChange={() => setViewFilters((prev) => ({ ...prev, requirement: !prev.requirement }))}
+                      className="w-4 h-4 rounded border-2 border-white/30 text-blue-600 focus:ring-2 focus:ring-blue-500"
+                    />
+                    <span className="calendar-legend-chip calendar-legend-chip--requirement group-hover:scale-105 transition-transform">
+                      Exigências
+                    </span>
+                  </label>
+                  <label className="flex items-center gap-2 cursor-pointer group">
+                    <input
+                      type="checkbox"
+                      checked={viewFilters.payment}
+                      onChange={() => setViewFilters((prev) => ({ ...prev, payment: !prev.payment }))}
+                      className="w-4 h-4 rounded border-2 border-white/30 text-blue-600 focus:ring-2 focus:ring-blue-500"
+                    />
+                    <span className="calendar-legend-chip calendar-legend-chip--payment group-hover:scale-105 transition-transform">
+                      Recebimentos
+                    </span>
+                  </label>
+                  <label className="flex items-center gap-2 cursor-pointer group">
+                    <input
+                      type="checkbox"
+                      checked={viewFilters.pericia}
+                      onChange={() => setViewFilters((prev) => ({ ...prev, pericia: !prev.pericia }))}
+                      className="w-4 h-4 rounded border-2 border-white/30 text-blue-600 focus:ring-2 focus:ring-blue-500"
+                    />
+                    <span className="calendar-legend-chip calendar-legend-chip--pericia group-hover:scale-105 transition-transform">
+                      Perícias
+                    </span>
+                  </label>
+                  <label className="flex items-center gap-2 cursor-pointer group">
+                    <input
+                      type="checkbox"
+                      checked={viewFilters.meeting}
+                      onChange={() => setViewFilters((prev) => ({ ...prev, meeting: !prev.meeting }))}
+                      className="w-4 h-4 rounded border-2 border-white/30 text-blue-600 focus:ring-2 focus:ring-blue-500"
+                    />
+                    <span className="calendar-legend-chip calendar-legend-chip--meeting group-hover:scale-105 transition-transform">
+                      Reuniões
+                    </span>
+                  </label>
+                </div>
+              </div>
             </div>
           )}
         </div>
 
         {/* Calendário com recuo */}
-        <div className="relative bg-white mt-6">
-          <div className="calendar-container px-6 py-6">
+        <div className="relative bg-white mt-6 rounded-t-3xl shadow-2xl">
+          <div className="calendar-container px-6 py-8">
           <FullCalendar
             ref={calendarRef}
             plugins={[dayGridPlugin, timeGridPlugin, interactionPlugin, listPlugin]}
@@ -1551,6 +1575,18 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({
         </div>
       </div>
 
+      {/* Botão Flutuante para Novo Compromisso */}
+      <button
+        onClick={() => openEventForm()}
+        className="fixed bottom-8 right-8 w-16 h-16 bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-500 hover:to-blue-600 text-white rounded-full shadow-2xl hover:shadow-3xl transition-all duration-300 hover:scale-110 z-40 flex items-center justify-center group"
+        title="Criar novo compromisso"
+      >
+        <CalendarIcon className="w-6 h-6 group-hover:scale-110 transition-transform" />
+        <div className="absolute -top-12 right-0 bg-slate-900 text-white text-xs px-3 py-1 rounded-lg opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap">
+          Novo Compromisso
+        </div>
+      </button>
+
       {/* Modal de Detalhes do Evento */}
       {selectedEvent && (
         <div
@@ -1558,24 +1594,28 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({
           onClick={() => setSelectedEvent(null)}
         >
           <div
-            className="bg-white rounded-2xl shadow-2xl max-w-lg w-full p-6"
+            className="bg-white rounded-3xl shadow-2xl max-w-lg w-full overflow-hidden"
             onClick={(e) => e.stopPropagation()}
           >
-            <div className="flex items-start justify-between mb-4">
-              <h3 className="text-lg font-semibold text-slate-900">{selectedEvent.title}</h3>
-              <button
-                onClick={() => setSelectedEvent(null)}
-                className="text-slate-400 hover:text-slate-600"
-              >
-                ✕
-              </button>
-            </div>
-            <div className="space-y-3 text-sm">
-              {selectedEventModuleLabel && (
-                <div className="inline-flex items-center gap-2 rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-600">
-                  {selectedEventModuleLabel}
+            <div className="bg-gradient-to-r from-slate-50 to-white p-6 border-b border-slate-100">
+              <div className="flex items-start justify-between">
+                <div>
+                  <h3 className="text-xl font-bold text-slate-900">{selectedEvent.title}</h3>
+                  {selectedEventModuleLabel && (
+                    <span className="inline-flex items-center gap-1 mt-2 px-3 py-1 rounded-full bg-blue-100 text-blue-700 text-xs font-semibold">
+                      {selectedEventModuleLabel}
+                    </span>
+                  )}
                 </div>
-              )}
+                <button
+                  onClick={() => setSelectedEvent(null)}
+                  className="text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-full p-2 transition-all"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+            </div>
+            <div className="space-y-4 text-sm">
               <div className="flex items-center gap-2">
                 <span className="font-semibold text-slate-700">Data:</span>
                 <span className="text-slate-600">

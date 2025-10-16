@@ -283,7 +283,7 @@ const NotificationsModule: React.FC<NotificationsModuleProps> = ({ onNavigateToM
         onNavigateToModule?.('intimations');
         break;
       case 'deadline':
-        onNavigateToModule?.('deadlines');
+        onNavigateToModule?.('prazos');
         break;
       case 'appointment':
         onNavigateToModule?.('calendar');

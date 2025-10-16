@@ -608,7 +608,7 @@ const ClientsModule: React.FC<ClientsModuleProps> = ({
           onBack={handleBackToList}
           onEdit={() => handleEditClient(selectedClient)}
           onCreateProcess={onNavigateToModule ? () => {
-            onNavigateToModule('cases', {
+            onNavigateToModule('processos', {
               mode: 'create',
               prefill: {
                 client_id: selectedClient.id,
@@ -617,7 +617,7 @@ const ClientsModule: React.FC<ClientsModuleProps> = ({
             });
           } : undefined}
           onCreateRequirement={onNavigateToModule ? () => {
-            onNavigateToModule('requirements', {
+            onNavigateToModule('requerimentos', {
               mode: 'create',
               prefill: {
                 client_id: selectedClient.id,
@@ -627,7 +627,7 @@ const ClientsModule: React.FC<ClientsModuleProps> = ({
             });
           } : undefined}
           onCreateDeadline={onNavigateToModule ? () => {
-            onNavigateToModule('deadlines', {
+            onNavigateToModule('prazos', {
               mode: 'create',
               prefill: {
                 client_id: selectedClient.id,

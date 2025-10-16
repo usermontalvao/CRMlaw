@@ -211,7 +211,7 @@ const NotificationsModuleNew: React.FC<NotificationsModuleProps> = ({ onNavigate
     if (!notification.isRead) await markAsRead(notification.id);
     
     if (notification.type === 'intimation') onNavigateToModule?.('intimations');
-    else if (notification.type === 'deadline') onNavigateToModule?.('deadlines');
+    else if (notification.type === 'deadline') onNavigateToModule?.('prazos');
     else onNavigateToModule?.('calendar');
   };
 

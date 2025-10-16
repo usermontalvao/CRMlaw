@@ -306,7 +306,7 @@ export const NotificationCenter: React.FC<NotificationCenterProps> = ({ onNaviga
         onNavigateToModule?.('intimations');
         break;
       case 'deadline':
-        onNavigateToModule?.('deadlines');
+        onNavigateToModule?.('prazos');
         break;
       case 'appointment':
         onNavigateToModule?.('calendar');

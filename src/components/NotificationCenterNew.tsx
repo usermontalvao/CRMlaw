@@ -162,7 +162,7 @@ export const NotificationCenterNew: React.FC<NotificationCenterProps> = ({ onNav
     if (!notification.isRead) await markAsRead(notification.id);
     setIsOpen(false);
     if (notification.type === 'intimation') onNavigateToModule?.('intimations');
-    else if (notification.type === 'deadline') onNavigateToModule?.('deadlines');
+    else if (notification.type === 'deadline') onNavigateToModule?.('prazos');
     else onNavigateToModule?.('calendar');
   };
 
