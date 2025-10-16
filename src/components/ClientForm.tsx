@@ -20,7 +20,7 @@ const ClientForm: React.FC<ClientFormProps> = ({ client, prefill, onBack, onSave
     cpf_cnpj: '',
     rg: '',
     birth_date: '',
-    nationality: 'Brasileira',
+    nationality: 'brasileiro (a)',
     marital_status: undefined,
     profession: '',
     email: '',

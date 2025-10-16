@@ -17,6 +17,9 @@ import {
   ArrowRight,
   X,
   UserPlus,
+  Bell,
+  Scale,
+  ChevronRight,
 } from 'lucide-react';
 import { clientService } from '../services/client.service';
 import { processService } from '../services/process.service';
@@ -25,6 +28,7 @@ import { taskService } from '../services/task.service';
 import { calendarService } from '../services/calendar.service';
 import { requirementService } from '../services/requirement.service';
 import { financialService } from '../services/financial.service';
+import { djenLocalService } from '../services/djenLocal.service';
 import type { Client } from '../types/client.types';
 import type { Process } from '../types/process.types';
 import type { Deadline } from '../types/deadline.types';
@@ -32,6 +36,7 @@ import type { Task } from '../types/task.types';
 import type { CalendarEvent } from '../types/calendar.types';
 import type { Requirement } from '../types/requirement.types';
 import type { FinancialStats, Installment, Agreement } from '../types/financial.types';
+import type { DjenComunicacaoLocal } from '../types/djen.types';
 
 interface DashboardProps {
   onNavigateToModule?: (moduleKey: string, params?: Record<string, string>) => void;
@@ -115,6 +120,9 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToModule }) => {
   const [requirements, setRequirements] = useState<Requirement[]>([]);
   const [financialStats, setFinancialStats] = useState<FinancialStats | null>(null);
   const [overdueInstallments, setOverdueInstallments] = useState<(Installment & { agreement?: Agreement })[]>([]);
+  const [djenIntimacoes, setDjenIntimacoes] = useState<DjenComunicacaoLocal[]>([]);
+  const [selectedEvent, setSelectedEvent] = useState<CalendarEvent | null>(null);
+  const [selectedIntimacao, setSelectedIntimacao] = useState<DjenComunicacaoLocal | null>(null);
   const clientMap = useMemo(() => new Map(clients.map((client) => [client.id, client])), [clients]);
 
   useEffect(() => {
@@ -133,6 +141,7 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToModule }) => {
         requirementsData,
         financialStatsData,
         allInstallmentsData,
+        djenIntimacoesData,
       ] = await Promise.all([
         clientService.listClients(),
         processService.listProcesses(),
@@ -142,6 +151,7 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToModule }) => {
         requirementService.listRequirements(),
         financialService.getFinancialStats(new Date().toISOString().slice(0, 7)),
         financialService.listAllInstallments(),
+        djenLocalService.listComunicacoes({ lida: false }),
       ]);
       setClients(clientsData);
       setProcesses(processesData);
@@ -150,6 +160,7 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToModule }) => {
       setCalendarEvents(calendarEventsData);
       setRequirements(requirementsData);
       setFinancialStats(financialStatsData);
+      setDjenIntimacoes(djenIntimacoesData);
       
       // Filtrar parcelas vencidas
       const today = new Date().toISOString().split('T')[0];
@@ -418,40 +429,219 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToModule }) => {
         </div>
       </div>
 
-      {/* Grid de 3 Colunas */}
+      {/* Grid de Widgets Principais - Agenda e DJEN */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
-        {/* Próximos Compromissos */}
-        <div className="bg-white rounded-xl p-5 shadow-sm border border-slate-200">
-            <div className="mb-4 flex items-center justify-between">
-              <h2 className="text-sm font-bold text-slate-700 uppercase tracking-wide">Próximos Compromissos</h2>
+        {/* Widget de Agenda - Destaque (2 colunas) */}
+        <div className="lg:col-span-2 bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 rounded-2xl shadow-2xl overflow-hidden">
+        <div className="relative">
+          <div className="absolute inset-0 bg-gradient-to-r from-blue-600/10 via-transparent to-purple-600/10" />
+          <div className="relative p-6">
+            <div className="flex items-center justify-between mb-6">
+              <div className="flex items-center gap-3">
+                <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-blue-500 to-blue-600 flex items-center justify-center shadow-lg">
+                  <Calendar className="w-6 h-6 text-white" />
+                </div>
+                <div>
+                  <h2 className="text-lg font-bold text-white">Agenda Jurídica</h2>
+                  <p className="text-xs text-white/70">Próximos compromissos e prazos</p>
+                </div>
+              </div>
               <button
-                onClick={() => handleNavigate('calendar')}
-                className="text-blue-500 hover:text-blue-600"
+                onClick={() => handleNavigate('agenda')}
+                className="px-4 py-2 bg-white/10 hover:bg-white/20 text-white rounded-xl text-xs font-semibold transition-all duration-200 hover:scale-105 border border-white/20"
               >
-                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-                </svg>
+                Ver Agenda Completa →
               </button>
             </div>
+
             {upcomingEvents.length === 0 ? (
-              <p className="text-center text-sm text-slate-500">Nenhum compromisso agendado</p>
+              <div className="bg-white/5 rounded-xl p-8 text-center border border-white/10">
+                <Calendar className="w-12 h-12 text-white/30 mx-auto mb-3" />
+                <p className="text-white/60 text-sm">Nenhum compromisso agendado</p>
+                <button
+                  onClick={() => handleNavigate('agenda')}
+                  className="mt-4 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-semibold transition-all"
+                >
+                  Criar Compromisso
+                </button>
+              </div>
             ) : (
-              <div className="space-y-2">
-                {upcomingEvents.slice(0, 6).map((event) => (
-                  <div key={event.id} className="flex items-center gap-3 p-2 rounded-lg hover:bg-slate-50 transition-colors">
-                    <div className="w-8 h-8 rounded-lg bg-blue-100 flex items-center justify-center flex-shrink-0">
-                      <Calendar className="w-4 h-4 text-blue-600" />
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+                {upcomingEvents.slice(0, 6).map((event, index) => {
+                  const eventDate = new Date(event.start_at);
+                  const isToday = eventDate.toDateString() === new Date().toDateString();
+                  const isTomorrow = eventDate.toDateString() === new Date(Date.now() + 86400000).toDateString();
+                  
+                  return (
+                    <div 
+                      key={event.id} 
+                      className="group relative bg-white/10 hover:bg-white/15 backdrop-blur-sm rounded-xl p-4 border border-white/20 hover:border-white/30 transition-all duration-200 hover:scale-105 cursor-pointer"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setSelectedEvent(event);
+                      }}
+                    >
+                      <div className="flex items-start gap-3">
+                        <div className={`w-10 h-10 rounded-lg flex items-center justify-center flex-shrink-0 ${
+                          isToday ? 'bg-amber-500' : isTomorrow ? 'bg-blue-500' : 'bg-white/20'
+                        }`}>
+                          <Calendar className="w-5 h-5 text-white" />
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2 mb-1">
+                            <span className="text-xs font-bold text-white/90">
+                              {eventDate.toLocaleDateString('pt-BR', { day: '2-digit', month: 'short' })}
+                            </span>
+                            {isToday && (
+                              <span className="px-2 py-0.5 bg-amber-500 text-white text-[10px] font-bold rounded-full">
+                                HOJE
+                              </span>
+                            )}
+                            {isTomorrow && (
+                              <span className="px-2 py-0.5 bg-blue-500 text-white text-[10px] font-bold rounded-full">
+                                AMANHÃ
+                              </span>
+                            )}
+                          </div>
+                          <p className="text-sm font-semibold text-white truncate group-hover:text-blue-200 transition-colors">
+                            {event.title}
+                          </p>
+                          <p className="text-xs text-white/60 mt-1">
+                            {eventDate.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}
+                          </p>
+                        </div>
+                      </div>
+                      {/* Seta indicando sequência */}
+                      {index < upcomingEvents.slice(0, 6).length - 1 && (
+                        <div className="absolute -right-4 top-1/2 -translate-y-1/2 z-10 hidden lg:block">
+                          <ChevronRight className="w-6 h-6 text-white/40" />
+                        </div>
+                      )}
                     </div>
-                    <div className="flex-1 min-w-0">
-                      <p className="text-xs font-medium text-slate-900 truncate">
-                        {new Date(event.start_at).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' })} - {event.title}
-                      </p>
-                    </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             )}
+            
+            {/* Botão Ver Agenda Completa - Sempre Visível */}
+            <div className="mt-6 pt-4 border-t border-white/10">
+              <button
+                onClick={() => handleNavigate('agenda')}
+                className="w-full flex items-center justify-center gap-3 px-6 py-3 bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-500 hover:to-blue-600 text-white rounded-xl font-semibold transition-all duration-200 hover:scale-105 shadow-lg hover:shadow-xl"
+              >
+                <Calendar className="w-5 h-5" />
+                Ver Agenda Completa
+                <ArrowRight className="w-4 h-4" />
+              </button>
+            </div>
           </div>
+        </div>
+      </div>
+
+      {/* Widget de Intimações DJEN - Destaque (1 coluna) */}
+      <div className="lg:col-span-1 bg-gradient-to-br from-red-900 via-red-800 to-red-900 rounded-2xl shadow-2xl overflow-hidden">
+        <div className="relative">
+          <div className="absolute inset-0 bg-gradient-to-r from-orange-600/10 via-transparent to-red-600/10" />
+          <div className="relative p-6">
+            <div className="flex items-center justify-between mb-6">
+              <div className="flex items-center gap-3">
+                <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-red-500 to-red-600 flex items-center justify-center shadow-lg">
+                  <Bell className="w-6 h-6 text-white" />
+                </div>
+                <div>
+                  <h2 className="text-lg font-bold text-white">Intimações DJEN</h2>
+                  <p className="text-xs text-white/70">Comunicações não lidas do Diário Eletrônico</p>
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                {djenIntimacoes.length > 0 && (
+                  <span className="px-3 py-1 bg-red-500 text-white text-xs font-bold rounded-full animate-pulse">
+                    {djenIntimacoes.length} NOVA{djenIntimacoes.length > 1 ? 'S' : ''}
+                  </span>
+                )}
+                <button
+                  onClick={() => handleNavigate('intimacoes')}
+                  className="px-4 py-2 bg-white/10 hover:bg-white/20 text-white rounded-xl text-xs font-semibold transition-all duration-200 hover:scale-105 border border-white/20"
+                >
+                  Ver Todas →
+                </button>
+              </div>
+            </div>
+
+            {djenIntimacoes.length === 0 ? (
+              <div className="bg-white/5 rounded-xl p-8 text-center border border-white/10">
+                <Scale className="w-12 h-12 text-white/30 mx-auto mb-3" />
+                <p className="text-white/60 text-sm">Nenhuma intimação não lida</p>
+                <p className="text-white/40 text-xs mt-1">Todas as comunicações estão em dia</p>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {djenIntimacoes.slice(0, 3).map((intimacao) => {
+                  const dataDisponibilizacao = new Date(intimacao.data_disponibilizacao);
+                  const isRecent = Date.now() - dataDisponibilizacao.getTime() < 24 * 60 * 60 * 1000; // últimas 24h
+                  
+                  return (
+                    <div 
+                      key={intimacao.id} 
+                      className="group bg-white/10 hover:bg-white/15 backdrop-blur-sm rounded-xl p-4 border border-white/20 hover:border-white/30 transition-all duration-200 hover:scale-105 cursor-pointer"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setSelectedIntimacao(intimacao);
+                      }}
+                    >
+                      <div className="flex items-start gap-3">
+                        <div className={`w-10 h-10 rounded-lg flex items-center justify-center flex-shrink-0 ${
+                          isRecent ? 'bg-orange-500 animate-pulse' : 'bg-white/20'
+                        }`}>
+                          <Bell className="w-5 h-5 text-white" />
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2 mb-1">
+                            <span className="text-xs font-bold text-white/90">
+                              {dataDisponibilizacao.toLocaleDateString('pt-BR', { day: '2-digit', month: 'short' })}
+                            </span>
+                            <span className="text-xs text-white/60">•</span>
+                            <span className="text-xs text-white/60 uppercase font-semibold">
+                              {intimacao.sigla_tribunal}
+                            </span>
+                            {isRecent && (
+                              <span className="px-2 py-0.5 bg-orange-500 text-white text-[10px] font-bold rounded-full">
+                                NOVA
+                              </span>
+                            )}
+                          </div>
+                          <p className="text-sm font-semibold text-white truncate group-hover:text-red-200 transition-colors">
+                            {intimacao.tipo_comunicacao || 'Comunicação'}
+                          </p>
+                          <p className="text-xs text-white/60 mt-1 truncate">
+                            Processo: {intimacao.numero_processo_mascara || intimacao.numero_processo}
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+            
+            {/* Botão Ver Todas - Sempre Visível */}
+            <div className="mt-6 pt-4 border-t border-white/10">
+              <button
+                onClick={() => handleNavigate('intimacoes')}
+                className="w-full flex items-center justify-center gap-3 px-6 py-3 bg-gradient-to-r from-red-600 to-red-700 hover:from-red-500 hover:to-red-600 text-white rounded-xl font-semibold transition-all duration-200 hover:scale-105 shadow-lg hover:shadow-xl"
+              >
+                <Bell className="w-5 h-5" />
+                Ver Todas as Intimações
+                <ArrowRight className="w-4 h-4" />
+              </button>
+            </div>
+          </div>
+        </div>
+        </div>
+      </div>
+
+      {/* Grid de 3 Colunas */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
 
           {/* Próximos Prazos */}
           <div className="bg-white rounded-xl p-5 shadow-sm border border-slate-200">
@@ -655,6 +845,240 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToModule }) => {
           )}
         </div>
       </div>
+
+      {/* Modal de Detalhes do Evento */}
+      {selectedEvent && (
+        <div
+          className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4"
+          onClick={() => setSelectedEvent(null)}
+        >
+          <div
+            className="bg-white rounded-3xl shadow-2xl max-w-lg w-full overflow-hidden"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="bg-gradient-to-r from-blue-50 to-white p-6 border-b border-slate-100">
+              <div className="flex items-start justify-between">
+                <div>
+                  <h3 className="text-xl font-bold text-slate-900">{selectedEvent.title}</h3>
+                  <span className="inline-flex items-center gap-1 mt-2 px-3 py-1 rounded-full bg-blue-100 text-blue-700 text-xs font-semibold">
+                    Compromisso
+                  </span>
+                </div>
+                <button
+                  onClick={() => setSelectedEvent(null)}
+                  className="text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-full p-2 transition-all"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+            </div>
+            <div className="p-6 space-y-4">
+              {/* Tipo de Evento */}
+              <div className="flex items-center gap-2">
+                <div className="w-2 h-2 rounded-full bg-blue-500"></div>
+                <span className="font-semibold text-slate-700">Tipo:</span>
+                <span className="text-slate-600 capitalize">
+                  {selectedEvent.event_type === 'deadline' && 'Prazo'}
+                  {selectedEvent.event_type === 'hearing' && 'Audiência'}
+                  {selectedEvent.event_type === 'requirement' && 'Exigência'}
+                  {selectedEvent.event_type === 'payment' && 'Pagamento'}
+                  {selectedEvent.event_type === 'meeting' && 'Reunião'}
+                  {selectedEvent.event_type === 'pericia' && 'Perícia'}
+                </span>
+              </div>
+
+              {/* Status */}
+              <div className="flex items-center gap-2">
+                <div className={`w-2 h-2 rounded-full ${
+                  selectedEvent.status === 'concluido' ? 'bg-green-500' : 
+                  selectedEvent.status === 'cancelado' ? 'bg-red-500' : 'bg-amber-500'
+                }`}></div>
+                <span className="font-semibold text-slate-700">Status:</span>
+                <span className={`px-2 py-1 rounded-full text-xs font-semibold ${
+                  selectedEvent.status === 'concluido' ? 'bg-green-100 text-green-700' : 
+                  selectedEvent.status === 'cancelado' ? 'bg-red-100 text-red-700' : 'bg-amber-100 text-amber-700'
+                }`}>
+                  {selectedEvent.status === 'pendente' && 'Pendente'}
+                  {selectedEvent.status === 'concluido' && 'Concluído'}
+                  {selectedEvent.status === 'cancelado' && 'Cancelado'}
+                </span>
+              </div>
+
+              {/* Data de Início */}
+              <div className="flex items-center gap-2">
+                <Calendar className="w-5 h-5 text-slate-600" />
+                <div className="flex-1">
+                  <span className="font-semibold text-slate-700">Data de Início:</span>
+                  <span className="text-slate-600 ml-2">
+                    {new Date(selectedEvent.start_at).toLocaleDateString('pt-BR', {
+                      day: '2-digit',
+                      month: 'long',
+                      year: 'numeric',
+                      hour: '2-digit',
+                      minute: '2-digit',
+                    })}
+                  </span>
+                </div>
+              </div>
+
+              {/* Data de Término */}
+              {selectedEvent.end_at && (
+                <div className="flex items-center gap-2">
+                  <Clock className="w-5 h-5 text-slate-600" />
+                  <div className="flex-1">
+                    <span className="font-semibold text-slate-700">Data de Término:</span>
+                    <span className="text-slate-600 ml-2">
+                      {new Date(selectedEvent.end_at).toLocaleDateString('pt-BR', {
+                        day: '2-digit',
+                        month: 'long',
+                        year: 'numeric',
+                        hour: '2-digit',
+                        minute: '2-digit',
+                      })}
+                    </span>
+                  </div>
+                </div>
+              )}
+
+              {/* Cliente */}
+              {selectedEvent.client_id && (
+                <div className="flex items-center gap-2">
+                  <Users className="w-5 h-5 text-slate-600" />
+                  <div className="flex-1">
+                    <span className="font-semibold text-slate-700">Cliente:</span>
+                    <span className="text-slate-600 ml-2">
+                      {clientMap.get(selectedEvent.client_id)?.full_name || 'Cliente vinculado'}
+                    </span>
+                  </div>
+                </div>
+              )}
+
+              {/* Notificação */}
+              {selectedEvent.notify_minutes_before && (
+                <div className="flex items-center gap-2">
+                  <Bell className="w-5 h-5 text-slate-600" />
+                  <div className="flex-1">
+                    <span className="font-semibold text-slate-700">Notificar:</span>
+                    <span className="text-slate-600 ml-2">
+                      {selectedEvent.notify_minutes_before} minutos antes
+                    </span>
+                  </div>
+                </div>
+              )}
+
+              {/* Descrição */}
+              {selectedEvent.description && (
+                <div className="border-t border-slate-200 pt-4">
+                  <span className="font-semibold text-slate-700 block mb-2">Descrição:</span>
+                  <p className="text-slate-600 text-sm whitespace-pre-wrap bg-slate-50 p-3 rounded-lg">
+                    {selectedEvent.description}
+                  </p>
+                </div>
+              )}
+
+              <div className="mt-6 flex justify-end gap-3">
+                <button
+                  onClick={() => setSelectedEvent(null)}
+                  className="px-4 py-2 text-sm font-medium text-slate-600 hover:text-slate-800 transition"
+                >
+                  Fechar
+                </button>
+                <button
+                  onClick={() => {
+                    setSelectedEvent(null);
+                    handleNavigate('agenda');
+                  }}
+                  className="px-4 py-2 text-sm font-semibold bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition"
+                >
+                  Ver na Agenda
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal de Detalhes da Intimação */}
+      {selectedIntimacao && (
+        <div
+          className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4"
+          onClick={() => setSelectedIntimacao(null)}
+        >
+          <div
+            className="bg-white rounded-3xl shadow-2xl max-w-lg w-full overflow-hidden"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="bg-gradient-to-r from-red-50 to-white p-6 border-b border-slate-100">
+              <div className="flex items-start justify-between">
+                <div>
+                  <h3 className="text-xl font-bold text-slate-900">{selectedIntimacao.tipo_comunicacao || 'Comunicação'}</h3>
+                  <span className="inline-flex items-center gap-1 mt-2 px-3 py-1 rounded-full bg-red-100 text-red-700 text-xs font-semibold uppercase">
+                    {selectedIntimacao.sigla_tribunal}
+                  </span>
+                </div>
+                <button
+                  onClick={() => setSelectedIntimacao(null)}
+                  className="text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-full p-2 transition-all"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+            </div>
+            <div className="p-6 space-y-4">
+              <div className="flex items-center gap-2">
+                <Calendar className="w-5 h-5 text-slate-600" />
+                <div>
+                  <span className="font-semibold text-slate-700">Data de Disponibilização:</span>
+                  <span className="text-slate-600 ml-2">
+                    {new Date(selectedIntimacao.data_disponibilizacao).toLocaleDateString('pt-BR', {
+                      day: '2-digit',
+                      month: 'long',
+                      year: 'numeric',
+                    })}
+                  </span>
+                </div>
+              </div>
+
+              <div>
+                <span className="font-semibold text-slate-700">Processo:</span>
+                <p className="text-slate-600 mt-1">{selectedIntimacao.numero_processo_mascara || selectedIntimacao.numero_processo}</p>
+              </div>
+
+              {selectedIntimacao.nome_orgao && (
+                <div>
+                  <span className="font-semibold text-slate-700">Órgão:</span>
+                  <p className="text-slate-600 mt-1">{selectedIntimacao.nome_orgao}</p>
+                </div>
+              )}
+
+              {selectedIntimacao.texto && (
+                <div>
+                  <span className="font-semibold text-slate-700">Texto:</span>
+                  <p className="text-slate-600 mt-1 text-sm max-h-40 overflow-y-auto">{selectedIntimacao.texto}</p>
+                </div>
+              )}
+
+              <div className="mt-6 flex justify-end gap-3">
+                <button
+                  onClick={() => setSelectedIntimacao(null)}
+                  className="px-4 py-2 text-sm font-medium text-slate-600 hover:text-slate-800 transition"
+                >
+                  Fechar
+                </button>
+                <button
+                  onClick={() => {
+                    setSelectedIntimacao(null);
+                    handleNavigate('intimacoes');
+                  }}
+                  className="px-4 py-2 text-sm font-semibold bg-red-600 hover:bg-red-700 text-white rounded-lg transition"
+                >
+                  Ver Todas Intimações
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Footer Stats */}
       <div className="bg-white rounded-xl p-4 shadow-sm border border-slate-200">

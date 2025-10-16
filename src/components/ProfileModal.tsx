@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import {
   X, Save, Loader2, Camera, Shield, Key, Activity, TrendingUp, Users, 
-  Briefcase, CheckCircle, Mail, Phone, Building, Award
+  Briefcase, CheckCircle, Mail, Phone, Building, Award, Calendar
 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { profileService } from '../services/profile.service';
@@ -19,7 +19,7 @@ interface ProfileModalProps {
 
 export default function ProfileModal({ isOpen, onClose, profile: initialProfile, onProfileUpdate }: ProfileModalProps) {
   const { user } = useAuth();
-  const [activeTab, setActiveTab] = useState<'profile' | 'security' | 'stats'>('profile');
+  const [activeTab, setActiveTab] = useState<'dados' | 'profissional' | 'sobre' | 'security' | 'stats'>('dados');
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
   
@@ -159,45 +159,56 @@ export default function ProfileModal({ isOpen, onClose, profile: initialProfile,
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-3xl max-h-[90vh] overflow-hidden flex flex-col">
-        {/* Header */}
-        <div className="bg-gradient-to-r from-amber-600 to-orange-600 px-6 py-4 text-white flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className="w-12 h-12 rounded-full border-2 border-white overflow-hidden">
-              <img src={profileForm.avatarUrl || GENERIC_AVATAR} alt={profileForm.name} className="w-full h-full object-cover" />
+    <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4 animate-in fade-in duration-200">
+      <div className="bg-white rounded-3xl shadow-2xl w-full max-w-3xl max-h-[90vh] overflow-hidden flex flex-col animate-in zoom-in duration-200">
+        {/* Header Moderno */}
+        <div className="relative bg-gradient-to-br from-slate-50 via-white to-slate-50 px-8 py-6 border-b border-slate-200">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-4">
+              <div className="relative">
+                <div className="w-16 h-16 rounded-2xl overflow-hidden ring-2 ring-slate-200 shadow-lg">
+                  <img src={profileForm.avatarUrl || GENERIC_AVATAR} alt={profileForm.name} className="w-full h-full object-cover" />
+                </div>
+                <div className="absolute -bottom-1 -right-1 w-5 h-5 bg-green-500 rounded-full border-2 border-white"></div>
+              </div>
+              <div>
+                <h3 className="text-2xl font-bold text-slate-900">Perfil Profissional</h3>
+                <p className="text-sm text-slate-600 mt-0.5">{profileForm.name} • {profileForm.role}</p>
+              </div>
             </div>
-            <div>
-              <h3 className="text-xl font-bold">Meu Perfil</h3>
-              <p className="text-sm text-amber-100">{profileForm.role}</p>
-            </div>
+            <button 
+              onClick={onClose} 
+              className="text-slate-400 hover:text-slate-600 hover:bg-slate-100 p-2.5 rounded-xl transition-all duration-200 hover:scale-110"
+            >
+              <X className="w-5 h-5" />
+            </button>
           </div>
-          <button onClick={onClose} className="text-white hover:bg-white/20 p-2 rounded-lg transition-colors">
-            <X className="w-5 h-5" />
-          </button>
         </div>
 
-        {/* Tabs */}
-        <div className="border-b border-gray-200 px-6">
-          <div className="flex gap-1">
+        {/* Tabs Modernos */}
+        <div className="px-8 pt-4 bg-slate-50/50">
+          <div className="flex gap-2 overflow-x-auto">
             {[
-              { id: 'profile', label: 'Perfil', icon: Award },
+              { id: 'dados', label: 'Dados', icon: Users },
+              { id: 'profissional', label: 'Profissional', icon: Briefcase },
+              { id: 'sobre', label: 'Sobre Você', icon: Award },
               { id: 'security', label: 'Segurança', icon: Shield },
               { id: 'stats', label: 'Estatísticas', icon: Activity },
             ].map((tab) => {
               const Icon = tab.icon;
+              const isActive = activeTab === tab.id;
               return (
                 <button
                   key={tab.id}
                   onClick={() => setActiveTab(tab.id as any)}
-                  className={`flex items-center gap-2 px-4 py-3 font-medium transition-colors ${
-                    activeTab === tab.id
-                      ? 'text-amber-600 border-b-2 border-amber-600'
-                      : 'text-slate-600 hover:text-slate-900'
+                  className={`flex items-center gap-2 px-6 py-3 font-semibold rounded-t-2xl transition-all duration-200 ${
+                    isActive
+                      ? 'bg-white text-blue-600 shadow-sm border-t-2 border-x border-slate-200 border-t-blue-600'
+                      : 'text-slate-600 hover:text-slate-900 hover:bg-white/50'
                   }`}
                 >
                   <Icon className="w-4 h-4" />
-                  <span>{tab.label}</span>
+                  <span className="text-sm">{tab.label}</span>
                 </button>
               );
             })}
@@ -206,72 +217,177 @@ export default function ProfileModal({ isOpen, onClose, profile: initialProfile,
 
         {/* Message */}
         {message && (
-          <div className={`mx-6 mt-4 rounded-lg p-3 text-sm ${message.type === 'success' ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' : 'bg-red-50 text-red-700 border border-red-200'}`}>
+          <div className={`mx-8 mt-6 rounded-xl p-4 text-sm font-medium flex items-center gap-3 shadow-sm animate-in slide-in-from-top duration-300 ${
+            message.type === 'success' 
+              ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' 
+              : 'bg-red-50 text-red-700 border border-red-200'
+          }`}>
+            <div className={`w-2 h-2 rounded-full ${
+              message.type === 'success' ? 'bg-emerald-500' : 'bg-red-500'
+            }`} />
             {message.text}
           </div>
         )}
 
         {/* Content */}
-        <div className="flex-1 overflow-y-auto p-6">
-          {/* Profile Tab */}
-          {activeTab === 'profile' && (
+        <div className="flex-1 overflow-y-auto px-6 py-4 bg-white">
+          {/* Aba Dados */}
+          {activeTab === 'dados' && (
             <form onSubmit={handleSaveProfile} className="space-y-4">
-              <div className="flex items-start gap-6">
-                <div className="flex-shrink-0">
-                  <div className="relative w-24 h-24 rounded-xl overflow-hidden border-2 border-amber-500 group">
-                    <img src={profileForm.avatarUrl || GENERIC_AVATAR} alt={profileForm.name} className="w-full h-full object-cover" />
-                    <label className="absolute inset-0 bg-black/0 group-hover:bg-black/60 flex items-center justify-center cursor-pointer transition-all">
-                      <Camera className="w-6 h-6 text-white opacity-0 group-hover:opacity-100 transition-opacity" />
-                      <input type="file" accept="image/*" onChange={handleAvatarChange} className="hidden" />
-                    </label>
+              {/* Foto de Perfil */}
+              <div className="bg-slate-50 rounded-xl p-4 border border-slate-200">
+                <h4 className="text-sm font-bold text-slate-900 mb-4">Foto de Perfil</h4>
+                <div className="flex items-center gap-6">
+                  <div className="flex-shrink-0">
+                    <div className="relative w-28 h-28 rounded-2xl overflow-hidden ring-4 ring-blue-100 group shadow-lg">
+                      <img src={profileForm.avatarUrl || GENERIC_AVATAR} alt={profileForm.name} className="w-full h-full object-cover" />
+                      <label className="absolute inset-0 bg-black/0 group-hover:bg-black/70 flex items-center justify-center cursor-pointer transition-all">
+                        <div className="text-center opacity-0 group-hover:opacity-100 transition-opacity">
+                          <Camera className="w-7 h-7 text-white mx-auto mb-1" />
+                          <span className="text-xs text-white font-medium">Alterar</span>
+                        </div>
+                        <input type="file" accept="image/*" onChange={handleAvatarChange} className="hidden" />
+                      </label>
+                    </div>
+                  </div>
+                  <div className="flex-1">
+                    <p className="text-sm font-semibold text-slate-900 mb-1">Escolha uma foto profissional</p>
+                    <p className="text-xs text-slate-600">JPG, PNG ou GIF. Tamanho máximo de 2MB.</p>
                   </div>
                 </div>
-                <div className="flex-1 grid grid-cols-2 gap-3">
-                  <div className="col-span-2">
-                    <label className="block text-xs font-medium text-slate-700 mb-1">Nome Completo *</label>
+              </div>
+
+              {/* Informações Básicas */}
+              <div className="bg-slate-50 rounded-xl p-4 border border-slate-200">
+                <h4 className="text-sm font-bold text-slate-900 mb-3">Informações Básicas</h4>
+                <div className="space-y-3">
+                  <div>
+                    <label className="block text-xs font-medium text-slate-700 mb-1.5">Nome Completo *</label>
                     <input type="text" value={profileForm.name} onChange={(e) => handleProfileChange('name', e.target.value)} className="input-field text-sm" required />
                   </div>
-                  <div>
-                    <label className="block text-xs font-medium text-slate-700 mb-1">Cargo</label>
-                    <select value={profileForm.role} onChange={(e) => handleProfileChange('role', e.target.value)} className="input-field text-sm">
-                      <option value="Advogado">Advogado</option>
-                      <option value="Auxiliar">Auxiliar</option>
-                      <option value="Estagiário">Estagiário</option>
-                      <option value="Administrador">Administrador</option>
-                      <option value="Sócio">Sócio</option>
-                    </select>
-                  </div>
-                  <div>
-                    <label className="block text-xs font-medium text-slate-700 mb-1">OAB</label>
-                    <input type="text" value={profileForm.oab} onChange={(e) => handleProfileChange('oab', e.target.value)} className="input-field text-sm" placeholder="OAB/SP 12345" />
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-xs font-medium text-slate-700 mb-1.5">Telefone</label>
+                      <input type="tel" value={profileForm.phone} onChange={(e) => handleProfileChange('phone', e.target.value)} className="input-field text-sm" placeholder="(00) 00000-0000" />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-medium text-slate-700 mb-1.5">E-mail <span className="text-slate-400">(não editável)</span></label>
+                      <input type="email" value={profileForm.email} className="input-field text-sm bg-slate-100 text-slate-500 cursor-not-allowed" disabled />
+                    </div>
                   </div>
                 </div>
               </div>
 
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-xs font-medium text-slate-700 mb-1">Telefone</label>
-                  <input type="tel" value={profileForm.phone} onChange={(e) => handleProfileChange('phone', e.target.value)} className="input-field text-sm" placeholder="(00) 00000-0000" />
+              {/* Botões de Ação */}
+              <div className="flex items-center justify-end gap-3 pt-3 border-t border-slate-200">
+                <button 
+                  type="button" 
+                  onClick={onClose}
+                  className="px-6 py-2.5 text-sm font-semibold text-slate-600 hover:text-slate-900 hover:bg-slate-100 rounded-xl transition-colors"
+                >
+                  Cancelar
+                </button>
+                <button 
+                  type="submit" 
+                  disabled={saving} 
+                  className="px-6 py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-semibold rounded-xl transition-all flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed shadow-lg hover:shadow-xl hover:scale-105 duration-200"
+                >
+                  {saving ? <><Loader2 className="w-4 h-4 animate-spin" />Salvando...</> : <><Save className="w-4 h-4" />Salvar Alterações</>}
+                </button>
+              </div>
+            </form>
+          )}
+
+          {/* Aba Profissional */}
+          {activeTab === 'profissional' && (
+            <form onSubmit={handleSaveProfile} className="space-y-4">
+              {/* Informações Profissionais */}
+              <div className="bg-slate-50 rounded-xl p-4 border border-slate-200">
+                <h4 className="text-sm font-bold text-slate-900 mb-3">Informações Profissionais</h4>
+                <div className="space-y-3">
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-xs font-medium text-slate-700 mb-1.5">Cargo / Função</label>
+                      <select value={profileForm.role} onChange={(e) => handleProfileChange('role', e.target.value)} className="input-field text-sm">
+                        <option value="Advogado">Advogado</option>
+                        <option value="Auxiliar">Auxiliar</option>
+                        <option value="Estagiário">Estagiário</option>
+                        <option value="Administrador">Administrador</option>
+                        <option value="Sócio">Sócio</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-xs font-medium text-slate-700 mb-1.5">Número OAB</label>
+                      <input type="text" value={profileForm.oab} onChange={(e) => handleProfileChange('oab', e.target.value)} className="input-field text-sm" placeholder="OAB/SP 12345" />
+                    </div>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-slate-700 mb-1.5">Nome Completo para DJEN <span className="text-slate-400">(Opcional)</span></label>
+                    <input type="text" value={profileForm.lawyerFullName} onChange={(e) => handleProfileChange('lawyerFullName', e.target.value)} className="input-field text-sm" placeholder="Nome completo para pesquisa no Diário Oficial" />
+                    <p className="text-xs text-slate-500 mt-1.5 flex items-start gap-2">
+                      <span className="text-blue-500 mt-0.5">ℹ️</span>
+                      <span>Utilizado para consultas automáticas no Diário de Justiça Eletrônico Nacional (DJEN)</span>
+                    </p>
+                  </div>
                 </div>
-                <div>
-                  <label className="block text-xs font-medium text-slate-700 mb-1">E-mail</label>
-                  <input type="email" value={profileForm.email} className="input-field text-sm bg-gray-50" disabled />
+              </div>
+
+              {/* Botões de Ação */}
+              <div className="flex items-center justify-end gap-3 pt-3 border-t border-slate-200">
+                <button 
+                  type="button" 
+                  onClick={onClose}
+                  className="px-6 py-2.5 text-sm font-semibold text-slate-600 hover:text-slate-900 hover:bg-slate-100 rounded-xl transition-colors"
+                >
+                  Cancelar
+                </button>
+                <button 
+                  type="submit" 
+                  disabled={saving} 
+                  className="px-6 py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-semibold rounded-xl transition-all flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed shadow-lg hover:shadow-xl hover:scale-105 duration-200"
+                >
+                  {saving ? <><Loader2 className="w-4 h-4 animate-spin" />Salvando...</> : <><Save className="w-4 h-4" />Salvar Alterações</>}
+                </button>
+              </div>
+            </form>
+          )}
+
+          {/* Aba Sobre Você */}
+          {activeTab === 'sobre' && (
+            <form onSubmit={handleSaveProfile} className="space-y-4">
+              {/* Biografia */}
+              <div className="bg-slate-50 rounded-xl p-4 border border-slate-200">
+                <h4 className="text-sm font-bold text-slate-900 mb-3">Sobre Você</h4>
+                <div className="space-y-3">
+                  <div>
+                    <label className="block text-xs font-medium text-slate-700 mb-1.5">Descrição Profissional</label>
+                    <textarea 
+                      value={profileForm.bio} 
+                      onChange={(e) => handleProfileChange('bio', e.target.value)} 
+                      rows={6} 
+                      className="input-field text-sm resize-none" 
+                      placeholder="Escreva uma breve descrição sobre você...&#10;&#10;Exemplo:&#10;• Áreas de atuação&#10;• Especialidades&#10;• Experiência profissional&#10;• Formação acadêmica" 
+                    />
+                    <p className="text-xs text-slate-500 mt-1.5">Esta informação pode ser útil para apresentações e perfis profissionais.</p>
+                  </div>
                 </div>
               </div>
 
-              <div>
-                <label className="block text-xs font-medium text-slate-700 mb-1">Nome para DJEN <span className="text-slate-500">(Opcional)</span></label>
-                <input type="text" value={profileForm.lawyerFullName} onChange={(e) => handleProfileChange('lawyerFullName', e.target.value)} className="input-field text-sm" placeholder="Nome completo para pesquisa no Diário Oficial" />
-              </div>
-
-              <div>
-                <label className="block text-xs font-medium text-slate-700 mb-1">Sobre</label>
-                <textarea value={profileForm.bio} onChange={(e) => handleProfileChange('bio', e.target.value)} rows={3} className="input-field text-sm resize-none" placeholder="Breve descrição profissional..." />
-              </div>
-
-              <div className="flex justify-end pt-2">
-                <button type="submit" disabled={saving} className="px-5 py-2 bg-amber-600 hover:bg-amber-700 text-white font-semibold rounded-lg transition-colors flex items-center gap-2 disabled:opacity-50 text-sm">
-                  {saving ? <><Loader2 className="w-4 h-4 animate-spin" />Salvando...</> : <><Save className="w-4 h-4" />Salvar</>}
+              {/* Botões de Ação */}
+              <div className="flex items-center justify-end gap-3 pt-3 border-t border-slate-200">
+                <button 
+                  type="button" 
+                  onClick={onClose}
+                  className="px-6 py-2.5 text-sm font-semibold text-slate-600 hover:text-slate-900 hover:bg-slate-100 rounded-xl transition-colors"
+                >
+                  Cancelar
+                </button>
+                <button 
+                  type="submit" 
+                  disabled={saving} 
+                  className="px-6 py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-semibold rounded-xl transition-all flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed shadow-lg hover:shadow-xl hover:scale-105 duration-200"
+                >
+                  {saving ? <><Loader2 className="w-4 h-4 animate-spin" />Salvando...</> : <><Save className="w-4 h-4" />Salvar Alterações</>}
                 </button>
               </div>
             </form>
@@ -280,42 +396,82 @@ export default function ProfileModal({ isOpen, onClose, profile: initialProfile,
           {/* Security Tab */}
           {activeTab === 'security' && (
             <form onSubmit={handlePasswordSubmit} className="space-y-4">
-              <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 flex items-start gap-2">
-                <Shield className="w-5 h-5 text-blue-600 flex-shrink-0 mt-0.5" />
-                <div className="text-sm text-blue-800">
-                  <p className="font-semibold">Proteja sua conta</p>
-                  <p className="text-xs mt-1">Use uma senha forte com pelo menos 8 caracteres.</p>
+              {/* Alterar Senha */}
+              <div className="bg-slate-50 rounded-xl p-4 border border-slate-200">
+                <div className="flex items-start gap-3 mb-4">
+                  <div className="w-10 h-10 rounded-xl bg-blue-100 flex items-center justify-center">
+                    <Shield className="w-5 h-5 text-blue-600" />
+                  </div>
+                  <div>
+                    <h4 className="text-sm font-bold text-slate-900">Alterar Senha</h4>
+                    <p className="text-xs text-slate-600 mt-1">Use uma senha forte com pelo menos 8 caracteres.</p>
+                  </div>
+                </div>
+
+                <div className="space-y-3">
+                  <div>
+                    <label className="block text-xs font-medium text-slate-700 mb-1.5">Nova Senha</label>
+                    <input 
+                      type="password" 
+                      value={passwordForm.newPassword} 
+                      onChange={(e) => setPasswordForm(prev => ({ ...prev, newPassword: e.target.value }))} 
+                      className="input-field text-sm" 
+                      placeholder="Mínimo 8 caracteres" 
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-medium text-slate-700 mb-1.5">Confirmar Nova Senha</label>
+                    <input 
+                      type="password" 
+                      value={passwordForm.confirmPassword} 
+                      onChange={(e) => setPasswordForm(prev => ({ ...prev, confirmPassword: e.target.value }))} 
+                      className="input-field text-sm" 
+                      placeholder="Repita a senha" 
+                    />
+                  </div>
                 </div>
               </div>
 
-              <div>
-                <label className="block text-xs font-medium text-slate-700 mb-1">Nova Senha</label>
-                <input type="password" value={passwordForm.newPassword} onChange={(e) => setPasswordForm(prev => ({ ...prev, newPassword: e.target.value }))} className="input-field text-sm" placeholder="Mínimo 8 caracteres" />
+              {/* Informações da Conta */}
+              <div className="bg-slate-50 rounded-xl p-4 border border-slate-200">
+                <h4 className="text-sm font-bold text-slate-900 mb-3">Informações da Conta</h4>
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between p-3 bg-white rounded-xl">
+                    <div className="flex items-center gap-3">
+                      <Mail className="w-4 h-4 text-slate-400" />
+                      <span className="text-sm text-slate-600">E-mail</span>
+                    </div>
+                    <span className="text-sm font-semibold text-slate-900">{profileForm.email}</span>
+                  </div>
+                  <div className="flex items-center justify-between p-3 bg-white rounded-xl">
+                    <div className="flex items-center gap-3">
+                      <Calendar className="w-4 h-4 text-slate-400" />
+                      <span className="text-sm text-slate-600">Membro desde</span>
+                    </div>
+                    <span className="text-sm font-semibold text-slate-900">
+                      {user?.created_at ? new Date(user.created_at).toLocaleDateString('pt-BR', { day: '2-digit', month: 'long', year: 'numeric' }) : '-'}
+                    </span>
+                  </div>
+                </div>
               </div>
 
-              <div>
-                <label className="block text-xs font-medium text-slate-700 mb-1">Confirmar Senha</label>
-                <input type="password" value={passwordForm.confirmPassword} onChange={(e) => setPasswordForm(prev => ({ ...prev, confirmPassword: e.target.value }))} className="input-field text-sm" placeholder="Repita a senha" />
-              </div>
-
-              <div className="flex justify-end pt-2">
-                <button type="submit" disabled={saving} className="px-5 py-2 bg-slate-900 hover:bg-slate-800 text-white font-semibold rounded-lg transition-colors flex items-center gap-2 disabled:opacity-50 text-sm">
+              {/* Botões de Ação */}
+              <div className="flex items-center justify-end gap-3 pt-3 border-t border-slate-200">
+                <button 
+                  type="button" 
+                  onClick={() => setPasswordForm({ newPassword: '', confirmPassword: '' })}
+                  className="px-6 py-2.5 text-sm font-semibold text-slate-600 hover:text-slate-900 hover:bg-slate-100 rounded-xl transition-colors"
+                >
+                  Limpar
+                </button>
+                <button 
+                  type="submit" 
+                  disabled={saving} 
+                  className="px-6 py-2.5 bg-slate-900 hover:bg-slate-800 text-white font-semibold rounded-xl transition-all flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed shadow-lg hover:shadow-xl hover:scale-105 duration-200"
+                >
                   {saving ? <><Loader2 className="w-4 h-4 animate-spin" />Atualizando...</> : <><Key className="w-4 h-4" />Atualizar Senha</>}
                 </button>
-              </div>
-
-              <div className="border-t border-gray-200 pt-4 mt-4">
-                <h4 className="text-sm font-semibold text-slate-900 mb-3">Informações da Conta</h4>
-                <div className="space-y-2 text-xs">
-                  <div className="flex justify-between py-1.5 border-b border-gray-100">
-                    <span className="text-slate-600">E-mail:</span>
-                    <span className="text-slate-900 font-medium">{profileForm.email}</span>
-                  </div>
-                  <div className="flex justify-between py-1.5">
-                    <span className="text-slate-600">Criado em:</span>
-                    <span className="text-slate-900 font-medium">{user?.created_at ? new Date(user.created_at).toLocaleDateString('pt-BR') : '-'}</span>
-                  </div>
-                </div>
               </div>
             </form>
           )}
