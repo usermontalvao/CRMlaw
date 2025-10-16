@@ -512,7 +512,6 @@ export const NotificationCenter: React.FC<NotificationCenterProps> = ({ onNaviga
                 </button>
               </div>
             )}
-            </div>
               </div>
             </div>
           </div>

@@ -353,7 +353,10 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToModule }) => {
           </div>
           
           <div className="grid grid-cols-2 gap-4">
-            <div className="flex items-center gap-3 p-3 rounded-lg bg-blue-50 border border-blue-100">
+            <div 
+              onClick={() => handleNavigate('clientes')}
+              className="flex items-center gap-3 p-3 rounded-lg bg-blue-50 border border-blue-100 cursor-pointer hover:bg-blue-100 hover:border-blue-200 transition-all duration-200 hover:scale-105"
+            >
               <div className="w-10 h-10 rounded-lg bg-blue-100 flex items-center justify-center">
                 <Users className="w-5 h-5 text-blue-600" />
               </div>
@@ -363,7 +366,10 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToModule }) => {
               </div>
             </div>
 
-            <div className="flex items-center gap-3 p-3 rounded-lg bg-purple-50 border border-purple-100">
+            <div 
+              onClick={() => handleNavigate('processos')}
+              className="flex items-center gap-3 p-3 rounded-lg bg-purple-50 border border-purple-100 cursor-pointer hover:bg-purple-100 hover:border-purple-200 transition-all duration-200 hover:scale-105"
+            >
               <div className="w-10 h-10 rounded-lg bg-purple-100 flex items-center justify-center">
                 <Briefcase className="w-5 h-5 text-purple-600" />
               </div>
@@ -373,7 +379,10 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToModule }) => {
               </div>
             </div>
 
-            <div className="flex items-center gap-3 p-3 rounded-lg bg-red-50 border border-red-100">
+            <div 
+              onClick={() => handleNavigate('prazos')}
+              className="flex items-center gap-3 p-3 rounded-lg bg-red-50 border border-red-100 cursor-pointer hover:bg-red-100 hover:border-red-200 transition-all duration-200 hover:scale-105"
+            >
               <div className="w-10 h-10 rounded-lg bg-red-100 flex items-center justify-center">
                 <AlertCircle className="w-5 h-5 text-red-600" />
               </div>
@@ -383,7 +392,10 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToModule }) => {
               </div>
             </div>
 
-            <div className="flex items-center gap-3 p-3 rounded-lg bg-amber-50 border border-amber-100">
+            <div 
+              onClick={() => handleNavigate('tarefas')}
+              className="flex items-center gap-3 p-3 rounded-lg bg-amber-50 border border-amber-100 cursor-pointer hover:bg-amber-100 hover:border-amber-200 transition-all duration-200 hover:scale-105"
+            >
               <div className="w-10 h-10 rounded-lg bg-amber-100 flex items-center justify-center">
                 <Clock className="w-5 h-5 text-amber-600" />
               </div>
