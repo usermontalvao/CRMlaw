@@ -18,6 +18,8 @@ import {
   CheckSquare,
   PiggyBank,
   Search,
+  Home,
+  FileText,
 } from 'lucide-react';
 import Dashboard from './components/Dashboard';
 import ClientsModule from './components/ClientsModule';
@@ -58,7 +60,6 @@ function App() {
   const navigate = useNavigate();
   const location = useLocation();
   const [moduleParams, setModuleParams] = useState<Record<string, string>>({});
-  const [sidebarOpen, setSidebarOpen] = useState(false);
   const [isMobileNavOpen, setIsMobileNavOpen] = useState(false);
   const { user, loading, signIn, signOut, resetPassword } = useAuth();
   
@@ -99,7 +100,6 @@ function App() {
   const [clientSearchLoading, setClientSearchLoading] = useState(false);
   const [clientSearchOpen, setClientSearchOpen] = useState(false);
 
-  const showSidebarLabels = sidebarOpen || isMobileNavOpen;
   const unreadCount = useMemo(() => notifications.filter((n) => !n.read).length, [notifications]);
 
   const clientsParams = useMemo(() => {
@@ -494,59 +494,37 @@ function App() {
   return (
     <CacheProvider>
       <div className="min-h-screen bg-gray-100">
-      {/* Sidebar */}
+      {/* Novo Sidebar - Estilo Compacto Vertical */}
       {isMobileNavOpen && <div className="fixed inset-0 bg-black/40 z-40 md:hidden" onClick={() => setIsMobileNavOpen(false)} />}
       <aside
-        className={`fixed inset-y-0 left-0 bg-slate-900 text-white transition-transform duration-300 z-50 flex flex-col w-64 ${
-          isMobileNavOpen ? 'translate-x-0' : '-translate-x-full'
-        } md:translate-x-0 ${sidebarOpen ? 'md:w-64' : 'md:w-20'}`}
-        onMouseEnter={() => window.innerWidth >= 768 && setSidebarOpen(true)}
-        onMouseLeave={() => window.innerWidth >= 768 && setSidebarOpen(false)}
+        className={`fixed inset-y-0 left-0 bg-slate-900 text-white transition-transform duration-300 z-50 flex flex-col w-64 md:w-20 ${
+          isMobileNavOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0'
+        }`}
       >
         <div className="flex flex-col h-full">
           {/* Logo */}
-          <div className="p-6 border-b border-slate-800">
-            <div className="flex items-center justify-between">
-              {sidebarOpen ? (
-                <div className="flex items-center space-x-3">
-                  <div className="bg-amber-600 p-2 rounded-lg">
-                    <Scale className="w-6 h-6" />
-                  </div>
-                  <div>
-                    <h1 className="text-lg font-bold">Advogado\Web</h1>
-                    <p className="text-xs text-slate-400">Gestão Jurídica</p>
-                  </div>
-                </div>
-              ) : (
-                <div className="bg-amber-600 p-2 rounded-lg mx-auto">
-                  <Scale className="w-6 h-6" />
-                </div>
-              )}
-              <button
-                className="hidden md:inline-flex items-center justify-center w-8 h-8 rounded-lg hover:bg-slate-800 transition"
-                onClick={() => setSidebarOpen((prev) => !prev)}
-              >
-                {sidebarOpen ? <X className="w-4 h-4" /> : <Menu className="w-4 h-4" />}
-              </button>
+          <div className="flex items-center justify-center py-5 border-b border-slate-800">
+            <div className="bg-amber-600 p-2 rounded-xl">
+              <img src="/icon-192.png" alt="Advogado Web" className="w-10 h-10 object-contain" />
             </div>
           </div>
 
           {/* Navigation */}
-          <nav className="flex-1 p-4 space-y-2 overflow-y-auto">
+          <nav className="flex-1 py-2 flex flex-col items-stretch gap-1 overflow-y-auto scrollbar-hide">
             <Link
               to="/dashboard"
               onClick={() => {
                 setClientPrefill(null);
                 setIsMobileNavOpen(false);
               }}
-              className={`w-full flex items-center space-x-3 px-4 py-3 rounded-lg transition-all ${
+              className={`flex flex-col items-center justify-center py-2.5 px-2 rounded-lg transition-all border-l-4 ${
                 activeModule === 'dashboard'
-                  ? 'bg-amber-600 text-white shadow-lg'
-                  : 'text-slate-300 hover:bg-slate-800 hover:text-white'
+                  ? 'bg-amber-600 text-white border-amber-400 shadow-lg'
+                  : 'border-transparent text-slate-300 hover:bg-slate-800 hover:text-white'
               }`}
             >
-              <Layers className="w-5 h-5 flex-shrink-0" />
-              {showSidebarLabels && <span className="font-medium">Dashboard</span>}
+              <Layers className="w-5 h-5 mb-1.5" />
+              <span className="text-[10px] font-medium text-center leading-tight">Dashboard</span>
             </Link>
 
             <Link
@@ -555,14 +533,14 @@ function App() {
                 setClientPrefill(null);
                 setIsMobileNavOpen(false);
               }}
-              className={`w-full flex items-center space-x-3 px-4 py-3 rounded-lg transition-all ${
+              className={`flex flex-col items-center justify-center py-2.5 px-2 rounded-lg transition-all border-l-4 ${
                 activeModule === 'leads'
-                  ? 'bg-amber-600 text-white shadow-lg'
-                  : 'text-slate-300 hover:bg-slate-800 hover:text-white'
+                  ? 'bg-amber-600 text-white border-amber-400 shadow-lg'
+                  : 'border-transparent text-slate-300 hover:bg-slate-800 hover:text-white'
               }`}
             >
-              <Target className="w-5 h-5 flex-shrink-0" />
-              {showSidebarLabels && <span className="font-medium">Leads</span>}
+              <Target className="w-5 h-5 mb-1.5" />
+              <span className="text-[10px] font-medium text-center leading-tight">Leads</span>
             </Link>
 
             <Link
@@ -571,14 +549,14 @@ function App() {
                 setClientPrefill(null);
                 setIsMobileNavOpen(false);
               }}
-              className={`w-full flex items-center space-x-3 px-4 py-3 rounded-lg transition-all ${
+              className={`flex flex-col items-center justify-center py-2.5 px-2 rounded-lg transition-all border-l-4 ${
                 activeModule === 'clientes'
-                  ? 'bg-amber-600 text-white shadow-lg'
-                  : 'text-slate-300 hover:bg-slate-800 hover:text-white'
+                  ? 'bg-amber-600 text-white border-amber-400 shadow-lg'
+                  : 'border-transparent text-slate-300 hover:bg-slate-800 hover:text-white'
               }`}
             >
-              <Users className="w-5 h-5 flex-shrink-0" />
-              {showSidebarLabels && <span className="font-medium">Clientes</span>}
+              <Users className="w-5 h-5 mb-1.5" />
+              <span className="text-[10px] font-medium text-center leading-tight">Clientes</span>
             </Link>
 
             <Link
@@ -587,14 +565,14 @@ function App() {
                 setClientPrefill(null);
                 setIsMobileNavOpen(false);
               }}
-              className={`w-full flex items-center space-x-3 px-4 py-3 rounded-lg transition-all ${
+              className={`flex flex-col items-center justify-center py-2.5 px-2 rounded-lg transition-all border-l-4 ${
                 activeModule === 'documentos'
-                  ? 'bg-amber-600 text-white shadow-lg'
-                  : 'text-slate-300 hover:bg-slate-800 hover:text-white'
+                  ? 'bg-amber-600 text-white border-amber-400 shadow-lg'
+                  : 'border-transparent text-slate-300 hover:bg-slate-800 hover:text-white'
               }`}
             >
-              <Library className="w-5 h-5 flex-shrink-0" />
-              {showSidebarLabels && <span className="font-medium">Documentos</span>}
+              <Library className="w-5 h-5 mb-1.5" />
+              <span className="text-[10px] font-medium text-center leading-tight">Documentos</span>
             </Link>
 
             <Link
@@ -603,14 +581,14 @@ function App() {
                 setClientPrefill(null);
                 setIsMobileNavOpen(false);
               }}
-              className={`w-full flex items-center space-x-3 px-4 py-3 rounded-lg transition-all ${
+              className={`flex flex-col items-center justify-center py-2.5 px-2 rounded-lg transition-all border-l-4 ${
                 activeModule === 'processos'
-                  ? 'bg-amber-600 text-white shadow-lg'
-                  : 'text-slate-300 hover:bg-slate-800 hover:text-white'
+                  ? 'bg-amber-600 text-white border-amber-400 shadow-lg'
+                  : 'border-transparent text-slate-300 hover:bg-slate-800 hover:text-white'
               }`}
             >
-              <Layers className="w-5 h-5 flex-shrink-0" />
-              {showSidebarLabels && <span className="font-medium">Processos</span>}
+              <Scale className="w-5 h-5 mb-1.5" />
+              <span className="text-[10px] font-medium text-center leading-tight">Processos</span>
             </Link>
 
             <Link
@@ -619,14 +597,14 @@ function App() {
                 setClientPrefill(null);
                 setIsMobileNavOpen(false);
               }}
-              className={`w-full flex items-center space-x-3 px-4 py-3 rounded-lg transition-all ${
+              className={`flex flex-col items-center justify-center py-2.5 px-2 rounded-lg transition-all border-l-4 ${
                 activeModule === 'requerimentos'
-                  ? 'bg-amber-600 text-white shadow-lg'
-                  : 'text-slate-300 hover:bg-slate-800 hover:text-white'
+                  ? 'bg-amber-600 text-white border-amber-400 shadow-lg'
+                  : 'border-transparent text-slate-300 hover:bg-slate-800 hover:text-white'
               }`}
             >
-              <Briefcase className="w-5 h-5 flex-shrink-0" />
-              {showSidebarLabels && <span className="font-medium">Requerimentos</span>}
+              <Briefcase className="w-5 h-5 mb-1.5" />
+              <span className="text-[10px] font-medium text-center leading-tight">Requerimentos</span>
             </Link>
 
             <Link
@@ -635,14 +613,14 @@ function App() {
                 setClientPrefill(null);
                 setIsMobileNavOpen(false);
               }}
-              className={`w-full flex items-center space-x-3 px-4 py-3 rounded-lg transition-all ${
+              className={`flex flex-col items-center justify-center py-2.5 px-2 rounded-lg transition-all border-l-4 ${
                 activeModule === 'prazos'
-                  ? 'bg-amber-600 text-white shadow-lg'
-                  : 'text-slate-300 hover:bg-slate-800 hover:text-white'
+                  ? 'bg-amber-600 text-white border-amber-400 shadow-lg'
+                  : 'border-transparent text-slate-300 hover:bg-slate-800 hover:text-white'
               }`}
             >
-              <AlarmClock className="w-5 h-5 flex-shrink-0" />
-              {showSidebarLabels && <span className="font-medium">Prazos</span>}
+              <AlarmClock className="w-5 h-5 mb-1.5" />
+              <span className="text-[10px] font-medium text-center leading-tight">Prazos</span>
             </Link>
 
             <Link
@@ -651,14 +629,14 @@ function App() {
                 setClientPrefill(null);
                 setIsMobileNavOpen(false);
               }}
-              className={`w-full flex items-center space-x-3 px-4 py-3 rounded-lg transition-all ${
+              className={`flex flex-col items-center justify-center py-2.5 px-2 rounded-lg transition-all border-l-4 ${
                 activeModule === 'intimacoes'
-                  ? 'bg-amber-600 text-white shadow-lg'
-                  : 'text-slate-300 hover:bg-slate-800 hover:text-white'
+                  ? 'bg-amber-600 text-white border-amber-400 shadow-lg'
+                  : 'border-transparent text-slate-300 hover:bg-slate-800 hover:text-white'
               }`}
             >
-              <Bell className="w-5 h-5 flex-shrink-0" />
-              {showSidebarLabels && <span className="font-medium">Intimações</span>}
+              <Bell className="w-5 h-5 mb-1.5" />
+              <span className="text-[10px] font-medium text-center leading-tight">Intimações</span>
             </Link>
 
             <Link
@@ -667,14 +645,14 @@ function App() {
                 setClientPrefill(null);
                 setIsMobileNavOpen(false);
               }}
-              className={`w-full flex items-center space-x-3 px-4 py-3 rounded-lg transition-all ${
+              className={`flex flex-col items-center justify-center py-2.5 px-2 rounded-lg transition-all border-l-4 ${
                 activeModule === 'financeiro'
-                  ? 'bg-emerald-600 text-white shadow-lg'
-                  : 'text-slate-300 hover:bg-slate-800 hover:text-white'
+                  ? 'bg-amber-600 text-white border-amber-400 shadow-lg'
+                  : 'border-transparent text-slate-300 hover:bg-slate-800 hover:text-white'
               }`}
             >
-              <PiggyBank className="w-5 h-5 flex-shrink-0" />
-              {showSidebarLabels && <span className="font-medium">Financeiro</span>}
+              <PiggyBank className="w-5 h-5 mb-1.5" />
+              <span className="text-[10px] font-medium text-center leading-tight">Financeiro</span>
             </Link>
 
             <Link
@@ -683,31 +661,37 @@ function App() {
                 setClientPrefill(null);
                 setIsMobileNavOpen(false);
               }}
-              className={`w-full flex items-center space-x-3 px-4 py-3 rounded-lg transition-all ${
+              className={`flex flex-col items-center justify-center py-2.5 px-2 rounded-lg transition-all border-l-4 ${
                 activeModule === 'agenda'
-                  ? 'bg-amber-600 text-white shadow-lg'
-                  : 'text-slate-300 hover:bg-slate-800 hover:text-white'
+                  ? 'bg-amber-600 text-white border-amber-400 shadow-lg'
+                  : 'border-transparent text-slate-300 hover:bg-slate-800 hover:text-white'
               }`}
             >
-              <Calendar className="w-5 h-5 flex-shrink-0" />
-              {showSidebarLabels && <span className="font-medium">Agenda</span>}
+              <Calendar className="w-5 h-5 mb-1.5" />
+              <span className="text-[10px] font-medium text-center leading-tight">Agenda</span>
             </Link>
-
           </nav>
 
-          {/* Toggle Sidebar */}
-          <div className="p-4 border-t border-slate-800">
-            <div className="text-xs text-center text-slate-500">
-              Passe o mouse para expandir
-            </div>
+          {/* Indicador de mais itens */}
+          <div className="flex items-center justify-center py-1 border-t border-slate-800/50">
+            <div className="text-slate-500 text-xs">⋮</div>
+          </div>
+
+          {/* Configurações */}
+          <div className="border-t border-slate-800 py-2">
+            <button
+              onClick={() => setIsProfileModalOpen(true)}
+              className="flex flex-col items-center justify-center py-3 px-2 w-full transition-all hover:bg-slate-800"
+            >
+              <UserCog className="w-6 h-6 mb-1.5" />
+              <span className="text-[10px] font-medium text-center leading-tight">Perfil</span>
+            </button>
           </div>
         </div>
       </aside>
 
       {/* Main Content Area */}
-      <div
-        className={`transition-all duration-300 ${sidebarOpen ? 'md:ml-64' : 'md:ml-20'} ml-0`}
-      >
+      <div className="md:ml-20 ml-0 transition-all duration-300">
         {/* Top Bar */}
         <header className="bg-white border-b border-gray-200 sticky top-0 z-30">
           <div className="px-3 sm:px-4 lg:px-8 py-3 sm:py-4">
