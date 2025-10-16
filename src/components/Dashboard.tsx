@@ -266,7 +266,13 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToModule }) => {
     .slice(0, 5);
 
   const upcomingEvents = calendarEvents
-    .filter((e) => e.start_at && new Date(e.start_at) >= new Date())
+    .filter((e) => {
+      if (!e.start_at) return false;
+      const eventDate = new Date(e.start_at);
+      const today = new Date();
+      today.setHours(0, 0, 0, 0); // Início do dia de hoje
+      return eventDate >= today;
+    })
     .sort((a, b) => new Date(a.start_at).getTime() - new Date(b.start_at).getTime())
     .slice(0, 10);
 

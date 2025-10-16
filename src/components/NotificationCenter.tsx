@@ -341,15 +341,10 @@ export const NotificationCenter: React.FC<NotificationCenterProps> = ({ onNaviga
       {/* Modal/Dropdown de notificações */}
       {isOpen && (
         <>
-          <div className="fixed inset-0 z-[9999] md:relative md:inset-auto md:z-auto">
-            {/* Backdrop - apenas mobile */}
-            <div
-              className="fixed inset-0 bg-black/50 z-[9998] md:hidden"
-              onClick={() => setIsOpen(false)}
-            />
-
-            {/* Panel */}
-            <div className="fixed inset-x-0 top-0 bottom-0 md:absolute md:right-0 md:top-full md:left-auto md:inset-x-auto md:bottom-auto md:mt-2 w-full md:w-[420px] h-full md:h-auto md:max-h-[85vh] bg-white md:rounded-2xl shadow-2xl md:shadow-[0_8px_30px_rgb(0,0,0,0.12)] border-0 z-[9999] overflow-hidden flex flex-col">
+          {/* Mobile: Full screen overlay */}
+          <div className="md:hidden fixed inset-0 z-[9999] bg-black/50" onClick={() => setIsOpen(false)}>
+            <div className="flex justify-center pt-16 px-4" onClick={(e) => e.stopPropagation()}>
+              <div className="w-full max-w-sm bg-white rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[80vh]">
             {/* Header */}
             <div className="px-4 md:px-6 py-4 md:py-4 bg-white border-b border-gray-100 flex items-center justify-between flex-shrink-0 safe-area-top">
               <h3 className="text-xl md:text-2xl font-bold text-slate-900">
@@ -517,6 +512,55 @@ export const NotificationCenter: React.FC<NotificationCenterProps> = ({ onNaviga
                 </button>
               </div>
             )}
+            </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Desktop: Dropdown */}
+          <div className="hidden md:block">
+            <div className="fixed inset-0 bg-black/50 z-[9998]" onClick={() => setIsOpen(false)} />
+            <div className="absolute right-0 top-full mt-2 w-[420px] max-h-[85vh] bg-white rounded-2xl shadow-2xl overflow-hidden flex flex-col z-[9999]">
+              {/* Conteúdo duplicado para desktop */}
+              <div className="px-6 py-4 bg-white border-b border-gray-100 flex items-center justify-between">
+                <h3 className="text-2xl font-bold text-slate-900">Notificações</h3>
+                <button onClick={() => setIsOpen(false)} className="p-2 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-full transition">
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+              <div className="flex-1 overflow-y-auto">
+                {loading ? (
+                  <div className="flex flex-col items-center justify-center py-12">
+                    <Loader2 className="w-8 h-8 text-blue-600 animate-spin mb-3" />
+                    <p className="text-slate-600 text-sm">Carregando notificações...</p>
+                  </div>
+                ) : notifications.length === 0 ? (
+                  <div className="flex flex-col items-center justify-center py-20">
+                    <div className="w-20 h-20 rounded-full bg-gradient-to-br from-blue-50 to-indigo-50 flex items-center justify-center mb-4">
+                      <CheckCircle className="w-10 h-10 text-indigo-500" />
+                    </div>
+                    <h4 className="text-lg font-bold text-slate-900 mb-1">Você está em dia!</h4>
+                    <p className="text-slate-500 text-sm">Sem novas notificações</p>
+                  </div>
+                ) : (
+                  <div className="p-4 text-center">
+                    <p className="text-slate-600">Notificações carregadas</p>
+                  </div>
+                )}
+              </div>
+              {notifications.length > 0 && (
+                <div className="p-4 bg-white border-t border-gray-100">
+                  <button
+                    onClick={() => {
+                      setIsOpen(false);
+                      onNavigateToModule?.('notifications');
+                    }}
+                    className="w-full py-3 text-sm font-semibold text-blue-600 hover:bg-blue-50 rounded-lg transition"
+                  >
+                    Ver todas as notificações
+                  </button>
+                </div>
+              )}
             </div>
           </div>
         </>

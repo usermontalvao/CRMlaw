@@ -159,26 +159,26 @@ export default function ProfileModal({ isOpen, onClose, profile: initialProfile,
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4 animate-in fade-in duration-200">
-      <div className="bg-white rounded-3xl shadow-2xl w-full max-w-3xl max-h-[90vh] overflow-hidden flex flex-col animate-in zoom-in duration-200">
+    <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-2 sm:p-4 animate-in fade-in duration-200">
+      <div className="bg-white rounded-2xl sm:rounded-3xl shadow-2xl w-full max-w-3xl max-h-[95vh] sm:max-h-[90vh] overflow-hidden flex flex-col animate-in zoom-in duration-200">
         {/* Header Moderno */}
-        <div className="relative bg-gradient-to-br from-slate-50 via-white to-slate-50 px-8 py-6 border-b border-slate-200">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-4">
+        <div className="relative bg-gradient-to-br from-slate-50 via-white to-slate-50 px-4 sm:px-6 md:px-8 py-4 sm:py-6 border-b border-slate-200 flex-shrink-0">
+          <div className="flex items-center justify-between gap-2">
+            <div className="flex items-center gap-3 sm:gap-4 min-w-0">
               <div className="relative">
                 <div className="w-16 h-16 rounded-2xl overflow-hidden ring-2 ring-slate-200 shadow-lg">
                   <img src={profileForm.avatarUrl || GENERIC_AVATAR} alt={profileForm.name} className="w-full h-full object-cover" />
                 </div>
                 <div className="absolute -bottom-1 -right-1 w-5 h-5 bg-green-500 rounded-full border-2 border-white"></div>
               </div>
-              <div>
-                <h3 className="text-2xl font-bold text-slate-900">Perfil Profissional</h3>
-                <p className="text-sm text-slate-600 mt-0.5">{profileForm.name} • {profileForm.role}</p>
+              <div className="min-w-0 flex-1">
+                <h3 className="text-lg sm:text-xl md:text-2xl font-bold text-slate-900 truncate">Perfil Profissional</h3>
+                <p className="text-xs sm:text-sm text-slate-600 mt-0.5 truncate">{profileForm.name} • {profileForm.role}</p>
               </div>
             </div>
             <button 
               onClick={onClose} 
-              className="text-slate-400 hover:text-slate-600 hover:bg-slate-100 p-2.5 rounded-xl transition-all duration-200 hover:scale-110"
+              className="text-slate-400 hover:text-slate-600 hover:bg-slate-100 p-2 rounded-xl transition flex-shrink-0"
             >
               <X className="w-5 h-5" />
             </button>
@@ -186,14 +186,14 @@ export default function ProfileModal({ isOpen, onClose, profile: initialProfile,
         </div>
 
         {/* Tabs Modernos */}
-        <div className="px-8 pt-4 bg-slate-50/50">
-          <div className="flex gap-2 overflow-x-auto">
+        <div className="px-2 sm:px-4 md:px-8 pt-3 sm:pt-4 bg-slate-50/50 flex-shrink-0">
+          <div className="flex gap-1 sm:gap-2 overflow-x-auto scrollbar-hide">
             {[
               { id: 'dados', label: 'Dados', icon: Users },
               { id: 'profissional', label: 'Profissional', icon: Briefcase },
-              { id: 'sobre', label: 'Sobre Você', icon: Award },
+              { id: 'sobre', label: 'Sobre', icon: Award },
               { id: 'security', label: 'Segurança', icon: Shield },
-              { id: 'stats', label: 'Estatísticas', icon: Activity },
+              { id: 'stats', label: 'Stats', icon: Activity },
             ].map((tab) => {
               const Icon = tab.icon;
               const isActive = activeTab === tab.id;
@@ -201,14 +201,14 @@ export default function ProfileModal({ isOpen, onClose, profile: initialProfile,
                 <button
                   key={tab.id}
                   onClick={() => setActiveTab(tab.id as any)}
-                  className={`flex items-center gap-2 px-6 py-3 font-semibold rounded-t-2xl transition-all duration-200 ${
+                  className={`flex items-center gap-1.5 sm:gap-2 px-3 sm:px-4 md:px-6 py-2 sm:py-3 font-semibold rounded-t-xl sm:rounded-t-2xl transition-all duration-200 whitespace-nowrap flex-shrink-0 ${
                     isActive
                       ? 'bg-white text-blue-600 shadow-sm border-t-2 border-x border-slate-200 border-t-blue-600'
                       : 'text-slate-600 hover:text-slate-900 hover:bg-white/50'
                   }`}
                 >
-                  <Icon className="w-4 h-4" />
-                  <span className="text-sm">{tab.label}</span>
+                  <Icon className="w-3 h-3 sm:w-4 sm:h-4" />
+                  <span className="text-xs sm:text-sm">{tab.label}</span>
                 </button>
               );
             })}
@@ -217,12 +217,12 @@ export default function ProfileModal({ isOpen, onClose, profile: initialProfile,
 
         {/* Message */}
         {message && (
-          <div className={`mx-8 mt-6 rounded-xl p-4 text-sm font-medium flex items-center gap-3 shadow-sm animate-in slide-in-from-top duration-300 ${
+          <div className={`mx-4 sm:mx-6 md:mx-8 mt-4 sm:mt-6 rounded-xl p-3 sm:p-4 text-xs sm:text-sm font-medium flex items-center gap-2 sm:gap-3 shadow-sm animate-in slide-in-from-top duration-300 ${
             message.type === 'success' 
               ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' 
               : 'bg-red-50 text-red-700 border border-red-200'
           }`}>
-            <div className={`w-2 h-2 rounded-full ${
+            <div className={`w-2 h-2 rounded-full flex-shrink-0 ${
               message.type === 'success' ? 'bg-emerald-500' : 'bg-red-500'
             }`} />
             {message.text}
@@ -230,7 +230,7 @@ export default function ProfileModal({ isOpen, onClose, profile: initialProfile,
         )}
 
         {/* Content */}
-        <div className="flex-1 overflow-y-auto px-6 py-4 bg-white">
+        <div className="flex-1 overflow-y-auto px-4 sm:px-6 py-4 bg-white">
           {/* Aba Dados */}
           {activeTab === 'dados' && (
             <form onSubmit={handleSaveProfile} className="space-y-4">

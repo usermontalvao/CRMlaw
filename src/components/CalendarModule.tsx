@@ -1320,68 +1320,48 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({
         <div className="absolute inset-0 bg-gradient-to-r from-blue-600/10 via-transparent to-purple-600/10" />
 
         <div className="relative px-3 sm:px-6 lg:px-8 py-3 sm:py-4">
-          <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 sm:gap-4">
-            {/* Esquerda: Título + Navegação + Mês + Stats */}
-            <div className="flex items-center gap-2 sm:gap-4 w-full sm:w-auto">
-              {/* Título */}
-              <div className="flex items-center gap-2 sm:gap-3">
-                <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-xl bg-gradient-to-br from-blue-500 to-blue-600 flex items-center justify-center shadow-lg">
-                  <CalendarIcon className="w-4 h-4 sm:w-5 sm:h-5 text-white" />
+          {/* Tudo em uma única linha */}
+          <div className="flex items-center justify-between gap-2 overflow-x-auto">
+            {/* Esquerda: Título + Navegação + Mês */}
+            <div className="flex items-center gap-2 flex-shrink-0">
+              <div className="flex items-center gap-2">
+                <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-blue-500 to-blue-600 flex items-center justify-center shadow-lg">
+                  <CalendarIcon className="w-4 h-4 text-white" />
                 </div>
-                <h1 className="text-lg sm:text-2xl font-bold text-white">
-                  Agenda
-                </h1>
+                <h1 className="text-base font-bold text-white">Agenda</h1>
               </div>
-              <p className="text-xs text-white/70 mt-1">Compromissos e prazos</p>
-            </div>
-
-            {/* Navegação */}
-            <div className="flex items-center gap-1 sm:gap-2 bg-white/10 rounded-xl p-1">
-              <button
-                type="button"
-                onClick={() => calendarRef.current?.getApi().prev()}
-                className="flex h-8 w-8 items-center justify-center rounded-lg bg-white/20 text-white text-lg font-bold hover:bg-white/30 transition-all duration-200 hover:scale-105"
-              >
-                ‹
-              </button>
-              <button
-                type="button"
-                onClick={() => calendarRef.current?.getApi().today()}
-                className="px-3 py-1.5 text-xs font-bold text-white rounded-lg bg-white/20 hover:bg-white/30 transition-all duration-200 hover:scale-105"
-              >
-                Hoje
-              </button>
-              <button
-                type="button"
-                onClick={() => calendarRef.current?.getApi().next()}
-                className="flex h-8 w-8 items-center justify-center rounded-lg bg-white/20 text-white text-lg font-bold hover:bg-white/30 transition-all duration-200 hover:scale-105"
-              >
-                ›
-              </button>
-            </div>
-
-            {/* Mês Atual */}
-            <div className="hidden sm:block px-3 sm:px-4 py-1.5 sm:py-2 bg-white/20 rounded-xl">
-              <span className="text-xs sm:text-sm font-bold text-white">{currentMonthName}</span>
-            </div>
-
-            {/* Stats */}
-            <div className="hidden lg:flex items-center gap-2">
-              <div className="flex items-center gap-2 px-3 py-2 rounded-xl bg-gradient-to-r from-amber-500/20 to-amber-600/20 border border-amber-400/30">
-                <span className="text-xs font-bold uppercase text-amber-200">Semana</span>
-                <span className="text-sm font-bold text-white bg-amber-500 rounded-full w-6 h-6 flex items-center justify-center">{stats.weekCount}</span>
+              
+              <div className="flex items-center gap-1 bg-white/10 rounded-xl p-1">
+                <button
+                  type="button"
+                  onClick={() => calendarRef.current?.getApi().prev()}
+                  className="flex h-7 w-7 items-center justify-center rounded-lg bg-white/20 text-white font-bold hover:bg-white/30 transition"
+                >
+                  ‹
+                </button>
+                <button
+                  type="button"
+                  onClick={() => calendarRef.current?.getApi().today()}
+                  className="px-2 py-1 text-xs font-bold text-white rounded-lg bg-white/20 hover:bg-white/30 transition"
+                >
+                  Hoje
+                </button>
+                <button
+                  type="button"
+                  onClick={() => calendarRef.current?.getApi().next()}
+                  className="flex h-7 w-7 items-center justify-center rounded-lg bg-white/20 text-white font-bold hover:bg-white/30 transition"
+                >
+                  ›
+                </button>
               </div>
-              <div className="flex items-center gap-2 px-3 py-2 rounded-xl bg-gradient-to-r from-cyan-500/20 to-cyan-600/20 border border-cyan-400/30">
-                <span className="text-xs font-bold uppercase text-cyan-200">Mês</span>
-                <span className="text-sm font-bold text-white bg-cyan-500 rounded-full w-6 h-6 flex items-center justify-center">{stats.monthCount}</span>
+
+              <div className="px-3 py-1.5 bg-white/20 rounded-xl">
+                <span className="text-xs font-bold text-white capitalize whitespace-nowrap">{currentMonthName}</span>
               </div>
             </div>
-          </div>
 
-          {/* Direita: Views + Ações */}
-          <div className="flex items-center gap-2 sm:gap-3 w-full sm:w-auto">
-            {/* Seletores de View */}
-            <div className="hidden lg:flex items-center gap-1 bg-white/10 rounded-xl p-1">
+            {/* Centro: Views */}
+            <div className="hidden md:flex items-center gap-1 bg-white/10 rounded-xl p-1">
               {([
                 { label: 'Mês', view: 'dayGridMonth' },
                 { label: 'Semana', view: 'timeGridWeek' },
@@ -1393,10 +1373,8 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({
                     key={view}
                     type="button"
                     onClick={() => handleChangeView(view)}
-                    className={`p-1.5 sm:p-2 hover:bg-white/20 rounded-lg transition text-white ${
-                      isActive
-                        ? 'bg-white text-slate-900 shadow-lg'
-                        : 'text-white hover:bg-white/20 hover:scale-105'
+                    className={`px-2 py-1 rounded-lg transition text-xs font-semibold ${
+                      isActive ? 'bg-white text-slate-900 shadow-lg' : 'text-white hover:bg-white/20'
                     }`}
                   >
                     {label}
@@ -1405,34 +1383,34 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({
               })}
             </div>
 
-            {/* Ações */}
-            <div className="flex items-center gap-2">
+            {/* Direita: Ações */}
+            <div className="flex items-center gap-1 flex-shrink-0">
               <button
                 type="button"
                 onClick={() => openEventForm()}
-                className="px-3 sm:px-4 py-1.5 sm:py-2 bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-500 hover:to-blue-600 text-white rounded-xl font-semibold text-xs sm:text-sm transition shadow-lg flex-1 sm:flex-none"
+                className="px-3 py-1.5 bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-500 hover:to-blue-600 text-white rounded-xl font-semibold text-xs transition shadow-lg"
               >
                 + Novo
               </button>
               <button
                 type="button"
                 onClick={() => setLegendExpanded((prev) => !prev)}
-                className="px-3 sm:px-4 py-1.5 sm:py-2 bg-white/10 hover:bg-white/20 text-white rounded-xl font-semibold text-xs sm:text-sm transition border border-white/30 hidden sm:block"
+                className="px-3 py-1.5 bg-white/10 hover:bg-white/20 text-white rounded-xl font-semibold text-xs transition border border-white/30"
               >
                 Filtros
               </button>
-              <div className="flex items-center gap-1 hidden sm:flex">
+              <div className="hidden lg:flex items-center gap-1">
                 <button
                   type="button"
                   onClick={() => handleOpenExportModal('excel')}
-                  className="px-3 sm:px-4 py-1.5 sm:py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-semibold text-xs sm:text-sm transition shadow-lg flex-1 sm:flex-none"
+                  className="px-2 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-semibold text-xs transition shadow-lg"
                 >
                   Excel
                 </button>
                 <button
                   type="button"
                   onClick={() => handleOpenExportModal('pdf')}
-                  className="px-3 sm:px-4 py-1.5 sm:py-2 bg-rose-600 hover:bg-rose-700 text-white rounded-xl font-semibold text-xs sm:text-sm transition shadow-lg flex-1 sm:flex-none"
+                  className="px-2 py-1.5 bg-rose-600 hover:bg-rose-700 text-white rounded-xl font-semibold text-xs transition shadow-lg"
                 >
                   PDF
                 </button>
@@ -1520,8 +1498,8 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({
       </div>
 
       {/* Calendário com recuo */}
-      <div className="relative bg-white mt-6 rounded-t-3xl shadow-2xl">
-          <div className="calendar-container px-6 py-8">
+      <div className="relative bg-white mt-4 sm:mt-6 rounded-t-2xl sm:rounded-t-3xl shadow-2xl">
+          <div className="calendar-container px-2 sm:px-4 md:px-6 py-4 sm:py-6 md:py-8">
             <FullCalendar
               ref={calendarRef}
               plugins={[dayGridPlugin, timeGridPlugin, interactionPlugin, listPlugin]}
@@ -1529,6 +1507,8 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({
               locale={ptLocale}
               timeZone="local"
               headerToolbar={false}
+              contentHeight="auto"
+              aspectRatio={1.35}
               customButtons={{
                 calendarExpand: {
                   text: 'Expandir',
@@ -1953,6 +1933,32 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({
         .calendar-container .fc-daygrid-day-frame {
           padding: 6px;
           min-height: 100px;
+        }
+        @media (max-width: 640px) {
+          .calendar-container .fc-daygrid-day-frame {
+            padding: 3px;
+            min-height: 70px;
+          }
+          .calendar-container .fc-daygrid-day-number {
+            font-size: 0.75rem;
+          }
+          .calendar-container .fc-col-header-cell-cushion {
+            font-size: 0.65rem;
+            padding: 4px 2px;
+          }
+          .calendar-container .fc-day-today .fc-daygrid-day-number {
+            width: 22px;
+            height: 22px;
+            font-size: 0.7rem;
+          }
+          .calendar-event-custom {
+            padding: 0.25rem 0.4rem !important;
+            font-size: 0.6rem !important;
+          }
+          .calendar-event-time {
+            font-size: 0.55rem !important;
+            padding: 0.1rem 0.25rem !important;
+          }
         }
         .calendar-container .fc-daygrid-day:hover {
           background: #f8fafc;
