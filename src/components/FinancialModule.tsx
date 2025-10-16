@@ -1704,124 +1704,121 @@ const FinancialModule: React.FC = () => {
   }
 
   return (
-    <div className="space-y-6">
-      {/* Header */}
-      <div className="bg-gradient-to-br from-emerald-600 to-blue-600 text-white rounded-2xl shadow-xl p-8">
-        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-6">
+    <div className="space-y-4">
+      {/* Header Compacto e Profissional */}
+      <div className="bg-white border border-slate-200 rounded-lg shadow-sm p-3 sm:p-4">
+        <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3 sm:gap-4">
           <div>
-            <h1 className="text-3xl font-bold flex items-center gap-3">
-              <PiggyBank className="w-9 h-9" />
-              Controle Financeiro
+            <h1 className="text-lg sm:text-2xl font-semibold text-slate-900 flex items-center gap-2">
+              <PiggyBank className="w-5 h-5 sm:w-6 sm:h-6 text-emerald-600" />
+              Gestão Financeira
             </h1>
-            <p className="text-emerald-100 mt-2 text-sm sm:text-base max-w-xl">
-              Gestão completa de receitas, acordos e honorários do escritório
+            <p className="text-sm text-slate-600 mt-1">
+              Controle de acordos e honorários
             </p>
           </div>
-          <div className="flex items-center gap-3">
-            {/* Navegação de Mês */}
-            <div className="flex items-center gap-2 bg-white/10 border border-white/20 rounded-xl px-3 py-2">
+          <div className="flex flex-col sm:flex-row flex-wrap items-stretch sm:items-center gap-2">
+            {/* Navegação de Mês + Relatório IR */}
+            <div className="flex items-center gap-2">
+              <div className="flex items-center gap-1 border border-slate-200 rounded-lg px-2 py-1.5">
+                <button
+                  onClick={handlePreviousMonth}
+                  className="hover:bg-slate-100 p-1 rounded transition"
+                  title="Mês anterior"
+                >
+                  <ChevronLeft className="w-4 h-4 text-slate-600" />
+                </button>
+                <span className="text-xs font-medium min-w-[100px] text-center capitalize text-slate-700">
+                  {formatMonthYear(activeMonth)}
+                </span>
+                <button
+                  onClick={handleNextMonth}
+                  className="hover:bg-slate-100 p-1 rounded transition"
+                  title="Próximo mês"
+                >
+                  <ChevronRight className="w-4 h-4 text-slate-600" />
+                </button>
+              </div>
               <button
-                onClick={handlePreviousMonth}
-                className="hover:bg-white/20 p-1 rounded transition"
-                title="Mês anterior"
+                onClick={() => setIsIRModalOpen(true)}
+                className="inline-flex items-center justify-center gap-1.5 border border-slate-200 hover:bg-slate-50 transition-colors px-3 py-1.5 rounded-lg text-xs font-medium text-slate-700"
+                title="Relatório de Imposto de Renda"
               >
-                <ChevronLeft className="w-5 h-5" />
-              </button>
-              <span className="text-sm font-semibold min-w-[120px] text-center capitalize">
-                {formatMonthYear(activeMonth)}
-              </span>
-              <button
-                onClick={handleNextMonth}
-                className="hover:bg-white/20 p-1 rounded transition"
-                title="Próximo mês"
-              >
-                <ChevronRight className="w-5 h-5" />
+                <FileSpreadsheet className="w-4 h-4" />
+                <span className="hidden sm:inline">Relatório IR</span>
+                <span className="sm:hidden">IR</span>
               </button>
             </div>
-            <button
-              onClick={generateMonthlyReport}
-              className="inline-flex items-center gap-2 bg-white/10 hover:bg-white/20 border border-white/20 transition-colors px-4 py-2.5 rounded-xl text-sm font-semibold"
-              title="Relatório Mensal para IR"
-            >
-              <FileSpreadsheet className="w-4 h-4" />
-              <span className="hidden sm:inline">Relatório IR</span>
-            </button>
+            
+            {/* Botão Novo Acordo */}
             <button
               onClick={handleOpenModal}
-              className="inline-flex items-center gap-2 bg-white/15 hover:bg-white/25 transition-colors px-5 py-3 rounded-xl text-sm font-semibold"
+              className="inline-flex items-center justify-center gap-1.5 bg-emerald-600 hover:bg-emerald-700 transition-colors px-3 py-1.5 rounded-lg text-xs font-medium text-white w-full sm:w-auto"
             >
-              <PlusCircle className="w-5 h-5" />
+              <PlusCircle className="w-4 h-4" />
               Novo Acordo
-            </button>
-            <button
-              onClick={() => setIsIRModalOpen(true)}
-              className="inline-flex items-center gap-2 bg-red-600 hover:bg-red-700 transition-colors px-5 py-3 rounded-xl text-sm font-semibold shadow-lg"
-              title="Gerar Relatório de Imposto de Renda"
-            >
-              <FileSpreadsheet className="w-5 h-5" />
-              Relatório IR
             </button>
           </div>
         </div>
       </div>
 
-      {/* Header Stats Label */}
-      <div className="flex items-center justify-between text-sm text-slate-600">
-        <span className="font-semibold text-slate-700">
-          {activeMonth === currentMonth
-            ? `Balanço ${formatMonthYear(activeMonth)} (mês atual)`
-            : `Balanço ${formatMonthYear(activeMonth)} x ${formatMonthYear(currentMonth)} (mês atual)`}
-        </span>
-      </div>
-
-      {/* Stats - Proveito Econômico do Escritório (Mês Vigente) */}
-      <div className="grid sm:grid-cols-4 gap-4">
-        <div className="bg-gradient-to-br from-emerald-500 to-emerald-600 text-white rounded-xl p-6 shadow-lg">
-          <p className="text-xs font-semibold uppercase mb-2 opacity-90">💰 A Receber (Mês)</p>
-          <p className="text-4xl font-bold">{formatCurrency(stats?.monthly_fees || 0)}</p>
-          <p className="text-xs mt-2 opacity-80">Honorários previstos neste mês</p>
+      {/* Stats Minimalistas */}
+      <div className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-4 gap-2 sm:gap-4">
+        <div className="bg-white border border-slate-200 rounded-lg p-3 sm:p-4 hover:shadow-sm transition">
+          <div className="flex items-center justify-between mb-2 sm:mb-3">
+            <span className="text-[10px] sm:text-xs font-medium text-slate-600 uppercase">A Receber</span>
+            <TrendingUp className="w-3 h-3 sm:w-4 sm:h-4 text-emerald-600" />
+          </div>
+          <p className="text-base sm:text-2xl font-semibold text-slate-900">{formatCurrency(stats?.monthly_fees || 0)}</p>
+          <p className="text-[9px] sm:text-xs text-slate-500 mt-0.5 sm:mt-1 hidden sm:block">Previsto no mês</p>
         </div>
-        <div className="bg-gradient-to-br from-blue-500 to-blue-600 text-white rounded-xl p-6 shadow-lg">
-          <p className="text-xs font-semibold uppercase mb-2 opacity-90">✅ Recebido</p>
-          <p className="text-4xl font-bold">{formatCurrency(stats?.monthly_fees_received || 0)}</p>
-          <p className="text-xs mt-2 opacity-80">Já quitado neste mês</p>
+        <div className="bg-white border border-slate-200 rounded-lg p-3 sm:p-4 hover:shadow-sm transition">
+          <div className="flex items-center justify-between mb-2 sm:mb-3">
+            <span className="text-[10px] sm:text-xs font-medium text-slate-600 uppercase">Recebido</span>
+            <CheckCircle className="w-3 h-3 sm:w-4 sm:h-4 text-blue-600" />
+          </div>
+          <p className="text-base sm:text-2xl font-semibold text-slate-900">{formatCurrency(stats?.monthly_fees_received || 0)}</p>
+          <p className="text-[9px] sm:text-xs text-slate-500 mt-0.5 sm:mt-1 hidden sm:block">Já quitado</p>
         </div>
-        <div className="bg-gradient-to-br from-amber-500 to-amber-600 text-white rounded-xl p-6 shadow-lg">
-          <p className="text-xs font-semibold uppercase mb-2 opacity-90">⏳ Pendente (Mês)</p>
-          <p className="text-4xl font-bold">{formatCurrency(stats?.monthly_fees_pending || 0)}</p>
-          <p className="text-xs mt-2 opacity-80">Aguardando pagamento</p>
+        <div className="bg-white border border-slate-200 rounded-lg p-3 sm:p-4 hover:shadow-sm transition">
+          <div className="flex items-center justify-between mb-2 sm:mb-3">
+            <span className="text-[10px] sm:text-xs font-medium text-slate-600 uppercase">Pendente</span>
+            <Clock className="w-3 h-3 sm:w-4 sm:h-4 text-amber-600" />
+          </div>
+          <p className="text-base sm:text-2xl font-semibold text-slate-900">{formatCurrency(stats?.monthly_fees_pending || 0)}</p>
+          <p className="text-[9px] sm:text-xs text-slate-500 mt-0.5 sm:mt-1 hidden sm:block">Aguardando</p>
         </div>
-        <div className="bg-gradient-to-br from-red-500 to-red-600 text-white rounded-xl p-6 shadow-lg">
-          <p className="text-xs font-semibold uppercase mb-2 opacity-90">⚠️ Vencidas</p>
-          <p className="text-4xl font-bold">{stats?.overdue_installments || 0}</p>
-          <p className="text-xs mt-2 opacity-80">
-            {stats?.overdue_installments ? (
-              <span>Parcelas em atraso</span>
-            ) : (
-              <span>Nenhuma parcela vencida</span>
-            )}
+        <div className="bg-white border border-slate-200 rounded-lg p-4 hover:shadow-sm transition">
+          <div className="flex items-center justify-between mb-3">
+            <span className="text-xs font-medium text-slate-600 uppercase">Vencidas</span>
+            <AlertCircle className="w-4 h-4 text-red-600" />
+          </div>
+          <p className="text-2xl font-semibold text-slate-900">{stats?.overdue_installments || 0}</p>
+          <p className="text-xs text-slate-500 mt-1">
+            {stats?.overdue_installments ? 'Parcelas em atraso' : 'Nenhuma vencida'}
           </p>
         </div>
       </div>
 
       {/* Modal de edição de acordo */}
       {isEditModalOpen && selectedAgreement && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
           <div className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm" onClick={handleCloseEditModal} />
-          <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-2xl mx-4 overflow-hidden">
-            <div className="flex items-center justify-between px-6 py-4 border-b border-slate-200 bg-gradient-to-r from-emerald-50 to-green-50">
-              <div>
-                <h3 className="text-xl font-semibold text-slate-900 flex items-center gap-2">
-                  <Edit className="w-5 h-5 text-emerald-600" /> Editar Acordo Financeiro
+          <div className="relative bg-white rounded-xl sm:rounded-2xl shadow-2xl w-full max-w-2xl max-h-[90vh] flex flex-col overflow-hidden">
+            <div className="flex items-center justify-between px-4 sm:px-6 py-3 sm:py-4 border-b border-slate-200 bg-gradient-to-r from-emerald-50 to-green-50 flex-shrink-0">
+              <div className="flex-1 min-w-0">
+                <h3 className="text-base sm:text-xl font-semibold text-slate-900 flex items-center gap-2 truncate">
+                  <Edit className="w-4 h-4 sm:w-5 sm:h-5 text-emerald-600 flex-shrink-0" /> Editar Acordo
                 </h3>
-                <p className="text-sm text-slate-600">Atualize informações gerais, status e notas internas.</p>
+                <p className="text-xs sm:text-sm text-slate-600 hidden sm:block">Atualize informações gerais, status e notas internas.</p>
               </div>
-              <button onClick={handleCloseEditModal} className="text-slate-400 hover:text-slate-600 transition">
+              <button onClick={handleCloseEditModal} className="text-slate-400 hover:text-slate-600 transition flex-shrink-0 ml-2">
                 <X className="w-5 h-5" />
               </button>
             </div>
 
-            <form onSubmit={handleSubmitEdit} className="px-6 py-6 space-y-6 max-h-[75vh] overflow-y-auto">
+            <form onSubmit={handleSubmitEdit} className="flex-1 overflow-y-auto">
+              <div className="px-4 sm:px-6 py-4 sm:py-6 space-y-4 sm:space-y-6">
               {editInitialLoading ? (
                 <div className="flex items-center justify-center py-8">
                   <Loader2 className="w-6 h-6 text-emerald-600 animate-spin" />
@@ -2139,23 +2136,39 @@ const FinancialModule: React.FC = () => {
                   </div>
                 </>
               )}
+              </div>
 
-              <div className="flex items-center justify-end gap-3 pt-4 border-t border-slate-200">
+              <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2 sm:gap-3 px-4 sm:px-6 py-3 sm:py-4 border-t border-slate-200 bg-slate-50 flex-shrink-0">
                 <button
                   type="button"
-                  onClick={handleCloseEditModal}
-                  className="text-sm font-semibold text-slate-500 hover:text-slate-700"
+                  onClick={() => {
+                    if (window.confirm('Tem certeza que deseja excluir este acordo?')) {
+                      handleDeleteAgreement(selectedAgreement);
+                      handleCloseEditModal();
+                    }
+                  }}
+                  className="inline-flex items-center justify-center gap-2 bg-red-50 hover:bg-red-100 text-red-600 font-semibold text-xs sm:text-sm px-4 py-2 rounded-lg transition"
                   disabled={editLoading}
                 >
-                  Cancelar
+                  <Trash2 className="w-4 h-4" />
+                  Excluir Acordo
                 </button>
-                <button
-                  type="submit"
-                  disabled={editLoading}
-                  className="inline-flex items-center gap-2 bg-emerald-600 hover:bg-emerald-700 transition-colors text-white font-semibold text-sm px-5 py-2.5 rounded-lg disabled:opacity-60"
-                >
-                  {editLoading ? (
-                    <>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={handleCloseEditModal}
+                    className="flex-1 sm:flex-none text-xs sm:text-sm font-semibold text-slate-500 hover:text-slate-700 px-4 py-2"
+                    disabled={editLoading}
+                  >
+                    Cancelar
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={editLoading}
+                    className="flex-1 sm:flex-none inline-flex items-center justify-center gap-2 bg-emerald-600 hover:bg-emerald-700 transition-colors text-white font-semibold text-xs sm:text-sm px-4 sm:px-5 py-2 sm:py-2.5 rounded-lg disabled:opacity-60"
+                  >
+                    {editLoading ? (
+                      <>
                       <Loader2 className="w-4 h-4 animate-spin" /> Salvando...
                     </>
                   ) : (
@@ -2164,6 +2177,7 @@ const FinancialModule: React.FC = () => {
                     </>
                   )}
                 </button>
+                </div>
               </div>
             </form>
           </div>
@@ -2286,11 +2300,11 @@ const FinancialModule: React.FC = () => {
             
             {/* Filtro de Status */}
             <div className="relative">
-              <Filter className="w-4 h-4 absolute left-3 top-1/2 transform -translate-y-1/2 text-slate-400" />
+              <Filter className="w-4 h-4 absolute left-3 top-1/2 transform -translate-y-1/2 text-slate-400 pointer-events-none" />
               <select
                 value={filterStatus}
                 onChange={(e) => setFilterStatus(e.target.value as any)}
-                className="pl-10 pr-8 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 appearance-none bg-white cursor-pointer"
+                className="w-full pl-10 pr-8 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 appearance-none bg-white cursor-pointer"
               >
                 <option value="all">Todos os status</option>
                 <option value="ativo">Ativos</option>
@@ -2316,25 +2330,14 @@ const FinancialModule: React.FC = () => {
         ) : (
           <div className="space-y-3">
             {filteredAgreements.map((agreement) => (
-              <div key={agreement.id} className="border border-slate-200 rounded-xl p-4 hover:border-emerald-300 transition group">
-                <div className="flex items-start justify-between gap-4">
-                  <div className="flex-1">
-                    <h3 className="font-semibold text-slate-900">{agreement.title}</h3>
-                    <p className="text-sm text-slate-600 mt-1">Cliente: {getClientName(agreement.client_id)}</p>
-                    <div className="flex flex-wrap gap-4 mt-3 text-sm">
-                      <span className="text-emerald-600 font-semibold">
-                        💰 Proveito: {formatCurrency(agreement.fee_value)}
-                      </span>
-                      <span className="text-slate-500">
-                        {agreement.fee_type === 'percentage' ? `${agreement.fee_percentage}% do total` : 'Valor fixo'}
-                      </span>
-                      <span className="text-slate-500">
-                        {agreement.payment_type === 'upfront' ? '• À Vista' : `• ${agreement.installments_count}x parcelas`}
-                      </span>
+              <div key={agreement.id} className="border border-slate-200 rounded-xl p-3 sm:p-4 hover:border-emerald-300 transition group">
+                <div className="flex flex-col gap-3">
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="flex-1 min-w-0">
+                      <h3 className="font-semibold text-slate-900 text-sm sm:text-base truncate">{agreement.title}</h3>
+                      <p className="text-xs sm:text-sm text-slate-600 mt-1 truncate">Cliente: {getClientName(agreement.client_id)}</p>
                     </div>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <span className={`px-3 py-1 rounded-full text-xs font-semibold ${
+                    <span className={`px-2 sm:px-3 py-1 rounded-full text-xs font-semibold flex-shrink-0 ${
                       agreement.status === 'ativo' ? 'bg-emerald-100 text-emerald-700' :
                       agreement.status === 'concluido' ? 'bg-blue-100 text-blue-700' :
                       agreement.status === 'cancelado' ? 'bg-red-100 text-red-700' :
@@ -2342,26 +2345,43 @@ const FinancialModule: React.FC = () => {
                     }`}>
                       {agreement.status.charAt(0).toUpperCase() + agreement.status.slice(1)}
                     </span>
-                    <button
-                      onClick={() => handleDeleteAgreement(agreement)}
-                      className="opacity-0 group-hover:opacity-100 transition-opacity bg-red-50 hover:bg-red-100 text-red-600 p-2 rounded-lg"
-                      title="Excluir acordo"
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </button>
+                  </div>
+                  
+                  <div className="flex flex-wrap gap-2 sm:gap-4 text-xs sm:text-sm">
+                    <span className="text-emerald-600 font-semibold">
+                      💰 {formatCurrency(agreement.fee_value)}
+                    </span>
+                    <span className="text-slate-500">
+                      {agreement.fee_type === 'percentage' ? `${agreement.fee_percentage}%` : 'Fixo'}
+                    </span>
+                    <span className="text-slate-500">
+                      {agreement.payment_type === 'upfront' ? '• À Vista' : `• ${agreement.installments_count}x`}
+                    </span>
+                  </div>
+
+                  <div className="flex items-center gap-2 pt-2 border-t border-slate-100">
                     <button
                       onClick={() => handleOpenDetails(agreement)}
-                      className="opacity-0 group-hover:opacity-100 transition-opacity bg-emerald-600 hover:bg-emerald-700 text-white p-2 rounded-lg"
+                      className="flex-1 inline-flex items-center justify-center gap-2 bg-emerald-600 hover:bg-emerald-700 text-white px-3 py-2 rounded-lg text-xs sm:text-sm font-medium transition"
                       title="Ver detalhes"
                     >
-                      <Eye className="w-4 h-4" />
+                      <Eye className="w-3 h-3 sm:w-4 sm:h-4" />
+                      Ver
                     </button>
                     <button
                       onClick={() => handleOpenEditModal(agreement)}
-                      className="opacity-0 group-hover:opacity-100 transition-opacity bg-blue-600 hover:bg-blue-700 text-white p-2 rounded-lg"
+                      className="flex-1 inline-flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-3 py-2 rounded-lg text-xs sm:text-sm font-medium transition"
                       title="Editar acordo"
                     >
-                      <Edit className="w-4 h-4" />
+                      <Edit className="w-3 h-3 sm:w-4 sm:h-4" />
+                      Editar
+                    </button>
+                    <button
+                      onClick={() => handleDeleteAgreement(agreement)}
+                      className="px-3 py-2 bg-red-50 hover:bg-red-100 text-red-600 rounded-lg transition"
+                      title="Excluir acordo"
+                    >
+                      <Trash2 className="w-3 h-3 sm:w-4 sm:h-4" />
                     </button>
                   </div>
                 </div>
@@ -2373,20 +2393,21 @@ const FinancialModule: React.FC = () => {
 
       {/* Modal de novo acordo */}
       {isModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
           <div className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm" onClick={handleCloseModal} />
-          <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-3xl mx-4 overflow-hidden">
-            <div className="flex items-center justify-between px-6 py-4 border-b border-slate-200">
-              <div>
-                <h3 className="text-xl font-semibold text-slate-900">Novo Acordo Financeiro</h3>
-                <p className="text-sm text-slate-500">Configure honorários e condições de pagamento vinculados ao cliente</p>
+          <div className="relative bg-white rounded-xl sm:rounded-2xl shadow-2xl w-full max-w-3xl max-h-[90vh] flex flex-col overflow-hidden">
+            <div className="flex items-center justify-between px-4 sm:px-6 py-3 sm:py-4 border-b border-slate-200 flex-shrink-0">
+              <div className="flex-1 min-w-0 pr-4">
+                <h3 className="text-base sm:text-xl font-semibold text-slate-900 truncate">Novo Acordo Financeiro</h3>
+                <p className="text-xs sm:text-sm text-slate-500 hidden sm:block">Configure honorários e condições de pagamento vinculados ao cliente</p>
               </div>
-              <button onClick={handleCloseModal} className="text-slate-400 hover:text-slate-600 transition">
+              <button onClick={handleCloseModal} className="text-slate-400 hover:text-slate-600 transition flex-shrink-0">
                 <X className="w-5 h-5" />
               </button>
             </div>
 
-            <form onSubmit={handleSubmit} className="max-h-[75vh] overflow-y-auto px-6 py-6 space-y-6">
+            <form onSubmit={handleSubmit} className="flex-1 overflow-y-auto">
+              <div className="px-4 sm:px-6 py-4 sm:py-6 space-y-4 sm:space-y-6">
               {formError && (
                 <div className="bg-red-50 border border-red-200 text-red-600 px-4 py-3 rounded-lg text-sm">
                   {formError}
@@ -2752,6 +2773,7 @@ const FinancialModule: React.FC = () => {
                   )}
                 </button>
               </div>
+              </div>
             </form>
           </div>
         </div>
@@ -2759,33 +2781,33 @@ const FinancialModule: React.FC = () => {
 
       {/* Modal de Detalhes do Acordo */}
       {isDetailsModalOpen && selectedAgreement && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
           <div className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm" onClick={handleCloseDetails} />
-          <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-5xl mx-4 my-8">
+          <div className="relative bg-white rounded-xl sm:rounded-2xl shadow-2xl w-full max-w-4xl max-h-[90vh] flex flex-col overflow-hidden">
             {/* Header */}
-            <div className="flex items-center justify-between px-6 py-4 border-b border-slate-200 bg-gradient-to-r from-emerald-50 to-blue-50">
-              <div>
-                <h3 className="text-2xl font-bold text-slate-900">{selectedAgreement.title}</h3>
-                <p className="text-sm text-emerald-700 mt-1 font-semibold flex items-center gap-2">
-                  <span className="inline-flex items-center justify-center bg-emerald-100 text-emerald-700 rounded-full px-3 py-1 text-xs uppercase tracking-wide">
+            <div className="flex items-center justify-between px-4 sm:px-6 py-3 sm:py-4 border-b border-slate-200 bg-gradient-to-r from-emerald-50 to-blue-50 flex-shrink-0">
+              <div className="flex-1 min-w-0 pr-4">
+                <h3 className="text-base sm:text-xl font-bold text-slate-900 truncate">{selectedAgreement.title}</h3>
+                <p className="text-xs sm:text-sm text-emerald-700 mt-1 font-semibold flex items-center gap-2 truncate">
+                  <span className="inline-flex items-center justify-center bg-emerald-100 text-emerald-700 rounded-full px-2 sm:px-3 py-0.5 sm:py-1 text-[10px] sm:text-xs uppercase tracking-wide flex-shrink-0">
                     Cliente
                   </span>
-                  {getClientName(selectedAgreement.client_id)}
+                  <span className="truncate">{getClientName(selectedAgreement.client_id)}</span>
                 </p>
               </div>
-              <button onClick={handleCloseDetails} className="text-slate-400 hover:text-slate-600 transition">
-                <X className="w-6 h-6" />
+              <button onClick={handleCloseDetails} className="text-slate-400 hover:text-slate-600 transition flex-shrink-0">
+                <X className="w-5 h-5 sm:w-6 sm:h-6" />
               </button>
             </div>
 
-            <div className="max-h-[75vh] overflow-y-auto">
+            <div className="flex-1 overflow-y-auto">
               {/* Resumo do Acordo */}
-              <div className="px-6 py-6 border-b border-slate-200">
-                <h4 className="text-lg font-semibold text-slate-900 mb-4">📋 Resumo do Acordo</h4>
-                <div className="grid md:grid-cols-3 gap-4">
-                  <div className="bg-slate-50 rounded-lg p-4">
+              <div className="px-4 sm:px-6 py-4 sm:py-6 border-b border-slate-200">
+                <h4 className="text-base sm:text-lg font-semibold text-slate-900 mb-3 sm:mb-4">📋 Resumo do Acordo</h4>
+                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3 sm:gap-4">
+                  <div className="bg-slate-50 rounded-lg p-3 sm:p-4">
                     <p className="text-xs text-slate-500 uppercase mb-1">Valor Total</p>
-                    <p className="text-2xl font-bold text-slate-900">{formatCurrency(agreementSummary?.totalValue || selectedAgreement.total_value)}</p>
+                    <p className="text-lg sm:text-2xl font-bold text-slate-900">{formatCurrency(agreementSummary?.totalValue || selectedAgreement.total_value)}</p>
                   </div>
                   <div className="bg-emerald-50 rounded-lg p-4">
                     <p className="text-xs text-emerald-600 uppercase mb-1">Honorários ({selectedAgreement.fee_type === 'percentage' ? `${selectedAgreement.fee_percentage}%` : 'Fixo'})</p>
@@ -2940,32 +2962,34 @@ const FinancialModule: React.FC = () => {
                                 )}
                               </div>
                             </div>
-                            <div className="text-right">
-                              <p className={`text-xl font-bold ${isOverdue ? 'text-red-900' : 'text-slate-900'}`}>
-                                {formatCurrency(installment.value)}
-                              </p>
-                              <p className="text-xs text-emerald-600 mt-1">
-                                💰 Honorário: {formatCurrency(selectedAgreement.fee_value / selectedAgreement.installments_count)}
-                              </p>
-                            </div>
-                            <div className="flex items-center gap-2">
-                              {isPaid && (
-                                <button
-                                  onClick={() => handleGenerateReceipt(selectedAgreement, installment)}
-                                  className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition flex items-center gap-2 shadow"
-                                  title="Gerar recibo desta parcela"
-                                >
-                                  <Receipt className="w-4 h-4" /> Recibo
-                                </button>
-                              )}
-                              {!isPaid && (
-                                <button
-                                  onClick={() => handleOpenPaymentModal(installment)}
-                                  className={`${isOverdue ? 'bg-red-600 hover:bg-red-700' : 'bg-emerald-600 hover:bg-emerald-700'} text-white px-5 py-3 rounded-lg text-sm font-semibold transition flex items-center gap-2 shadow-lg`}
-                                >
-                                  <CheckCircle className="w-5 h-5" /> Dar Baixa
-                                </button>
-                              )}
+                            <div className="flex flex-col items-end gap-3">
+                              <div className="text-right">
+                                <p className={`text-xl font-bold ${isOverdue ? 'text-red-900' : 'text-slate-900'}`}>
+                                  {formatCurrency(installment.value)}
+                                </p>
+                                <p className="text-xs text-emerald-600 mt-1">
+                                  💰 Honorário: {formatCurrency(selectedAgreement.fee_value / selectedAgreement.installments_count)}
+                                </p>
+                              </div>
+                              <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 w-full sm:w-auto">
+                                {isPaid && (
+                                  <button
+                                    onClick={() => handleGenerateReceipt(selectedAgreement, installment)}
+                                    className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-xs sm:text-sm font-medium transition flex items-center justify-center gap-2 shadow w-full sm:w-auto"
+                                    title="Gerar recibo desta parcela"
+                                  >
+                                    <Receipt className="w-4 h-4" /> Recibo
+                                  </button>
+                                )}
+                                {!isPaid && (
+                                  <button
+                                    onClick={() => handleOpenPaymentModal(installment)}
+                                    className={`${isOverdue ? 'bg-red-600 hover:bg-red-700' : 'bg-emerald-600 hover:bg-emerald-700'} text-white px-4 sm:px-5 py-2 sm:py-3 rounded-lg text-xs sm:text-sm font-semibold transition flex items-center justify-center gap-2 shadow-lg w-full sm:w-auto`}
+                                  >
+                                    <CheckCircle className="w-4 h-4 sm:w-5 sm:h-5" /> Dar Baixa
+                                  </button>
+                                )}
+                              </div>
                             </div>
                           </div>
                           {installment.notes && (
@@ -3008,22 +3032,22 @@ const FinancialModule: React.FC = () => {
 
       {/* Modal de Baixa de Pagamento */}
       {isPaymentModalOpen && selectedInstallment && (
-        <div className="fixed inset-0 z-[60] flex items-start justify-center overflow-y-auto py-8">
+        <div className="fixed inset-0 z-[60] flex items-center justify-center p-4">
           <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm" onClick={handleClosePaymentModal} />
-          <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-2xl mx-4 max-h-[90vh] overflow-y-auto">
-            <div className="sticky top-0 flex items-center justify-between px-5 py-4 border-b border-slate-200 bg-gradient-to-r from-emerald-50 to-green-50">
-              <div>
-                <h3 className="text-xl font-bold text-slate-900">💳 Dar Baixa no Pagamento</h3>
-                <p className="text-sm text-slate-600 mt-1">
+          <div className="relative bg-white rounded-xl sm:rounded-2xl shadow-2xl w-full max-w-2xl max-h-[90vh] flex flex-col overflow-hidden">
+            <div className="flex items-center justify-between px-4 sm:px-5 py-3 sm:py-4 border-b border-slate-200 bg-gradient-to-r from-emerald-50 to-green-50 flex-shrink-0">
+              <div className="flex-1 min-w-0 pr-4">
+                <h3 className="text-base sm:text-xl font-bold text-slate-900 truncate">💳 Dar Baixa</h3>
+                <p className="text-xs sm:text-sm text-slate-600 mt-1 truncate">
                   Parcela {selectedInstallment.installment_number}/{selectedAgreement?.installments_count} - Venc: {new Date(selectedInstallment.due_date).toLocaleDateString('pt-BR')}
                 </p>
               </div>
-              <button onClick={handleClosePaymentModal} className="text-slate-400 hover:text-slate-600 transition">
+              <button onClick={handleClosePaymentModal} className="text-slate-400 hover:text-slate-600 transition flex-shrink-0">
                 <X className="w-5 h-5" />
               </button>
             </div>
 
-            <div className="px-5 py-5 space-y-5">
+            <div className="flex-1 overflow-y-auto px-4 sm:px-5 py-4 sm:py-5 space-y-4 sm:space-y-5">
               {/* Valor da Parcela */}
               <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-4">
                 <div className="flex items-center justify-between">
@@ -3048,8 +3072,8 @@ const FinancialModule: React.FC = () => {
 
               {/* Método de Pagamento */}
               <div>
-                <label className="text-sm font-semibold text-slate-700 mb-2 block">💰 Método de Pagamento</label>
-                <div className="grid grid-cols-3 gap-3">
+                <label className="text-xs sm:text-sm font-semibold text-slate-700 mb-2 block">💰 Método de Pagamento</label>
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 sm:gap-3">
                   <button
                     type="button"
                     onClick={() => setPaymentData(prev => ({ ...prev, paymentMethod: 'pix' }))}

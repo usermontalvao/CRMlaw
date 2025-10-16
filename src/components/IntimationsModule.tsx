@@ -753,7 +753,7 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
                     handleCreateDeadline(selectedIntimation);
                     setSelectedIntimation(null);
                   }}
-                  className="inline-flex items-center gap-2 bg-amber-600 hover:bg-amber-700 text-white font-medium px-5 py-2.5 rounded-lg transition"
+                  className="inline-flex items-center justify-center gap-2 bg-amber-600 hover:bg-amber-700 text-white font-medium px-3 sm:px-5 py-2 sm:py-2.5 rounded-lg transition text-xs sm:text-sm w-full sm:w-auto"
                 >
                   <Clock className="w-4 h-4" />
                   Novo Prazo
@@ -763,7 +763,7 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
                     handleCreateAppointment(selectedIntimation);
                     setSelectedIntimation(null);
                   }}
-                  className="inline-flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white font-medium px-5 py-2.5 rounded-lg transition"
+                  className="inline-flex items-center justify-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white font-medium px-3 sm:px-5 py-2 sm:py-2.5 rounded-lg transition text-xs sm:text-sm w-full sm:w-auto"
                 >
                   <CalendarIcon className="w-4 h-4" />
                   Adicionar Compromisso
@@ -774,7 +774,7 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
                       handleMarkAsRead(selectedIntimation.id);
                       setSelectedIntimation(null);
                     }}
-                    className="inline-flex items-center gap-2 bg-emerald-600 hover:bg-emerald-700 text-white font-medium px-5 py-2.5 rounded-lg transition"
+                    className="inline-flex items-center justify-center gap-2 bg-emerald-600 hover:bg-emerald-700 text-white font-medium px-3 sm:px-5 py-2 sm:py-2.5 rounded-lg transition text-xs sm:text-sm w-full sm:w-auto"
                   >
                     <CheckCircle className="w-4 h-4" />
                     Marcar como Lida
@@ -787,7 +787,7 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
                     handleOpenLinkModal(selectedIntimation);
                     setSelectedIntimation(null);
                   }}
-                  className="inline-flex items-center gap-2 border-2 border-purple-600 text-purple-600 hover:bg-purple-50 font-medium px-5 py-2.5 rounded-lg transition"
+                  className="inline-flex items-center justify-center gap-2 border-2 border-purple-600 text-purple-600 hover:bg-purple-50 font-medium px-3 sm:px-5 py-2 sm:py-2.5 rounded-lg transition text-xs sm:text-sm w-full sm:w-auto"
                 >
                   <Link2 className="w-4 h-4" />
                   Vincular
@@ -797,7 +797,7 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
                     href={selectedIntimation.link}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="inline-flex items-center gap-2 border-2 border-blue-600 text-blue-600 hover:bg-blue-50 font-medium px-5 py-2.5 rounded-lg transition"
+                    className="inline-flex items-center justify-center gap-2 border-2 border-blue-600 text-blue-600 hover:bg-blue-50 font-medium px-3 sm:px-5 py-2 sm:py-2.5 rounded-lg transition text-xs sm:text-sm w-full sm:w-auto"
                   >
                     <ExternalLink className="w-4 h-4" />
                     Ver Diário
@@ -814,11 +814,11 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div className="bg-white border border-gray-200 rounded-xl p-6">
-        <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
+      <div className="bg-white border border-gray-200 rounded-xl p-3 sm:p-6">
+        <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3 sm:gap-4">
           <div>
-            <h3 className="text-2xl font-bold text-slate-900 flex items-center gap-3">
-              <Bell className="w-7 h-7 text-amber-600" />
+            <h3 className="text-lg sm:text-2xl font-bold text-slate-900 flex items-center gap-2 sm:gap-3">
+              <Bell className="w-5 h-5 sm:w-7 sm:h-7 text-amber-600" />
               Intimações DJEN
             </h3>
             <div className="mt-2">
@@ -861,11 +861,11 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
             )}
           </div>
 
-          <div className="flex flex-wrap gap-3 justify-end">
+          <div className="flex flex-col sm:flex-row flex-wrap gap-2 sm:gap-3 justify-end w-full sm:w-auto">
             <button
               onClick={handleSync}
               disabled={syncing}
-              className="inline-flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white font-medium px-5 py-2.5 rounded-lg transition disabled:opacity-50"
+              className="inline-flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-700 text-white font-medium px-3 sm:px-5 py-2 sm:py-2.5 rounded-lg transition disabled:opacity-50 text-xs sm:text-sm w-full sm:w-auto"
             >
               {syncing ? (
                 <>
@@ -883,7 +883,7 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
             <button
               onClick={handleClearAllIntimations}
               disabled={clearingAll || syncing || intimations.length === 0}
-              className="inline-flex items-center gap-2 border border-red-200 text-red-600 hover:bg-red-50 font-medium px-5 py-2.5 rounded-lg transition disabled:opacity-50"
+              className="inline-flex items-center justify-center gap-2 border border-red-200 text-red-600 hover:bg-red-50 font-medium px-3 sm:px-5 py-2 sm:py-2.5 rounded-lg transition disabled:opacity-50 text-xs sm:text-sm w-full sm:w-auto"
             >
               {clearingAll ? (
                 <>
@@ -902,8 +902,8 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
       </div>
 
       {/* Filtros e Busca */}
-      <div className="bg-white border border-gray-200 rounded-xl p-6">
-        <div className="flex flex-col lg:flex-row gap-4">
+      <div className="bg-white border border-gray-200 rounded-xl p-3 sm:p-6">
+        <div className="flex flex-col lg:flex-row gap-3 sm:gap-4">
           <div className="relative flex-1">
             <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-slate-400 w-5 h-5" />
             <input

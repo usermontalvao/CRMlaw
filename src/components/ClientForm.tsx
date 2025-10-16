@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { ArrowLeft, Save, User, Building2 } from 'lucide-react';
+import { X, Save, User, Building2 } from 'lucide-react';
 import { clientService } from '../services/client.service';
 import type { Client, CreateClientDTO, ClientType, MaritalStatus } from '../types/client.types';
 
@@ -9,6 +9,34 @@ interface ClientFormProps {
   onBack: () => void;
   onSave: (savedClient: Client) => void;
 }
+
+// Função para aplicar máscara de CPF
+const applyCpfMask = (value: string): string => {
+  const numbers = value.replace(/\D/g, '').slice(0, 11);
+  if (numbers.length <= 3) return numbers;
+  if (numbers.length <= 6) return `${numbers.slice(0, 3)}.${numbers.slice(3)}`;
+  if (numbers.length <= 9) return `${numbers.slice(0, 3)}.${numbers.slice(3, 6)}.${numbers.slice(6)}`;
+  return `${numbers.slice(0, 3)}.${numbers.slice(3, 6)}.${numbers.slice(6, 9)}-${numbers.slice(9, 11)}`;
+};
+
+// Função para aplicar máscara de CNPJ
+const applyCnpjMask = (value: string): string => {
+  const numbers = value.replace(/\D/g, '').slice(0, 14);
+  if (numbers.length <= 2) return numbers;
+  if (numbers.length <= 5) return `${numbers.slice(0, 2)}.${numbers.slice(2)}`;
+  if (numbers.length <= 8) return `${numbers.slice(0, 2)}.${numbers.slice(2, 5)}.${numbers.slice(5)}`;
+  if (numbers.length <= 12) return `${numbers.slice(0, 2)}.${numbers.slice(2, 5)}.${numbers.slice(5, 8)}/${numbers.slice(8)}`;
+  return `${numbers.slice(0, 2)}.${numbers.slice(2, 5)}.${numbers.slice(5, 8)}/${numbers.slice(8, 12)}-${numbers.slice(12, 14)}`;
+};
+
+// Função para aplicar máscara de telefone
+const applyPhoneMask = (value: string): string => {
+  const numbers = value.replace(/\D/g, '').slice(0, 11);
+  if (numbers.length <= 2) return numbers;
+  if (numbers.length <= 7) return `(${numbers.slice(0, 2)}) ${numbers.slice(2)}`;
+  if (numbers.length <= 10) return `(${numbers.slice(0, 2)}) ${numbers.slice(2, 6)}-${numbers.slice(6)}`;
+  return `(${numbers.slice(0, 2)}) ${numbers.slice(2, 3)} ${numbers.slice(3, 7)}-${numbers.slice(7, 11)}`;
+};
 
 const ClientForm: React.FC<ClientFormProps> = ({ client, prefill, onBack, onSave }) => {
   const [loading, setLoading] = useState(false);
@@ -40,18 +68,26 @@ const ClientForm: React.FC<ClientFormProps> = ({ client, prefill, onBack, onSave
 
   useEffect(() => {
     if (client) {
+      const rawCpfCnpj = client.cpf_cnpj || '';
+      const maskedCpfCnpj = client.client_type === 'pessoa_fisica'
+        ? applyCpfMask(rawCpfCnpj)
+        : applyCnpjMask(rawCpfCnpj);
+
+      const rawPhone = client.phone || client.mobile || '';
+      const maskedPhone = applyPhoneMask(rawPhone);
+
       setFormData({
         full_name: client.full_name,
         client_type: client.client_type,
-        cpf_cnpj: client.cpf_cnpj,
+        cpf_cnpj: maskedCpfCnpj,
         rg: client.rg,
         birth_date: client.birth_date,
         nationality: client.nationality,
         marital_status: client.marital_status,
         profession: client.profession,
         email: client.email,
-        phone: client.phone || client.mobile || '',
-        mobile: client.phone || client.mobile || '',
+        phone: maskedPhone,
+        mobile: maskedPhone,
         address_street: client.address_street,
         address_number: client.address_number,
         address_complement: client.address_complement,
@@ -149,11 +185,26 @@ const ClientForm: React.FC<ClientFormProps> = ({ client, prefill, onBack, onSave
       if (!cleanedData.profession) delete cleanedData.profession;
       if (!cleanedData.nationality) delete cleanedData.nationality;
 
-      let savedClient: Client;
-      cleanedData.mobile = cleanedData.phone || cleanedData.mobile || '';
+      const stripDigits = (value?: string) => (value ? value.replace(/\D/g, '') : '');
 
-      if (!cleanedData.phone) delete cleanedData.phone;
-      if (!cleanedData.mobile) delete cleanedData.mobile;
+      if (cleanedData.cpf_cnpj) {
+        const numericCpfCnpj = stripDigits(cleanedData.cpf_cnpj);
+        if (numericCpfCnpj) {
+          cleanedData.cpf_cnpj = numericCpfCnpj;
+        } else {
+          delete cleanedData.cpf_cnpj;
+        }
+      }
+
+      let savedClient: Client;
+      const phoneDigits = stripDigits(cleanedData.phone || cleanedData.mobile || '');
+      if (phoneDigits) {
+        cleanedData.phone = phoneDigits;
+        cleanedData.mobile = phoneDigits;
+      } else {
+        delete cleanedData.phone;
+        delete cleanedData.mobile;
+      }
 
       if (client) {
         savedClient = await clientService.updateClient(client.id, cleanedData);
@@ -198,120 +249,136 @@ const ClientForm: React.FC<ClientFormProps> = ({ client, prefill, onBack, onSave
   };
 
   return (
-    <div className="card">
-      <div className="mb-6">
-        <button onClick={onBack} className="flex items-center gap-2 text-gray-600 hover:text-gray-900 transition-colors">
-          <ArrowLeft className="w-5 h-5" />
-          Voltar
-        </button>
-        <h2 className="text-2xl font-bold text-gray-900 mt-4">
-          {client ? 'Editar Cliente' : 'Novo Cliente'}
-        </h2>
+    <div className="bg-white rounded-lg">
+      {/* Header Compacto */}
+      <div className="border-b border-slate-200 px-3 sm:px-4 py-2 sm:py-3">
+        <div className="flex items-center justify-between">
+          <div>
+            <h2 className="text-base sm:text-lg font-semibold text-slate-900">
+              {client ? 'Editar Cliente' : 'Novo Cliente'}
+            </h2>
+            <p className="text-[10px] sm:text-xs text-slate-500">Preencha os dados do cliente</p>
+          </div>
+          <button
+            onClick={onBack}
+            className="p-1 sm:p-1.5 hover:bg-slate-100 rounded-lg transition"
+            type="button"
+            aria-label="Fechar"
+          >
+            <X className="w-5 h-5 text-slate-600" />
+          </button>
+        </div>
       </div>
 
-      <form onSubmit={handleSubmit} className="space-y-6">
+      <form onSubmit={handleSubmit} className="p-2 sm:p-4 space-y-3 sm:space-y-4 max-h-[calc(100vh-150px)] sm:max-h-[calc(100vh-200px)] overflow-y-auto">
         {/* Tipo de Cliente */}
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-2">Tipo de Cliente *</label>
-          <div className="flex gap-4">
-            <label className="flex items-center gap-2 cursor-pointer">
+          <label className="block text-xs font-medium text-slate-600 mb-2">Tipo de Cliente *</label>
+          <div className="flex gap-3">
+            <label className="flex-1 flex items-center gap-2 p-2.5 border border-slate-200 rounded-lg cursor-pointer hover:bg-slate-50 transition">
               <input
                 type="radio"
                 name="client_type"
                 value="pessoa_fisica"
                 checked={formData.client_type === 'pessoa_fisica'}
                 onChange={(e) => handleChange('client_type', e.target.value as ClientType)}
-                className="w-4 h-4 text-primary-600"
+                className="w-4 h-4 text-blue-600"
               />
-              <User className="w-5 h-5" />
-              <span>Pessoa Física</span>
+              <User className="w-4 h-4 text-slate-600" />
+              <span className="text-sm">Pessoa Física</span>
             </label>
-            <label className="flex items-center gap-2 cursor-pointer">
+            <label className="flex-1 flex items-center gap-2 p-2.5 border border-slate-200 rounded-lg cursor-pointer hover:bg-slate-50 transition">
               <input
                 type="radio"
                 name="client_type"
                 value="pessoa_juridica"
                 checked={formData.client_type === 'pessoa_juridica'}
                 onChange={(e) => handleChange('client_type', e.target.value as ClientType)}
-                className="w-4 h-4 text-primary-600"
+                className="w-4 h-4 text-blue-600"
               />
-              <Building2 className="w-5 h-5" />
-              <span>Pessoa Jurídica</span>
+              <Building2 className="w-4 h-4 text-slate-600" />
+              <span className="text-sm">Pessoa Jurídica</span>
             </label>
           </div>
         </div>
 
         {/* Dados Pessoais */}
-        <div>
-          <h3 className="text-lg font-semibold text-gray-900 mb-4">Dados Pessoais</h3>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div className="bg-slate-50 rounded-lg p-2 sm:p-3">
+          <h3 className="text-xs sm:text-sm font-semibold text-slate-900 mb-2 sm:mb-3">Dados Pessoais</h3>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-2 sm:gap-3">
             <div className="md:col-span-2">
-              <label className="block text-sm font-medium text-gray-700 mb-1">
+              <label className="block text-xs font-medium text-slate-600 mb-1">
                 {formData.client_type === 'pessoa_fisica' ? 'Nome Completo' : 'Razão Social'} *
               </label>
               <input
                 type="text"
                 required
-                className="input-field"
+                className="w-full px-3 py-1.5 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
                 value={formData.full_name}
                 onChange={(e) => handleChange('full_name', e.target.value)}
               />
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
+              <label className="block text-xs font-medium text-slate-600 mb-1">
                 {formData.client_type === 'pessoa_fisica' ? 'CPF' : 'CNPJ'}
               </label>
               <input
                 type="text"
-                className="input-field"
+                className="w-full px-3 py-1.5 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
                 value={formData.cpf_cnpj}
-                onChange={(e) => handleChange('cpf_cnpj', e.target.value)}
+                onChange={(e) => {
+                  const masked = formData.client_type === 'pessoa_fisica' 
+                    ? applyCpfMask(e.target.value)
+                    : applyCnpjMask(e.target.value);
+                  handleChange('cpf_cnpj', masked);
+                }}
                 placeholder={formData.client_type === 'pessoa_fisica' ? '000.000.000-00' : '00.000.000/0000-00'}
+                maxLength={formData.client_type === 'pessoa_fisica' ? 14 : 18}
               />
             </div>
 
             {formData.client_type === 'pessoa_fisica' && (
               <>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">RG</label>
+                  <label className="block text-xs font-medium text-slate-600 mb-1">RG</label>
                   <input
                     type="text"
-                    className="input-field"
+                    className="w-full px-3 py-1.5 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
                     value={formData.rg}
                     onChange={(e) => handleChange('rg', e.target.value)}
                   />
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Data de Nascimento</label>
+                  <label className="block text-xs font-medium text-slate-600 mb-1">Data de Nascimento</label>
                   <input
                     type="date"
-                    className="input-field"
+                    className="w-full px-3 py-1.5 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
                     value={formData.birth_date}
                     onChange={(e) => handleChange('birth_date', e.target.value)}
                   />
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Nacionalidade</label>
+                  <label className="block text-xs font-medium text-slate-600 mb-1">Nacionalidade</label>
                   <input
                     type="text"
-                    className="input-field"
+                    className="w-full px-3 py-1.5 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
                     value={formData.nationality}
                     onChange={(e) => handleChange('nationality', e.target.value)}
                   />
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Estado Civil</label>
+                  <label className="block text-xs font-medium text-slate-600 mb-1">Estado Civil</label>
                   <select
-                    className="input-field"
+                    className="w-full px-3 py-1.5 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
                     value={formData.marital_status || ''}
                     onChange={(e) => handleChange('marital_status', e.target.value as MaritalStatus)}
                   >
                     <option value="">Selecione...</option>
-                    <option value="solteiro">Solteiro(a)</option>
+                    <option value="solteiro">olteiro(a)</option>
                     <option value="casado">Casado(a)</option>
                     <option value="divorciado">Divorciado(a)</option>
                     <option value="viuvo">Viúvo(a)</option>
@@ -320,10 +387,10 @@ const ClientForm: React.FC<ClientFormProps> = ({ client, prefill, onBack, onSave
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Profissão</label>
+                  <label className="block text-xs font-medium text-slate-600 mb-1">Profissão</label>
                   <input
                     type="text"
-                    className="input-field"
+                    className="w-full px-3 py-1.5 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
                     value={formData.profession}
                     onChange={(e) => handleChange('profession', e.target.value)}
                   />
@@ -334,38 +401,42 @@ const ClientForm: React.FC<ClientFormProps> = ({ client, prefill, onBack, onSave
         </div>
 
         {/* Dados de Contato */}
-        <div>
-          <h3 className="text-lg font-semibold text-gray-900 mb-4">Dados de Contato</h3>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div className="bg-slate-50 rounded-lg p-2 sm:p-3">
+          <h3 className="text-xs sm:text-sm font-semibold text-slate-900 mb-2 sm:mb-3">Dados de Contato</h3>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-2 sm:gap-3">
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Email</label>
+              <label className="block text-xs font-medium text-slate-600 mb-1">Email</label>
               <input
                 type="email"
-                className="input-field"
+                className="w-full px-3 py-1.5 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
                 value={formData.email}
                 onChange={(e) => handleChange('email', e.target.value)}
               />
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Telefone / WhatsApp</label>
+              <label className="block text-xs font-medium text-slate-600 mb-1">Telefone / WhatsApp</label>
               <input
                 type="tel"
-                className="input-field"
+                className="w-full px-3 py-1.5 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
                 value={formData.phone}
-                onChange={(e) => handleChange('phone', e.target.value)}
-                placeholder="(00) 00000-0000"
+                onChange={(e) => {
+                  const masked = applyPhoneMask(e.target.value);
+                  handleChange('phone', masked);
+                }}
+                placeholder="(00) 0 0000-0000"
+                maxLength={16}
               />
             </div>
           </div>
         </div>
 
         {/* Endereço */}
-        <div>
-          <h3 className="text-lg font-semibold text-gray-900 mb-4">Endereço</h3>
-          <div className="grid grid-cols-1 lg:grid-cols-6 gap-4">
+        <div className="bg-slate-50 rounded-lg p-2 sm:p-3">
+          <h3 className="text-xs sm:text-sm font-semibold text-slate-900 mb-2 sm:mb-3">Endereço</h3>
+          <div className="grid grid-cols-1 lg:grid-cols-6 gap-2 sm:gap-3">
             <div className="lg:col-span-2">
-              <label className="block text-sm font-medium text-gray-700 mb-1">CEP *</label>
+              <label className="block text-xs font-medium text-slate-600 mb-1">CEP *</label>
               <div className="relative">
                 <input
                   type="text"

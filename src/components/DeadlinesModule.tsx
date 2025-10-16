@@ -8,6 +8,7 @@ import {
   Eye,
   X,
   AlertCircle,
+  CheckCircle,
   CheckCircle2,
   Clock,
   XCircle,
@@ -250,6 +251,7 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
   const [clientSearchTerm, setClientSearchTerm] = useState('');
   const [showClientSuggestions, setShowClientSuggestions] = useState(false);
   const [members, setMembers] = useState<Profile[]>([]);
+  const [filtersExpanded, setFiltersExpanded] = useState(false);
 
   const filteredDeadlines = useMemo(() => {
     let filtered = deadlines;
@@ -337,6 +339,16 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
       .filter((d) => d.status === 'cumprido')
       .sort((a, b) => new Date(b.completed_at || b.updated_at).getTime() - new Date(a.completed_at || a.updated_at).getTime())
       .slice(0, 10);
+  }, [deadlines]);
+
+  const dueTodayDeadlines = useMemo(() => {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    return deadlines.filter((deadline) => {
+      const dueDate = new Date(deadline.due_date);
+      dueDate.setHours(0, 0, 0, 0);
+      return dueDate.getTime() === today.getTime() && deadline.status === 'pendente';
+    });
   }, [deadlines]);
 
   const criticalDeadlines = useMemo(() => {
@@ -1369,48 +1381,48 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
       )}
 
       {/* Mapa de Prazos */}
-      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
-        <div className="bg-white border border-slate-200 rounded-xl p-5 shadow-sm">
-          <div className="text-xs font-semibold uppercase text-slate-500">Total</div>
-          <div className="flex items-end justify-between mt-3">
+      <div className="grid grid-cols-2 md:grid-cols-2 xl:grid-cols-4 gap-2 sm:gap-4">
+        <div className="bg-white border border-slate-200 rounded-xl p-3 sm:p-5 shadow-sm">
+          <div className="text-[10px] sm:text-xs font-semibold uppercase text-slate-500">Total</div>
+          <div className="flex items-end justify-between mt-2 sm:mt-3">
             <div>
-              <p className="text-3xl font-bold text-slate-900">{deadlines.length}</p>
-              <p className="text-xs text-slate-500 mt-1">Todos os prazos cadastrados</p>
+              <p className="text-xl sm:text-3xl font-bold text-slate-900">{deadlines.length}</p>
+              <p className="text-[9px] sm:text-xs text-slate-500 mt-0.5 sm:mt-1 hidden sm:block">Todos os prazos</p>
             </div>
-            <Calendar className="w-8 h-8 text-slate-400" />
+            <Calendar className="w-5 h-5 sm:w-8 sm:h-8 text-slate-400" />
           </div>
         </div>
 
-        <div className="bg-white border border-slate-200 rounded-xl p-5 shadow-sm">
-          <div className="text-xs font-semibold uppercase text-amber-500">Vencendo em 7 dias</div>
-          <div className="flex items-end justify-between mt-3">
+        <div className="bg-white border border-slate-200 rounded-xl p-3 sm:p-5 shadow-sm">
+          <div className="text-[10px] sm:text-xs font-semibold uppercase text-slate-500">Pendentes</div>
+          <div className="flex items-end justify-between mt-2 sm:mt-3">
             <div>
-              <p className="text-3xl font-bold text-amber-600">{upcomingDeadlines.length}</p>
-              <p className="text-xs text-slate-500 mt-1">Pendentes próximos ao prazo</p>
+              <p className="text-xl sm:text-3xl font-bold text-amber-600">{pendingDeadlines.length}</p>
+              <p className="text-[9px] sm:text-xs text-slate-500 mt-0.5 sm:mt-1 hidden sm:block">Aguardando</p>
             </div>
-            <AlertTriangle className="w-8 h-8 text-amber-400" />
+            <Clock className="w-5 h-5 sm:w-8 sm:h-8 text-amber-400" />
           </div>
         </div>
 
-        <div className="bg-white border border-slate-200 rounded-xl p-5 shadow-sm">
-          <div className="text-xs font-semibold uppercase text-red-500">Vencidos</div>
-          <div className="flex items-end justify-between mt-3">
+        <div className="bg-white border border-slate-200 rounded-xl p-3 sm:p-5 shadow-sm">
+          <div className="text-[10px] sm:text-xs font-semibold uppercase text-slate-500">Hoje</div>
+          <div className="flex items-end justify-between mt-2 sm:mt-3">
             <div>
-              <p className="text-3xl font-bold text-red-600">{overdueDeadlines.length}</p>
-              <p className="text-xs text-slate-500 mt-1">Prazos com atraso</p>
+              <p className="text-xl sm:text-3xl font-bold text-red-600">{dueTodayDeadlines.length}</p>
+              <p className="text-[9px] sm:text-xs text-slate-500 mt-0.5 sm:mt-1 hidden sm:block">Atenção</p>
             </div>
-            <AlertCircle className="w-8 h-8 text-red-400" />
+            <AlertCircle className="w-5 h-5 sm:w-8 sm:h-8 text-red-400" />
           </div>
         </div>
 
-        <div className="bg-white border border-slate-200 rounded-xl p-5 shadow-sm">
-          <div className="text-xs font-semibold uppercase text-emerald-500">Cumpridos</div>
-          <div className="flex items-end justify-between mt-3">
+        <div className="bg-white border border-slate-200 rounded-xl p-3 sm:p-5 shadow-sm">
+          <div className="text-[10px] sm:text-xs font-semibold uppercase text-slate-500">Concluídos</div>
+          <div className="flex items-end justify-between mt-2 sm:mt-3">
             <div>
-              <p className="text-3xl font-bold text-emerald-600">{deadlines.filter((d) => d.status === 'cumprido').length}</p>
-              <p className="text-xs text-slate-500 mt-1">Prazos concluídos</p>
+              <p className="text-xl sm:text-3xl font-bold text-emerald-600">{completedDeadlines.length}</p>
+              <p className="text-[9px] sm:text-xs text-slate-500 mt-0.5 sm:mt-1 hidden sm:block">Finalizados</p>
             </div>
-            <CheckCircle2 className="w-8 h-8 text-emerald-400" />
+            <CheckCircle className="w-5 h-5 sm:w-8 sm:h-8 text-emerald-400" />
           </div>
         </div>
       </div>
@@ -1531,45 +1543,72 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
           })}
         </div>
 
-        {/* Filtros */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          <div className="relative">
-            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-slate-400 w-4 h-4" />
-            <input
-              type="text"
-              value={filterSearch}
-              onChange={(event) => setFilterSearch(event.target.value)}
-              className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
-              placeholder="Buscar por título ou descrição..."
-            />
+        {/* Botão para expandir/recolher filtros */}
+        <button
+          onClick={() => setFiltersExpanded(!filtersExpanded)}
+          className="flex items-center justify-between w-full px-4 py-3 bg-slate-50 hover:bg-slate-100 rounded-lg transition text-sm font-medium text-slate-700"
+        >
+          <span className="flex items-center gap-2">
+            <Search className="w-4 h-4" />
+            Filtros de busca
+            {(filterSearch || filterType || filterPriority) && (
+              <span className="px-2 py-0.5 bg-blue-500 text-white rounded-full text-xs">
+                Ativos
+              </span>
+            )}
+          </span>
+          {filtersExpanded ? (
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 15l7-7 7 7" />
+            </svg>
+          ) : (
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+            </svg>
+          )}
+        </button>
+
+        {/* Filtros (expansível) */}
+        {filtersExpanded && (
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mt-4">
+            <div className="relative">
+              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-slate-400 w-4 h-4" />
+              <input
+                type="text"
+                value={filterSearch}
+                onChange={(event) => setFilterSearch(event.target.value)}
+                className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+                placeholder="Buscar por título ou descrição..."
+              />
+            </div>
+
+            <select
+              value={filterType}
+              onChange={(event) => setFilterType(event.target.value as DeadlineType | '')}
+              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+            >
+              <option value="">Todos os tipos</option>
+              {TYPE_OPTIONS.map((type) => (
+                <option key={type.key} value={type.key}>
+                  {type.label}
+                </option>
+              ))}
+            </select>
+
+            <select
+              value={filterPriority}
+              onChange={(event) => setFilterPriority(event.target.value as DeadlinePriority | '')}
+              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+            >
+              <option value="">Todas as prioridades</option>
+              {PRIORITY_OPTIONS.map((priority) => (
+                <option key={priority.key} value={priority.key}>
+                  {priority.label}
+                </option>
+              ))}
+            </select>
           </div>
-
-          <select
-            value={filterType}
-            onChange={(event) => setFilterType(event.target.value as DeadlineType | '')}
-            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
-          >
-            <option value="">Todos os tipos</option>
-            {TYPE_OPTIONS.map((type) => (
-              <option key={type.key} value={type.key}>
-                {type.label}
-              </option>
-            ))}
-          </select>
-
-          <select
-            value={filterPriority}
-            onChange={(event) => setFilterPriority(event.target.value as DeadlinePriority | '')}
-            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
-          >
-            <option value="">Todas as prioridades</option>
-            {PRIORITY_OPTIONS.map((priority) => (
-              <option key={priority.key} value={priority.key}>
-                {priority.label}
-              </option>
-            ))}
-          </select>
-        </div>
+        )}
 
       </div>
 
@@ -1825,7 +1864,86 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
         </div>
       ) : (
         <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
-          <div className="overflow-x-auto">
+          {/* Mobile Cards */}
+          <div className="block lg:hidden divide-y divide-gray-200">
+            {paginatedDeadlines.map((deadline) => {
+              const priorityConfig = getPriorityConfig(deadline.priority);
+              const typeConfig = getTypeConfig(deadline.type);
+              const daysUntil = getDaysUntilDue(deadline.due_date);
+              const dueSoon = isDueSoon(deadline.due_date);
+              const clientItem = deadline.client_id ? clientMap.get(deadline.client_id) : null;
+              const responsibleItem = deadline.responsible_id ? memberMap.get(deadline.responsible_id) : null;
+
+              return (
+                <div key={deadline.id} className={`p-3 sm:p-4 ${dueSoon && deadline.status === 'pendente' ? 'bg-red-50/70' : ''}`}>
+                  <div className="flex items-start justify-between gap-2 mb-2">
+                    <div className="flex-1 min-w-0">
+                      <h3 className="text-sm font-semibold text-gray-900 truncate">{deadline.title}</h3>
+                      {deadline.description && (
+                        <p className="text-xs text-slate-500 mt-1 line-clamp-2">{deadline.description}</p>
+                      )}
+                    </div>
+                    <span className={`inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-semibold flex-shrink-0 ${getPriorityBadge(deadline.priority)}`}>
+                      {priorityConfig && <priorityConfig.icon className="w-3 h-3" />}
+                      {getPriorityLabel(deadline.priority)}
+                    </span>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-2 text-xs mb-3">
+                    <div>
+                      <span className="text-slate-500">Vencimento:</span>
+                      <p className="font-medium text-gray-900">{formatDate(deadline.due_date)}</p>
+                    </div>
+                    <div>
+                      <span className="text-slate-500">Dias:</span>
+                      {daysUntil >= 0 ? (
+                        <p className={`font-medium ${dueSoon ? 'text-red-600' : 'text-gray-900'}`}>
+                          {daysUntil} dia(s)
+                        </p>
+                      ) : (
+                        <p className="font-medium text-red-600">Vencido</p>
+                      )}
+                    </div>
+                    <div>
+                      <span className="text-slate-500">Cliente:</span>
+                      <p className="font-medium text-gray-900 truncate">{clientItem ? clientItem.full_name : 'N/A'}</p>
+                    </div>
+                    <div>
+                      <span className="text-slate-500">Tipo:</span>
+                      <p className="font-medium text-gray-900">{getTypeLabel(deadline.type)}</p>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={() => handleViewDeadline(deadline)}
+                      className="flex-1 inline-flex items-center justify-center gap-2 bg-blue-50 text-blue-700 px-3 py-2 rounded-lg text-xs font-medium"
+                    >
+                      <Eye className="w-3 h-3" />
+                      Ver
+                    </button>
+                    <button
+                      onClick={() => handleOpenModal(deadline)}
+                      className="flex-1 inline-flex items-center justify-center gap-2 bg-amber-50 text-amber-700 px-3 py-2 rounded-lg text-xs font-medium"
+                    >
+                      <Edit2 className="w-3 h-3" />
+                      Editar
+                    </button>
+                    <button
+                      onClick={() => handleDeleteDeadline(deadline.id)}
+                      className="px-3 py-2 bg-red-50 text-red-700 rounded-lg"
+                      title="Excluir"
+                    >
+                      <Trash2 className="w-3 h-3" />
+                    </button>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+
+          {/* Desktop Table */}
+          <div className="hidden lg:block overflow-x-auto">
             <table className="min-w-full divide-y divide-gray-200">
               <thead className="bg-slate-50">
                 <tr>
@@ -2013,9 +2131,15 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
               return (
                 <div
                   key={deadline.id}
-                  className="border border-emerald-100 bg-emerald-50/30 rounded-lg p-4 flex items-center justify-between hover:shadow-md transition"
+                  className="relative border border-emerald-100 bg-emerald-50/30 rounded-lg p-4 flex items-center justify-between hover:shadow-md transition overflow-hidden"
                 >
-                  <div className="flex-1">
+                  {/* Badge CONCLUÍDO */}
+                  <div className="absolute top-0 right-0 bg-emerald-600 text-white px-3 py-1 rounded-bl-lg text-xs font-bold flex items-center gap-1">
+                    <CheckCircle className="w-3 h-3" />
+                    CONCLUÍDO
+                  </div>
+                  
+                  <div className="flex-1 pr-24">
                     <div className="flex items-center gap-3 mb-2">
                       <h5 className="text-sm font-semibold text-slate-900">{deadline.title}</h5>
                       {priorityConfig && (

@@ -110,6 +110,25 @@ const QuickAction: React.FC<QuickActionProps> = ({ title, description, icon, onC
   </button>
 );
 
+// Cache keys e configuração
+const DASHBOARD_CACHE_KEY = 'crm-dashboard-cache';
+const CACHE_DURATION = 5 * 60 * 1000; // 5 minutos
+
+interface DashboardCache {
+  timestamp: number;
+  data: {
+    clients: Client[];
+    processes: Process[];
+    deadlines: Deadline[];
+    tasks: Task[];
+    calendarEvents: CalendarEvent[];
+    requirements: Requirement[];
+    financialStats: FinancialStats | null;
+    overdueInstallments: (Installment & { agreement?: Agreement })[];
+    djenIntimacoes: DjenComunicacaoLocal[];
+  };
+}
+
 const Dashboard: React.FC<DashboardProps> = ({ onNavigateToModule }) => {
   const [loading, setLoading] = useState(true);
   const [clients, setClients] = useState<Client[]>([]);
@@ -129,9 +148,41 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToModule }) => {
     loadDashboardData();
   }, []);
 
-  const loadDashboardData = async () => {
+  const loadDashboardData = async (forceRefresh = false) => {
     try {
       setLoading(true);
+
+      // Tentar carregar do cache primeiro
+      if (!forceRefresh) {
+        const cachedData = localStorage.getItem(DASHBOARD_CACHE_KEY);
+        if (cachedData) {
+          try {
+            const cache: DashboardCache = JSON.parse(cachedData);
+            const now = Date.now();
+            
+            // Verificar se o cache ainda é válido
+            if (now - cache.timestamp < CACHE_DURATION) {
+              console.log('📦 Carregando Dashboard do cache');
+              setClients(cache.data.clients);
+              setProcesses(cache.data.processes);
+              setDeadlines(cache.data.deadlines);
+              setTasks(cache.data.tasks);
+              setCalendarEvents(cache.data.calendarEvents);
+              setRequirements(cache.data.requirements);
+              setFinancialStats(cache.data.financialStats);
+              setOverdueInstallments(cache.data.overdueInstallments);
+              setDjenIntimacoes(cache.data.djenIntimacoes);
+              setLoading(false);
+              return;
+            }
+          } catch (e) {
+            console.warn('Cache inválido, recarregando dados');
+          }
+        }
+      }
+
+      // Carregar dados da API
+      console.log('🔄 Carregando Dashboard da API');
       const [
         clientsData,
         processesData,
@@ -153,6 +204,15 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToModule }) => {
         financialService.listAllInstallments(),
         djenLocalService.listComunicacoes({ lida: false }),
       ]);
+      
+      // Filtrar parcelas vencidas
+      const today = new Date().toISOString().split('T')[0];
+      const overdue = allInstallmentsData
+        .filter(inst => (inst.status === 'pendente' || inst.status === 'vencido') && inst.due_date < today)
+        .sort((a, b) => a.due_date.localeCompare(b.due_date))
+        .slice(0, 5);
+
+      // Atualizar estados
       setClients(clientsData);
       setProcesses(processesData);
       setDeadlines(deadlinesData);
@@ -161,14 +221,25 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToModule }) => {
       setRequirements(requirementsData);
       setFinancialStats(financialStatsData);
       setDjenIntimacoes(djenIntimacoesData);
-      
-      // Filtrar parcelas vencidas
-      const today = new Date().toISOString().split('T')[0];
-      const overdue = allInstallmentsData
-        .filter(inst => (inst.status === 'pendente' || inst.status === 'vencido') && inst.due_date < today)
-        .sort((a, b) => a.due_date.localeCompare(b.due_date))
-        .slice(0, 5);
       setOverdueInstallments(overdue);
+
+      // Salvar no cache
+      const cacheData: DashboardCache = {
+        timestamp: Date.now(),
+        data: {
+          clients: clientsData,
+          processes: processesData,
+          deadlines: deadlinesData,
+          tasks: tasksData,
+          calendarEvents: calendarEventsData,
+          requirements: requirementsData,
+          financialStats: financialStatsData,
+          overdueInstallments: overdue,
+          djenIntimacoes: djenIntimacoesData,
+        },
+      };
+      localStorage.setItem(DASHBOARD_CACHE_KEY, JSON.stringify(cacheData));
+      console.log('💾 Dashboard salvo no cache');
     } catch (error) {
       console.error('Erro ao carregar dados do dashboard:', error);
     } finally {

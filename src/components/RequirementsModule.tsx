@@ -1341,8 +1341,8 @@ const RequirementsModule: React.FC<RequirementsModuleProps> = ({ forceCreate, en
           </button>
         </div>
 
-        <form onSubmit={handleSubmit} className="p-6 space-y-5">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <form onSubmit={handleSubmit} className="p-3 sm:p-6 space-y-3 sm:space-y-5">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3 sm:gap-4">
             <div>
               <label className="text-sm font-medium text-slate-700">Protocolo do INSS *</label>
               <input
@@ -1528,7 +1528,7 @@ const RequirementsModule: React.FC<RequirementsModuleProps> = ({ forceCreate, en
             />
           </div>
 
-          <div className="flex justify-end gap-3 pt-2">
+          <div className="flex flex-col sm:flex-row justify-end gap-2 sm:gap-3 pt-2">
             <button
               type="button"
               onClick={handleCloseModal}
@@ -1540,7 +1540,7 @@ const RequirementsModule: React.FC<RequirementsModuleProps> = ({ forceCreate, en
             <button
               type="submit"
               disabled={saving}
-              className="px-4 py-2.5 rounded-lg text-sm font-semibold text-white bg-blue-600 hover:bg-blue-700 transition flex items-center gap-2"
+              className="px-3 sm:px-4 py-2 sm:py-2.5 rounded-lg text-xs sm:text-sm font-semibold text-white bg-blue-600 hover:bg-blue-700 transition flex items-center justify-center gap-2 w-full sm:w-auto"
             >
               {saving && <Loader2 className="w-4 h-4 animate-spin" />}
               {selectedRequirement ? 'Salvar alterações' : 'Criar requerimento'}
@@ -1698,7 +1698,7 @@ const RequirementsModule: React.FC<RequirementsModuleProps> = ({ forceCreate, en
             </button>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3 sm:gap-6">
             <div>
               <label className="text-xs font-semibold text-slate-500 uppercase">Protocolo</label>
               <p className="text-base text-slate-900 mt-1 font-mono">{selectedRequirementForView.protocol}</p>
@@ -1784,17 +1784,17 @@ const RequirementsModule: React.FC<RequirementsModuleProps> = ({ forceCreate, en
             </div>
           </div>
 
-          <div className="flex flex-wrap gap-3 mt-8 pt-6 border-t border-gray-200">
+          <div className="flex flex-col sm:flex-row sm:flex-wrap gap-2 sm:gap-3 mt-4 sm:mt-8 pt-4 sm:pt-6 border-t border-gray-200">
             <button
               onClick={() => handleOpenModal(selectedRequirementForView)}
-              className="inline-flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white font-medium px-4 py-2.5 rounded-lg transition"
+              className="inline-flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-700 text-white font-medium px-3 sm:px-4 py-2 sm:py-2.5 rounded-lg transition text-xs sm:text-sm w-full sm:w-auto"
             >
               <Edit2 className="w-4 h-4" />
               Editar Requerimento
             </button>
             <button
               onClick={() => handleWhatsApp(selectedRequirementForView.phone)}
-              className="inline-flex items-center gap-2 bg-green-600 hover:bg-green-700 text-white font-medium px-4 py-2.5 rounded-lg transition"
+              className="inline-flex items-center justify-center gap-2 bg-green-600 hover:bg-green-700 text-white font-medium px-3 sm:px-4 py-2 sm:py-2.5 rounded-lg transition text-xs sm:text-sm w-full sm:w-auto"
             >
               <MessageSquare className="w-4 h-4" />
               WhatsApp
@@ -1804,7 +1804,7 @@ const RequirementsModule: React.FC<RequirementsModuleProps> = ({ forceCreate, en
                 handleDeleteRequirement(selectedRequirementForView.id);
                 handleBackToList();
               }}
-              className="inline-flex items-center gap-2 bg-red-50 hover:bg-red-100 text-red-600 font-medium px-4 py-2.5 rounded-lg transition"
+              className="inline-flex items-center justify-center gap-2 bg-red-50 hover:bg-red-100 text-red-600 font-medium px-3 sm:px-4 py-2 sm:py-2.5 rounded-lg transition text-xs sm:text-sm w-full sm:w-auto"
             >
               <Trash2 className="w-4 h-4" />
               Excluir Requerimento
@@ -1859,18 +1859,18 @@ const RequirementsModule: React.FC<RequirementsModuleProps> = ({ forceCreate, en
         </div>
       )}
 
-      <div className="bg-white border border-gray-200 rounded-xl p-6">
-        <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 mb-6">
+      <div className="bg-white border border-gray-200 rounded-xl p-3 sm:p-6">
+        <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3 sm:gap-4 mb-4 sm:mb-6">
           <div>
-            <h3 className="text-xl font-semibold text-slate-900">Sistema de Requerimentos</h3>
-            <p className="text-sm text-slate-600 mt-1">Gerencie requerimentos administrativos do INSS</p>
+            <h3 className="text-lg sm:text-xl font-semibold text-slate-900">Sistema de Requerimentos</h3>
+            <p className="text-xs sm:text-sm text-slate-600 mt-1 hidden sm:block">Gerencie requerimentos administrativos do INSS</p>
           </div>
 
-          <div className="flex gap-3">
+          <div className="flex flex-col sm:flex-row gap-2 sm:gap-3 w-full sm:w-auto">
             <button
               onClick={handleExportExcel}
               disabled={exportingExcel}
-              className="inline-flex items-center gap-2 bg-green-600 hover:bg-green-700 disabled:bg-green-400 text-white font-medium px-4 py-2.5 rounded-lg shadow-sm transition disabled:cursor-not-allowed"
+              className="inline-flex items-center justify-center gap-2 bg-green-600 hover:bg-green-700 disabled:bg-green-400 text-white font-medium px-3 sm:px-4 py-2 sm:py-2.5 rounded-lg shadow-sm transition disabled:cursor-not-allowed text-xs sm:text-sm w-full sm:w-auto"
             >
               {exportingExcel ? <Loader2 className="w-4 h-4 animate-spin" /> : <FileSpreadsheet className="w-4 h-4" />}
               {exportingExcel ? 'Gerando Excel...' : 'Exportar Excel'}

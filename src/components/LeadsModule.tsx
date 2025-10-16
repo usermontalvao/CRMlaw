@@ -249,12 +249,12 @@ const LeadsModule: React.FC<LeadsModuleProps> = ({ onConvertLead }) => {
       </div>
 
       {/* Kanban Board */}
-      <div className="flex gap-4 overflow-x-auto pb-4">
+      <div className="flex flex-col md:flex-row gap-3 md:gap-4 md:overflow-x-auto pb-4">
         {STAGES.map((stage) => {
           const stageLeads = getLeadsByStage(stage.key);
           const isActiveDrop = dragOverStage === stage.key;
           return (
-            <div key={stage.key} className="flex-shrink-0 w-80">
+            <div key={stage.key} className="flex-shrink-0 w-full md:w-80">
               <div
                 className={`bg-white rounded-2xl border ${
                   isActiveDrop ? 'border-amber-400 shadow-lg shadow-amber-200/40' : 'border-gray-200 shadow-sm'
@@ -262,22 +262,22 @@ const LeadsModule: React.FC<LeadsModuleProps> = ({ onConvertLead }) => {
                 onDragOver={(event) => handleDragOver(event, stage.key)}
                 onDrop={(event) => handleDrop(event, stage.key)}
               >
-                <div className={`px-5 py-4 border-b border-white/10 bg-gradient-to-r ${stage.gradient}`}>
+                <div className={`px-3 md:px-5 py-3 md:py-4 border-b border-white/10 bg-gradient-to-r ${stage.gradient}`}>
                   <div className="flex items-center justify-between text-white mb-2">
                     <div className="flex items-center gap-2">
                       <div className="bg-white/20 backdrop-blur-sm p-1.5 rounded-lg">
                         {stage.icon}
                       </div>
-                      <h4 className="font-semibold text-sm tracking-wide uppercase">{stage.label}</h4>
+                      <h4 className="font-semibold text-xs md:text-sm tracking-wide uppercase">{stage.label}</h4>
                     </div>
-                    <span className="text-xs font-bold px-2.5 py-1 bg-black/30 backdrop-blur-sm rounded-full">
+                    <span className="text-xs font-bold px-2 md:px-2.5 py-0.5 md:py-1 bg-black/30 backdrop-blur-sm rounded-full">
                       {stageLeads.length}
                     </span>
                   </div>
-                  <p className="text-[11px] text-white/80 leading-relaxed">{stage.description}</p>
+                  <p className="text-[10px] md:text-[11px] text-white/80 leading-relaxed hidden md:block">{stage.description}</p>
                 </div>
 
-                <div className="p-4 space-y-3 min-h-[200px] max-h-[600px] overflow-y-auto bg-gradient-to-b from-slate-50/80 to-white">
+                <div className="p-3 md:p-4 space-y-2 md:space-y-3 min-h-[150px] md:min-h-[200px] max-h-[400px] md:max-h-[600px] overflow-y-auto bg-gradient-to-b from-slate-50/80 to-white">
                   {stageLeads.length === 0 ? (
                     <div className="flex flex-col items-center justify-center py-12 text-center">
                       <div className="bg-slate-100 p-3 rounded-full mb-3">
@@ -294,30 +294,30 @@ const LeadsModule: React.FC<LeadsModuleProps> = ({ onConvertLead }) => {
                         onDragStart={(event) => handleDragStart(event, lead)}
                         onDragEnd={handleDragEnd}
                         onClick={() => handleOpenLead(lead)}
-                        className={`relative bg-white border border-slate-200 rounded-xl p-4 hover:shadow-xl hover:border-amber-300 transition-all duration-200 cursor-pointer group ${
+                        className={`relative bg-white border border-slate-200 rounded-xl p-3 md:p-4 hover:shadow-xl hover:border-amber-300 transition-all duration-200 cursor-pointer group ${
                           draggingLeadId === lead.id ? 'opacity-50 scale-95 shadow-2xl shadow-amber-300/50 border-amber-400' : ''
                         }`}
                       >
-                        <div className="flex items-start justify-between mb-3">
-                          <div className="flex-1">
-                            <span className="text-[10px] uppercase tracking-[0.15em] text-slate-400 font-semibold block mb-1">Lead</span>
-                            <h5 className="font-bold text-sm text-slate-900 leading-tight">{lead.name}</h5>
+                        <div className="flex items-start justify-between mb-2 md:mb-3">
+                          <div className="flex-1 min-w-0">
+                            <span className="text-[9px] md:text-[10px] uppercase tracking-[0.15em] text-slate-400 font-semibold block mb-1">Lead</span>
+                            <h5 className="font-bold text-xs md:text-sm text-slate-900 leading-tight truncate">{lead.name}</h5>
                           </div>
                           <button
                             onClick={(e) => {
                               e.stopPropagation();
                               handleDeleteLead(lead.id);
                             }}
-                            className="text-slate-300 hover:text-red-500 hover:bg-red-50 p-1.5 rounded-lg transition-all"
+                            className="text-slate-300 hover:text-red-500 hover:bg-red-50 p-1 md:p-1.5 rounded-lg transition-all flex-shrink-0"
                             title="Excluir lead"
                           >
-                            <Trash2 className="w-4 h-4" />
+                            <Trash2 className="w-3 h-3 md:w-4 md:h-4" />
                           </button>
                         </div>
 
                         {lead.email && (
-                          <div className="flex items-center gap-2 text-xs text-slate-600 mb-2 bg-slate-50 border border-slate-100 px-2.5 py-1.5 rounded-lg">
-                            <Mail className="w-3.5 h-3.5 text-slate-400" />
+                          <div className="flex items-center gap-1.5 md:gap-2 text-[10px] md:text-xs text-slate-600 mb-2 bg-slate-50 border border-slate-100 px-2 md:px-2.5 py-1 md:py-1.5 rounded-lg">
+                            <Mail className="w-3 h-3 md:w-3.5 md:h-3.5 text-slate-400 flex-shrink-0" />
                             <span className="line-clamp-1 font-medium">{lead.email}</span>
                           </div>
                         )}

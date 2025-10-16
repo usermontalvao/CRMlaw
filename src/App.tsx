@@ -482,7 +482,7 @@ function App() {
       {/* Novo Sidebar - Estilo Compacto Vertical */}
       {isMobileNavOpen && <div className="fixed inset-0 bg-black/40 z-40 md:hidden" onClick={() => setIsMobileNavOpen(false)} />}
       <aside
-        className={`fixed inset-y-0 left-0 bg-slate-900 text-white transition-transform duration-300 z-50 flex flex-col w-64 md:w-20 ${
+        className={`fixed inset-y-0 left-0 bg-slate-900 text-white transition-transform duration-300 z-50 flex flex-col w-20 ${
           isMobileNavOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0'
         }`}
       >

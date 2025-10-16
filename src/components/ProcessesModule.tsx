@@ -1181,8 +1181,8 @@ const ProcessesModule: React.FC<ProcessesModuleProps> = ({ forceCreate, entityId
   const processModal =
     isModalOpen && (
       <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center z-50 p-2 sm:p-4 overflow-y-auto">
-        <div className="bg-white rounded-2xl shadow-2xl max-w-3xl w-full my-4 sm:my-8 max-h-[95vh] sm:max-h-[90vh] overflow-y-auto">
-          <div className="px-4 sm:px-6 py-3 sm:py-4 border-b border-gray-200 flex items-center justify-between">
+        <div className="bg-white rounded-2xl shadow-2xl max-w-full sm:max-w-3xl w-full my-4 sm:my-8 max-h-[95vh] sm:max-h-[90vh] overflow-y-auto">
+          <div className="px-3 sm:px-6 py-2 sm:py-4 border-b border-gray-200 flex items-center justify-between">
             <div>
               <h3 className="text-base sm:text-lg font-semibold text-slate-900">
                 {selectedProcess ? 'Editar Processo' : 'Novo Processo'}
@@ -1200,8 +1200,8 @@ const ProcessesModule: React.FC<ProcessesModuleProps> = ({ forceCreate, entityId
             </button>
           </div>
 
-          <form onSubmit={handleSubmit} className="p-4 sm:p-6 space-y-4 sm:space-y-5">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <form onSubmit={handleSubmit} className="p-3 sm:p-6 space-y-3 sm:space-y-5">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3 sm:gap-4">
               <div className="space-y-2">
                 <label className="text-sm font-medium text-slate-700">Cliente *</label>
                 <div className="relative">
@@ -1280,7 +1280,7 @@ const ProcessesModule: React.FC<ProcessesModuleProps> = ({ forceCreate, entityId
                     type="button"
                     onClick={handleSearchDjen}
                     disabled={searchingDjen || formData.process_code.replace(/\D/g, '').length < 20}
-                    className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:bg-gray-300 disabled:cursor-not-allowed flex items-center justify-center gap-2 whitespace-nowrap sm:w-auto w-full"
+                    className="px-3 py-1.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:bg-gray-300 disabled:cursor-not-allowed flex items-center justify-center gap-2 whitespace-nowrap sm:w-auto w-full text-xs sm:text-sm"
                   >
                     {searchingDjen ? (
                       <>
@@ -1917,25 +1917,25 @@ const ProcessesModule: React.FC<ProcessesModuleProps> = ({ forceCreate, entityId
             {filteredProcesses.map((process) => {
               const client = clientMap.get(process.client_id);
               return (
-                <div key={process.id} className="p-4 hover:bg-gray-50 transition-colors">
-                  <div className="flex items-start gap-3 mb-3">
-                    <div className={`flex-shrink-0 h-10 w-10 rounded-full flex items-center justify-center ${
+                <div key={process.id} className="p-3 sm:p-4 hover:bg-gray-50 transition-colors">
+                  <div className="flex items-start gap-2 sm:gap-3 mb-2 sm:mb-3">
+                    <div className={`flex-shrink-0 h-8 w-8 sm:h-10 sm:w-10 rounded-full flex items-center justify-center ${
                       client?.client_type === 'pessoa_fisica'
                         ? 'bg-blue-100 text-blue-600'
                         : 'bg-purple-100 text-purple-600'
                     }`}>
                       {client?.client_type === 'pessoa_fisica' ? (
-                        <User className="w-5 h-5" />
+                        <User className="w-4 h-4 sm:w-5 sm:h-5" />
                       ) : (
-                        <Building2 className="w-5 h-5" />
+                        <Building2 className="w-4 h-4 sm:w-5 sm:h-5" />
                       )}
                     </div>
                     <div className="flex-1 min-w-0">
-                      <div className="text-sm font-medium text-gray-900 mb-1">
+                      <div className="text-xs sm:text-sm font-medium text-gray-900 mb-1 truncate">
                         {client?.full_name || 'Cliente removido'}
                       </div>
-                      <div className="flex items-center gap-2 mb-1">
-                        <div className="text-xs font-mono text-gray-700">{process.process_code}</div>
+                      <div className="flex items-center gap-2 mb-1 flex-wrap">
+                        <div className="text-[10px] sm:text-xs font-mono text-gray-700 break-all">{process.process_code}</div>
                         {process.djen_synced === false || (process.djen_synced && !process.djen_has_data) ? (
                           <span className="px-1.5 py-0.5 text-xs font-medium bg-yellow-100 text-yellow-800 rounded" title="Aguardando dados do DJEN">
                             ⏳

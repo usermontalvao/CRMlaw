@@ -347,161 +347,132 @@ const ClientsModule: React.FC<ClientsModuleProps> = ({
   const hasActiveFilters = Boolean(filters.status || filters.client_type || filters.search) || showIncompleteOnly;
 
   return (
-    <div className="space-y-6">
-      {/* Header Moderno com Gradiente */}
+    <div className="space-y-4">
+      {/* Header Profissional e Limpo */}
       {viewMode === 'list' && (
-        <div className="relative bg-gradient-to-br from-blue-900 via-blue-800 to-blue-900 rounded-2xl shadow-2xl overflow-hidden">
-          {/* Padrão de fundo decorativo */}
-          <div className="absolute inset-0 bg-[url('data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNjAiIGhlaWdodD0iNjAiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+PGRlZnM+PHBhdHRlcm4gaWQ9ImdyaWQiIHdpZHRoPSI2MCIgaGVpZ2h0PSI2MCIgcGF0dGVyblVuaXRzPSJ1c2VyU3BhY2VPblVzZSI+PHBhdGggZD0iTSAxMCAwIEwgMCAwIDAgMTAiIGZpbGw9Im5vbmUiIHN0cm9rZT0icmdiYSgyNTUsMjU1LDI1NSwwLjAzKSIgc3Ryb2tlLXdpZHRoPSIxIi8+PC9wYXR0ZXJuPjwvZGVmcz48cmVjdCB3aWR0aD0iMTAwJSIgaGVpZ2h0PSIxMDAlIiBmaWxsPSJ1cmwoI2dyaWQpIi8+PC9zdmc+')] opacity-40"></div>
-          
-          {/* Efeito de brilho */}
-          <div className="absolute top-0 right-0 w-96 h-96 bg-cyan-500/10 rounded-full blur-3xl"></div>
-          <div className="absolute bottom-0 left-0 w-96 h-96 bg-blue-500/10 rounded-full blur-3xl"></div>
-          
-          <div className="relative p-5">
-            {/* Título e Ações */}
-            <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4 mb-5">
-              <div className="flex items-center gap-3">
-                <div className="flex-shrink-0 w-11 h-11 bg-gradient-to-br from-cyan-400 to-blue-600 rounded-lg flex items-center justify-center shadow-lg">
-                  <Users className="w-6 h-6 text-white" />
-                </div>
-                <div>
-                  <h3 className="text-2xl font-bold text-white">Gestão de Clientes</h3>
-                  <p className="text-xs text-blue-200">
-                    Gerencie todos os seus clientes
-                  </p>
-                </div>
+        <>
+          {/* Header Compacto */}
+          <div className="bg-white border border-slate-200 rounded-lg shadow-sm p-4">
+            <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
+              <div>
+                <h1 className="text-2xl font-semibold text-slate-900 flex items-center gap-2">
+                  <Users className="w-6 h-6 text-blue-600" />
+                  Gestão de Clientes
+                </h1>
+                <p className="text-sm text-slate-600 mt-1">
+                  Cadastro e gerenciamento de clientes
+                </p>
               </div>
-
               <button
                 onClick={handleNewClient}
-                className="inline-flex items-center justify-center gap-2 bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-white font-bold px-6 py-2.5 rounded-lg shadow-lg hover:shadow-xl transition-all duration-300 transform hover:scale-105"
+                className="inline-flex items-center gap-1.5 bg-blue-600 hover:bg-blue-700 transition-colors px-3 py-1.5 rounded-lg text-xs font-medium text-white"
               >
                 <Plus className="w-4 h-4" />
-                <span className="text-sm">Novo Cliente</span>
+                Novo Cliente
               </button>
             </div>
+          </div>
 
-            {/* Cards de Estatísticas */}
-            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2.5 mb-4">
-              <div className="bg-white/95 backdrop-blur-sm rounded-lg p-3 shadow-md border border-white/20 hover:shadow-lg transition-shadow">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-slate-600 text-[10px] font-bold uppercase tracking-wide">Total</p>
-                    <p className="text-2xl font-black text-slate-900 mt-0.5">{stats.total}</p>
-                  </div>
-                  <div className="w-9 h-9 bg-gradient-to-br from-slate-100 to-slate-200 rounded-lg flex items-center justify-center">
-                    <User className="w-4 h-4 text-slate-700" />
-                  </div>
-                </div>
+          {/* Stats Minimalistas */}
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
+            <div className="bg-white border border-slate-200 rounded-lg p-3 hover:shadow-sm transition">
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-xs font-medium text-slate-600 uppercase">Total</span>
+                <User className="w-4 h-4 text-slate-600" />
               </div>
-
-              <div className="bg-white/95 backdrop-blur-sm rounded-lg p-3 shadow-md border border-white/20 hover:shadow-lg transition-shadow">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-emerald-600 text-[10px] font-bold uppercase tracking-wide">Ativos</p>
-                    <p className="text-2xl font-black text-emerald-600 mt-0.5">{stats.active}</p>
-                  </div>
-                  <div className="w-9 h-9 bg-gradient-to-br from-emerald-100 to-emerald-200 rounded-lg flex items-center justify-center">
-                    <UserPlus className="w-4 h-4 text-emerald-700" />
-                  </div>
-                </div>
-              </div>
-
-              <div className="bg-white/95 backdrop-blur-sm rounded-lg p-3 shadow-md border border-white/20 hover:shadow-lg transition-shadow">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-blue-600 text-[10px] font-bold uppercase tracking-wide">P. Física</p>
-                    <p className="text-2xl font-black text-blue-600 mt-0.5">{stats.pessoaFisica}</p>
-                  </div>
-                  <div className="w-9 h-9 bg-gradient-to-br from-blue-100 to-blue-200 rounded-lg flex items-center justify-center">
-                    <User className="w-4 h-4 text-blue-700" />
-                  </div>
-                </div>
-              </div>
-
-              <div className="bg-white/95 backdrop-blur-sm rounded-lg p-3 shadow-md border border-white/20 hover:shadow-lg transition-shadow">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-purple-600 text-[10px] font-bold uppercase tracking-wide">P. Jurídica</p>
-                    <p className="text-2xl font-black text-purple-600 mt-0.5">{stats.pessoaJuridica}</p>
-                  </div>
-                  <div className="w-9 h-9 bg-gradient-to-br from-purple-100 to-purple-200 rounded-lg flex items-center justify-center">
-                    <Building2 className="w-4 h-4 text-purple-700" />
-                  </div>
-                </div>
-              </div>
-
-              <div className="bg-white/95 backdrop-blur-sm rounded-lg p-3 shadow-md border border-white/20 hover:shadow-lg transition-shadow">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-amber-600 text-[10px] font-bold uppercase tracking-wide">Incompletos</p>
-                    <p className="text-2xl font-black text-amber-600 mt-0.5">{stats.incomplete}</p>
-                  </div>
-                  <div className="w-9 h-9 bg-gradient-to-br from-amber-100 to-amber-200 rounded-lg flex items-center justify-center">
-                    <AlertTriangle className="w-4 h-4 text-amber-700" />
-                  </div>
-                </div>
-              </div>
+              <p className="text-xl font-semibold text-slate-900">{stats.total}</p>
             </div>
 
-            {/* Barra de Filtros e Busca */}
-            <div className="bg-white/95 backdrop-blur-sm rounded-lg p-3.5 shadow-lg border border-white/20">
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-12 gap-3">
-                {/* Busca */}
-                <div className="sm:col-span-2 lg:col-span-4">
-                  <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-700 mb-1.5">
-                    🔍 Buscar Cliente
-                  </label>
-                  <div className="relative group">
-                    <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-slate-400 group-focus-within:text-blue-500 w-4 h-4 transition-colors" />
-                    <input
-                      type="text"
-                      value={searchTerm}
-                      onChange={(e) => setSearchTerm(e.target.value)}
-                      onKeyPress={(e) => e.key === 'Enter' && handleSearch()}
-                      className="w-full pl-10 pr-3 py-2 rounded-lg border-2 border-slate-200 bg-white text-sm text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all shadow-sm hover:shadow-md"
-                      placeholder="Nome, CPF, e-mail..."
-                    />
-                  </div>
-                </div>
+            <div className="bg-white border border-slate-200 rounded-lg p-3 hover:shadow-sm transition">
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-xs font-medium text-emerald-600 uppercase">Ativos</span>
+                <UserPlus className="w-4 h-4 text-emerald-600" />
+              </div>
+              <p className="text-xl font-semibold text-emerald-600">{stats.active}</p>
+            </div>
 
-                {/* Filtro de Status */}
-                <div className="lg:col-span-2">
-                  <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-700 mb-1.5">
-                    📊 Status
-                  </label>
-                  <select
-                    value={filters.status || ''}
-                    onChange={(e) => setFilters({ ...filters, status: e.target.value as any })}
-                    className="w-full px-3 py-2 rounded-lg border-2 border-slate-200 bg-white text-sm text-slate-800 font-medium focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all shadow-sm hover:shadow-md cursor-pointer"
-                  >
-                    <option value="">Todos</option>
-                    <option value="ativo">✅ Ativos</option>
-                    <option value="inativo">❌ Inativos</option>
-                    <option value="suspenso">⏸️ Suspensos</option>
-                  </select>
-                </div>
+            <div className="bg-white border border-slate-200 rounded-lg p-3 hover:shadow-sm transition">
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-xs font-medium text-blue-600 uppercase">P. Física</span>
+                <User className="w-4 h-4 text-blue-600" />
+              </div>
+              <p className="text-xl font-semibold text-blue-600">{stats.pessoaFisica}</p>
+            </div>
 
-                {/* Filtro de Tipo */}
-                <div className="lg:col-span-2">
-                  <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-700 mb-1.5">
-                    👤 Tipo
-                  </label>
-                  <select
-                    value={filters.client_type || ''}
-                    onChange={(e) => setFilters({ ...filters, client_type: e.target.value as any })}
-                    className="w-full px-3 py-2 rounded-lg border-2 border-slate-200 bg-white text-sm text-slate-800 font-medium focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all shadow-sm hover:shadow-md cursor-pointer"
-                  >
-                    <option value="">Todos</option>
-                    <option value="pessoa_fisica">👤 Pessoa Física</option>
-                    <option value="pessoa_juridica">🏢 Pessoa Jurídica</option>
+            <div className="bg-white border border-slate-200 rounded-lg p-3 hover:shadow-sm transition">
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-xs font-medium text-purple-600 uppercase">P. Jurídica</span>
+                <Building2 className="w-4 h-4 text-purple-600" />
+              </div>
+              <p className="text-xl font-semibold text-purple-600">{stats.pessoaJuridica}</p>
+            </div>
+
+            <div className="bg-white border border-slate-200 rounded-lg p-3 hover:shadow-sm transition">
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-xs font-medium text-amber-600 uppercase">Incompletos</span>
+                <AlertTriangle className="w-4 h-4 text-amber-600" />
+              </div>
+              <p className="text-xl font-semibold text-amber-600">{stats.incomplete}</p>
+            </div>
+          </div>
+
+          {/* Filtros e Busca Compactos */}
+          <div className="bg-white border border-slate-200 rounded-lg p-3 shadow-sm">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-12 gap-3">
+              {/* Busca */}
+              <div className="sm:col-span-2 lg:col-span-4">
+                <label className="block text-xs font-medium text-slate-600 mb-1.5">
+                  Buscar Cliente
+                </label>
+                <div className="relative">
+                  <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-slate-400 w-4 h-4" />
+                  <input
+                    type="text"
+                    value={searchTerm}
+                    onChange={(e) => setSearchTerm(e.target.value)}
+                    onKeyPress={(e) => e.key === 'Enter' && handleSearch()}
+                    className="w-full pl-9 pr-3 py-1.5 rounded-lg border border-slate-200 bg-white text-sm text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition"
+                    placeholder="Nome, CPF, e-mail..."
+                  />
+                </div>
+              </div>
+
+              {/* Filtro de Status */}
+              <div className="lg:col-span-2">
+                <label className="block text-xs font-medium text-slate-600 mb-1.5">
+                  Status
+                </label>
+                <select
+                  value={filters.status || ''}
+                  onChange={(e) => setFilters({ ...filters, status: e.target.value as any })}
+                  className="w-full px-3 py-1.5 rounded-lg border border-slate-200 bg-white text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition"
+                >
+                  <option value="">Todos</option>
+                  <option value="ativo">Ativos</option>
+                  <option value="inativo">Inativos</option>
+                  <option value="suspenso">Suspensos</option>
+                </select>
+              </div>
+
+              {/* Filtro de Tipo */}
+              <div className="lg:col-span-2">
+                <label className="block text-xs font-medium text-slate-600 mb-1.5">
+                  Tipo
+                </label>
+                <select
+                  value={filters.client_type || ''}
+                  onChange={(e) => setFilters({ ...filters, client_type: e.target.value as any })}
+                  className="w-full px-3 py-1.5 rounded-lg border border-slate-200 bg-white text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition"
+                >
+                  <option value="">Todos</option>
+                  <option value="pessoa_fisica">Pessoa Física</option>
+                  <option value="pessoa_juridica">Pessoa Jurídica</option>
                   </select>
                 </div>
 
                 {/* Ações */}
                 <div className="sm:col-span-2 lg:col-span-4 flex items-end gap-2">
-                  <label className="flex-1 inline-flex items-center justify-center gap-1.5 text-sm font-bold text-slate-700 border-2 border-slate-300 hover:border-slate-400 rounded-lg px-3 py-2 bg-white cursor-pointer transition-all shadow-sm hover:shadow-md">
+                  <label className="flex-1 inline-flex items-center gap-1.5 text-xs font-medium text-slate-700 border border-slate-200 hover:bg-slate-50 rounded-lg px-3 py-1.5 bg-white cursor-pointer transition">
                     <input
                       type="checkbox"
                       className="rounded border-slate-300 text-amber-600 focus:ring-amber-500 w-3.5 h-3.5"
@@ -532,8 +503,7 @@ const ClientsModule: React.FC<ClientsModuleProps> = ({
                 </div>
               </div>
             </div>
-          </div>
-        </div>
+          </>
       )}
 
       {viewMode === 'list' && (missingFieldsMap.size > 0 || outdatedSet.size > 0) && (
@@ -583,61 +553,80 @@ const ClientsModule: React.FC<ClientsModuleProps> = ({
         />
       )}
 
+      {/* Modal de Formulário */}
       {viewMode === 'form' && (
-        <ClientForm
-          client={selectedClient}
-          prefill={!selectedClient ? prefillData : null}
-          onBack={() => handleBackToList(false)}
-          onSave={(savedClient) => {
-            setSelectedClient(savedClient);
-            setViewMode('details');
-            loadClientRelations(savedClient.id);
-            if (onClientSaved) {
-              onClientSaved();
-            }
-          }}
-        />
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-4">
+          <div className="absolute inset-0 bg-slate-900/50 backdrop-blur-sm" onClick={() => handleBackToList(false)} />
+          <div className="relative bg-white rounded-lg shadow-2xl w-full max-w-full sm:max-w-4xl max-h-[95vh] sm:max-h-[90vh] overflow-hidden">
+            <ClientForm
+              client={selectedClient}
+              prefill={!selectedClient ? prefillData : null}
+              onBack={() => handleBackToList(false)}
+              onSave={(savedClient) => {
+                setSelectedClient(savedClient);
+                setViewMode('details');
+                loadClientRelations(savedClient.id);
+                if (onClientSaved) {
+                  onClientSaved();
+                }
+              }}
+            />
+          </div>
+        </div>
       )}
 
       {viewMode === 'details' && selectedClient && (
-        <ClientDetails
-          client={selectedClient}
-          processes={clientProcesses}
-          requirements={clientRequirements}
-          relationsLoading={relationsLoading}
-          onBack={handleBackToList}
-          onEdit={() => handleEditClient(selectedClient)}
-          onCreateProcess={onNavigateToModule ? () => {
-            onNavigateToModule('processos', {
-              mode: 'create',
-              prefill: {
-                client_id: selectedClient.id,
-                client_name: selectedClient.full_name,
-              },
-            });
-          } : undefined}
-          onCreateRequirement={onNavigateToModule ? () => {
-            onNavigateToModule('requerimentos', {
-              mode: 'create',
-              prefill: {
-                client_id: selectedClient.id,
-                beneficiary: selectedClient.full_name,
-                cpf: selectedClient.cpf_cnpj,
-              },
-            });
-          } : undefined}
-          onCreateDeadline={onNavigateToModule ? () => {
-            onNavigateToModule('prazos', {
-              mode: 'create',
-              prefill: {
-                client_id: selectedClient.id,
-                client_name: selectedClient.full_name,
-              },
-            });
-          } : undefined}
-          missingFields={missingFieldsMap.get(selectedClient.id) || getMissingFields(selectedClient)}
-          isOutdated={outdatedSet.has(selectedClient.id)}
-        />
+        <div className="fixed inset-0 z-40 flex items-center justify-center p-2 sm:p-4">
+          <div className="absolute inset-0 bg-slate-900/50 backdrop-blur-sm" onClick={() => handleBackToList(false)} />
+          <div className="relative bg-white rounded-lg shadow-2xl w-full max-w-full sm:max-w-5xl max-h-[95vh] sm:max-h-[90vh] overflow-hidden">
+            <div className="max-h-[95vh] sm:max-h-[90vh] overflow-y-auto">
+              <ClientDetails
+                client={selectedClient}
+                processes={clientProcesses}
+                requirements={clientRequirements}
+                relationsLoading={relationsLoading}
+                onBack={() => handleBackToList(false)}
+                onEdit={() => handleEditClient(selectedClient)}
+                onCreateProcess={() => {
+                if (onNavigateToModule) {
+                  onNavigateToModule('processos', {
+                    mode: 'create',
+                    prefill: {
+                      client_id: selectedClient.id,
+                      client_name: selectedClient.full_name,
+                    }
+                  });
+                }
+              }}
+              onCreateRequirement={() => {
+                if (onNavigateToModule) {
+                  onNavigateToModule('requerimentos', {
+                    mode: 'create',
+                    prefill: {
+                      client_id: selectedClient.id,
+                      beneficiary: selectedClient.full_name,
+                      cpf: selectedClient.cpf_cnpj || '',
+                    }
+                  });
+                }
+              }}
+              onCreateDeadline={() => {
+                if (onNavigateToModule) {
+                  onNavigateToModule('prazos', {
+                    mode: 'create',
+                    prefill: {
+                      client_id: selectedClient.id,
+                      client_name: selectedClient.full_name,
+                    }
+                  });
+                }
+              }}
+              missingFields={missingFieldsMap?.get(selectedClient.id)}
+              isOutdated={outdatedSet?.has(selectedClient.id)}
+            />
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );
