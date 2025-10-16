@@ -340,15 +340,16 @@ export const NotificationCenter: React.FC<NotificationCenterProps> = ({ onNaviga
 
       {/* Modal/Dropdown de notificações */}
       {isOpen && (
-        <div className="fixed inset-0 z-[9999] md:relative md:inset-auto md:z-auto">
-          {/* Backdrop - apenas mobile */}
-          <div
-            className="fixed inset-0 bg-black/50 z-[9998] md:hidden"
-            onClick={() => setIsOpen(false)}
-          />
+        <>
+          <div className="fixed inset-0 z-[9999] md:relative md:inset-auto md:z-auto">
+            {/* Backdrop - apenas mobile */}
+            <div
+              className="fixed inset-0 bg-black/50 z-[9998] md:hidden"
+              onClick={() => setIsOpen(false)}
+            />
 
-          {/* Panel */}
-          <div className="fixed inset-x-0 top-0 bottom-0 md:absolute md:right-0 md:top-full md:left-auto md:inset-x-auto md:bottom-auto md:mt-2 w-full md:w-[420px] h-full md:h-auto md:max-h-[85vh] bg-white md:rounded-2xl shadow-2xl md:shadow-[0_8px_30px_rgb(0,0,0,0.12)] border-0 z-[9999] overflow-hidden flex flex-col">
+            {/* Panel */}
+            <div className="fixed inset-x-0 top-0 bottom-0 md:absolute md:right-0 md:top-full md:left-auto md:inset-x-auto md:bottom-auto md:mt-2 w-full md:w-[420px] h-full md:h-auto md:max-h-[85vh] bg-white md:rounded-2xl shadow-2xl md:shadow-[0_8px_30px_rgb(0,0,0,0.12)] border-0 z-[9999] overflow-hidden flex flex-col">
             {/* Header */}
             <div className="px-4 md:px-6 py-4 md:py-4 bg-white border-b border-gray-100 flex items-center justify-between flex-shrink-0 safe-area-top">
               <h3 className="text-xl md:text-2xl font-bold text-slate-900">
@@ -516,6 +517,7 @@ export const NotificationCenter: React.FC<NotificationCenterProps> = ({ onNaviga
                 </button>
               </div>
             )}
+            </div>
           </div>
         </>
       )}
