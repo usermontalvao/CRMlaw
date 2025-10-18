@@ -23,6 +23,7 @@ import {
   Sparkles,
   Lightbulb,
   AlertTriangle,
+  Download,
 } from 'lucide-react';
 import { djenService } from '../services/djen.service';
 import { djenLocalService } from '../services/djenLocal.service';
@@ -35,6 +36,9 @@ import { userNotificationService } from '../services/userNotification.service';
 import { aiService } from '../services/ai.service';
 import { intimationAnalysisService } from '../services/intimationAnalysis.service';
 import { useToastContext } from '../contexts/ToastContext';
+import { useAuth } from '../contexts/AuthContext';
+import { exportToCSV, exportToExcel, exportToPDF } from '../utils/exportIntimations';
+import { addSyncHistory } from '../utils/syncHistory';
 import type { DjenComunicacaoLocal, DjenConsultaParams } from '../types/djen.types';
 import type { Client } from '../types/client.types';
 import type { Process } from '../types/process.types';
@@ -51,6 +55,7 @@ interface IntimationsModuleProps {
 
 const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModule }) => {
   const toast = useToastContext();
+  const { user } = useAuth();
   
   // Estados principais
   const [intimations, setIntimations] = useState<DjenComunicacaoLocal[]>([]);
@@ -66,6 +71,7 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
   // Filtros e busca
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState<'all' | 'unread' | 'read'>('unread');
+  const [tribunalFilter, setTribunalFilter] = useState<string>('all');
   const [dateFilter, setDateFilter] = useState<'30days' | '60days' | '90days' | 'all'>('30days');
   const [customDateStart, setCustomDateStart] = useState('');
   const [customDateEnd, setCustomDateEnd] = useState('');
@@ -96,6 +102,9 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
   const [analyzingIds, setAnalyzingIds] = useState<Set<string>>(new Set());
   const [aiEnabled, setAiEnabled] = useState(false);
 
+  // Exportação
+  const [showExportMenu, setShowExportMenu] = useState(false);
+
   // Verificar se IA está habilitada
   useEffect(() => {
     setAiEnabled(aiService.isEnabled());
@@ -107,9 +116,11 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
       if (!silent) {
         toast.warning('IA não configurada', 'Configure VITE_OPENAI_API_KEY no arquivo .env');
       }
+      console.log('⚠️ IA não habilitada - verifique VITE_OPENAI_API_KEY');
       return;
     }
 
+    console.log(`🤖 Iniciando análise de IA para intimação ${intimation.id.substring(0, 8)}...`);
     setAnalyzingIds(prev => new Set(prev).add(intimation.id));
 
     try {
@@ -121,6 +132,8 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
         intimation.tipo_comunicacao || undefined
       );
 
+      console.log(`✅ Análise concluída - Urgência: ${analysis.urgency}, Prazo: ${analysis.deadline?.days || 'N/A'} dias`);
+
       // Atualizar estado local
       setAiAnalysis(prev => new Map(prev).set(intimation.id, analysis));
       
@@ -131,10 +144,27 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
           analysis,
           currentUserProfile?.id
         );
-        console.log('✅ Análise salva no banco de dados');
+        console.log(`💾 Análise salva no banco de dados para intimação ${intimation.id.substring(0, 8)}`);
       } catch (saveErr: any) {
-        console.error('Erro ao salvar análise no banco:', saveErr);
+        console.error(`❌ Erro ao salvar análise no banco para intimação ${intimation.id.substring(0, 8)}:`, saveErr);
         // Não bloqueia o fluxo se falhar ao salvar
+      }
+
+      // 🔔 Criar notificação para intimações urgentes com prazo curto
+      if (analysis.urgency === 'alta' && analysis.deadline?.days && analysis.deadline.days <= 5) {
+        try {
+          await userNotificationService.createNotification({
+            title: '⚠️ Intimação Urgente',
+            message: `Prazo de ${analysis.deadline.days} dia(s) - Processo ${intimation.numero_processo}`,
+            type: 'intimation_urgent',
+            user_id: user?.id || '',
+            intimation_id: intimation.id,
+          });
+          console.log(`🔔 Notificação criada para intimação urgente ${intimation.id.substring(0, 8)}`);
+        } catch (notifErr: any) {
+          console.error('Erro ao criar notificação:', notifErr);
+          // Não bloqueia o fluxo
+        }
       }
       
       if (!silent) {
@@ -142,7 +172,7 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
         toast.success('Análise concluída', `Intimação analisada com urgência ${analysis.urgency}`);
       }
     } catch (err: any) {
-      console.error('Erro ao analisar com IA:', err);
+      console.error(`❌ Erro ao analisar intimação ${intimation.id.substring(0, 8)} com IA:`, err);
       if (!silent) {
         toast.error('Erro ao analisar', err.message || 'Não foi possível analisar a intimação');
       }
@@ -159,8 +189,10 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
   const autoAnalyzeNewIntimations = async (intimationsList: DjenComunicacaoLocal[]) => {
     if (!aiService.isEnabled()) return;
 
+    // BUG FIX: Remover filtro de 'lida' - analisar todas que não têm análise
+    // Intimações podem estar lidas mas sem análise de IA
     const toAnalyze = intimationsList.filter(
-      (intimation) => !intimation.lida && !aiAnalysis.has(intimation.id)
+      (intimation) => !aiAnalysis.has(intimation.id)
     );
 
     if (toAnalyze.length === 0) return;
@@ -187,6 +219,7 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
       if (intimationsData.length > 0) {
         try {
           const intimationIds = intimationsData.map(int => int.id);
+          console.log(`🔍 Buscando análises para ${intimationIds.length} intimação(ões)...`);
           const savedAnalyses = await intimationAnalysisService.getAnalysesByIntimationIds(intimationIds);
           
           // Converter para o formato usado pela aplicação
@@ -196,9 +229,10 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
           });
           
           setAiAnalysis(analysisMap);
-          console.log(`✅ ${analysisMap.size} análise(s) recarregada(s)`);
+          console.log(`✅ ${analysisMap.size} análise(s) recarregada(s) do banco de dados`);
+          console.log(`📊 Intimações sem análise: ${intimationIds.length - analysisMap.size}`);
         } catch (err: any) {
-          console.error('Erro ao carregar análises salvas:', err);
+          console.error('❌ Erro ao carregar análises salvas:', err);
         }
       }
 
@@ -279,33 +313,34 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
       setSyncing(true);
 
       try {
-        // Obtém nome do advogado do perfil
-        const lawyerName = currentUserProfile?.lawyer_full_name || currentUserProfile?.name || '';
-        
-        if (!lawyerName) {
-          throw new Error('Nome do advogado não definido. Configure seu perfil.');
-        }
-        
-        const params: DjenConsultaParams = {
-          nomeAdvogado: lawyerName,
-          dataDisponibilizacaoInicio: djenService.getDataHoje(),
-          dataDisponibilizacaoFim: djenService.getDataHoje(),
-          meio: 'D',
-          itensPorPagina: 100,
-          pagina: 1,
-        };
-
         let savedFromAdvocate = 0;
         let savedFromProcesses = 0;
 
-        const response = await djenService.consultarTodasComunicacoes(params);
+        // Buscar por nome do advogado (apenas se configurado)
+        const lawyerName = currentUserProfile?.lawyer_full_name || '';
+        
+        if (lawyerName) {
+          console.log(`🔍 Buscando intimações para: ${lawyerName}`);
+          const params: DjenConsultaParams = {
+            nomeAdvogado: lawyerName,
+            dataDisponibilizacaoInicio: djenService.getDataDiasAtras(7), // Última semana (inclui fins de semana)
+            dataDisponibilizacaoFim: djenService.getDataHoje(),
+            meio: 'D',
+            itensPorPagina: 100,
+            pagina: 1,
+          };
 
-        if (response.items && response.items.length > 0) {
-          const result = await djenLocalService.saveComunicacoes(response.items, {
-            clients,
-            processes,
-          });
-          savedFromAdvocate = result.saved;
+          const response = await djenService.consultarTodasComunicacoes(params);
+
+          if (response.items && response.items.length > 0) {
+            const result = await djenLocalService.saveComunicacoes(response.items, {
+              clients,
+              processes,
+            });
+            savedFromAdvocate = result.saved;
+          }
+        } else {
+          console.log('ℹ️ Nome DJEN não configurado - buscando apenas por processos cadastrados');
         }
 
         const processNumbers = Array.from(
@@ -347,7 +382,9 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
 
         // Recarregar apenas intimações (sem flash) e analisar automaticamente
         const totalSaved = savedFromAdvocate + savedFromProcesses;
-        await reloadIntimations(totalSaved > 0); // Analisar apenas se houver novas intimações
+        // BUG FIX: Sempre tentar analisar, não apenas quando há novas
+        // Pode haver intimações antigas sem análise
+        await reloadIntimations(true);
 
         if (mode === 'manual') {
           if (totalSaved > 0) {
@@ -372,12 +409,30 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
         setSyncing(false);
       }
     },
-    [processes, currentUserProfile, loadData]
+    [processes, clients, currentUserProfile, loadData]
   );
 
   const handleSync = useCallback(async () => {
     await performSync('manual');
   }, [performSync]);
+
+  // Handlers de exportação
+  const handleExportCSV = () => {
+    exportToCSV(filteredIntimations, aiAnalysis);
+    toast.success('Exportado', 'Relatório CSV baixado com sucesso');
+    setShowExportMenu(false);
+  };
+
+  const handleExportExcel = () => {
+    exportToExcel(filteredIntimations, aiAnalysis);
+    toast.success('Exportado', 'Relatório Excel baixado com sucesso');
+    setShowExportMenu(false);
+  };
+
+  const handleExportPDF = () => {
+    exportToPDF(filteredIntimations, aiAnalysis);
+    setShowExportMenu(false);
+  };
 
   const autoSyncInitializedRef = useRef(false);
   useEffect(() => {
@@ -510,6 +565,11 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
       filtered = filtered.filter((i) => i.lida);
     }
 
+    // Filtro de tribunal
+    if (tribunalFilter !== 'all') {
+      filtered = filtered.filter((i) => i.sigla_tribunal === tribunalFilter);
+    }
+
     // Filtro de data
     if (dateFilter !== 'all') {
       const now = new Date();
@@ -558,7 +618,18 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
     }
 
     return filtered;
-  }, [intimations, statusFilter, dateFilter, customDateStart, customDateEnd, searchTerm]);
+  }, [intimations, statusFilter, tribunalFilter, dateFilter, customDateStart, customDateEnd, searchTerm]);
+
+  // Lista de tribunais únicos
+  const availableTribunals = useMemo(() => {
+    const tribunals = new Set<string>();
+    intimations.forEach((i) => {
+      if (i.sigla_tribunal) {
+        tribunals.add(i.sigla_tribunal);
+      }
+    });
+    return Array.from(tribunals).sort();
+  }, [intimations]);
 
   // Contadores
   const unreadCount = intimations.filter((i) => !i.lida).length;
@@ -823,23 +894,25 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
             </h3>
             <div className="mt-2">
               <p className="text-sm text-slate-600">
-                Sincronizamos com o DJEN procurando pelos processos cadastrados e pelo nome:
+                Sincronizamos com o DJEN procurando pelos processos cadastrados
+                {currentUserProfile?.lawyer_full_name && ' e pelo nome do advogado'}:
               </p>
               {currentUserProfile && (
                 <div>
-                  <p className="text-sm font-semibold text-indigo-600 mt-1">
-                    {currentUserProfile.lawyer_full_name || currentUserProfile.name}
-                  </p>
-                  {!currentUserProfile.lawyer_full_name && (
-                    <p className="text-xs text-amber-600 mt-1">
-                      💡 Configure "Nome Completo para DJEN" no seu perfil para maior precisão na busca
+                  {currentUserProfile.lawyer_full_name ? (
+                    <p className="text-sm font-semibold text-indigo-600 mt-1">
+                      {currentUserProfile.lawyer_full_name}
+                    </p>
+                  ) : (
+                    <p className="text-xs text-slate-500 mt-1">
+                      ℹ️ Buscando apenas por processos cadastrados (Nome DJEN não configurado)
                     </p>
                   )}
                 </div>
               )}
               {!currentUserProfile && (
                 <p className="text-xs text-amber-600 mt-1">
-                  ⚠️ Configure o nome do advogado no seu perfil
+                  ⚠️ Carregando perfil...
                 </p>
               )}
             </div>
@@ -854,6 +927,40 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
                 <strong className="text-blue-600">{intimations.length}</strong> total
               </span>
             </div>
+
+            {/* Estatísticas de Urgência - APENAS NÃO LIDAS */}
+            {aiAnalysis.size > 0 && (() => {
+              // Filtrar apenas intimações não lidas
+              const unreadIntimations = intimations.filter(i => !i.lida);
+              const unreadWithAnalysis = unreadIntimations.filter(i => aiAnalysis.has(i.id));
+              
+              const altaCount = unreadWithAnalysis.filter(i => aiAnalysis.get(i.id)?.urgency === 'alta').length;
+              const mediaCount = unreadWithAnalysis.filter(i => aiAnalysis.get(i.id)?.urgency === 'media').length;
+              const baixaCount = unreadWithAnalysis.filter(i => aiAnalysis.get(i.id)?.urgency === 'baixa').length;
+              
+              if (altaCount === 0 && mediaCount === 0 && baixaCount === 0) return null;
+              
+              return (
+                <div className="flex gap-2 mt-3">
+                  {altaCount > 0 && (
+                    <span className="inline-flex items-center gap-1 px-2 py-1 bg-red-100 text-red-700 rounded-md text-xs font-semibold">
+                      🔴 {altaCount} Alta
+                    </span>
+                  )}
+                  {mediaCount > 0 && (
+                    <span className="inline-flex items-center gap-1 px-2 py-1 bg-yellow-100 text-yellow-700 rounded-md text-xs font-semibold">
+                      🟡 {mediaCount} Média
+                    </span>
+                  )}
+                  {baixaCount > 0 && (
+                    <span className="inline-flex items-center gap-1 px-2 py-1 bg-green-100 text-green-700 rounded-md text-xs font-semibold">
+                      🟢 {baixaCount} Baixa
+                    </span>
+                  )}
+                </div>
+              );
+            })()}
+
             {lastAutoSyncAt && (
               <p className="text-xs text-slate-500 mt-2">
                 Última sincronização automática: {formatDateTime(lastAutoSyncAt)}
@@ -897,6 +1004,46 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
                 </>
               )}
             </button>
+
+            {/* Botão de Exportação */}
+            <div className="relative">
+              <button
+                onClick={() => setShowExportMenu(!showExportMenu)}
+                disabled={filteredIntimations.length === 0}
+                className="inline-flex items-center justify-center gap-2 border border-green-200 text-green-600 hover:bg-green-50 font-medium px-3 sm:px-5 py-2 sm:py-2.5 rounded-lg transition disabled:opacity-50 text-xs sm:text-sm w-full sm:w-auto"
+              >
+                <Download className="w-4 h-4" />
+                Exportar Relatório
+              </button>
+
+              {showExportMenu && (
+                <div className="absolute right-0 mt-2 w-48 bg-white rounded-lg shadow-lg border border-gray-200 z-50">
+                  <div className="py-1">
+                    <button
+                      onClick={handleExportCSV}
+                      className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 flex items-center gap-2"
+                    >
+                      <FileText className="w-4 h-4" />
+                      Exportar CSV
+                    </button>
+                    <button
+                      onClick={handleExportExcel}
+                      className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 flex items-center gap-2"
+                    >
+                      <FileText className="w-4 h-4" />
+                      Exportar Excel
+                    </button>
+                    <button
+                      onClick={handleExportPDF}
+                      className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 flex items-center gap-2"
+                    >
+                      <FileText className="w-4 h-4" />
+                      Exportar PDF
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
           </div>
         </div>
       </div>
@@ -923,6 +1070,19 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
             <option value="all">Todas ({intimations.length})</option>
             <option value="unread">Não Lidas ({unreadCount})</option>
             <option value="read">Lidas ({readCount})</option>
+          </select>
+
+          <select
+            value={tribunalFilter}
+            onChange={(e) => setTribunalFilter(e.target.value)}
+            className="px-4 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm min-w-[160px]"
+          >
+            <option value="all">Todos os Tribunais</option>
+            {availableTribunals.map((tribunal) => (
+              <option key={tribunal} value={tribunal}>
+                {tribunal}
+              </option>
+            ))}
           </select>
 
           <select
@@ -1417,6 +1577,61 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
                                     </ul>
                                   </div>
                                 )}
+
+                                {/* Botões de Ação Rápida */}
+                                <div className="pt-3 border-t border-purple-200">
+                                  <h6 className="text-xs font-semibold text-slate-900 mb-2 flex items-center gap-1">
+                                    ⚡ Ações Rápidas:
+                                  </h6>
+                                  <div className="flex flex-wrap gap-2">
+                                    {analysis.deadline && (
+                                      <button
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          handleCreateDeadline(intimation);
+                                        }}
+                                        className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-amber-600 hover:bg-amber-700 text-white text-xs font-semibold rounded-lg transition"
+                                      >
+                                        <Clock className="w-3.5 h-3.5" />
+                                        Criar Prazo ({analysis.deadline.days}d)
+                                      </button>
+                                    )}
+                                    <button
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        handleCreateAppointment(intimation);
+                                      }}
+                                      className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold rounded-lg transition"
+                                    >
+                                      <CalendarIcon className="w-3.5 h-3.5" />
+                                      Agendar Compromisso
+                                    </button>
+                                    {!intimation.lida && (
+                                      <button
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          handleMarkAsRead(intimation.id);
+                                        }}
+                                        className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold rounded-lg transition"
+                                      >
+                                        <CheckCircle className="w-3.5 h-3.5" />
+                                        Marcar como Lida
+                                      </button>
+                                    )}
+                                    {!intimation.client_id && (
+                                      <button
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          handleOpenLinkModal(intimation);
+                                        }}
+                                        className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-purple-600 hover:bg-purple-700 text-white text-xs font-semibold rounded-lg transition"
+                                      >
+                                        <Link2 className="w-3.5 h-3.5" />
+                                        Vincular Cliente
+                                      </button>
+                                    )}
+                                  </div>
+                                </div>
                               </>
                             );
                           })()}
@@ -1609,6 +1824,7 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
       {deadlineModalOpen && currentIntimationForAction && (
         <DeadlineCreationModal
           intimation={currentIntimationForAction}
+          analysis={aiAnalysis.get(currentIntimationForAction.id)}
           clients={clients}
           processes={processes}
           members={members}
@@ -1628,6 +1844,7 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
       {appointmentModalOpen && currentIntimationForAction && (
         <AppointmentCreationModal
           intimation={currentIntimationForAction}
+          analysis={aiAnalysis.get(currentIntimationForAction.id)}
           clients={clients}
           processes={processes}
           members={members}
@@ -1649,6 +1866,7 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
 // Modal de Criação de Prazo
 interface DeadlineCreationModalProps {
   intimation: DjenComunicacaoLocal;
+  analysis?: IntimationAnalysis;
   clients: Client[];
   processes: Process[];
   members: Profile[];
@@ -1658,6 +1876,7 @@ interface DeadlineCreationModalProps {
 
 const DeadlineCreationModal: React.FC<DeadlineCreationModalProps> = ({
   intimation,
+  analysis,
   clients,
   processes,
   members,
@@ -1667,12 +1886,30 @@ const DeadlineCreationModal: React.FC<DeadlineCreationModalProps> = ({
   const process = processes.find((p) => p.id === intimation.process_id);
   const client = clients.find((c) => c.id === intimation.client_id);
 
+  // Determinar prioridade baseada na urgência da IA
+  const getPriorityFromUrgency = (urgency?: string): DeadlinePriority => {
+    if (!urgency) return 'alta';
+    if (urgency === 'critica' || urgency === 'alta') return 'alta';
+    if (urgency === 'media') return 'media';
+    return 'baixa';
+  };
+
+  // Calcular data de vencimento: 1 dia ANTES do prazo detectado
+  const getDeadlineDate = (analysis?: IntimationAnalysis): string => {
+    if (!analysis?.deadline?.dueDate) return '';
+    const dueDate = new Date(analysis.deadline.dueDate);
+    dueDate.setDate(dueDate.getDate() - 1); // 1 dia antes
+    return dueDate.toISOString().split('T')[0];
+  };
+
   const [formData, setFormData] = useState({
-    title: `Prazo ${intimation.tipo_comunicacao || 'Intimação'} - Processo ${intimation.numero_processo_mascara || intimation.numero_processo}`,
-    description: intimation.texto || '',
-    due_date: '',
+    title: analysis?.deadline?.description 
+      ? `${analysis.deadline.description} - Processo ${intimation.numero_processo_mascara || intimation.numero_processo}`
+      : `Prazo ${intimation.tipo_comunicacao || 'Intimação'} - Processo ${intimation.numero_processo_mascara || intimation.numero_processo}`,
+    description: analysis?.summary || intimation.texto || '',
+    due_date: getDeadlineDate(analysis),
     type: 'processo' as DeadlineType,
-    priority: 'alta' as DeadlinePriority,
+    priority: getPriorityFromUrgency(analysis?.urgency),
     client_id: intimation.client_id || '',
     process_id: intimation.process_id || '',
     responsible_id: '',
@@ -1817,6 +2054,21 @@ const DeadlineCreationModal: React.FC<DeadlineCreationModalProps> = ({
               className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-transparent"
               required
             />
+            {analysis?.deadline?.dueDate && (
+              <div className="mt-2 p-2 bg-amber-50 border border-amber-200 rounded-lg">
+                <p className="text-xs text-amber-900 font-semibold">
+                  ⚠️ Prazo Final: {new Date(analysis.deadline.dueDate).toLocaleDateString('pt-BR', { 
+                    weekday: 'long', 
+                    year: 'numeric', 
+                    month: 'long', 
+                    day: 'numeric' 
+                  })}
+                </p>
+                <p className="text-xs text-amber-700 mt-1">
+                  ✓ Data sugerida preenchida: 1 dia antes (margem de segurança)
+                </p>
+              </div>
+            )}
           </div>
 
           {/* Cliente */}
@@ -1997,6 +2249,7 @@ const DeadlineCreationModal: React.FC<DeadlineCreationModalProps> = ({
 // Modal de Criação de Compromisso
 interface AppointmentCreationModalProps {
   intimation: DjenComunicacaoLocal;
+  analysis?: IntimationAnalysis;
   clients: Client[];
   processes: Process[];
   members: Profile[];
@@ -2006,6 +2259,7 @@ interface AppointmentCreationModalProps {
 
 const AppointmentCreationModal: React.FC<AppointmentCreationModalProps> = ({
   intimation,
+  analysis,
   clients,
   processes,
   members,
@@ -2015,12 +2269,36 @@ const AppointmentCreationModal: React.FC<AppointmentCreationModalProps> = ({
   const process = processes.find((p) => p.id === intimation.process_id);
   const client = clients.find((c) => c.id === intimation.client_id);
 
+  // Determinar tipo de compromisso baseado na análise
+  const getEventTypeFromAnalysis = (analysis?: IntimationAnalysis): CalendarEventType => {
+    if (!analysis) return 'meeting';
+    // Se tem prazo, é uma audiência ou prazo processual
+    if (analysis.deadline) return 'hearing';
+    return 'meeting';
+  };
+
+  // Usar data EXATA da audiência (não 3 dias antes)
+  const getAppointmentDate = (analysis?: IntimationAnalysis): string => {
+    if (!analysis?.deadline?.dueDate) return '';
+    // Retorna data exata do prazo para audiências
+    return analysis.deadline.dueDate.split('T')[0];
+  };
+
+  // Horário padrão de Cuiabá (GMT-4) - 14:00 (horário comum de audiências)
+  const getAppointmentTime = (analysis?: IntimationAnalysis): string => {
+    // Se for audiência, usar horário padrão de 14:00 (horário de Cuiabá)
+    if (analysis?.deadline) return '14:00';
+    return '09:00';
+  };
+
   const [formData, setFormData] = useState({
-    title: `Compromisso ${intimation.tipo_comunicacao || 'Intimação'} - Processo ${intimation.numero_processo_mascara || intimation.numero_processo}`,
-    description: intimation.texto || '',
-    date: '',
-    time: '',
-    type: 'meeting' as CalendarEventType,
+    title: analysis?.deadline?.description
+      ? `${analysis.deadline.description} - Processo ${intimation.numero_processo_mascara || intimation.numero_processo}`
+      : `Compromisso ${intimation.tipo_comunicacao || 'Intimação'} - Processo ${intimation.numero_processo_mascara || intimation.numero_processo}`,
+    description: analysis?.summary || intimation.texto || '',
+    date: getAppointmentDate(analysis),
+    time: getAppointmentTime(analysis),
+    type: getEventTypeFromAnalysis(analysis),
     client_id: intimation.client_id || '',
     responsible_id: '',
   });
@@ -2212,11 +2490,16 @@ const AppointmentCreationModal: React.FC<AppointmentCreationModalProps> = ({
                 className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
                 required
               />
+              {analysis?.deadline?.dueDate && (
+                <p className="text-xs text-indigo-600 mt-1">
+                  ℹ️ Data exata da audiência/prazo
+                </p>
+              )}
             </div>
 
             <div>
               <label className="block text-sm font-semibold text-slate-900 mb-2">
-                Hora *
+                Hora * (Horário de Cuiabá GMT-4)
               </label>
               <input
                 type="time"
@@ -2225,6 +2508,11 @@ const AppointmentCreationModal: React.FC<AppointmentCreationModalProps> = ({
                 className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
                 required
               />
+              {analysis?.deadline && (
+                <p className="text-xs text-indigo-600 mt-1">
+                  ℹ️ Horário padrão: 14:00 (audiências)
+                </p>
+              )}
             </div>
           </div>
 
@@ -2246,7 +2534,7 @@ const AppointmentCreationModal: React.FC<AppointmentCreationModalProps> = ({
                 onFocus={() => setShowResponsibleSuggestions(true)}
                 onBlur={() => setTimeout(() => setShowResponsibleSuggestions(false), 200)}
                 placeholder="Digite para buscar responsável..."
-                className="w-full px-4 py-2.5border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
               />
               {showResponsibleSuggestions && responsibleSearchTerm && (
                 <div className="absolute z-20 mt-1 w-full bg-white border border-gray-200 rounded-lg shadow-lg max-h-48 overflow-y-auto">

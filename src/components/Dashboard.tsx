@@ -29,6 +29,7 @@ import { calendarService } from '../services/calendar.service';
 import { requirementService } from '../services/requirement.service';
 import { financialService } from '../services/financial.service';
 import { djenLocalService } from '../services/djenLocal.service';
+import { intimationAnalysisService } from '../services/intimationAnalysis.service';
 import type { Client } from '../types/client.types';
 import type { Process } from '../types/process.types';
 import type { Deadline } from '../types/deadline.types';
@@ -140,6 +141,7 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToModule }) => {
   const [financialStats, setFinancialStats] = useState<FinancialStats | null>(null);
   const [overdueInstallments, setOverdueInstallments] = useState<(Installment & { agreement?: Agreement })[]>([]);
   const [djenIntimacoes, setDjenIntimacoes] = useState<DjenComunicacaoLocal[]>([]);
+  const [djenUrgencyStats, setDjenUrgencyStats] = useState({ alta: 0, media: 0, baixa: 0, sem_analise: 0 });
   const [selectedEvent, setSelectedEvent] = useState<CalendarEvent | null>(null);
   const [selectedIntimacao, setSelectedIntimacao] = useState<DjenComunicacaoLocal | null>(null);
   const clientMap = useMemo(() => new Map(clients.map((client) => [client.id, client])), [clients]);
@@ -211,6 +213,27 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToModule }) => {
         .filter(inst => (inst.status === 'pendente' || inst.status === 'vencido') && inst.due_date < today)
         .sort((a, b) => a.due_date.localeCompare(b.due_date))
         .slice(0, 5);
+
+      // Carregar estatísticas de urgência das intimações
+      if (djenIntimacoesData.length > 0) {
+        try {
+          const intimationIds = djenIntimacoesData.map(int => int.id);
+          const analyses = await intimationAnalysisService.getAnalysesByIntimationIds(intimationIds);
+          
+          const stats = { alta: 0, media: 0, baixa: 0, sem_analise: 0 };
+          djenIntimacoesData.forEach(int => {
+            const analysis = analyses.get(int.id);
+            if (analysis && analysis.urgency) {
+              stats[analysis.urgency as 'alta' | 'media' | 'baixa']++;
+            } else {
+              stats.sem_analise++;
+            }
+          });
+          setDjenUrgencyStats(stats);
+        } catch (err) {
+          console.error('Erro ao carregar estatísticas de urgência:', err);
+        }
+      }
 
       // Atualizar estados
       setClients(clientsData);
@@ -657,6 +680,30 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToModule }) => {
               </div>
             </div>
 
+            {/* Estatísticas de Urgência */}
+            {djenIntimacoes.length > 0 && (djenUrgencyStats.alta > 0 || djenUrgencyStats.media > 0 || djenUrgencyStats.baixa > 0) && (
+              <div className="mb-4 grid grid-cols-3 gap-2">
+                {djenUrgencyStats.alta > 0 && (
+                  <div className="bg-red-500/20 border border-red-400/30 rounded-lg p-2 text-center">
+                    <div className="text-2xl font-bold text-white">{djenUrgencyStats.alta}</div>
+                    <div className="text-[10px] text-white/80 font-semibold uppercase">🔴 Alta</div>
+                  </div>
+                )}
+                {djenUrgencyStats.media > 0 && (
+                  <div className="bg-yellow-500/20 border border-yellow-400/30 rounded-lg p-2 text-center">
+                    <div className="text-2xl font-bold text-white">{djenUrgencyStats.media}</div>
+                    <div className="text-[10px] text-white/80 font-semibold uppercase">🟡 Média</div>
+                  </div>
+                )}
+                {djenUrgencyStats.baixa > 0 && (
+                  <div className="bg-green-500/20 border border-green-400/30 rounded-lg p-2 text-center">
+                    <div className="text-2xl font-bold text-white">{djenUrgencyStats.baixa}</div>
+                    <div className="text-[10px] text-white/80 font-semibold uppercase">🟢 Baixa</div>
+                  </div>
+                )}
+              </div>
+            )}
+
             {djenIntimacoes.length === 0 ? (
               <div className="bg-white/5 rounded-xl p-8 text-center border border-white/10">
                 <Scale className="w-12 h-12 text-white/30 mx-auto mb-3" />
@@ -668,6 +715,12 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToModule }) => {
                 {djenIntimacoes.slice(0, 3).map((intimacao) => {
                   const dataDisponibilizacao = new Date(intimacao.data_disponibilizacao);
                   const isRecent = Date.now() - dataDisponibilizacao.getTime() < 24 * 60 * 60 * 1000; // últimas 24h
+                  
+                  // Buscar cliente vinculado
+                  const client = intimacao.client_id ? clientMap.get(intimacao.client_id) : null;
+                  
+                  // Buscar análise de IA (se disponível no estado djenUrgencyStats)
+                  const hasAnalysis = djenUrgencyStats.alta > 0 || djenUrgencyStats.media > 0 || djenUrgencyStats.baixa > 0;
                   
                   return (
                     <div 
@@ -699,12 +752,27 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToModule }) => {
                               </span>
                             )}
                           </div>
-                          <p className="text-sm font-semibold text-white truncate group-hover:text-red-200 transition-colors">
+                          
+                          {/* Nome do Cliente */}
+                          {client && (
+                            <p className="text-sm font-bold text-white mb-1 truncate">
+                              {client.full_name}
+                            </p>
+                          )}
+                          
+                          <p className="text-sm font-semibold text-white/90 truncate group-hover:text-red-200 transition-colors">
                             {intimacao.tipo_comunicacao || 'Comunicação'}
                           </p>
                           <p className="text-xs text-white/60 mt-1 truncate">
                             Processo: {intimacao.numero_processo_mascara || intimacao.numero_processo}
                           </p>
+                          
+                          {/* Resumo da IA (placeholder - será preenchido quando análise estiver disponível) */}
+                          {hasAnalysis && (
+                            <p className="text-xs text-white/70 mt-2 line-clamp-2 italic">
+                              💡 Clique para ver análise de IA
+                            </p>
+                          )}
                         </div>
                       </div>
                     </div>

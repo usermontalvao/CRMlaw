@@ -321,14 +321,17 @@ export default function ProfileModal({ isOpen, onClose, profile: initialProfile,
                       <input type="text" value={profileForm.oab} onChange={(e) => handleProfileChange('oab', e.target.value)} className="input-field text-sm" placeholder="OAB/SP 12345" />
                     </div>
                   </div>
-                  <div>
-                    <label className="block text-xs font-medium text-slate-700 mb-1.5">Nome Completo para DJEN <span className="text-slate-400">(Opcional)</span></label>
-                    <input type="text" value={profileForm.lawyerFullName} onChange={(e) => handleProfileChange('lawyerFullName', e.target.value)} className="input-field text-sm" placeholder="Nome completo para pesquisa no Diário Oficial" />
-                    <p className="text-xs text-slate-500 mt-1.5 flex items-start gap-2">
-                      <span className="text-blue-500 mt-0.5">ℹ️</span>
-                      <span>Utilizado para consultas automáticas no Diário de Justiça Eletrônico Nacional (DJEN)</span>
-                    </p>
-                  </div>
+                  {/* Campo DJEN apenas para Advogados e Sócios */}
+                  {(profileForm.role === 'Advogado' || profileForm.role === 'Sócio') && (
+                    <div>
+                      <label className="block text-xs font-medium text-slate-700 mb-1.5">Nome Completo para DJEN <span className="text-slate-400">(Opcional)</span></label>
+                      <input type="text" value={profileForm.lawyerFullName} onChange={(e) => handleProfileChange('lawyerFullName', e.target.value)} className="input-field text-sm" placeholder="Nome completo para pesquisa no Diário Oficial" />
+                      <p className="text-xs text-slate-500 mt-1.5 flex items-start gap-2">
+                        <span className="text-blue-500 mt-0.5">ℹ️</span>
+                        <span>Utilizado para consultas automáticas no Diário de Justiça Eletrônico Nacional (DJEN)</span>
+                      </p>
+                    </div>
+                  )}
                 </div>
               </div>
 

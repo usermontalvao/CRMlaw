@@ -142,6 +142,7 @@ export interface CreateDjenComunicacaoDTO {
   polo_passivo?: string | null;
   client_id?: string | null;
   process_id?: string | null;
+  lida?: boolean; // Padrão: false (não lida)
 }
 
 export interface UpdateDjenComunicacaoDTO {

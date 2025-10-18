@@ -5,6 +5,7 @@ export type UserNotificationType =
   | 'appointment_assigned'
   | 'process_updated'
   | 'intimation_new'
+  | 'intimation_urgent'
   | 'deadline_reminder'
   | 'appointment_reminder';
 

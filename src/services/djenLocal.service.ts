@@ -284,6 +284,7 @@ class DjenLocalService {
           data_disponibilizacao: comunicacao.data_disponibilizacao,
           polo_ativo: poloAtivo,
           polo_passivo: poloPassivo,
+          lida: false, // Nova intimação = não lida
         };
 
         const processMatch = await getProcessMatch(comunicacao.numero_processo);

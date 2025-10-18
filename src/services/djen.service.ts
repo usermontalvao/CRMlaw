@@ -3,9 +3,11 @@ import type {
   DjenConsultaResponse,
   DjenTribunal,
 } from '../types/djen.types';
+import { supabase } from '../config/supabase';
 
 class DjenService {
   private baseUrl = 'https://comunicaapi.pje.jus.br/api/v1';
+  private useProxy = false; // Desabilitado - Edge Function não deployada
 
   /**
    * Consulta comunicações no DJEN (uma página)
@@ -17,6 +19,42 @@ class DjenService {
    */
   async consultarComunicacoes(params: DjenConsultaParams): Promise<DjenConsultaResponse> {
     try {
+      // Usar Edge Function em desenvolvimento para evitar CORS
+      if (this.useProxy) {
+        console.log('🔄 Usando Edge Function proxy para DJEN...');
+        const { data, error } = await supabase.functions.invoke('djen-proxy', {
+          body: {
+            endpoint: '/comunicacao',
+            params: {
+              numeroOab: params.numeroOab,
+              ufOab: params.ufOab,
+              nomeAdvogado: params.nomeAdvogado,
+              nomeParte: params.nomeParte,
+              numeroProcesso: params.numeroProcesso,
+              dataDisponibilizacaoInicio: params.dataDisponibilizacaoInicio,
+              dataDisponibilizacaoFim: params.dataDisponibilizacaoFim,
+              siglaTribunal: params.siglaTribunal,
+              numeroComunicacao: params.numeroComunicacao,
+              pagina: params.pagina,
+              itensPorPagina: params.itensPorPagina,
+              orgaoId: params.orgaoId,
+              meio: params.meio,
+            },
+          },
+        });
+
+        if (error) {
+          throw new Error(`Edge Function error: ${error.message}`);
+        }
+
+        if (data.error) {
+          throw new Error(data.error);
+        }
+
+        return data as DjenConsultaResponse;
+      }
+
+      // Requisição direta (produção)
       const queryParams = new URLSearchParams();
 
       if (params.numeroOab) queryParams.append('numeroOab', params.numeroOab);
