@@ -20,6 +20,7 @@ import { saveAs } from 'file-saver';
 import { Document as DocxDocument, Packer, Paragraph, TextRun } from 'docx';
 import { documentTemplateService } from '../services/documentTemplate.service';
 import { clientService } from '../services/client.service';
+import { ClientSearchSelect } from './ClientSearchSelect';
 import type { DocumentTemplate, CreateDocumentTemplateDTO } from '../types/document.types';
 import type { Client } from '../types/client.types';
 
@@ -465,66 +466,23 @@ const DocumentsModule: React.FC = () => {
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               {/* Cliente */}
               <div className="space-y-3">
-                <label className="block text-sm font-bold text-slate-900 mb-2 flex items-center gap-2">
-                  <div className="bg-amber-100 text-amber-700 w-6 h-6 rounded-full flex items-center justify-center font-bold text-xs">1</div>
-                  Cliente *
-                </label>
-                <div className="relative">
-                  <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
-                  <input
-                    type="text"
-                    value={clientSearchTerm}
-                    onChange={(e) => {
-                      const value = e.target.value;
-                      setClientSearchTerm(value);
-                      if (!value.trim()) {
-                        setSelectedClientId('');
-                      }
-                    }}
-                    onFocus={() => setShowClientSuggestions(true)}
-                    onBlur={() => setTimeout(() => setShowClientSuggestions(false), 150)}
-                    placeholder="Digite para buscar clientes pelo nome, CPF ou email"
-                    className={`input-field pl-9 text-sm ${
-                      selectedClientId ? 'border-emerald-500 bg-emerald-50' : 'border-gray-300'
-                    }`}
-                  />
-                  {clientsLoading && (
-                    <Loader2 className="w-4 h-4 text-amber-500 absolute right-3 top-1/2 -translate-y-1/2 animate-spin" />
-                  )}
-
-                  {showClientSuggestions && (
-                    <div className="absolute z-20 mt-1 w-full bg-white border border-slate-200 rounded-xl shadow-lg max-h-60 overflow-y-auto">
-                      {clientsLoading ? (
-                        <div className="flex items-center gap-2 px-4 py-3 text-sm text-slate-500">
-                          <Loader2 className="w-4 h-4 animate-spin" />
-                          Buscando clientes...
-                        </div>
-                      ) : clients.length === 0 ? (
-                        <div className="px-4 py-3 text-xs text-slate-500">Nenhum cliente encontrado.</div>
-                      ) : (
-                        clients.map((client) => (
-                          <button
-                            type="button"
-                            key={client.id}
-                            onMouseDown={(event) => event.preventDefault()}
-                            onClick={() => {
-                              setSelectedClientId(client.id);
-                              setClientSearchTerm(client.full_name);
-                              setShowClientSuggestions(false);
-                            }}
-                            className={`w-full text-left px-4 py-3 text-sm hover:bg-amber-50 transition-colors ${
-                              client.id === selectedClientId ? 'bg-emerald-50 text-emerald-700 font-medium' : 'text-slate-700'
-                            }`}
-                          >
-                            <div className="font-semibold">{client.full_name}</div>
-                            <div className="text-xs text-slate-500">
-                              {client.cpf_cnpj || 'CPF/CNPJ não informado'} • {client.email || 'Sem e-mail'}
-                            </div>
-                          </button>
-                        ))
-                      )}
-                    </div>
-                  )}
+                <div className="flex items-start gap-3">
+                  <div className="bg-blue-600 text-white w-6 h-6 rounded-full flex items-center justify-center font-bold text-xs flex-shrink-0 mt-1">
+                    1
+                  </div>
+                  <div className="flex-1">
+                    <ClientSearchSelect
+                      value={selectedClientId}
+                      onChange={(clientId, clientName) => {
+                        setSelectedClientId(clientId);
+                        setClientSearchTerm(clientName);
+                      }}
+                      label="Cliente *"
+                      placeholder="Buscar cliente pelo nome, CPF ou email"
+                      required
+                      allowCreate={true}
+                    />
+                  </div>
                 </div>
                 {selectedClient && (
                   <div className="bg-emerald-50 border border-emerald-200 rounded-lg p-3 mt-2">

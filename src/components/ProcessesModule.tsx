@@ -20,6 +20,7 @@ import { clientService } from '../services/client.service';
 import { profileService } from '../services/profile.service';
 import { djenService } from '../services/djen.service';
 import { processDjenSyncService } from '../services/processDjenSync.service';
+import { ClientSearchSelect } from './ClientSearchSelect';
 import { useAuth } from '../contexts/AuthContext';
 import type { Process, ProcessStatus, ProcessPracticeArea, HearingMode } from '../types/process.types';
 import type { Client } from '../types/client.types';
@@ -1202,69 +1203,17 @@ const ProcessesModule: React.FC<ProcessesModuleProps> = ({ forceCreate, entityId
 
           <form onSubmit={handleSubmit} className="p-3 sm:p-6 space-y-3 sm:space-y-5">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3 sm:gap-4">
-              <div className="space-y-2">
-                <label className="text-sm font-medium text-slate-700">Cliente *</label>
-                <div className="relative">
-                  <input
-                    type="text"
-                    value={clientSearchTerm}
-                    onChange={(event) => {
-                      const value = event.target.value;
-                      setClientSearchTerm(value);
-                      if (!value) {
-                        handleFormChange('client_id', '');
-                      }
-                    }}
-                    onFocus={() => setShowClientSuggestions(true)}
-                    onBlur={() => setTimeout(() => setShowClientSuggestions(false), 150)}
-                    placeholder="Digite para buscar clientes"
-                    className={`input-field ${formData.client_id ? 'border-emerald-400 bg-emerald-50/50' : ''}`}
-                  />
-                  {clientsLoading && (
-                    <Loader2 className="w-4 h-4 text-amber-500 absolute right-3 top-1/2 -translate-y-1/2 animate-spin" />
-                  )}
-                  {showClientSuggestions && (
-                    <div className="absolute mt-2 w-full bg-white border border-slate-200 rounded-xl shadow-lg max-h-60 overflow-y-auto z-10">
-                      {clientsLoading ? (
-                        <div className="px-4 py-3 text-sm text-slate-500">Buscando clientes...</div>
-                      ) : clients.length === 0 ? (
-                        <div className="px-4 py-3 text-xs text-slate-500">Nenhum cliente encontrado.</div>
-                      ) : (
-                        clients.map((client) => (
-                          <button
-                            type="button"
-                            key={client.id}
-                            className={`w-full text-left px-4 py-3 text-sm hover:bg-amber-50 transition ${
-                              client.id === formData.client_id ? 'bg-emerald-50 text-emerald-700 font-medium' : 'text-slate-700'
-                            }`}
-                            onMouseDown={(event) => event.preventDefault()}
-                            onClick={() => {
-                              handleFormChange('client_id', client.id);
-                              setClientSearchTerm(client.full_name);
-                              setShowClientSuggestions(false);
-                            }}
-                          >
-                            <div className="font-semibold flex items-center gap-2">
-                              {client.client_type === 'pessoa_fisica' ? (
-                                <User className="w-4 h-4 text-blue-500" />
-                              ) : (
-                                <Building2 className="w-4 h-4 text-purple-500" />
-                              )}
-                              {client.full_name}
-                            </div>
-                            <div className="text-xs text-slate-500">
-                              {client.cpf_cnpj || 'CPF/CNPJ não informado'} • {client.email || 'Sem e-mail'}
-                            </div>
-                          </button>
-                        ))
-                      )}
-                    </div>
-                  )}
-                </div>
-                {formData.client_id === '' && (
-                  <p className="text-xs text-slate-500">Selecione um cliente para vincular ao processo.</p>
-                )}
-              </div>
+              <ClientSearchSelect
+                value={formData.client_id}
+                onChange={(clientId, clientName) => {
+                  handleFormChange('client_id', clientId);
+                  setClientSearchTerm(clientName);
+                }}
+                label="Cliente *"
+                placeholder="Buscar cliente pelo nome, CPF ou email"
+                required
+                allowCreate={true}
+              />
 
               <div className="md:col-span-2">
                 <label className="text-sm font-medium text-slate-700">Código do Processo *</label>

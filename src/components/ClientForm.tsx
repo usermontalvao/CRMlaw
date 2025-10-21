@@ -173,6 +173,7 @@ const ClientForm: React.FC<ClientFormProps> = ({ client, prefill, onBack, onSave
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    console.log('🔵 Iniciando cadastro de cliente...');
     setLoading(true);
 
     try {
@@ -207,10 +208,13 @@ const ClientForm: React.FC<ClientFormProps> = ({ client, prefill, onBack, onSave
       }
 
       if (client) {
+        console.log('🔄 Atualizando cliente existente...');
         savedClient = await clientService.updateClient(client.id, cleanedData);
       } else {
+        console.log('➕ Criando novo cliente...');
         savedClient = await clientService.createClient(cleanedData);
       }
+      console.log('✅ Cliente salvo com sucesso:', savedClient);
       onSave(savedClient);
     } catch (error: any) {
       console.error('Erro ao salvar cliente:', error);

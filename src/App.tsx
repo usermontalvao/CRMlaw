@@ -34,6 +34,7 @@ import TasksModule from './components/TasksModule';
 import NotificationsModuleNew from './components/NotificationsModuleNew';
 import FinancialModule from './components/FinancialModule';
 import ProfileModal from './components/ProfileModal';
+import { ClientFormModal } from './components/ClientFormModal';
 import { NotificationCenterNew as NotificationCenter } from './components/NotificationCenterNew';
 import { NotificationPermissionBanner } from './components/NotificationPermissionBanner';
 import { useNotifications } from './hooks/useNotifications';
@@ -94,13 +95,15 @@ function App() {
   const [clientSearchResults, setClientSearchResults] = useState<ClientSearchResult[]>([]);
   const [clientSearchLoading, setClientSearchLoading] = useState(false);
   const [clientSearchOpen, setClientSearchOpen] = useState(false);
+  const [isClientFormModalOpen, setIsClientFormModalOpen] = useState(false);
+  const [clientFormPrefill, setClientFormPrefill] = useState<Partial<CreateClientDTO> | null>(null);
 
   const unreadCount = useMemo(() => notifications.filter((n) => !n.read).length, [notifications]);
 
   const clientsParams = useMemo(() => {
-    if (!moduleParams['clients']) return null;
+    if (!moduleParams['clientes']) return null;
     try {
-      return JSON.parse(moduleParams['clients']);
+      return JSON.parse(moduleParams['clientes']);
     } catch (error) {
       console.error('Erro ao interpretar parâmetros de clientes:', error);
       return null;
@@ -440,7 +443,7 @@ function App() {
     () => () =>
       setModuleParams((prev) => {
         const updated = { ...prev };
-        delete updated['clients'];
+        delete updated['clientes'];
         return updated;
       }),
     []
@@ -733,13 +736,34 @@ function App() {
                     placeholder="Buscar clientes..."
                     className="w-full rounded-lg border border-gray-200 pl-9 pr-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-500 focus:border-amber-500"
                   />
-                  {(clientSearchOpen && (clientSearchLoading || clientSearchResults.length > 0)) && (
+                  {(clientSearchOpen && (clientSearchLoading || clientSearchResults.length > 0 || clientSearchTerm.trim().length >= 2)) && (
                     <div className="absolute left-0 right-0 mt-1 bg-white border border-slate-200 rounded-lg shadow-lg z-40 max-h-72 overflow-y-auto text-sm">
                       {clientSearchLoading && (
                         <div className="px-3 py-2 text-slate-500">Buscando...</div>
                       )}
-                      {!clientSearchLoading && clientSearchResults.length === 0 && (
-                        <div className="px-3 py-2 text-slate-400">Nenhum cliente encontrado</div>
+                      {!clientSearchLoading && clientSearchResults.length === 0 && clientSearchTerm.trim().length >= 2 && (
+                        <>
+                          <div className="px-3 py-2 text-slate-400 border-b border-slate-100">
+                            Nenhum cliente encontrado para "{clientSearchTerm}"
+                          </div>
+                          <button
+                            type="button"
+                            onMouseDown={(event) => event.preventDefault()}
+                            onClick={() => {
+                              setClientSearchOpen(false);
+                              setClientFormPrefill({ full_name: clientSearchTerm });
+                              setIsClientFormModalOpen(true);
+                              setClientSearchTerm('');
+                            }}
+                            className="w-full text-left px-3 py-2.5 hover:bg-emerald-50 transition border-t border-slate-100 flex items-center gap-2 text-emerald-600 font-medium"
+                          >
+                            <span className="text-lg">+</span>
+                            <div>
+                              <p className="text-sm font-semibold">Adicionar Novo Cliente</p>
+                              <p className="text-xs text-slate-500">Criar cadastro para "{clientSearchTerm}"</p>
+                            </div>
+                          </button>
+                        </>
                       )}
                       {!clientSearchLoading && clientSearchResults.map((client) => {
                         const primaryPhone = client.phone || client.mobile || '';
@@ -756,6 +780,22 @@ function App() {
                           </button>
                         );
                       })}
+                      {!clientSearchLoading && clientSearchResults.length > 0 && (
+                        <button
+                          type="button"
+                          onMouseDown={(event) => event.preventDefault()}
+                          onClick={() => {
+                            setClientSearchOpen(false);
+                            setClientFormPrefill(null);
+                            setIsClientFormModalOpen(true);
+                            setClientSearchTerm('');
+                          }}
+                          className="w-full text-left px-3 py-2 hover:bg-emerald-50 transition border-t border-slate-100 flex items-center gap-2 text-emerald-600 font-medium"
+                        >
+                          <span className="text-lg">+</span>
+                          <span className="text-sm font-semibold">Adicionar Novo Cliente</span>
+                        </button>
+                      )}
                     </div>
                   )}
                 </div>
@@ -919,6 +959,22 @@ function App() {
           onClose={closeProfileModal}
           profile={profile}
           onProfileUpdate={handleProfileUpdate}
+        />
+
+        {/* Client Form Modal */}
+        <ClientFormModal
+          isOpen={isClientFormModalOpen}
+          onClose={() => {
+            setIsClientFormModalOpen(false);
+            setClientFormPrefill(null);
+          }}
+          onClientCreated={(clientId, clientName) => {
+            console.log('✅ Cliente criado:', clientId, clientName);
+            // Apenas fecha o modal, permanece na mesma tela
+            setIsClientFormModalOpen(false);
+            setClientFormPrefill(null);
+          }}
+          prefillData={clientFormPrefill || undefined}
         />
       </div>
       </div>

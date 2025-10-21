@@ -1,14 +1,14 @@
 {
   "name": "Advogado Web CRM",
   "short_name": "AdvogadoWeb",
-  "start_url": "/dashboard",
+  "start_url": "/",
   "scope": "/",
   "display": "standalone",
   "background_color": "#0f172a",
   "theme_color": "#f97316",
   "description": "Sistema de gestão jurídica com integrações DJEN e automações.",
   "lang": "pt-BR",
-  "orientation": "landscape",
+  "orientation": "portrait",
   "icons": [
     {
       "src": "/icon-192.png",

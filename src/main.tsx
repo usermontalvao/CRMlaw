@@ -6,6 +6,11 @@ import { AuthProvider } from './contexts/AuthContext';
 import { ToastProvider } from './contexts/ToastContext';
 import './index.css';
 
+// Garante que a URL sempre seja "/" (raiz)
+if (window.location.pathname !== '/') {
+  window.history.replaceState({}, '', '/');
+}
+
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
     <NavigationProvider initialModule="dashboard">

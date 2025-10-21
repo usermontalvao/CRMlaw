@@ -1,24 +1,30 @@
 // Service Worker para Push Notifications
 
-const CACHE_NAME = 'crm-cache-v2';
+const CACHE_NAME = 'crm-cache-v3'; // Incrementado para forçar atualização
 
 // Install event
 self.addEventListener('install', (event) => {
-  console.log('Service Worker instalado');
+  console.log('Service Worker instalado - v3');
   self.skipWaiting();
 });
 
 // Activate event
 self.addEventListener('activate', (event) => {
-  console.log('Service Worker ativado');
+  console.log('Service Worker ativado - v3');
   event.waitUntil(
     caches.keys().then((cacheNames) => {
       return Promise.all(
         cacheNames
           .filter((name) => name !== CACHE_NAME)
-          .map((name) => caches.delete(name))
+          .map((name) => {
+            console.log('Deletando cache antigo:', name);
+            return caches.delete(name);
+          })
       );
-    }).then(() => clients.claim())
+    }).then(() => {
+      console.log('Todos os caches antigos foram limpos');
+      return clients.claim();
+    })
   );
 });
 
@@ -27,7 +33,8 @@ self.addEventListener('fetch', (event) => {
   // Apenas interceptar requisições de navegação (HTML)
   if (event.request.mode === 'navigate') {
     event.respondWith(
-      fetch(event.request).catch(() => {
+      // Sempre redirecionar para / (raiz) e buscar index.html
+      fetch('/').catch(() => {
         // Se falhar (offline ou erro), retornar index.html do cache ou network
         return caches.match('/index.html').then((response) => {
           return response || fetch('/index.html');

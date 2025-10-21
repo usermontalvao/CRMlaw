@@ -35,6 +35,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { financialService } from '../services/financial.service';
 import { clientService } from '../services/client.service';
 import { calendarService } from '../services/calendar.service';
+import { ClientSearchSelect } from './ClientSearchSelect';
 import type {
   Agreement,
   AgreementStatus,
@@ -1833,22 +1834,14 @@ const FinancialModule: React.FC = () => {
                   )}
 
                   <div className="grid md:grid-cols-2 gap-4">
-                    <div>
-                      <label className="text-xs font-semibold text-slate-600 uppercase mb-1 block">Cliente</label>
-                      <select
-                        value={editForm.clientId}
-                        onChange={(e) => handleEditChange('clientId', e.target.value)}
-                        className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500"
-                        required
-                      >
-                        <option value="">Selecione o cliente</option>
-                        {clients.map((client) => (
-                          <option key={client.id} value={client.id}>
-                            {client.full_name || (client as any)?.name || 'Cliente sem nome'}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
+                    <ClientSearchSelect
+                      value={editForm.clientId}
+                      onChange={(clientId) => handleEditChange('clientId', clientId)}
+                      label="Cliente"
+                      placeholder="Buscar cliente..."
+                      required
+                      allowCreate={true}
+                    />
                     <div>
                       <label className="text-xs font-semibold text-slate-600 uppercase mb-1 block">Processo (opcional)</label>
                       <input
@@ -2415,22 +2408,14 @@ const FinancialModule: React.FC = () => {
               )}
 
               <div className="grid md:grid-cols-2 gap-4">
-                <div>
-                  <label className="text-xs font-semibold text-slate-600 uppercase mb-1 block">Cliente</label>
-                  <select
-                    value={formData.clientId}
-                    onChange={(e) => handleChange('clientId', e.target.value)}
-                    className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500"
-                    required
-                  >
-                    <option value="">Selecione o cliente</option>
-                    {clients.map((client) => (
-                      <option key={client.id} value={client.id}>
-                        {client.full_name || (client as any)?.name || 'Cliente sem nome'}
-                      </option>
-                    ))}
-                  </select>
-                </div>
+                <ClientSearchSelect
+                  value={formData.clientId}
+                  onChange={(clientId) => handleChange('clientId', clientId)}
+                  label="Cliente"
+                  placeholder="Buscar cliente..."
+                  required
+                  allowCreate={true}
+                />
                 <div>
                   <label className="text-xs font-semibold text-slate-600 uppercase mb-1 block">Processo (opcional)</label>
                   <input
