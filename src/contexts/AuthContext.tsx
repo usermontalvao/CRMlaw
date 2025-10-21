@@ -51,11 +51,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     return () => subscription.unsubscribe();
   }, []);
 
-  // Heartbeat para manter sessão ativa e renovar token periodicamente
+  // Heartbeat otimizado: verificar sessão a cada 10 minutos (reduz requisições)
   useEffect(() => {
     if (!session) return;
 
-    // Verificar e renovar sessão a cada 5 minutos
     const heartbeatInterval = setInterval(async () => {
       try {
         const { data, error } = await supabase.auth.getSession();
@@ -72,34 +71,35 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           return;
         }
 
-        // Verificar se o token está próximo de expirar (menos de 10 minutos)
+        // Renovar apenas se token expira em menos de 20 minutos E houve atividade recente
         const expiresAt = data.session.expires_at;
         if (expiresAt) {
           const expiresInMs = (expiresAt * 1000) - Date.now();
-          const tenMinutes = 10 * 60 * 1000;
+          const twentyMinutes = 20 * 60 * 1000;
+          const recentActivity = (Date.now() - lastActivity) < 5 * 60 * 1000; // Ativo nos últimos 5min
 
-          if (expiresInMs < tenMinutes) {
-            console.log('Token próximo de expirar, renovando...');
+          if (expiresInMs < twentyMinutes && recentActivity) {
+            console.log('🔄 Renovando sessão (expira em', Math.round(expiresInMs / 60000), 'min)');
             const { data: refreshData, error: refreshError } = await supabase.auth.refreshSession();
             
             if (refreshError) {
               console.error('Erro ao renovar sessão:', refreshError);
             } else if (refreshData.session) {
-              console.log('✅ Sessão renovada com sucesso');
+              console.log('✅ Sessão renovada');
               setSession(refreshData.session);
               setUser(refreshData.user);
             }
           }
         }
       } catch (error) {
-        console.error('Erro no heartbeat de sessão:', error);
+        console.error('Erro no heartbeat:', error);
       }
-    }, 5 * 60 * 1000); // A cada 5 minutos
+    }, 10 * 60 * 1000); // A cada 10 minutos (reduzido de 5min)
 
     return () => clearInterval(heartbeatInterval);
-  }, [session]);
+  }, [session, lastActivity]);
 
-  // Detectar atividade do usuário e renovar sessão se necessário
+  // Detectar atividade do usuário (apenas rastrear, sem requisições)
   useEffect(() => {
     if (!session) return;
 
@@ -107,10 +107,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       setLastActivity(Date.now());
     };
 
-    // Eventos que indicam atividade do usuário
-    const events = ['mousedown', 'keydown', 'scroll', 'touchstart'];
+    // Eventos que indicam atividade (throttled para reduzir processamento)
+    const events = ['mousedown', 'keydown'];
     events.forEach(event => {
-      window.addEventListener(event, handleActivity);
+      window.addEventListener(event, handleActivity, { passive: true });
     });
 
     return () => {
@@ -119,44 +119,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       });
     };
   }, [session]);
-
-  // Verificar se precisa renovar sessão baseado na atividade
-  useEffect(() => {
-    if (!session) return;
-
-    const checkSessionOnActivity = async () => {
-      try {
-        const { data, error } = await supabase.auth.getSession();
-        
-        if (!data.session || error) return;
-
-        const expiresAt = data.session.expires_at;
-        if (expiresAt) {
-          const expiresInMs = (expiresAt * 1000) - Date.now();
-          const fifteenMinutes = 15 * 60 * 1000;
-
-          // Se o token expira em menos de 15 minutos e houve atividade recente
-          if (expiresInMs < fifteenMinutes && (Date.now() - lastActivity) < 60000) {
-            console.log('Renovando sessão devido à atividade do usuário...');
-            const { data: refreshData, error: refreshError } = await supabase.auth.refreshSession();
-            
-            if (!refreshError && refreshData.session) {
-              console.log('✅ Sessão renovada por atividade');
-              setSession(refreshData.session);
-              setUser(refreshData.user);
-            }
-          }
-        }
-      } catch (error) {
-        console.error('Erro ao verificar sessão por atividade:', error);
-      }
-    };
-
-    // Verificar a cada 2 minutos se houve atividade recente
-    const activityCheckInterval = setInterval(checkSessionOnActivity, 2 * 60 * 1000);
-
-    return () => clearInterval(activityCheckInterval);
-  }, [session, lastActivity]);
 
   const signIn = async (email: string, password: string) => {
     const { data, error } = await supabase.auth.signInWithPassword({

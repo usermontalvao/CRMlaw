@@ -113,7 +113,7 @@ const QuickAction: React.FC<QuickActionProps> = ({ title, description, icon, onC
 
 // Cache keys e configuração
 const DASHBOARD_CACHE_KEY = 'crm-dashboard-cache';
-const CACHE_DURATION = 5 * 60 * 1000; // 5 minutos
+const CACHE_DURATION = 30 * 60 * 1000; // 30 minutos (reduzir requisições)
 
 interface DashboardCache {
   timestamp: number;
@@ -183,8 +183,11 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToModule }) => {
         }
       }
 
-      // Carregar dados da API
-      console.log('🔄 Carregando Dashboard da API');
+      // Carregar dados da API com limites para reduzir egress
+      console.log('🔄 Carregando Dashboard da API (com limites)');
+      const today = new Date().toISOString().split('T')[0];
+      const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+      
       const [
         clientsData,
         processesData,
@@ -196,19 +199,34 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToModule }) => {
         allInstallmentsData,
         djenIntimacoesData,
       ] = await Promise.all([
-        clientService.listClients(),
-        processService.listProcesses(),
-        deadlineService.listDeadlines(),
-        taskService.listTasks(),
-        calendarService.listEvents(),
-        requirementService.listRequirements(),
+        // Apenas clientes ativos (reduz volume)
+        clientService.listClients().then(clients => clients.filter(c => c.status === 'ativo')),
+        // Apenas processos ativos (não arquivados)
+        processService.listProcesses().then(procs => procs.filter(p => p.status !== 'arquivado').slice(0, 100)),
+        // Apenas prazos pendentes
+        deadlineService.listDeadlines().then(deadlines => deadlines.filter(d => d.status === 'pendente').slice(0, 50)),
+        // Apenas tarefas pendentes
+        taskService.listTasks().then(tasks => tasks.filter(t => t.status === 'pending').slice(0, 50)),
+        // Apenas eventos futuros (próximos 60 dias)
+        calendarService.listEvents().then(events => {
+          const futureDate = new Date(Date.now() + 60 * 24 * 60 * 60 * 1000);
+          return events.filter(e => e.start_at && new Date(e.start_at) <= futureDate).slice(0, 100);
+        }),
+        // Apenas requerimentos aguardando confecção
+        requirementService.listRequirements().then(reqs => reqs.filter(r => r.status === 'aguardando_confeccao').slice(0, 50)),
         financialService.getFinancialStats(new Date().toISOString().slice(0, 7)),
-        financialService.listAllInstallments(),
+        // Apenas parcelas vencidas/pendentes dos últimos 30 dias
+        financialService.listAllInstallments().then(insts => 
+          insts.filter(i => 
+            (i.status === 'pendente' || i.status === 'vencido') && 
+            i.due_date >= thirtyDaysAgo
+          ).slice(0, 50)
+        ),
+        // Apenas intimações não lidas
         djenLocalService.listComunicacoes({ lida: false }),
       ]);
       
-      // Filtrar parcelas vencidas
-      const today = new Date().toISOString().split('T')[0];
+      // Filtrar parcelas vencidas (reutilizar variável today já declarada)
       const overdue = allInstallmentsData
         .filter(inst => (inst.status === 'pendente' || inst.status === 'vencido') && inst.due_date < today)
         .sort((a, b) => a.due_date.localeCompare(b.due_date))

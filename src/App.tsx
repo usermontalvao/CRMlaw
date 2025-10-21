@@ -1,4 +1,4 @@
-import { useEffect, useState, useMemo } from 'react';
+import { useEffect, useState, useMemo, lazy, Suspense } from 'react';
 import { useNavigation } from './contexts/NavigationContext';
 import {
   Scale,
@@ -21,26 +21,28 @@ import {
   Home,
   FileText,
 } from 'lucide-react';
-import Dashboard from './components/Dashboard';
-import ClientsModule from './components/ClientsModule';
-import DocumentsModule from './components/DocumentsModule';
-import LeadsModule from './components/LeadsModule';
-import ProcessesModule from './components/ProcessesModule';
-import IntimationsModule from './components/IntimationsModule';
-import RequirementsModule from './components/RequirementsModule';
-import DeadlinesModule from './components/DeadlinesModule';
-import CalendarModule from './components/CalendarModule';
-import TasksModule from './components/TasksModule';
-import NotificationsModuleNew from './components/NotificationsModuleNew';
-import FinancialModule from './components/FinancialModule';
+import Login from './components/Login';
 import ProfileModal from './components/ProfileModal';
 import { ClientFormModal } from './components/ClientFormModal';
 import { NotificationCenterNew as NotificationCenter } from './components/NotificationCenterNew';
 import { NotificationPermissionBanner } from './components/NotificationPermissionBanner';
+
+// Lazy loading dos módulos principais (carrega apenas quando acessado)
+const Dashboard = lazy(() => import('./components/Dashboard'));
+const ClientsModule = lazy(() => import('./components/ClientsModule'));
+const DocumentsModule = lazy(() => import('./components/DocumentsModule'));
+const LeadsModule = lazy(() => import('./components/LeadsModule'));
+const ProcessesModule = lazy(() => import('./components/ProcessesModule'));
+const IntimationsModule = lazy(() => import('./components/IntimationsModule'));
+const RequirementsModule = lazy(() => import('./components/RequirementsModule'));
+const DeadlinesModule = lazy(() => import('./components/DeadlinesModule'));
+const CalendarModule = lazy(() => import('./components/CalendarModule'));
+const TasksModule = lazy(() => import('./components/TasksModule'));
+const NotificationsModuleNew = lazy(() => import('./components/NotificationsModuleNew'));
+const FinancialModule = lazy(() => import('./components/FinancialModule'));
 import { useNotifications } from './hooks/useNotifications';
 import { usePresence } from './hooks/usePresence';
 import { pushNotifications } from './utils/pushNotifications';
-import Login from './components/Login';
 import { useAuth } from './contexts/AuthContext';
 import { CacheProvider } from './contexts/CacheContext';
 import { useDjenSync } from './hooks/useDjenSync';
@@ -879,78 +881,87 @@ function App() {
             </div>
           )}
 
-          {/* Renderização condicional baseada no módulo ativo */}
-          {activeModule === 'dashboard' && <Dashboard onNavigateToModule={handleNavigateToModule} />}
-          {activeModule === 'leads' && <LeadsModule onConvertLead={handleConvertLead} />}
-          {activeModule === 'clientes' && (
-            <ClientsModule 
-              prefillData={clientPrefill} 
-              onClientSaved={handleClientSaved}
-              onClientCancelled={handleClientCancelled}
-              forceCreate={clientsForceCreate}
-              focusClientId={clientsFocusClientId}
-              onParamConsumed={clearClientParams}
-              onNavigateToModule={(moduleKey, params) => {
-                navigateTo(moduleKey as any, params);
-              }}
-            />
-          )}
-          {activeModule === 'documentos' && <DocumentsModule />}
-          {activeModule === 'processos' && (
-            <ProcessesModule 
-              forceCreate={moduleParams['processos'] ? JSON.parse(moduleParams['processos']).mode === 'create' : false}
-              entityId={moduleParams['processos'] ? JSON.parse(moduleParams['processos']).entityId : undefined}
-              prefillData={moduleParams['processos'] ? JSON.parse(moduleParams['processos']).prefill : undefined}
-              onParamConsumed={() => clearModuleParams('processos')}
-            />
-          )}
-          {activeModule === 'requerimentos' && (
-            <RequirementsModule 
-              forceCreate={moduleParams['requerimentos'] ? JSON.parse(moduleParams['requerimentos']).mode === 'create' : false}
-              entityId={moduleParams['requerimentos'] ? JSON.parse(moduleParams['requerimentos']).entityId : undefined}
-              prefillData={moduleParams['requerimentos'] ? JSON.parse(moduleParams['requerimentos']).prefill : undefined}
-              onParamConsumed={() => clearModuleParams('requerimentos')}
-            />
-          )}
-          {activeModule === 'prazos' && (
-            <DeadlinesModule 
-              forceCreate={moduleParams['prazos'] ? JSON.parse(moduleParams['prazos']).mode === 'create' : false}
-              entityId={moduleParams['prazos'] ? JSON.parse(moduleParams['prazos']).entityId : undefined}
-              prefillData={moduleParams['prazos'] ? JSON.parse(moduleParams['prazos']).prefill : undefined}
-              onParamConsumed={() => clearModuleParams('prazos')}
-            />
-          )}
-          {activeModule === 'intimacoes' && (
-            <IntimationsModule 
-              onNavigateToModule={(moduleKey, params) => {
-                navigateTo(moduleKey as any, params);
-              }}
-            />
-          )}
-          {activeModule === 'agenda' && (
-            <CalendarModule 
-              userName={profile.name}
-              onNavigateToModule={({ module, entityId }) => {
-                if (entityId) {
-                  navigateTo(module as any, { entityId });
-                } else {
-                  navigateTo(module as any);
-                }
-              }}
-              forceCreate={moduleParams['calendar'] ? JSON.parse(moduleParams['calendar']).mode === 'create' : false}
-              prefillData={moduleParams['calendar'] ? JSON.parse(moduleParams['calendar']).prefill : undefined}
-              onParamConsumed={() => clearModuleParams('calendar')}
-            />
-          )}
-          {activeModule === 'tarefas' && (
-            <TasksModule 
-              focusNewTask={moduleParams['tasks'] ? JSON.parse(moduleParams['tasks']).mode === 'create' : false}
-              onParamConsumed={() => clearModuleParams('tasks')}
-              onPendingTasksChange={setPendingTasksCount}
-            />
-          )}
-          {activeModule === 'notificacoes' && <NotificationsModuleNew onNavigateToModule={handleNavigateToModule} />}
-          {activeModule === 'financeiro' && <FinancialModule />}
+          {/* Renderização condicional baseada no módulo ativo com Lazy Loading */}
+          <Suspense fallback={
+            <div className="flex h-96 items-center justify-center">
+              <div className="text-center">
+                <Loader2 className="w-12 h-12 text-amber-600 animate-spin mx-auto mb-4" />
+                <p className="text-slate-600">Carregando módulo...</p>
+              </div>
+            </div>
+          }>
+            {activeModule === 'dashboard' && <Dashboard onNavigateToModule={handleNavigateToModule} />}
+            {activeModule === 'leads' && <LeadsModule onConvertLead={handleConvertLead} />}
+            {activeModule === 'clientes' && (
+              <ClientsModule 
+                prefillData={clientPrefill} 
+                onClientSaved={handleClientSaved}
+                onClientCancelled={handleClientCancelled}
+                forceCreate={clientsForceCreate}
+                focusClientId={clientsFocusClientId}
+                onParamConsumed={clearClientParams}
+                onNavigateToModule={(moduleKey, params) => {
+                  navigateTo(moduleKey as any, params);
+                }}
+              />
+            )}
+            {activeModule === 'documentos' && <DocumentsModule />}
+            {activeModule === 'processos' && (
+              <ProcessesModule 
+                forceCreate={moduleParams['processos'] ? JSON.parse(moduleParams['processos']).mode === 'create' : false}
+                entityId={moduleParams['processos'] ? JSON.parse(moduleParams['processos']).entityId : undefined}
+                prefillData={moduleParams['processos'] ? JSON.parse(moduleParams['processos']).prefill : undefined}
+                onParamConsumed={() => clearModuleParams('processos')}
+              />
+            )}
+            {activeModule === 'requerimentos' && (
+              <RequirementsModule 
+                forceCreate={moduleParams['requerimentos'] ? JSON.parse(moduleParams['requerimentos']).mode === 'create' : false}
+                entityId={moduleParams['requerimentos'] ? JSON.parse(moduleParams['requerimentos']).entityId : undefined}
+                prefillData={moduleParams['requerimentos'] ? JSON.parse(moduleParams['requerimentos']).prefill : undefined}
+                onParamConsumed={() => clearModuleParams('requerimentos')}
+              />
+            )}
+            {activeModule === 'prazos' && (
+              <DeadlinesModule 
+                forceCreate={moduleParams['prazos'] ? JSON.parse(moduleParams['prazos']).mode === 'create' : false}
+                entityId={moduleParams['prazos'] ? JSON.parse(moduleParams['prazos']).entityId : undefined}
+                prefillData={moduleParams['prazos'] ? JSON.parse(moduleParams['prazos']).prefill : undefined}
+                onParamConsumed={() => clearModuleParams('prazos')}
+              />
+            )}
+            {activeModule === 'intimacoes' && (
+              <IntimationsModule 
+                onNavigateToModule={(moduleKey, params) => {
+                  navigateTo(moduleKey as any, params);
+                }}
+              />
+            )}
+            {activeModule === 'agenda' && (
+              <CalendarModule 
+                userName={profile.name}
+                onNavigateToModule={({ module, entityId }) => {
+                  if (entityId) {
+                    navigateTo(module as any, { entityId });
+                  } else {
+                    navigateTo(module as any);
+                  }
+                }}
+                forceCreate={moduleParams['calendar'] ? JSON.parse(moduleParams['calendar']).mode === 'create' : false}
+                prefillData={moduleParams['calendar'] ? JSON.parse(moduleParams['calendar']).prefill : undefined}
+                onParamConsumed={() => clearModuleParams('calendar')}
+              />
+            )}
+            {activeModule === 'tarefas' && (
+              <TasksModule 
+                focusNewTask={moduleParams['tasks'] ? JSON.parse(moduleParams['tasks']).mode === 'create' : false}
+                onParamConsumed={() => clearModuleParams('tasks')}
+                onPendingTasksChange={setPendingTasksCount}
+              />
+            )}
+            {activeModule === 'notificacoes' && <NotificationsModuleNew onNavigateToModule={handleNavigateToModule} />}
+            {activeModule === 'financeiro' && <FinancialModule />}
+          </Suspense>
         </main>
 
         {/* Profile Modal */}
