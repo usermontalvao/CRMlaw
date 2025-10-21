@@ -28,6 +28,7 @@ import { processService } from '../services/process.service';
 import { requirementService } from '../services/requirement.service';
 import { clientService } from '../services/client.service';
 import { profileService } from '../services/profile.service';
+import { ClientSearchSelect } from './ClientSearchSelect';
 import type { Deadline, DeadlineStatus, DeadlinePriority, DeadlineType } from '../types/deadline.types';
 import type { Process } from '../types/process.types';
 import type { Requirement } from '../types/requirement.types';
@@ -952,54 +953,21 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
             </div>
 
             <div className="md:col-span-2">
-              <label className="text-sm font-medium text-slate-700">Cliente *</label>
-              <div className="relative">
-                <input
-                  value={clientSearchTerm}
-                  onChange={(event) => {
-                    setClientSearchTerm(event.target.value);
-                    if (!event.target.value) {
-                      handleFormChange('client_id', '');
-                      handleFormChange('process_id', '');
-                      setProcessSearchTerm('');
-                    }
-                  }}
-                  onFocus={() => setShowClientSuggestions(true)}
-                  onBlur={() => setTimeout(() => setShowClientSuggestions(false), 150)}
-                  className="input-field"
-                  placeholder="Digite o nome ou CPF do cliente"
-                  required
-                />
-                {clientsLoading && (
-                  <Loader2 className="w-4 h-4 text-blue-500 absolute right-3 top-1/2 -translate-y-1/2 animate-spin" />
-                )}
-                {showClientSuggestions && (
-                  <div className="absolute mt-2 w-full bg-white border border-slate-200 rounded-xl shadow-lg max-h-60 overflow-y-auto z-10">
-                    {clientsLoading ? (
-                      <div className="px-4 py-3 text-xs text-slate-500">Buscando clientes...</div>
-                    ) : filteredClients.length === 0 ? (
-                      <div className="px-4 py-3 text-xs text-slate-500">Nenhum cliente encontrado.</div>
-                    ) : (
-                      filteredClients.map((client) => (
-                        <button
-                          type="button"
-                          key={client.id}
-                          className="w-full text-left px-4 py-3 text-sm hover:bg-slate-50 transition"
-                          onMouseDown={(event) => event.preventDefault()}
-                          onClick={() => {
-                            handleFormChange('client_id', client.id);
-                            setClientSearchTerm(client.full_name || '');
-                            setShowClientSuggestions(false);
-                          }}
-                        >
-                          <div className="font-semibold text-slate-800">{client.full_name || 'Cliente sem nome'}</div>
-                          <div className="text-xs text-slate-500">{client.cpf_cnpj || 'CPF não informado'}</div>
-                        </button>
-                      ))
-                    )}
-                  </div>
-                )}
-              </div>
+              <ClientSearchSelect
+                value={formData.client_id}
+                onChange={(clientId) => {
+                  handleFormChange('client_id', clientId);
+                  // Limpar processo ao trocar cliente
+                  if (!clientId) {
+                    handleFormChange('process_id', '');
+                    setProcessSearchTerm('');
+                  }
+                }}
+                label="Cliente *"
+                placeholder="Buscar cliente..."
+                required
+                allowCreate={true}
+              />
             </div>
 
             {formData.type === 'processo' && (

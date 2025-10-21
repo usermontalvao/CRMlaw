@@ -28,6 +28,7 @@ import {
 import { djenService } from '../services/djen.service';
 import { djenLocalService } from '../services/djenLocal.service';
 import { clientService } from '../services/client.service';
+import { ClientSearchSelect } from './ClientSearchSelect';
 import { processService } from '../services/process.service';
 import { deadlineService } from '../services/deadline.service';
 import { calendarService } from '../services/calendar.service';
@@ -1915,10 +1916,7 @@ const DeadlineCreationModal: React.FC<DeadlineCreationModalProps> = ({
     responsible_id: '',
   });
 
-  const [clientSearchTerm, setClientSearchTerm] = useState(
-    client ? client.full_name : ''
-  );
-  const [showClientSuggestions, setShowClientSuggestions] = useState(false);
+  // Removido: clientSearchTerm e showClientSuggestions (agora usa ClientSearchSelect no modal de prazo)
   const [responsibleSearchTerm, setResponsibleSearchTerm] = useState('');
   const [showResponsibleSuggestions, setShowResponsibleSuggestions] = useState(false);
 
@@ -2073,53 +2071,13 @@ const DeadlineCreationModal: React.FC<DeadlineCreationModalProps> = ({
 
           {/* Cliente */}
           <div>
-            <label className="block text-sm font-semibold text-slate-900 mb-2">
-              Cliente {intimation.client_id && '(vinculado automaticamente)'}
-            </label>
-            <div className="relative">
-              <input
-                type="text"
-                value={clientSearchTerm}
-                onChange={(e) => {
-                  setClientSearchTerm(e.target.value);
-                  if (!e.target.value.trim()) {
-                    setFormData({ ...formData, client_id: '' });
-                  }
-                }}
-                onFocus={() => setShowClientSuggestions(true)}
-                onBlur={() => setTimeout(() => setShowClientSuggestions(false), 200)}
-                placeholder="Digite para buscar cliente..."
-                className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-transparent"
-              />
-              {showClientSuggestions && clientSearchTerm && (
-                <div className="absolute z-20 mt-1 w-full bg-white border border-gray-200 rounded-lg shadow-lg max-h-48 overflow-y-auto">
-                  {clients
-                    .filter((c) =>
-                      c.full_name.toLowerCase().includes(clientSearchTerm.toLowerCase())
-                    )
-                    .slice(0, 5)
-                    .map((c) => (
-                      <button
-                        key={c.id}
-                        type="button"
-                        onMouseDown={(e) => e.preventDefault()}
-                        onClick={() => {
-                          setFormData({ ...formData, client_id: c.id });
-                          setClientSearchTerm(c.full_name);
-                          setShowClientSuggestions(false);
-                        }}
-                        className="w-full text-left px-4 py-2 text-sm hover:bg-amber-50 transition"
-                      >
-                        <div className="font-semibold text-slate-900">{c.full_name}</div>
-                        <div className="text-xs text-slate-500">{c.cpf_cnpj || 'CPF não informado'}</div>
-                      </button>
-                    ))}
-                </div>
-              )}
-            </div>
-            {formData.client_id && (
-              <p className="text-xs text-emerald-600 mt-1">✓ Cliente selecionado</p>
-            )}
+            <ClientSearchSelect
+              value={formData.client_id}
+              onChange={(clientId) => setFormData({ ...formData, client_id: clientId })}
+              label={`Cliente ${intimation.client_id ? '(vinculado automaticamente)' : ''}`}
+              placeholder="Buscar cliente..."
+              allowCreate={true}
+            />
           </div>
 
           {/* Responsável */}
@@ -2303,10 +2261,7 @@ const AppointmentCreationModal: React.FC<AppointmentCreationModalProps> = ({
     responsible_id: '',
   });
 
-  const [clientSearchTerm, setClientSearchTerm] = useState(
-    client ? client.full_name : ''
-  );
-  const [showClientSuggestions, setShowClientSuggestions] = useState(false);
+  // Removido: clientSearchTerm e showClientSuggestions (agora usa ClientSearchSelect no modal de compromisso)
   const [responsibleSearchTerm, setResponsibleSearchTerm] = useState('');
   const [showResponsibleSuggestions, setShowResponsibleSuggestions] = useState(false);
 
@@ -2428,53 +2383,13 @@ const AppointmentCreationModal: React.FC<AppointmentCreationModalProps> = ({
 
           {/* Cliente */}
           <div>
-            <label className="block text-sm font-semibold text-slate-900 mb-2">
-              Cliente {intimation.client_id && '(vinculado automaticamente)'}
-            </label>
-            <div className="relative">
-              <input
-                type="text"
-                value={clientSearchTerm}
-                onChange={(e) => {
-                  setClientSearchTerm(e.target.value);
-                  if (!e.target.value.trim()) {
-                    setFormData({ ...formData, client_id: '' });
-                  }
-                }}
-                onFocus={() => setShowClientSuggestions(true)}
-                onBlur={() => setTimeout(() => setShowClientSuggestions(false), 200)}
-                placeholder="Digite para buscar cliente..."
-                className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
-              />
-              {showClientSuggestions && clientSearchTerm && (
-                <div className="absolute z-20 mt-1 w-full bg-white border border-gray-200 rounded-lg shadow-lg max-h-48 overflow-y-auto">
-                  {clients
-                    .filter((c) =>
-                      c.full_name.toLowerCase().includes(clientSearchTerm.toLowerCase())
-                    )
-                    .slice(0, 5)
-                    .map((c) => (
-                      <button
-                        key={c.id}
-                        type="button"
-                        onMouseDown={(e) => e.preventDefault()}
-                        onClick={() => {
-                          setFormData({ ...formData, client_id: c.id });
-                          setClientSearchTerm(c.full_name);
-                          setShowClientSuggestions(false);
-                        }}
-                        className="w-full text-left px-4 py-2 text-sm hover:bg-indigo-50 transition"
-                      >
-                        <div className="font-semibold text-slate-900">{c.full_name}</div>
-                        <div className="text-xs text-slate-500">{c.cpf_cnpj || 'CPF não informado'}</div>
-                      </button>
-                    ))}
-                </div>
-              )}
-            </div>
-            {formData.client_id && (
-              <p className="text-xs text-emerald-600 mt-1">✓ Cliente selecionado</p>
-            )}
+            <ClientSearchSelect
+              value={formData.client_id}
+              onChange={(clientId) => setFormData({ ...formData, client_id: clientId })}
+              label={`Cliente ${intimation.client_id ? '(vinculado automaticamente)' : ''}`}
+              placeholder="Buscar cliente..."
+              allowCreate={true}
+            />
           </div>
 
           {/* Data e Hora */}
