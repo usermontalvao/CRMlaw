@@ -382,7 +382,7 @@ const ClientForm: React.FC<ClientFormProps> = ({ client, prefill, onBack, onSave
                     onChange={(e) => handleChange('marital_status', e.target.value as MaritalStatus)}
                   >
                     <option value="">Selecione...</option>
-                    <option value="solteiro">olteiro(a)</option>
+                    <option value="solteiro">solteiro(a)</option>
                     <option value="casado">Casado(a)</option>
                     <option value="divorciado">Divorciado(a)</option>
                     <option value="viuvo">Viúvo(a)</option>
