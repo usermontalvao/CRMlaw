@@ -15,6 +15,7 @@ import {
   Plus,
   Calendar as CalendarIcon,
   UserCircle,
+  UserCog,
   ChevronDown,
   ChevronRight,
   Eye,
@@ -24,6 +25,8 @@ import {
   Lightbulb,
   AlertTriangle,
   Download,
+  Info,
+  FileCog,
 } from 'lucide-react';
 import { djenService } from '../services/djen.service';
 import { djenLocalService } from '../services/djenLocal.service';
@@ -40,6 +43,7 @@ import { useToastContext } from '../contexts/ToastContext';
 import { useAuth } from '../contexts/AuthContext';
 import { exportToCSV, exportToExcel, exportToPDF } from '../utils/exportIntimations';
 import { addSyncHistory } from '../utils/syncHistory';
+import { djenSyncStatusService, type DjenSyncLog } from '../services/djenSyncStatus.service';
 import type { DjenComunicacaoLocal, DjenConsultaParams } from '../types/djen.types';
 import type { Client } from '../types/client.types';
 import type { Process } from '../types/process.types';
@@ -48,7 +52,25 @@ import type { CreateCalendarEventDTO, CalendarEventType } from '../types/calenda
 import type { Profile } from '../services/profile.service';
 import type { IntimationAnalysis } from '../types/ai.types';
 
-const AUTO_SYNC_INTERVAL = 2 * 60 * 60 * 1000; // 2 horas em ms
+interface ModuleSettings {
+  defaultGroupByProcess: boolean;
+  defaultStatusFilter: 'all' | 'unread' | 'read';
+  externalCronToken: string;
+}
+
+const MODULE_SETTINGS_STORAGE_KEY = 'intimations_module_settings';
+
+const startOfToday = () => {
+  const date = new Date();
+  date.setHours(0, 0, 0, 0);
+  return date;
+};
+
+const subDays = (date: Date, amount: number) => {
+  const result = new Date(date);
+  result.setDate(result.getDate() - amount);
+  return result;
+};
 
 interface IntimationsModuleProps {
   onNavigateToModule?: (moduleKey: string, params?: any) => void;
@@ -65,9 +87,9 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
   const [members, setMembers] = useState<Profile[]>([]);
   const [currentUserProfile, setCurrentUserProfile] = useState<Profile | null>(null);
   const [loading, setLoading] = useState(true);
+  const [initialSnapshotLoaded, setInitialSnapshotLoaded] = useState(false);
   const [syncing, setSyncing] = useState(false);
   const [clearingAll, setClearingAll] = useState(false);
-  const [lastAutoSyncAt, setLastAutoSyncAt] = useState<string | null>(null);
 
   // Filtros e busca
   const [searchTerm, setSearchTerm] = useState('');
@@ -77,7 +99,7 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
   const [customDateStart, setCustomDateStart] = useState('');
   const [customDateEnd, setCustomDateEnd] = useState('');
   const [showFilters, setShowFilters] = useState(false);
-  const [groupByProcess, setGroupByProcess] = useState(false);
+  const [groupByProcess, setGroupByProcess] = useState(true);
 
   // Detalhes e ações
   const [selectedIntimation, setSelectedIntimation] = useState<DjenComunicacaoLocal | null>(null);
@@ -105,6 +127,82 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
 
   // Exportação
   const [showExportMenu, setShowExportMenu] = useState(false);
+  const [showClearMenu, setShowClearMenu] = useState(false);
+  const [syncLogs, setSyncLogs] = useState<DjenSyncLog[]>([]);
+  const [syncStatusLoading, setSyncStatusLoading] = useState(false);
+  const [showCronHistory, setShowCronHistory] = useState(false);
+  const [moduleSettings, setModuleSettings] = useState<ModuleSettings>({
+    defaultGroupByProcess: true,
+    defaultStatusFilter: 'unread',
+    externalCronToken: 'djen-sync-2024',
+  });
+  const [settingsLoaded, setSettingsLoaded] = useState(false);
+  const [copyStatus, setCopyStatus] = useState<'idle' | 'copied' | 'error'>('idle');
+  const overviewSectionRef = useRef<HTMLDivElement | null>(null);
+  const configSectionRef = useRef<HTMLDivElement | null>(null);
+  const filterSectionRef = useRef<HTMLDivElement | null>(null);
+  const listSectionRef = useRef<HTMLDivElement | null>(null);
+
+  // Carregar configurações salvas
+  useEffect(() => {
+    try {
+      const stored = localStorage.getItem(MODULE_SETTINGS_STORAGE_KEY);
+      if (stored) {
+        const parsed = JSON.parse(stored) as ModuleSettings;
+        setModuleSettings(parsed);
+        setGroupByProcess(parsed.defaultGroupByProcess);
+        setStatusFilter(parsed.defaultStatusFilter);
+      }
+    } catch (err) {
+      console.error('Erro ao carregar configurações do módulo:', err);
+    } finally {
+      setSettingsLoaded(true);
+    }
+  }, []);
+
+  // Persistir configurações ao alterar
+  useEffect(() => {
+    if (!settingsLoaded) return;
+    localStorage.setItem(MODULE_SETTINGS_STORAGE_KEY, JSON.stringify(moduleSettings));
+  }, [moduleSettings, settingsLoaded]);
+
+  const fetchSyncLogs = useCallback(async () => {
+    try {
+      setSyncStatusLoading(true);
+      const logs = await djenSyncStatusService.listRecent(5);
+      setSyncLogs(logs);
+    } catch (error) {
+      console.error('Erro ao carregar histórico do cron DJEN:', error);
+    } finally {
+      setSyncStatusLoading(false);
+    }
+  }, []);
+
+  // Pré-carregar snapshot local para evitar tela em branco
+  useEffect(() => {
+    let cancelled = false;
+
+    const preloadLocalSnapshot = async () => {
+      try {
+        const localIntimations = await djenLocalService.listComunicacoes();
+        if (!cancelled && localIntimations.length > 0) {
+          setIntimations(localIntimations);
+        }
+      } catch (err) {
+        console.error('Erro ao carregar snapshot inicial de intimações:', err);
+      } finally {
+        if (!cancelled) {
+          setInitialSnapshotLoaded(true);
+        }
+      }
+    };
+
+    preloadLocalSnapshot();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   // Verificar se IA está habilitada
   useEffect(() => {
@@ -183,6 +281,45 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
         newSet.delete(intimation.id);
         return newSet;
       });
+    }
+  };
+
+  const handleDeleteSelected = async () => {
+    setShowClearMenu(false);
+    const ids = Array.from(selectedIds);
+    if (!ids.length) {
+      toast.info('Nenhuma seleção', 'Escolha as intimações que deseja remover');
+      return;
+    }
+
+    const confirmed = window.confirm(`Remover ${ids.length} intimação(ões) selecionada(s)? Esta ação é irreversível.`);
+    if (!confirmed) return;
+
+    try {
+      const deleted = await djenLocalService.deleteByIds(ids);
+      setIntimations(prev => prev.filter(int => !ids.includes(int.id)));
+      setSelectedIds(new Set());
+      toast.success('Intimações removidas', `${deleted} registro(s) excluído(s) com sucesso.`);
+    } catch (err: any) {
+      toast.error('Erro ao remover', err.message);
+    }
+  };
+
+  const handleDeleteRead = async () => {
+    setShowClearMenu(false);
+    const confirmed = window.confirm('Remover todas as intimações marcadas como lidas? Esta ação é irreversível.');
+    if (!confirmed) return;
+
+    try {
+      const deleted = await djenLocalService.deleteRead();
+      if (deleted > 0) {
+        await reloadIntimations();
+        toast.success('Intimações removidas', `${deleted} intimação(ões) lidas foram excluídas.`);
+      } else {
+        toast.info('Nada a remover', 'Nenhuma intimação lida encontrada.');
+      }
+    } catch (err: any) {
+      toast.error('Erro ao remover', err.message);
     }
   };
 
@@ -291,13 +428,15 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
       toast.error('Erro ao carregar dados', err.message);
     } finally {
       setLoading(false);
+      setInitialSnapshotLoaded(true);
     }
   }, []);
 
   // Carregar dados
   useEffect(() => {
     loadData();
-  }, [loadData]);
+    fetchSyncLogs();
+  }, [loadData, fetchSyncLogs]);
 
   const syncingRef = useRef(false);
   useEffect(() => {
@@ -396,9 +535,8 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
           } else {
             toast.info('Sincronização concluída', 'Nenhuma intimação nova encontrada');
           }
-        } else {
-          setLastAutoSyncAt(new Date().toISOString());
         }
+        fetchSyncLogs();
       } catch (err: any) {
         if (mode === 'manual') {
           toast.error('Erro ao sincronizar', err.message);
@@ -410,7 +548,7 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
         setSyncing(false);
       }
     },
-    [processes, clients, currentUserProfile, loadData]
+    [processes, clients, currentUserProfile, loadData, aiEnabled, reloadIntimations, fetchSyncLogs]
   );
 
   const handleSync = useCallback(async () => {
@@ -435,33 +573,7 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
     setShowExportMenu(false);
   };
 
-  const autoSyncInitializedRef = useRef(false);
-  useEffect(() => {
-    if (loading) {
-      return;
-    }
-
-    const runAutoSync = async () => {
-      if (syncingRef.current) {
-        return;
-      }
-      try {
-        await performSync('auto');
-      } catch (err) {
-        console.error('Falha ao executar sincronização automática:', err);
-      }
-    };
-
-    if (!autoSyncInitializedRef.current) {
-      autoSyncInitializedRef.current = true;
-      runAutoSync();
-    }
-
-    const intervalId = window.setInterval(runAutoSync, AUTO_SYNC_INTERVAL);
-    return () => {
-      window.clearInterval(intervalId);
-    };
-  }, [loading, processes.length, performSync]);
+  // Sincronização automática movida para cron no Supabase
 
   // Marcar como lida
   const handleMarkAsRead = async (id: string) => {
@@ -499,6 +611,7 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
       toast.error('Erro ao remover', err.message);
     } finally {
       setClearingAll(false);
+      setShowClearMenu(false);
     }
   };
 
@@ -636,6 +749,82 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
   const unreadCount = intimations.filter((i) => !i.lida).length;
   const readCount = intimations.filter((i) => i.lida).length;
 
+  const newTodayCount = useMemo(() => {
+    const startOfDay = startOfToday();
+    return intimations.filter((i) => {
+      if (!i.data_disponibilizacao) return false;
+      const date = new Date(i.data_disponibilizacao);
+      return date >= startOfDay;
+    }).length;
+  }, [intimations]);
+
+  const newWeekCount = useMemo(() => {
+    const sevenDaysAgo = subDays(new Date(), 7);
+    return intimations.filter((i) => {
+      if (!i.data_disponibilizacao) return false;
+      const date = new Date(i.data_disponibilizacao);
+      return date >= sevenDaysAgo;
+    }).length;
+  }, [intimations]);
+
+  const aiCoverage = useMemo(() => {
+    if (intimations.length === 0) return 0;
+    const totalAnalyzed = aiAnalysis.size;
+    return Math.round((totalAnalyzed / intimations.length) * 100);
+  }, [intimations.length, aiAnalysis]);
+
+  const totalAnalyzedCount = useMemo(() => aiAnalysis.size, [aiAnalysis]);
+
+  const externalCronUrl = useMemo(() => {
+    if (typeof window === 'undefined') return '';
+    return `${window.location.origin}/#/cron/djen?action=djen-sync&token=${moduleSettings.externalCronToken}`;
+  }, [moduleSettings.externalCronToken]);
+
+  const scrollToSection = (ref: React.RefObject<HTMLDivElement>) => {
+    if (ref.current) {
+      ref.current.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+  };
+
+  const quickNavItems = [
+    {
+      key: 'overview',
+      label: 'Resumo Geral',
+      description: 'Status do cron e indicadores',
+      icon: <Sparkles className="w-4 h-4" />,
+      bg: 'bg-amber-50',
+      text: 'text-amber-700',
+      target: overviewSectionRef,
+    },
+    {
+      key: 'settings',
+      label: 'Configurações',
+      description: 'Token externo e preferências',
+      icon: <FileCog className="w-4 h-4" />,
+      bg: 'bg-emerald-50',
+      text: 'text-emerald-700',
+      target: configSectionRef,
+    },
+    {
+      key: 'filters',
+      label: 'Filtros & Agrupamento',
+      description: 'Controle de visualização e busca',
+      icon: <Filter className="w-4 h-4" />,
+      bg: 'bg-blue-50',
+      text: 'text-blue-700',
+      target: filterSectionRef,
+    },
+    {
+      key: 'list',
+      label: 'Lista de Intimações',
+      description: 'Gerencie comunicações e ações',
+      icon: <FileText className="w-4 h-4" />,
+      bg: 'bg-purple-50',
+      text: 'text-purple-700',
+      target: listSectionRef,
+    },
+  ];
+
   // Agrupamento por processo
   const groupedByProcess = useMemo(() => {
     if (!groupByProcess) return null;
@@ -700,6 +889,83 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
     });
   };
 
+  const linkedProcessesCount = useMemo(() => {
+    const set = new Set<string>();
+    intimations.forEach((intimation) => {
+      if (intimation.process_id) {
+        set.add(intimation.process_id);
+      }
+    });
+    return set.size;
+  }, [intimations]);
+
+  const aiUrgencyStats = useMemo(() => {
+    const stats = { alta: 0, media: 0, baixa: 0, unreadAnalyzed: 0 };
+    intimations.forEach((intimation) => {
+      if (intimation.lida) return;
+      const analysis = aiAnalysis.get(intimation.id);
+      if (!analysis) return;
+      stats.unreadAnalyzed++;
+      if (analysis.urgency === 'alta') stats.alta++;
+      else if (analysis.urgency === 'media') stats.media++;
+      else if (analysis.urgency === 'baixa') stats.baixa++;
+    });
+    return stats;
+  }, [intimations, aiAnalysis]);
+
+  const lastCronRun = syncLogs[0] || null;
+  const lastRunDateValue = lastCronRun
+    ? lastCronRun.run_finished_at || lastCronRun.run_started_at || lastCronRun.created_at || null
+    : null;
+  const lastRunDateObj = lastRunDateValue ? new Date(lastRunDateValue) : null;
+  const nextCronRunDate = useMemo(() => {
+    if (lastCronRun?.next_run_at) {
+      return new Date(lastCronRun.next_run_at);
+    }
+    if (lastCronRun?.run_finished_at) {
+      const nextDate = new Date(lastCronRun.run_finished_at);
+      nextDate.setHours(nextDate.getHours() + 6);
+      return nextDate;
+    }
+    return null;
+  }, [lastCronRun]);
+
+  const formatRelativeTime = (date?: Date | null) => {
+    if (!date) return null;
+    const diff = date.getTime() - Date.now();
+    const hours = Math.round(diff / (1000 * 60 * 60));
+    if (Math.abs(hours) >= 24) {
+      return `${date.toLocaleDateString('pt-BR')} ${date.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}`;
+    }
+    if (hours > 0) return `em ${hours}h`;
+    if (hours === 0) return 'em instantes';
+    return `há ${Math.abs(hours)}h`;
+  };
+
+  const lastRunRelative = formatRelativeTime(lastRunDateObj);
+  const lastRunFormatted = lastRunDateObj
+    ? lastRunDateObj.toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })
+    : null;
+  const nextRunRelative = formatRelativeTime(nextCronRunDate);
+  const nextRunFormatted = nextCronRunDate
+    ? nextCronRunDate.toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })
+    : null;
+
+  const getStatusBadgeClass = (status?: string | null) => {
+    if (!status) return 'bg-slate-100 text-slate-600';
+    const normalized = status.toLowerCase();
+    if (['success', 'completed', 'ok'].some((tag) => normalized.includes(tag))) {
+      return 'bg-emerald-100 text-emerald-700';
+    }
+    if (['error', 'failed'].some((tag) => normalized.includes(tag))) {
+      return 'bg-red-100 text-red-700';
+    }
+    if (['running', 'processing'].some((tag) => normalized.includes(tag))) {
+      return 'bg-amber-100 text-amber-700';
+    }
+    return 'bg-slate-100 text-slate-600';
+  };
+
   // Criar prazo a partir da intimação
   const handleCreateDeadline = (intimation: DjenComunicacaoLocal) => {
     setCurrentIntimationForAction(intimation);
@@ -712,7 +978,7 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
     setAppointmentModalOpen(true);
   };
 
-  if (loading) {
+  if (!initialSnapshotLoaded) {
     return (
       <div className="flex items-center justify-center h-96">
         <div className="flex flex-col items-center gap-4">
@@ -884,96 +1150,116 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
   }
 
   return (
-    <div className="space-y-6">
-      {/* Header */}
-      <div className="bg-white border border-gray-200 rounded-xl p-3 sm:p-6">
+    <div className="space-y-4">
+      {loading && (
+        <div className="flex items-center gap-2 text-xs font-medium text-blue-700 bg-blue-50 border border-blue-100 rounded-lg px-3 py-2">
+          <Loader2 className="w-4 h-4 animate-spin" />
+          Atualizando dados em segundo plano...
+        </div>
+      )}
+      {/* Header minimalista */}
+      <div className="bg-white border border-slate-200 rounded-lg shadow-sm p-3 sm:p-4">
         <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3 sm:gap-4">
           <div>
-            <h3 className="text-lg sm:text-2xl font-bold text-slate-900 flex items-center gap-2 sm:gap-3">
-              <Bell className="w-5 h-5 sm:w-7 sm:h-7 text-amber-600" />
+            <h1 className="text-lg sm:text-2xl font-semibold text-slate-900 flex items-center gap-2">
+              <Bell className="w-5 h-5 sm:w-6 sm:h-6 text-amber-600" />
               Intimações DJEN
-            </h3>
-            <div className="mt-2">
-              <p className="text-sm text-slate-600">
-                Sincronizamos com o DJEN procurando pelos processos cadastrados
-                {currentUserProfile?.lawyer_full_name && ' e pelo nome do advogado'}:
-              </p>
-              {currentUserProfile && (
-                <div>
-                  {currentUserProfile.lawyer_full_name ? (
-                    <p className="text-sm font-semibold text-indigo-600 mt-1">
-                      {currentUserProfile.lawyer_full_name}
-                    </p>
-                  ) : (
-                    <p className="text-xs text-slate-500 mt-1">
-                      ℹ️ Buscando apenas por processos cadastrados (Nome DJEN não configurado)
-                    </p>
+            </h1>
+            <p className="text-sm text-slate-600 mt-1">
+              Monitoramento contínuo das comunicações judiciais sincronizadas pelo cron do Supabase.
+            </p>
+            <div className="mt-2 grid gap-1 text-xs text-slate-500 sm:grid-cols-2">
+              <div>
+                <span className="font-semibold text-slate-700">Última sincronização:</span>{' '}
+                {syncStatusLoading ? (
+                  <span>carregando…</span>
+                ) : lastRunFormatted ? (
+                  <span>
+                    {lastRunFormatted}
+                    {lastRunRelative && <span className="text-slate-400"> ({lastRunRelative})</span>}
+                  </span>
+                ) : (
+                  <span>Aguardando primeira execução</span>
+                )}
+              </div>
+              <div>
+                <span className="font-semibold text-slate-700">Próxima execução:</span>{' '}
+                {nextRunFormatted ? (
+                  <span>
+                    {nextRunFormatted}
+                    {nextRunRelative && <span className="text-slate-400"> ({nextRunRelative})</span>}
+                  </span>
+                ) : (
+                  <span>a cada 6h (cron)</span>
+                )}
+              </div>
+            </div>
+            <div className="mt-2 flex flex-wrap items-center gap-3 text-xs text-slate-500">
+              <button
+                onClick={fetchSyncLogs}
+                className="inline-flex items-center gap-1.5 border border-slate-200 text-slate-600 hover:text-slate-900 hover:bg-slate-50 px-3 py-1 rounded-lg font-medium"
+              >
+                <RefreshCw className="w-3.5 h-3.5" /> Atualizar status
+              </button>
+              <a
+                href={`${window.location.origin}/#/cron/djen?action=djen-sync&token=djen-sync-2024`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-1.5 border border-blue-200 text-blue-600 hover:text-blue-900 hover:bg-blue-50 px-3 py-1 rounded-lg font-medium"
+              >
+                <ExternalLink className="w-3.5 h-3.5" /> Link Cron
+              </a>
+              {syncStatusLoading ? (
+                <span className="inline-flex items-center gap-1">
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" /> Atualizando histórico...
+                </span>
+              ) : syncLogs.length === 0 ? (
+                <span>Nenhuma execução registrada ainda.</span>
+              ) : (
+                <>
+                  {lastCronRun?.status && (
+                    <span className={`inline-flex items-center px-2 py-0.5 rounded-full font-semibold ${getStatusBadgeClass(lastCronRun.status)}`}>
+                      Status atual: {lastCronRun.status}
+                    </span>
                   )}
-                </div>
-              )}
-              {!currentUserProfile && (
-                <p className="text-xs text-amber-600 mt-1">
-                  ⚠️ Carregando perfil...
-                </p>
+                  <button
+                    onClick={() => setShowCronHistory((prev) => !prev)}
+                    className="inline-flex items-center gap-1 text-slate-600 hover:text-slate-900"
+                  >
+                    <Info className="w-3.5 h-3.5" /> Histórico
+                  </button>
+                </>
               )}
             </div>
-            <div className="flex gap-4 mt-3">
-              <span className="text-sm">
-                <strong className="text-amber-600">{unreadCount}</strong> não lidas
-              </span>
-              <span className="text-sm">
-                <strong className="text-slate-600">{readCount}</strong> lidas
-              </span>
-              <span className="text-sm">
-                <strong className="text-blue-600">{intimations.length}</strong> total
-              </span>
-            </div>
-
-            {/* Estatísticas de Urgência - APENAS NÃO LIDAS */}
-            {aiAnalysis.size > 0 && (() => {
-              // Filtrar apenas intimações não lidas
-              const unreadIntimations = intimations.filter(i => !i.lida);
-              const unreadWithAnalysis = unreadIntimations.filter(i => aiAnalysis.has(i.id));
-              
-              const altaCount = unreadWithAnalysis.filter(i => aiAnalysis.get(i.id)?.urgency === 'alta').length;
-              const mediaCount = unreadWithAnalysis.filter(i => aiAnalysis.get(i.id)?.urgency === 'media').length;
-              const baixaCount = unreadWithAnalysis.filter(i => aiAnalysis.get(i.id)?.urgency === 'baixa').length;
-              
-              if (altaCount === 0 && mediaCount === 0 && baixaCount === 0) return null;
-              
-              return (
-                <div className="flex gap-2 mt-3">
-                  {altaCount > 0 && (
-                    <span className="inline-flex items-center gap-1 px-2 py-1 bg-red-100 text-red-700 rounded-md text-xs font-semibold">
-                      🔴 {altaCount} Alta
-                    </span>
-                  )}
-                  {mediaCount > 0 && (
-                    <span className="inline-flex items-center gap-1 px-2 py-1 bg-yellow-100 text-yellow-700 rounded-md text-xs font-semibold">
-                      🟡 {mediaCount} Média
-                    </span>
-                  )}
-                  {baixaCount > 0 && (
-                    <span className="inline-flex items-center gap-1 px-2 py-1 bg-green-100 text-green-700 rounded-md text-xs font-semibold">
-                      🟢 {baixaCount} Baixa
-                    </span>
-                  )}
-                </div>
-              );
-            })()}
-
-            {lastAutoSyncAt && (
-              <p className="text-xs text-slate-500 mt-2">
-                Última sincronização automática: {formatDateTime(lastAutoSyncAt)}
-              </p>
+            {showCronHistory && syncLogs.length > 0 && (
+              <div className="mt-2 p-3 rounded-lg border border-slate-100 bg-slate-50 space-y-2">
+                {syncLogs.slice(0, 3).map((log) => {
+                  const startedAt = log.run_started_at || log.created_at || log.run_finished_at || '';
+                  const executedAt = startedAt ? formatDateTime(startedAt) : '—';
+                  return (
+                    <div key={log.id} className="flex flex-col gap-1 text-xs text-slate-600">
+                      <div className="flex items-center justify-between">
+                        <span className="font-semibold text-slate-800">{executedAt}</span>
+                        <span className={`inline-flex items-center px-2 py-0.5 rounded-full font-semibold ${getStatusBadgeClass(log.status)}`}>
+                          {log.status || 'sem status'}
+                        </span>
+                      </div>
+                      <div className="flex flex-wrap gap-3">
+                        <span>Itens salvos: <strong>{log.items_saved ?? 0}</strong></span>
+                        <span>Itens encontrados: <strong>{log.items_found ?? 0}</strong></span>
+                        {log.error_message && <span className="text-red-600">Erro: {log.error_message}</span>}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
             )}
           </div>
-
-          <div className="flex flex-col sm:flex-row flex-wrap gap-2 sm:gap-3 justify-end w-full sm:w-auto">
+          <div className="flex flex-col sm:flex-row flex-wrap gap-2 sm:gap-3 w-full sm:w-auto">
             <button
               onClick={handleSync}
               disabled={syncing}
-              className="inline-flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-700 text-white font-medium px-3 sm:px-5 py-2 sm:py-2.5 rounded-lg transition disabled:opacity-50 text-xs sm:text-sm w-full sm:w-auto"
+              className="inline-flex items-center justify-center gap-1.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-medium px-3 py-1.5 rounded-lg transition disabled:opacity-50 w-full sm:w-auto"
             >
               {syncing ? (
                 <>
@@ -983,69 +1269,256 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
               ) : (
                 <>
                   <RefreshCw className="w-4 h-4" />
-                  Sincronizar
+                  Sincronizar agora
                 </>
               )}
             </button>
-
-            <button
-              onClick={handleClearAllIntimations}
-              disabled={clearingAll || syncing || intimations.length === 0}
-              className="inline-flex items-center justify-center gap-2 border border-red-200 text-red-600 hover:bg-red-50 font-medium px-3 sm:px-5 py-2 sm:py-2.5 rounded-lg transition disabled:opacity-50 text-xs sm:text-sm w-full sm:w-auto"
-            >
-              {clearingAll ? (
-                <>
-                  <Loader2 className="w-4 h-4 animate-spin" />
-                  Removendo...
-                </>
-              ) : (
-                <>
-                  <Trash2 className="w-4 h-4" />
-                  Limpar histórico
-                </>
+            <div className="relative">
+              <button
+                onClick={() => setShowClearMenu(prev => !prev)}
+                disabled={syncing}
+                className="inline-flex items-center justify-center gap-1.5 border border-slate-200 text-slate-700 hover:bg-slate-50 text-xs font-medium px-3 py-1.5 rounded-lg transition disabled:opacity-50 w-full sm:w-auto"
+              >
+                <Trash2 className="w-4 h-4" />
+                Gerenciar histórico
+              </button>
+              {showClearMenu && (
+                <div className="absolute right-0 mt-2 w-60 bg-white rounded-lg shadow-lg border border-gray-200 z-50 text-sm text-slate-700">
+                  <button
+                    onClick={handleDeleteSelected}
+                    className="w-full text-left px-4 py-2 hover:bg-gray-50 flex items-center gap-2 disabled:text-slate-400"
+                  >
+                    <CheckCircle className="w-4 h-4" /> Remover selecionadas
+                  </button>
+                  <button
+                    onClick={handleDeleteRead}
+                    className="w-full text-left px-4 py-2 hover:bg-gray-50 flex items-center gap-2"
+                  >
+                    <EyeOff className="w-4 h-4" /> Remover lidas
+                  </button>
+                  <button
+                    onClick={handleClearAllIntimations}
+                    disabled={clearingAll || intimations.length === 0}
+                    className="w-full text-left px-4 py-2 hover:bg-gray-50 flex items-center gap-2 text-red-600 disabled:text-red-300"
+                  >
+                    <Trash2 className="w-4 h-4" /> Remover tudo
+                  </button>
+                </div>
               )}
-            </button>
-
-            {/* Botão de Exportação */}
+            </div>
             <div className="relative">
               <button
                 onClick={() => setShowExportMenu(!showExportMenu)}
                 disabled={filteredIntimations.length === 0}
-                className="inline-flex items-center justify-center gap-2 border border-green-200 text-green-600 hover:bg-green-50 font-medium px-3 sm:px-5 py-2 sm:py-2.5 rounded-lg transition disabled:opacity-50 text-xs sm:text-sm w-full sm:w-auto"
+                className="inline-flex items-center justify-center gap-1.5 border border-slate-200 text-slate-700 hover:bg-slate-50 text-xs font-medium px-3 py-1.5 rounded-lg transition disabled:opacity-50 w-full sm:w-auto"
               >
                 <Download className="w-4 h-4" />
-                Exportar Relatório
+                Exportar
               </button>
 
               {showExportMenu && (
                 <div className="absolute right-0 mt-2 w-48 bg-white rounded-lg shadow-lg border border-gray-200 z-50">
-                  <div className="py-1">
+                  <div className="py-1 text-sm text-gray-700">
                     <button
                       onClick={handleExportCSV}
-                      className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 flex items-center gap-2"
+                      className="w-full text-left px-4 py-2 hover:bg-gray-100 flex items-center gap-2"
                     >
-                      <FileText className="w-4 h-4" />
-                      Exportar CSV
+                      <FileText className="w-4 h-4" /> CSV
                     </button>
                     <button
                       onClick={handleExportExcel}
-                      className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 flex items-center gap-2"
+                      className="w-full text-left px-4 py-2 hover:bg-gray-100 flex items-center gap-2"
                     >
-                      <FileText className="w-4 h-4" />
-                      Exportar Excel
+                      <FileText className="w-4 h-4" /> Excel
                     </button>
                     <button
                       onClick={handleExportPDF}
-                      className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 flex items-center gap-2"
+                      className="w-full text-left px-4 py-2 hover:bg-gray-100 flex items-center gap-2"
                     >
-                      <FileText className="w-4 h-4" />
-                      Exportar PDF
+                      <FileText className="w-4 h-4" /> PDF
                     </button>
                   </div>
                 </div>
               )}
             </div>
           </div>
+        </div>
+      </div>
+
+      {/* Cards compactos de indicadores */}
+      <div className="grid grid-cols-2 lg:grid-cols-5 gap-2 sm:gap-4">
+        <div className="bg-white border border-slate-200 rounded-lg p-3 sm:p-4">
+          <div className="flex items-center justify-between">
+            <span className="text-[11px] uppercase text-slate-500 font-semibold tracking-wide">
+              Não lidas
+            </span>
+            <Bell className="w-4 h-4 text-amber-600" />
+          </div>
+          <p className="text-xl sm:text-2xl font-bold text-slate-900 mt-1">{unreadCount}</p>
+          <p className="text-[11px] text-slate-500">pendentes de leitura</p>
+        </div>
+        <div className="bg-white border border-slate-200 rounded-lg p-3 sm:p-4">
+          <div className="flex items-center justify-between">
+            <span className="text-[11px] uppercase text-slate-500 font-semibold tracking-wide">
+              Total
+            </span>
+            <FileText className="w-4 h-4 text-slate-500" />
+          </div>
+          <p className="text-xl sm:text-2xl font-bold text-slate-900 mt-1">{intimations.length}</p>
+          <p className="text-[11px] text-slate-500">intimações salvas</p>
+        </div>
+        <div className="bg-white border border-slate-200 rounded-lg p-3 sm:p-4">
+          <div className="flex items-center justify-between">
+            <span className="text-[11px] uppercase text-slate-500 font-semibold tracking-wide">
+              Novas (7d)
+            </span>
+            <Sparkles className="w-4 h-4 text-purple-600" />
+          </div>
+          <p className="text-xl sm:text-2xl font-bold text-slate-900 mt-1">{newWeekCount}</p>
+          <p className="text-[11px] text-slate-500 flex items-center gap-1">
+            +{newTodayCount} hoje
+          </p>
+        </div>
+        <div className="bg-white border border-slate-200 rounded-lg p-3 sm:p-4">
+          <div className="flex items-center justify-between">
+            <span className="text-[11px] uppercase text-slate-500 font-semibold tracking-wide">
+              Processos
+            </span>
+            <Link2 className="w-4 h-4 text-blue-600" />
+          </div>
+          <p className="text-xl sm:text-2xl font-bold text-slate-900 mt-1">{linkedProcessesCount}</p>
+          <p className="text-[11px] text-slate-500">processos vinculados</p>
+        </div>
+        <div className="bg-white border border-slate-200 rounded-lg p-3 sm:p-4">
+          <div className="flex items-center justify-between">
+            <span className="text-[11px] uppercase text-slate-500 font-semibold tracking-wide">
+              Cobertura IA
+            </span>
+            <Sparkles className="w-4 h-4 text-purple-600" />
+          </div>
+          <p className="text-xl sm:text-2xl font-bold text-slate-900 mt-1">{aiCoverage}%</p>
+          <div className="mt-2 h-1.5 bg-slate-100 rounded-full overflow-hidden">
+            <div className="h-full bg-purple-500" style={{ width: `${aiCoverage}%` }} />
+          </div>
+        </div>
+      </div>
+
+      {/* Resumo de urgência */}
+      {aiUrgencyStats.unreadAnalyzed > 0 && (
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+          <div className="bg-white border border-red-200 rounded-lg p-3 sm:p-4">
+            <p className="text-[11px] uppercase font-semibold text-red-600">Urgência alta</p>
+            <p className="text-xl font-bold text-red-700 mt-1">{aiUrgencyStats.alta}</p>
+            <p className="text-[11px] text-slate-500">não lidas analisadas</p>
+          </div>
+          <div className="bg-white border border-amber-200 rounded-lg p-3 sm:p-4">
+            <p className="text-[11px] uppercase font-semibold text-amber-600">Urgência média</p>
+            <p className="text-xl font-bold text-amber-700 mt-1">{aiUrgencyStats.media}</p>
+            <p className="text-[11px] text-slate-500">não lidas analisadas</p>
+          </div>
+          <div className="bg-white border border-emerald-200 rounded-lg p-3 sm:p-4">
+            <p className="text-[11px] uppercase font-semibold text-emerald-600">Urgência baixa</p>
+            <p className="text-xl font-bold text-emerald-700 mt-1">{aiUrgencyStats.baixa}</p>
+            <p className="text-[11px] text-slate-500">não lidas analisadas</p>
+          </div>
+        </div>
+      )}
+
+      {/* Configurações do Módulo */}
+      <div className="bg-white border border-slate-200 rounded-xl p-3 sm:p-6">
+        <div className="flex items-center justify-between mb-4">
+          <div>
+            <h3 className="text-lg font-semibold text-slate-900">Configurações do Módulo</h3>
+            <p className="text-sm text-slate-500">Gerencie preferências de visualização e acesso ao cron externo.</p>
+          </div>
+          <button
+            onClick={() => {
+              const url = `${window.location.origin}/#/cron/djen?action=djen-sync&token=${moduleSettings.externalCronToken}`;
+              navigator.clipboard.writeText(url)
+                .then(() => setCopyStatus('copied'))
+                .catch(() => setCopyStatus('error'));
+              setTimeout(() => setCopyStatus('idle'), 2000);
+            }}
+            className="inline-flex items-center gap-2 border border-slate-200 text-slate-700 hover:bg-slate-50 text-xs font-medium px-3 py-1.5 rounded-lg"
+          >
+            <Link2 className="w-4 h-4" /> Copiar link do cron
+            {copyStatus === 'copied' && <span className="text-emerald-600">copiado!</span>}
+            {copyStatus === 'error' && <span className="text-red-600">erro</span>}
+          </button>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div>
+            <label className="text-sm font-medium text-slate-700">Token do cron externo</label>
+            <div className="mt-1 flex rounded-lg border border-slate-200 focus-within:ring-2 focus-within:ring-blue-500">
+              <input
+                type="text"
+                value={moduleSettings.externalCronToken}
+                onChange={(e) =>
+                  setModuleSettings((prev) => ({
+                    ...prev,
+                    externalCronToken: e.target.value,
+                  }))
+                }
+                className="flex-1 px-3 py-2 rounded-l-lg outline-none"
+                placeholder="Informe o token"
+              />
+              <button
+                onClick={() => navigator.clipboard.writeText(moduleSettings.externalCronToken)}
+                className="px-3 text-sm text-blue-600 hover:text-blue-800"
+                type="button"
+              >
+                Copiar token
+              </button>
+            </div>
+            <p className="text-xs text-slate-500 mt-1">Use este token para proteger o acesso ao link público.</p>
+          </div>
+
+          <div>
+            <label className="text-sm font-medium text-slate-700">Visualização padrão</label>
+            <div className="mt-2 flex flex-col gap-2">
+              <label className="inline-flex items-center gap-2 text-sm text-slate-600">
+                <input
+                  type="checkbox"
+                  checked={moduleSettings.defaultGroupByProcess}
+                  onChange={(e) => {
+                    setModuleSettings((prev) => ({
+                      ...prev,
+                      defaultGroupByProcess: e.target.checked,
+                    }));
+                    setGroupByProcess(e.target.checked);
+                  }}
+                  className="rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                />
+                Agrupar por processo automaticamente
+              </label>
+            </div>
+          </div>
+
+          <div>
+            <label className="text-sm font-medium text-slate-700">Filtro padrão</label>
+            <select
+              value={moduleSettings.defaultStatusFilter}
+              onChange={(e) => {
+                const value = e.target.value as 'all' | 'unread' | 'read';
+                setModuleSettings((prev) => ({
+                  ...prev,
+                  defaultStatusFilter: value,
+                }));
+                setStatusFilter(value);
+              }}
+              className="mt-2 w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+            >
+              <option value="all">Todas</option>
+              <option value="unread">Não lidas</option>
+              <option value="read">Lidas</option>
+            </select>
+            <p className="text-xs text-slate-500 mt-1">Define o filtro aplicado ao abrir o módulo.</p>
+          </div>
+        </div>
+
+        <div className="mt-4 text-xs text-slate-500">
+          Link público: <code className="bg-slate-100 px-2 py-1 rounded">{`${window.location.origin}/#/cron/djen?action=djen-sync&token=${moduleSettings.externalCronToken}`}</code>
         </div>
       </div>
 
@@ -1173,17 +1646,26 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
         )}
 
         {selectionMode && selectedIds.size > 0 && (
-          <div className="mt-4 pt-4 border-t border-gray-200 flex items-center justify-between">
+          <div className="mt-4 pt-4 border-t border-gray-200 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
             <span className="text-sm text-slate-600">
               <strong>{selectedIds.size}</strong> intimação(ões) selecionada(s)
             </span>
-            <button
-              onClick={handleMarkSelectedAsRead}
-              className="inline-flex items-center gap-2 bg-emerald-600 hover:bg-emerald-700 text-white font-medium px-4 py-2 rounded-lg transition text-sm"
-            >
-              <CheckCircle className="w-4 h-4" />
-              Marcar como Lidas
-            </button>
+            <div className="flex flex-wrap gap-2">
+              <button
+                onClick={handleMarkSelectedAsRead}
+                className="inline-flex items-center gap-2 bg-emerald-600 hover:bg-emerald-700 text-white font-medium px-4 py-2 rounded-lg transition text-sm"
+              >
+                <CheckCircle className="w-4 h-4" />
+                Marcar como Lidas
+              </button>
+              <button
+                onClick={handleDeleteSelected}
+                className="inline-flex items-center gap-2 bg-red-600 hover:bg-red-700 text-white font-medium px-4 py-2 rounded-lg transition text-sm"
+              >
+                <Trash2 className="w-4 h-4" />
+                Remover selecionadas
+              </button>
+            </div>
           </div>
         )}
       </div>

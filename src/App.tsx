@@ -26,6 +26,7 @@ import ProfileModal from './components/ProfileModal';
 import { ClientFormModal } from './components/ClientFormModal';
 import { NotificationCenterNew as NotificationCenter } from './components/NotificationCenterNew';
 import { NotificationPermissionBanner } from './components/NotificationPermissionBanner';
+import SessionWarning from './components/SessionWarning';
 
 // Lazy loading dos módulos principais (carrega apenas quando acessado)
 const Dashboard = lazy(() => import('./components/Dashboard'));
@@ -40,6 +41,7 @@ const CalendarModule = lazy(() => import('./components/CalendarModule'));
 const TasksModule = lazy(() => import('./components/TasksModule'));
 const NotificationsModuleNew = lazy(() => import('./components/NotificationsModuleNew'));
 const FinancialModule = lazy(() => import('./components/FinancialModule'));
+const CronEndpoint = lazy(() => import('./components/CronEndpoint'));
 import { useNotifications } from './hooks/useNotifications';
 import { usePresence } from './hooks/usePresence';
 import { pushNotifications } from './utils/pushNotifications';
@@ -60,6 +62,18 @@ import type { NotificationItem } from './types/notification.types';
 type ClientSearchResult = Awaited<ReturnType<typeof clientService.searchClients>>[number];
 
 function App() {
+  const isCronRoute = typeof window !== 'undefined' && window.location.hash.includes('/cron/djen');
+
+  if (isCronRoute) {
+    return (
+      <div className="min-h-screen bg-gray-50">
+        <Suspense fallback={<div className="p-8 text-center text-slate-600">Carregando cron...</div>}>
+          <CronEndpoint />
+        </Suspense>
+      </div>
+    );
+  }
+
   const { currentModule: activeModule, moduleParams, navigateTo, setModuleParams, clearModuleParams } = useNavigation();
   const [isMobileNavOpen, setIsMobileNavOpen] = useState(false);
   const { user, loading, signIn, signOut, resetPassword } = useAuth();
@@ -484,6 +498,8 @@ function App() {
   return (
     <CacheProvider>
       <div className="min-h-screen bg-gray-100">
+        {/* Aviso de sessão */}
+        <SessionWarning />
       {/* Novo Sidebar - Estilo Compacto Vertical */}
       {isMobileNavOpen && <div className="fixed inset-0 bg-black/40 z-40 md:hidden" onClick={() => setIsMobileNavOpen(false)} />}
       <aside
@@ -507,11 +523,7 @@ function App() {
                 setIsMobileNavOpen(false);
                 navigateTo('dashboard');
               }}
-              className={`flex flex-col items-center justify-center py-2.5 px-2 rounded-lg transition-all border-l-4 ${
-                activeModule === 'dashboard'
-                  ? 'bg-amber-600 text-white border-amber-400 shadow-lg'
-                  : 'border-transparent text-slate-300 hover:bg-slate-800 hover:text-white'
-              }`}
+              className={`flex flex-col items-center justify-center py-2.5 px-2 rounded-lg transition-all border-l-4 bg-amber-600 text-white border-amber-400 shadow-lg`}
             >
               <Layers className="w-5 h-5 mb-1.5" />
               <span className="text-[10px] font-medium text-center leading-tight">Dashboard</span>
@@ -961,6 +973,7 @@ function App() {
             )}
             {activeModule === 'notificacoes' && <NotificationsModuleNew onNavigateToModule={handleNavigateToModule} />}
             {activeModule === 'financeiro' && <FinancialModule />}
+            {activeModule === 'cron' && <CronEndpoint />}
           </Suspense>
         </main>
 

@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState, useRef } from 'react';
 import {
   Plus,
   FileText,
@@ -13,6 +13,9 @@ import {
   ArrowRight,
   CheckCircle2,
   Search,
+  Settings,
+  Eye,
+  Pencil,
 } from 'lucide-react';
 import PizZip from 'pizzip';
 import Docxtemplater from 'docxtemplater';
@@ -113,6 +116,36 @@ const DocumentsModule: React.FC = () => {
   const [nameInput, setNameInput] = useState('');
   const [descriptionInput, setDescriptionInput] = useState('');
   const [fileInput, setFileInput] = useState<File | null>(null);
+  const [downloadingTemplateId, setDownloadingTemplateId] = useState<string | null>(null);
+  const [templateActionError, setTemplateActionError] = useState<string | null>(null);
+  const [activeView, setActiveView] = useState<'new-doc' | 'manage'>('new-doc');
+  const [isPreviewModalOpen, setIsPreviewModalOpen] = useState(false);
+  const [previewTemplate, setPreviewTemplate] = useState<DocumentTemplate | null>(null);
+  const [previewPdfUrl, setPreviewPdfUrl] = useState<string | null>(null);
+  const [previewLoading, setPreviewLoading] = useState(false);
+  const [previewError, setPreviewError] = useState<string | null>(null);
+  const [previewIsObjectUrl, setPreviewIsObjectUrl] = useState(false);
+  const [previewEditName, setPreviewEditName] = useState('');
+  const [previewEditDescription, setPreviewEditDescription] = useState('');
+  const [previewEditContent, setPreviewEditContent] = useState('');
+  const [isPreviewEditing, setIsPreviewEditing] = useState(false);
+  const [previewSaving, setPreviewSaving] = useState(false);
+  const [previewEditError, setPreviewEditError] = useState<string | null>(null);
+  const [deleteTemplateTarget, setDeleteTemplateTarget] = useState<DocumentTemplate | null>(null);
+  const [deleteConfirmName, setDeleteConfirmName] = useState('');
+  const [deleteCaptchaInput, setDeleteCaptchaInput] = useState('');
+  const [deleteCaptchaNumbers, setDeleteCaptchaNumbers] = useState<[number, number] | null>(null);
+  const [deleteLoading, setDeleteLoading] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
+  const [isEditModalOpen, setIsEditModalOpen] = useState(false);
+  const [editingTemplate, setEditingTemplate] = useState<DocumentTemplate | null>(null);
+  const [editName, setEditName] = useState('');
+  const [editDescription, setEditDescription] = useState('');
+  const [editContent, setEditContent] = useState('');
+  const [editFile, setEditFile] = useState<File | null>(null);
+  const [editSaving, setEditSaving] = useState(false);
+  const [editError, setEditError] = useState<string | null>(null);
+  const jsPdfLoaderRef = useRef<Promise<any> | null>(null);
 
   const currentDate = useMemo(() => new Date(), []);
 
@@ -255,6 +288,228 @@ const DocumentsModule: React.FC = () => {
     return result;
   };
 
+  const createDocxFromContent = async (content: string) => {
+    const paragraphs = content.split(/\n/g).map(
+      (line) =>
+        new Paragraph({
+          children: [new TextRun({ text: line, break: 0 })],
+        }),
+    );
+
+    const doc = new DocxDocument({
+      sections: [
+        {
+          properties: {},
+          children: paragraphs,
+        },
+      ],
+    });
+
+    return Packer.toBlob(doc);
+  };
+
+  const loadJsPdf = () => {
+    const existing = (window as any).jspdf;
+    if (existing?.jsPDF) {
+      return Promise.resolve(existing);
+    }
+
+    if (!jsPdfLoaderRef.current) {
+      jsPdfLoaderRef.current = new Promise((resolve, reject) => {
+        const script = document.createElement('script');
+        script.src = 'https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js';
+        script.async = true;
+        script.onload = () => resolve((window as any).jspdf || (window as any).jsPDF);
+        script.onerror = () => reject(new Error('Não foi possível carregar dependências de PDF.'));
+        document.body.appendChild(script);
+      });
+    }
+
+    return jsPdfLoaderRef.current;
+  };
+
+  const getTemplateTextContent = async (template: DocumentTemplate) => {
+    if (template.file_path) {
+      const file = await documentTemplateService.downloadTemplateFile(template);
+      const arrayBuffer = await file.arrayBuffer();
+      const zip = new PizZip(arrayBuffer);
+      const extracted = extractTextFromDocxZip(zip);
+      return sanitizeText(extracted || template.content || template.description || '');
+    }
+    return sanitizeText(template.content || template.description || '');
+  };
+
+  const handlePreviewTemplate = async (template: DocumentTemplate) => {
+    setPreviewTemplate(template);
+    setPreviewError(null);
+    setIsPreviewModalOpen(true);
+    setPreviewLoading(true);
+    setIsPreviewEditing(false);
+    setPreviewEditError(null);
+
+    try {
+      if (template.file_path) {
+        const textContent = (await getTemplateTextContent(template)) || '';
+        if (previewPdfUrl && previewIsObjectUrl) {
+          URL.revokeObjectURL(previewPdfUrl);
+        }
+        const signedUrl = await documentTemplateService.getTemplateSignedUrl(template);
+        const officeViewerUrl = `https://view.officeapps.live.com/op/embed.aspx?src=${encodeURIComponent(signedUrl)}`;
+        setPreviewPdfUrl(officeViewerUrl);
+        setPreviewIsObjectUrl(false);
+        setPreviewEditName(template.name);
+        setPreviewEditDescription(template.description || '');
+        setPreviewEditContent(textContent);
+      } else {
+        const textContent = (await getTemplateTextContent(template)) || 'Conteúdo não disponível.';
+        if (previewPdfUrl && previewIsObjectUrl) {
+          URL.revokeObjectURL(previewPdfUrl);
+        }
+        setPreviewPdfUrl(null);
+        setPreviewIsObjectUrl(false);
+        setPreviewEditContent(textContent);
+        setPreviewEditName(template.name);
+        setPreviewEditDescription(template.description || '');
+      }
+    } catch (err: any) {
+      console.error(err);
+      setPreviewError(err.message || 'Não foi possível gerar a visualização.');
+    } finally {
+      setPreviewLoading(false);
+    }
+  };
+
+  const handleClosePreviewModal = () => {
+    if (previewPdfUrl && previewIsObjectUrl) {
+      URL.revokeObjectURL(previewPdfUrl);
+    }
+    setPreviewPdfUrl(null);
+    setPreviewIsObjectUrl(false);
+    setPreviewTemplate(null);
+    setPreviewError(null);
+    setIsPreviewModalOpen(false);
+    setPreviewEditContent('');
+    setPreviewEditName('');
+    setPreviewEditDescription('');
+    setIsPreviewEditing(false);
+    setPreviewEditError(null);
+  };
+
+  useEffect(() => {
+    return () => {
+      if (previewPdfUrl && previewIsObjectUrl) {
+        URL.revokeObjectURL(previewPdfUrl);
+      }
+    };
+  }, [previewPdfUrl, previewIsObjectUrl]);
+
+  const handleStartPreviewEditing = () => {
+    if (!previewTemplate || previewTemplate.file_path) return;
+    setIsPreviewEditing(true);
+    setPreviewEditError(null);
+  };
+
+  const handleCancelPreviewEditing = () => {
+    if (!previewTemplate) return;
+    setIsPreviewEditing(false);
+    setPreviewEditError(null);
+    setPreviewEditName(previewTemplate.name);
+    setPreviewEditDescription(previewTemplate.description || '');
+    setPreviewEditContent(previewTemplate.content || '');
+  };
+
+  const handleSavePreviewEdits = async (event: React.FormEvent) => {
+    event.preventDefault();
+    if (!previewTemplate || previewTemplate.file_path) return;
+
+    const trimmedName = previewEditName.trim();
+    if (!trimmedName) {
+      setPreviewEditError('Informe um nome para o template.');
+      return;
+    }
+
+    try {
+      setPreviewSaving(true);
+      setPreviewEditError(null);
+
+      await documentTemplateService.updateTemplate(previewTemplate.id, {
+        name: trimmedName,
+        description: previewEditDescription,
+        content: previewEditContent,
+      });
+
+      const data = await documentTemplateService.listTemplates();
+      setTemplates(data);
+      const updatedTemplate = data.find((t) => t.id === previewTemplate.id) || previewTemplate;
+      setPreviewTemplate(updatedTemplate);
+      setPreviewEditName(updatedTemplate.name);
+      setPreviewEditDescription(updatedTemplate.description || '');
+      setPreviewEditContent(updatedTemplate.content || '');
+      setIsPreviewEditing(false);
+    } catch (err: any) {
+      console.error(err);
+      setPreviewEditError(err.message || 'Não foi possível salvar as alterações.');
+    } finally {
+      setPreviewSaving(false);
+    }
+  };
+
+  const handleOpenEditModal = (template: DocumentTemplate) => {
+    setEditingTemplate(template);
+    setEditName(template.name);
+    setEditDescription(template.description || '');
+    setEditContent(template.content || '');
+    setEditFile(null);
+    setEditError(null);
+    setIsEditModalOpen(true);
+  };
+
+  const handleCloseEditModal = () => {
+    setIsEditModalOpen(false);
+    setEditingTemplate(null);
+    setEditFile(null);
+  };
+
+  const handleSaveTemplateEdits = async (event: React.FormEvent) => {
+    event.preventDefault();
+    if (!editingTemplate) return;
+
+    const trimmedName = editName.trim();
+    if (!trimmedName) {
+      setEditError('Informe um nome para o template.');
+      return;
+    }
+
+    try {
+      setEditSaving(true);
+      setEditError(null);
+
+      const basePayload: Partial<CreateDocumentTemplateDTO> = {
+        name: trimmedName,
+        description: editDescription,
+      };
+
+      if (!editingTemplate.file_path) {
+        basePayload.content = editContent || '';
+      }
+
+      if (editFile) {
+        await documentTemplateService.updateTemplateWithFile(editingTemplate, basePayload, editFile);
+      } else {
+        await documentTemplateService.updateTemplate(editingTemplate.id, basePayload);
+      }
+
+      const data = await documentTemplateService.listTemplates();
+      setTemplates(data);
+      handleCloseEditModal();
+    } catch (err: any) {
+      console.error(err);
+      setEditError(err.message || 'Não foi possível salvar as alterações.');
+    } finally {
+      setEditSaving(false);
+    }
+  };
+
   const handleGenerateDocument = async () => {
     if (!selectedClient || !selectedTemplate) {
       setGenerationError('Selecione o cliente e o modelo antes de gerar.');
@@ -288,27 +543,40 @@ const DocumentsModule: React.FC = () => {
       }
 
       const content = sanitizeText(replacePlaceholdersInString(selectedTemplate.content, placeholders));
-      const paragraphs = content.split(/\n/g).map((line) =>
-        new Paragraph({
-          children: [new TextRun({ text: line, break: 0 })],
-        }),
-      );
-
-      const doc = new DocxDocument({
-        sections: [
-          {
-            properties: {},
-            children: paragraphs,
-          },
-        ],
-      });
-
-      const blob = await Packer.toBlob(doc);
+      const blob = await createDocxFromContent(content);
       return { blob, text: content };
     } catch (err: any) {
       console.error(err);
       setGenerationError(err.message || 'Não foi possível gerar o documento.');
       return null;
+    }
+  };
+
+  const handleDownloadTemplate = async (template: DocumentTemplate) => {
+    if (!template.file_path && !template.content) {
+      setTemplateActionError('Template não possui conteúdo disponível para download.');
+      return;
+    }
+
+    try {
+      setTemplateActionError(null);
+      setDownloadingTemplateId(template.id);
+
+      if (template.file_path) {
+        const file = await documentTemplateService.downloadTemplateFile(template);
+        const fileName = template.file_name || `${template.name}.docx`;
+        saveAs(file, fileName);
+      } else {
+        const content = sanitizeText(template.content || '');
+        const blob = await createDocxFromContent(content);
+        const fileName = `${removeDiacritics(template.name).replace(/\s+/g, '-') || 'template'}.docx`;
+        saveAs(blob, fileName);
+      }
+    } catch (err: any) {
+      console.error(err);
+      setTemplateActionError(err.message || 'Não foi possível baixar este template.');
+    } finally {
+      setDownloadingTemplateId(null);
     }
   };
 
@@ -338,15 +606,64 @@ const DocumentsModule: React.FC = () => {
     }
   };
 
-  const handleDeleteTemplate = async (id: string) => {
-    if (!confirm('Tem certeza que deseja remover este template?')) return;
+  const generateCaptchaNumbers = () => {
+    const a = Math.floor(Math.random() * 8) + 2;
+    const b = Math.floor(Math.random() * 8) + 2;
+    return [a, b] as [number, number];
+  };
+
+  const openDeleteModal = (template: DocumentTemplate) => {
+    setDeleteTemplateTarget(template);
+    setDeleteConfirmName('');
+    setDeleteCaptchaInput('');
+    setDeleteCaptchaNumbers(generateCaptchaNumbers());
+    setDeleteError(null);
+  };
+
+  const handleCloseDeleteModal = () => {
+    setDeleteTemplateTarget(null);
+    setDeleteConfirmName('');
+    setDeleteCaptchaInput('');
+    setDeleteCaptchaNumbers(null);
+    setDeleteLoading(false);
+    setDeleteError(null);
+  };
+
+  const handleConfirmDelete = async (event: React.FormEvent) => {
+    event.preventDefault();
+    if (!deleteTemplateTarget || !deleteCaptchaNumbers) return;
+
+    const trimmedName = deleteConfirmName.trim();
+    if (!trimmedName) {
+      setDeleteError('Digite o nome do template para confirmar.');
+      return;
+    }
+
+    if (trimmedName !== deleteTemplateTarget.name) {
+      setDeleteError('Nome não confere. Digite exatamente como aparece.');
+      return;
+    }
+
+    const expectedAnswer = deleteCaptchaNumbers[0] + deleteCaptchaNumbers[1];
+    if (parseInt(deleteCaptchaInput, 10) !== expectedAnswer) {
+      setDeleteError('Resposta do desafio incorreta.');
+      return;
+    }
+
     try {
-      await documentTemplateService.deleteTemplate(id);
+      setDeleteLoading(true);
+      setDeleteError(null);
+      setTemplateActionError(null);
+      await documentTemplateService.deleteTemplate(deleteTemplateTarget.id);
       const data = await documentTemplateService.listTemplates();
       setTemplates(data);
-      if (selectedTemplateId === id) setSelectedTemplateId('');
+      if (selectedTemplateId === deleteTemplateTarget.id) setSelectedTemplateId('');
+      handleCloseDeleteModal();
     } catch (err: any) {
-      setError(err.message);
+      console.error(err);
+      setDeleteError(err.message || 'Não foi possível remover este template.');
+    } finally {
+      setDeleteLoading(false);
     }
   };
 
@@ -354,155 +671,70 @@ const DocumentsModule: React.FC = () => {
   const templatesWithFile = templates.filter((template) => template.file_path).length;
 
   return (
-    <div className="space-y-6">
-      {/* Header */}
-      <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-6">
-        <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
-          <div>
-            <h3 className="text-2xl font-bold text-slate-900 flex items-center gap-3">
-              <div className="bg-blue-100 p-2 rounded-lg">
-                <FileText className="w-6 h-6 text-blue-600" />
-              </div>
-              Modelos de Documentos
-            </h3>
-            <p className="text-slate-600 mt-2">Gerencie templates personalizados e gere documentos rapidamente com dados automáticos.</p>
+    <>
+      <div className="space-y-6">
+      {/* Header com tabs */}
+      <div className="rounded-2xl border border-slate-200 bg-white">
+        <div className="border-b border-slate-200 px-4 py-4 sm:px-6">
+          <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
+            <FileText className="h-4 w-4 text-slate-400" />
+            Modelos de documentos
           </div>
+          <h3 className="mt-1 text-xl font-semibold text-slate-900 sm:text-2xl">Gerencie templates e documentos</h3>
+        </div>
+        <div className="flex flex-col gap-2 border-b border-slate-200 px-4 py-3 sm:flex-row sm:px-6">
           <button
-            onClick={handleOpenModal}
-            className="bg-blue-600 hover:bg-blue-700 text-white font-semibold px-6 py-3 rounded-lg flex items-center gap-2 transition-colors shadow-sm"
+            onClick={() => setActiveView('new-doc')}
+            className={`inline-flex items-center justify-center gap-2 rounded-lg px-4 py-2 text-sm font-medium transition ${
+              activeView === 'new-doc'
+                ? 'bg-slate-900 text-white'
+                : 'border border-slate-200 text-slate-700 hover:bg-slate-50'
+            }`}
           >
-            <Plus className="w-5 h-5" />
-            Novo Template
+            <Plus className="h-4 w-4" />
+            Novo documento
+          </button>
+          <button
+            onClick={() => setActiveView('manage')}
+            className={`inline-flex items-center justify-center gap-2 rounded-lg px-4 py-2 text-sm font-medium transition ${
+              activeView === 'manage'
+                ? 'bg-slate-900 text-white'
+                : 'border border-slate-200 text-slate-700 hover:bg-slate-50'
+            }`}
+          >
+            <Settings className="h-4 w-4" />
+            Gerenciar templates
           </button>
         </div>
       </div>
 
-      {/* Stats Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        <div className="bg-white border border-slate-200 rounded-lg p-5 flex items-center gap-4 shadow-sm">
-          <div className="w-12 h-12 rounded-lg bg-blue-100 text-blue-600 flex items-center justify-center">
-            <BookOpen className="w-6 h-6" />
+      {/* Novo documento */}
+      {activeView === 'new-doc' && (
+        <div className="rounded-2xl border border-slate-200 bg-white p-4 sm:p-6">
+          <div className="mb-4">
+            <h4 className="text-base font-semibold text-slate-900">Gerar novo documento</h4>
+            <p className="text-sm text-slate-500">Preencha os campos e clique em gerar para baixar o Word.</p>
           </div>
-          <div>
-            <p className="text-sm font-medium text-slate-600">Total de modelos</p>
-            <p className="text-2xl font-bold text-slate-900">{totalTemplates}</p>
-          </div>
-        </div>
-        <div className="bg-white border border-slate-200 rounded-lg p-5 flex items-center gap-4 shadow-sm">
-          <div className="w-12 h-12 rounded-lg bg-emerald-100 text-emerald-600 flex items-center justify-center">
-            <BarChart3 className="w-6 h-6" />
-          </div>
-          <div>
-            <p className="text-sm font-medium text-slate-600">Modelos com arquivo</p>
-            <p className="text-2xl font-bold text-slate-900">{templatesWithFile}</p>
-          </div>
-        </div>
-        <div className="bg-white border border-slate-200 rounded-lg p-5 flex items-center gap-4 shadow-sm">
-          <div className="w-12 h-12 rounded-lg bg-purple-100 text-purple-600 flex items-center justify-center">
-            <Users className="w-6 h-6" />
-          </div>
-          <div>
-            <p className="text-sm font-medium text-slate-600">Clientes cadastrados</p>
-            <p className="text-2xl font-bold text-slate-900">{clients.length}</p>
-          </div>
-        </div>
-      </div>
-
-      {/* Seção de Geração - Destaque Principal */}
-      <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
-        {/* Header com ícone e título */}
-        <div className="bg-slate-50 border-b border-slate-200 px-6 py-5">
-          <div className="flex items-center gap-3">
-            <div className="bg-blue-100 p-2.5 rounded-lg">
-              <Sparkles className="w-6 h-6 text-blue-600" />
+          <div className="space-y-4">
+            <div>
+              <label className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-slate-500">Cliente *</label>
+              <ClientSearchSelect
+                value={selectedClientId}
+                onChange={(clientId, clientName) => {
+                  setSelectedClientId(clientId);
+                  setClientSearchTerm(clientName);
+                }}
+                label=""
+                placeholder="Buscar cliente pelo nome"
+                required
+                allowCreate={true}
+              />
             </div>
             <div>
-              <h3 className="text-xl font-bold text-slate-900">Gerador de Documentos</h3>
-              <p className="text-slate-600 text-sm mt-0.5">Crie documentos personalizados em segundos com dados automáticos</p>
-            </div>
-          </div>
-        </div>
-
-        <div className="p-6 space-y-6">
-          {/* Instruções passo a passo */}
-          <div className="bg-blue-50 border border-blue-200 rounded-xl p-6">
-            <h4 className="text-lg font-semibold text-blue-900 mb-4 flex items-center gap-2">
-              <CheckCircle2 className="w-5 h-5" />
-              Como funciona?
-            </h4>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              <div className="flex items-start gap-3">
-                <div className="bg-blue-600 text-white w-8 h-8 rounded-full flex items-center justify-center font-bold text-sm flex-shrink-0">1</div>
-                <div>
-                  <p className="font-semibold text-blue-900 text-sm">Selecione o Cliente</p>
-                  <p className="text-xs text-blue-700 mt-1">Escolha o cliente para preencher automaticamente os dados</p>
-                </div>
-              </div>
-              <div className="flex items-start gap-3">
-                <div className="bg-blue-600 text-white w-8 h-8 rounded-full flex items-center justify-center font-bold text-sm flex-shrink-0">2</div>
-                <div>
-                  <p className="font-semibold text-blue-900 text-sm">Escolha o Modelo</p>
-                  <p className="text-xs text-blue-700 mt-1">Selecione o template de documento desejado</p>
-                </div>
-              </div>
-              <div className="flex items-start gap-3">
-                <div className="bg-blue-600 text-white w-8 h-8 rounded-full flex items-center justify-center font-bold text-sm flex-shrink-0">3</div>
-                <div>
-                  <p className="font-semibold text-blue-900 text-sm">Gere o Documento</p>
-                  <p className="text-xs text-blue-700 mt-1">Clique para gerar e baixar o arquivo Word</p>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          {/* Data atual em destaque */}
-          <div className="flex items-center justify-between bg-slate-50 border border-slate-200 rounded-lg px-4 py-3">
-            <span className="text-sm font-medium text-slate-600">Data de geração:</span>
-            <span className="text-base font-bold text-slate-900">{currentDate.toLocaleDateString('pt-BR', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}</span>
-          </div>
-
-          {/* Formulário de geração */}
-          <div className="space-y-6">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              {/* Cliente */}
-              <div className="space-y-3">
-                <div className="flex items-start gap-3">
-                  <div className="bg-blue-600 text-white w-6 h-6 rounded-full flex items-center justify-center font-bold text-xs flex-shrink-0 mt-1">
-                    1
-                  </div>
-                  <div className="flex-1">
-                    <ClientSearchSelect
-                      value={selectedClientId}
-                      onChange={(clientId, clientName) => {
-                        setSelectedClientId(clientId);
-                        setClientSearchTerm(clientName);
-                      }}
-                      label="Cliente *"
-                      placeholder="Buscar cliente pelo nome, CPF ou email"
-                      required
-                      allowCreate={true}
-                    />
-                  </div>
-                </div>
-                {selectedClient && (
-                  <div className="bg-emerald-50 border border-emerald-200 rounded-lg p-3 mt-2">
-                    <p className="text-xs font-semibold text-emerald-800 mb-1">✓ Cliente selecionado</p>
-                    <p className="text-xs text-emerald-700">CPF: {selectedClient.cpf_cnpj || 'Não informado'}</p>
-                    <p className="text-xs text-emerald-700">Cidade: {selectedClient.address_city || 'Não informado'}</p>
-                  </div>
-                )}
-              </div>
-
-              {/* Modelo */}
-              <div className="space-y-2">
-                <label className="block text-sm font-bold text-slate-900 mb-2 flex items-center gap-2">
-                  <div className="bg-amber-100 text-amber-700 w-6 h-6 rounded-full flex items-center justify-center font-bold text-xs">2</div>
-                  Modelo de Documento *
-                </label>
+              <label className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-slate-500">Template *</label>
+              <div className="relative">
                 <select
-                  className={`input-field text-base font-medium ${
-                    selectedTemplateId ? 'border-emerald-500 bg-emerald-50' : 'border-gray-300'
-                  }`}
+                  className="w-full rounded-lg border border-slate-200 bg-white px-4 py-2.5 text-sm text-slate-900 transition hover:border-slate-300 focus:border-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-900/10"
                   value={selectedTemplateId}
                   onChange={(e) => setSelectedTemplateId(e.target.value)}
                   disabled={loading}
@@ -514,200 +746,445 @@ const DocumentsModule: React.FC = () => {
                     </option>
                   ))}
                 </select>
-                {selectedTemplate && (
-                  <div className="bg-emerald-50 border border-emerald-200 rounded-lg p-3 mt-2">
-                    <p className="text-xs font-semibold text-emerald-800 mb-1">✓ Modelo selecionado</p>
-                    <p className="text-xs text-emerald-700">{selectedTemplate.description || 'Template pronto para uso'}</p>
-                  </div>
-                )}
               </div>
             </div>
-
-            {/* Réu / Parte contrária */}
-            <div className="space-y-2">
-              <label className="block text-sm font-bold text-slate-900 mb-2">Réu / Parte Contrária (Opcional)</label>
+            <div>
+              <label className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-slate-500">Réu / Parte contrária (opcional)</label>
               <input
                 type="text"
-                className="input-field text-base"
-                placeholder="Ex: João da Silva, Empresa XYZ Ltda."
+                className="w-full rounded-lg border border-slate-200 bg-white px-4 py-2.5 text-sm text-slate-900 transition hover:border-slate-300 focus:border-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-900/10"
+                placeholder="Ex: Empresa XPTO Ltda"
                 value={defendantInput}
                 onChange={(e) => setDefendantInput(e.target.value)}
               />
-              <p className="text-xs text-slate-500">Informe o nome da parte contrária se aplicável ao documento</p>
             </div>
-          </div>
-
-          {/* Mensagens de feedback */}
-          {generationError && (
-            <div className="bg-red-50 border-l-4 border-red-500 p-4 rounded-r-lg">
-              <p className="text-sm font-medium text-red-800">{generationError}</p>
-            </div>
-          )}
-          {generationSuccess && (
-            <div className="bg-emerald-50 border-l-4 border-emerald-500 p-4 rounded-r-lg">
-              <p className="text-sm font-medium text-emerald-800">{generationSuccess}</p>
-            </div>
-          )}
-
-          {/* Botão de geração em destaque */}
-          <div className="flex flex-col items-center gap-4 pt-4 border-t-2 border-dashed border-amber-200">
+            {generationError && (
+              <div className="rounded-lg border border-red-100 bg-red-50 px-3 py-2 text-sm text-red-700">
+                {generationError}
+              </div>
+            )}
+            {generationSuccess && (
+              <div className="rounded-lg border border-emerald-100 bg-emerald-50 px-3 py-2 text-sm text-emerald-700">
+                {generationSuccess}
+              </div>
+            )}
             <button
               onClick={handleGenerateDocx}
               disabled={generatingDocx || !selectedClientId || !selectedTemplateId}
-              className="group relative bg-gradient-to-r from-amber-600 to-amber-500 hover:from-amber-700 hover:to-amber-600 disabled:from-gray-400 disabled:to-gray-300 text-white font-bold px-12 py-4 rounded-xl shadow-xl hover:shadow-2xl transition-all duration-300 disabled:cursor-not-allowed transform hover:scale-105 disabled:hover:scale-100"
+              className="w-full rounded-xl bg-slate-900 px-6 py-3 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:bg-slate-300"
             >
-              <div className="flex items-center gap-3">
-                {generatingDocx ? (
-                  <>
-                    <Loader2 className="w-6 h-6 animate-spin" />
-                    <span className="text-lg">Gerando Documento...</span>
-                  </>
-                ) : (
-                  <>
-                    <FileDown className="w-6 h-6" />
-                    <span className="text-lg">Gerar Documento Word</span>
-                    <ArrowRight className="w-5 h-5 group-hover:translate-x-1 transition-transform" />
-                  </>
-                )}
-              </div>
-              {!selectedClientId || !selectedTemplateId ? (
-                <span className="absolute -bottom-8 left-1/2 transform -translate-x-1/2 text-xs text-slate-500 whitespace-nowrap">
-                  Selecione cliente e modelo para continuar
+              {generatingDocx ? (
+                <span className="inline-flex items-center gap-2">
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  Gerando documento...
                 </span>
-              ) : null}
+              ) : (
+                <span className="inline-flex items-center gap-2">
+                  <FileDown className="h-4 w-4" />
+                  Gerar documento Word
+                </span>
+              )}
             </button>
-            
-            {selectedClientId && selectedTemplateId && !generatingDocx && (
-              <div className="flex items-center gap-2 text-sm text-emerald-600 font-medium">
-                <CheckCircle2 className="w-4 h-4" />
-                Tudo pronto! Clique para gerar seu documento
-              </div>
-            )}
           </div>
         </div>
-      </div>
+      )}
 
-      <div className="bg-white rounded-xl border border-gray-200">
-          {loading ? (
-            <div className="flex items-center justify-center py-16">
-              <Loader2 className="w-8 h-8 text-amber-600 animate-spin" />
+      {/* Gerenciar templates */}
+      {activeView === 'manage' && (
+        <div className="rounded-2xl border border-slate-200 bg-white p-4 sm:p-6">
+          <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <h4 className="text-base font-semibold text-slate-900">Templates cadastrados</h4>
+              <p className="text-sm text-slate-500">Visualize, edite, baixe ou remova templates existentes.</p>
             </div>
-          ) : error ? (
-            <div className="p-6">
-              <p className="text-red-600">{error}</p>
+            <button
+              onClick={handleOpenModal}
+              className="inline-flex items-center justify-center gap-2 rounded-lg bg-slate-900 px-4 py-2 text-sm font-semibold text-white transition hover:bg-slate-800"
+            >
+              <Plus className="h-4 w-4" />
+              Novo template
+            </button>
+          </div>
+          {loading ? (
+            <div className="flex items-center justify-center py-8">
+              <Loader2 className="h-6 w-6 animate-spin text-slate-400" />
             </div>
           ) : templates.length === 0 ? (
-            <div className="p-6 text-center">
-              <FileText className="w-12 h-12 text-slate-300 mx-auto mb-4" />
-              <h4 className="text-lg font-semibold text-slate-900 mb-2">Nenhum template cadastrado</h4>
-              <p className="text-slate-600">Crie seu primeiro template para começar a gerar documentos automaticamente.</p>
-            </div>
+            <p className="py-8 text-center text-sm text-slate-500">Nenhum template cadastrado ainda.</p>
           ) : (
-            <div className="divide-y divide-gray-200">
+            <div className="space-y-3">
               {templates.map((template) => (
-                <div key={template.id} className="p-6 flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
-                  <div className="space-y-2">
-                    <h4 className="text-lg font-semibold text-slate-900">{template.name}</h4>
-                    {template.description && (
-                      <p className="text-sm text-slate-600">{template.description}</p>
-                    )}
-                    {!template.file_path && (
-                      <pre className="bg-slate-50 border border-slate-100 rounded-lg p-4 text-sm text-slate-700 whitespace-pre-wrap">
-                        {template.content}
-                      </pre>
-                    )}
-                    {template.file_path && (
-                      <p className="text-xs text-slate-500">
-                        Arquivo Word enviado: {template.file_name} ({Math.round((template.file_size ?? 0) / 1024)} KB)
-                      </p>
-                    )}
+                <div
+                  key={template.id}
+                  className="flex flex-col gap-3 rounded-xl border border-slate-200 bg-slate-50 p-4 transition hover:border-slate-300 sm:flex-row sm:items-center sm:justify-between"
+                >
+                  <div className="flex-1">
+                    <h5 className="font-semibold text-slate-900">{template.name}</h5>
+                    {template.description && <p className="text-sm text-slate-600">{template.description}</p>}
+                    <p className="mt-1 text-xs text-slate-500">
+                      {template.file_path ? `Arquivo: ${template.file_name || 'template.docx'}` : 'Template em texto'}
+                    </p>
                   </div>
-                  <button
-                    onClick={() => handleDeleteTemplate(template.id)}
-                    className="inline-flex items-center gap-2 bg-red-50 hover:bg-red-100 text-red-600 px-3 py-2 rounded-lg text-sm font-medium"
-                  >
-                    <Trash2 className="w-4 h-4" />
-                    Remover
-                  </button>
+                  <div className="flex flex-wrap gap-2">
+                    <button
+                      onClick={() => handlePreviewTemplate(template)}
+                      className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 transition hover:border-slate-300"
+                    >
+                      <Eye className="h-3.5 w-3.5" />
+                      Visualizar
+                    </button>
+                    <button
+                      onClick={() => handleDownloadTemplate(template)}
+                      disabled={downloadingTemplateId === template.id}
+                      className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 transition hover:border-slate-300 disabled:opacity-50"
+                    >
+                      {downloadingTemplateId === template.id ? (
+                        <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                      ) : (
+                        <FileDown className="h-3.5 w-3.5" />
+                      )}
+                      Baixar
+                    </button>
+                    <button
+                      onClick={() => openDeleteModal(template)}
+                      className="inline-flex items-center gap-1.5 rounded-lg border border-red-200 bg-white px-3 py-1.5 text-xs font-medium text-red-600 transition hover:border-red-300 hover:bg-red-50"
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                      Remover
+                    </button>
+                  </div>
                 </div>
               ))}
             </div>
           )}
-      </div>
+          {templateActionError && (
+            <div className="mt-4 rounded-lg border border-red-100 bg-red-50 px-3 py-2 text-sm text-red-700">
+              {templateActionError}
+            </div>
+          )}
+        </div>
+      )}
 
+      {/* Novo template modal */}
       {isModalOpen && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-xl shadow-2xl max-w-md w-full max-h-[90vh] overflow-y-auto">
-            <div className="sticky top-0 bg-white border-b border-gray-200 px-6 py-4 flex items-center justify-between">
-              <h3 className="text-lg font-semibold text-slate-900">Novo Template</h3>
-              <button
-                onClick={handleCloseModal}
-                className="text-slate-400 hover:text-slate-600 transition"
-              >
-                <X className="w-5 h-5" />
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-4">
+          <div className="w-full max-w-xl rounded-2xl bg-white shadow-2xl">
+            <div className="flex items-center justify-between border-b border-slate-100 px-5 py-4">
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Adicionar template</p>
+                <h3 className="text-lg font-semibold text-slate-900">Novo template</h3>
+              </div>
+              <button onClick={handleCloseModal} className="rounded-full p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-600">
+                <X className="h-5 w-5" />
               </button>
             </div>
-
-            <form onSubmit={handleUploadTemplate} className="p-6 space-y-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Nome do template</label>
+            <form onSubmit={handleUploadTemplate} className="space-y-4 px-5 py-5">
+              <div className="space-y-1">
+                <label className="text-xs font-semibold uppercase tracking-wide text-slate-500">Nome do template</label>
                 <input
                   type="text"
-                  className="input-field"
-                  placeholder="Ex: Contrato de Honorários"
+                  className="input-field text-sm"
                   value={nameInput}
                   onChange={(e) => setNameInput(e.target.value)}
+                  placeholder="Ex: Petição Inicial"
                 />
               </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Descrição</label>
+              <div className="space-y-1">
+                <label className="text-xs font-semibold uppercase tracking-wide text-slate-500">Descrição</label>
                 <textarea
-                  className="input-field"
+                  className="input-field text-sm"
                   rows={3}
-                  placeholder="Descreva o uso deste template"
                   value={descriptionInput}
                   onChange={(e) => setDescriptionInput(e.target.value)}
+                  placeholder="Breve resumo sobre o uso do template"
                 />
               </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Arquivo Word (.doc ou .docx)</label>
+              <div className="space-y-1">
+                <label className="text-xs font-semibold uppercase tracking-wide text-slate-500">Arquivo .docx *</label>
                 <input
                   type="file"
-                  accept=".doc,.docx,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-                  className="block w-full text-sm text-slate-500 file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-sm file:font-semibold file:bg-amber-50 file:text-amber-700 hover:file:bg-amber-100"
-                  onChange={(e) => setFileInput(e.target.files?.[0] ?? null)}
+                  accept=".doc,.docx"
+                  className="input-field text-sm"
+                  onChange={(e) => setFileInput(e.target.files?.[0] || null)}
                 />
-                {fileInput && (
-                  <p className="text-xs text-slate-500 mt-1">Arquivo selecionado: {fileInput.name}</p>
-                )}
               </div>
-
               {uploadError && <p className="text-sm text-red-600">{uploadError}</p>}
-
-              <div className="flex gap-3 pt-4">
+              <div className="flex flex-col gap-2 pt-2 sm:flex-row">
                 <button
                   type="button"
                   onClick={handleCloseModal}
-                  className="flex-1 bg-slate-100 hover:bg-slate-200 text-slate-700 font-medium px-4 py-2.5 rounded-lg transition-colors"
+                  className="w-full rounded-xl border border-slate-200 px-4 py-2.5 text-sm font-medium text-slate-600 hover:border-slate-300"
                 >
                   Cancelar
                 </button>
                 <button
                   type="submit"
                   disabled={uploading}
-                  className="flex-1 bg-amber-600 hover:bg-amber-700 text-white font-medium px-4 py-2.5 rounded-lg flex items-center justify-center gap-2 transition-colors disabled:opacity-50"
+                  className="w-full rounded-xl bg-slate-900 px-4 py-2.5 text-sm font-semibold text-white transition disabled:bg-slate-300"
                 >
-                  {uploading ? <Loader2 className="w-4 h-4 animate-spin" /> : <FileText className="w-4 h-4" />}
-                  {uploading ? 'Enviando...' : 'Criar Template'}
+                  {uploading ? 'Enviando...' : 'Salvar template'}
                 </button>
               </div>
             </form>
           </div>
         </div>
       )}
-    </div>
+
+      {/* Preview Modal */}
+      {isPreviewModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-4">
+          <div className="w-full max-w-4xl rounded-2xl bg-white shadow-2xl">
+            <div className="flex items-center justify-between border-b border-slate-100 px-6 py-4">
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Visualizar template</p>
+                <h3 className="text-lg font-semibold text-slate-900">{previewTemplate?.name}</h3>
+              </div>
+              <button onClick={handleClosePreviewModal} className="rounded-full p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-600">
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+            <div className="h-[70vh] overflow-hidden p-6">
+              {previewLoading ? (
+                <div className="flex h-full items-center justify-center">
+                  <Loader2 className="h-6 w-6 animate-spin text-slate-400" />
+                </div>
+              ) : previewError ? (
+                <div className="rounded-lg border border-red-100 bg-red-50 p-4 text-sm text-red-700">{previewError}</div>
+              ) : previewTemplate?.file_path ? (
+                <div className="flex h-full flex-col gap-4">
+                  {previewPdfUrl ? (
+                    <iframe src={previewPdfUrl} title="Preview DOCX" className="h-full w-full rounded-xl border border-slate-200" />
+                  ) : (
+                    <p className="text-sm text-slate-500">Carregando documento...</p>
+                  )}
+                  <div className="flex flex-wrap gap-3 text-sm">
+                    <button
+                      onClick={() => previewTemplate && handleOpenEditModal(previewTemplate)}
+                      className="inline-flex items-center gap-2 rounded-xl border border-slate-200 px-4 py-2 font-medium text-slate-700 hover:border-slate-300"
+                    >
+                      <Pencil className="h-4 w-4" />
+                      Editar template
+                    </button>
+                    <button
+                      onClick={() => previewTemplate && handleDownloadTemplate(previewTemplate)}
+                      className="inline-flex items-center gap-2 rounded-xl border border-slate-200 px-4 py-2 font-medium text-slate-700 hover:border-slate-300"
+                    >
+                      <FileDown className="h-4 w-4" />
+                      Baixar arquivo
+                    </button>
+                  </div>
+                  <p className="text-xs text-slate-500">A edição direta está disponível apenas para templates em texto. Para arquivos Word, substitua o arquivo pelo botão "Editar template".</p>
+                </div>
+              ) : previewTemplate ? (
+                isPreviewEditing ? (
+                  <form onSubmit={handleSavePreviewEdits} className="flex h-full flex-col gap-4">
+                    <div className="space-y-1">
+                      <label className="text-xs font-semibold uppercase tracking-wide text-slate-500">Nome</label>
+                      <input
+                        type="text"
+                        className="input-field text-sm"
+                        value={previewEditName}
+                        onChange={(e) => setPreviewEditName(e.target.value)}
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <label className="text-xs font-semibold uppercase tracking-wide text-slate-500">Descrição</label>
+                      <textarea
+                        className="input-field text-sm"
+                        rows={3}
+                        value={previewEditDescription}
+                        onChange={(e) => setPreviewEditDescription(e.target.value)}
+                      />
+                    </div>
+                    <div className="flex-1 space-y-1">
+                      <label className="text-xs font-semibold uppercase tracking-wide text-slate-500">Conteúdo</label>
+                      <textarea
+                        className="input-field h-full min-h-[280px] text-sm"
+                        value={previewEditContent}
+                        onChange={(e) => setPreviewEditContent(e.target.value)}
+                      />
+                    </div>
+                    {previewEditError && <p className="text-sm text-red-600">{previewEditError}</p>}
+                    <div className="flex flex-col gap-2 pt-2 sm:flex-row">
+                      <button
+                        type="button"
+                        onClick={handleCancelPreviewEditing}
+                        className="w-full rounded-xl border border-slate-200 px-4 py-2.5 text-sm font-medium text-slate-600 hover:border-slate-300"
+                      >
+                        Cancelar
+                      </button>
+                      <button
+                        type="submit"
+                        disabled={previewSaving}
+                        className="w-full rounded-xl bg-slate-900 px-4 py-2.5 text-sm font-semibold text-white transition disabled:bg-slate-300"
+                      >
+                        {previewSaving ? 'Salvando...' : 'Salvar alterações'}
+                      </button>
+                    </div>
+                  </form>
+                ) : (
+                  <div className="flex h-full flex-col gap-4">
+                    <div className="flex items-center justify-between">
+                      <p className="text-sm text-slate-500">Conteúdo em texto com variáveis prontas para edição.</p>
+                      <button
+                        onClick={handleStartPreviewEditing}
+                        className="inline-flex items-center gap-2 rounded-xl border border-slate-200 px-4 py-2 text-sm font-medium text-slate-700 hover:border-slate-300"
+                      >
+                        <Pencil className="h-4 w-4" />
+                        Editar conteúdo
+                      </button>
+                    </div>
+                    <pre className="flex-1 overflow-auto rounded-xl border border-slate-100 bg-slate-50 p-4 text-xs text-slate-700 whitespace-pre-wrap">
+                      {previewEditContent}
+                    </pre>
+                  </div>
+                )
+              ) : (
+                <p className="text-sm text-slate-500">Nenhum conteúdo para visualizar.</p>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Edit Modal */}
+      {isEditModalOpen && editingTemplate && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-4">
+          <div className="w-full max-w-2xl rounded-2xl bg-white shadow-2xl">
+            <div className="flex items-center justify-between border-b border-slate-100 px-6 py-4">
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Editar template</p>
+                <h3 className="text-lg font-semibold text-slate-900">{editingTemplate.name}</h3>
+              </div>
+              <button onClick={handleCloseEditModal} className="rounded-full p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-600">
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+            <form onSubmit={handleSaveTemplateEdits} className="space-y-4 p-6">
+              <div className="space-y-1">
+                <label className="text-xs font-semibold uppercase tracking-wide text-slate-500">Nome *</label>
+                <input
+                  type="text"
+                  className="input-field text-sm"
+                  value={editName}
+                  onChange={(e) => setEditName(e.target.value)}
+                  required
+                />
+              </div>
+              <div className="space-y-1">
+                <label className="text-xs font-semibold uppercase tracking-wide text-slate-500">Descrição</label>
+                <textarea
+                  className="input-field text-sm"
+                  rows={3}
+                  value={editDescription}
+                  onChange={(e) => setEditDescription(e.target.value)}
+                />
+              </div>
+              {!editingTemplate.file_path && (
+                <div className="space-y-1">
+                  <label className="text-xs font-semibold uppercase tracking-wide text-slate-500">Conteúdo</label>
+                  <textarea
+                    className="input-field text-sm"
+                    rows={8}
+                    value={editContent}
+                    onChange={(e) => setEditContent(e.target.value)}
+                  />
+                </div>
+              )}
+              {editingTemplate.file_path && (
+                <div className="space-y-1">
+                  <label className="text-xs font-semibold uppercase tracking-wide text-slate-500">Substituir arquivo (opcional)</label>
+                  <input
+                    type="file"
+                    accept=".docx"
+                    className="input-field text-sm"
+                    onChange={(e) => setEditFile(e.target.files?.[0] || null)}
+                  />
+                  <p className="text-xs text-slate-500">Deixe em branco para manter o arquivo atual.</p>
+                </div>
+              )}
+              {editError && <p className="text-sm text-red-600">{editError}</p>}
+              <div className="flex flex-col gap-2 pt-2 sm:flex-row">
+                <button
+                  type="button"
+                  onClick={handleCloseEditModal}
+                  className="w-full rounded-xl border border-slate-200 px-4 py-2.5 text-sm font-medium text-slate-600 hover:border-slate-300"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  disabled={editSaving}
+                  className="w-full rounded-xl bg-slate-900 px-4 py-2.5 text-sm font-semibold text-white transition disabled:bg-slate-300"
+                >
+                  {editSaving ? 'Salvando...' : 'Salvar alterações'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Delete confirmation modal */}
+      {deleteTemplateTarget && deleteCaptchaNumbers ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 p-4">
+          <div className="w-full max-w-lg rounded-2xl border border-slate-200 bg-white shadow-2xl">
+            <div className="flex items-center justify-between border-b border-slate-100 px-5 py-4">
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-wide text-red-500">Excluir template</p>
+                <h3 className="text-lg font-semibold text-slate-900">{deleteTemplateTarget.name}</h3>
+              </div>
+              <button onClick={handleCloseDeleteModal} className="rounded-full p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-600">
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+            <form onSubmit={handleConfirmDelete} className="space-y-4 px-5 py-5">
+              <p className="text-sm text-slate-600">
+                Esta ação é permanente. Digite o <strong>nome completo</strong> do template abaixo e resolva o desafio para confirmar.
+              </p>
+              <div className="space-y-1">
+                <label className="text-xs font-semibold uppercase tracking-wide text-slate-500">Nome do template</label>
+                <input
+                  type="text"
+                  className="input-field text-sm"
+                  value={deleteConfirmName}
+                  onChange={(e) => setDeleteConfirmName(e.target.value)}
+                />
+              </div>
+              <div className="space-y-1">
+                <label className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                  Desafio: quanto é {deleteCaptchaNumbers[0]} + {deleteCaptchaNumbers[1]}?
+                </label>
+                <input
+                  type="number"
+                  className="input-field text-sm"
+                  value={deleteCaptchaInput}
+                  onChange={(e) => setDeleteCaptchaInput(e.target.value)}
+                />
+              </div>
+              {deleteError && <p className="text-sm text-red-600">{deleteError}</p>}
+              <div className="flex flex-col gap-2 pt-2 sm:flex-row">
+                <button
+                  type="button"
+                  onClick={handleCloseDeleteModal}
+                  className="w-full rounded-xl border border-slate-200 px-4 py-2.5 text-sm font-medium text-slate-600 hover:border-slate-300"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  disabled={deleteLoading}
+                  className="w-full rounded-xl bg-red-600 px-4 py-2.5 text-sm font-semibold text-white transition disabled:bg-red-300"
+                >
+                  {deleteLoading ? 'Removendo...' : 'Confirmar exclusão'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      ) : null}
+      </div>
+    </>
   );
 };
 

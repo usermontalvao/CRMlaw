@@ -6,8 +6,15 @@ import { AuthProvider } from './contexts/AuthContext';
 import { ToastProvider } from './contexts/ToastContext';
 import './index.css';
 
-// Garante que a URL sempre seja "/" (raiz)
-if (window.location.pathname !== '/') {
+// Detectar rotas especiais antes de forçar "/"
+const currentPath = window.location.pathname;
+const currentHash = window.location.hash;
+
+// Permitir rota /cron/djen para endpoint público
+if (currentHash.includes('/cron/djen')) {
+  // Não alterar a URL, permitir que o app processe a rota
+} else if (currentPath !== '/') {
+  // Garante que a URL sempre seja "/" (raiz) para outras rotas
   window.history.replaceState({}, '', '/');
 }
 

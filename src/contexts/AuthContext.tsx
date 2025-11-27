@@ -9,6 +9,8 @@ interface AuthContextType {
   signIn: (email: string, password: string) => Promise<void>;
   signOut: () => Promise<void>;
   resetPassword: (email: string) => Promise<void>;
+  sessionWarning: boolean;
+  extendSession: () => void;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -18,6 +20,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [session, setSession] = useState<Session | null>(null);
   const [loading, setLoading] = useState(true);
   const [lastActivity, setLastActivity] = useState(Date.now());
+  const [sessionWarning, setSessionWarning] = useState(false);
 
   useEffect(() => {
     // Check active session
@@ -51,12 +54,35 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     return () => subscription.unsubscribe();
   }, []);
 
-  // Heartbeat otimizado: verificar sessão a cada 10 minutos (reduz requisições)
+  // Verificação de inatividade e logout automático
   useEffect(() => {
     if (!session) return;
 
+    const checkInactivity = () => {
+      const inactiveTime = Date.now() - lastActivity;
+      const maxInactiveTime = 30 * 60 * 1000; // 30 minutos de inatividade
+      const warningTime = 25 * 60 * 1000; // Aviso aos 25 minutos
+      
+      if (inactiveTime > maxInactiveTime) {
+        console.warn('⏰ Logout automático por inatividade (30min)');
+        signOut();
+        return;
+      }
+      
+      // Mostrar aviso quando próximo do logout
+      if (inactiveTime > warningTime && !sessionWarning) {
+        console.warn('⚠️ Sessão expirará em 5 minutos por inatividade');
+        setSessionWarning(true);
+      } else if (inactiveTime <= warningTime && sessionWarning) {
+        setSessionWarning(false);
+      }
+    };
+
     const heartbeatInterval = setInterval(async () => {
       try {
+        // Primeiro verificar inatividade
+        checkInactivity();
+        
         const { data, error } = await supabase.auth.getSession();
         
         if (error) {
@@ -71,14 +97,14 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           return;
         }
 
-        // Renovar apenas se token expira em menos de 20 minutos E houve atividade recente
+        // Renovar apenas se token expira em menos de 15 minutos E houve atividade recente
         const expiresAt = data.session.expires_at;
         if (expiresAt) {
           const expiresInMs = (expiresAt * 1000) - Date.now();
-          const twentyMinutes = 20 * 60 * 1000;
-          const recentActivity = (Date.now() - lastActivity) < 5 * 60 * 1000; // Ativo nos últimos 5min
+          const fifteenMinutes = 15 * 60 * 1000;
+          const recentActivity = (Date.now() - lastActivity) < 10 * 60 * 1000; // Ativo nos últimos 10min
 
-          if (expiresInMs < twentyMinutes && recentActivity) {
+          if (expiresInMs < fifteenMinutes && recentActivity) {
             console.log('🔄 Renovando sessão (expira em', Math.round(expiresInMs / 60000), 'min)');
             const { data: refreshData, error: refreshError } = await supabase.auth.refreshSession();
             
@@ -89,26 +115,37 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
               setSession(refreshData.session);
               setUser(refreshData.user);
             }
+          } else if (!recentActivity) {
+            console.log('⚠️ Usuário inativo há mais de 10min, não renovando sessão');
           }
         }
       } catch (error) {
         console.error('Erro no heartbeat:', error);
       }
-    }, 10 * 60 * 1000); // A cada 10 minutos (reduzido de 5min)
+    }, 5 * 60 * 1000); // A cada 5 minutos
 
     return () => clearInterval(heartbeatInterval);
   }, [session, lastActivity]);
 
-  // Detectar atividade do usuário (apenas rastrear, sem requisições)
+  // Detectar atividade do usuário com throttling
   useEffect(() => {
     if (!session) return;
 
+    let throttleTimeout: NodeJS.Timeout | null = null;
+
     const handleActivity = () => {
+      // Throttle para evitar muitas atualizações
+      if (throttleTimeout) return;
+      
       setLastActivity(Date.now());
+      
+      throttleTimeout = setTimeout(() => {
+        throttleTimeout = null;
+      }, 30000); // Throttle de 30 segundos
     };
 
-    // Eventos que indicam atividade (throttled para reduzir processamento)
-    const events = ['mousedown', 'keydown'];
+    // Eventos que indicam atividade do usuário
+    const events = ['mousedown', 'keydown', 'scroll', 'touchstart', 'click'];
     events.forEach(event => {
       window.addEventListener(event, handleActivity, { passive: true });
     });
@@ -117,6 +154,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       events.forEach(event => {
         window.removeEventListener(event, handleActivity);
       });
+      if (throttleTimeout) {
+        clearTimeout(throttleTimeout);
+      }
     };
   }, [session]);
 
@@ -149,8 +189,23 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     if (error) throw error;
   };
 
+  const extendSession = () => {
+    setLastActivity(Date.now());
+    setSessionWarning(false);
+    console.log('🔄 Sessão estendida pelo usuário');
+  };
+
   return (
-    <AuthContext.Provider value={{ user, session, loading, signIn, signOut, resetPassword }}>
+    <AuthContext.Provider value={{ 
+      user, 
+      session, 
+      loading, 
+      signIn, 
+      signOut, 
+      resetPassword, 
+      sessionWarning, 
+      extendSession 
+    }}>
       {children}
     </AuthContext.Provider>
   );

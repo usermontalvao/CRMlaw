@@ -471,6 +471,40 @@ class DjenLocalService {
     }
   }
 
+  async deleteByIds(ids: string[]): Promise<number> {
+    if (!ids.length) {
+      return 0;
+    }
+
+    const { data, error } = await supabase
+      .from(this.tableName)
+      .delete()
+      .in('id', ids)
+      .select('id');
+
+    if (error) {
+      console.error('Erro ao remover intimações selecionadas:', error);
+      throw new Error(error.message);
+    }
+
+    return data?.length || 0;
+  }
+
+  async deleteRead(): Promise<number> {
+    const { data, error } = await supabase
+      .from(this.tableName)
+      .delete()
+      .eq('lida', true)
+      .select('id');
+
+    if (error) {
+      console.error('Erro ao remover intimações lidas:', error);
+      throw new Error(error.message);
+    }
+
+    return data?.length || 0;
+  }
+
   /**
    * Vincula comunicação a um cliente
    */

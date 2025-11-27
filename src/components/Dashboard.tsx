@@ -20,6 +20,7 @@ import {
   Bell,
   Scale,
   ChevronRight,
+  ExternalLink,
 } from 'lucide-react';
 import { clientService } from '../services/client.service';
 import { processService } from '../services/process.service';
@@ -96,20 +97,38 @@ type QuickActionProps = {
   description: string;
   icon: React.ReactNode;
   onClick: () => void;
+  accent?: 'amber' | 'blue' | 'green' | 'purple';
 };
 
-const QuickAction: React.FC<QuickActionProps> = ({ title, description, icon, onClick }) => (
-  <button
-    onClick={onClick}
-    className="flex items-start gap-4 rounded-lg border border-slate-200 bg-white p-4 text-left transition hover:border-amber-300 hover:shadow-md"
-  >
-    <div className="rounded-lg bg-amber-50 p-3 text-amber-600">{icon}</div>
-    <div className="flex-1">
-      <h3 className="font-semibold text-slate-900">{title}</h3>
-      <p className="text-sm text-slate-600">{description}</p>
-    </div>
-  </button>
-);
+const QuickAction: React.FC<QuickActionProps> = ({ title, description, icon, onClick, accent = 'amber' }) => {
+  const accentClasses: Record<NonNullable<QuickActionProps['accent']>, string> = {
+    amber: 'bg-amber-50 text-amber-600',
+    blue: 'bg-blue-50 text-blue-600',
+    green: 'bg-emerald-50 text-emerald-600',
+    purple: 'bg-purple-50 text-purple-600',
+  };
+
+  return (
+    <button
+      onClick={onClick}
+      className="flex items-start gap-4 rounded-lg border border-slate-200 bg-white p-4 text-left transition hover:border-amber-300 hover:shadow-md"
+    >
+      <div className={`rounded-lg p-3 ${accentClasses[accent]}`}>{icon}</div>
+      <div className="flex-1">
+        <h3 className="font-semibold text-slate-900">{title}</h3>
+        <p className="text-sm text-slate-600">{description}</p>
+      </div>
+    </button>
+  );
+};
+
+interface ModuleShortcut {
+  title: string;
+  description: string;
+  icon: React.ReactNode;
+  action: () => void;
+  accent: NonNullable<QuickActionProps['accent']>;
+}
 
 // Cache keys e configuração
 const DASHBOARD_CACHE_KEY = 'crm-dashboard-cache';
@@ -209,8 +228,16 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToModule }) => {
         taskService.listTasks().then(tasks => tasks.filter(t => t.status === 'pending').slice(0, 50)),
         // Apenas eventos futuros (próximos 60 dias)
         calendarService.listEvents().then(events => {
-          const futureDate = new Date(Date.now() + 60 * 24 * 60 * 60 * 1000);
-          return events.filter(e => e.start_at && new Date(e.start_at) <= futureDate).slice(0, 100);
+          const now = new Date();
+          now.setHours(0, 0, 0, 0);
+          const futureDate = new Date(now.getTime() + 60 * 24 * 60 * 60 * 1000);
+          return events
+            .filter(e => {
+              if (!e.start_at) return false;
+              const eventDate = new Date(e.start_at);
+              return eventDate >= now && eventDate <= futureDate;
+            })
+            .slice(0, 100);
         }),
         // Apenas requerimentos aguardando confecção
         requirementService.listRequirements().then(reqs => reqs.filter(r => r.status === 'aguardando_confeccao').slice(0, 50)),

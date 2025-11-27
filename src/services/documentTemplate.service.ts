@@ -85,6 +85,22 @@ class DocumentTemplateService {
     return data;
   }
 
+  async getTemplateSignedUrl(template: DocumentTemplate, expiresInSeconds = 60 * 5) {
+    if (!template.file_path) {
+      throw new Error('Template não possui arquivo para visualização.');
+    }
+
+    const { data, error } = await supabase.storage
+      .from(STORAGE_BUCKET)
+      .createSignedUrl(template.file_path, expiresInSeconds);
+
+    if (error || !data?.signedUrl) {
+      throw new Error(error?.message ?? 'Não foi possível gerar link temporário.');
+    }
+
+    return data.signedUrl;
+  }
+
   async createTemplate(payload: CreateDocumentTemplateDTO): Promise<DocumentTemplate> {
     const { data, error } = await supabase
       .from(this.tableName)
@@ -146,6 +162,52 @@ class DocumentTemplateService {
       .single();
 
     if (error) throw new Error(error.message);
+    return data;
+  }
+
+  async updateTemplateWithFile(
+    template: DocumentTemplate,
+    payload: Partial<CreateDocumentTemplateDTO>,
+    file: File,
+  ): Promise<DocumentTemplate> {
+    await this.ensureBucket();
+
+    const extension = file.name.split('.').pop() ?? 'docx';
+    const filePath = `${crypto.randomUUID()}.${extension}`;
+
+    const { error: uploadError } = await supabase.storage
+      .from(STORAGE_BUCKET)
+      .upload(filePath, file, {
+        contentType: file.type || 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+        upsert: false,
+      });
+
+    if (uploadError) {
+      throw new Error(uploadError.message);
+    }
+
+    const { data, error } = await supabase
+      .from(this.tableName)
+      .update({
+        ...payload,
+        file_path: filePath,
+        file_name: file.name,
+        mime_type: file.type,
+        file_size: file.size,
+      })
+      .eq('id', template.id)
+      .select()
+      .single();
+
+    if (error) {
+      await supabase.storage.from(STORAGE_BUCKET).remove([filePath]);
+      throw new Error(error.message);
+    }
+
+    if (template.file_path) {
+      await supabase.storage.from(STORAGE_BUCKET).remove([template.file_path]);
+    }
+
     return data;
   }
 

@@ -13,7 +13,9 @@ export type ModuleName =
   | 'agenda'
   | 'tarefas'
   | 'notificacoes'
-  | 'login';
+  | 'login'
+  | 'cron'
+  | 'configuracoes';
 
 interface ModuleParams {
   [key: string]: any;
