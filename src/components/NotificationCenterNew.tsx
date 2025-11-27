@@ -69,6 +69,9 @@ export const NotificationCenterNew: React.FC<NotificationCenterProps> = ({ onNav
 
     intimations.forEach((int) => {
       const notifId = `intimation-${int.id}`;
+      if (readNotifications.has(notifId) || int.lida) {
+        return;
+      }
       items.push({
         id: notifId,
         type: 'intimation',
@@ -76,7 +79,7 @@ export const NotificationCenterNew: React.FC<NotificationCenterProps> = ({ onNav
         description: `Processo ${int.numero_processo_mascara || int.numero_processo}`,
         date: int.data_disponibilizacao,
         priority: 'urgent',
-        isRead: readNotifications.has(notifId) || int.lida,
+        isRead: false,
         data: int,
       });
     });
@@ -84,6 +87,9 @@ export const NotificationCenterNew: React.FC<NotificationCenterProps> = ({ onNav
     deadlines.forEach((deadline) => {
       const daysUntil = Math.ceil((new Date(deadline.due_date).getTime() - new Date().getTime()) / (1000 * 60 * 60 * 24));
       const notifId = `deadline-${deadline.id}`;
+      if (readNotifications.has(notifId)) {
+        return;
+      }
       items.push({
         id: notifId,
         type: 'deadline',
@@ -91,7 +97,7 @@ export const NotificationCenterNew: React.FC<NotificationCenterProps> = ({ onNav
         description: `Vence ${daysUntil <= 0 ? 'hoje' : `em ${daysUntil} dia${daysUntil !== 1 ? 's' : ''}`}`,
         date: deadline.due_date,
         priority: daysUntil <= 2 ? 'urgent' : daysUntil <= 5 ? 'high' : 'normal',
-        isRead: readNotifications.has(notifId),
+        isRead: false,
         data: deadline,
       });
     });
@@ -99,6 +105,9 @@ export const NotificationCenterNew: React.FC<NotificationCenterProps> = ({ onNav
     appointments.forEach((appt) => {
       const startDate = new Date(appt.start_at);
       const notifId = `appointment-${appt.id}`;
+      if (readNotifications.has(notifId)) {
+        return;
+      }
       items.push({
         id: notifId,
         type: 'appointment',
@@ -106,13 +115,12 @@ export const NotificationCenterNew: React.FC<NotificationCenterProps> = ({ onNav
         description: `${startDate.toLocaleDateString('pt-BR')} às ${startDate.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}`,
         date: appt.start_at,
         priority: 'normal',
-        isRead: readNotifications.has(notifId),
+        isRead: false,
         data: appt,
       });
     });
 
     return items.sort((a, b) => {
-      if (a.isRead !== b.isRead) return a.isRead ? 1 : -1;
       const priorityOrder = { urgent: 0, high: 1, normal: 2 };
       if (priorityOrder[a.priority] !== priorityOrder[b.priority]) {
         return priorityOrder[a.priority] - priorityOrder[b.priority];
@@ -140,15 +148,21 @@ export const NotificationCenterNew: React.FC<NotificationCenterProps> = ({ onNav
     newReadSet.add(notificationId);
     setReadNotifications(newReadSet);
     localStorage.setItem('read_notifications', JSON.stringify([...newReadSet]));
-    
+
     if (notificationId.startsWith('intimation-')) {
       const intimationId = notificationId.replace('intimation-', '');
       try {
         await djenLocalService.marcarComoLida(intimationId);
-        setIntimations(prev => prev.map(int => int.id === intimationId ? { ...int, lida: true } : int));
+        setIntimations(prev => prev.filter(int => int.id !== intimationId));
       } catch (error) {
         console.error('Erro ao marcar intimação como lida:', error);
       }
+    } else if (notificationId.startsWith('deadline-')) {
+      const deadlineId = notificationId.replace('deadline-', '');
+      setDeadlines(prev => prev.filter(deadline => deadline.id !== deadlineId));
+    } else if (notificationId.startsWith('appointment-')) {
+      const appointmentId = notificationId.replace('appointment-', '');
+      setAppointments(prev => prev.filter(appointment => appointment.id !== appointmentId));
     }
   };
 
@@ -156,6 +170,9 @@ export const NotificationCenterNew: React.FC<NotificationCenterProps> = ({ onNav
     const allIds = notifications.map(n => n.id);
     setReadNotifications(new Set(allIds));
     localStorage.setItem('read_notifications', JSON.stringify(allIds));
+    setIntimations([]);
+    setDeadlines([]);
+    setAppointments([]);
   };
 
   const handleNotificationClick = async (notification: NotificationItem) => {

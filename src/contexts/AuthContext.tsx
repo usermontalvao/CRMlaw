@@ -11,9 +11,12 @@ interface AuthContextType {
   resetPassword: (email: string) => Promise<void>;
   sessionWarning: boolean;
   extendSession: () => void;
+  sessionStart: number | null;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
+
+const SESSION_START_STORAGE_KEY = 'auth_session_start_at';
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [user, setUser] = useState<User | null>(null);
@@ -21,12 +24,46 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [loading, setLoading] = useState(true);
   const [lastActivity, setLastActivity] = useState(Date.now());
   const [sessionWarning, setSessionWarning] = useState(false);
+  const [sessionStart, setSessionStart] = useState<number | null>(() => {
+    if (typeof window === 'undefined') return null;
+    const stored = localStorage.getItem(SESSION_START_STORAGE_KEY);
+    if (!stored) return null;
+    const parsed = Number(stored);
+    return Number.isNaN(parsed) ? null : parsed;
+  });
+
+  const persistSessionStart = (timestamp: number | null) => {
+    if (typeof window === 'undefined') return;
+    if (timestamp) {
+      localStorage.setItem(SESSION_START_STORAGE_KEY, String(timestamp));
+    } else {
+      localStorage.removeItem(SESSION_START_STORAGE_KEY);
+    }
+    setSessionStart(timestamp);
+  };
 
   useEffect(() => {
     // Check active session
     supabase.auth.getSession().then(({ data: { session } }) => {
       setSession(session);
       setUser(session?.user ?? null);
+      if (session) {
+        const stored = typeof window !== 'undefined' ? localStorage.getItem(SESSION_START_STORAGE_KEY) : null;
+        if (stored) {
+          const parsed = Number(stored);
+          if (!Number.isNaN(parsed)) {
+            setSessionStart(parsed);
+          } else {
+            const now = Date.now();
+            persistSessionStart(now);
+          }
+        } else {
+          const now = Date.now();
+          persistSessionStart(now);
+        }
+      } else {
+        persistSessionStart(null);
+      }
       setLoading(false);
     });
 
@@ -40,12 +77,19 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       if (event === 'SIGNED_OUT' || event === 'TOKEN_REFRESHED' || event === 'USER_UPDATED') {
         setSession(session);
         setUser(session?.user ?? null);
+        if (event === 'SIGNED_OUT' || !session) {
+          persistSessionStart(null);
+        }
       } else if (event === 'SIGNED_IN') {
         setSession(session);
         setUser(session?.user ?? null);
+        persistSessionStart(Date.now());
       } else {
         setSession(session);
         setUser(session?.user ?? null);
+        if (!session) {
+          persistSessionStart(null);
+        }
       }
       
       setLoading(false);
@@ -60,11 +104,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     const checkInactivity = () => {
       const inactiveTime = Date.now() - lastActivity;
-      const maxInactiveTime = 30 * 60 * 1000; // 30 minutos de inatividade
-      const warningTime = 25 * 60 * 1000; // Aviso aos 25 minutos
-      
+      const maxInactiveTime = 6 * 60 * 60 * 1000; // 6 horas de inatividade
+      const warningTime = maxInactiveTime - 5 * 60 * 1000; // Aviso 5 minutos antes
+
       if (inactiveTime > maxInactiveTime) {
-        console.warn('⏰ Logout automático por inatividade (30min)');
+        console.warn('⏰ Logout automático por inatividade (6h)');
         signOut();
         return;
       }
@@ -170,6 +214,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     setSession(data.session);
     setUser(data.user);
+    persistSessionStart(Date.now());
   };
 
   const signOut = async () => {
@@ -178,6 +223,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     setSession(null);
     setUser(null);
+    persistSessionStart(null);
   };
 
   const resetPassword = async (email: string) => {
@@ -204,7 +250,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       signOut, 
       resetPassword, 
       sessionWarning, 
-      extendSession 
+      extendSession,
+      sessionStart 
     }}>
       {children}
     </AuthContext.Provider>

@@ -113,7 +113,6 @@ function App() {
   const [clientSearchOpen, setClientSearchOpen] = useState(false);
   const [isClientFormModalOpen, setIsClientFormModalOpen] = useState(false);
   const [clientFormPrefill, setClientFormPrefill] = useState<Partial<CreateClientDTO> | null>(null);
-
   const unreadCount = useMemo(() => notifications.filter((n) => !n.read).length, [notifications]);
 
   const clientsParams = useMemo(() => {

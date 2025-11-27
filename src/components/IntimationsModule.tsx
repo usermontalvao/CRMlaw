@@ -59,6 +59,7 @@ interface ModuleSettings {
 }
 
 const MODULE_SETTINGS_STORAGE_KEY = 'intimations_module_settings';
+const LAST_SYNC_STORAGE_KEY = 'intimations_last_sync_at';
 
 const startOfToday = () => {
   const date = new Date();
@@ -125,7 +126,8 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
   const [analyzingIds, setAnalyzingIds] = useState<Set<string>>(new Set());
   const [aiEnabled, setAiEnabled] = useState(false);
 
-  // Exportação
+  // Estados de navegação e interface
+  const [showSettingsMenu, setShowSettingsMenu] = useState(false);
   const [showExportMenu, setShowExportMenu] = useState(false);
   const [showClearMenu, setShowClearMenu] = useState(false);
   const [syncLogs, setSyncLogs] = useState<DjenSyncLog[]>([]);
@@ -142,6 +144,8 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
   const configSectionRef = useRef<HTMLDivElement | null>(null);
   const filterSectionRef = useRef<HTMLDivElement | null>(null);
   const listSectionRef = useRef<HTMLDivElement | null>(null);
+  const autoSyncTriggeredRef = useRef(false);
+  const [lastLocalSyncAt, setLastLocalSyncAt] = useState<Date | null>(null);
 
   // Carregar configurações salvas
   useEffect(() => {
@@ -153,10 +157,18 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
         setGroupByProcess(parsed.defaultGroupByProcess);
         setStatusFilter(parsed.defaultStatusFilter);
       }
-    } catch (err) {
-      console.error('Erro ao carregar configurações do módulo:', err);
+    } catch (error) {
+      console.error('Erro ao carregar configurações do módulo:', error);
     } finally {
       setSettingsLoaded(true);
+    }
+
+    const storedLastSync = localStorage.getItem(LAST_SYNC_STORAGE_KEY);
+    if (storedLastSync) {
+      const parsedDate = new Date(storedLastSync);
+      if (!Number.isNaN(parsedDate.getTime())) {
+        setLastLocalSyncAt(parsedDate);
+      }
     }
   }, []);
 
@@ -325,7 +337,13 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
 
   // Analisar automaticamente intimações não lidas
   const autoAnalyzeNewIntimations = async (intimationsList: DjenComunicacaoLocal[]) => {
-    if (!aiService.isEnabled()) return;
+    console.log(`🔍 Verificando análise automática para ${intimationsList.length} intimações...`);
+    console.log(`🤖 IA habilitada: ${aiService.isEnabled()}`);
+    
+    if (!aiService.isEnabled()) {
+      console.log('⚠️ IA não habilitada - pulando análise automática');
+      return;
+    }
 
     // BUG FIX: Remover filtro de 'lida' - analisar todas que não têm análise
     // Intimações podem estar lidas mas sem análise de IA
@@ -333,18 +351,34 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
       (intimation) => !aiAnalysis.has(intimation.id)
     );
 
-    if (toAnalyze.length === 0) return;
+    console.log(`📊 Intimações sem análise: ${toAnalyze.length} de ${intimationsList.length}`);
 
-    console.log(`🤖 Analisando automaticamente ${toAnalyze.length} intimação(ões) com IA...`);
-
-    const batch = toAnalyze.slice(0, 5);
-
-    for (const intimation of batch) {
-      await handleAnalyzeWithAI(intimation, true);
-      await new Promise(resolve => setTimeout(resolve, 2000));
+    if (toAnalyze.length === 0) {
+      console.log('✅ Todas as intimações já foram analisadas');
+      return;
     }
 
-    console.log(`✅ Análise automática concluída: ${batch.length} intimação(ões)`);
+    console.log(`🤖 Iniciando análise automática de ${toAnalyze.length} intimação(ões)...`);
+
+    // Analisar em lotes de 3 para não sobrecarregar
+    const batch = toAnalyze.slice(0, 3);
+
+    for (const intimation of batch) {
+      console.log(`🔄 Analisando intimação ${intimation.id.substring(0, 8)}...`);
+      await handleAnalyzeWithAI(intimation, true);
+      // Delay menor para análise mais rápida
+      await new Promise(resolve => setTimeout(resolve, 1500));
+    }
+
+    console.log(`✅ Análise automática concluída: ${batch.length} intimação(ões) processadas`);
+    
+    // Se ainda há mais para analisar, agendar próximo lote
+    if (toAnalyze.length > 3) {
+      console.log(`⏳ Agendando análise de mais ${toAnalyze.length - 3} intimações em 10 segundos...`);
+      setTimeout(() => {
+        autoAnalyzeNewIntimations(toAnalyze.slice(3));
+      }, 10000);
+    }
   };
 
   // Recarregar apenas intimações (sem flash/reload)
@@ -434,7 +468,7 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
 
   // Carregar dados
   useEffect(() => {
-    loadData();
+    loadData(true); // Sempre executar análise automática
     fetchSyncLogs();
   }, [loadData, fetchSyncLogs]);
 
@@ -526,6 +560,10 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
         // Pode haver intimações antigas sem análise
         await reloadIntimations(true);
 
+        const completedAt = new Date();
+        localStorage.setItem(LAST_SYNC_STORAGE_KEY, completedAt.toISOString());
+        setLastLocalSyncAt(completedAt);
+
         if (mode === 'manual') {
           if (totalSaved > 0) {
             toast.success(
@@ -550,6 +588,56 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
     },
     [processes, clients, currentUserProfile, loadData, aiEnabled, reloadIntimations, fetchSyncLogs]
   );
+
+  const getLastSyncDate = useCallback((): Date | null => {
+    if (lastLocalSyncAt) {
+      return lastLocalSyncAt;
+    }
+
+    const lastLogWithDate = syncLogs.find(log => log.run_finished_at || log.run_started_at);
+    if (lastLogWithDate) {
+      const value = lastLogWithDate.run_finished_at || lastLogWithDate.run_started_at;
+      if (value) {
+        const date = new Date(value);
+        if (!Number.isNaN(date.getTime())) {
+          return date;
+        }
+      }
+    }
+
+    return null;
+  }, [lastLocalSyncAt, syncLogs]);
+
+  // Sincronização automática se a última execução tiver mais de 12h
+  useEffect(() => {
+    if (autoSyncTriggeredRef.current) return;
+    if (syncStatusLoading) return;
+    if (syncingRef.current) return;
+
+    const twelveHoursMs = 12 * 60 * 60 * 1000;
+    const lastSyncDate = getLastSyncDate();
+    const needsSync = !lastSyncDate || (Date.now() - lastSyncDate.getTime() > twelveHoursMs);
+
+    if (needsSync) {
+      autoSyncTriggeredRef.current = true;
+      performSync('auto').finally(() => {
+        autoSyncTriggeredRef.current = false;
+      });
+    }
+  }, [syncStatusLoading, performSync, getLastSyncDate]);
+
+  const lastSyncLabel = useMemo(() => {
+    const date = getLastSyncDate();
+    if (!date) return 'Nunca sincronizado';
+
+    return date.toLocaleString('pt-BR', {
+      day: '2-digit',
+      month: '2-digit',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+    });
+  }, [getLastSyncDate]);
 
   const handleSync = useCallback(async () => {
     await performSync('manual');
@@ -1341,6 +1429,112 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
                 </div>
               )}
             </div>
+            <div className="relative">
+              <button
+                onClick={() => setShowSettingsMenu(!showSettingsMenu)}
+                className="inline-flex items-center justify-center gap-1.5 border border-slate-200 text-slate-700 hover:bg-slate-50 text-xs font-medium px-3 py-1.5 rounded-lg transition w-full sm:w-auto"
+              >
+                <UserCog className="w-4 h-4" />
+                Configurações
+              </button>
+
+              {showSettingsMenu && (
+                <div className="absolute right-0 mt-2 w-80 bg-white rounded-lg shadow-lg border border-gray-200 z-50 p-4">
+                  <div className="mb-4">
+                    <h3 className="text-sm font-semibold text-slate-900 mb-2">Configurações do Módulo</h3>
+                    <p className="text-xs text-slate-500">Gerencie preferências de visualização e acesso ao cron externo.</p>
+                  </div>
+
+                  <div className="space-y-4">
+                    <div>
+                      <label className="text-xs font-medium text-slate-700">Token do cron externo</label>
+                      <div className="mt-1 flex rounded-lg border border-slate-200 focus-within:ring-1 focus-within:ring-blue-500">
+                        <input
+                          type="text"
+                          value={moduleSettings.externalCronToken}
+                          onChange={(e) =>
+                            setModuleSettings((prev) => ({
+                              ...prev,
+                              externalCronToken: e.target.value,
+                            }))
+                          }
+                          className="flex-1 px-2 py-1.5 rounded-l-lg outline-none text-xs"
+                          placeholder="Informe o token"
+                        />
+                        <button
+                          onClick={() => navigator.clipboard.writeText(moduleSettings.externalCronToken)}
+                          className="px-2 text-xs text-blue-600 hover:text-blue-800"
+                          type="button"
+                        >
+                          Copiar
+                        </button>
+                      </div>
+                      <p className="text-xs text-slate-500 mt-1">Use este token para proteger o acesso ao link público.</p>
+                    </div>
+
+                    <div>
+                      <label className="text-xs font-medium text-slate-700">Visualização padrão</label>
+                      <div className="mt-2">
+                        <label className="inline-flex items-center gap-2 text-xs text-slate-600">
+                          <input
+                            type="checkbox"
+                            checked={moduleSettings.defaultGroupByProcess}
+                            onChange={(e) => {
+                              setModuleSettings((prev) => ({
+                                ...prev,
+                                defaultGroupByProcess: e.target.checked,
+                              }));
+                              setGroupByProcess(e.target.checked);
+                            }}
+                            className="rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                          />
+                          Agrupar por processo automaticamente
+                        </label>
+                      </div>
+                    </div>
+
+                    <div>
+                      <label className="text-xs font-medium text-slate-700">Filtro padrão</label>
+                      <select
+                        value={moduleSettings.defaultStatusFilter}
+                        onChange={(e) => {
+                          const value = e.target.value as 'all' | 'unread' | 'read';
+                          setModuleSettings((prev) => ({
+                            ...prev,
+                            defaultStatusFilter: value,
+                          }));
+                          setStatusFilter(value);
+                        }}
+                        className="mt-1 w-full px-2 py-1.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-1 focus:ring-blue-500 text-xs"
+                      >
+                        <option value="all">Todas</option>
+                        <option value="unread">Não lidas</option>
+                        <option value="read">Lidas</option>
+                      </select>
+                      <p className="text-xs text-slate-500 mt-1">Define o filtro aplicado ao abrir o módulo.</p>
+                    </div>
+
+                    <div className="pt-2 border-t border-slate-100">
+                      <button
+                        onClick={() => {
+                          const url = `${window.location.origin}/#/cron/djen?action=djen-sync&token=${moduleSettings.externalCronToken}`;
+                          navigator.clipboard.writeText(url)
+                            .then(() => setCopyStatus('copied'))
+                            .catch(() => setCopyStatus('error'));
+                          setTimeout(() => setCopyStatus('idle'), 2000);
+                        }}
+                        className="w-full inline-flex items-center justify-center gap-2 bg-blue-50 hover:bg-blue-100 border border-blue-200 text-blue-700 text-xs font-medium px-3 py-2 rounded-lg transition"
+                      >
+                        <Link2 className="w-3 h-3" /> 
+                        Copiar link do cron
+                        {copyStatus === 'copied' && <span className="text-emerald-600">✓</span>}
+                        {copyStatus === 'error' && <span className="text-red-600">✗</span>}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
           </div>
         </div>
       </div>
@@ -1424,103 +1618,6 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
         </div>
       )}
 
-      {/* Configurações do Módulo */}
-      <div className="bg-white border border-slate-200 rounded-xl p-3 sm:p-6">
-        <div className="flex items-center justify-between mb-4">
-          <div>
-            <h3 className="text-lg font-semibold text-slate-900">Configurações do Módulo</h3>
-            <p className="text-sm text-slate-500">Gerencie preferências de visualização e acesso ao cron externo.</p>
-          </div>
-          <button
-            onClick={() => {
-              const url = `${window.location.origin}/#/cron/djen?action=djen-sync&token=${moduleSettings.externalCronToken}`;
-              navigator.clipboard.writeText(url)
-                .then(() => setCopyStatus('copied'))
-                .catch(() => setCopyStatus('error'));
-              setTimeout(() => setCopyStatus('idle'), 2000);
-            }}
-            className="inline-flex items-center gap-2 border border-slate-200 text-slate-700 hover:bg-slate-50 text-xs font-medium px-3 py-1.5 rounded-lg"
-          >
-            <Link2 className="w-4 h-4" /> Copiar link do cron
-            {copyStatus === 'copied' && <span className="text-emerald-600">copiado!</span>}
-            {copyStatus === 'error' && <span className="text-red-600">erro</span>}
-          </button>
-        </div>
-
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          <div>
-            <label className="text-sm font-medium text-slate-700">Token do cron externo</label>
-            <div className="mt-1 flex rounded-lg border border-slate-200 focus-within:ring-2 focus-within:ring-blue-500">
-              <input
-                type="text"
-                value={moduleSettings.externalCronToken}
-                onChange={(e) =>
-                  setModuleSettings((prev) => ({
-                    ...prev,
-                    externalCronToken: e.target.value,
-                  }))
-                }
-                className="flex-1 px-3 py-2 rounded-l-lg outline-none"
-                placeholder="Informe o token"
-              />
-              <button
-                onClick={() => navigator.clipboard.writeText(moduleSettings.externalCronToken)}
-                className="px-3 text-sm text-blue-600 hover:text-blue-800"
-                type="button"
-              >
-                Copiar token
-              </button>
-            </div>
-            <p className="text-xs text-slate-500 mt-1">Use este token para proteger o acesso ao link público.</p>
-          </div>
-
-          <div>
-            <label className="text-sm font-medium text-slate-700">Visualização padrão</label>
-            <div className="mt-2 flex flex-col gap-2">
-              <label className="inline-flex items-center gap-2 text-sm text-slate-600">
-                <input
-                  type="checkbox"
-                  checked={moduleSettings.defaultGroupByProcess}
-                  onChange={(e) => {
-                    setModuleSettings((prev) => ({
-                      ...prev,
-                      defaultGroupByProcess: e.target.checked,
-                    }));
-                    setGroupByProcess(e.target.checked);
-                  }}
-                  className="rounded border-slate-300 text-blue-600 focus:ring-blue-500"
-                />
-                Agrupar por processo automaticamente
-              </label>
-            </div>
-          </div>
-
-          <div>
-            <label className="text-sm font-medium text-slate-700">Filtro padrão</label>
-            <select
-              value={moduleSettings.defaultStatusFilter}
-              onChange={(e) => {
-                const value = e.target.value as 'all' | 'unread' | 'read';
-                setModuleSettings((prev) => ({
-                  ...prev,
-                  defaultStatusFilter: value,
-                }));
-                setStatusFilter(value);
-              }}
-              className="mt-2 w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
-            >
-              <option value="all">Todas</option>
-              <option value="unread">Não lidas</option>
-              <option value="read">Lidas</option>
-            </select>
-            <p className="text-xs text-slate-500 mt-1">Define o filtro aplicado ao abrir o módulo.</p>
-          </div>
-        </div>
-
-        <div className="mt-4 text-xs text-slate-500">
-          Link público: <code className="bg-slate-100 px-2 py-1 rounded">{`${window.location.origin}/#/cron/djen?action=djen-sync&token=${moduleSettings.externalCronToken}`}</code>
-        </div>
-      </div>
 
       {/* Filtros e Busca */}
       <div className="bg-white border border-gray-200 rounded-xl p-3 sm:p-6">

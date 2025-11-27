@@ -113,7 +113,7 @@ export const NotificationCenter: React.FC<NotificationCenterProps> = ({ onNaviga
       setHasViewed(false);
       localStorage.setItem('notifications_viewed', 'false');
     }
-  }, [intimations, deadlines, appointments]);
+  }, [intimations, deadlines, appointments, readNotifications]);
 
   // Agrupar notificações por tipo
   const groupedNotifications = useMemo(() => {
@@ -125,8 +125,13 @@ export const NotificationCenter: React.FC<NotificationCenterProps> = ({ onNaviga
 
     // Intimações
     intimations.forEach((int) => {
+      const notifId = `intimation-${int.id}`;
+      if (int.lida || readNotifications.has(notifId)) {
+        return;
+      }
+
       groups.intimation.push({
-        id: `intimation-${int.id}`,
+        id: notifId,
         type: 'intimation',
         title: `Nova Intimação - ${int.tipo_comunicacao || 'DJEN'}`,
         description: `Processo ${int.numero_processo_mascara || int.numero_processo}`,
@@ -144,6 +149,9 @@ export const NotificationCenter: React.FC<NotificationCenterProps> = ({ onNaviga
       );
       
       const notifId = `deadline-${deadline.id}`;
+      if (readNotifications.has(notifId)) {
+        return;
+      }
       groups.deadline.push({
         id: notifId,
         type: 'deadline',
@@ -161,6 +169,9 @@ export const NotificationCenter: React.FC<NotificationCenterProps> = ({ onNaviga
     appointments.forEach((appt) => {
       const startDate = new Date(appt.start_at);
       const notifId = `appointment-${appt.id}`;
+      if (readNotifications.has(notifId)) {
+        return;
+      }
       groups.appointment.push({
         id: notifId,
         type: 'appointment',
@@ -183,8 +194,12 @@ export const NotificationCenter: React.FC<NotificationCenterProps> = ({ onNaviga
 
     // Intimações
     intimations.forEach((int) => {
+      const notifId = `intimation-${int.id}`;
+      if (int.lida || readNotifications.has(notifId)) {
+        return;
+      }
       items.push({
-        id: `intimation-${int.id}`,
+        id: notifId,
         type: 'intimation',
         title: `Nova Intimação - ${int.tipo_comunicacao || 'DJEN'}`,
         description: `Processo ${int.numero_processo_mascara || int.numero_processo}`,
@@ -200,8 +215,11 @@ export const NotificationCenter: React.FC<NotificationCenterProps> = ({ onNaviga
       const daysUntil = Math.ceil(
         (new Date(deadline.due_date).getTime() - new Date().getTime()) / (1000 * 60 * 60 * 24)
       );
-      
+
       const notifId = `deadline-${deadline.id}`;
+      if (readNotifications.has(notifId)) {
+        return;
+      }
       items.push({
         id: notifId,
         type: 'deadline',
@@ -219,6 +237,9 @@ export const NotificationCenter: React.FC<NotificationCenterProps> = ({ onNaviga
     appointments.forEach((appt) => {
       const startDate = new Date(appt.start_at);
       const notifId = `appointment-${appt.id}`;
+      if (readNotifications.has(notifId)) {
+        return;
+      }
       items.push({
         id: notifId,
         type: 'appointment',
@@ -262,18 +283,20 @@ export const NotificationCenter: React.FC<NotificationCenterProps> = ({ onNaviga
     setReadNotifications(newReadSet);
     localStorage.setItem('read_notifications', JSON.stringify([...newReadSet]));
     
-    // Se for intimação, marcar no banco
     if (notificationId.startsWith('intimation-')) {
       const intimationId = notificationId.replace('intimation-', '');
       try {
         await djenLocalService.marcarComoLida(intimationId);
-        // Atualizar estado local
-        setIntimations(prev => prev.map(int => 
-          int.id === intimationId ? { ...int, lida: true } : int
-        ));
+        setIntimations((prev) => prev.filter((int) => int.id !== intimationId));
       } catch (error) {
         console.error('Erro ao marcar intimação como lida:', error);
       }
+    } else if (notificationId.startsWith('deadline-')) {
+      const deadlineId = notificationId.replace('deadline-', '');
+      setDeadlines((prev) => prev.filter((deadline) => deadline.id !== deadlineId));
+    } else if (notificationId.startsWith('appointment-')) {
+      const appointmentId = notificationId.replace('appointment-', '');
+      setAppointments((prev) => prev.filter((appointment) => appointment.id !== appointmentId));
     }
   };
 
@@ -285,17 +308,20 @@ export const NotificationCenter: React.FC<NotificationCenterProps> = ({ onNaviga
       setReadNotifications(newReadSet);
       localStorage.setItem('read_notifications', JSON.stringify([...newReadSet]));
       
-      // Se for intimação, marcar no banco
       if (notification.type === 'intimation') {
         const intimationId = notification.id.replace('intimation-', '');
         try {
           await djenLocalService.marcarComoLida(intimationId);
-          setIntimations(prev => prev.map(int => 
-            int.id === intimationId ? { ...int, lida: true } : int
-          ));
+          setIntimations((prev) => prev.filter((int) => int.id !== intimationId));
         } catch (error) {
           console.error('Erro ao marcar intimação como lida:', error);
         }
+      } else if (notification.type === 'deadline') {
+        const deadlineId = notification.id.replace('deadline-', '');
+        setDeadlines((prev) => prev.filter((deadline) => deadline.id !== deadlineId));
+      } else if (notification.type === 'appointment') {
+        const appointmentId = notification.id.replace('appointment-', '');
+        setAppointments((prev) => prev.filter((appointment) => appointment.id !== appointmentId));
       }
     }
     
