@@ -607,23 +607,29 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
     return null;
   }, [lastLocalSyncAt, syncLogs]);
 
-  // Sincronização automática se a última execução tiver mais de 12h
+  // Sincronização automática ao abrir a página (se última sync > 30 minutos)
   useEffect(() => {
     if (autoSyncTriggeredRef.current) return;
     if (syncStatusLoading) return;
     if (syncingRef.current) return;
+    if (!currentUserProfile) return; // Aguardar perfil carregar
 
-    const twelveHoursMs = 12 * 60 * 60 * 1000;
+    const thirtyMinutesMs = 30 * 60 * 1000; // 30 minutos
     const lastSyncDate = getLastSyncDate();
-    const needsSync = !lastSyncDate || (Date.now() - lastSyncDate.getTime() > twelveHoursMs);
+    const needsSync = !lastSyncDate || (Date.now() - lastSyncDate.getTime() > thirtyMinutesMs);
 
     if (needsSync) {
       autoSyncTriggeredRef.current = true;
-      performSync('auto').finally(() => {
-        autoSyncTriggeredRef.current = false;
-      });
+      console.log('🔄 Iniciando sincronização automática de intimações...');
+      // Aguardar 2 segundos para não sobrecarregar
+      const timer = setTimeout(() => {
+        performSync('auto').finally(() => {
+          autoSyncTriggeredRef.current = false;
+        });
+      }, 2000);
+      return () => clearTimeout(timer);
     }
-  }, [syncStatusLoading, performSync, getLastSyncDate]);
+  }, [syncStatusLoading, performSync, getLastSyncDate, currentUserProfile]);
 
   const lastSyncLabel = useMemo(() => {
     const date = getLastSyncDate();

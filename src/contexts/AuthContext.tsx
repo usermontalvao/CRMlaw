@@ -67,29 +67,42 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       setLoading(false);
     });
 
-    // Listen for auth changes
+    // Listen for auth changes - com debounce para evitar múltiplas chamadas
+    let lastEvent = '';
+    let lastEventTime = 0;
+    
     const {
       data: { subscription },
     } = supabase.auth.onAuthStateChange((event, session) => {
-      console.log('Auth state change:', event, session);
+      const now = Date.now();
+      
+      // Ignorar eventos duplicados em menos de 1 segundo
+      if (event === lastEvent && now - lastEventTime < 1000) {
+        return;
+      }
+      
+      lastEvent = event;
+      lastEventTime = now;
+      
+      // Log apenas eventos importantes
+      if (event === 'SIGNED_IN' || event === 'SIGNED_OUT') {
+        console.log('Auth:', event);
+      }
       
       // Handle session expiration
-      if (event === 'SIGNED_OUT' || event === 'TOKEN_REFRESHED' || event === 'USER_UPDATED') {
-        setSession(session);
-        setUser(session?.user ?? null);
-        if (event === 'SIGNED_OUT' || !session) {
-          persistSessionStart(null);
-        }
+      if (event === 'SIGNED_OUT') {
+        setSession(null);
+        setUser(null);
+        persistSessionStart(null);
       } else if (event === 'SIGNED_IN') {
         setSession(session);
         setUser(session?.user ?? null);
-        persistSessionStart(Date.now());
-      } else {
-        setSession(session);
-        setUser(session?.user ?? null);
-        if (!session) {
-          persistSessionStart(null);
+        if (!sessionStart) {
+          persistSessionStart(Date.now());
         }
+      } else if (event === 'TOKEN_REFRESHED') {
+        // Apenas atualizar sessão silenciosamente
+        setSession(session);
       }
       
       setLoading(false);

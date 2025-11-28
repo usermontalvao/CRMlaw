@@ -42,7 +42,6 @@ const CalendarModule = lazy(() => import('./components/CalendarModule'));
 const TasksModule = lazy(() => import('./components/TasksModule'));
 const NotificationsModuleNew = lazy(() => import('./components/NotificationsModuleNew'));
 const FinancialModule = lazy(() => import('./components/FinancialModule'));
-const ProcessMonitorModule = lazy(() => import('./components/ProcessMonitorModule'));
 const CronEndpoint = lazy(() => import('./components/CronEndpoint'));
 import { useNotifications } from './hooks/useNotifications';
 import { usePresence } from './hooks/usePresence';
@@ -213,14 +212,9 @@ function App() {
   // Monitorar mudanças de autenticação e renovar sessão automaticamente
   useEffect(() => {
     const { data: authListener } = supabase.auth.onAuthStateChange(async (event, session) => {
-      console.log('Auth state changed:', event);
-      
-      if (event === 'TOKEN_REFRESHED') {
-        console.log('✅ Token renovado automaticamente');
-      }
-      
-      if (event === 'SIGNED_OUT' || (event === 'USER_UPDATED' && !session)) {
-        console.log('🔒 Sessão expirada ou logout detectado');
+      // Apenas logar eventos importantes
+      if (event === 'SIGNED_OUT') {
+        console.log('🔒 Logout detectado');
         // Limpar cache
         sessionStorage.removeItem(PROFILE_CACHE_KEY);
         sessionStorage.removeItem(NOTIFICATIONS_CACHE_KEY);
@@ -684,21 +678,6 @@ function App() {
               <span className="text-[10px] font-medium text-center leading-tight">Agenda</span>
             </button>
 
-            <button
-              onClick={() => {
-                setClientPrefill(null);
-                setIsMobileNavOpen(false);
-                navigateTo('monitor');
-              }}
-              className={`flex flex-col items-center justify-center py-2.5 px-2 rounded-lg transition-all border-l-4 ${
-                activeModule === 'monitor'
-                  ? 'bg-amber-600 text-white border-amber-400 shadow-lg'
-                  : 'border-transparent text-slate-300 hover:bg-slate-800 hover:text-white'
-              }`}
-            >
-              <Activity className="w-5 h-5 mb-1.5" />
-              <span className="text-[10px] font-medium text-center leading-tight">Monitor</span>
-            </button>
           </nav>
 
           {/* Indicador de mais itens */}
@@ -746,7 +725,6 @@ function App() {
                     {activeModule === 'agenda' && 'Agenda'}
                     {activeModule === 'tarefas' && 'Tarefas'}
                     {activeModule === 'documentos' && 'Documentos'}
-                    {activeModule === 'monitor' && 'Monitor de Processos'}
                   </h2>
                   <p className="hidden md:block text-xs sm:text-sm text-slate-600 mt-1 truncate">
                     {activeModule === 'dashboard' && 'Visão geral do escritório e atividades recentes'}
@@ -760,7 +738,6 @@ function App() {
                     {activeModule === 'agenda' && 'Organize compromissos e prazos'}
                     {activeModule === 'tarefas' && 'Gerencie suas tarefas e lembretes'}
                     {activeModule === 'documentos' && 'Crie modelos e gere documentos personalizados'}
-                    {activeModule === 'monitor' && 'Acompanhe seus processos com análise inteligente do DJEN'}
                   </p>
                 </div>
               </div>
@@ -1002,7 +979,6 @@ function App() {
             )}
             {activeModule === 'notificacoes' && <NotificationsModuleNew onNavigateToModule={handleNavigateToModule} />}
             {activeModule === 'financeiro' && <FinancialModule />}
-            {activeModule === 'monitor' && <ProcessMonitorModule />}
             {activeModule === 'cron' && <CronEndpoint />}
           </Suspense>
         </main>
