@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   Plus,
   Loader2,
@@ -18,11 +18,22 @@ import {
   Briefcase,
   AlertTriangle,
   Siren,
+  BookmarkPlus,
+  BookmarkX,
   UserCircle,
   LayoutGrid,
   List,
+  BarChart3,
+  PieChart,
+  TrendingUp,
+  Download,
+  Filter,
+  Users,
+  FileText,
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
+import { saveAs } from 'file-saver';
+import { PDFDocument, StandardFonts, rgb } from 'pdf-lib';
 import { deadlineService } from '../services/deadline.service';
 import { processService } from '../services/process.service';
 import { requirementService } from '../services/requirement.service';
@@ -135,6 +146,60 @@ type DeadlineFormData = {
   notify_days_before: string;
 };
 
+type SavedFilter = {
+  id: string;
+  name: string;
+  search: string;
+  type: DeadlineType | '';
+  priority: DeadlinePriority | '';
+  status: DeadlineStatus | 'todos';
+  responsibleId: string;
+};
+
+type SmartAlert = {
+  id: string;
+  title: string;
+  description: string;
+  tone: 'danger' | 'warning' | 'info' | 'success';
+  actionLabel?: string;
+  onAction?: () => void;
+  icon: React.ReactNode;
+};
+
+const SAVED_FILTERS_KEY = 'deadlines_saved_filters';
+const UNASSIGNED_FILTER_VALUE = '__unassigned__';
+
+const ALERT_TONE_STYLES: Record<SmartAlert['tone'], { bg: string; border: string; text: string; button: string; buttonText: string }> = {
+  danger: {
+    bg: 'bg-red-50',
+    border: 'border-red-200',
+    text: 'text-red-900',
+    button: 'bg-red-600 hover:bg-red-700 text-white',
+    buttonText: 'text-red-700',
+  },
+  warning: {
+    bg: 'bg-amber-50',
+    border: 'border-amber-200',
+    text: 'text-amber-900',
+    button: 'bg-amber-500 hover:bg-amber-600 text-white',
+    buttonText: 'text-amber-700',
+  },
+  info: {
+    bg: 'bg-blue-50',
+    border: 'border-blue-200',
+    text: 'text-blue-900',
+    button: 'bg-blue-600 hover:bg-blue-700 text-white',
+    buttonText: 'text-blue-700',
+  },
+  success: {
+    bg: 'bg-emerald-50',
+    border: 'border-emerald-200',
+    text: 'text-emerald-900',
+    button: 'bg-emerald-600 hover:bg-emerald-700 text-white',
+    buttonText: 'text-emerald-700',
+  },
+};
+
 const emptyForm: DeadlineFormData = {
   title: '',
   description: '',
@@ -167,6 +232,37 @@ const formatDateTime = (value?: string | null) => {
     hour: '2-digit',
     minute: '2-digit',
   });
+};
+
+// Calcula data de vencimento baseado em dias úteis (exclui finais de semana)
+// Prazos processuais começam no dia subsequente à publicação
+const calcularDataVencimento = (dataPublicacao: string, diasPrazo: number): string => {
+  const data = new Date(dataPublicacao + 'T12:00:00');
+  
+  // Começa no dia subsequente (regra processual)
+  data.setDate(data.getDate() + 1);
+  
+  let diasContados = 0;
+  
+  while (diasContados < diasPrazo) {
+    const diaSemana = data.getDay();
+    
+    // Pula sábado (6) e domingo (0)
+    if (diaSemana !== 0 && diaSemana !== 6) {
+      diasContados++;
+    }
+    
+    if (diasContados < diasPrazo) {
+      data.setDate(data.getDate() + 1);
+    }
+  }
+  
+  // Se caiu em fim de semana, avança para segunda
+  while (data.getDay() === 0 || data.getDay() === 6) {
+    data.setDate(data.getDate() + 1);
+  }
+  
+  return data.toISOString().split('T')[0];
 };
 
 const toDateInputValue = (value?: string | null) => {
@@ -235,11 +331,15 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
   const [filterSearch, setFilterSearch] = useState('');
   const [filterType, setFilterType] = useState<DeadlineType | ''>('');
   const [filterPriority, setFilterPriority] = useState<DeadlinePriority | ''>('');
+  const [filterResponsible, setFilterResponsible] = useState('');
   const [activeStatusTab, setActiveStatusTab] = useState<DeadlineStatus | 'todos'>('todos');
   const [viewMode, setViewMode] = useState<'list' | 'kanban' | 'map' | 'details'>('list');
   const [selectedDeadlineForView, setSelectedDeadlineForView] = useState<Deadline | null>(null);
   const [statusUpdatingId, setStatusUpdatingId] = useState<string | null>(null);
   const [exportingExcel, setExportingExcel] = useState(false);
+  const [exportingPdf, setExportingPdf] = useState(false);
+  const [savedFilters, setSavedFilters] = useState<SavedFilter[]>([]);
+  const [selectedSavedFilterId, setSelectedSavedFilterId] = useState('');
   const [currentPage, setCurrentPage] = useState(1);
   const [processes, setProcesses] = useState<Process[]>([]);
   const [requirements, setRequirements] = useState<Requirement[]>([]);
@@ -252,7 +352,91 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
   const [clientSearchTerm, setClientSearchTerm] = useState('');
   const [showClientSuggestions, setShowClientSuggestions] = useState(false);
   const [members, setMembers] = useState<Profile[]>([]);
+  const [currentUser, setCurrentUser] = useState<Profile | null>(null);
   const [filtersExpanded, setFiltersExpanded] = useState(false);
+  const [calendarExpanded, setCalendarExpanded] = useState(false);
+  const [calendarMonth, setCalendarMonth] = useState(new Date().getMonth());
+  const [calendarYear, setCalendarYear] = useState(new Date().getFullYear());
+  
+  // Estados para calculadora de prazo
+  const [dataPublicacao, setDataPublicacao] = useState('');
+  const [diasPrazo, setDiasPrazo] = useState('');
+  const calculadoraAtiva = Boolean(dataPublicacao && diasPrazo);
+
+  const hasFilterCriteria = Boolean(
+    filterSearch.trim() ||
+      filterType ||
+      filterPriority ||
+      filterResponsible ||
+      activeStatusTab !== 'todos',
+  );
+  
+  // Estados para relatórios
+  const [showReportModal, setShowReportModal] = useState(false);
+  const [reportPeriod, setReportPeriod] = useState<'week' | 'month' | 'quarter' | 'year' | 'custom'>('month');
+  const [reportStartDate, setReportStartDate] = useState('');
+  const [reportEndDate, setReportEndDate] = useState('');
+
+  const applyFilterPreset = useCallback(
+    (preset: {
+      search?: string;
+      type?: DeadlineType | '';
+      priority?: DeadlinePriority | '';
+      responsibleId?: string;
+      status?: DeadlineStatus | 'todos';
+    }) => {
+      setCurrentPage(1);
+      if (preset.search !== undefined) setFilterSearch(preset.search);
+      if (preset.type !== undefined) setFilterType(preset.type);
+      if (preset.priority !== undefined) setFilterPriority(preset.priority);
+      if (preset.responsibleId !== undefined) setFilterResponsible(preset.responsibleId);
+      if (preset.status !== undefined) setActiveStatusTab(preset.status);
+    },
+    [],
+  );
+
+  const handleSaveCurrentFilter = useCallback(() => {
+    if (!hasFilterCriteria) {
+      alert('Defina algum filtro antes de salvar.');
+      return;
+    }
+    const name = prompt('Nome do filtro salvo:');
+    if (!name || !name.trim()) return;
+    const newFilter: SavedFilter = {
+      id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      name: name.trim(),
+      search: filterSearch,
+      type: filterType,
+      priority: filterPriority,
+      status: activeStatusTab,
+      responsibleId: filterResponsible,
+    };
+    setSavedFilters((prev) => [newFilter, ...prev].slice(0, 10));
+    setSelectedSavedFilterId(newFilter.id);
+  }, [hasFilterCriteria, filterSearch, filterType, filterPriority, filterResponsible, activeStatusTab]);
+
+  const handleSavedFilterChange = useCallback(
+    (id: string) => {
+      setSelectedSavedFilterId(id);
+      if (!id) return;
+      const filter = savedFilters.find((f) => f.id === id);
+      if (filter) {
+        applyFilterPreset(filter);
+      }
+    },
+    [savedFilters, applyFilterPreset],
+  );
+
+  const handleDeleteSavedFilter = useCallback(
+    (id: string) => {
+      if (!confirm('Remover este filtro salvo?')) return;
+      setSavedFilters((prev) => prev.filter((f) => f.id !== id));
+      if (selectedSavedFilterId === id) {
+        setSelectedSavedFilterId('');
+      }
+    },
+    [selectedSavedFilterId],
+  );
 
   const filteredDeadlines = useMemo(() => {
     let filtered = deadlines;
@@ -280,6 +464,12 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
       filtered = filtered.filter((deadline) => deadline.priority === filterPriority);
     }
 
+    if (filterResponsible === UNASSIGNED_FILTER_VALUE) {
+      filtered = filtered.filter((deadline) => !deadline.responsible_id);
+    } else if (filterResponsible) {
+      filtered = filtered.filter((deadline) => deadline.responsible_id === filterResponsible);
+    }
+
     return filtered.slice().sort((a, b) => {
       if (a.status === 'vencido' && b.status !== 'vencido') return -1;
       if (a.status !== 'vencido' && b.status === 'vencido') return 1;
@@ -287,7 +477,7 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
       if (a.status !== 'pendente' && b.status === 'pendente') return 1;
       return new Date(a.due_date).getTime() - new Date(b.due_date).getTime();
     });
-  }, [deadlines, activeStatusTab, filterSearch, filterType, filterPriority]);
+  }, [deadlines, activeStatusTab, filterSearch, filterType, filterPriority, filterResponsible]);
 
   const pageSize = 20;
   const totalPages = Math.max(1, Math.ceil(filteredDeadlines.length / pageSize));
@@ -335,6 +525,53 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
       .sort((a, b) => new Date(a.due_date).getTime() - new Date(b.due_date).getTime());
   }, [deadlines]);
 
+  const criticalDeadlines = useMemo(() => {
+    return deadlines
+      .filter((d) => d.status === 'pendente')
+      .filter((d) => getDaysUntilDue(d.due_date) === 1)
+      .sort((a, b) => new Date(a.due_date).getTime() - new Date(b.due_date).getTime());
+  }, [deadlines]);
+
+  const unassignedPending = useMemo(() => deadlines.filter((d) => d.status === 'pendente' && !d.responsible_id), [deadlines]);
+
+  const smartAlerts = useMemo<SmartAlert[]>(() => {
+    const alerts: SmartAlert[] = [];
+    if (overdueDeadlines.length) {
+      alerts.push({
+        id: 'overdue',
+        title: 'Prazos vencidos',
+        description: `${overdueDeadlines.length} prazo(s) pendente(s) estão atrasados e precisam de ação imediata.`,
+        tone: 'danger',
+        actionLabel: 'Ver vencidos',
+        onAction: () => applyFilterPreset({ status: 'vencido' }),
+        icon: <AlertCircle className="w-5 h-5 text-red-600" />,
+      });
+    }
+    if (criticalDeadlines.length) {
+      alerts.push({
+        id: 'soon',
+        title: 'Prazos vencendo em até 2 dias',
+        description: `${criticalDeadlines.length} prazo(s) expiram nas próximas 48h.`,
+        tone: 'warning',
+        actionLabel: 'Filtrar urgentes',
+        onAction: () => applyFilterPreset({ status: 'pendente', priority: 'urgente' }),
+        icon: <Siren className="w-5 h-5 text-amber-600" />,
+      });
+    }
+    if (unassignedPending.length) {
+      alerts.push({
+        id: 'unassigned',
+        title: 'Prazos sem responsável',
+        description: `${unassignedPending.length} prazo(s) aguardam designação.`,
+        tone: 'info',
+        actionLabel: 'Ver não atribuídos',
+        onAction: () => applyFilterPreset({ responsibleId: UNASSIGNED_FILTER_VALUE }),
+        icon: <Users className="w-5 h-5 text-blue-600" />,
+      });
+    }
+    return alerts;
+  }, [overdueDeadlines.length, criticalDeadlines.length, unassignedPending.length, applyFilterPreset]);
+
   const completedDeadlines = useMemo(() => {
     return deadlines
       .filter((d) => d.status === 'cumprido')
@@ -352,15 +589,166 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
     });
   }, [deadlines]);
 
-  const criticalDeadlines = useMemo(() => {
-    return deadlines
-      .filter((d) => d.status === 'pendente')
-      .filter((d) => getDaysUntilDue(d.due_date) === 1)
-      .sort((a, b) => new Date(a.due_date).getTime() - new Date(b.due_date).getTime());
+  const monthlyDeadlines = useMemo(() => {
+    const now = new Date();
+    const month = now.getMonth();
+    const year = now.getFullYear();
+    return deadlines.filter((deadline) => {
+      const due = parseDateOnly(deadline.due_date);
+      if (!due) return false;
+      return due.getMonth() === month && due.getFullYear() === year;
+    });
   }, [deadlines]);
+
+  const monthlyPending = useMemo(
+    () => monthlyDeadlines.filter((deadline) => deadline.status === 'pendente'),
+    [monthlyDeadlines],
+  );
+
+  const monthlyCompleted = useMemo(
+    () => monthlyDeadlines.filter((deadline) => deadline.status === 'cumprido'),
+    [monthlyDeadlines],
+  );
+
+  const monthlyDueToday = useMemo(() => {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    return monthlyDeadlines.filter((deadline) => {
+      if (deadline.status !== 'pendente') return false;
+      const due = parseDateOnly(deadline.due_date);
+      if (!due) return false;
+      return due.getTime() === today.getTime();
+    });
+  }, [monthlyDeadlines]);
+
+  const monthlyOverdue = useMemo(
+    () =>
+      monthlyDeadlines.filter(
+        (deadline) => deadline.status === 'pendente' && getDaysUntilDue(deadline.due_date) < 0,
+      ),
+    [monthlyDeadlines],
+  );
+
+  const monthlyAttentionCount = useMemo(
+    () => monthlyDueToday.length + monthlyOverdue.length,
+    [monthlyDueToday, monthlyOverdue],
+  );
+
+  const currentMonthLabel = useMemo(
+    () => new Date().toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' }),
+    [],
+  );
 
   const memberMap = useMemo(() => new Map(members.map((member) => [member.id, member])), [members]);
   const clientMap = useMemo(() => new Map(clients.map((client) => [client.id, client])), [clients]);
+
+  // Estatísticas para relatórios
+  const reportStats = useMemo(() => {
+    const getDateRange = () => {
+      const today = new Date();
+      let start: Date;
+      let end: Date = new Date();
+      
+      switch (reportPeriod) {
+        case 'week':
+          start = new Date(today);
+          start.setDate(today.getDate() - 7);
+          break;
+        case 'month':
+          start = new Date(today.getFullYear(), today.getMonth(), 1);
+          end = new Date(today.getFullYear(), today.getMonth() + 1, 0);
+          break;
+        case 'quarter':
+          const quarter = Math.floor(today.getMonth() / 3);
+          start = new Date(today.getFullYear(), quarter * 3, 1);
+          end = new Date(today.getFullYear(), quarter * 3 + 3, 0);
+          break;
+        case 'year':
+          start = new Date(today.getFullYear(), 0, 1);
+          end = new Date(today.getFullYear(), 11, 31);
+          break;
+        case 'custom':
+          start = reportStartDate ? new Date(reportStartDate) : new Date(today.getFullYear(), today.getMonth(), 1);
+          end = reportEndDate ? new Date(reportEndDate) : new Date();
+          break;
+        default:
+          start = new Date(today.getFullYear(), today.getMonth(), 1);
+      }
+      
+      return { start, end };
+    };
+    
+    const { start, end } = getDateRange();
+    
+    const periodDeadlines = deadlines.filter(d => {
+      const dueDate = new Date(d.due_date);
+      return dueDate >= start && dueDate <= end;
+    });
+    
+    const byStatus = {
+      pendente: periodDeadlines.filter(d => d.status === 'pendente').length,
+      cumprido: periodDeadlines.filter(d => d.status === 'cumprido').length,
+      vencido: periodDeadlines.filter(d => d.status === 'vencido').length,
+      cancelado: periodDeadlines.filter(d => d.status === 'cancelado').length,
+    };
+    
+    const byPriority = {
+      urgente: periodDeadlines.filter(d => d.priority === 'urgente').length,
+      alta: periodDeadlines.filter(d => d.priority === 'alta').length,
+      media: periodDeadlines.filter(d => d.priority === 'media').length,
+      baixa: periodDeadlines.filter(d => d.priority === 'baixa').length,
+    };
+    
+    const byType = {
+      geral: periodDeadlines.filter(d => d.type === 'geral').length,
+      processo: periodDeadlines.filter(d => d.type === 'processo').length,
+      requerimento: periodDeadlines.filter(d => d.type === 'requerimento').length,
+    };
+    
+    // Por responsável
+    const byResponsible: Record<string, number> = {};
+    periodDeadlines.forEach(d => {
+      const name = d.responsible_id ? (memberMap.get(d.responsible_id)?.name || 'Não atribuído') : 'Não atribuído';
+      byResponsible[name] = (byResponsible[name] || 0) + 1;
+    });
+    
+    // Por cliente (top 10)
+    const byClient: Record<string, number> = {};
+    periodDeadlines.forEach(d => {
+      const name = d.client_id ? (clientMap.get(d.client_id)?.full_name || 'Sem cliente') : 'Sem cliente';
+      byClient[name] = (byClient[name] || 0) + 1;
+    });
+    
+    // Taxa de cumprimento
+    const total = periodDeadlines.length;
+    const completed = byStatus.cumprido;
+    const completionRate = total > 0 ? Math.round((completed / total) * 100) : 0;
+    
+    // Média de dias para cumprir (dos cumpridos)
+    const completedDeadlinesInPeriod = periodDeadlines.filter(d => d.status === 'cumprido' && d.completed_at);
+    let avgDaysToComplete = 0;
+    if (completedDeadlinesInPeriod.length > 0) {
+      const totalDays = completedDeadlinesInPeriod.reduce((acc, d) => {
+        const created = new Date(d.created_at);
+        const completed = new Date(d.completed_at!);
+        return acc + Math.ceil((completed.getTime() - created.getTime()) / (1000 * 60 * 60 * 24));
+      }, 0);
+      avgDaysToComplete = Math.round(totalDays / completedDeadlinesInPeriod.length);
+    }
+    
+    return {
+      total,
+      byStatus,
+      byPriority,
+      byType,
+      byResponsible,
+      byClient,
+      completionRate,
+      avgDaysToComplete,
+      periodStart: start,
+      periodEnd: end,
+    };
+  }, [deadlines, reportPeriod, reportStartDate, reportEndDate, memberMap, clientMap]);
 
   useEffect(() => {
     const fetchDeadlines = async () => {
@@ -433,6 +821,62 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
     };
 
     loadMembers();
+
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    try {
+      const stored = localStorage.getItem(SAVED_FILTERS_KEY);
+      if (stored) {
+        const parsed = JSON.parse(stored);
+        if (Array.isArray(parsed)) {
+          setSavedFilters(parsed);
+        }
+      }
+    } catch (err) {
+      console.error('Erro ao carregar filtros salvos de prazos.', err);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    try {
+      localStorage.setItem(SAVED_FILTERS_KEY, JSON.stringify(savedFilters));
+    } catch (err) {
+      console.error('Erro ao persistir filtros salvos de prazos.', err);
+    }
+  }, [savedFilters]);
+
+  useEffect(() => {
+    const match = savedFilters.find(
+      (filter) =>
+        filter.search === filterSearch &&
+        filter.type === filterType &&
+        filter.priority === filterPriority &&
+        filter.responsibleId === filterResponsible &&
+        filter.status === activeStatusTab,
+    );
+    setSelectedSavedFilterId(match?.id ?? '');
+  }, [filterSearch, filterType, filterPriority, filterResponsible, activeStatusTab, savedFilters]);
+
+  useEffect(() => {
+    let active = true;
+
+    const loadProfile = async () => {
+      try {
+        const profile = await profileService.getMyProfile();
+        if (!active) return;
+        setCurrentUser(profile);
+      } catch (err) {
+        console.error('Não foi possível carregar o perfil do usuário para o relatório.', err);
+      }
+    };
+
+    loadProfile();
 
     return () => {
       active = false;
@@ -575,6 +1019,8 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
       setRequirementSearchTerm('');
     }
 
+    setDataPublicacao('');
+    setDiasPrazo('');
     setIsModalOpen(true);
   };
 
@@ -587,6 +1033,8 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
     setRequirementSearchTerm('');
     setShowProcessSuggestions(false);
     setShowRequirementSuggestions(false);
+    setDataPublicacao('');
+    setDiasPrazo('');
   };
 
   const handleFormChange = (field: keyof typeof formData, value: string) => {
@@ -656,6 +1104,8 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
       setFormData(emptyForm);
       setProcessSearchTerm('');
       setRequirementSearchTerm('');
+      setDataPublicacao('');
+      setDiasPrazo('');
     } catch (err: any) {
       setError(err.message || 'Não foi possível salvar o prazo.');
     } finally {
@@ -813,6 +1263,374 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
     }
   };
 
+  const handleExportReport = () => {
+    const { periodStart, periodEnd } = reportStats;
+    
+    // Criar workbook com múltiplas abas
+    const wb = XLSX.utils.book_new();
+    
+    // Aba 1: Resumo
+    const resumoData = [
+      ['RELATÓRIO DE PRAZOS'],
+      [''],
+      ['Período:', `${periodStart.toLocaleDateString('pt-BR')} a ${periodEnd.toLocaleDateString('pt-BR')}`],
+      ['Gerado em:', new Date().toLocaleString('pt-BR')],
+      [''],
+      ['RESUMO GERAL'],
+      ['Total de Prazos:', reportStats.total],
+      ['Taxa de Cumprimento:', `${reportStats.completionRate}%`],
+      ['Média de Dias para Cumprir:', reportStats.avgDaysToComplete],
+      [''],
+      ['POR STATUS'],
+      ['Pendentes:', reportStats.byStatus.pendente],
+      ['Cumpridos:', reportStats.byStatus.cumprido],
+      ['Vencidos:', reportStats.byStatus.vencido],
+      ['Cancelados:', reportStats.byStatus.cancelado],
+      [''],
+      ['POR PRIORIDADE'],
+      ['Urgente:', reportStats.byPriority.urgente],
+      ['Alta:', reportStats.byPriority.alta],
+      ['Média:', reportStats.byPriority.media],
+      ['Baixa:', reportStats.byPriority.baixa],
+      [''],
+      ['POR TIPO'],
+      ['Geral:', reportStats.byType.geral],
+      ['Processo:', reportStats.byType.processo],
+      ['Requerimento:', reportStats.byType.requerimento],
+    ];
+    const wsResumo = XLSX.utils.aoa_to_sheet(resumoData);
+    wsResumo['!cols'] = [{ wch: 30 }, { wch: 30 }];
+    XLSX.utils.book_append_sheet(wb, wsResumo, 'Resumo');
+    
+    // Aba 2: Por Responsável
+    const responsavelData = [
+      ['Responsável', 'Quantidade'],
+      ...Object.entries(reportStats.byResponsible).sort((a, b) => b[1] - a[1]),
+    ];
+    const wsResponsavel = XLSX.utils.aoa_to_sheet(responsavelData);
+    wsResponsavel['!cols'] = [{ wch: 30 }, { wch: 15 }];
+    XLSX.utils.book_append_sheet(wb, wsResponsavel, 'Por Responsável');
+    
+    // Aba 3: Por Cliente
+    const clienteData = [
+      ['Cliente', 'Quantidade'],
+      ...Object.entries(reportStats.byClient).sort((a, b) => b[1] - a[1]).slice(0, 20),
+    ];
+    const wsCliente = XLSX.utils.aoa_to_sheet(clienteData);
+    wsCliente['!cols'] = [{ wch: 40 }, { wch: 15 }];
+    XLSX.utils.book_append_sheet(wb, wsCliente, 'Por Cliente');
+    
+    // Aba 4: Detalhamento
+    const periodDeadlines = deadlines.filter(d => {
+      const dueDate = new Date(d.due_date);
+      return dueDate >= periodStart && dueDate <= periodEnd;
+    });
+    
+    const detalheData = periodDeadlines.map(d => ({
+      'Título': d.title,
+      'Vencimento': formatDate(d.due_date),
+      'Status': getStatusLabel(d.status),
+      'Prioridade': getPriorityLabel(d.priority),
+      'Tipo': getTypeLabel(d.type),
+      'Cliente': d.client_id ? (clientMap.get(d.client_id)?.full_name || '-') : '-',
+      'Responsável': d.responsible_id ? (memberMap.get(d.responsible_id)?.name || '-') : '-',
+    }));
+    const wsDetalhe = XLSX.utils.json_to_sheet(detalheData);
+    wsDetalhe['!cols'] = [
+      { wch: 30 },
+      { wch: 15 },
+      { wch: 12 },
+      { wch: 12 },
+      { wch: 15 },
+      { wch: 30 },
+      { wch: 20 },
+    ];
+    XLSX.utils.book_append_sheet(wb, wsDetalhe, 'Detalhamento');
+    
+    // Salvar arquivo
+    const dateSlug = new Date().toISOString().split('T')[0];
+    XLSX.writeFile(wb, `relatorio_prazos_${dateSlug}.xlsx`);
+  };
+
+  const handleExportPdf = async () => {
+    if (!deadlines.length) {
+      alert('Não há prazos disponíveis para exportar.');
+      return;
+    }
+
+    try {
+      setExportingPdf(true);
+
+      let effectiveUser = currentUser;
+      if (!effectiveUser) {
+        try {
+          effectiveUser = await profileService.getMyProfile();
+          setCurrentUser(effectiveUser);
+        } catch (err) {
+          console.error('Não foi possível carregar o perfil do usuário antes da exportação.', err);
+        }
+      }
+
+      const pdfDoc = await PDFDocument.create();
+      const font = await pdfDoc.embedFont(StandardFonts.Helvetica);
+      const boldFont = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
+
+      // Cores
+      const blue = rgb(0.13, 0.4, 0.7);
+      const green = rgb(0.1, 0.55, 0.4);
+      const orange = rgb(0.85, 0.5, 0.15);
+      const red = rgb(0.75, 0.2, 0.2);
+      const darkText = rgb(0.15, 0.15, 0.15);
+      const grayText = rgb(0.4, 0.4, 0.4);
+      const lightGray = rgb(0.94, 0.94, 0.96);
+      const white = rgb(1, 1, 1);
+
+      // Página A4
+      let page = pdfDoc.addPage([595.28, 841.89]);
+      let { width, height } = page.getSize();
+      const margin = 40;
+      const usableWidth = width - margin * 2;
+      let y = height - margin;
+
+      const createNewPage = () => {
+        page = pdfDoc.addPage([595.28, 841.89]);
+        ({ width, height } = page.getSize());
+        y = height - margin;
+      };
+
+      const checkSpace = (needed: number) => {
+        if (y - needed < margin + 30) {
+          createNewPage();
+        }
+      };
+
+      const text = (
+        str: string,
+        x: number,
+        yPos: number,
+        size = 10,
+        bold = false,
+        color = darkText,
+        maxW?: number,
+      ) => {
+        let display = str || '';
+        if (maxW) {
+          const avgChar = size * 0.52;
+          const maxChars = Math.floor(maxW / avgChar);
+          if (display.length > maxChars) {
+            display = display.substring(0, maxChars - 2) + '..';
+          }
+        }
+        page.drawText(display, {
+          x,
+          y: yPos,
+          size,
+          font: bold ? boldFont : font,
+          color,
+        });
+      };
+
+      const rect = (x: number, yPos: number, w: number, h: number, color: ReturnType<typeof rgb>) => {
+        page.drawRectangle({ x, y: yPos, width: w, height: h, color });
+      };
+
+      const { periodStart, periodEnd, total, completionRate, avgDaysToComplete, byStatus, byPriority, byType } = reportStats;
+      const periodDeadlines = deadlines
+        .filter((d) => {
+          const dueDate = new Date(d.due_date);
+          return dueDate >= periodStart && dueDate <= periodEnd;
+        })
+        .sort((a, b) => new Date(a.due_date).getTime() - new Date(b.due_date).getTime());
+
+      const exportTimestamp = new Date();
+      const exportedBy = effectiveUser?.name?.trim().length ? effectiveUser.name : 'Usuário do sistema';
+      const exportedEmail = effectiveUser?.email?.trim().length ? effectiveUser.email : 'E-mail não informado';
+      const exportedRole = effectiveUser?.role?.trim().length ? effectiveUser.role : 'Não informado';
+      const exportLogId = `${exportTimestamp.getTime()}-${effectiveUser?.id ?? 'anon'}`;
+      const periodLabel = `${periodStart.toLocaleDateString('pt-BR')} a ${periodEnd.toLocaleDateString('pt-BR')}`;
+
+      // ===== HEADER =====
+      const headerHeight = 110;
+      rect(0, height - headerHeight, width, headerHeight, blue);
+      text('RELATÓRIO DE PRAZOS', margin, height - 38, 20, true, white);
+      text(`Período: ${periodLabel}`, margin, height - 58, 10, false, rgb(0.85, 0.9, 1));
+      text(`Gerado em: ${exportTimestamp.toLocaleString('pt-BR')}`, margin, height - 74, 9, false, rgb(0.7, 0.8, 0.95));
+      text(`Exportado por: ${exportedBy}`, margin, height - 90, 9, false, rgb(0.7, 0.8, 0.95));
+      y = height - headerHeight - 20;
+
+      // ===== RESUMO (4 CARDS) =====
+      const cardW = (usableWidth - 24) / 4;
+      const cardH = 50;
+      checkSpace(cardH + 20);
+      const cardColors = [blue, green, orange, red];
+      const cardLabels = ['Total', 'Cumpridos', 'Média dias', 'Vencidos'];
+      const cardValues = [String(total), `${completionRate}%`, String(avgDaysToComplete || 0), String(byStatus.vencido)];
+
+      for (let i = 0; i < 4; i++) {
+        const cx = margin + i * (cardW + 8);
+        const cy = y - cardH;
+        rect(cx, cy, cardW, cardH, cardColors[i]);
+        text(cardValues[i], cx + 10, cy + 28, 18, true, white);
+        text(cardLabels[i], cx + 10, cy + 10, 9, false, rgb(0.9, 0.95, 1));
+      }
+      y -= cardH + 20;
+
+      // ===== SEÇÕES DE LISTA =====
+      const addList = (title: string, items: [string, number][]) => {
+        const rowH = 16;
+        const neededH = 28 + items.length * rowH + 10;
+        checkSpace(neededH);
+
+        // Título
+        rect(margin, y - 20, usableWidth, 22, lightGray);
+        text(title, margin + 8, y - 14, 11, true, blue);
+        y -= 30;
+
+        if (!items.length) {
+          text('Nenhum dado disponível.', margin + 8, y, 10, false, grayText);
+          y -= 20;
+          return;
+        }
+
+        // Itens em lista vertical simples
+        items.forEach(([label, value]) => {
+          checkSpace(rowH + 5);
+          text(label, margin + 8, y, 10, false, darkText, usableWidth - 60);
+          text(String(value), margin + usableWidth - 40, y, 10, true, blue);
+          y -= rowH;
+        });
+        y -= 10;
+      };
+
+      addList('Por Status', Object.entries(byStatus).map(([k, v]) => [k.charAt(0).toUpperCase() + k.slice(1), v]));
+      addList('Por Prioridade', Object.entries(byPriority).map(([k, v]) => [k.charAt(0).toUpperCase() + k.slice(1), v]));
+      addList('Por Tipo', Object.entries(byType).map(([k, v]) => [k.charAt(0).toUpperCase() + k.slice(1), v]));
+
+      const responsibleEntries = Object.entries(reportStats.byResponsible).sort((a, b) => b[1] - a[1]).slice(0, 5);
+      if (responsibleEntries.length) {
+        addList('Top 5 Responsáveis', responsibleEntries as [string, number][]);
+      }
+
+      const clientEntries = Object.entries(reportStats.byClient).sort((a, b) => b[1] - a[1]).slice(0, 5);
+      if (clientEntries.length) {
+        addList('Top 5 Clientes', clientEntries as [string, number][]);
+      }
+
+      // ===== DETALHAMENTO DOS PRAZOS =====
+      if (periodDeadlines.length) {
+        checkSpace(80);
+        rect(margin, y - 20, usableWidth, 22, lightGray);
+        text('DETALHAMENTO DOS PRAZOS', margin + 8, y - 14, 11, true, blue);
+        y -= 32;
+
+        const cardHeight = 32;
+
+        periodDeadlines.forEach((deadline, idx) => {
+          const extraHeight = 18; // for meta line
+          const totalHeight = cardHeight + extraHeight;
+          if (y - totalHeight < margin + 30) {
+            createNewPage();
+            rect(margin, y - 20, usableWidth, 22, lightGray);
+            text('DETALHAMENTO DOS PRAZOS (cont.)', margin + 8, y - 14, 11, true, blue);
+            y -= 32;
+          }
+
+          const cardY = y - cardHeight;
+          if (idx % 2 === 0) {
+            rect(margin, cardY - 6, usableWidth, totalHeight, lightGray);
+          }
+
+          const clientName = deadline.client_id ? clientMap.get(deadline.client_id)?.full_name : null;
+          const responsibleName = deadline.responsible_id ? memberMap.get(deadline.responsible_id)?.name : null;
+          const titleStr = clientName ? `${deadline.title} (${clientName})` : deadline.title;
+          text(titleStr, margin + 10, cardY + 12, 10, true, darkText, usableWidth - 20);
+
+          const metaLine = [
+            `Vencimento: ${formatDate(deadline.due_date)}`,
+            `Status: ${getStatusLabel(deadline.status)}`,
+            `Prioridade: ${getPriorityLabel(deadline.priority)}`,
+            `Tipo: ${getTypeLabel(deadline.type)}`,
+            `Responsável: ${responsibleName ?? 'Não atribuído'}`,
+          ].join('   |   ');
+
+          text(metaLine, margin + 10, cardY - 2, 9, false, grayText, usableWidth - 20);
+
+          y -= totalHeight + 6;
+        });
+      }
+
+      const pages = pdfDoc.getPages();
+      pages.forEach((pg, index) => {
+        const { width: pageWidth } = pg.getSize();
+        const footerMargin = 40;
+        pg.drawLine({
+          start: { x: footerMargin, y: 40 },
+          end: { x: pageWidth - footerMargin, y: 40 },
+          thickness: 0.5,
+          color: rgb(0.8, 0.8, 0.8),
+        });
+
+        pg.drawText('Sistema de Gestão de Prazos', {
+          x: footerMargin,
+          y: 27,
+          size: 8,
+          font,
+          color: grayText,
+        });
+
+        pg.drawText(`Página ${index + 1} de ${pages.length}`, {
+          x: pageWidth - footerMargin - 60,
+          y: 27,
+          size: 8,
+          font,
+          color: grayText,
+        });
+
+        pg.drawText(`Exportado por: ${exportedBy}`, {
+          x: footerMargin,
+          y: 17,
+          size: 7.5,
+          font,
+          color: grayText,
+        });
+
+        pg.drawText(`Email: ${exportedEmail}`, {
+          x: footerMargin,
+          y: 9,
+          size: 7.5,
+          font,
+          color: grayText,
+        });
+
+        pg.drawText(`Data/Hora: ${exportTimestamp.toLocaleString('pt-BR')}`, {
+          x: footerMargin + 220,
+          y: 17,
+          size: 7.5,
+          font,
+          color: grayText,
+        });
+
+        pg.drawText(`Log: ${exportLogId}`, {
+          x: footerMargin + 220,
+          y: 9,
+          size: 7.5,
+          font,
+          color: grayText,
+        });
+      });
+
+      const pdfBytes = await pdfDoc.save();
+      const blob = new Blob([pdfBytes as BlobPart], { type: 'application/pdf' });
+      const dateSlug = new Date().toISOString().split('T')[0];
+      saveAs(blob, `relatorio_prazos_${dateSlug}.pdf`);
+    } catch (err: any) {
+      console.error(err);
+      setError(err?.message || 'Não foi possível exportar o relatório em PDF.');
+    } finally {
+      setExportingPdf(false);
+    }
+  };
+
   const filteredProcesses = useMemo(() => {
     const scopedProcesses = formData.client_id
       ? processes.filter((p) => p.client_id === formData.client_id)
@@ -853,6 +1671,267 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
       .slice(0, 10);
   }, [clients, clientSearchTerm]);
 
+  // Modal de Relatórios
+  const reportModal = showReportModal && (
+    <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center z-50 p-4 overflow-y-auto">
+      <div className="bg-white rounded-2xl shadow-2xl max-w-4xl w-full my-8 max-h-[90vh] overflow-y-auto">
+        <div className="px-6 py-4 border-b border-gray-200 flex items-center justify-between sticky top-0 bg-white z-10">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center">
+              <BarChart3 className="w-5 h-5 text-white" />
+            </div>
+            <div>
+              <h3 className="text-lg font-semibold text-slate-900">Relatório de Prazos</h3>
+              <p className="text-sm text-slate-500">Análise detalhada do período selecionado</p>
+            </div>
+          </div>
+          <button onClick={() => setShowReportModal(false)} className="text-slate-400 hover:text-slate-600" title="Fechar">
+            <X className="w-5 h-5" />
+          </button>
+        </div>
+
+        <div className="p-6 space-y-6">
+          {/* Seletor de Período */}
+          <div className="bg-slate-50 rounded-xl p-4">
+            <label className="text-sm font-semibold text-slate-700 mb-3 block">Período do Relatório</label>
+            <div className="flex flex-wrap gap-2 mb-3">
+              {[
+                { key: 'week', label: 'Última Semana' },
+                { key: 'month', label: 'Este Mês' },
+                { key: 'quarter', label: 'Este Trimestre' },
+                { key: 'year', label: 'Este Ano' },
+                { key: 'custom', label: 'Personalizado' },
+              ].map((period) => (
+                <button
+                  key={period.key}
+                  type="button"
+                  onClick={() => setReportPeriod(period.key as typeof reportPeriod)}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${
+                    reportPeriod === period.key
+                      ? 'bg-indigo-600 text-white'
+                      : 'bg-white text-slate-600 border border-slate-200 hover:border-indigo-300'
+                  }`}
+                >
+                  {period.label}
+                </button>
+              ))}
+            </div>
+            
+            {reportPeriod === 'custom' && (
+              <div className="flex gap-3 mt-3">
+                <div className="flex-1">
+                  <label className="text-xs text-slate-500">Data Inicial</label>
+                  <input
+                    type="date"
+                    value={reportStartDate}
+                    onChange={(e) => setReportStartDate(e.target.value)}
+                    className="w-full mt-1 px-3 py-2 border border-slate-200 rounded-lg text-sm"
+                  />
+                </div>
+                <div className="flex-1">
+                  <label className="text-xs text-slate-500">Data Final</label>
+                  <input
+                    type="date"
+                    value={reportEndDate}
+                    onChange={(e) => setReportEndDate(e.target.value)}
+                    className="w-full mt-1 px-3 py-2 border border-slate-200 rounded-lg text-sm"
+                  />
+                </div>
+              </div>
+            )}
+            
+            <p className="text-xs text-slate-500 mt-2">
+              Período: {reportStats.periodStart.toLocaleDateString('pt-BR')} a {reportStats.periodEnd.toLocaleDateString('pt-BR')}
+            </p>
+          </div>
+
+          {/* Cards de Resumo */}
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+            <div className="bg-gradient-to-br from-blue-500 to-blue-600 rounded-xl p-4 text-white">
+              <p className="text-3xl font-bold">{reportStats.total}</p>
+              <p className="text-xs text-blue-100">Total de Prazos</p>
+            </div>
+            <div className="bg-gradient-to-br from-emerald-500 to-emerald-600 rounded-xl p-4 text-white">
+              <p className="text-3xl font-bold">{reportStats.completionRate}%</p>
+              <p className="text-xs text-emerald-100">Taxa de Cumprimento</p>
+            </div>
+            <div className="bg-gradient-to-br from-amber-500 to-amber-600 rounded-xl p-4 text-white">
+              <p className="text-3xl font-bold">{reportStats.avgDaysToComplete}</p>
+              <p className="text-xs text-amber-100">Média Dias p/ Cumprir</p>
+            </div>
+            <div className="bg-gradient-to-br from-red-500 to-red-600 rounded-xl p-4 text-white">
+              <p className="text-3xl font-bold">{reportStats.byStatus.vencido}</p>
+              <p className="text-xs text-red-100">Vencidos no Período</p>
+            </div>
+          </div>
+
+          {/* Gráficos em Grid */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {/* Por Status */}
+            <div className="bg-white border border-slate-200 rounded-xl p-4">
+              <h4 className="text-sm font-semibold text-slate-800 mb-3 flex items-center gap-2">
+                <PieChart className="w-4 h-4 text-slate-400" />
+                Por Status
+              </h4>
+              <div className="space-y-2">
+                {[
+                  { label: 'Pendentes', value: reportStats.byStatus.pendente, color: 'bg-blue-500' },
+                  { label: 'Cumpridos', value: reportStats.byStatus.cumprido, color: 'bg-emerald-500' },
+                  { label: 'Vencidos', value: reportStats.byStatus.vencido, color: 'bg-red-500' },
+                  { label: 'Cancelados', value: reportStats.byStatus.cancelado, color: 'bg-slate-400' },
+                ].map((item) => (
+                  <div key={item.label} className="flex items-center gap-2">
+                    <div className={`w-3 h-3 rounded ${item.color}`} />
+                    <span className="text-xs text-slate-600 flex-1">{item.label}</span>
+                    <span className="text-sm font-semibold text-slate-800">{item.value}</span>
+                    <div className="w-20 h-2 bg-slate-100 rounded-full overflow-hidden">
+                      <div
+                        className={`h-full ${item.color}`}
+                        style={{ width: `${reportStats.total > 0 ? (item.value / reportStats.total) * 100 : 0}%` }}
+                      />
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* Por Prioridade */}
+            <div className="bg-white border border-slate-200 rounded-xl p-4">
+              <h4 className="text-sm font-semibold text-slate-800 mb-3 flex items-center gap-2">
+                <AlertTriangle className="w-4 h-4 text-slate-400" />
+                Por Prioridade
+              </h4>
+              <div className="space-y-2">
+                {[
+                  { label: 'Urgente', value: reportStats.byPriority.urgente, color: 'bg-red-500' },
+                  { label: 'Alta', value: reportStats.byPriority.alta, color: 'bg-orange-500' },
+                  { label: 'Média', value: reportStats.byPriority.media, color: 'bg-amber-500' },
+                  { label: 'Baixa', value: reportStats.byPriority.baixa, color: 'bg-slate-400' },
+                ].map((item) => (
+                  <div key={item.label} className="flex items-center gap-2">
+                    <div className={`w-3 h-3 rounded ${item.color}`} />
+                    <span className="text-xs text-slate-600 flex-1">{item.label}</span>
+                    <span className="text-sm font-semibold text-slate-800">{item.value}</span>
+                    <div className="w-20 h-2 bg-slate-100 rounded-full overflow-hidden">
+                      <div
+                        className={`h-full ${item.color}`}
+                        style={{ width: `${reportStats.total > 0 ? (item.value / reportStats.total) * 100 : 0}%` }}
+                      />
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* Por Tipo */}
+            <div className="bg-white border border-slate-200 rounded-xl p-4">
+              <h4 className="text-sm font-semibold text-slate-800 mb-3 flex items-center gap-2">
+                <Layers className="w-4 h-4 text-slate-400" />
+                Por Tipo
+              </h4>
+              <div className="space-y-2">
+                {[
+                  { label: 'Geral', value: reportStats.byType.geral, color: 'bg-slate-500' },
+                  { label: 'Processo', value: reportStats.byType.processo, color: 'bg-indigo-500' },
+                  { label: 'Requerimento', value: reportStats.byType.requerimento, color: 'bg-purple-500' },
+                ].map((item) => (
+                  <div key={item.label} className="flex items-center gap-2">
+                    <div className={`w-3 h-3 rounded ${item.color}`} />
+                    <span className="text-xs text-slate-600 flex-1">{item.label}</span>
+                    <span className="text-sm font-semibold text-slate-800">{item.value}</span>
+                    <div className="w-20 h-2 bg-slate-100 rounded-full overflow-hidden">
+                      <div
+                        className={`h-full ${item.color}`}
+                        style={{ width: `${reportStats.total > 0 ? (item.value / reportStats.total) * 100 : 0}%` }}
+                      />
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* Por Responsável */}
+            <div className="bg-white border border-slate-200 rounded-xl p-4">
+              <h4 className="text-sm font-semibold text-slate-800 mb-3 flex items-center gap-2">
+                <Users className="w-4 h-4 text-slate-400" />
+                Por Responsável (Top 5)
+              </h4>
+              <div className="space-y-2">
+                {Object.entries(reportStats.byResponsible)
+                  .sort((a, b) => b[1] - a[1])
+                  .slice(0, 5)
+                  .map(([name, value]) => (
+                    <div key={name} className="flex items-center gap-2">
+                      <div className="w-6 h-6 rounded-full bg-indigo-100 flex items-center justify-center">
+                        <span className="text-[10px] font-bold text-indigo-600">
+                          {name.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase()}
+                        </span>
+                      </div>
+                      <span className="text-xs text-slate-600 flex-1 truncate">{name}</span>
+                      <span className="text-sm font-semibold text-slate-800">{value}</span>
+                    </div>
+                  ))}
+                {Object.keys(reportStats.byResponsible).length === 0 && (
+                  <p className="text-xs text-slate-400 text-center py-2">Nenhum dado disponível</p>
+                )}
+              </div>
+            </div>
+          </div>
+
+          {/* Top Clientes */}
+          <div className="bg-white border border-slate-200 rounded-xl p-4">
+            <h4 className="text-sm font-semibold text-slate-800 mb-3 flex items-center gap-2">
+              <Briefcase className="w-4 h-4 text-slate-400" />
+              Clientes com Mais Prazos (Top 10)
+            </h4>
+            <div className="grid grid-cols-2 md:grid-cols-5 gap-2">
+              {Object.entries(reportStats.byClient)
+                .sort((a, b) => b[1] - a[1])
+                .slice(0, 10)
+                .map(([name, value]) => (
+                  <div key={name} className="bg-slate-50 rounded-lg p-2 text-center">
+                    <p className="text-lg font-bold text-slate-800">{value}</p>
+                    <p className="text-[10px] text-slate-500 truncate" title={name}>{name}</p>
+                  </div>
+                ))}
+              {Object.keys(reportStats.byClient).length === 0 && (
+                <p className="text-xs text-slate-400 col-span-5 text-center py-4">Nenhum dado disponível</p>
+              )}
+            </div>
+          </div>
+
+          {/* Botões de Ação */}
+          <div className="flex justify-end gap-3 pt-4 border-t border-slate-200">
+            <button
+              type="button"
+              onClick={() => setShowReportModal(false)}
+              className="px-4 py-2 text-sm font-medium text-slate-600 hover:text-slate-800 transition-colors"
+            >
+              Fechar
+            </button>
+            <button
+              type="button"
+              onClick={handleExportPdf}
+              disabled={exportingPdf}
+              className="flex items-center gap-2 px-4 py-2 bg-slate-900 text-white rounded-lg text-sm font-medium hover:bg-black transition-all disabled:opacity-50"
+            >
+              {exportingPdf ? <Loader2 className="w-4 h-4 animate-spin" /> : <FileText className="w-4 h-4" />}
+              Exportar PDF
+            </button>
+            <button
+              type="button"
+              onClick={handleExportReport}
+              className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-indigo-600 to-purple-600 text-white rounded-lg text-sm font-medium hover:from-indigo-700 hover:to-purple-700 transition-all"
+            >
+              <Download className="w-4 h-4" />
+              Exportar Relatório (Excel)
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+
   const deadlineModal = isModalOpen && (
     <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center z-50 p-4 overflow-y-auto">
       <div className="bg-white rounded-2xl shadow-2xl max-w-3xl w-full my-8 max-h-[90vh] overflow-y-auto">
@@ -881,15 +1960,140 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
               />
             </div>
 
-            <div>
-              <label className="text-sm font-medium text-slate-700">Data de Vencimento *</label>
-              <input
-                type="date"
-                value={formData.due_date}
-                onChange={(event) => handleFormChange('due_date', event.target.value)}
-                className="input-field"
-                required
-              />
+            {/* Calculadora de Prazo Processual */}
+            <div className="md:col-span-2 bg-blue-50 rounded-xl p-4 border border-blue-200">
+              <div className="flex items-center gap-2 mb-4">
+                <Calendar className="w-4 h-4 text-blue-700" />
+                <div>
+                  <p className="text-sm font-semibold text-blue-900">Calculadora de Prazo Processual</p>
+                  <p className="text-[11px] text-blue-700">
+                    Informe a data de publicação no DJEN e os dias de prazo. O sistema calcula automaticamente ignorando finais de semana.
+                  </p>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
+                <div>
+                  <label className="text-xs font-medium text-blue-800">Data Publicação DJEN</label>
+                  <input
+                    type="date"
+                    value={dataPublicacao}
+                    onChange={(e) => {
+                      const value = e.target.value;
+                      setDataPublicacao(value);
+                      if (value && diasPrazo) {
+                        const dataVenc = calcularDataVencimento(value, parseInt(diasPrazo));
+                        handleFormChange('due_date', dataVenc);
+                      }
+                    }}
+                    className="w-full mt-1 px-3 py-2 border border-blue-300 rounded-lg text-sm bg-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                  />
+                </div>
+
+                <div>
+                  <label className="text-xs font-medium text-blue-800">Dias de Prazo (úteis)</label>
+                  <div className="mt-1 flex gap-2">
+                    <input
+                      type="number"
+                      min={1}
+                      value={diasPrazo}
+                      onChange={(e) => {
+                        const value = e.target.value;
+                        setDiasPrazo(value);
+                        if (dataPublicacao && value) {
+                          const dias = Number(value);
+                          if (!Number.isNaN(dias) && dias > 0) {
+                            const dataVenc = calcularDataVencimento(dataPublicacao, dias);
+                            handleFormChange('due_date', dataVenc);
+                          }
+                        }
+                      }}
+                      className="flex-1 px-3 py-2 border border-blue-300 rounded-lg text-sm bg-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                      placeholder="Ex: 15"
+                    />
+                    <select
+                      value=""
+                      onChange={(e) => {
+                        if (!e.target.value) return;
+                        setDiasPrazo(e.target.value);
+                        if (dataPublicacao) {
+                          const dias = parseInt(e.target.value, 10);
+                          const dataVenc = calcularDataVencimento(dataPublicacao, dias);
+                          handleFormChange('due_date', dataVenc);
+                        }
+                        e.currentTarget.selectedIndex = 0;
+                      }}
+                      className="px-2 py-2 border border-blue-300 rounded-lg text-xs text-blue-700 bg-white"
+                    >
+                      <option value="">Atalhos</option>
+                      <option value="5">5 dias</option>
+                      <option value="10">10 dias</option>
+                      <option value="15">15 dias</option>
+                      <option value="20">20 dias</option>
+                      <option value="30">30 dias</option>
+                    </select>
+                  </div>
+                </div>
+
+                <div className="md:col-span-2">
+                  <label className="text-xs font-medium text-blue-800">Data de Vencimento Calculada</label>
+                  <div className="mt-1 px-3 py-2 bg-white border border-blue-300 rounded-lg text-sm font-semibold text-blue-900 min-h-[42px] flex items-center justify-between">
+                    {formData.due_date ? (
+                      <>
+                        <span>{formatDate(formData.due_date)}</span>
+                        <span className="text-xs font-normal text-blue-600">
+                          {new Date(formData.due_date + 'T12:00:00').toLocaleDateString('pt-BR', { weekday: 'long' })}
+                        </span>
+                      </>
+                    ) : (
+                      <span className="text-slate-400">Preencha data e dias para calcular</span>
+                    )}
+                  </div>
+                  {calculadoraAtiva && (
+                    <p className="text-[10px] text-blue-600 mt-1">
+                      Resultado pronto! Salve o prazo para registrar esta data calculada.
+                    </p>
+                  )}
+                </div>
+              </div>
+
+              <div className="mt-4 border-t border-blue-200 pt-3">
+                <p className="text-xs font-semibold text-blue-900 mb-2">Precisa ajustar manualmente?</p>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  <div>
+                    <label className="text-xs font-medium text-slate-700">Data de Vencimento *</label>
+                    <input
+                      type="date"
+                      value={formData.due_date}
+                      onChange={(event) => {
+                        const selectedDate = new Date(event.target.value + 'T12:00:00');
+                        const dayOfWeek = selectedDate.getDay();
+                        
+                        if (dayOfWeek === 0 || dayOfWeek === 6) {
+                          alert('⚠️ Não é permitido cadastrar prazos em finais de semana.\n\nSelecione um dia útil (segunda a sexta).');
+                          return;
+                        }
+                        setDataPublicacao('');
+                        setDiasPrazo('');
+                        handleFormChange('due_date', event.target.value);
+                      }}
+                      className="w-full mt-1 px-3 py-2 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500"
+                      required
+                    />
+                  </div>
+                  <div className="flex items-end">
+                    {formData.due_date && (
+                      <p className="text-sm text-slate-600 pb-2">
+                        {new Date(formData.due_date + 'T12:00:00').toLocaleDateString('pt-BR', { weekday: 'long', day: 'numeric', month: 'long' })}
+                      </p>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              <p className="text-[10px] text-blue-600 mt-3">
+                💡 Prazos processuais começam no dia subsequente à publicação e excluem finais de semana. A calculadora considera automaticamente essas regras.
+              </p>
             </div>
 
             <div>
@@ -1302,282 +2506,390 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
   }
 
   return (
-    <div className="space-y-6">
-      {criticalDeadlines.length > 0 && (
-        <div className="bg-red-100 border border-red-300 rounded-xl p-4">
-          <div className="flex items-start gap-3">
-            <Siren className="w-6 h-6 text-red-600 flex-shrink-0" />
-            <div className="flex-1">
-              <h4 className="text-sm font-semibold text-red-900">Alerta máximo: prazo vencendo em 1 dia</h4>
-              <p className="text-sm text-red-700 mt-1">
-                {criticalDeadlines.length} prazo(s) exigem ação imediata. Garanta a execução antes do vencimento.
-              </p>
-              <div className="mt-3 space-y-2">
-                {criticalDeadlines.slice(0, 3).map((deadline) => (
-                  <div key={deadline.id} className="text-xs text-red-800 flex items-center gap-2">
-                    <span className="font-semibold">{deadline.title}</span>
-                    <span className="text-red-600">• Vence em 1 dia</span>
-                  </div>
-                ))}
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Alertas de prazos */}
-      {overdueDeadlines.length > 0 && (
-        <div className="bg-red-50 border border-red-200 rounded-xl p-4">
-          <div className="flex items-start gap-3">
-            <AlertCircle className="w-5 h-5 text-red-600 flex-shrink-0 mt-0.5" />
-            <div className="flex-1">
-              <h4 className="text-sm font-semibold text-red-900">Prazos Vencidos</h4>
-              <p className="text-sm text-red-700 mt-1">
-                Você tem {overdueDeadlines.length} prazo(s) vencido(s) que requerem atenção imediata.
-              </p>
-              <div className="mt-3 space-y-2">
-                {overdueDeadlines.slice(0, 3).map((deadline) => (
-                  <div key={deadline.id} className="text-xs text-red-800 flex items-center gap-2">
-                    <span className="font-semibold">{deadline.title}</span>
-                    <span className="text-red-600">• Venceu há {Math.abs(getDaysUntilDue(deadline.due_date))} dia(s)</span>
-                  </div>
-                ))}
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Mapa de Prazos */}
-      <div className="grid grid-cols-2 md:grid-cols-2 xl:grid-cols-4 gap-2 sm:gap-4">
-        <div className="bg-white border border-slate-200 rounded-xl p-3 sm:p-5 shadow-sm">
-          <div className="text-[10px] sm:text-xs font-semibold uppercase text-slate-500">Total</div>
-          <div className="flex items-end justify-between mt-2 sm:mt-3">
-            <div>
-              <p className="text-xl sm:text-3xl font-bold text-slate-900">{deadlines.length}</p>
-              <p className="text-[9px] sm:text-xs text-slate-500 mt-0.5 sm:mt-1 hidden sm:block">Todos os prazos</p>
-            </div>
-            <Calendar className="w-5 h-5 sm:w-8 sm:h-8 text-slate-400" />
-          </div>
-        </div>
-
-        <div className="bg-white border border-slate-200 rounded-xl p-3 sm:p-5 shadow-sm">
-          <div className="text-[10px] sm:text-xs font-semibold uppercase text-slate-500">Pendentes</div>
-          <div className="flex items-end justify-between mt-2 sm:mt-3">
-            <div>
-              <p className="text-xl sm:text-3xl font-bold text-amber-600">{pendingDeadlines.length}</p>
-              <p className="text-[9px] sm:text-xs text-slate-500 mt-0.5 sm:mt-1 hidden sm:block">Aguardando</p>
-            </div>
-            <Clock className="w-5 h-5 sm:w-8 sm:h-8 text-amber-400" />
-          </div>
-        </div>
-
-        <div className="bg-white border border-slate-200 rounded-xl p-3 sm:p-5 shadow-sm">
-          <div className="text-[10px] sm:text-xs font-semibold uppercase text-slate-500">Hoje</div>
-          <div className="flex items-end justify-between mt-2 sm:mt-3">
-            <div>
-              <p className="text-xl sm:text-3xl font-bold text-red-600">{dueTodayDeadlines.length}</p>
-              <p className="text-[9px] sm:text-xs text-slate-500 mt-0.5 sm:mt-1 hidden sm:block">Atenção</p>
-            </div>
-            <AlertCircle className="w-5 h-5 sm:w-8 sm:h-8 text-red-400" />
-          </div>
-        </div>
-
-        <div className="bg-white border border-slate-200 rounded-xl p-3 sm:p-5 shadow-sm">
-          <div className="text-[10px] sm:text-xs font-semibold uppercase text-slate-500">Concluídos</div>
-          <div className="flex items-end justify-between mt-2 sm:mt-3">
-            <div>
-              <p className="text-xl sm:text-3xl font-bold text-emerald-600">{completedDeadlines.length}</p>
-              <p className="text-[9px] sm:text-xs text-slate-500 mt-0.5 sm:mt-1 hidden sm:block">Finalizados</p>
-            </div>
-            <CheckCircle className="w-5 h-5 sm:w-8 sm:h-8 text-emerald-400" />
-          </div>
-        </div>
-      </div>
-
-      {/* Heatmap simplificado */}
-      <div className="bg-white border border-slate-200 rounded-xl p-6">
-        <h4 className="text-sm font-semibold text-slate-900 mb-4">Distribuição semanal</h4>
-        <div className="grid grid-cols-7 gap-2">
-          {['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'].map((day, index) => {
-            const count = deadlines.filter((deadline) => {
-              const due = new Date(deadline.due_date);
-              return due.getDay() === index;
-            }).length;
-            const intensity = Math.min(count / 4, 1);
-            const bg = `rgba(37, 99, 235, ${0.15 + intensity * 0.55})`;
+    <div className="space-y-4">
+      {/* Alertas inteligentes */}
+      {smartAlerts.length > 0 && (
+        <div className="space-y-2">
+          {smartAlerts.map((alert) => {
+            const tone = ALERT_TONE_STYLES[alert.tone];
             return (
-              <div key={day} className="text-center">
-                <div
-                  className="w-full rounded-lg py-6 text-sm font-semibold text-white"
-                  style={{ backgroundColor: count ? bg : 'rgba(226, 232, 240, 0.8)' }}
-                >
-                  {count}
+              <div
+                key={alert.id}
+                className={`flex flex-col sm:flex-row sm:items-center justify-between gap-3 border ${tone.border} ${tone.bg} rounded-2xl p-4`}
+              >
+                <div className={`flex items-start gap-3 ${tone.text}`}>
+                  <div className="flex-shrink-0">{alert.icon}</div>
+                  <div>
+                    <p className="text-sm font-semibold">{alert.title}</p>
+                    <p className="text-xs opacity-80">{alert.description}</p>
+                  </div>
                 </div>
-                <span className="text-xs text-slate-500 mt-2 block">{day}</span>
+                {alert.actionLabel && alert.onAction && (
+                  <button
+                    onClick={alert.onAction}
+                    className={`px-4 py-2 rounded-lg text-xs font-semibold ${tone.button}`}
+                  >
+                    {alert.actionLabel}
+                  </button>
+                )}
               </div>
             );
           })}
         </div>
+      )}
+
+      {/* Cards de Estatísticas - Mensais */}
+      <div className="flex items-center justify-between">
+        <div>
+          <p className="text-[11px] font-semibold text-slate-500 uppercase tracking-wide">Resumo mensal</p>
+          <p className="text-sm font-semibold text-slate-900 capitalize">{currentMonthLabel}</p>
+        </div>
+        <p className="text-[11px] text-slate-400">Somente prazos com vencimento no mês atual</p>
+      </div>
+      <div className="grid grid-cols-4 gap-2">
+        <button
+          onClick={() => setActiveStatusTab('todos')}
+          className={`flex items-center gap-3 p-3 rounded-xl transition-all hover:shadow-md ${
+            activeStatusTab === 'todos' ? 'ring-2 ring-blue-500 bg-blue-50' : 'bg-white border border-slate-200'
+          }`}
+        >
+          <div className="w-10 h-10 rounded-lg bg-blue-500 flex items-center justify-center">
+            <Calendar className="w-5 h-5 text-white" />
+          </div>
+          <div className="text-left">
+            <p className="text-xl font-bold text-slate-900">{monthlyDeadlines.length}</p>
+            <p className="text-[10px] text-slate-500">Total no mês</p>
+          </div>
+        </button>
+
+        <button
+          onClick={() => setActiveStatusTab('pendente')}
+          className={`flex items-center gap-3 p-3 rounded-xl transition-all hover:shadow-md ${
+            activeStatusTab === 'pendente' ? 'ring-2 ring-amber-500 bg-amber-50' : 'bg-white border border-slate-200'
+          }`}
+        >
+          <div className="w-10 h-10 rounded-lg bg-amber-500 flex items-center justify-center">
+            <Clock className="w-5 h-5 text-white" />
+          </div>
+          <div className="text-left">
+            <p className="text-xl font-bold text-slate-900">{monthlyPending.length}</p>
+            <p className="text-[10px] text-slate-500">Pendentes no mês</p>
+          </div>
+        </button>
+
+        <button
+          onClick={() => setActiveStatusTab('vencido')}
+          className={`flex items-center gap-3 p-3 rounded-xl transition-all hover:shadow-md ${
+            activeStatusTab === 'vencido' ? 'ring-2 ring-red-500 bg-red-50' : 'bg-white border border-slate-200'
+          }`}
+        >
+          <div className={`w-10 h-10 rounded-lg flex items-center justify-center ${
+            dueTodayDeadlines.length > 0 || overdueDeadlines.length > 0 ? 'bg-red-500' : 'bg-slate-400'
+          }`}>
+            <AlertCircle className="w-5 h-5 text-white" />
+          </div>
+          <div className="text-left">
+            <p className="text-xl font-bold text-slate-900">{monthlyAttentionCount}</p>
+            <p className="text-[10px] text-slate-500">Atenção no mês</p>
+          </div>
+        </button>
+
+        <div className="flex items-center gap-3 p-3 rounded-xl bg-white border border-slate-200">
+          <div className="w-10 h-10 rounded-lg bg-emerald-500 flex items-center justify-center">
+            <CheckCircle className="w-5 h-5 text-white" />
+          </div>
+          <div className="text-left">
+            <p className="text-xl font-bold text-slate-900">{monthlyCompleted.length}</p>
+            <p className="text-[10px] text-slate-500">Concluídos no mês</p>
+          </div>
+        </div>
       </div>
 
-      <div className="bg-white border border-gray-200 rounded-xl p-6">
-        <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 mb-6">
-          <div>
-            <h3 className="text-xl font-semibold text-slate-900">Gestão de Prazos</h3>
-            <p className="text-sm text-slate-600 mt-1">Controle prazos processuais e administrativos</p>
+      {/* Calendário Mensal de Prazos - Retrátil */}
+      <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+        <button
+          onClick={() => setCalendarExpanded(!calendarExpanded)}
+          className="w-full flex items-center justify-between p-3 hover:bg-slate-50 transition-colors"
+        >
+          <div className="flex items-center gap-2">
+            <Calendar className="w-4 h-4 text-slate-600" />
+            <h4 className="text-sm font-semibold text-slate-800">Calendário de Prazos</h4>
           </div>
-
-          <div className="flex gap-3">
-            <div className="hidden sm:flex items-center bg-slate-100 rounded-lg p-1">
+          <div className="flex items-center gap-2">
+            <span className="text-xs bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full font-medium">
+              {pendingDeadlines.filter(d => {
+                const dueDateStr = d.due_date?.split('T')[0];
+                if (!dueDateStr) return false;
+                const [year, month] = dueDateStr.split('-').map(Number);
+                return month === calendarMonth + 1 && year === calendarYear;
+              }).length} prazos
+            </span>
+            <svg className={`w-4 h-4 text-slate-400 transition-transform ${calendarExpanded ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+            </svg>
+          </div>
+        </button>
+        
+        {calendarExpanded && (
+          <div className="p-4 pt-0 border-t border-slate-100">
+            {/* Navegação do mês */}
+            <div className="flex items-center justify-between mb-3 mt-3">
               <button
                 onClick={() => {
-                  setViewMode('list');
+                  if (calendarMonth === 0) {
+                    setCalendarMonth(11);
+                    setCalendarYear(calendarYear - 1);
+                  } else {
+                    setCalendarMonth(calendarMonth - 1);
+                  }
                 }}
-                className={`inline-flex items-center gap-2 px-3 py-2 rounded-md text-sm font-medium transition ${
-                  viewMode === 'list' ? 'bg-white text-slate-900 shadow' : 'text-slate-600 hover:text-slate-900'
-                }`}
+                className="p-1.5 hover:bg-slate-100 rounded-lg transition-colors"
               >
-                <List className="w-4 h-4" />
-                Lista
+                <svg className="w-4 h-4 text-slate-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+                </svg>
               </button>
+              
+              <div className="flex items-center gap-2">
+                <span className="text-sm font-semibold text-slate-800 capitalize">
+                  {new Date(calendarYear, calendarMonth).toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' })}
+                </span>
+                {(calendarMonth !== new Date().getMonth() || calendarYear !== new Date().getFullYear()) && (
+                  <button
+                    onClick={() => {
+                      setCalendarMonth(new Date().getMonth());
+                      setCalendarYear(new Date().getFullYear());
+                    }}
+                    className="text-[10px] text-blue-600 hover:text-blue-800 font-medium"
+                  >
+                    Hoje
+                  </button>
+                )}
+              </div>
+              
               <button
                 onClick={() => {
-                  setViewMode('kanban');
+                  if (calendarMonth === 11) {
+                    setCalendarMonth(0);
+                    setCalendarYear(calendarYear + 1);
+                  } else {
+                    setCalendarMonth(calendarMonth + 1);
+                  }
                 }}
-                className={`inline-flex items-center gap-2 px-3 py-2 rounded-md text-sm font-medium transition ${
-                  viewMode === 'kanban' ? 'bg-white text-slate-900 shadow' : 'text-slate-600 hover:text-slate-900'
-                }`}
+                className="p-1.5 hover:bg-slate-100 rounded-lg transition-colors"
               >
-                <LayoutGrid className="w-4 h-4" />
-                Kanban
-              </button>
-              <button
-                onClick={() => {
-                  setViewMode('map');
-                }}
-                className={`inline-flex items-center gap-2 px-3 py-2 rounded-md text-sm font-medium transition ${
-                  viewMode === 'map' ? 'bg-white text-slate-900 shadow' : 'text-slate-600 hover:text-slate-900'
-                }`}
-              >
-                <Calendar className="w-4 h-4" />
-                Mapa
+                <svg className="w-4 h-4 text-slate-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                </svg>
               </button>
             </div>
+            
+            {/* Dias da semana */}
+            <div className="grid grid-cols-7 gap-1 mb-1">
+              {['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'].map((day, i) => (
+                <div key={day} className={`text-center text-[10px] font-medium py-1 ${
+                  i === 0 || i === 6 ? 'text-red-400' : 'text-slate-500'
+                }`}>
+                  {day}
+                </div>
+              ))}
+            </div>
+        
+            {/* Dias do mês */}
+            <div className="grid grid-cols-7 gap-1">
+              {(() => {
+                const today = new Date();
+                const year = calendarYear;
+                const month = calendarMonth;
+                const firstDay = new Date(year, month, 1).getDay();
+                const daysInMonth = new Date(year, month + 1, 0).getDate();
+                const cells = [];
+                
+                // Células vazias antes do primeiro dia
+                for (let i = 0; i < firstDay; i++) {
+                  cells.push(<div key={`empty-${i}`} className="h-8" />);
+                }
+                
+                // Dias do mês
+                for (let day = 1; day <= daysInMonth; day++) {
+                  const date = new Date(year, month, day);
+                  const isToday = date.toDateString() === today.toDateString();
+                  const isWeekend = date.getDay() === 0 || date.getDay() === 6;
+                  
+                  // Formatar a data do dia atual para comparar com due_date (YYYY-MM-DD)
+                  const dayStr = String(day).padStart(2, '0');
+                  const monthStr = String(month + 1).padStart(2, '0');
+                  const dateStr = `${year}-${monthStr}-${dayStr}`;
+                  
+                  const dayDeadlines = pendingDeadlines.filter(d => {
+                    // Comparar diretamente as strings de data (YYYY-MM-DD)
+                    const dueDateStr = d.due_date?.split('T')[0];
+                    return dueDateStr === dateStr;
+                  });
+                  const count = dayDeadlines.length;
+                  const hasUrgent = dayDeadlines.some(d => d.priority === 'urgente' || d.priority === 'alta');
+                  const isPast = date < new Date(today.getFullYear(), today.getMonth(), today.getDate());
+                  
+                  cells.push(
+                    <div
+                      key={day}
+                      className={`relative h-8 flex items-center justify-center rounded-lg text-xs font-medium transition-all ${
+                        isToday
+                          ? 'bg-blue-600 text-white ring-2 ring-blue-300'
+                          : count > 0 && hasUrgent
+                          ? 'bg-red-100 text-red-700 hover:bg-red-200 cursor-pointer'
+                          : count > 0
+                          ? 'bg-amber-100 text-amber-700 hover:bg-amber-200 cursor-pointer'
+                          : isWeekend
+                      ? 'text-red-300 bg-red-50/50'
+                      : isPast
+                      ? 'text-slate-300'
+                      : 'text-slate-600 hover:bg-slate-100'
+                  }`}
+                  title={count > 0 ? `${count} prazo(s)` : ''}
+                >
+                  {day}
+                  {count > 0 && (
+                    <span className={`absolute -top-1 -right-1 w-4 h-4 rounded-full text-[9px] font-bold flex items-center justify-center ${
+                      hasUrgent ? 'bg-red-500 text-white' : 'bg-amber-500 text-white'
+                    }`}>
+                      {count}
+                    </span>
+                  )}
+                </div>
+              );
+            }
+            
+            return cells;
+          })()}
+        </div>
+        
+            {/* Legenda */}
+            <div className="flex items-center justify-center gap-4 mt-3 pt-3 border-t border-slate-100">
+              <div className="flex items-center gap-1">
+                <div className="w-3 h-3 rounded bg-amber-100 border border-amber-300" />
+                <span className="text-[10px] text-slate-500">Com prazo</span>
+              </div>
+              <div className="flex items-center gap-1">
+                <div className="w-3 h-3 rounded bg-red-100 border border-red-300" />
+                <span className="text-[10px] text-slate-500">Urgente</span>
+              </div>
+              <div className="flex items-center gap-1">
+                <div className="w-3 h-3 rounded bg-red-50 border border-red-200" />
+                <span className="text-[10px] text-slate-500">Fim de semana</span>
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
 
+      {/* Barra de Ações e Filtros - Design Compacto */}
+      <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+        {/* Header com ações */}
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-4 border-b border-slate-100">
+          {/* Visualização */}
+          <div className="flex items-center bg-slate-100 rounded-xl p-1">
             <button
-              onClick={handleExportExcel}
-              disabled={exportingExcel}
-              className="inline-flex items-center gap-2 bg-green-600 hover:bg-green-700 disabled:bg-green-400 text-white font-medium px-4 py-2.5 rounded-lg shadow-sm transition disabled:cursor-not-allowed"
+              onClick={() => setViewMode('list')}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${
+                viewMode === 'list' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-700'
+              }`}
             >
-              {exportingExcel ? <Loader2 className="w-4 h-4 animate-spin" /> : <FileSpreadsheet className="w-4 h-4" />}
-              {exportingExcel ? 'Gerando Excel...' : 'Exportar Excel'}
+              <List className="w-3.5 h-3.5" />
+              <span className="hidden sm:inline">Lista</span>
             </button>
+            <button
+              onClick={() => setViewMode('kanban')}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${
+                viewMode === 'kanban' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-700'
+              }`}
+            >
+              <LayoutGrid className="w-3.5 h-3.5" />
+              <span className="hidden sm:inline">Kanban</span>
+            </button>
+            <button
+              onClick={() => setViewMode('map')}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${
+                viewMode === 'map' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-700'
+              }`}
+            >
+              <Calendar className="w-3.5 h-3.5" />
+              <span className="hidden sm:inline">Mapa</span>
+            </button>
+          </div>
 
+          {/* Botões de ação */}
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setShowReportModal(true)}
+              className="flex items-center gap-1.5 px-3 py-2 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 rounded-lg text-xs font-medium transition-all"
+            >
+              <BarChart3 className="w-3.5 h-3.5" />
+              <span className="hidden sm:inline">Relatórios</span>
+            </button>
             <button
               onClick={() => handleOpenModal()}
-              className="inline-flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white font-medium px-5 py-2.5 rounded-lg shadow-sm transition"
+              className="flex items-center gap-1.5 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-semibold transition-all shadow-sm"
             >
-              <Plus className="w-4 h-4" />
+              <Plus className="w-3.5 h-3.5" />
               Novo Prazo
             </button>
           </div>
         </div>
 
-        {/* Abas de Status */}
-        <div className="flex flex-wrap gap-2 mb-6">
-          <button
-            onClick={() => setActiveStatusTab('todos')}
-            className={`px-4 py-2 rounded-lg text-sm font-medium transition ${
-              activeStatusTab === 'todos' ? 'bg-blue-600 text-white' : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
-            }`}
-          >
-            Todos ({statusCounts.todos})
-          </button>
-          {STATUS_FILTER_OPTIONS.map((status) => {
-            const StatusIcon = status.icon;
-            return (
-              <button
-                key={status.key}
-                onClick={() => setActiveStatusTab(status.key)}
-                className={`px-4 py-2 rounded-lg text-sm font-medium transition inline-flex items-center gap-2 ${
-                  activeStatusTab === status.key ? status.badge : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
-                }`}
-              >
-                <StatusIcon className="w-4 h-4" />
-                {status.label} ({statusCounts[status.key]})
-              </button>
-            );
-          })}
-        </div>
+        {/* Busca e Filtros inline */}
+        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 p-3 bg-slate-50/50">
+          {/* Busca */}
+          <div className="relative flex-1">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+            <input
+              type="text"
+              value={filterSearch}
+              onChange={(event) => setFilterSearch(event.target.value)}
+              className="w-full pl-9 pr-3 py-2 bg-white border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
+              placeholder="Buscar prazo..."
+            />
+          </div>
 
-        {/* Botão para expandir/recolher filtros */}
-        <button
-          onClick={() => setFiltersExpanded(!filtersExpanded)}
-          className="flex items-center justify-between w-full px-4 py-3 bg-slate-50 hover:bg-slate-100 rounded-lg transition text-sm font-medium text-slate-700"
-        >
-          <span className="flex items-center gap-2">
-            <Search className="w-4 h-4" />
-            Filtros de busca
-            {(filterSearch || filterType || filterPriority) && (
-              <span className="px-2 py-0.5 bg-blue-500 text-white rounded-full text-xs">
-                Ativos
-              </span>
-            )}
-          </span>
-          {filtersExpanded ? (
-            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 15l7-7 7 7" />
-            </svg>
-          ) : (
-            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-            </svg>
-          )}
-        </button>
-
-        {/* Filtros (expansível) */}
-        {filtersExpanded && (
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mt-4">
-            <div className="relative">
-              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-slate-400 w-4 h-4" />
-              <input
-                type="text"
-                value={filterSearch}
-                onChange={(event) => setFilterSearch(event.target.value)}
-                className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
-                placeholder="Buscar por título ou descrição..."
-              />
-            </div>
-
+          {/* Filtros */}
+          <div className="flex items-center gap-2">
             <select
               value={filterType}
               onChange={(event) => setFilterType(event.target.value as DeadlineType | '')}
-              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+              className="px-3 py-2 bg-white border border-slate-200 rounded-lg text-xs focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
             >
-              <option value="">Todos os tipos</option>
+              <option value="">Tipo</option>
               {TYPE_OPTIONS.map((type) => (
-                <option key={type.key} value={type.key}>
-                  {type.label}
-                </option>
+                <option key={type.key} value={type.key}>{type.label}</option>
               ))}
             </select>
 
             <select
               value={filterPriority}
               onChange={(event) => setFilterPriority(event.target.value as DeadlinePriority | '')}
-              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+              className="px-3 py-2 bg-white border border-slate-200 rounded-lg text-xs focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
             >
-              <option value="">Todas as prioridades</option>
+              <option value="">Prioridade</option>
               {PRIORITY_OPTIONS.map((priority) => (
-                <option key={priority.key} value={priority.key}>
-                  {priority.label}
-                </option>
+                <option key={priority.key} value={priority.key}>{priority.label}</option>
               ))}
             </select>
-          </div>
-        )}
 
+            {(filterSearch || filterType || filterPriority) && (
+              <button
+                onClick={() => {
+                  setFilterSearch('');
+                  setFilterType('');
+                  setFilterPriority('');
+                }}
+                className="px-2 py-2 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-lg transition-all"
+                title="Limpar filtros"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            )}
+          </div>
+        </div>
       </div>
 
       {error && (
@@ -1585,60 +2897,96 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
       )}
 
       {viewMode === 'kanban' ? (
-        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
           {STATUS_FILTER_OPTIONS.map((statusOption) => {
             const StatusIcon = statusOption.icon;
             const statusDeadlines = filteredDeadlines.filter((d) => d.status === statusOption.key);
+            const columnColors: Record<string, { bg: string; border: string; headerBg: string }> = {
+              pendente: { bg: 'bg-blue-50/50', border: 'border-blue-200', headerBg: 'bg-blue-500' },
+              vencido: { bg: 'bg-red-50/50', border: 'border-red-200', headerBg: 'bg-red-500' },
+              cancelado: { bg: 'bg-slate-50/50', border: 'border-slate-200', headerBg: 'bg-slate-500' },
+            };
+            const colors = columnColors[statusOption.key] || columnColors.pendente;
+            
             return (
-              <div key={statusOption.key} className="bg-white border border-slate-200 rounded-xl p-4">
-                <div className="flex items-center justify-between mb-4">
+              <div key={statusOption.key} className={`${colors.bg} border ${colors.border} rounded-2xl overflow-hidden`}>
+                {/* Header da coluna */}
+                <div className={`${colors.headerBg} px-4 py-3 flex items-center justify-between`}>
                   <div className="flex items-center gap-2">
-                    <StatusIcon className="w-4 h-4" />
-                    <h4 className="text-sm font-semibold text-slate-900">{statusOption.label}</h4>
+                    <StatusIcon className="w-4 h-4 text-white" />
+                    <h4 className="text-sm font-semibold text-white">{statusOption.label}</h4>
                   </div>
-                  <span className="text-xs font-semibold text-slate-500">{statusDeadlines.length}</span>
+                  <span className="bg-white/20 text-white text-xs font-bold px-2 py-0.5 rounded-full">
+                    {statusDeadlines.length}
+                  </span>
                 </div>
-                <div className="space-y-3 max-h-[600px] overflow-y-auto">
+                
+                {/* Cards */}
+                <div className="p-3 space-y-2 max-h-[500px] overflow-y-auto">
                   {statusDeadlines.map((deadline) => {
                     const daysUntil = getDaysUntilDue(deadline.due_date);
                     const dueSoon = isDueSoon(deadline.due_date);
                     const priorityConfig = getPriorityConfig(deadline.priority);
                     const clientItem = deadline.client_id ? clientMap.get(deadline.client_id) : null;
+                    
                     return (
                       <div
                         key={deadline.id}
-                        className={`rounded-lg p-3 hover:shadow-md transition cursor-pointer border ${
-                          dueSoon ? 'bg-red-50 border-red-300' : 'bg-slate-50 border-slate-200'
+                        className={`bg-white rounded-xl p-3 shadow-sm hover:shadow-md transition-all cursor-pointer border-l-4 ${
+                          dueSoon || daysUntil < 0
+                            ? 'border-l-red-500'
+                            : deadline.priority === 'urgente'
+                            ? 'border-l-red-500'
+                            : deadline.priority === 'alta'
+                            ? 'border-l-orange-500'
+                            : deadline.priority === 'media'
+                            ? 'border-l-amber-500'
+                            : 'border-l-slate-300'
                         }`}
                         onClick={() => handleViewDeadline(deadline)}
                       >
-                        <div className="flex items-start justify-between mb-2">
-                          <h5 className="text-sm font-semibold text-slate-900 flex-1">{deadline.title}</h5>
+                        {/* Título e prioridade */}
+                        <div className="flex items-start justify-between gap-2 mb-2">
+                          <h5 className="text-sm font-semibold text-slate-800 line-clamp-2">{deadline.title}</h5>
                           {priorityConfig && (
-                            <span className={`ml-2 px-2 py-0.5 rounded-full text-xs font-semibold ${getPriorityBadge(deadline.priority)}`}>
-                              {priorityConfig.label}
+                            <span className={`flex-shrink-0 px-1.5 py-0.5 rounded text-[10px] font-bold ${getPriorityBadge(deadline.priority)}`}>
+                              {priorityConfig.label.slice(0, 3).toUpperCase()}
                             </span>
                           )}
                         </div>
+                        
+                        {/* Cliente */}
                         {clientItem && (
-                          <p className="text-xs text-slate-600 mb-2">{clientItem.full_name}</p>
+                          <p className="text-xs text-slate-500 mb-2 flex items-center gap-1">
+                            <UserCircle className="w-3 h-3" />
+                            <span className="truncate">{clientItem.full_name}</span>
+                          </p>
                         )}
-                        <div className="flex items-center justify-between text-xs">
-                          <span className="text-slate-500">{formatDate(deadline.due_date)}</span>
+                        
+                        {/* Data e dias */}
+                        <div className="flex items-center justify-between pt-2 border-t border-slate-100">
+                          <span className="text-[10px] text-slate-400">{formatDate(deadline.due_date)}</span>
                           {daysUntil >= 0 ? (
-                            <span className={`flex items-center gap-1 ${dueSoon ? 'text-red-600 font-semibold' : 'text-slate-600'}`}>
-                              {dueSoon && <Siren className="w-3 h-3" />}
-                              {daysUntil} dia(s)
+                            <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded ${
+                              dueSoon ? 'bg-red-100 text-red-700' : 'bg-slate-100 text-slate-600'
+                            }`}>
+                              {daysUntil === 0 ? 'Hoje' : daysUntil === 1 ? 'Amanhã' : `${daysUntil}d`}
                             </span>
                           ) : (
-                            <span className="text-red-600 font-semibold">Vencido</span>
+                            <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-red-500 text-white">
+                              {Math.abs(daysUntil)}d atrás
+                            </span>
                           )}
                         </div>
                       </div>
                     );
                   })}
+                  
                   {statusDeadlines.length === 0 && (
-                    <p className="text-xs text-slate-400 text-center py-8">Nenhum prazo neste status</p>
+                    <div className="text-center py-8">
+                      <StatusIcon className="w-8 h-8 text-slate-300 mx-auto mb-2" />
+                      <p className="text-xs text-slate-400">Nenhum prazo</p>
+                    </div>
                   )}
                 </div>
               </div>
@@ -1910,138 +3258,97 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
             })}
           </div>
 
-          {/* Desktop Table */}
-          <div className="hidden lg:block overflow-x-auto">
-            <table className="min-w-full divide-y divide-gray-200">
-              <thead className="bg-slate-50">
+          {/* Desktop Table - Compacta */}
+          <div className="hidden lg:block">
+            <table className="w-full">
+              <thead className="bg-slate-50 border-b border-slate-200">
                 <tr>
-                  <th className="px-6 py-4 text-left text-xs font-semibold text-slate-700 uppercase tracking-wider">
-                    Título
-                  </th>
-                  <th className="px-6 py-4 text-left text-xs font-semibold text-slate-700 uppercase tracking-wider">
-                    Vencimento
-                  </th>
-                  <th className="px-6 py-4 text-left text-xs font-semibold text-slate-700 uppercase tracking-wider">
-                    Dias Restantes
-                  </th>
-                  <th className="px-6 py-4 text-left text-xs font-semibold text-slate-700 uppercase tracking-wider">
-                    Cliente
-                  </th>
-                  <th className="px-6 py-4 text-left text-xs font-semibold text-slate-700 uppercase tracking-wider">
-                    Prioridade
-                  </th>
-                  <th className="px-6 py-4 text-left text-xs font-semibold text-slate-700 uppercase tracking-wider">
-                    Tipo
-                  </th>
-                  <th className="px-6 py-4 text-left text-xs font-semibold text-slate-700 uppercase tracking-wider">
-                    Responsável
-                  </th>
-                  <th className="px-6 py-4 text-left text-xs font-semibold text-slate-700 uppercase tracking-wider">
-                    Status
-                  </th>
-                  <th className="px-6 py-4 text-right text-xs font-semibold text-slate-700 uppercase tracking-wider">
-                    Ações
-                  </th>
+                  <th className="px-3 py-2 text-left text-[10px] font-semibold text-slate-600 uppercase">Prazo</th>
+                  <th className="px-3 py-2 text-left text-[10px] font-semibold text-slate-600 uppercase w-24">Vencimento</th>
+                  <th className="px-3 py-2 text-left text-[10px] font-semibold text-slate-600 uppercase w-16">Dias</th>
+                  <th className="px-3 py-2 text-left text-[10px] font-semibold text-slate-600 uppercase">Cliente / Prioridade</th>
+                  <th className="px-3 py-2 text-center text-[10px] font-semibold text-slate-600 uppercase w-32">Status</th>
+                  <th className="px-3 py-2 text-right text-[10px] font-semibold text-slate-600 uppercase w-24">Ações</th>
                 </tr>
               </thead>
-              <tbody className="bg-white divide-y divide-gray-200">
+              <tbody className="divide-y divide-slate-100">
                 {paginatedDeadlines.map((deadline) => {
                   const isUpdating = statusUpdatingId === deadline.id;
                   const priorityConfig = getPriorityConfig(deadline.priority);
-                  const typeConfig = getTypeConfig(deadline.type);
                   const daysUntil = getDaysUntilDue(deadline.due_date);
                   const dueSoon = isDueSoon(deadline.due_date);
                   const clientItem = deadline.client_id ? clientMap.get(deadline.client_id) : null;
-                  const responsibleItem = deadline.responsible_id ? memberMap.get(deadline.responsible_id) : null;
 
                   return (
                     <tr
                       key={deadline.id}
-                      className={`hover:bg-gray-50 transition-colors ${
-                        dueSoon && deadline.status === 'pendente' ? 'bg-red-50/70 animate-pulse' : ''
+                      className={`hover:bg-slate-50 transition-colors ${
+                        dueSoon && deadline.status === 'pendente' ? 'bg-red-50/50' : ''
                       }`}
                     >
-                      <td className="px-6 py-4">
-                        <div className="text-sm font-medium text-gray-900">{deadline.title}</div>
-                        {deadline.description && (
-                          <div className="text-xs text-slate-500 mt-1 truncate max-w-xs">{deadline.description}</div>
-                        )}
+                      <td className="px-3 py-2">
+                        <p className="text-sm font-medium text-slate-900 truncate max-w-[200px]">{deadline.title}</p>
                       </td>
-                      <td className="px-6 py-4 whitespace-nowrap">
-                        <div className="text-sm text-gray-900">{formatDate(deadline.due_date)}</div>
+                      <td className="px-3 py-2">
+                        <span className="text-xs text-slate-600">{formatDate(deadline.due_date)}</span>
                       </td>
-                      <td className="px-6 py-4 whitespace-nowrap">
+                      <td className="px-3 py-2">
                         {daysUntil >= 0 ? (
-                          <span className={`flex items-center gap-1 text-sm ${dueSoon ? 'text-red-600 font-semibold' : 'text-slate-700'}`}>
-                            {dueSoon && <Siren className="w-4 h-4" />}
-                            {daysUntil} dia(s)
+                          <span className={`text-xs font-semibold px-2 py-0.5 rounded ${
+                            dueSoon ? 'bg-red-100 text-red-700' : 'bg-slate-100 text-slate-600'
+                          }`}>
+                            {daysUntil === 0 ? 'Hoje' : daysUntil === 1 ? '1d' : `${daysUntil}d`}
                           </span>
                         ) : (
-                          <span className="text-sm text-red-600 font-semibold">Vencido há {Math.abs(daysUntil)} dia(s)</span>
+                          <span className="text-xs font-semibold px-2 py-0.5 rounded bg-red-500 text-white">
+                            -{Math.abs(daysUntil)}d
+                          </span>
                         )}
                       </td>
-                      <td className="px-6 py-4 whitespace-nowrap">
-                        <div className="text-sm text-gray-900">
-                          {clientItem ? clientItem.full_name : 'Não vinculado'}
-                        </div>
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap">
-                        <span className={`inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-semibold ${getPriorityBadge(deadline.priority)}`}>
-                          {priorityConfig && <priorityConfig.icon className="w-3 h-3" />}
-                          {getPriorityLabel(deadline.priority)}
-                        </span>
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap">
-                        <span className="inline-flex items-center gap-1 text-xs text-slate-700">
-                          {typeConfig && <typeConfig.icon className="w-3 h-3" />}
-                          {getTypeLabel(deadline.type)}
-                        </span>
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap">
-                        <span className="inline-flex items-center gap-2 text-xs text-slate-700">
-                          <UserCircle className="w-3 h-3" />
-                          {responsibleItem ? responsibleItem.name : 'Não definido'}
-                        </span>
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap">
+                      <td className="px-3 py-2">
                         <div className="flex items-center gap-2">
-                          <select
-                            value={deadline.status}
-                            onChange={(e) => handleStatusChange(deadline.id, e.target.value as DeadlineStatus)}
-                            disabled={isUpdating}
-                            className={`text-xs font-semibold px-3 py-1 rounded-full border-0 shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50 transition ${getStatusBadge(deadline.status)}`}
-                          >
-                            {STATUS_OPTIONS.map((opt) => (
-                              <option key={opt.key} value={opt.key}>
-                                {opt.label}
-                              </option>
-                            ))}
-                          </select>
-                          {isUpdating && <Loader2 className="w-4 h-4 text-blue-500 animate-spin" />}
+                          <span className="text-xs text-slate-700 truncate max-w-[120px]">
+                            {clientItem ? clientItem.full_name : '-'}
+                          </span>
+                          <span className={`inline-block px-1.5 py-0.5 rounded text-[9px] font-bold ${getPriorityBadge(deadline.priority)}`}>
+                            {priorityConfig?.label}
+                          </span>
                         </div>
                       </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
-                        <div className="flex items-center justify-end gap-2">
+                      <td className="px-3 py-2 text-center">
+                        <select
+                          value={deadline.status}
+                          onChange={(e) => handleStatusChange(deadline.id, e.target.value as DeadlineStatus)}
+                          disabled={isUpdating}
+                          className={`text-xs font-semibold px-2 py-1 rounded border-0 focus:outline-none focus:ring-1 focus:ring-blue-500 disabled:opacity-50 ${getStatusBadge(deadline.status)}`}
+                        >
+                          {STATUS_OPTIONS.map((opt) => (
+                            <option key={opt.key} value={opt.key}>{opt.label}</option>
+                          ))}
+                        </select>
+                      </td>
+                      <td className="px-3 py-2">
+                        <div className="flex items-center justify-end gap-1">
                           <button
                             onClick={() => handleViewDeadline(deadline)}
-                            className="text-cyan-600 hover:text-cyan-900 transition-colors"
-                            title="Ver detalhes"
+                            className="p-1.5 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded transition-colors"
+                            title="Ver"
                           >
-                            <Eye className="w-5 h-5" />
+                            <Eye className="w-4 h-4" />
                           </button>
                           <button
                             onClick={() => handleOpenModal(deadline)}
-                            className="text-blue-600 hover:text-blue-900 transition-colors"
+                            className="p-1.5 text-slate-400 hover:text-amber-600 hover:bg-amber-50 rounded transition-colors"
                             title="Editar"
                           >
-                            <Edit2 className="w-5 h-5" />
+                            <Edit2 className="w-4 h-4" />
                           </button>
                           <button
                             onClick={() => handleDeleteDeadline(deadline.id)}
-                            className="text-red-600 hover:text-red-900 transition-colors"
+                            className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded transition-colors"
                             title="Excluir"
                           >
-                            <Trash2 className="w-5 h-5" />
+                            <Trash2 className="w-4 h-4" />
                           </button>
                         </div>
                       </td>
@@ -2077,6 +3384,7 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
       )}
 
       {deadlineModal}
+      {reportModal}
 
       {/* Histórico de Prazos Cumpridos */}
       <div className="bg-white border border-slate-200 rounded-xl p-6">

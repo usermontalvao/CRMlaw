@@ -13,6 +13,7 @@ export type ModuleName =
   | 'agenda'
   | 'tarefas'
   | 'notificacoes'
+  | 'monitor'
   | 'login'
   | 'cron'
   | 'configuracoes';

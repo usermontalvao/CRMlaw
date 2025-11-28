@@ -21,6 +21,15 @@ import {
   Scale,
   ChevronRight,
   ExternalLink,
+  Zap,
+  BarChart3,
+  Wallet,
+  AlertTriangle,
+  CalendarDays,
+  Gavel,
+  Plus,
+  Eye,
+  Sparkles,
 } from 'lucide-react';
 import { clientService } from '../services/client.service';
 import { processService } from '../services/process.service';
@@ -394,9 +403,45 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToModule }) => {
     }).format(value);
   };
 
+  // Calcular saudação baseada na hora
+  const getGreeting = () => {
+    const hour = new Date().getHours();
+    if (hour < 12) return 'Bom dia';
+    if (hour < 18) return 'Boa tarde';
+    return 'Boa noite';
+  };
+
+  // Calcular alertas urgentes
+  const urgentAlerts = useMemo(() => {
+    const alerts: { type: string; count: number; color: string; icon: React.ReactNode; action: string }[] = [];
+    
+    if (pendingDeadlines > 0) {
+      const urgentDeadlines = deadlines.filter(d => {
+        if (d.status !== 'pendente') return false;
+        const dueDate = new Date(d.due_date!);
+        const today = new Date();
+        const diffDays = Math.ceil((dueDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+        return diffDays <= 3 && diffDays >= 0;
+      }).length;
+      if (urgentDeadlines > 0) {
+        alerts.push({ type: 'Prazos Urgentes', count: urgentDeadlines, color: 'red', icon: <AlertTriangle className="w-5 h-5" />, action: 'prazos' });
+      }
+    }
+    
+    if (djenIntimacoes.length > 0) {
+      alerts.push({ type: 'Intimações Não Lidas', count: djenIntimacoes.length, color: 'orange', icon: <Bell className="w-5 h-5" />, action: 'intimacoes' });
+    }
+    
+    if (financialStats && financialStats.overdue_installments > 0) {
+      alerts.push({ type: 'Parcelas Vencidas', count: financialStats.overdue_installments, color: 'amber', icon: <Wallet className="w-5 h-5" />, action: 'financeiro' });
+    }
+    
+    return alerts;
+  }, [pendingDeadlines, deadlines, djenIntimacoes, financialStats]);
+
   if (loading) {
     return (
-      <div className="flex h-96 items-center justify-center">
+      <div className="flex min-h-[400px] items-center justify-center">
         <div className="text-center">
           <div className="mx-auto mb-4 h-12 w-12 animate-spin rounded-full border-4 border-amber-600 border-t-transparent"></div>
           <p className="text-slate-600">Carregando dashboard...</p>
@@ -406,224 +451,210 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToModule }) => {
   }
 
   return (
-    <div className="space-y-5 bg-slate-50 -m-6 p-6 min-h-screen">
-      {/* Grid Layout Principal */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
-        {/* Estatísticas Gerais */}
-        <div className="bg-white rounded-xl p-5 shadow-sm border border-slate-200">
-          <div className="flex items-center justify-between mb-4">
-            <h2 className="text-sm font-bold text-slate-700 uppercase tracking-wide">Estatísticas Gerais</h2>
-            <button className="text-amber-500 hover:text-amber-600">
-              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 5v.01M12 12v.01M12 19v.01M12 6a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2z" />
-              </svg>
+    <div className="space-y-4 bg-slate-50 -m-6 p-4 sm:p-6 min-h-screen">
+      
+      {/* Header com Saudação - Compacto */}
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-xl sm:text-2xl font-bold text-slate-900">
+            {getGreeting()}! 👋
+          </h1>
+          <p className="text-slate-500 text-xs sm:text-sm">
+            {new Date().toLocaleDateString('pt-BR', { weekday: 'long', day: 'numeric', month: 'long' })}
+          </p>
+        </div>
+        <button
+          onClick={() => handleNavigate('clientes?mode=create')}
+          className="flex items-center gap-1.5 px-3 py-2 bg-amber-500 hover:bg-amber-600 text-white rounded-lg font-semibold text-xs transition-all shadow-md"
+        >
+          <Plus className="w-3.5 h-3.5" />
+          <span className="hidden sm:inline">Novo Cliente</span>
+        </button>
+      </div>
+
+      {/* Alertas Urgentes - Compacto */}
+      {urgentAlerts.length > 0 && (
+        <div className="flex flex-wrap items-center gap-2 p-3 bg-gradient-to-r from-red-500 to-orange-500 rounded-xl shadow-md">
+          <div className="flex items-center gap-2 text-white">
+            <AlertTriangle className="w-4 h-4" />
+            <span className="text-sm font-semibold">Atenção:</span>
+          </div>
+          {urgentAlerts.map((alert, index) => (
+            <button
+              key={index}
+              onClick={() => handleNavigate(alert.action)}
+              className="flex items-center gap-2 bg-white/20 hover:bg-white/30 rounded-lg px-3 py-1.5 transition-all group"
+            >
+              <span className="text-white text-xs font-medium">{alert.type}</span>
+              <span className="bg-white text-red-600 text-xs font-bold px-1.5 py-0.5 rounded-full">{alert.count}</span>
+            </button>
+          ))}
+        </div>
+      )}
+
+      {/* Grid de Estatísticas Principais - Compacto */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+        <button
+          onClick={() => handleNavigate('clientes')}
+          className="group bg-white rounded-xl p-4 shadow-sm border border-slate-200 hover:shadow-md hover:border-blue-200 transition-all text-left"
+        >
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-lg bg-blue-500 flex items-center justify-center">
+              <Users className="w-5 h-5 text-white" />
+            </div>
+            <div>
+              <p className="text-2xl font-bold text-slate-900">{activeClients}</p>
+              <p className="text-xs text-slate-500">Clientes</p>
+            </div>
+          </div>
+        </button>
+
+        <button
+          onClick={() => handleNavigate('processos')}
+          className="group bg-white rounded-xl p-4 shadow-sm border border-slate-200 hover:shadow-md hover:border-purple-200 transition-all text-left"
+        >
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-lg bg-purple-500 flex items-center justify-center">
+              <Gavel className="w-5 h-5 text-white" />
+            </div>
+            <div>
+              <p className="text-2xl font-bold text-slate-900">{activeProcesses}</p>
+              <p className="text-xs text-slate-500">Processos</p>
+            </div>
+          </div>
+        </button>
+
+        <button
+          onClick={() => handleNavigate('prazos')}
+          className="group bg-white rounded-xl p-4 shadow-sm border border-slate-200 hover:shadow-md hover:border-red-200 transition-all text-left"
+        >
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-lg bg-red-500 flex items-center justify-center">
+              <CalendarDays className="w-5 h-5 text-white" />
+            </div>
+            <div>
+              <p className="text-2xl font-bold text-slate-900">{pendingDeadlines}</p>
+              <p className="text-xs text-slate-500">Prazos</p>
+            </div>
+          </div>
+        </button>
+
+        <button
+          onClick={() => handleNavigate('tarefas')}
+          className="group bg-white rounded-xl p-4 shadow-sm border border-slate-200 hover:shadow-md hover:border-amber-200 transition-all text-left"
+        >
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-lg bg-amber-500 flex items-center justify-center">
+              <CheckSquare className="w-5 h-5 text-white" />
+            </div>
+            <div>
+              <p className="text-2xl font-bold text-slate-900">{pendingTasks}</p>
+              <p className="text-xs text-slate-500">Tarefas</p>
+            </div>
+          </div>
+        </button>
+      </div>
+
+      {/* Controle Financeiro - Compacto */}
+      {financialStats && (
+        <div className="bg-gradient-to-r from-emerald-600 to-teal-600 rounded-xl p-4 shadow-md">
+          <div className="flex items-center justify-between mb-3">
+            <div className="flex items-center gap-2">
+              <Wallet className="w-5 h-5 text-white" />
+              <h2 className="text-sm font-bold text-white">Financeiro</h2>
+            </div>
+            <button
+              onClick={() => handleNavigate('financeiro')}
+              className="text-white/80 hover:text-white text-xs font-medium flex items-center gap-1"
+            >
+              Ver mais <ChevronRight className="w-3 h-3" />
             </button>
           </div>
           
-          <div className="grid grid-cols-2 gap-4">
-            <div 
-              onClick={() => handleNavigate('clientes')}
-              className="flex items-center gap-3 p-3 rounded-lg bg-blue-50 border border-blue-100 cursor-pointer hover:bg-blue-100 hover:border-blue-200 transition-all duration-200 hover:scale-105"
-            >
-              <div className="w-10 h-10 rounded-lg bg-blue-100 flex items-center justify-center">
-                <Users className="w-5 h-5 text-blue-600" />
-              </div>
-              <div>
-                <p className="text-2xl font-bold text-slate-900">{activeClients}</p>
-                <p className="text-xs text-slate-600">Clientes Ativos</p>
-              </div>
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+            <div className="bg-white/10 rounded-lg p-3">
+              <p className="text-[10px] text-white/60 mb-1">Honorários</p>
+              <p className="text-lg font-bold text-white">{formatCurrency(financialStats.monthly_fees_received)}</p>
             </div>
-
-            <div 
-              onClick={() => handleNavigate('processos')}
-              className="flex items-center gap-3 p-3 rounded-lg bg-purple-50 border border-purple-100 cursor-pointer hover:bg-purple-100 hover:border-purple-200 transition-all duration-200 hover:scale-105"
-            >
-              <div className="w-10 h-10 rounded-lg bg-purple-100 flex items-center justify-center">
-                <Briefcase className="w-5 h-5 text-purple-600" />
-              </div>
-              <div>
-                <p className="text-2xl font-bold text-slate-900">{activeProcesses}</p>
-                <p className="text-xs text-slate-600">Processos</p>
-              </div>
+            <div className="bg-white/10 rounded-lg p-3">
+              <p className="text-[10px] text-white/60 mb-1">Recebidos</p>
+              <p className="text-lg font-bold text-emerald-300">{financialStats.paid_installments} <span className="text-xs font-normal text-white/50">parc.</span></p>
             </div>
-
-            <div 
-              onClick={() => handleNavigate('prazos')}
-              className="flex items-center gap-3 p-3 rounded-lg bg-red-50 border border-red-100 cursor-pointer hover:bg-red-100 hover:border-red-200 transition-all duration-200 hover:scale-105"
-            >
-              <div className="w-10 h-10 rounded-lg bg-red-100 flex items-center justify-center">
-                <AlertCircle className="w-5 h-5 text-red-600" />
-              </div>
-              <div>
-                <p className="text-2xl font-bold text-slate-900">{pendingDeadlines}</p>
-                <p className="text-xs text-slate-600">Prazos Pendentes</p>
-              </div>
+            <div className="bg-white/10 rounded-lg p-3">
+              <p className="text-[10px] text-white/60 mb-1">Pendentes</p>
+              <p className="text-lg font-bold text-amber-300">{formatCurrency(financialStats.monthly_fees_pending)}</p>
             </div>
-
-            <div 
-              onClick={() => handleNavigate('tarefas')}
-              className="flex items-center gap-3 p-3 rounded-lg bg-amber-50 border border-amber-100 cursor-pointer hover:bg-amber-100 hover:border-amber-200 transition-all duration-200 hover:scale-105"
-            >
-              <div className="w-10 h-10 rounded-lg bg-amber-100 flex items-center justify-center">
-                <Clock className="w-5 h-5 text-amber-600" />
-              </div>
-              <div>
-                <p className="text-2xl font-bold text-slate-900">{pendingTasks}</p>
-                <p className="text-xs text-slate-600">Tarefas Pendentes</p>
-              </div>
+            <div className="bg-white/10 rounded-lg p-3">
+              <p className="text-[10px] text-white/60 mb-1">Vencidos</p>
+              <p className="text-lg font-bold text-red-300">{formatCurrency(financialStats.total_overdue)}</p>
             </div>
           </div>
         </div>
+      )}
 
-        {/* Controle Financeiro */}
-        {financialStats && (
-          <div className="bg-white rounded-xl p-5 shadow-sm border border-slate-200">
-            <div className="flex items-center justify-between mb-4">
-              <h2 className="text-sm font-bold text-slate-700 uppercase tracking-wide">Controle Financeiro</h2>
-              <button className="text-amber-500 hover:text-amber-600">
-                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 5v.01M12 12v.01M12 19v.01M12 6a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2z" />
-                </svg>
-              </button>
-            </div>
-
-            <div className="grid grid-cols-2 gap-4">
-              <div className="p-3 rounded-lg bg-amber-50 border border-amber-100">
-                <div className="flex items-center gap-2 mb-2">
-                  <div className="w-6 h-6 rounded bg-amber-100 flex items-center justify-center">
-                    <DollarSign className="w-4 h-4 text-amber-600" />
-                  </div>
-                  <p className="text-xs font-semibold text-slate-600">Honorários do mês</p>
-                </div>
-                <p className="text-xl font-bold text-slate-900">{formatCurrency(financialStats.monthly_fees_received)}</p>
-              </div>
-
-              <div className="p-3 rounded-lg bg-emerald-50 border border-emerald-100">
-                <div className="flex items-center gap-2 mb-2">
-                  <div className="w-6 h-6 rounded bg-emerald-100 flex items-center justify-center">
-                    <TrendingUp className="w-4 h-4 text-emerald-600" />
-                  </div>
-                  <p className="text-xs font-semibold text-slate-600">Recebidos ({financialStats.paid_installments} parc.)</p>
-                </div>
-                <p className="text-xl font-bold text-slate-900">{formatCurrency(financialStats.monthly_fees_received)}</p>
-              </div>
-
-              <div className="p-3 rounded-lg bg-amber-50 border border-amber-100">
-                <div className="flex items-center gap-2 mb-2">
-                  <div className="w-6 h-6 rounded bg-amber-100 flex items-center justify-center">
-                    <Clock className="w-4 h-4 text-amber-600" />
-                  </div>
-                  <p className="text-xs font-semibold text-slate-600">Pendentes ({financialStats.pending_installments} parc.)</p>
-                </div>
-                <p className="text-xl font-bold text-slate-900">{formatCurrency(financialStats.monthly_fees_pending)}</p>
-              </div>
-
-              <div className="p-3 rounded-lg bg-red-50 border border-red-100">
-                <div className="flex items-center gap-2 mb-2">
-                  <div className="w-6 h-6 rounded bg-red-100 flex items-center justify-center">
-                    <X className="w-4 h-4 text-red-600" />
-                  </div>
-                  <p className="text-xs font-semibold text-slate-600">Vencidos ({financialStats.overdue_installments} parc.)</p>
-                </div>
-                <p className="text-xl font-bold text-slate-900">{formatCurrency(financialStats.total_overdue)}</p>
-              </div>
-            </div>
-          </div>
-        )}
-      </div>
-
-      {/* Ações Rápidas */}
-      <div className="bg-white rounded-xl p-5 shadow-sm border border-slate-200">
-        <div className="flex items-center justify-between mb-4">
-          <h2 className="text-sm font-bold text-slate-700 uppercase tracking-wide">Ações Rápidas</h2>
-          <button className="text-amber-500 hover:text-amber-600">
-            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 5v.01M12 12v.01M12 19v.01M12 6a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2z" />
-            </svg>
-          </button>
-        </div>
-        
-        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
-          <button
-            onClick={() => handleNavigate('clientes?mode=create')}
-            className="flex items-center justify-center gap-2 p-3 rounded-lg bg-amber-500 hover:bg-amber-600 text-white transition-colors"
-          >
-            <UserPlus className="w-4 h-4" />
-            <span className="text-sm font-semibold">Novo Cliente</span>
-          </button>
-          
-          <button
-            onClick={() => handleNavigate('processos?mode=create')}
-            className="flex items-center justify-center gap-2 p-3 rounded-lg border border-slate-200 hover:border-slate-300 hover:bg-slate-50 text-slate-700 transition-colors"
-          >
-            <FileText className="w-4 h-4" />
-            <span className="text-sm font-semibold">Processo</span>
-          </button>
-          
-          <button
-            onClick={() => handleNavigate('prazos?mode=create')}
-            className="flex items-center justify-center gap-2 p-3 rounded-lg border border-slate-200 hover:border-slate-300 hover:bg-slate-50 text-slate-700 transition-colors"
-          >
-            <Calendar className="w-4 h-4" />
-            <span className="text-sm font-semibold">Prazo</span>
-          </button>
-          
-          <button
-            onClick={() => handleNavigate('tarefas?mode=create')}
-            className="flex items-center justify-center gap-2 p-3 rounded-lg border border-slate-200 hover:border-slate-300 hover:bg-slate-50 text-slate-700 transition-colors"
-          >
-            <CheckSquare className="w-4 h-4" />
-            <span className="text-sm font-semibold">Tarefa</span>
-          </button>
-          
-          <button
-            onClick={() => handleNavigate('financeiro')}
-            className="flex items-center justify-center gap-2 p-3 rounded-lg border border-slate-200 hover:border-slate-300 hover:bg-slate-50 text-slate-700 transition-colors"
-          >
-            <DollarSign className="w-4 h-4" />
-            <span className="text-sm font-semibold">Financeiro</span>
-          </button>
-        </div>
+      {/* Ações Rápidas - Compactas */}
+      <div className="flex flex-wrap gap-2">
+        <button
+          onClick={() => handleNavigate('clientes?mode=create')}
+          className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-blue-50 hover:bg-blue-100 text-blue-700 font-medium text-xs transition-all"
+        >
+          <UserPlus className="w-3.5 h-3.5" />
+          <span>Cliente</span>
+        </button>
+        <button
+          onClick={() => handleNavigate('processos?mode=create')}
+          className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-purple-50 hover:bg-purple-100 text-purple-700 font-medium text-xs transition-all"
+        >
+          <FileText className="w-3.5 h-3.5" />
+          <span>Processo</span>
+        </button>
+        <button
+          onClick={() => handleNavigate('prazos?mode=create')}
+          className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-red-50 hover:bg-red-100 text-red-700 font-medium text-xs transition-all"
+        >
+          <CalendarDays className="w-3.5 h-3.5" />
+          <span>Prazo</span>
+        </button>
+        <button
+          onClick={() => handleNavigate('agenda?mode=create')}
+          className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-emerald-50 hover:bg-emerald-100 text-emerald-700 font-medium text-xs transition-all"
+        >
+          <Calendar className="w-3.5 h-3.5" />
+          <span>Compromisso</span>
+        </button>
       </div>
 
       {/* Grid de Widgets Principais - Agenda e DJEN */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
         {/* Widget de Agenda - Destaque (2 colunas) */}
-        <div className="lg:col-span-2 bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 rounded-2xl shadow-2xl overflow-hidden">
+        <div className="lg:col-span-2 bg-gradient-to-br from-slate-800 to-slate-900 rounded-xl shadow-lg overflow-hidden">
         <div className="relative">
-          <div className="absolute inset-0 bg-gradient-to-r from-blue-600/10 via-transparent to-purple-600/10" />
-          <div className="relative p-6">
-            <div className="flex items-center justify-between mb-6">
-              <div className="flex items-center gap-3">
-                <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-blue-500 to-blue-600 flex items-center justify-center shadow-lg">
-                  <Calendar className="w-6 h-6 text-white" />
+          <div className="relative p-4">
+            <div className="flex items-center justify-between mb-4">
+              <div className="flex items-center gap-2">
+                <div className="w-9 h-9 rounded-lg bg-blue-600 flex items-center justify-center">
+                  <Calendar className="w-5 h-5 text-white" />
                 </div>
                 <div>
-                  <h2 className="text-lg font-bold text-white">Agenda Jurídica</h2>
-                  <p className="text-xs text-white/70">Próximos compromissos e prazos</p>
+                  <h2 className="text-sm font-bold text-white">Agenda Jurídica</h2>
+                  <p className="text-[10px] text-white/60">{upcomingEvents.length} compromisso{upcomingEvents.length !== 1 ? 's' : ''}</p>
                 </div>
               </div>
-              <button
-                onClick={() => handleNavigate('agenda')}
-                className="px-4 py-2 bg-white/10 hover:bg-white/20 text-white rounded-xl text-xs font-semibold transition-all duration-200 hover:scale-105 border border-white/20"
-              >
-                Ver Agenda Completa →
-              </button>
             </div>
 
             {upcomingEvents.length === 0 ? (
-              <div className="bg-white/5 rounded-xl p-8 text-center border border-white/10">
-                <Calendar className="w-12 h-12 text-white/30 mx-auto mb-3" />
+              <div className="bg-white/5 rounded-lg p-6 text-center border border-white/10">
+                <Calendar className="w-10 h-10 text-white/30 mx-auto mb-2" />
                 <p className="text-white/60 text-sm">Nenhum compromisso agendado</p>
                 <button
                   onClick={() => handleNavigate('agenda')}
-                  className="mt-4 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-semibold transition-all"
+                  className="mt-3 px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-semibold transition-all"
                 >
                   Criar Compromisso
                 </button>
               </div>
             ) : (
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2">
                 {upcomingEvents.slice(0, 6).map((event, index) => {
                   const eventDate = new Date(event.start_at);
                   const isToday = eventDate.toDateString() === new Date().toDateString();
@@ -632,192 +663,126 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToModule }) => {
                   return (
                     <div 
                       key={event.id} 
-                      className="group relative bg-white/10 hover:bg-white/15 backdrop-blur-sm rounded-xl p-4 border border-white/20 hover:border-white/30 transition-all duration-200 hover:scale-105 cursor-pointer"
+                      className="group relative bg-white/10 hover:bg-white/15 rounded-lg p-3 border border-white/10 hover:border-white/20 transition-all cursor-pointer"
                       onClick={(e) => {
                         e.stopPropagation();
                         setSelectedEvent(event);
                       }}
                     >
-                      <div className="flex items-start gap-3">
-                        <div className={`w-10 h-10 rounded-lg flex items-center justify-center flex-shrink-0 ${
-                          isToday ? 'bg-amber-500' : isTomorrow ? 'bg-blue-500' : 'bg-white/20'
+                      <div className="flex items-center gap-2">
+                        <div className={`w-8 h-8 rounded flex items-center justify-center flex-shrink-0 text-xs font-bold ${
+                          isToday ? 'bg-amber-500 text-white' : isTomorrow ? 'bg-blue-500 text-white' : 'bg-white/20 text-white'
                         }`}>
-                          <Calendar className="w-5 h-5 text-white" />
+                          {eventDate.getDate()}
                         </div>
                         <div className="flex-1 min-w-0">
-                          <div className="flex items-center gap-2 mb-1">
-                            <span className="text-xs font-bold text-white/90">
-                              {eventDate.toLocaleDateString('pt-BR', { day: '2-digit', month: 'short' })}
-                            </span>
-                            {isToday && (
-                              <span className="px-2 py-0.5 bg-amber-500 text-white text-[10px] font-bold rounded-full">
-                                HOJE
-                              </span>
-                            )}
-                            {isTomorrow && (
-                              <span className="px-2 py-0.5 bg-blue-500 text-white text-[10px] font-bold rounded-full">
-                                AMANHÃ
-                              </span>
-                            )}
-                          </div>
-                          <p className="text-sm font-semibold text-white truncate group-hover:text-blue-200 transition-colors">
+                          <p className="text-xs font-medium text-white truncate">
                             {event.title}
                           </p>
-                          <p className="text-xs text-white/60 mt-1">
+                          <p className="text-[10px] text-white/50">
                             {eventDate.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}
+                            {isToday && <span className="ml-1 text-amber-400">• Hoje</span>}
+                            {isTomorrow && <span className="ml-1 text-blue-400">• Amanhã</span>}
                           </p>
                         </div>
                       </div>
-                      {/* Seta indicando sequência */}
-                      {index < upcomingEvents.slice(0, 6).length - 1 && (
-                        <div className="absolute -right-4 top-1/2 -translate-y-1/2 z-10 hidden lg:block">
-                          <ChevronRight className="w-6 h-6 text-white/40" />
-                        </div>
-                      )}
                     </div>
                   );
                 })}
               </div>
             )}
             
-            {/* Botão Ver Agenda Completa - Sempre Visível */}
-            <div className="mt-6 pt-4 border-t border-white/10">
+            {/* Botão Ver Agenda Completa */}
+            <div className="mt-4 pt-3 border-t border-white/10">
               <button
                 onClick={() => handleNavigate('agenda')}
-                className="w-full flex items-center justify-center gap-3 px-6 py-3 bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-500 hover:to-blue-600 text-white rounded-xl font-semibold transition-all duration-200 hover:scale-105 shadow-lg hover:shadow-xl"
+                className="w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-blue-600 hover:bg-blue-500 text-white rounded-lg font-medium text-sm transition-all"
               >
-                <Calendar className="w-5 h-5" />
                 Ver Agenda Completa
                 <ArrowRight className="w-4 h-4" />
               </button>
             </div>
           </div>
         </div>
-      </div>
+        </div>
 
-      {/* Widget de Intimações DJEN - Destaque (1 coluna) */}
-      <div className="lg:col-span-1 bg-gradient-to-br from-red-900 via-red-800 to-red-900 rounded-2xl shadow-2xl overflow-hidden">
-        <div className="relative">
-          <div className="absolute inset-0 bg-gradient-to-r from-orange-600/10 via-transparent to-red-600/10" />
-          <div className="relative p-6">
-            <div className="flex items-center justify-between mb-6">
-              <div className="flex items-center gap-3">
-                <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-red-500 to-red-600 flex items-center justify-center shadow-lg">
-                  <Bell className="w-6 h-6 text-white" />
+        {/* Widget de Intimações DJEN */}
+      <div className="lg:col-span-1 bg-gradient-to-br from-red-800 to-red-900 rounded-xl shadow-lg overflow-hidden">
+        <div className="relative p-4">
+            <div className="flex items-center justify-between mb-3">
+              <div className="flex items-center gap-2">
+                <div className="w-9 h-9 rounded-lg bg-red-600 flex items-center justify-center">
+                  <Bell className="w-5 h-5 text-white" />
                 </div>
                 <div>
-                  <h2 className="text-lg font-bold text-white">Intimações DJEN</h2>
-                  <p className="text-xs text-white/70">Comunicações não lidas do Diário Eletrônico</p>
+                  <h2 className="text-sm font-bold text-white">Intimações DJEN</h2>
+                  <p className="text-[10px] text-white/60">{djenIntimacoes.length} não lida{djenIntimacoes.length !== 1 ? 's' : ''}</p>
                 </div>
               </div>
-              <div className="flex items-center gap-2">
-                {djenIntimacoes.length > 0 && (
-                  <span className="px-3 py-1 bg-red-500 text-white text-xs font-bold rounded-full animate-pulse">
-                    {djenIntimacoes.length} NOVA{djenIntimacoes.length > 1 ? 'S' : ''}
-                  </span>
-                )}
-                <button
-                  onClick={() => handleNavigate('intimacoes')}
-                  className="px-4 py-2 bg-white/10 hover:bg-white/20 text-white rounded-xl text-xs font-semibold transition-all duration-200 hover:scale-105 border border-white/20"
-                >
-                  Ver Todas →
-                </button>
-              </div>
+              {djenIntimacoes.length > 0 && (
+                <span className="px-2 py-0.5 bg-red-500 text-white text-[10px] font-bold rounded-full animate-pulse">
+                  {djenIntimacoes.length}
+                </span>
+              )}
             </div>
 
-            {/* Estatísticas de Urgência */}
+            {/* Estatísticas de Urgência - Compacto */}
             {djenIntimacoes.length > 0 && (djenUrgencyStats.alta > 0 || djenUrgencyStats.media > 0 || djenUrgencyStats.baixa > 0) && (
-              <div className="mb-4 grid grid-cols-3 gap-2">
+              <div className="mb-3 flex gap-2">
                 {djenUrgencyStats.alta > 0 && (
-                  <div className="bg-red-500/20 border border-red-400/30 rounded-lg p-2 text-center">
-                    <div className="text-2xl font-bold text-white">{djenUrgencyStats.alta}</div>
-                    <div className="text-[10px] text-white/80 font-semibold uppercase">🔴 Alta</div>
+                  <div className="flex items-center gap-1 bg-red-500/30 rounded px-2 py-1">
+                    <span className="text-sm font-bold text-white">{djenUrgencyStats.alta}</span>
+                    <span className="text-[10px] text-white/80">Alta</span>
                   </div>
                 )}
                 {djenUrgencyStats.media > 0 && (
-                  <div className="bg-yellow-500/20 border border-yellow-400/30 rounded-lg p-2 text-center">
-                    <div className="text-2xl font-bold text-white">{djenUrgencyStats.media}</div>
-                    <div className="text-[10px] text-white/80 font-semibold uppercase">🟡 Média</div>
+                  <div className="flex items-center gap-1 bg-yellow-500/30 rounded px-2 py-1">
+                    <span className="text-sm font-bold text-white">{djenUrgencyStats.media}</span>
+                    <span className="text-[10px] text-white/80">Média</span>
                   </div>
                 )}
                 {djenUrgencyStats.baixa > 0 && (
-                  <div className="bg-green-500/20 border border-green-400/30 rounded-lg p-2 text-center">
-                    <div className="text-2xl font-bold text-white">{djenUrgencyStats.baixa}</div>
-                    <div className="text-[10px] text-white/80 font-semibold uppercase">🟢 Baixa</div>
+                  <div className="flex items-center gap-1 bg-green-500/30 rounded px-2 py-1">
+                    <span className="text-sm font-bold text-white">{djenUrgencyStats.baixa}</span>
+                    <span className="text-[10px] text-white/80">Baixa</span>
                   </div>
                 )}
               </div>
             )}
 
             {djenIntimacoes.length === 0 ? (
-              <div className="bg-white/5 rounded-xl p-8 text-center border border-white/10">
-                <Scale className="w-12 h-12 text-white/30 mx-auto mb-3" />
-                <p className="text-white/60 text-sm">Nenhuma intimação não lida</p>
-                <p className="text-white/40 text-xs mt-1">Todas as comunicações estão em dia</p>
+              <div className="bg-white/5 rounded-lg p-4 text-center border border-white/10">
+                <Scale className="w-8 h-8 text-white/30 mx-auto mb-2" />
+                <p className="text-white/60 text-xs">Nenhuma intimação não lida</p>
               </div>
             ) : (
-              <div className="space-y-3">
+              <div className="space-y-2">
                 {djenIntimacoes.slice(0, 3).map((intimacao) => {
                   const dataDisponibilizacao = new Date(intimacao.data_disponibilizacao);
-                  const isRecent = Date.now() - dataDisponibilizacao.getTime() < 24 * 60 * 60 * 1000; // últimas 24h
-                  
-                  // Buscar cliente vinculado
-                  const client = intimacao.client_id ? clientMap.get(intimacao.client_id) : null;
-                  
-                  // Buscar análise de IA (se disponível no estado djenUrgencyStats)
-                  const hasAnalysis = djenUrgencyStats.alta > 0 || djenUrgencyStats.media > 0 || djenUrgencyStats.baixa > 0;
+                  const isRecent = Date.now() - dataDisponibilizacao.getTime() < 24 * 60 * 60 * 1000;
                   
                   return (
                     <div 
                       key={intimacao.id} 
-                      className="group bg-white/10 hover:bg-white/15 backdrop-blur-sm rounded-xl p-4 border border-white/20 hover:border-white/30 transition-all duration-200 hover:scale-105 cursor-pointer"
+                      className="bg-white/10 hover:bg-white/15 rounded-lg p-2.5 border border-white/10 cursor-pointer transition-all"
                       onClick={(e) => {
                         e.stopPropagation();
                         setSelectedIntimacao(intimacao);
                       }}
                     >
-                      <div className="flex items-start gap-3">
-                        <div className={`w-10 h-10 rounded-lg flex items-center justify-center flex-shrink-0 ${
-                          isRecent ? 'bg-orange-500 animate-pulse' : 'bg-white/20'
+                      <div className="flex items-center gap-2">
+                        <div className={`w-7 h-7 rounded flex items-center justify-center flex-shrink-0 text-[10px] font-bold ${
+                          isRecent ? 'bg-orange-500 text-white' : 'bg-white/20 text-white'
                         }`}>
-                          <Bell className="w-5 h-5 text-white" />
+                          {dataDisponibilizacao.getDate()}
                         </div>
                         <div className="flex-1 min-w-0">
-                          <div className="flex items-center gap-2 mb-1">
-                            <span className="text-xs font-bold text-white/90">
-                              {dataDisponibilizacao.toLocaleDateString('pt-BR', { day: '2-digit', month: 'short' })}
-                            </span>
-                            <span className="text-xs text-white/60">•</span>
-                            <span className="text-xs text-white/60 uppercase font-semibold">
-                              {intimacao.sigla_tribunal}
-                            </span>
-                            {isRecent && (
-                              <span className="px-2 py-0.5 bg-orange-500 text-white text-[10px] font-bold rounded-full">
-                                NOVA
-                              </span>
-                            )}
-                          </div>
-                          
-                          {/* Nome do Cliente */}
-                          {client && (
-                            <p className="text-sm font-bold text-white mb-1 truncate">
-                              {client.full_name}
-                            </p>
-                          )}
-                          
-                          <p className="text-sm font-semibold text-white/90 truncate group-hover:text-red-200 transition-colors">
+                          <p className="text-xs font-medium text-white truncate">
                             {intimacao.tipo_comunicacao || 'Comunicação'}
                           </p>
-                          <p className="text-xs text-white/60 mt-1 truncate">
-                            Processo: {intimacao.numero_processo_mascara || intimacao.numero_processo}
+                          <p className="text-[10px] text-white/50 truncate">
+                            {intimacao.sigla_tribunal} • {intimacao.numero_processo_mascara || intimacao.numero_processo}
                           </p>
-                          
-                          {/* Resumo da IA (placeholder - será preenchido quando análise estiver disponível) */}
-                          {hasAnalysis && (
-                            <p className="text-xs text-white/70 mt-2 line-clamp-2 italic">
-                              💡 Clique para ver análise de IA
-                            </p>
-                          )}
                         </div>
                       </div>
                     </div>
@@ -826,69 +791,88 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToModule }) => {
               </div>
             )}
             
-            {/* Botão Ver Todas - Sempre Visível */}
-            <div className="mt-6 pt-4 border-t border-white/10">
+            {/* Botão Ver Todas */}
+            <div className="mt-3 pt-3 border-t border-white/10">
               <button
                 onClick={() => handleNavigate('intimacoes')}
-                className="w-full flex items-center justify-center gap-3 px-6 py-3 bg-gradient-to-r from-red-600 to-red-700 hover:from-red-500 hover:to-red-600 text-white rounded-xl font-semibold transition-all duration-200 hover:scale-105 shadow-lg hover:shadow-xl"
+                className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-red-600 hover:bg-red-500 text-white rounded-lg font-medium text-sm transition-all"
               >
-                <Bell className="w-5 h-5" />
-                Ver Todas as Intimações
+                Ver Todas Intimações
                 <ArrowRight className="w-4 h-4" />
               </button>
             </div>
-          </div>
-        </div>
         </div>
       </div>
+      </div>
 
-      {/* Grid de 3 Colunas */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
+      {/* Grid de 2 Colunas - Prazos e Tarefas */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
 
           {/* Próximos Prazos */}
-          <div className="bg-white rounded-xl p-5 shadow-sm border border-slate-200">
+          <div className="bg-white rounded-2xl p-5 shadow-sm border border-slate-200 hover:shadow-md transition-shadow">
             <div className="mb-4 flex items-center justify-between">
-              <h2 className="text-sm font-bold text-slate-700 uppercase tracking-wide">Próximos Prazos</h2>
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-red-500 to-red-600 flex items-center justify-center">
+                  <CalendarDays className="w-5 h-5 text-white" />
+                </div>
+                <div>
+                  <h2 className="text-sm font-bold text-slate-800">Próximos Prazos</h2>
+                  <p className="text-xs text-slate-500">{upcomingDeadlines.length} pendente{upcomingDeadlines.length !== 1 ? 's' : ''}</p>
+                </div>
+              </div>
               <button
                 onClick={() => handleNavigate('prazos')}
-                className="text-red-500 hover:text-red-600"
+                className="flex items-center gap-1 text-red-500 hover:text-red-600 text-xs font-semibold"
               >
-                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-                </svg>
+                Ver todos
+                <ChevronRight className="w-4 h-4" />
               </button>
             </div>
             {upcomingDeadlines.length === 0 ? (
-              <p className="text-center text-sm text-slate-500">Nenhum prazo pendente</p>
+              <div className="text-center py-8">
+                <CalendarDays className="w-10 h-10 text-slate-300 mx-auto mb-2" />
+                <p className="text-sm text-slate-500">Nenhum prazo pendente</p>
+              </div>
             ) : (
-              <div className="space-y-3">
+              <div className="space-y-2">
                 {upcomingDeadlines.map((deadline) => {
                   const client = deadline.client_id ? clientMap.get(deadline.client_id) : null;
+                  const dueDate = new Date(deadline.due_date!);
+                  const today = new Date();
+                  const diffDays = Math.ceil((dueDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+                  const isUrgent = diffDays <= 3;
+                  
                   return (
                     <div
                       key={deadline.id}
-                      className="flex items-start gap-3 rounded-lg border border-slate-100 bg-slate-50 p-3"
+                      onClick={() => handleNavigate('prazos')}
+                      className={`flex items-center gap-3 rounded-xl p-3 cursor-pointer transition-all hover:scale-[1.02] ${
+                        isUrgent ? 'bg-red-50 border border-red-100' : 'bg-slate-50 border border-slate-100'
+                      }`}
                     >
-                      <div className="rounded-lg bg-amber-100 p-2 text-amber-600">
-                        <AlertCircle className="h-4 w-4" />
+                      <div className={`w-10 h-10 rounded-lg flex items-center justify-center flex-shrink-0 ${
+                        isUrgent ? 'bg-red-100' : 'bg-slate-200'
+                      }`}>
+                        <span className="text-sm font-bold text-slate-700">
+                          {dueDate.getDate()}
+                        </span>
                       </div>
-                      <div className="flex-1">
-                        <p className="font-medium text-slate-900">{deadline.title}</p>
-                        <p className="text-xs text-slate-600">
-                          {client?.full_name || 'Sem cliente'} • Vencimento: {new Date(deadline.due_date!).toLocaleDateString('pt-BR')}
+                      <div className="flex-1 min-w-0">
+                        <p className="font-medium text-slate-900 text-sm truncate">{deadline.title}</p>
+                        <p className="text-xs text-slate-500 truncate">
+                          {client?.full_name || 'Sem cliente'}
                         </p>
                       </div>
-                      <span
-                        className={`rounded-full px-2 py-1 text-xs font-medium ${
-                          deadline.priority === 'alta'
-                            ? 'bg-red-100 text-red-700'
-                            : deadline.priority === 'media'
-                            ? 'bg-amber-100 text-amber-700'
-                            : 'bg-blue-100 text-blue-700'
-                        }`}
-                      >
-                        {deadline.priority}
-                      </span>
+                      <div className="text-right flex-shrink-0">
+                        <span className={`inline-block px-2 py-1 rounded-full text-[10px] font-bold uppercase ${
+                          isUrgent ? 'bg-red-500 text-white' : 
+                          deadline.priority === 'alta' ? 'bg-red-100 text-red-700' :
+                          deadline.priority === 'media' ? 'bg-amber-100 text-amber-700' :
+                          'bg-blue-100 text-blue-700'
+                        }`}>
+                          {isUrgent ? `${diffDays}d` : deadline.priority}
+                        </span>
+                      </div>
                     </div>
                   );
                 })}
@@ -897,30 +881,45 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToModule }) => {
           </div>
 
           {/* Tarefas Recentes */}
-          <div className="bg-white rounded-xl p-5 shadow-sm border border-slate-200">
+          <div className="bg-white rounded-2xl p-5 shadow-sm border border-slate-200 hover:shadow-md transition-shadow">
             <div className="mb-4 flex items-center justify-between">
-              <h2 className="text-sm font-bold text-slate-700 uppercase tracking-wide">Tarefas Recentes</h2>
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-emerald-500 to-emerald-600 flex items-center justify-center">
+                  <CheckSquare className="w-5 h-5 text-white" />
+                </div>
+                <div>
+                  <h2 className="text-sm font-bold text-slate-800">Tarefas Pendentes</h2>
+                  <p className="text-xs text-slate-500">{recentTasks.length} tarefa{recentTasks.length !== 1 ? 's' : ''}</p>
+                </div>
+              </div>
               <button
                 onClick={() => handleNavigate('tarefas')}
-                className="text-emerald-500 hover:text-emerald-600"
+                className="flex items-center gap-1 text-emerald-500 hover:text-emerald-600 text-xs font-semibold"
               >
-                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-                </svg>
+                Ver todas
+                <ChevronRight className="w-4 h-4" />
               </button>
             </div>
             {recentTasks.length === 0 ? (
-              <p className="text-center text-sm text-slate-500">Nenhuma tarefa pendente</p>
+              <div className="text-center py-8">
+                <CheckSquare className="w-10 h-10 text-slate-300 mx-auto mb-2" />
+                <p className="text-sm text-slate-500">Nenhuma tarefa pendente</p>
+              </div>
             ) : (
               <div className="space-y-2">
                 {recentTasks.map((task) => (
-                  <div key={task.id} className="flex items-center gap-3 p-2 rounded-lg hover:bg-slate-50 transition-colors">
+                  <div 
+                    key={task.id} 
+                    onClick={() => handleNavigate('tarefas')}
+                    className="flex items-center gap-3 p-3 rounded-xl bg-slate-50 border border-slate-100 hover:bg-emerald-50 hover:border-emerald-100 cursor-pointer transition-all hover:scale-[1.02]"
+                  >
                     <div className="w-8 h-8 rounded-lg bg-emerald-100 flex items-center justify-center flex-shrink-0">
                       <CheckSquare className="w-4 h-4 text-emerald-600" />
                     </div>
                     <div className="flex-1 min-w-0">
-                      <p className="text-xs font-medium text-slate-900 truncate">{task.title}</p>
+                      <p className="text-sm font-medium text-slate-900 truncate">{task.title}</p>
                     </div>
+                    <ChevronRight className="w-4 h-4 text-slate-400" />
                   </div>
                 ))}
               </div>
@@ -929,40 +928,44 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToModule }) => {
       </div>
 
       {/* Grid de 3 Colunas - Processos e Requerimentos */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
         {/* Processos Aguardando Confecção */}
-        <div className="bg-white rounded-xl p-5 shadow-sm border border-slate-200">
+        <div className="bg-white rounded-2xl p-5 shadow-sm border border-slate-200 hover:shadow-md transition-shadow">
           <div className="mb-4 flex items-center justify-between">
-            <h2 className="text-sm font-bold text-slate-700 uppercase tracking-wide">Processos Aguardando Confecção</h2>
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-amber-500 to-orange-500 flex items-center justify-center">
+                <FileText className="w-5 h-5 text-white" />
+              </div>
+              <div>
+                <h2 className="text-sm font-bold text-slate-800">Aguardando Confecção</h2>
+                <p className="text-xs text-slate-500">{awaitingDraftProcessesList.length} processo{awaitingDraftProcessesList.length !== 1 ? 's' : ''}</p>
+              </div>
+            </div>
             <button
               onClick={() => handleNavigate('processos')}
-              className="text-amber-500 hover:text-amber-600"
+              className="flex items-center gap-1 text-amber-500 hover:text-amber-600 text-xs font-semibold"
             >
-              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-              </svg>
+              Ver
+              <ChevronRight className="w-4 h-4" />
             </button>
           </div>
           {awaitingDraftProcessesList.length === 0 ? (
-            <p className="text-center text-sm text-slate-500">Nenhum processo aguardando</p>
+            <div className="text-center py-6">
+              <FileText className="w-8 h-8 text-slate-300 mx-auto mb-2" />
+              <p className="text-sm text-slate-500">Nenhum processo aguardando</p>
+            </div>
           ) : (
-            <div className="space-y-2">
+            <div className="space-y-2 max-h-[200px] overflow-y-auto">
               {awaitingDraftProcessesList.map((process) => {
                 const client = process.client_id ? clientMap.get(process.client_id) : null;
                 return (
-                  <div key={process.id} className="p-3 rounded-lg bg-amber-50 border border-amber-100">
-                    <div className="flex items-center justify-between mb-1">
-                      <p className="text-xs font-semibold text-slate-900">{client?.full_name || 'Cliente não informado'}</p>
-                      <button
-                        onClick={() => handleNavigate('processos')}
-                        className="text-amber-600 hover:text-amber-700"
-                      >
-                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-                        </svg>
-                      </button>
-                    </div>
-                    <p className="text-xs text-slate-600">{process.process_code || 'Processo sem código'}</p>
+                  <div 
+                    key={process.id} 
+                    onClick={() => handleNavigate('processos')}
+                    className="p-3 rounded-xl bg-amber-50 border border-amber-100 hover:bg-amber-100 cursor-pointer transition-all"
+                  >
+                    <p className="text-sm font-medium text-slate-900 truncate">{client?.full_name || 'Cliente não informado'}</p>
+                    <p className="text-xs text-slate-500 truncate">{process.process_code || 'Sem código'}</p>
                   </div>
                 );
               })}
@@ -971,36 +974,40 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToModule }) => {
         </div>
 
         {/* Requerimentos Aguardando Confecção */}
-        <div className="bg-white rounded-xl p-5 shadow-sm border border-slate-200">
+        <div className="bg-white rounded-2xl p-5 shadow-sm border border-slate-200 hover:shadow-md transition-shadow">
           <div className="mb-4 flex items-center justify-between">
-            <h2 className="text-sm font-bold text-slate-700 uppercase tracking-wide">Requerimentos Aguardando Confecção</h2>
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-purple-500 to-violet-500 flex items-center justify-center">
+                <Target className="w-5 h-5 text-white" />
+              </div>
+              <div>
+                <h2 className="text-sm font-bold text-slate-800">Requerimentos</h2>
+                <p className="text-xs text-slate-500">{pendingRequirementsList.length} pendente{pendingRequirementsList.length !== 1 ? 's' : ''}</p>
+              </div>
+            </div>
             <button
-              onClick={() => handleNavigate('requirements')}
-              className="text-purple-500 hover:text-purple-600"
+              onClick={() => handleNavigate('requerimentos')}
+              className="flex items-center gap-1 text-purple-500 hover:text-purple-600 text-xs font-semibold"
             >
-              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-              </svg>
+              Ver
+              <ChevronRight className="w-4 h-4" />
             </button>
           </div>
           {pendingRequirementsList.length === 0 ? (
-            <p className="text-center text-sm text-slate-500">Nenhum requerimento aguardando</p>
+            <div className="text-center py-6">
+              <Target className="w-8 h-8 text-slate-300 mx-auto mb-2" />
+              <p className="text-sm text-slate-500">Nenhum requerimento pendente</p>
+            </div>
           ) : (
-            <div className="space-y-2">
+            <div className="space-y-2 max-h-[200px] overflow-y-auto">
               {pendingRequirementsList.map((requirement) => (
-                <div key={requirement.id} className="p-3 rounded-lg bg-purple-50 border border-purple-100">
-                  <div className="flex items-center justify-between mb-1">
-                    <p className="text-xs font-semibold text-slate-900">{requirement.beneficiary || 'Sem beneficiário'}</p>
-                    <button
-                      onClick={() => handleNavigate('requirements')}
-                      className="text-purple-600 hover:text-purple-700"
-                    >
-                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-                      </svg>
-                    </button>
-                  </div>
-                  <p className="text-xs text-slate-600">Cliente: {requirement.beneficiary}</p>
+                <div 
+                  key={requirement.id} 
+                  onClick={() => handleNavigate('requerimentos')}
+                  className="p-3 rounded-xl bg-purple-50 border border-purple-100 hover:bg-purple-100 cursor-pointer transition-all"
+                >
+                  <p className="text-sm font-medium text-slate-900 truncate">{requirement.beneficiary || 'Sem beneficiário'}</p>
+                  <p className="text-xs text-slate-500 truncate">Aguardando confecção</p>
                 </div>
               ))}
             </div>
@@ -1008,38 +1015,42 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToModule }) => {
         </div>
 
         {/* Processos em Andamento */}
-        <div className="bg-white rounded-xl p-5 shadow-sm border border-slate-200">
+        <div className="bg-white rounded-2xl p-5 shadow-sm border border-slate-200 hover:shadow-md transition-shadow">
           <div className="mb-4 flex items-center justify-between">
-            <h2 className="text-sm font-bold text-slate-700 uppercase tracking-wide">Processos em Andamento</h2>
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-blue-500 to-indigo-500 flex items-center justify-center">
+                <Gavel className="w-5 h-5 text-white" />
+              </div>
+              <div>
+                <h2 className="text-sm font-bold text-slate-800">Em Andamento</h2>
+                <p className="text-xs text-slate-500">{pendingProcessesList.length} processo{pendingProcessesList.length !== 1 ? 's' : ''}</p>
+              </div>
+            </div>
             <button
               onClick={() => handleNavigate('processos')}
-              className="text-blue-500 hover:text-blue-600"
+              className="flex items-center gap-1 text-blue-500 hover:text-blue-600 text-xs font-semibold"
             >
-              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-              </svg>
+              Ver
+              <ChevronRight className="w-4 h-4" />
             </button>
           </div>
           {pendingProcessesList.length === 0 ? (
-            <p className="text-center text-sm text-slate-500">Nenhum processo em andamento</p>
+            <div className="text-center py-6">
+              <Gavel className="w-8 h-8 text-slate-300 mx-auto mb-2" />
+              <p className="text-sm text-slate-500">Nenhum processo em andamento</p>
+            </div>
           ) : (
-            <div className="space-y-2">
+            <div className="space-y-2 max-h-[200px] overflow-y-auto">
               {pendingProcessesList.map((process) => {
                 const client = process.client_id ? clientMap.get(process.client_id) : null;
                 return (
-                  <div key={process.id} className="p-3 rounded-lg bg-blue-50 border border-blue-100">
-                    <div className="flex items-center justify-between mb-1">
-                      <p className="text-xs font-semibold text-slate-900">{client?.full_name || 'Cliente não informado'}</p>
-                      <button
-                        onClick={() => handleNavigate('processos')}
-                        className="text-blue-600 hover:text-blue-700"
-                      >
-                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-                        </svg>
-                      </button>
-                    </div>
-                    <p className="text-xs text-slate-600">{process.process_code || 'Processo sem código'}</p>
+                  <div 
+                    key={process.id} 
+                    onClick={() => handleNavigate('processos')}
+                    className="p-3 rounded-xl bg-blue-50 border border-blue-100 hover:bg-blue-100 cursor-pointer transition-all"
+                  >
+                    <p className="text-sm font-medium text-slate-900 truncate">{client?.full_name || 'Cliente não informado'}</p>
+                    <p className="text-xs text-slate-500 truncate">{process.process_code || 'Sem código'}</p>
                   </div>
                 );
               })}
@@ -1282,30 +1293,6 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToModule }) => {
         </div>
       )}
 
-      {/* Footer Stats */}
-      <div className="bg-white rounded-xl p-4 shadow-sm border border-slate-200">
-        <div className="flex flex-wrap items-center justify-center gap-6 text-xs text-slate-600">
-          <div className="flex items-center gap-2">
-            <span className="font-semibold text-slate-900">{clients.length}</span>
-            <span>Clientes</span>
-          </div>
-          <div className="w-px h-4 bg-slate-300"></div>
-          <div className="flex items-center gap-2">
-            <span className="font-semibold text-slate-900">{processes.length}</span>
-            <span>Processos</span>
-          </div>
-          <div className="w-px h-4 bg-slate-300"></div>
-          <div className="flex items-center gap-2">
-            <span className="font-semibold text-slate-900">{tasks.filter((t) => t.status === 'completed').length}</span>
-            <span>Tarefas Concluídas</span>
-          </div>
-          <div className="w-px h-4 bg-slate-300"></div>
-          <div className="flex items-center gap-2">
-            <span className="font-semibold text-slate-900">{awaitingRequirements.length}</span>
-            <span>Aguardando Confecção</span>
-          </div>
-        </div>
-      </div>
     </div>
   );
 };

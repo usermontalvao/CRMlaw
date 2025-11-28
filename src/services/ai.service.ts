@@ -6,6 +6,8 @@ class AIService {
   private openai: OpenAI | null = null;
   private enabled: boolean = false;
   private useEdgeFunction: boolean = false; // TEMPORÁRIO: Desabilitado até implantar Edge Function
+  private useGroq: boolean = true; // Usar Groq como provider principal
+  private groqApiKey: string | null = null;
 
   constructor() {
     this.initialize();
@@ -33,10 +35,21 @@ class AIService {
   }
 
   private initialize() {
+    // Primeiro tenta Groq (mais barato e sem rate limit agressivo)
+    this.groqApiKey = import.meta.env.VITE_GROQ_API_KEY;
+    
+    if (this.groqApiKey) {
+      this.useGroq = true;
+      this.enabled = true;
+      console.log('✅ Groq AI Service inicializado (provider principal)');
+      return;
+    }
+    
+    // Fallback para OpenAI
     const apiKey = import.meta.env.VITE_OPENAI_API_KEY;
     
     if (!apiKey || apiKey === 'your_openai_api_key_here') {
-      console.warn('⚠️ OpenAI API Key não configurada. Funcionalidades de IA desabilitadas.');
+      console.warn('⚠️ Nenhuma API Key de IA configurada. Funcionalidades de IA desabilitadas.');
       this.enabled = false;
       return;
     }
@@ -46,8 +59,9 @@ class AIService {
         apiKey,
         dangerouslyAllowBrowser: true, // Para uso no cliente
       });
+      this.useGroq = false;
       this.enabled = true;
-      console.log('✅ OpenAI AI Service inicializado');
+      console.log('✅ OpenAI AI Service inicializado (fallback)');
     } catch (error) {
       console.error('❌ Erro ao inicializar OpenAI:', error);
       this.enabled = false;
@@ -55,7 +69,34 @@ class AIService {
   }
 
   isEnabled(): boolean {
-    return this.enabled && this.openai !== null;
+    return this.enabled && (this.groqApiKey !== null || this.openai !== null);
+  }
+
+  /**
+   * Chama a API do Groq
+   */
+  private async callGroqAPI(messages: any[], maxTokens: number = 1000): Promise<string> {
+    const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${this.groqApiKey}`,
+      },
+      body: JSON.stringify({
+        model: 'llama-3.3-70b-versatile',
+        messages,
+        temperature: 0.3,
+        max_tokens: maxTokens,
+      }),
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      throw new Error(`Groq API error: ${response.status} - ${errorData.error?.message || response.statusText}`);
+    }
+
+    const data = await response.json();
+    return data.choices?.[0]?.message?.content || '';
   }
 
   /**
@@ -124,7 +165,13 @@ ${texto}`;
 
       let content: string | null;
 
-      if (this.useEdgeFunction) {
+      if (this.useGroq && this.groqApiKey) {
+        // Usa Groq API (mais barato e sem rate limit agressivo)
+        content = await this.callGroqAPI([
+          { role: 'system', content: systemPrompt },
+          { role: 'user', content: userPrompt },
+        ], 1000);
+      } else if (this.useEdgeFunction) {
         // Usa Edge Function para evitar CORS
         const response = await this.callOpenAIViaEdgeFunction([
           { role: 'system', content: systemPrompt },
@@ -147,6 +194,12 @@ ${texto}`;
       }
       if (!content) {
         throw new Error('Resposta vazia da API');
+      }
+      
+      // Extrair JSON da resposta (Groq pode retornar texto extra)
+      const jsonMatch = content.match(/\{[\s\S]*\}/);
+      if (jsonMatch) {
+        content = jsonMatch[0];
       }
 
       const analysis: IntimationAnalysis = JSON.parse(content);
@@ -186,19 +239,34 @@ Analise o texto e identifique se há algum prazo. Responda APENAS com JSON:
 
 Se não houver prazo, retorne null para days e dueDate.`;
 
-      const response = await this.openai!.chat.completions.create({
-        model: 'gpt-4o-mini',
-        messages: [
+      let content: string | null;
+      
+      if (this.useGroq && this.groqApiKey) {
+        content = await this.callGroqAPI([
           { role: 'system', content: systemPrompt },
           { role: 'user', content: texto },
-        ],
-        temperature: 0.2,
-        max_tokens: 300,
-        response_format: { type: 'json_object' },
-      });
+        ], 300);
+      } else {
+        const response = await this.openai!.chat.completions.create({
+          model: 'gpt-4o-mini',
+          messages: [
+            { role: 'system', content: systemPrompt },
+            { role: 'user', content: texto },
+          ],
+          temperature: 0.2,
+          max_tokens: 300,
+          response_format: { type: 'json_object' },
+        });
+        content = response.choices[0].message.content;
+      }
 
-      const content = response.choices[0].message.content;
       if (!content) return null;
+      
+      // Extrair JSON da resposta
+      const jsonMatch = content.match(/\{[\s\S]*\}/);
+      if (jsonMatch) {
+        content = jsonMatch[0];
+      }
 
       const result: DeadlineExtraction = JSON.parse(content);
       
@@ -227,23 +295,27 @@ Se não houver prazo, retorne null para days e dueDate.`;
     }
 
     try {
-      const response = await this.openai!.chat.completions.create({
-        model: 'gpt-4o-mini',
-        messages: [
-          {
-            role: 'system',
-            content: `Você é um assistente que resume textos jurídicos de forma clara e objetiva em no máximo ${maxWords} palavras.`,
-          },
-          {
-            role: 'user',
-            content: `Resuma este texto:\n\n${texto}`,
-          },
-        ],
-        temperature: 0.3,
-        max_tokens: 200,
-      });
-
-      return response.choices[0].message.content || texto.substring(0, 200) + '...';
+      const systemPrompt = `Você é um assistente que resume textos jurídicos de forma clara e objetiva em no máximo ${maxWords} palavras.`;
+      const userPrompt = `Resuma este texto:\n\n${texto}`;
+      
+      if (this.useGroq && this.groqApiKey) {
+        const content = await this.callGroqAPI([
+          { role: 'system', content: systemPrompt },
+          { role: 'user', content: userPrompt },
+        ], 200);
+        return content || texto.substring(0, 200) + '...';
+      } else {
+        const response = await this.openai!.chat.completions.create({
+          model: 'gpt-4o-mini',
+          messages: [
+            { role: 'system', content: systemPrompt },
+            { role: 'user', content: userPrompt },
+          ],
+          temperature: 0.3,
+          max_tokens: 200,
+        });
+        return response.choices[0].message.content || texto.substring(0, 200) + '...';
+      }
     } catch (error) {
       console.error('Erro ao gerar resumo:', error);
       return texto.substring(0, 200) + '...';
@@ -274,26 +346,33 @@ Se não houver prazo, retorne null para days e dueDate.`;
     }
 
     try {
-      const response = await this.openai!.chat.completions.create({
-        model: 'gpt-4o-mini',
-        messages: [
-          {
-            role: 'system',
-            content: `Você é um especialista em classificar urgência de comunicações judiciais.
+      const systemPrompt = `Você é um especialista em classificar urgência de comunicações judiciais.
 Classifique como: "critica", "alta", "media" ou "baixa".
-Responda APENAS com uma palavra.`,
-          },
-          {
-            role: 'user',
-            content: `Tipo: ${tipoDocumento || 'N/A'} | Comunicação: ${tipoComunicacao || 'N/A'}\nTexto: ${texto}`,
-          },
-        ],
-        temperature: 0.2,
-        max_tokens: 10,
-      });
+Responda APENAS com uma palavra.`;
+      const userPrompt = `Tipo: ${tipoDocumento || 'N/A'} | Comunicação: ${tipoComunicacao || 'N/A'}\nTexto: ${texto}`;
+      
+      let urgency: string;
+      
+      if (this.useGroq && this.groqApiKey) {
+        urgency = await this.callGroqAPI([
+          { role: 'system', content: systemPrompt },
+          { role: 'user', content: userPrompt },
+        ], 10);
+      } else {
+        const response = await this.openai!.chat.completions.create({
+          model: 'gpt-4o-mini',
+          messages: [
+            { role: 'system', content: systemPrompt },
+            { role: 'user', content: userPrompt },
+          ],
+          temperature: 0.2,
+          max_tokens: 10,
+        });
+        urgency = response.choices[0].message.content || 'media';
+      }
 
-      const urgency = response.choices[0].message.content?.toLowerCase().trim() as any;
-      return ['critica', 'alta', 'media', 'baixa'].includes(urgency) ? urgency : 'media';
+      const normalizedUrgency = urgency.toLowerCase().trim() as any;
+      return ['critica', 'alta', 'media', 'baixa'].includes(normalizedUrgency) ? normalizedUrgency : 'media';
     } catch (error) {
       console.error('Erro ao analisar urgência:', error);
       return 'media';
@@ -309,26 +388,38 @@ Responda APENAS com uma palavra.`,
     }
 
     try {
-      const response = await this.openai!.chat.completions.create({
-        model: 'gpt-4o-mini',
-        messages: [
-          {
-            role: 'system',
-            content: `Você é um assistente jurídico. Sugira 3-5 ações práticas e específicas que o advogado deve tomar.
-Responda com um JSON: {"actions": ["ação 1", "ação 2", "ação 3"]}`,
-          },
-          {
-            role: 'user',
-            content: `Intimação: ${texto}\nPrazo: ${prazo || 'Não especificado'}`,
-          },
-        ],
-        temperature: 0.4,
-        max_tokens: 300,
-        response_format: { type: 'json_object' },
-      });
+      const systemPrompt = `Você é um assistente jurídico. Sugira 3-5 ações práticas e específicas que o advogado deve tomar.
+Responda com um JSON: {"actions": ["ação 1", "ação 2", "ação 3"]}`;
+      const userPrompt = `Intimação: ${texto}\nPrazo: ${prazo || 'Não especificado'}`;
+      
+      let content: string | null;
+      
+      if (this.useGroq && this.groqApiKey) {
+        content = await this.callGroqAPI([
+          { role: 'system', content: systemPrompt },
+          { role: 'user', content: userPrompt },
+        ], 300);
+      } else {
+        const response = await this.openai!.chat.completions.create({
+          model: 'gpt-4o-mini',
+          messages: [
+            { role: 'system', content: systemPrompt },
+            { role: 'user', content: userPrompt },
+          ],
+          temperature: 0.4,
+          max_tokens: 300,
+          response_format: { type: 'json_object' },
+        });
+        content = response.choices[0].message.content;
+      }
 
-      const content = response.choices[0].message.content;
       if (!content) return [];
+      
+      // Extrair JSON da resposta
+      const jsonMatch = content.match(/\{[\s\S]*\}/);
+      if (jsonMatch) {
+        content = jsonMatch[0];
+      }
 
       const result = JSON.parse(content);
       return result.actions || [];
