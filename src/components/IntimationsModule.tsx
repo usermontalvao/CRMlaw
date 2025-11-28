@@ -479,9 +479,11 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
   const performSync = useCallback(
     async (mode: 'manual' | 'auto') => {
       if (syncingRef.current) {
+        console.log('⚠️ Sync já em andamento, ignorando...');
         return;
       }
 
+      console.log(`🚀 Iniciando performSync (${mode})...`);
       syncingRef.current = true;
       setSyncing(true);
 
@@ -503,14 +505,20 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
             pagina: 1,
           };
 
-          const response = await djenService.consultarTodasComunicacoes(params);
+          try {
+            const response = await djenService.consultarTodasComunicacoes(params);
+            console.log(`📥 Resposta DJEN: ${response.items?.length || 0} itens`);
 
-          if (response.items && response.items.length > 0) {
-            const result = await djenLocalService.saveComunicacoes(response.items, {
-              clients,
-              processes,
-            });
-            savedFromAdvocate = result.saved;
+            if (response.items && response.items.length > 0) {
+              const result = await djenLocalService.saveComunicacoes(response.items, {
+                clients,
+                processes,
+              });
+              savedFromAdvocate = result.saved;
+              console.log(`💾 Salvos do advogado: ${savedFromAdvocate}`);
+            }
+          } catch (djenErr: any) {
+            console.error('❌ Erro ao consultar DJEN por advogado:', djenErr);
           }
         } else {
           console.log('ℹ️ Nome DJEN não configurado - buscando apenas por processos cadastrados');
@@ -524,21 +532,29 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
           ),
         );
 
+        console.log(`📋 Processos para buscar: ${processNumbers.length}`);
+        
         if (processNumbers.length > 0) {
-          const processResponse = await djenService.consultarPorProcessos(processNumbers, {
-            dataDisponibilizacaoInicio: djenService.getDataDiasAtras(30),
-            dataDisponibilizacaoFim: djenService.getDataHoje(),
-            meio: 'D',
-            itensPorPagina: 100,
-            pagina: 1,
-          });
-
-          if (processResponse.items && processResponse.items.length > 0) {
-            const result = await djenLocalService.saveComunicacoes(processResponse.items, {
-              clients,
-              processes,
+          try {
+            const processResponse = await djenService.consultarPorProcessos(processNumbers, {
+              dataDisponibilizacaoInicio: djenService.getDataDiasAtras(30),
+              dataDisponibilizacaoFim: djenService.getDataHoje(),
+              meio: 'D',
+              itensPorPagina: 100,
+              pagina: 1,
             });
-            savedFromProcesses = result.saved;
+            console.log(`📥 Resposta DJEN (processos): ${processResponse.items?.length || 0} itens`);
+
+            if (processResponse.items && processResponse.items.length > 0) {
+              const result = await djenLocalService.saveComunicacoes(processResponse.items, {
+                clients,
+                processes,
+              });
+              savedFromProcesses = result.saved;
+              console.log(`💾 Salvos dos processos: ${savedFromProcesses}`);
+            }
+          } catch (procErr: any) {
+            console.error('❌ Erro ao consultar DJEN por processos:', procErr);
           }
         }
 
@@ -575,17 +591,17 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
         }
         fetchSyncLogs();
       } catch (err: any) {
+        console.error('❌ Erro no sync:', err);
         if (mode === 'manual') {
           toast.error('Erro ao sincronizar', err.message);
-        } else {
-          console.error('Erro na sincronização automática:', err);
         }
       } finally {
+        console.log('✅ Sync finalizado');
         syncingRef.current = false;
         setSyncing(false);
       }
     },
-    [processes, clients, currentUserProfile, loadData, aiEnabled, reloadIntimations, fetchSyncLogs]
+    [processes, clients, currentUserProfile, aiEnabled, reloadIntimations, fetchSyncLogs, toast]
   );
 
   const getLastSyncDate = useCallback((): Date | null => {
@@ -607,29 +623,19 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
     return null;
   }, [lastLocalSyncAt, syncLogs]);
 
-  // Sincronização automática ao abrir a página (se última sync > 30 minutos)
+  // Sincronização automática SEMPRE ao abrir a página
   useEffect(() => {
     if (autoSyncTriggeredRef.current) return;
-    if (syncStatusLoading) return;
-    if (syncingRef.current) return;
+    if (loading) return; // Aguardar dados carregarem
     if (!currentUserProfile) return; // Aguardar perfil carregar
 
-    const thirtyMinutesMs = 30 * 60 * 1000; // 30 minutos
-    const lastSyncDate = getLastSyncDate();
-    const needsSync = !lastSyncDate || (Date.now() - lastSyncDate.getTime() > thirtyMinutesMs);
-
-    if (needsSync) {
-      autoSyncTriggeredRef.current = true;
-      console.log('🔄 Iniciando sincronização automática de intimações...');
-      // Aguardar 2 segundos para não sobrecarregar
-      const timer = setTimeout(() => {
-        performSync('auto').finally(() => {
-          autoSyncTriggeredRef.current = false;
-        });
-      }, 2000);
-      return () => clearTimeout(timer);
-    }
-  }, [syncStatusLoading, performSync, getLastSyncDate, currentUserProfile]);
+    autoSyncTriggeredRef.current = true;
+    console.log('🔄 Sincronizando intimações automaticamente...');
+    
+    performSync('auto').finally(() => {
+      autoSyncTriggeredRef.current = false;
+    });
+  }, [loading, currentUserProfile, performSync]);
 
   const lastSyncLabel = useMemo(() => {
     const date = getLastSyncDate();
