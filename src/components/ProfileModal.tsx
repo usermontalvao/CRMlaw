@@ -34,7 +34,7 @@ import { supabase } from '../config/supabase';
 type UserRole = 'Advogado' | 'Auxiliar' | 'Estagiário' | 'Administrador' | 'Sócio';
 type ActiveTab = 'dados' | 'profissional' | 'sobre' | 'security' | 'stats';
 
-interface AppProfile {
+export interface AppProfile {
   name?: string;
   email?: string;
   avatarUrl?: string;

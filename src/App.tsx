@@ -89,7 +89,7 @@ function App() {
 
   const GENERIC_AVATAR = 'https://www.gravatar.com/avatar/?d=mp&s=300';
 
-  const [profile, setProfile] = useState({
+  const [profile, setProfile] = useState<AppProfile>({
     name: 'Usuário',
     email: '',
     avatarUrl: GENERIC_AVATAR,
