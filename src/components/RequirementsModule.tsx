@@ -357,6 +357,7 @@ const RequirementsModule: React.FC<RequirementsModuleProps> = ({ forceCreate, en
   const [schedulePromptId, setSchedulePromptId] = useState<string | null>(null);
   const [exigencyModal, setExigencyModal] = useState<ExigencyModalState | null>(null);
   const [periciaModal, setPericiaModal] = useState<PericiaModalState | null>(null);
+  const [showFilters, setShowFilters] = useState(false);
   const [exigencyForm, setExigencyForm] = useState({
     title: '',
     due_date: '',
@@ -1859,38 +1860,38 @@ const RequirementsModule: React.FC<RequirementsModuleProps> = ({ forceCreate, en
         </div>
       )}
 
-      <div className="bg-white border border-gray-200 rounded-xl p-3 sm:p-6">
-        <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3 sm:gap-4 mb-4 sm:mb-6">
+      <div className="bg-white border border-gray-200 rounded-xl p-3 sm:p-4">
+        <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-2 sm:gap-3 mb-3 sm:mb-4">
           <div>
             <h3 className="text-lg sm:text-xl font-semibold text-slate-900">Sistema de Requerimentos</h3>
             <p className="text-xs sm:text-sm text-slate-600 mt-1 hidden sm:block">Gerencie requerimentos administrativos do INSS</p>
           </div>
 
-          <div className="flex flex-col sm:flex-row gap-2 sm:gap-3 w-full sm:w-auto">
+          <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3 w-full sm:w-auto sm:justify-end">
             <button
               onClick={handleExportExcel}
               disabled={exportingExcel}
-              className="inline-flex items-center justify-center gap-2 bg-green-600 hover:bg-green-700 disabled:bg-green-400 text-white font-medium px-3 sm:px-4 py-2 sm:py-2.5 rounded-lg shadow-sm transition disabled:cursor-not-allowed text-xs sm:text-sm w-full sm:w-auto"
+              className="inline-flex items-center justify-center gap-2 border border-green-600 text-green-700 hover:bg-green-50 disabled:border-green-300 disabled:text-green-400 bg-white font-medium px-3 sm:px-4 py-2 sm:py-2.5 rounded-lg shadow-sm transition disabled:cursor-not-allowed text-xs sm:text-sm w-full sm:w-auto"
             >
               {exportingExcel ? <Loader2 className="w-4 h-4 animate-spin" /> : <FileSpreadsheet className="w-4 h-4" />}
-              {exportingExcel ? 'Gerando Excel...' : 'Exportar Excel'}
+              <span>{exportingExcel ? 'Gerando Excel...' : 'Exportar Excel'}</span>
             </button>
 
             <button
               onClick={() => handleOpenModal()}
-              className="inline-flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white font-medium px-5 py-2.5 rounded-lg shadow-sm transition"
+              className="inline-flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-700 text-white font-medium px-3 sm:px-5 py-2 sm:py-2.5 rounded-lg shadow-sm transition text-xs sm:text-sm w-full sm:w-auto"
             >
               <Plus className="w-4 h-4" />
-              Novo Requerimento
+              <span>Novo Requerimento</span>
             </button>
           </div>
         </div>
 
         {/* Abas de Status */}
-        <div className="flex flex-wrap gap-2 mb-6">
+        <div className="flex flex-wrap gap-1.5 sm:gap-2 mb-4 sm:mb-6 overflow-x-auto pb-2">
           <button
             onClick={() => setActiveStatusTab('todos')}
-            className={`px-4 py-2 rounded-lg text-sm font-medium transition ${
+            className={`px-2.5 sm:px-4 py-1.5 sm:py-2 rounded-lg text-xs sm:text-sm font-medium transition whitespace-nowrap ${
               activeStatusTab === 'todos'
                 ? 'bg-blue-600 text-white animate-pulse'
                 : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
@@ -1903,7 +1904,7 @@ const RequirementsModule: React.FC<RequirementsModuleProps> = ({ forceCreate, en
             <button
               key={status.key}
               onClick={() => setActiveStatusTab(status.key)}
-              className={`px-4 py-2 rounded-lg text-sm font-medium transition ${
+              className={`px-2.5 sm:px-4 py-1.5 sm:py-2 rounded-lg text-xs sm:text-sm font-medium transition whitespace-nowrap ${
                 activeStatusTab === status.key
                   ? `${status.badge} ${status.animation ?? ''}`
                   : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
@@ -1922,52 +1923,67 @@ const RequirementsModule: React.FC<RequirementsModuleProps> = ({ forceCreate, en
         </div>
 
         {/* Filtros */}
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-          <div className="relative">
-            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-slate-400 w-4 h-4" />
-            <input
-              type="text"
-              value={filterProtocol}
-              onChange={(event) => setFilterProtocol(event.target.value)}
-              className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
-              placeholder="Buscar por protocolo..."
-            />
+        <div className="mt-2 sm:mt-3 space-y-2">
+          <div className="flex items-center justify-between">
+            <span className="text-xs sm:text-sm text-slate-600">Filtros avançados</span>
+            <button
+              type="button"
+              onClick={() => setShowFilters((prev) => !prev)}
+              className="text-xs sm:text-sm font-medium text-blue-600 hover:text-blue-700 underline-offset-2 hover:underline"
+            >
+              {showFilters ? 'Ocultar filtros' : 'Mostrar filtros'}
+            </button>
           </div>
 
-          <div className="relative">
-            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-slate-400 w-4 h-4" />
-            <input
-              type="text"
-              value={filterBeneficiary}
-              onChange={(event) => setFilterBeneficiary(event.target.value)}
-              className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
-              placeholder="Buscar por beneficiário..."
-            />
-          </div>
+          {showFilters && (
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
+              <div className="relative">
+                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-slate-400 w-4 h-4" />
+                <input
+                  type="text"
+                  value={filterProtocol}
+                  onChange={(event) => setFilterProtocol(event.target.value)}
+                  className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+                  placeholder="Buscar por protocolo..."
+                />
+              </div>
 
-          <div className="relative">
-            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-slate-400 w-4 h-4" />
-            <input
-              type="text"
-              value={filterCPF}
-              onChange={(event) => setFilterCPF(event.target.value)}
-              className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
-              placeholder="Buscar por CPF..."
-            />
-          </div>
+              <div className="relative">
+                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-slate-400 w-4 h-4" />
+                <input
+                  type="text"
+                  value={filterBeneficiary}
+                  onChange={(event) => setFilterBeneficiary(event.target.value)}
+                  className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+                  placeholder="Buscar por beneficiário..."
+                />
+              </div>
 
-          <select
-            value={filterBenefitType}
-            onChange={(event) => setFilterBenefitType(event.target.value as BenefitType | '')}
-            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
-          >
-            <option value="">Todos os tipos</option>
-            {BENEFIT_TYPES.map((type) => (
-              <option key={type.key} value={type.key}>
-                {type.label}
-              </option>
-            ))}
-          </select>
+              <div className="relative">
+                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-slate-400 w-4 h-4" />
+                <input
+                  type="text"
+                  value={filterCPF}
+                  onChange={(event) => setFilterCPF(event.target.value)}
+                  className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+                  placeholder="Buscar por CPF..."
+                />
+              </div>
+
+              <select
+                value={filterBenefitType}
+                onChange={(event) => setFilterBenefitType(event.target.value as BenefitType | '')}
+                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+              >
+                <option value="">Todos os tipos</option>
+                {BENEFIT_TYPES.map((type) => (
+                  <option key={type.key} value={type.key}>
+                    {type.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
         </div>
       </div>
 
@@ -1987,7 +2003,9 @@ const RequirementsModule: React.FC<RequirementsModuleProps> = ({ forceCreate, en
           <p className="text-slate-600">Nenhum requerimento encontrado.</p>
         </div>
       ) : (
-        <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
+        <React.Fragment>
+        {/* Desktop: Tabela | Mobile: Cards */}
+        <div className="hidden lg:block bg-white border border-gray-200 rounded-xl overflow-hidden">
           <div className="overflow-x-auto">
             <table className="min-w-full divide-y divide-gray-200">
               <thead className="bg-slate-50">
@@ -2102,26 +2120,129 @@ const RequirementsModule: React.FC<RequirementsModuleProps> = ({ forceCreate, en
             </table>
           </div>
         </div>
+
+        {/* Mobile: Cards */}
+        <div className="lg:hidden space-y-3">
+          {paginatedRequirements.map((requirement) => {
+            const isUpdating = statusUpdatingId === requirement.id;
+            const statusConfig = getStatusConfig(requirement.status);
+            return (
+              <div
+                key={requirement.id}
+                className="bg-white border border-gray-200 rounded-xl p-4 space-y-3"
+              >
+                <div className="flex items-start justify-between gap-2">
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-semibold text-slate-900 truncate">{requirement.beneficiary}</p>
+                    <p className="text-xs text-slate-500 font-mono mt-0.5">{requirement.protocol || 'Sem protocolo'}</p>
+                  </div>
+                  <span
+                    className={`inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-semibold shrink-0 ${
+                      statusConfig?.badge ?? 'bg-slate-200 text-slate-700'
+                    } ${statusConfig?.animation ?? ''}`}
+                    style={statusConfig?.animationStyle}
+                  >
+                    {getStatusLabel(requirement.status)}
+                    {(requirement.status === 'em_analise' || isUpdating) && (
+                      <Loader2 className="w-3 h-3 animate-spin" />
+                    )}
+                  </span>
+                </div>
+
+                <div className="grid grid-cols-2 gap-2 text-xs">
+                  <div>
+                    <span className="text-slate-500">CPF:</span>
+                    <span className="ml-1 text-slate-700">{requirement.cpf}</span>
+                  </div>
+                  <div>
+                    <span className="text-slate-500">Entrada:</span>
+                    <span className="ml-1 text-slate-700">{formatDate(requirement.entry_date)}</span>
+                  </div>
+                  <div className="col-span-2">
+                    <span className="text-slate-500">Benefício:</span>
+                    <span className="ml-1 text-slate-700">{getBenefitTypeLabel(requirement.benefit_type)}</span>
+                  </div>
+                  {requirement.status === 'em_exigencia' && (
+                    <div className="col-span-2">
+                      <span className="text-amber-600 font-medium">
+                        Prazo: {requirement.exigency_due_date ? formatDate(requirement.exigency_due_date) : 'não definido'}
+                      </span>
+                    </div>
+                  )}
+                </div>
+
+                <div className="flex items-center justify-between pt-2 border-t border-gray-100">
+                  <select
+                    value={requirement.status}
+                    onChange={(e) => handleStatusChange(requirement.id, e.target.value as RequirementStatus)}
+                    disabled={isUpdating}
+                    className="text-xs font-medium px-2 py-1 rounded-lg border border-gray-200 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50 bg-white"
+                  >
+                    {STATUS_OPTIONS.map((opt) => (
+                      <option key={opt.key} value={opt.key}>
+                        {opt.label}
+                      </option>
+                    ))}
+                  </select>
+
+                  <div className="flex items-center gap-3">
+                    <button
+                      onClick={() => handleWhatsApp(requirement.phone)}
+                      className="text-green-600 hover:text-green-700 transition-colors p-1"
+                      title="WhatsApp"
+                    >
+                      <MessageSquare className="w-5 h-5" />
+                    </button>
+                    <button
+                      onClick={() => handleViewRequirement(requirement)}
+                      className="text-cyan-600 hover:text-cyan-700 transition-colors p-1"
+                      title="Ver detalhes"
+                    >
+                      <Eye className="w-5 h-5" />
+                    </button>
+                    <button
+                      onClick={() => handleOpenModal(requirement)}
+                      className="text-blue-600 hover:text-blue-700 transition-colors p-1"
+                      title="Editar"
+                    >
+                      <Edit2 className="w-5 h-5" />
+                    </button>
+                    <button
+                      onClick={() => handleDeleteRequirement(requirement.id)}
+                      className="text-red-600 hover:text-red-700 transition-colors p-1"
+                      title="Excluir"
+                    >
+                      <Trash2 className="w-5 h-5" />
+                    </button>
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+        </React.Fragment>
       )}
 
       {filteredRequirements.length > pageSize && (
-        <div className="bg-white border border-gray-200 rounded-xl p-4 flex items-center justify-between">
+        <div className="bg-white border border-gray-200 rounded-xl p-3 sm:p-4 flex items-center justify-between gap-2">
           <button
             onClick={() => setCurrentPage((prev) => Math.max(1, prev - 1))}
             disabled={currentPage === 1}
-            className="px-3 py-2 text-sm font-semibold text-slate-700 bg-slate-100 hover:bg-slate-200 rounded-lg disabled:opacity-50 disabled:cursor-not-allowed transition"
+            className="px-2 sm:px-3 py-1.5 sm:py-2 text-xs sm:text-sm font-semibold text-slate-700 bg-slate-100 hover:bg-slate-200 rounded-lg disabled:opacity-50 disabled:cursor-not-allowed transition"
           >
-            Anterior
+            <span className="hidden sm:inline">Anterior</span>
+            <span className="sm:hidden">←</span>
           </button>
-          <div className="text-sm text-slate-600">
-            Página {currentPage} de {totalPages}
+          <div className="text-xs sm:text-sm text-slate-600 text-center">
+            <span className="hidden sm:inline">Página </span>{currentPage}<span className="hidden sm:inline"> de</span><span className="sm:hidden">/</span> {totalPages}
           </div>
           <button
             onClick={() => setCurrentPage((prev) => Math.min(totalPages, prev + 1))}
             disabled={currentPage === totalPages}
-            className="px-3 py-2 text-sm font-semibold text-slate-700 bg-slate-100 hover:bg-slate-200 rounded-lg disabled:opacity-50 disabled:cursor-not-allowed transition"
+            className="px-2 sm:px-3 py-1.5 sm:py-2 text-xs sm:text-sm font-semibold text-slate-700 bg-slate-100 hover:bg-slate-200 rounded-lg disabled:opacity-50 disabled:cursor-not-allowed transition"
           >
-            Próxima
+            <span className="hidden sm:inline">Próxima</span>
+            <span className="sm:hidden">→</span>
           </button>
         </div>
       )}

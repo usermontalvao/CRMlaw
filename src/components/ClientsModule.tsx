@@ -80,6 +80,8 @@ const ClientsModule: React.FC<ClientsModuleProps> = ({
   const [missingFieldsMap, setMissingFieldsMap] = useState<Map<string, string[]>>(new Map());
   const [outdatedSet, setOutdatedSet] = useState<Set<string>>(new Set());
   const [showIncompleteOnly, setShowIncompleteOnly] = useState(false);
+  const [showFilters, setShowFilters] = useState(false);
+  const [showMissingBanner, setShowMissingBanner] = useState(true);
 
   // Carregar clientes
   const loadClients = async () => {
@@ -373,25 +375,28 @@ const ClientsModule: React.FC<ClientsModuleProps> = ({
             </div>
           </div>
 
-          {/* Stats Minimalistas */}
-          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
-            <div className="bg-white border border-slate-200 rounded-lg p-3 hover:shadow-sm transition">
-              <div className="flex items-center justify-between mb-2">
-                <span className="text-xs font-medium text-slate-600 uppercase">Total</span>
+          {/* Stats Minimalistas (mais compactos em mobile) */}
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2 sm:gap-3">
+            {/* Total - sempre visível */}
+            <div className="bg-white border border-slate-200 rounded-lg p-2.5 sm:p-3 hover:shadow-sm transition">
+              <div className="flex items-center justify-between mb-1.5">
+                <span className="text-[10px] sm:text-xs font-medium text-slate-600 uppercase">Total</span>
                 <User className="w-4 h-4 text-slate-600" />
               </div>
-              <p className="text-xl font-semibold text-slate-900">{stats.total}</p>
+              <p className="text-lg sm:text-xl font-semibold text-slate-900">{stats.total}</p>
             </div>
 
-            <div className="bg-white border border-slate-200 rounded-lg p-3 hover:shadow-sm transition">
-              <div className="flex items-center justify-between mb-2">
-                <span className="text-xs font-medium text-emerald-600 uppercase">Ativos</span>
+            {/* Ativos - sempre visível */}
+            <div className="bg-white border border-slate-200 rounded-lg p-2.5 sm:p-3 hover:shadow-sm transition">
+              <div className="flex items-center justify-between mb-1.5">
+                <span className="text-[10px] sm:text-xs font-medium text-emerald-600 uppercase">Ativos</span>
                 <UserPlus className="w-4 h-4 text-emerald-600" />
               </div>
-              <p className="text-xl font-semibold text-emerald-600">{stats.active}</p>
+              <p className="text-lg sm:text-xl font-semibold text-emerald-600">{stats.active}</p>
             </div>
 
-            <div className="bg-white border border-slate-200 rounded-lg p-3 hover:shadow-sm transition">
+            {/* Demais stats: apenas em sm+ para não ocupar altura em mobile */}
+            <div className="hidden sm:block bg-white border border-slate-200 rounded-lg p-3 hover:shadow-sm transition">
               <div className="flex items-center justify-between mb-2">
                 <span className="text-xs font-medium text-blue-600 uppercase">P. Física</span>
                 <User className="w-4 h-4 text-blue-600" />
@@ -399,7 +404,7 @@ const ClientsModule: React.FC<ClientsModuleProps> = ({
               <p className="text-xl font-semibold text-blue-600">{stats.pessoaFisica}</p>
             </div>
 
-            <div className="bg-white border border-slate-200 rounded-lg p-3 hover:shadow-sm transition">
+            <div className="hidden sm:block bg-white border border-slate-200 rounded-lg p-3 hover:shadow-sm transition">
               <div className="flex items-center justify-between mb-2">
                 <span className="text-xs font-medium text-purple-600 uppercase">P. Jurídica</span>
                 <Building2 className="w-4 h-4 text-purple-600" />
@@ -407,7 +412,7 @@ const ClientsModule: React.FC<ClientsModuleProps> = ({
               <p className="text-xl font-semibold text-purple-600">{stats.pessoaJuridica}</p>
             </div>
 
-            <div className="bg-white border border-slate-200 rounded-lg p-3 hover:shadow-sm transition">
+            <div className="hidden sm:block bg-white border border-slate-200 rounded-lg p-3 hover:shadow-sm transition">
               <div className="flex items-center justify-between mb-2">
                 <span className="text-xs font-medium text-amber-600 uppercase">Incompletos</span>
                 <AlertTriangle className="w-4 h-4 text-amber-600" />
@@ -416,57 +421,69 @@ const ClientsModule: React.FC<ClientsModuleProps> = ({
             </div>
           </div>
 
-          {/* Filtros e Busca Compactos */}
+          {/* Filtros e Busca Compactos (retraídos por padrão) */}
           <div className="bg-white border border-slate-200 rounded-lg p-3 shadow-sm">
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-12 gap-3">
-              {/* Busca */}
-              <div className="sm:col-span-2 lg:col-span-4">
-                <label className="block text-xs font-medium text-slate-600 mb-1.5">
-                  Buscar Cliente
-                </label>
-                <div className="relative">
-                  <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-slate-400 w-4 h-4" />
-                  <input
-                    type="text"
-                    value={searchTerm}
-                    onChange={(e) => setSearchTerm(e.target.value)}
-                    onKeyPress={(e) => e.key === 'Enter' && handleSearch()}
-                    className="w-full pl-9 pr-3 py-1.5 rounded-lg border border-slate-200 bg-white text-sm text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition"
-                    placeholder="Nome, CPF, e-mail..."
-                  />
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-xs sm:text-sm text-slate-600">Buscar e filtrar clientes</span>
+              <button
+                type="button"
+                onClick={() => setShowFilters((prev) => !prev)}
+                className="text-xs sm:text-sm font-medium text-blue-600 hover:text-blue-700 underline-offset-2 hover:underline"
+              >
+                {showFilters ? 'Ocultar filtros' : 'Mostrar filtros'}
+              </button>
+            </div>
+
+            {showFilters && (
+              <div className="mt-2 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-12 gap-3">
+                {/* Busca */}
+                <div className="sm:col-span-2 lg:col-span-4">
+                  <label className="block text-xs font-medium text-slate-600 mb-1.5">
+                    Buscar Cliente
+                  </label>
+                  <div className="relative">
+                    <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-slate-400 w-4 h-4" />
+                    <input
+                      type="text"
+                      value={searchTerm}
+                      onChange={(e) => setSearchTerm(e.target.value)}
+                      onKeyPress={(e) => e.key === 'Enter' && handleSearch()}
+                      className="w-full pl-9 pr-3 py-1.5 rounded-lg border border-slate-200 bg-white text-sm text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition"
+                      placeholder="Nome, CPF, e-mail..."
+                    />
+                  </div>
                 </div>
-              </div>
 
-              {/* Filtro de Status */}
-              <div className="lg:col-span-2">
-                <label className="block text-xs font-medium text-slate-600 mb-1.5">
-                  Status
-                </label>
-                <select
-                  value={filters.status || ''}
-                  onChange={(e) => setFilters({ ...filters, status: e.target.value as any })}
-                  className="w-full px-3 py-1.5 rounded-lg border border-slate-200 bg-white text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition"
-                >
-                  <option value="">Todos</option>
-                  <option value="ativo">Ativos</option>
-                  <option value="inativo">Inativos</option>
-                  <option value="suspenso">Suspensos</option>
-                </select>
-              </div>
+                {/* Filtro de Status */}
+                <div className="lg:col-span-2">
+                  <label className="block text-xs font-medium text-slate-600 mb-1.5">
+                    Status
+                  </label>
+                  <select
+                    value={filters.status || ''}
+                    onChange={(e) => setFilters({ ...filters, status: e.target.value as any })}
+                    className="w-full px-3 py-1.5 rounded-lg border border-slate-200 bg-white text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition"
+                  >
+                    <option value="">Todos</option>
+                    <option value="ativo">Ativos</option>
+                    <option value="inativo">Inativos</option>
+                    <option value="suspenso">Suspensos</option>
+                  </select>
+                </div>
 
-              {/* Filtro de Tipo */}
-              <div className="lg:col-span-2">
-                <label className="block text-xs font-medium text-slate-600 mb-1.5">
-                  Tipo
-                </label>
-                <select
-                  value={filters.client_type || ''}
-                  onChange={(e) => setFilters({ ...filters, client_type: e.target.value as any })}
-                  className="w-full px-3 py-1.5 rounded-lg border border-slate-200 bg-white text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition"
-                >
-                  <option value="">Todos</option>
-                  <option value="pessoa_fisica">Pessoa Física</option>
-                  <option value="pessoa_juridica">Pessoa Jurídica</option>
+                {/* Filtro de Tipo */}
+                <div className="lg:col-span-2">
+                  <label className="block text-xs font-medium text-slate-600 mb-1.5">
+                    Tipo
+                  </label>
+                  <select
+                    value={filters.client_type || ''}
+                    onChange={(e) => setFilters({ ...filters, client_type: e.target.value as any })}
+                    className="w-full px-3 py-1.5 rounded-lg border border-slate-200 bg-white text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition"
+                  >
+                    <option value="">Todos</option>
+                    <option value="pessoa_fisica">Pessoa Física</option>
+                    <option value="pessoa_juridica">Pessoa Jurídica</option>
                   </select>
                 </div>
 
@@ -485,12 +502,12 @@ const ClientsModule: React.FC<ClientsModuleProps> = ({
                   <button
                     onClick={handleExportToExcel}
                     disabled={exporting}
-                    className="flex-1 inline-flex items-center justify-center gap-1.5 bg-gradient-to-r from-emerald-600 to-emerald-700 hover:from-emerald-500 hover:to-emerald-600 disabled:from-emerald-400 disabled:to-emerald-500 text-white font-bold px-3 py-2 rounded-lg shadow-md hover:shadow-lg transition-all duration-300 disabled:cursor-not-allowed transform hover:-translate-y-0.5 disabled:transform-none"
+                    className="flex-1 inline-flex items-center justify-center gap-1.5 border border-emerald-600 text-emerald-700 hover:bg-emerald-50 disabled:border-emerald-300 disabled:text-emerald-400 bg-white font-medium px-3 py-2 rounded-lg shadow-sm transition disabled:cursor-not-allowed"
                     title="Exportar para Excel"
                   >
                     {exporting ? (
                       <>
-                        <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                        <div className="w-4 h-4 border-2 border-emerald-600 border-t-transparent rounded-full animate-spin" />
                         <span className="text-xs">Gerando...</span>
                       </>
                     ) : (
@@ -502,29 +519,40 @@ const ClientsModule: React.FC<ClientsModuleProps> = ({
                   </button>
                 </div>
               </div>
-            </div>
+            )}
+          </div>
           </>
       )}
 
       {viewMode === 'list' && (missingFieldsMap.size > 0 || outdatedSet.size > 0) && (
         <div className="space-y-2">
-          {missingFieldsMap.size > 0 && (
-            <div className="bg-amber-50 border border-amber-200 text-amber-800 px-4 py-2.5 rounded-lg flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-              <div className="flex items-start gap-3">
+          {missingFieldsMap.size > 0 && showMissingBanner && (
+            <div className="bg-amber-50 border border-amber-200 text-amber-800 px-4 py-2.5 rounded-lg flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
+              <div className="flex items-start gap-3 flex-1">
                 <AlertTriangle className="w-5 h-5 mt-0.5 flex-shrink-0" />
                 <div>
                   <p className="font-semibold text-sm">Cadastros com dados obrigatórios pendentes</p>
                   <p className="text-xs mt-1">Identificamos {missingFieldsMap.size} cliente(s) com informações essenciais ausentes. Complete os dados para garantir consistência.</p>
                 </div>
               </div>
-              {!showIncompleteOnly && (
+              <div className="flex items-center gap-2 self-stretch sm:self-auto">
+                {!showIncompleteOnly && (
+                  <button
+                    onClick={() => setShowIncompleteOnly(true)}
+                    className="inline-flex items-center justify-center px-3 py-1.5 text-xs font-semibold text-amber-900 bg-amber-200/70 hover:bg-amber-200 rounded-md transition-colors"
+                  >
+                    Mostrar incompletos
+                  </button>
+                )}
                 <button
-                  onClick={() => setShowIncompleteOnly(true)}
-                  className="inline-flex items-center justify-center px-3 py-1.5 text-xs font-semibold text-amber-900 bg-amber-200/70 hover:bg-amber-200 rounded-md transition-colors"
+                  type="button"
+                  onClick={() => setShowMissingBanner(false)}
+                  className="ml-auto text-amber-700 hover:text-amber-900 text-xs font-semibold px-2 py-1 rounded-md hover:bg-amber-100 transition-colors"
+                  aria-label="Fechar aviso de cadastros incompletos"
                 >
-                  Mostrar incompletos
+                  ×
                 </button>
-              )}
+              </div>
             </div>
           )}
           {outdatedSet.size > 0 && (
