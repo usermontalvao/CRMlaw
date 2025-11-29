@@ -24,7 +24,7 @@ import {
   Settings,
 } from 'lucide-react';
 import Login from './components/Login';
-import ProfileModal from './components/ProfileModal';
+import ProfileModal, { AppProfile } from './components/ProfileModal';
 import { ClientFormModal } from './components/ClientFormModal';
 import { NotificationCenterNew as NotificationCenter } from './components/NotificationCenterNew';
 import { NotificationPermissionBanner } from './components/NotificationPermissionBanner';
