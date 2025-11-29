@@ -48,6 +48,8 @@ import type { CalendarEvent } from '../types/calendar.types';
 import type { Requirement } from '../types/requirement.types';
 import type { FinancialStats, Installment, Agreement } from '../types/financial.types';
 import type { DjenComunicacaoLocal } from '../types/djen.types';
+import { FinancialCard } from './dashboard/FinancialCard';
+import { DashboardHeader } from './dashboard/DashboardHeader';
 
 interface DashboardProps {
   onNavigateToModule?: (moduleKey: string, params?: Record<string, string>) => void;
@@ -555,41 +557,12 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToModule }) => {
         </button>
       </div>
 
-      {/* Controle Financeiro - Compacto */}
+      {/* Controle Financeiro - Novo Widget */}
       {financialStats && (
-        <div className="bg-gradient-to-r from-emerald-600 to-teal-600 rounded-xl p-4 shadow-md">
-          <div className="flex items-center justify-between mb-3">
-            <div className="flex items-center gap-2">
-              <Wallet className="w-5 h-5 text-white" />
-              <h2 className="text-sm font-bold text-white">Financeiro</h2>
-            </div>
-            <button
-              onClick={() => handleNavigate('financeiro')}
-              className="text-white/80 hover:text-white text-xs font-medium flex items-center gap-1"
-            >
-              Ver mais <ChevronRight className="w-3 h-3" />
-            </button>
-          </div>
-          
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-            <div className="bg-white/10 rounded-lg p-3">
-              <p className="text-[10px] text-white/60 mb-1">Honorários</p>
-              <p className="text-lg font-bold text-white">{formatCurrency(financialStats.monthly_fees_received)}</p>
-            </div>
-            <div className="bg-white/10 rounded-lg p-3">
-              <p className="text-[10px] text-white/60 mb-1">Recebidos</p>
-              <p className="text-lg font-bold text-emerald-300">{financialStats.paid_installments} <span className="text-xs font-normal text-white/50">parc.</span></p>
-            </div>
-            <div className="bg-white/10 rounded-lg p-3">
-              <p className="text-[10px] text-white/60 mb-1">Pendentes</p>
-              <p className="text-lg font-bold text-amber-300">{formatCurrency(financialStats.monthly_fees_pending)}</p>
-            </div>
-            <div className="bg-white/10 rounded-lg p-3">
-              <p className="text-[10px] text-white/60 mb-1">Vencidos</p>
-              <p className="text-lg font-bold text-red-300">{formatCurrency(financialStats.total_overdue)}</p>
-            </div>
-          </div>
-        </div>
+        <FinancialCard 
+          stats={financialStats}
+          onNavigate={() => handleNavigate('financeiro')}
+        />
       )}
 
       {/* Ações Rápidas - Compactas */}

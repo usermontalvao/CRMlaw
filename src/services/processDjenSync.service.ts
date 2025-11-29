@@ -6,11 +6,14 @@ import type { Process } from '../types/process.types';
 class ProcessDjenSyncService {
   /**
    * Busca dados do DJEN para um processo
+   * O DJEN retorna INTIMAÇÕES/COMUNICAÇÕES publicadas no Diário de Justiça
+   * Não são andamentos processuais, mas sim publicações oficiais
    */
   async syncProcessWithDjen(process: Process): Promise<{
     success: boolean;
     updated: boolean;
     data?: any;
+    intimationsCount?: number;
     error?: string;
   }> {
     try {
@@ -36,17 +39,28 @@ class ProcessDjenSyncService {
       const response = await djenService.consultarComunicacoes(searchParams);
 
       if (response.items && response.items.length > 0) {
-        const firstItem = response.items[0];
+        const items = response.items;
+        const firstItem = items[0];
+        
+        // Ordenar por data para pegar a mais recente e a mais antiga
+        const sortedByDate = [...items].sort((a, b) => 
+          new Date(b.datadisponibilizacao || 0).getTime() - new Date(a.datadisponibilizacao || 0).getTime()
+        );
+        
+        const mostRecent = sortedByDate[0];
+        const oldest = sortedByDate[sortedByDate.length - 1];
         
         // Atualizar processo com dados do DJEN
         const updates: any = {};
         let hasUpdates = false;
 
+        // Atualizar vara/comarca se não tiver
         if (firstItem.nomeOrgao && !process.court) {
           updates.court = firstItem.nomeOrgao;
           hasUpdates = true;
         }
 
+        // Atualizar área se não tiver
         if (firstItem.nomeClasse && !process.practice_area) {
           const area = this.mapClasseToArea(firstItem.nomeClasse);
           if (area) {
@@ -55,23 +69,29 @@ class ProcessDjenSyncService {
           }
         }
 
-        // Marcar como sincronizado
+        // Tentar extrair data de distribuição da primeira intimação
+        if (!process.distributed_at && oldest.datadisponibilizacao) {
+          updates.distributed_at = oldest.datadisponibilizacao.split('T')[0];
+          hasUpdates = true;
+        }
+
+        // Marcar como sincronizado com contagem de intimações
         updates.djen_synced = true;
         updates.djen_last_sync = new Date().toISOString();
         updates.djen_has_data = true;
 
-        if (hasUpdates) {
-          await processService.updateProcess(process.id, updates);
-        }
+        await processService.updateProcess(process.id, updates);
 
         return {
           success: true,
           updated: hasUpdates,
           data: firstItem,
+          intimationsCount: items.length,
         };
       } else {
-        // Marcar tentativa de sincronização
+        // Marcar tentativa de sincronização - sem intimações encontradas
         await processService.updateProcess(process.id, {
+          djen_synced: true,
           djen_last_sync: new Date().toISOString(),
           djen_has_data: false,
         });
@@ -79,7 +99,8 @@ class ProcessDjenSyncService {
         return {
           success: true,
           updated: false,
-          error: 'Sem dados no DJEN',
+          intimationsCount: 0,
+          error: 'Nenhuma intimação encontrada no DJEN para este processo',
         };
       }
     } catch (error: any) {

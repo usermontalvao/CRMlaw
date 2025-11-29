@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef, useCallback, type ReactNode } from 'react';
 import {
   X, Save, Loader2, Camera, Shield, Key, Activity, TrendingUp, Users, 
   Briefcase, CheckCircle, Mail, Phone, Building, Award, Calendar

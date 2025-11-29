@@ -206,12 +206,12 @@ const emptyForm: DeadlineFormData = {
   due_date: '',
   status: 'pendente',
   priority: 'media',
-  type: 'geral',
+  type: 'processo',
   process_id: '',
   requirement_id: '',
   client_id: '',
   responsible_id: '',
-  notify_days_before: '3',
+  notify_days_before: '2',
 };
 
 const formatDate = (value?: string | null) => {
@@ -236,7 +236,9 @@ const formatDateTime = (value?: string | null) => {
 
 // Calcula data de vencimento baseado em dias úteis (exclui finais de semana)
 // Prazos processuais começam no dia subsequente à publicação
-const calcularDataVencimento = (dataPublicacao: string, diasPrazo: number): string => {
+type TipoPrazo = 'processual' | 'material';
+
+const calcularDataVencimento = (dataPublicacao: string, diasPrazo: number, tipo: TipoPrazo): string => {
   const data = new Date(dataPublicacao + 'T12:00:00');
   
   // Começa no dia subsequente (regra processual)
@@ -246,20 +248,25 @@ const calcularDataVencimento = (dataPublicacao: string, diasPrazo: number): stri
   
   while (diasContados < diasPrazo) {
     const diaSemana = data.getDay();
-    
-    // Pula sábado (6) e domingo (0)
-    if (diaSemana !== 0 && diaSemana !== 6) {
+    const isFinalSemana = diaSemana === 0 || diaSemana === 6;
+
+    if (tipo === 'processual') {
+      if (!isFinalSemana) {
+        diasContados++;
+      }
+    } else {
       diasContados++;
     }
-    
+
     if (diasContados < diasPrazo) {
       data.setDate(data.getDate() + 1);
     }
   }
-  
-  // Se caiu em fim de semana, avança para segunda
-  while (data.getDay() === 0 || data.getDay() === 6) {
-    data.setDate(data.getDate() + 1);
+
+  if (tipo === 'processual') {
+    while (data.getDay() === 0 || data.getDay() === 6) {
+      data.setDate(data.getDate() + 1);
+    }
   }
   
   return data.toISOString().split('T')[0];
@@ -361,6 +368,7 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
   // Estados para calculadora de prazo
   const [dataPublicacao, setDataPublicacao] = useState('');
   const [diasPrazo, setDiasPrazo] = useState('');
+  const [tipoPrazoCalculadora, setTipoPrazoCalculadora] = useState<TipoPrazo>('processual');
   const calculadoraAtiva = Boolean(dataPublicacao && diasPrazo);
 
   const hasFilterCriteria = Boolean(
@@ -590,25 +598,25 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
   }, [deadlines]);
 
   const monthlyDeadlines = useMemo(() => {
-    const now = new Date();
-    const month = now.getMonth();
-    const year = now.getFullYear();
     return deadlines.filter((deadline) => {
       const due = parseDateOnly(deadline.due_date);
       if (!due) return false;
-      return due.getMonth() === month && due.getFullYear() === year;
+      return due.getMonth() === calendarMonth && due.getFullYear() === calendarYear;
     });
-  }, [deadlines]);
+  }, [deadlines, calendarMonth, calendarYear]);
 
   const monthlyPending = useMemo(
     () => monthlyDeadlines.filter((deadline) => deadline.status === 'pendente'),
     [monthlyDeadlines],
   );
 
-  const monthlyCompleted = useMemo(
-    () => monthlyDeadlines.filter((deadline) => deadline.status === 'cumprido'),
-    [monthlyDeadlines],
-  );
+  const monthlyCompleted = useMemo(() => {
+    return deadlines.filter((deadline) => {
+      if (deadline.status !== 'cumprido' || !deadline.completed_at) return false;
+      const completed = new Date(deadline.completed_at);
+      return completed.getMonth() === calendarMonth && completed.getFullYear() === calendarYear;
+    });
+  }, [deadlines, calendarMonth, calendarYear]);
 
   const monthlyDueToday = useMemo(() => {
     const today = new Date();
@@ -617,6 +625,7 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
       if (deadline.status !== 'pendente') return false;
       const due = parseDateOnly(deadline.due_date);
       if (!due) return false;
+      due.setHours(0, 0, 0, 0);
       return due.getTime() === today.getTime();
     });
   }, [monthlyDeadlines]);
@@ -635,8 +644,8 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
   );
 
   const currentMonthLabel = useMemo(
-    () => new Date().toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' }),
-    [],
+    () => new Date(calendarYear, calendarMonth).toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' }),
+    [calendarMonth, calendarYear],
   );
 
   const memberMap = useMemo(() => new Map(members.map((member) => [member.id, member])), [members]);
@@ -996,7 +1005,7 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
         requirement_id: deadline.requirement_id || '',
         client_id: deadline.client_id || '',
         responsible_id: deadline.responsible_id || '',
-        notify_days_before: String(deadline.notify_days_before ?? 3),
+        notify_days_before: String(deadline.notify_days_before ?? 2),
       });
 
       if (deadline.process_id) {
@@ -1059,6 +1068,11 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
       return;
     }
 
+    if (!formData.responsible_id) {
+      setError('Selecione o responsável pelo prazo.');
+      return;
+    }
+
     try {
       setSaving(true);
       setError(null);
@@ -1074,7 +1088,7 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
         requirement_id: formData.requirement_id || null,
         client_id: formData.client_id || null,
         responsible_id: formData.responsible_id || null,
-        notify_days_before: formData.notify_days_before ? parseInt(formData.notify_days_before, 10) : 3,
+        notify_days_before: formData.notify_days_before ? parseInt(formData.notify_days_before, 10) : 2,
       };
 
       const editingDeadline = selectedDeadline;
@@ -1933,22 +1947,22 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
   );
 
   const deadlineModal = isModalOpen && (
-    <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center z-50 p-4 overflow-y-auto">
-      <div className="bg-white rounded-2xl shadow-2xl max-w-3xl w-full my-8 max-h-[90vh] overflow-y-auto">
-        <div className="px-6 py-4 border-b border-gray-200 flex items-center justify-between">
+    <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center z-50 p-3 overflow-y-auto">
+      <div className="bg-white rounded-xl shadow-2xl max-w-2xl w-full my-6 max-h-[90vh] overflow-y-auto">
+        <div className="px-4 py-3 border-b border-gray-200 flex items-center justify-between">
           <div>
-            <h3 className="text-lg font-semibold text-slate-900">
+            <h3 className="text-base font-semibold text-slate-900">
               {selectedDeadline ? 'Editar Prazo' : 'Novo Prazo'}
             </h3>
-            <p className="text-sm text-slate-600">Cadastre prazos e vincule a processos ou requerimentos.</p>
+            <p className="text-xs text-slate-500">Cadastre prazos e vincule a processos ou requerimentos.</p>
           </div>
           <button onClick={handleCloseModal} className="text-slate-400 hover:text-slate-600" title="Fechar">
             <X className="w-5 h-5" />
           </button>
         </div>
 
-        <form onSubmit={handleSubmit} className="p-6 space-y-5">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <form onSubmit={handleSubmit} className="p-4 space-y-4 text-sm">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
             <div className="md:col-span-2">
               <label className="text-sm font-medium text-slate-700">Título do Prazo *</label>
               <input
@@ -1961,8 +1975,8 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
             </div>
 
             {/* Calculadora de Prazo Processual */}
-            <div className="md:col-span-2 bg-blue-50 rounded-xl p-4 border border-blue-200">
-              <div className="flex items-center gap-2 mb-4">
+            <div className="md:col-span-2 bg-blue-50 rounded-lg p-3 border border-blue-200">
+              <div className="flex items-center gap-2 mb-3">
                 <Calendar className="w-4 h-4 text-blue-700" />
                 <div>
                   <p className="text-sm font-semibold text-blue-900">Calculadora de Prazo Processual</p>
@@ -1972,7 +1986,39 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
                 </div>
               </div>
 
-              <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
+              <div className="flex flex-col gap-3">
+                <div>
+                  <p className="text-xs font-semibold text-blue-900 mb-1">Tipo de prazo</p>
+                  <div className="flex flex-wrap gap-2">
+                    {[
+                      { label: 'Processual (dias úteis)', value: 'processual' },
+                      { label: 'Material (dias corridos)', value: 'material' },
+                    ].map((option) => (
+                      <button
+                        type="button"
+                        key={option.value}
+                        onClick={() => {
+                          setTipoPrazoCalculadora(option.value as TipoPrazo);
+                          if (dataPublicacao && diasPrazo) {
+                            const dias = Number(diasPrazo);
+                            if (!Number.isNaN(dias) && dias > 0) {
+                              const dataVenc = calcularDataVencimento(dataPublicacao, dias, option.value as TipoPrazo);
+                              handleFormChange('due_date', dataVenc);
+                            }
+                          }
+                        }}
+                        className={`px-3 py-1.5 rounded-lg text-xs font-medium border transition ${
+                          tipoPrazoCalculadora === option.value
+                            ? 'bg-blue-600 text-white border-blue-600'
+                            : 'bg-white text-blue-700 border-blue-200 hover:border-blue-400'
+                        }`}
+                      >
+                        {option.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
                 <div>
                   <label className="text-xs font-medium text-blue-800">Data Publicação DJEN</label>
                   <input
@@ -1982,7 +2028,7 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
                       const value = e.target.value;
                       setDataPublicacao(value);
                       if (value && diasPrazo) {
-                        const dataVenc = calcularDataVencimento(value, parseInt(diasPrazo));
+                        const dataVenc = calcularDataVencimento(value, parseInt(diasPrazo), tipoPrazoCalculadora);
                         handleFormChange('due_date', dataVenc);
                       }
                     }}
@@ -2003,7 +2049,7 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
                         if (dataPublicacao && value) {
                           const dias = Number(value);
                           if (!Number.isNaN(dias) && dias > 0) {
-                            const dataVenc = calcularDataVencimento(dataPublicacao, dias);
+                            const dataVenc = calcularDataVencimento(dataPublicacao, dias, tipoPrazoCalculadora);
                             handleFormChange('due_date', dataVenc);
                           }
                         }
@@ -2018,7 +2064,7 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
                         setDiasPrazo(e.target.value);
                         if (dataPublicacao) {
                           const dias = parseInt(e.target.value, 10);
-                          const dataVenc = calcularDataVencimento(dataPublicacao, dias);
+                          const dataVenc = calcularDataVencimento(dataPublicacao, dias, tipoPrazoCalculadora);
                           handleFormChange('due_date', dataVenc);
                         }
                         e.currentTarget.selectedIndex = 0;
@@ -2035,7 +2081,7 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
                   </div>
                 </div>
 
-                <div className="md:col-span-2">
+                <div>
                   <label className="text-xs font-medium text-blue-800">Data de Vencimento Calculada</label>
                   <div className="mt-1 px-3 py-2 bg-white border border-blue-300 rounded-lg text-sm font-semibold text-blue-900 min-h-[42px] flex items-center justify-between">
                     {formData.due_date ? (
@@ -2057,7 +2103,7 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
                 </div>
               </div>
 
-              <div className="mt-4 border-t border-blue-200 pt-3">
+              <div className="mt-3 border-t border-blue-200 pt-3">
                 <p className="text-xs font-semibold text-blue-900 mb-2">Precisa ajustar manualmente?</p>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                   <div>
@@ -2091,9 +2137,15 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
                 </div>
               </div>
 
-              <p className="text-[10px] text-blue-600 mt-3">
-                💡 Prazos processuais começam no dia subsequente à publicação e excluem finais de semana. A calculadora considera automaticamente essas regras.
-              </p>
+              <div className="text-[10px] text-blue-700 mt-2 space-y-1">
+                <p>💡 Regras do CPC/2015 (art. 219):</p>
+                <ul className="list-disc list-inside space-y-1">
+                  <li>Processuais contam apenas dias úteis, iniciam no primeiro dia útil após a intimação e excluem finais de semana/feriados.</li>
+                  <li>Materiais seguem dias corridos; use esta opção apenas quando a lei não determina dias úteis.</li>
+                  <li>Feriado local precisa ser comprovado; nacionais são aplicados automaticamente.</li>
+                </ul>
+                <p className="text-[10px] text-blue-600">O prazo projetado é estimado; sempre confirme com o diário e normas locais.</p>
+              </div>
             </div>
 
             <div>
@@ -2277,19 +2329,40 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
             )}
 
             <div>
-              <label className="text-sm font-medium text-slate-700">Responsável</label>
-              <select
-                value={formData.responsible_id}
-                onChange={(event) => handleFormChange('responsible_id', event.target.value)}
-                className="input-field"
-              >
-                <option value="">Selecione um responsável</option>
+              <label className="text-sm font-medium text-slate-700 mb-2 block">Responsável *</label>
+              <div className="flex flex-wrap gap-2">
                 {members.map((member) => (
-                  <option key={member.id} value={member.id}>
-                    {member.name}
-                  </option>
+                  <button
+                    key={member.id}
+                    type="button"
+                    onClick={() => handleFormChange('responsible_id', member.id)}
+                    className={`flex flex-col items-center gap-1 p-2 rounded-lg border-2 transition-all ${
+                      formData.responsible_id === member.id
+                        ? 'border-blue-500 bg-blue-50 ring-2 ring-blue-200'
+                        : 'border-slate-200 hover:border-slate-300 hover:bg-slate-50'
+                    }`}
+                    title={member.name}
+                  >
+                    {member.avatar_url ? (
+                      <img
+                        src={member.avatar_url}
+                        alt={member.name}
+                        className="w-10 h-10 rounded-full object-cover"
+                      />
+                    ) : (
+                      <div className="w-10 h-10 rounded-full bg-slate-200 flex items-center justify-center text-sm font-semibold text-slate-600">
+                        {member.name.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase()}
+                      </div>
+                    )}
+                    <span className="text-[10px] text-slate-600 font-medium max-w-[60px] truncate">
+                      {member.name.split(' ')[0]}
+                    </span>
+                  </button>
                 ))}
-              </select>
+              </div>
+              {!formData.responsible_id && (
+                <p className="text-xs text-red-500 mt-1">Selecione um responsável</p>
+              )}
             </div>
 
             <div>
@@ -2301,7 +2374,7 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
                 className="input-field"
                 min="0"
                 max="30"
-                placeholder="3"
+                placeholder="2"
               />
             </div>
           </div>
@@ -2329,7 +2402,7 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
             <button
               type="submit"
               disabled={saving}
-              className="px-4 py-2.5 rounded-lg text-sm font-semibold text-white bg-blue-600 hover:bg-blue-700 transition flex items-center gap-2"
+              className="px-4 py-2 rounded-lg text-sm font-semibold text-white bg-blue-600 hover:bg-blue-700 transition flex items-center gap-2"
             >
               {saving && <Loader2 className="w-4 h-4 animate-spin" />}
               {selectedDeadline ? 'Salvar alterações' : 'Criar prazo'}
@@ -2507,133 +2580,253 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
 
   return (
     <div className="space-y-4">
-      {/* Alertas inteligentes */}
-      {smartAlerts.length > 0 && (
-        <div className="space-y-2">
-          {smartAlerts.map((alert) => {
-            const tone = ALERT_TONE_STYLES[alert.tone];
-            return (
-              <div
-                key={alert.id}
-                className={`flex flex-col sm:flex-row sm:items-center justify-between gap-3 border ${tone.border} ${tone.bg} rounded-2xl p-4`}
-              >
-                <div className={`flex items-start gap-3 ${tone.text}`}>
-                  <div className="flex-shrink-0">{alert.icon}</div>
-                  <div>
-                    <p className="text-sm font-semibold">{alert.title}</p>
-                    <p className="text-xs opacity-80">{alert.description}</p>
-                  </div>
-                </div>
-                {alert.actionLabel && alert.onAction && (
-                  <button
-                    onClick={alert.onAction}
-                    className={`px-4 py-2 rounded-lg text-xs font-semibold ${tone.button}`}
-                  >
-                    {alert.actionLabel}
-                  </button>
-                )}
-              </div>
-            );
-          })}
-        </div>
-      )}
-
-      {/* Cards de Estatísticas - Mensais */}
-      <div className="flex items-center justify-between">
+      {/* Header Principal */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
-          <p className="text-[11px] font-semibold text-slate-500 uppercase tracking-wide">Resumo mensal</p>
-          <p className="text-sm font-semibold text-slate-900 capitalize">{currentMonthLabel}</p>
+          <h1 className="text-2xl font-bold text-slate-900">Gestão de Prazos</h1>
+          <p className="text-sm text-slate-500">Controle compromissos e prazos vinculados aos seus casos</p>
         </div>
-        <p className="text-[11px] text-slate-400">Somente prazos com vencimento no mês atual</p>
+        
+        {/* Seletor de Mês */}
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => {
+              if (calendarMonth === 0) {
+                setCalendarMonth(11);
+                setCalendarYear(calendarYear - 1);
+              } else {
+                setCalendarMonth(calendarMonth - 1);
+              }
+            }}
+            className="p-2 hover:bg-slate-100 rounded-lg transition-colors text-slate-600"
+          >
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+            </svg>
+          </button>
+          <span className="text-sm font-semibold text-slate-800 capitalize min-w-[140px] text-center">
+            {new Date(calendarYear, calendarMonth).toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' })}
+          </span>
+          <button
+            onClick={() => {
+              if (calendarMonth === 11) {
+                setCalendarMonth(0);
+                setCalendarYear(calendarYear + 1);
+              } else {
+                setCalendarMonth(calendarMonth + 1);
+              }
+            }}
+            className="p-2 hover:bg-slate-100 rounded-lg transition-colors text-slate-600"
+          >
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+            </svg>
+          </button>
+        </div>
       </div>
-      <div className="grid grid-cols-4 gap-2">
+
+      {/* Cards de Estatísticas - Layout Horizontal */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
         <button
           onClick={() => setActiveStatusTab('todos')}
-          className={`flex items-center gap-3 p-3 rounded-xl transition-all hover:shadow-md ${
-            activeStatusTab === 'todos' ? 'ring-2 ring-blue-500 bg-blue-50' : 'bg-white border border-slate-200'
+          className={`flex items-center gap-3 p-4 rounded-xl transition-all hover:shadow-md border ${
+            activeStatusTab === 'todos' ? 'ring-2 ring-blue-500 bg-blue-50 border-blue-200' : 'bg-white border-slate-200'
           }`}
         >
-          <div className="w-10 h-10 rounded-lg bg-blue-500 flex items-center justify-center">
+          <div className="w-10 h-10 rounded-full bg-blue-500 flex items-center justify-center flex-shrink-0">
             <Calendar className="w-5 h-5 text-white" />
           </div>
           <div className="text-left">
-            <p className="text-xl font-bold text-slate-900">{monthlyDeadlines.length}</p>
-            <p className="text-[10px] text-slate-500">Total no mês</p>
+            <p className="text-2xl font-bold text-slate-900">{monthlyDeadlines.length}</p>
+            <p className="text-xs text-slate-500">Total no mês</p>
           </div>
         </button>
 
         <button
           onClick={() => setActiveStatusTab('pendente')}
-          className={`flex items-center gap-3 p-3 rounded-xl transition-all hover:shadow-md ${
-            activeStatusTab === 'pendente' ? 'ring-2 ring-amber-500 bg-amber-50' : 'bg-white border border-slate-200'
+          className={`flex items-center gap-3 p-4 rounded-xl transition-all hover:shadow-md border ${
+            activeStatusTab === 'pendente' ? 'ring-2 ring-amber-500 bg-amber-50 border-amber-200' : 'bg-white border-slate-200'
           }`}
         >
-          <div className="w-10 h-10 rounded-lg bg-amber-500 flex items-center justify-center">
+          <div className="w-10 h-10 rounded-full bg-amber-500 flex items-center justify-center flex-shrink-0">
             <Clock className="w-5 h-5 text-white" />
           </div>
           <div className="text-left">
-            <p className="text-xl font-bold text-slate-900">{monthlyPending.length}</p>
-            <p className="text-[10px] text-slate-500">Pendentes no mês</p>
+            <p className="text-2xl font-bold text-slate-900">{monthlyPending.length}</p>
+            <p className="text-xs text-slate-500">Pendentes no mês</p>
           </div>
         </button>
 
         <button
           onClick={() => setActiveStatusTab('vencido')}
-          className={`flex items-center gap-3 p-3 rounded-xl transition-all hover:shadow-md ${
-            activeStatusTab === 'vencido' ? 'ring-2 ring-red-500 bg-red-50' : 'bg-white border border-slate-200'
+          className={`flex items-center gap-3 p-4 rounded-xl transition-all hover:shadow-md border ${
+            activeStatusTab === 'vencido' ? 'ring-2 ring-red-500 bg-red-50 border-red-200' : 'bg-white border-slate-200'
           }`}
         >
-          <div className={`w-10 h-10 rounded-lg flex items-center justify-center ${
-            dueTodayDeadlines.length > 0 || overdueDeadlines.length > 0 ? 'bg-red-500' : 'bg-slate-400'
+          <div className={`w-10 h-10 rounded-full flex items-center justify-center flex-shrink-0 ${
+            monthlyAttentionCount > 0 ? 'bg-red-500' : 'bg-slate-300'
           }`}>
             <AlertCircle className="w-5 h-5 text-white" />
           </div>
           <div className="text-left">
-            <p className="text-xl font-bold text-slate-900">{monthlyAttentionCount}</p>
-            <p className="text-[10px] text-slate-500">Atenção no mês</p>
+            <p className="text-2xl font-bold text-slate-900">{monthlyAttentionCount}</p>
+            <p className="text-xs text-slate-500">Atenção no mês</p>
           </div>
         </button>
 
-        <div className="flex items-center gap-3 p-3 rounded-xl bg-white border border-slate-200">
-          <div className="w-10 h-10 rounded-lg bg-emerald-500 flex items-center justify-center">
+        <div className="flex items-center gap-3 p-4 rounded-xl bg-white border border-slate-200">
+          <div className="w-10 h-10 rounded-full bg-emerald-500 flex items-center justify-center flex-shrink-0">
             <CheckCircle className="w-5 h-5 text-white" />
           </div>
           <div className="text-left">
-            <p className="text-xl font-bold text-slate-900">{monthlyCompleted.length}</p>
-            <p className="text-[10px] text-slate-500">Concluídos no mês</p>
+            <p className="text-2xl font-bold text-slate-900">{monthlyCompleted.length}</p>
+            <p className="text-xs text-slate-500">Concluídos no mês</p>
+          </div>
+        </div>
+      </div>
+
+      {/* Alertas inteligentes - Compacto */}
+      {smartAlerts.length > 0 && (
+        <div className="flex flex-wrap gap-2">
+          {smartAlerts.map((alert) => {
+            const tone = ALERT_TONE_STYLES[alert.tone];
+            return (
+              <button
+                key={alert.id}
+                onClick={alert.onAction}
+                className={`flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-medium border ${tone.border} ${tone.bg} ${tone.text} hover:shadow-sm transition-all`}
+              >
+                {alert.icon}
+                <span>{alert.title}: {alert.description.match(/\d+/)?.[0] || ''}</span>
+              </button>
+            );
+          })}
+        </div>
+      )}
+
+      {/* Abas de Navegação e Ações */}
+      <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-4 border-b border-slate-100">
+          {/* Abas de Visualização */}
+          <div className="flex items-center gap-1 bg-slate-100 rounded-lg p-1">
+            <button
+              onClick={() => setViewMode('list')}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-all ${
+                viewMode === 'list' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-700'
+              }`}
+            >
+              <List className="w-3.5 h-3.5" />
+              Lista
+            </button>
+            <button
+              onClick={() => setViewMode('kanban')}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-all ${
+                viewMode === 'kanban' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-700'
+              }`}
+            >
+              <LayoutGrid className="w-3.5 h-3.5" />
+              Kanban
+            </button>
+            <button
+              onClick={() => setViewMode('map')}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-all ${
+                viewMode === 'map' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-700'
+              }`}
+            >
+              <Calendar className="w-3.5 h-3.5" />
+              Mapa
+            </button>
+            <button
+              onClick={() => setCalendarExpanded(!calendarExpanded)}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-all ${
+                calendarExpanded ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-700'
+              }`}
+            >
+              <Calendar className="w-3.5 h-3.5" />
+              Calendário de Prazos
+            </button>
+          </div>
+
+          {/* Botões de Ação */}
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setShowReportModal(true)}
+              className="flex items-center gap-1.5 px-3 py-2 border border-slate-200 hover:bg-slate-50 text-slate-700 rounded-lg text-xs font-medium transition-all"
+            >
+              <BarChart3 className="w-3.5 h-3.5" />
+              Relatórios
+            </button>
+            <button
+              onClick={() => handleOpenModal()}
+              className="flex items-center gap-1.5 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-semibold transition-all shadow-sm"
+            >
+              <Plus className="w-3.5 h-3.5" />
+              Novo Prazo
+            </button>
+          </div>
+        </div>
+
+        {/* Barra de Filtros */}
+        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 p-3 bg-slate-50/50 border-b border-slate-100">
+          {/* Busca */}
+          <div className="relative flex-1">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+            <input
+              type="text"
+              value={filterSearch}
+              onChange={(event) => setFilterSearch(event.target.value)}
+              className="w-full pl-9 pr-3 py-2 bg-white border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
+              placeholder="Buscar prazo..."
+            />
+          </div>
+
+          {/* Filtros */}
+          <div className="flex items-center gap-2">
+            <select
+              value={filterType}
+              onChange={(event) => setFilterType(event.target.value as DeadlineType | '')}
+              className="px-3 py-2 bg-white border border-slate-200 rounded-lg text-xs focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
+            >
+              <option value="">Tipo</option>
+              {TYPE_OPTIONS.map((type) => (
+                <option key={type.key} value={type.key}>{type.label}</option>
+              ))}
+            </select>
+
+            <select
+              value={filterPriority}
+              onChange={(event) => setFilterPriority(event.target.value as DeadlinePriority | '')}
+              className="px-3 py-2 bg-white border border-slate-200 rounded-lg text-xs focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
+            >
+              <option value="">Prioridade</option>
+              {PRIORITY_OPTIONS.map((priority) => (
+                <option key={priority.key} value={priority.key}>{priority.label}</option>
+              ))}
+            </select>
+
+            {(filterSearch || filterType || filterPriority) && (
+              <button
+                onClick={() => {
+                  setFilterSearch('');
+                  setFilterType('');
+                  setFilterPriority('');
+                }}
+                className="px-2 py-2 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-lg transition-all"
+                title="Limpar filtros"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            )}
           </div>
         </div>
       </div>
 
       {/* Calendário Mensal de Prazos - Retrátil */}
+      {calendarExpanded && (
       <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
-        <button
-          onClick={() => setCalendarExpanded(!calendarExpanded)}
-          className="w-full flex items-center justify-between p-3 hover:bg-slate-50 transition-colors"
-        >
-          <div className="flex items-center gap-2">
-            <Calendar className="w-4 h-4 text-slate-600" />
-            <h4 className="text-sm font-semibold text-slate-800">Calendário de Prazos</h4>
-          </div>
-          <div className="flex items-center gap-2">
-            <span className="text-xs bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full font-medium">
-              {pendingDeadlines.filter(d => {
-                const dueDateStr = d.due_date?.split('T')[0];
-                if (!dueDateStr) return false;
-                const [year, month] = dueDateStr.split('-').map(Number);
-                return month === calendarMonth + 1 && year === calendarYear;
-              }).length} prazos
-            </span>
-            <svg className={`w-4 h-4 text-slate-400 transition-transform ${calendarExpanded ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-            </svg>
-          </div>
-        </button>
-        
-        {calendarExpanded && (
-          <div className="p-4 pt-0 border-t border-slate-100">
+        <div className="p-4">
             {/* Navegação do mês */}
-            <div className="flex items-center justify-between mb-3 mt-3">
+            <div className="flex items-center justify-between mb-3">
               <button
                 onClick={() => {
                   if (calendarMonth === 0) {
@@ -2705,24 +2898,20 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
                 const daysInMonth = new Date(year, month + 1, 0).getDate();
                 const cells = [];
                 
-                // Células vazias antes do primeiro dia
                 for (let i = 0; i < firstDay; i++) {
                   cells.push(<div key={`empty-${i}`} className="h-8" />);
                 }
                 
-                // Dias do mês
                 for (let day = 1; day <= daysInMonth; day++) {
                   const date = new Date(year, month, day);
                   const isToday = date.toDateString() === today.toDateString();
                   const isWeekend = date.getDay() === 0 || date.getDay() === 6;
                   
-                  // Formatar a data do dia atual para comparar com due_date (YYYY-MM-DD)
                   const dayStr = String(day).padStart(2, '0');
                   const monthStr = String(month + 1).padStart(2, '0');
                   const dateStr = `${year}-${monthStr}-${dayStr}`;
                   
                   const dayDeadlines = pendingDeadlines.filter(d => {
-                    // Comparar diretamente as strings de data (YYYY-MM-DD)
                     const dueDateStr = d.due_date?.split('T')[0];
                     return dueDateStr === dateStr;
                   });
@@ -2741,28 +2930,28 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
                           : count > 0
                           ? 'bg-amber-100 text-amber-700 hover:bg-amber-200 cursor-pointer'
                           : isWeekend
-                      ? 'text-red-300 bg-red-50/50'
-                      : isPast
-                      ? 'text-slate-300'
-                      : 'text-slate-600 hover:bg-slate-100'
-                  }`}
-                  title={count > 0 ? `${count} prazo(s)` : ''}
-                >
-                  {day}
-                  {count > 0 && (
-                    <span className={`absolute -top-1 -right-1 w-4 h-4 rounded-full text-[9px] font-bold flex items-center justify-center ${
-                      hasUrgent ? 'bg-red-500 text-white' : 'bg-amber-500 text-white'
-                    }`}>
-                      {count}
-                    </span>
-                  )}
-                </div>
-              );
-            }
-            
-            return cells;
-          })()}
-        </div>
+                          ? 'text-red-300 bg-red-50/50'
+                          : isPast
+                          ? 'text-slate-300'
+                          : 'text-slate-600 hover:bg-slate-100'
+                      }`}
+                      title={count > 0 ? `${count} prazo(s)` : ''}
+                    >
+                      {day}
+                      {count > 0 && (
+                        <span className={`absolute -top-1 -right-1 w-4 h-4 rounded-full text-[9px] font-bold flex items-center justify-center ${
+                          hasUrgent ? 'bg-red-500 text-white' : 'bg-amber-500 text-white'
+                        }`}>
+                          {count}
+                        </span>
+                      )}
+                    </div>
+                  );
+                }
+                
+                return cells;
+              })()}
+            </div>
         
             {/* Legenda */}
             <div className="flex items-center justify-center gap-4 mt-3 pt-3 border-t border-slate-100">
@@ -2780,122 +2969,14 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
               </div>
             </div>
           </div>
-        )}
-      </div>
-
-      {/* Barra de Ações e Filtros - Design Compacto */}
-      <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
-        {/* Header com ações */}
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-4 border-b border-slate-100">
-          {/* Visualização */}
-          <div className="flex items-center bg-slate-100 rounded-xl p-1">
-            <button
-              onClick={() => setViewMode('list')}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${
-                viewMode === 'list' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-700'
-              }`}
-            >
-              <List className="w-3.5 h-3.5" />
-              <span className="hidden sm:inline">Lista</span>
-            </button>
-            <button
-              onClick={() => setViewMode('kanban')}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${
-                viewMode === 'kanban' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-700'
-              }`}
-            >
-              <LayoutGrid className="w-3.5 h-3.5" />
-              <span className="hidden sm:inline">Kanban</span>
-            </button>
-            <button
-              onClick={() => setViewMode('map')}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${
-                viewMode === 'map' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-700'
-              }`}
-            >
-              <Calendar className="w-3.5 h-3.5" />
-              <span className="hidden sm:inline">Mapa</span>
-            </button>
-          </div>
-
-          {/* Botões de ação */}
-          <div className="flex items-center gap-2">
-            <button
-              onClick={() => setShowReportModal(true)}
-              className="flex items-center gap-1.5 px-3 py-2 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 rounded-lg text-xs font-medium transition-all"
-            >
-              <BarChart3 className="w-3.5 h-3.5" />
-              <span className="hidden sm:inline">Relatórios</span>
-            </button>
-            <button
-              onClick={() => handleOpenModal()}
-              className="flex items-center gap-1.5 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-semibold transition-all shadow-sm"
-            >
-              <Plus className="w-3.5 h-3.5" />
-              Novo Prazo
-            </button>
-          </div>
         </div>
-
-        {/* Busca e Filtros inline */}
-        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 p-3 bg-slate-50/50">
-          {/* Busca */}
-          <div className="relative flex-1">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
-            <input
-              type="text"
-              value={filterSearch}
-              onChange={(event) => setFilterSearch(event.target.value)}
-              className="w-full pl-9 pr-3 py-2 bg-white border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
-              placeholder="Buscar prazo..."
-            />
-          </div>
-
-          {/* Filtros */}
-          <div className="flex items-center gap-2">
-            <select
-              value={filterType}
-              onChange={(event) => setFilterType(event.target.value as DeadlineType | '')}
-              className="px-3 py-2 bg-white border border-slate-200 rounded-lg text-xs focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
-            >
-              <option value="">Tipo</option>
-              {TYPE_OPTIONS.map((type) => (
-                <option key={type.key} value={type.key}>{type.label}</option>
-              ))}
-            </select>
-
-            <select
-              value={filterPriority}
-              onChange={(event) => setFilterPriority(event.target.value as DeadlinePriority | '')}
-              className="px-3 py-2 bg-white border border-slate-200 rounded-lg text-xs focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
-            >
-              <option value="">Prioridade</option>
-              {PRIORITY_OPTIONS.map((priority) => (
-                <option key={priority.key} value={priority.key}>{priority.label}</option>
-              ))}
-            </select>
-
-            {(filterSearch || filterType || filterPriority) && (
-              <button
-                onClick={() => {
-                  setFilterSearch('');
-                  setFilterType('');
-                  setFilterPriority('');
-                }}
-                className="px-2 py-2 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-lg transition-all"
-                title="Limpar filtros"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            )}
-          </div>
-        </div>
-      </div>
+      )}
 
       {error && (
         <div className="bg-red-50 border border-red-200 text-red-600 px-4 py-3 rounded-lg text-sm">{error}</div>
       )}
 
+      {/* Conteúdo Principal baseado no viewMode */}
       {viewMode === 'kanban' ? (
         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
           {STATUS_FILTER_OPTIONS.map((statusOption) => {
@@ -3258,17 +3339,17 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
             })}
           </div>
 
-          {/* Desktop Table - Compacta */}
+          {/* Desktop Table - Layout conforme imagem */}
           <div className="hidden lg:block">
             <table className="w-full">
-              <thead className="bg-slate-50 border-b border-slate-200">
+              <thead className="border-b border-slate-200">
                 <tr>
-                  <th className="px-3 py-2 text-left text-[10px] font-semibold text-slate-600 uppercase">Prazo</th>
-                  <th className="px-3 py-2 text-left text-[10px] font-semibold text-slate-600 uppercase w-24">Vencimento</th>
-                  <th className="px-3 py-2 text-left text-[10px] font-semibold text-slate-600 uppercase w-16">Dias</th>
-                  <th className="px-3 py-2 text-left text-[10px] font-semibold text-slate-600 uppercase">Cliente / Prioridade</th>
-                  <th className="px-3 py-2 text-center text-[10px] font-semibold text-slate-600 uppercase w-32">Status</th>
-                  <th className="px-3 py-2 text-right text-[10px] font-semibold text-slate-600 uppercase w-24">Ações</th>
+                  <th className="px-4 py-3 text-left text-[11px] font-semibold text-slate-500 uppercase tracking-wide">Prazo</th>
+                  <th className="px-4 py-3 text-left text-[11px] font-semibold text-slate-500 uppercase tracking-wide">Vencimento</th>
+                  <th className="px-4 py-3 text-left text-[11px] font-semibold text-slate-500 uppercase tracking-wide">Dias</th>
+                  <th className="px-4 py-3 text-left text-[11px] font-semibold text-slate-500 uppercase tracking-wide">Cliente / Prioridade</th>
+                  <th className="px-4 py-3 text-left text-[11px] font-semibold text-slate-500 uppercase tracking-wide">Status</th>
+                  <th className="px-4 py-3 text-right text-[11px] font-semibold text-slate-500 uppercase tracking-wide">Ações</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
@@ -3278,74 +3359,105 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
                   const daysUntil = getDaysUntilDue(deadline.due_date);
                   const dueSoon = isDueSoon(deadline.due_date);
                   const clientItem = deadline.client_id ? clientMap.get(deadline.client_id) : null;
+                  const linkedProcess = deadline.process_id ? processes.find(p => p.id === deadline.process_id) : null;
 
                   return (
                     <tr
                       key={deadline.id}
                       className={`hover:bg-slate-50 transition-colors ${
-                        dueSoon && deadline.status === 'pendente' ? 'bg-red-50/50' : ''
+                        dueSoon && deadline.status === 'pendente' ? 'bg-red-50/30' : ''
                       }`}
                     >
-                      <td className="px-3 py-2">
-                        <p className="text-sm font-medium text-slate-900 truncate max-w-[200px]">{deadline.title}</p>
+                      {/* Coluna PRAZO */}
+                      <td className="px-4 py-3">
+                        <div>
+                          <p className="text-sm font-semibold text-blue-600 hover:text-blue-700 cursor-pointer" onClick={() => handleViewDeadline(deadline)}>
+                            {deadline.title.toUpperCase()}
+                          </p>
+                          <p className="text-xs text-slate-400 mt-0.5">
+                            {linkedProcess ? `Prazos vinculados aos prazos` : 'Prazos vinculados aos prazos'}
+                          </p>
+                        </div>
                       </td>
-                      <td className="px-3 py-2">
-                        <span className="text-xs text-slate-600">{formatDate(deadline.due_date)}</span>
+                      
+                      {/* Coluna VENCIMENTO */}
+                      <td className="px-4 py-3">
+                        <span className="text-sm text-slate-700">{formatDate(deadline.due_date)}</span>
                       </td>
-                      <td className="px-3 py-2">
+                      
+                      {/* Coluna DIAS */}
+                      <td className="px-4 py-3">
                         {daysUntil >= 0 ? (
-                          <span className={`text-xs font-semibold px-2 py-0.5 rounded ${
-                            dueSoon ? 'bg-red-100 text-red-700' : 'bg-slate-100 text-slate-600'
+                          <span className={`inline-flex items-center px-2.5 py-1 rounded-md text-xs font-semibold ${
+                            dueSoon ? 'bg-red-100 text-red-700' : 'bg-blue-50 text-blue-700'
                           }`}>
-                            {daysUntil === 0 ? 'Hoje' : daysUntil === 1 ? '1d' : `${daysUntil}d`}
+                            {daysUntil} dias
                           </span>
                         ) : (
-                          <span className="text-xs font-semibold px-2 py-0.5 rounded bg-red-500 text-white">
-                            -{Math.abs(daysUntil)}d
+                          <span className="inline-flex items-center px-2.5 py-1 rounded-md text-xs font-semibold bg-red-500 text-white">
+                            {Math.abs(daysUntil)} dias
                           </span>
                         )}
                       </td>
-                      <td className="px-3 py-2">
-                        <div className="flex items-center gap-2">
-                          <span className="text-xs text-slate-700 truncate max-w-[120px]">
+                      
+                      {/* Coluna CLIENTE / PRIORIDADE */}
+                      <td className="px-4 py-3">
+                        <div className="flex flex-col gap-1">
+                          <span className="text-sm text-slate-800">
                             {clientItem ? clientItem.full_name : '-'}
                           </span>
-                          <span className={`inline-block px-1.5 py-0.5 rounded text-[9px] font-bold ${getPriorityBadge(deadline.priority)}`}>
-                            {priorityConfig?.label}
-                          </span>
+                          <div className="flex items-center gap-1.5">
+                            <span className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] font-semibold ${
+                              deadline.priority === 'media' ? 'bg-amber-100 text-amber-700' :
+                              deadline.priority === 'alta' ? 'bg-red-100 text-red-700' :
+                              deadline.priority === 'urgente' ? 'bg-red-500 text-white' :
+                              'bg-slate-100 text-slate-600'
+                            }`}>
+                              {priorityConfig?.label}
+                            </span>
+                            {(deadline.priority === 'alta' || deadline.priority === 'urgente') && (
+                              <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-semibold bg-red-100 text-red-700">
+                                Alta
+                              </span>
+                            )}
+                          </div>
                         </div>
                       </td>
-                      <td className="px-3 py-2 text-center">
+                      
+                      {/* Coluna STATUS */}
+                      <td className="px-4 py-3">
                         <select
                           value={deadline.status}
                           onChange={(e) => handleStatusChange(deadline.id, e.target.value as DeadlineStatus)}
                           disabled={isUpdating}
-                          className={`text-xs font-semibold px-2 py-1 rounded border-0 focus:outline-none focus:ring-1 focus:ring-blue-500 disabled:opacity-50 ${getStatusBadge(deadline.status)}`}
+                          className="text-xs font-medium px-3 py-1.5 rounded-md border border-slate-200 bg-white text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 disabled:opacity-50 cursor-pointer"
                         >
                           {STATUS_OPTIONS.map((opt) => (
                             <option key={opt.key} value={opt.key}>{opt.label}</option>
                           ))}
                         </select>
                       </td>
-                      <td className="px-3 py-2">
+                      
+                      {/* Coluna AÇÕES */}
+                      <td className="px-4 py-3">
                         <div className="flex items-center justify-end gap-1">
                           <button
                             onClick={() => handleViewDeadline(deadline)}
-                            className="p-1.5 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded transition-colors"
+                            className="p-2 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
                             title="Ver"
                           >
                             <Eye className="w-4 h-4" />
                           </button>
                           <button
                             onClick={() => handleOpenModal(deadline)}
-                            className="p-1.5 text-slate-400 hover:text-amber-600 hover:bg-amber-50 rounded transition-colors"
+                            className="p-2 text-slate-400 hover:text-amber-600 hover:bg-amber-50 rounded-lg transition-colors"
                             title="Editar"
                           >
                             <Edit2 className="w-4 h-4" />
                           </button>
                           <button
                             onClick={() => handleDeleteDeadline(deadline.id)}
-                            className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded transition-colors"
+                            className="p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
                             title="Excluir"
                           >
                             <Trash2 className="w-4 h-4" />
@@ -3387,19 +3499,16 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
       {reportModal}
 
       {/* Histórico de Prazos Cumpridos */}
-      <div className="bg-white border border-slate-200 rounded-xl p-6">
-        <div className="flex items-center justify-between mb-4">
-          <div>
-            <h4 className="text-lg font-semibold text-slate-900">Histórico - Últimos Prazos Cumpridos</h4>
-            <p className="text-sm text-slate-600 mt-1">Últimos 10 prazos concluídos com opção de reabrir</p>
-          </div>
-          <CheckCircle2 className="w-6 h-6 text-emerald-500" />
+      <div className="bg-white border border-slate-200 rounded-xl overflow-hidden">
+        <div className="flex items-center gap-2 px-6 py-4 border-b border-slate-100">
+          <CheckCircle2 className="w-5 h-5 text-emerald-500" />
+          <h4 className="text-base font-semibold text-slate-900">Histórico - Últimos Prazos Cumpridos</h4>
         </div>
 
         {completedDeadlines.length === 0 ? (
           <p className="text-sm text-slate-500 text-center py-8">Nenhum prazo cumprido ainda.</p>
         ) : (
-          <div className="space-y-3">
+          <div className="divide-y divide-slate-100">
             {completedDeadlines.map((deadline) => {
               const clientItem = deadline.client_id ? clientMap.get(deadline.client_id) : null;
               const responsibleItem = deadline.responsible_id ? memberMap.get(deadline.responsible_id) : null;
@@ -3407,56 +3516,60 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
               return (
                 <div
                   key={deadline.id}
-                  className="relative border border-emerald-100 bg-emerald-50/30 rounded-lg p-4 flex items-center justify-between hover:shadow-md transition overflow-hidden"
+                  className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between px-6 py-4 hover:bg-slate-50 transition"
                 >
-                  {/* Badge CONCLUÍDO */}
-                  <div className="absolute top-0 right-0 bg-emerald-600 text-white px-3 py-1 rounded-bl-lg text-xs font-bold flex items-center gap-1">
-                    <CheckCircle className="w-3 h-3" />
-                    CONCLUÍDO
-                  </div>
-                  
-                  <div className="flex-1 pr-24">
-                    <div className="flex items-center gap-3 mb-2">
+                  {/* Info do prazo */}
+                  <div className="flex-1 min-w-[200px]">
+                    <div className="flex items-center gap-2 mb-1">
                       <h5 className="text-sm font-semibold text-slate-900">{deadline.title}</h5>
                       {priorityConfig && (
-                        <span className={`px-2 py-0.5 rounded-full text-xs font-semibold ${getPriorityBadge(deadline.priority)}`}>
+                        <span className={`px-2 py-0.5 rounded text-[10px] font-semibold ${
+                          deadline.priority === 'media' ? 'bg-amber-100 text-amber-700' :
+                          deadline.priority === 'alta' ? 'bg-red-100 text-red-700' :
+                          deadline.priority === 'urgente' ? 'bg-red-500 text-white' :
+                          'bg-slate-100 text-slate-600'
+                        }`}>
                           {priorityConfig.label}
                         </span>
                       )}
                     </div>
-                    <div className="flex flex-wrap gap-4 text-xs text-slate-600">
-                      {clientItem && (
-                        <span className="flex items-center gap-1">
-                          <UserCircle className="w-3 h-3" />
-                          {clientItem.full_name}
-                        </span>
-                      )}
-                      <span>Vencimento: {formatDate(deadline.due_date)}</span>
-                      {deadline.completed_at && (
-                        <span className="text-emerald-600 font-semibold">
-                          Cumprido em: {formatDate(deadline.completed_at)}
-                        </span>
-                      )}
-                      {responsibleItem && (
-                        <span>Responsável: {responsibleItem.name}</span>
-                      )}
+                    <p className="text-xs text-slate-500">
+                      {clientItem ? `Cliente ${clientItem.full_name}` : 'Sem cliente'}
+                    </p>
+                  </div>
+                  
+                  {/* Datas */}
+                  <div className="flex flex-wrap items-center gap-4 text-sm min-w-[240px]">
+                    <div>
+                      <p className="text-slate-500 text-xs uppercase tracking-wide">Vencimento</p>
+                      <p className="text-slate-800 font-medium">{formatDate(deadline.due_date)}</p>
+                    </div>
+                    <div>
+                      <p className="text-slate-500 text-xs uppercase tracking-wide">Cumprido</p>
+                      <p className="text-slate-800 font-medium">{deadline.completed_at ? formatDate(deadline.completed_at) : '-'}</p>
+                    </div>
+                    <div>
+                      <p className="text-slate-500 text-xs uppercase tracking-wide">Responsável</p>
+                      <p className="text-slate-800 font-medium">{responsibleItem ? responsibleItem.name : '—'}</p>
                     </div>
                   </div>
-                  <div className="flex items-center gap-2">
+                  
+                  {/* Badge e Ações */}
+                  <div className="flex items-center gap-3 md:ml-6">
+                    <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-semibold bg-emerald-100 text-emerald-700">
+                      <CheckCircle className="w-3 h-3" />
+                      CONCLUÍDO
+                    </span>
                     <button
                       onClick={() => handleViewDeadline(deadline)}
-                      className="inline-flex items-center gap-1 px-3 py-2 text-xs font-medium text-cyan-600 hover:text-cyan-700 hover:bg-cyan-50 rounded-lg transition"
-                      title="Ver detalhes"
+                      className="px-3 py-1.5 text-xs font-medium text-slate-600 border border-slate-200 hover:bg-slate-50 rounded-lg transition"
                     >
-                      <Eye className="w-4 h-4" />
                       Ver
                     </button>
                     <button
                       onClick={() => handleStatusChange(deadline.id, 'pendente')}
-                      className="inline-flex items-center gap-1 px-3 py-2 text-xs font-medium text-blue-600 hover:text-blue-700 hover:bg-blue-50 rounded-lg transition"
-                      title="Reabrir prazo"
+                      className="px-3 py-1.5 text-xs font-medium text-blue-600 border border-blue-200 hover:bg-blue-50 rounded-lg transition"
                     >
-                      <Clock className="w-4 h-4" />
                       Reabrir
                     </button>
                   </div>

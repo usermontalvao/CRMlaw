@@ -13,6 +13,15 @@ import {
   List,
   Reply,
   FileSpreadsheet,
+  RefreshCw,
+  CheckCircle2,
+  AlertCircle,
+  Clock,
+  FileText,
+  AlertTriangle,
+  ChevronDown,
+  ChevronUp,
+  Sparkles,
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { processService } from '../services/process.service';
@@ -20,6 +29,7 @@ import { clientService } from '../services/client.service';
 import { profileService } from '../services/profile.service';
 import { djenService } from '../services/djen.service';
 import { processDjenSyncService } from '../services/processDjenSync.service';
+import { processTimelineService, type TimelineEvent } from '../services/processTimeline.service';
 import { ClientSearchSelect } from './ClientSearchSelect';
 import { useAuth } from '../contexts/AuthContext';
 import type { Process, ProcessStatus, ProcessPracticeArea, HearingMode } from '../types/process.types';
@@ -237,6 +247,7 @@ const ProcessesModule: React.FC<ProcessesModuleProps> = ({ forceCreate, entityId
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [clients, setClients] = useState<Client[]>([]);
+  const [allClients, setAllClients] = useState<Client[]>([]); // Para busca global
   const [clientsLoading, setClientsLoading] = useState(false);
   const [clientSearchTerm, setClientSearchTerm] = useState('');
   const [showClientSuggestions, setShowClientSuggestions] = useState(false);
@@ -269,6 +280,16 @@ const ProcessesModule: React.FC<ProcessesModuleProps> = ({ forceCreate, entityId
   const [isDragging, setIsDragging] = useState(false);
   const [exportingExcel, setExportingExcel] = useState(false);
   const [currentProfile, setCurrentProfile] = useState<Profile | null>(null);
+  const [syncingDjen, setSyncingDjen] = useState(false);
+  const [syncResult, setSyncResult] = useState<{ total: number; synced: number; updated: number; errors: number; intimationsFound: number } | null>(null);
+  
+  // Timeline states
+  const [timeline, setTimeline] = useState<TimelineEvent[]>([]);
+  const [loadingTimeline, setLoadingTimeline] = useState(false);
+  const [timelineError, setTimelineError] = useState<string | null>(null);
+  const [analyzingTimeline, setAnalyzingTimeline] = useState(false);
+  const [analyzeProgress, setAnalyzeProgress] = useState({ current: 0, total: 0 });
+  const [expandedTimelineEvents, setExpandedTimelineEvents] = useState<Set<string>>(new Set());
 
   const clientMap = useMemo(() => new Map(clients.map((client) => [client.id, client])), [clients]);
 
@@ -300,8 +321,12 @@ const ProcessesModule: React.FC<ProcessesModuleProps> = ({ forceCreate, entityId
     return parseNotes(selectedProcessForView.notes);
   }, [selectedProcessForView]);
 
+  // Mapa de todos os clientes para busca rápida
+  const allClientsMap = useMemo(() => new Map(allClients.map((c) => [c.id, c])), [allClients]);
+
   const filteredProcesses = useMemo(() => {
     const term = searchTerm.trim().toLowerCase();
+
     const baseList =
       statusFilter === 'todos'
         ? processes
@@ -310,14 +335,31 @@ const ProcessesModule: React.FC<ProcessesModuleProps> = ({ forceCreate, entityId
     if (!term) return baseList;
 
     return baseList.filter((process) => {
-      const client = clientMap.get(process.client_id);
-      const responsibleProfile = resolveResponsibleLawyer(process);
-      const lawyerName = responsibleProfile?.name;
+      // Usar allClientsMap para busca (contém todos os clientes)
+      const client = allClientsMap.get(process.client_id);
+      const processCode = process.process_code || '';
+      
+      if (term.length > 3 && processCode.includes('0000000-00.0000.0.00.0000')) { // Log apenas para um processo de teste ou aleatório para não floodar
+         console.log('Debug Filter:', {
+           processId: process.id,
+           clientId: process.client_id,
+           clientFound: !!client,
+           clientName: client?.full_name,
+           term
+         });
+      }
+
+      const practiceAreaLabel =
+        PRACTICE_AREAS.find((area) => area.key === process.practice_area)?.label ??
+        process.practice_area;
+
       const composite = [
         process.process_code,
         process.court,
-        lawyerName,
+        process.responsible_lawyer,
         client?.full_name,
+        practiceAreaLabel,
+        process.notes,
       ]
         .filter(Boolean)
         .join(' ')
@@ -325,7 +367,7 @@ const ProcessesModule: React.FC<ProcessesModuleProps> = ({ forceCreate, entityId
 
       return composite.includes(term);
     });
-  }, [processes, statusFilter, searchTerm, clientMap, members]);
+  }, [processes, statusFilter, searchTerm, allClientsMap]);
 
   useEffect(() => {
     const fetchProcesses = async () => {
@@ -342,6 +384,20 @@ const ProcessesModule: React.FC<ProcessesModuleProps> = ({ forceCreate, entityId
     };
 
     fetchProcesses();
+  }, []);
+
+  // Carregar todos os clientes uma vez para busca global
+  useEffect(() => {
+    const loadAllClients = async () => {
+      try {
+        const data = await clientService.listClients();
+        console.log('[ProcessesModule] Clientes carregados para busca:', data.length);
+        setAllClients(data);
+      } catch (err) {
+        console.error('Erro ao carregar clientes:', err);
+      }
+    };
+    loadAllClients();
   }, []);
 
   useEffect(() => {
@@ -459,6 +515,16 @@ const ProcessesModule: React.FC<ProcessesModuleProps> = ({ forceCreate, entityId
       isMounted = false;
     };
   }, [user, members]);
+
+  // Carregar timeline quando processo é selecionado para visualização
+  useEffect(() => {
+    if (selectedProcessForView && viewMode === 'details') {
+      loadTimeline(selectedProcessForView.process_code);
+    } else {
+      setTimeline([]);
+      setTimelineError(null);
+    }
+  }, [selectedProcessForView?.id, viewMode]);
 
   const handleReload = async () => {
     try {
@@ -1005,6 +1071,144 @@ const ProcessesModule: React.FC<ProcessesModuleProps> = ({ forceCreate, entityId
     }
   };
 
+  // Timeline functions
+  const loadTimeline = async (processCode: string) => {
+    try {
+      setLoadingTimeline(true);
+      setTimelineError(null);
+      setTimeline([]);
+      
+      const events = await processTimelineService.fetchProcessTimeline(processCode);
+      setTimeline(events);
+      
+      if (events.length === 0) {
+        setTimelineError('Nenhuma publicação encontrada no DJEN para este processo.');
+      }
+    } catch (err: any) {
+      console.error('Erro ao carregar timeline:', err);
+      setTimelineError(err.message || 'Erro ao carregar linha do tempo');
+    } finally {
+      setLoadingTimeline(false);
+    }
+  };
+
+  const analyzeTimelineWithAI = async () => {
+    if (!selectedProcessForView || timeline.length === 0 || analyzingTimeline) return;
+    
+    try {
+      setAnalyzingTimeline(true);
+      setAnalyzeProgress({ current: 0, total: Math.min(timeline.length, 10) });
+      
+      const analyzedEvents = await processTimelineService.fetchAndAnalyzeTimeline(
+        selectedProcessForView.process_code,
+        (current, total) => setAnalyzeProgress({ current, total })
+      );
+      
+      setTimeline(analyzedEvents);
+    } catch (err: any) {
+      console.error('Erro ao analisar timeline:', err);
+    } finally {
+      setAnalyzingTimeline(false);
+    }
+  };
+
+  const toggleTimelineEvent = (eventId: string) => {
+    setExpandedTimelineEvents(prev => {
+      const next = new Set(prev);
+      if (next.has(eventId)) {
+        next.delete(eventId);
+      } else {
+        next.add(eventId);
+      }
+      return next;
+    });
+  };
+
+  const getUrgencyColor = (urgency?: string) => {
+    switch (urgency) {
+      case 'critica': return 'bg-red-100 text-red-800 border-red-200';
+      case 'alta': return 'bg-orange-100 text-orange-800 border-orange-200';
+      case 'media': return 'bg-yellow-100 text-yellow-800 border-yellow-200';
+      case 'baixa': return 'bg-green-100 text-green-800 border-green-200';
+      default: return 'bg-slate-100 text-slate-800 border-slate-200';
+    }
+  };
+
+  const getEventTypeIcon = (type: TimelineEvent['type']) => {
+    switch (type) {
+      case 'intimacao': return <FileText className="w-4 h-4" />;
+      case 'citacao': return <AlertTriangle className="w-4 h-4" />;
+      case 'despacho': return <FileText className="w-4 h-4" />;
+      case 'sentenca': return <CheckCircle2 className="w-4 h-4" />;
+      case 'decisao': return <FileText className="w-4 h-4" />;
+      default: return <Clock className="w-4 h-4" />;
+    }
+  };
+
+  const handleSyncAllDjen = async () => {
+    if (syncingDjen) return;
+    
+    try {
+      setSyncingDjen(true);
+      setSyncResult(null);
+      
+      // Buscar processos que não foram sincronizados com DJEN
+      const pendingProcesses = processes.filter(p => 
+        !p.djen_synced || (p.djen_synced && !p.djen_has_data)
+      );
+      
+      if (pendingProcesses.length === 0) {
+        setSyncResult({ total: 0, synced: 0, updated: 0, errors: 0, intimationsFound: 0 });
+        return;
+      }
+      
+      let synced = 0;
+      let updated = 0;
+      let errors = 0;
+      let intimationsFound = 0;
+      
+      for (const process of pendingProcesses) {
+        try {
+          const result = await processDjenSyncService.syncProcessWithDjen(process);
+          
+          if (result.success) {
+            synced++;
+            if (result.updated) {
+              updated++;
+            }
+            if (result.intimationsCount) {
+              intimationsFound += result.intimationsCount;
+            }
+          } else {
+            errors++;
+          }
+          
+          // Aguardar 1 segundo entre requisições
+          await new Promise(resolve => setTimeout(resolve, 1000));
+        } catch (err) {
+          errors++;
+        }
+      }
+      
+      setSyncResult({
+        total: pendingProcesses.length,
+        synced,
+        updated,
+        errors,
+        intimationsFound,
+      });
+      
+      // Recarregar lista de processos
+      await handleReload();
+      
+    } catch (err: any) {
+      console.error('Erro na sincronização em massa:', err);
+      setError(err.message || 'Erro ao sincronizar processos com DJEN.');
+    } finally {
+      setSyncingDjen(false);
+    }
+  };
+
   const handleExportExcel = async () => {
     if (!processes.length) {
       alert('Não há processos disponíveis para exportar.');
@@ -1173,6 +1377,18 @@ const ProcessesModule: React.FC<ProcessesModuleProps> = ({ forceCreate, entityId
 
     return grouped;
   }, [filteredProcesses]);
+
+  const pendingDjenCount = useMemo(() => {
+    return processes.filter(p => !p.djen_synced || (p.djen_synced && !p.djen_has_data)).length;
+  }, [processes]);
+
+  // Contadores por status
+  const statusCounts = useMemo(() => {
+    const counts: Record<string, number> = { todos: processes.length };
+    STATUS_OPTIONS.forEach(s => { counts[s.key] = 0; });
+    processes.forEach(p => { if (counts[p.status] !== undefined) counts[p.status]++; });
+    return counts;
+  }, [processes]);
 
   const noteThreads = useMemo(() => {
     if (!selectedProcessForView) return [];
@@ -1615,132 +1831,410 @@ const ProcessesModule: React.FC<ProcessesModuleProps> = ({ forceCreate, entityId
             </div>
           </div>
         </div>
+
+        {/* Timeline do Processo - Publicações DJEN */}
+        <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
+          <div className="px-6 py-4 border-b border-gray-200 bg-gradient-to-r from-blue-50 to-indigo-50">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 bg-blue-600 rounded-lg flex items-center justify-center">
+                  <Clock className="w-5 h-5 text-white" />
+                </div>
+                <div>
+                  <h4 className="text-base font-semibold text-slate-900">Linha do Tempo</h4>
+                  <p className="text-xs text-slate-600">Publicações do Diário de Justiça (DJEN)</p>
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                {timeline.length > 0 && !timeline.some(e => e.aiAnalysis) && (
+                  <button
+                    onClick={analyzeTimelineWithAI}
+                    disabled={analyzingTimeline}
+                    className="inline-flex items-center gap-2 px-3 py-2 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white text-sm font-medium rounded-lg transition disabled:opacity-60"
+                  >
+                    {analyzingTimeline ? (
+                      <>
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                        <span>Analisando {analyzeProgress.current}/{analyzeProgress.total}...</span>
+                      </>
+                    ) : (
+                      <>
+                        <Sparkles className="w-4 h-4" />
+                        <span>Analisar com IA</span>
+                      </>
+                    )}
+                  </button>
+                )}
+                <button
+                  onClick={() => loadTimeline(selectedProcessForView.process_code)}
+                  disabled={loadingTimeline}
+                  className="inline-flex items-center gap-2 px-3 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 text-sm font-medium rounded-lg transition disabled:opacity-60"
+                >
+                  {loadingTimeline ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
+                  <span className="hidden sm:inline">Atualizar</span>
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <div className="p-6">
+            {loadingTimeline ? (
+              <div className="flex flex-col items-center justify-center py-12">
+                <Loader2 className="w-8 h-8 text-blue-600 animate-spin mb-3" />
+                <p className="text-slate-600">Buscando publicações no DJEN...</p>
+              </div>
+            ) : timelineError ? (
+              <div className="text-center py-8">
+                <div className="w-12 h-12 bg-yellow-100 rounded-full flex items-center justify-center mx-auto mb-3">
+                  <AlertCircle className="w-6 h-6 text-yellow-600" />
+                </div>
+                <p className="text-slate-600">{timelineError}</p>
+                <p className="text-xs text-slate-500 mt-2">
+                  O processo pode ser muito recente ou ainda não ter publicações no Diário de Justiça.
+                </p>
+              </div>
+            ) : timeline.length === 0 ? (
+              <div className="text-center py-8">
+                <div className="w-12 h-12 bg-slate-100 rounded-full flex items-center justify-center mx-auto mb-3">
+                  <Clock className="w-6 h-6 text-slate-400" />
+                </div>
+                <p className="text-slate-600">Nenhuma publicação encontrada</p>
+              </div>
+            ) : (
+              <div className="relative">
+                {/* Linha vertical */}
+                <div className="absolute left-4 top-0 bottom-0 w-0.5 bg-slate-200" />
+                
+                <div className="space-y-4">
+                  {timeline.map((event, index) => {
+                    const isExpanded = expandedTimelineEvents.has(event.id);
+                    const hasAnalysis = !!event.aiAnalysis;
+                    
+                    return (
+                      <div key={event.id} className="relative pl-10">
+                        {/* Marcador */}
+                        <div className={`absolute left-0 w-8 h-8 rounded-full flex items-center justify-center ${
+                          hasAnalysis && event.aiAnalysis?.urgency === 'critica' ? 'bg-red-500 text-white' :
+                          hasAnalysis && event.aiAnalysis?.urgency === 'alta' ? 'bg-orange-500 text-white' :
+                          hasAnalysis && event.aiAnalysis?.urgency === 'media' ? 'bg-yellow-500 text-white' :
+                          'bg-blue-500 text-white'
+                        }`}>
+                          {getEventTypeIcon(event.type)}
+                        </div>
+                        
+                        {/* Card do evento */}
+                        <div className={`border rounded-lg overflow-hidden transition-all ${
+                          hasAnalysis ? `border-l-4 ${getUrgencyColor(event.aiAnalysis?.urgency)}` : 'border-slate-200'
+                        }`}>
+                          <button
+                            onClick={() => toggleTimelineEvent(event.id)}
+                            className="w-full px-4 py-3 flex items-start justify-between gap-3 hover:bg-slate-50 transition text-left"
+                          >
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center gap-2 flex-wrap">
+                                <span className="text-xs font-medium text-blue-600">
+                                  {new Date(event.date).toLocaleDateString('pt-BR')}
+                                </span>
+                                <span className="text-xs px-2 py-0.5 bg-slate-100 text-slate-600 rounded">
+                                  {event.type}
+                                </span>
+                                {hasAnalysis && event.aiAnalysis?.actionRequired && (
+                                  <span className="text-xs px-2 py-0.5 bg-red-100 text-red-700 rounded font-medium">
+                                    ⚡ Ação necessária
+                                  </span>
+                                )}
+                              </div>
+                              <p className="text-sm font-medium text-slate-900 mt-1 truncate">
+                                {hasAnalysis ? event.aiAnalysis?.summary : event.title}
+                              </p>
+                              <p className="text-xs text-slate-500 mt-0.5">{event.orgao}</p>
+                            </div>
+                            {isExpanded ? (
+                              <ChevronUp className="w-5 h-5 text-slate-400 flex-shrink-0" />
+                            ) : (
+                              <ChevronDown className="w-5 h-5 text-slate-400 flex-shrink-0" />
+                            )}
+                          </button>
+                          
+                          {isExpanded && (
+                            <div className="px-4 pb-4 border-t border-slate-100">
+                              {hasAnalysis && event.aiAnalysis?.keyPoints && event.aiAnalysis.keyPoints.length > 0 && (
+                                <div className="mt-3 p-3 bg-purple-50 rounded-lg">
+                                  <p className="text-xs font-semibold text-purple-800 mb-2 flex items-center gap-1">
+                                    <Sparkles className="w-3 h-3" /> Análise da IA
+                                  </p>
+                                  <ul className="space-y-1">
+                                    {event.aiAnalysis.keyPoints.map((point, i) => (
+                                      <li key={i} className="text-xs text-purple-700 flex items-start gap-2">
+                                        <span className="text-purple-400">•</span>
+                                        {point}
+                                      </li>
+                                    ))}
+                                  </ul>
+                                </div>
+                              )}
+                              <div className="mt-3">
+                                <p className="text-xs font-semibold text-slate-500 mb-1">Texto completo:</p>
+                                <p className="text-xs text-slate-700 whitespace-pre-wrap max-h-48 overflow-y-auto bg-slate-50 p-3 rounded">
+                                  {event.description || 'Conteúdo não disponível'}
+                                </p>
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+                
+                {timeline.length > 0 && (
+                  <p className="text-xs text-slate-500 text-center mt-4">
+                    {timeline.length} publicação(ões) encontrada(s) no DJEN
+                  </p>
+                )}
+              </div>
+            )}
+          </div>
+        </div>
+
         {processModal}
       </div>
     );
   }
 
   return (
-    <div className="space-y-6">
-      {/* Header Moderno com Gradiente */}
-      <div className="relative bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 rounded-2xl shadow-2xl overflow-hidden">
-        {/* Padrão de fundo decorativo */}
-        <div className="absolute inset-0 bg-[url('data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNjAiIGhlaWdodD0iNjAiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+PGRlZnM+PHBhdHRlcm4gaWQ9ImdyaWQiIHdpZHRoPSI2MCIgaGVpZ2h0PSI2MCIgcGF0dGVyblVuaXRzPSJ1c2VyU3BhY2VPblVzZSI+PHBhdGggZD0iTSAxMCAwIEwgMCAwIDAgMTAiIGZpbGw9Im5vbmUiIHN0cm9rZT0icmdiYSgyNTUsMjU1LDI1NSwwLjAzKSIgc3Ryb2tlLXdpZHRoPSIxIi8+PC9wYXR0ZXJuPjwvZGVmcz48cmVjdCB3aWR0aD0iMTAwJSIgaGVpZ2h0PSIxMDAlIiBmaWxsPSJ1cmwoI2dyaWQpIi8+PC9zdmc+')] opacity-40"></div>
-        
-        {/* Efeito de brilho */}
-        <div className="absolute top-0 right-0 w-96 h-96 bg-amber-500/10 rounded-full blur-3xl"></div>
-        <div className="absolute bottom-0 left-0 w-96 h-96 bg-blue-500/10 rounded-full blur-3xl"></div>
-        
-        <div className="relative p-6 sm:p-8">
-          {/* Título e Ações */}
-          <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-6 mb-8">
-            <div className="flex items-center gap-4">
-              <div className="flex-shrink-0 w-14 h-14 bg-gradient-to-br from-amber-400 to-amber-600 rounded-xl flex items-center justify-center shadow-lg">
-                <Building2 className="w-7 h-7 text-white" />
-              </div>
-              <div>
-                <h3 className="text-3xl font-bold text-white mb-1">Gestão de Processos</h3>
-                <p className="text-sm text-slate-300">
-                  Cadastre e acompanhe todos os processos jurídicos do escritório
-                </p>
-              </div>
-            </div>
+    <div className="space-y-4">
+      {/* Header Principal */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-bold text-slate-900">Gestão de Processos</h1>
+          <p className="text-sm text-slate-500">Cadastre e acompanhe todos os processos jurídicos</p>
+        </div>
+      </div>
 
-            <button
-              onClick={() => handleOpenModal()}
-              className="inline-flex items-center justify-center gap-2 bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-white font-bold px-8 py-4 rounded-xl shadow-xl hover:shadow-2xl transition-all duration-300 transform hover:scale-105 hover:-translate-y-0.5"
-            >
-              <Plus className="w-5 h-5" />
-              <span>Novo Processo</span>
-            </button>
+      {/* Cards de Estatísticas */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+        <button
+          onClick={() => setStatusFilter('todos')}
+          className={`flex items-center gap-3 p-4 rounded-xl transition-all hover:shadow-md border ${
+            statusFilter === 'todos' ? 'ring-2 ring-amber-500 bg-amber-50 border-amber-200' : 'bg-white border-slate-200'
+          }`}
+        >
+          <div className="w-10 h-10 rounded-full bg-amber-500 flex items-center justify-center flex-shrink-0">
+            <Building2 className="w-5 h-5 text-white" />
           </div>
+          <div className="text-left">
+            <p className="text-2xl font-bold text-slate-900">{statusCounts.todos}</p>
+            <p className="text-xs text-slate-500">Total</p>
+          </div>
+        </button>
 
-          {/* Barra de Filtros e Busca */}
-          <div className="bg-white/95 backdrop-blur-sm rounded-xl p-4 sm:p-5 shadow-xl border border-white/20">
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-12 gap-4">
-              {/* Busca */}
-              <div className="sm:col-span-2 lg:col-span-5">
-                <label className="block text-xs font-bold uppercase tracking-wider text-slate-700 mb-2">
-                  🔍 Buscar Processo
-                </label>
-                <div className="relative group">
-                  <Search className="absolute left-4 top-1/2 transform -translate-y-1/2 text-slate-400 group-focus-within:text-amber-500 w-5 h-5 transition-colors" />
-                  <input
-                    type="text"
-                    value={searchTerm}
-                    onChange={(event) => setSearchTerm(event.target.value)}
-                    className="w-full pl-12 pr-4 py-3.5 rounded-xl border-2 border-slate-200 bg-white text-sm text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-amber-500 focus:border-transparent transition-all shadow-sm hover:shadow-md"
-                    placeholder="Cliente, código do processo ou vara..."
-                  />
-                </div>
-              </div>
+        <button
+          onClick={() => setStatusFilter('andamento')}
+          className={`flex items-center gap-3 p-4 rounded-xl transition-all hover:shadow-md border ${
+            statusFilter === 'andamento' ? 'ring-2 ring-blue-500 bg-blue-50 border-blue-200' : 'bg-white border-slate-200'
+          }`}
+        >
+          <div className="w-10 h-10 rounded-full bg-blue-500 flex items-center justify-center flex-shrink-0">
+            <Clock className="w-5 h-5 text-white" />
+          </div>
+          <div className="text-left">
+            <p className="text-2xl font-bold text-slate-900">{statusCounts.andamento || 0}</p>
+            <p className="text-xs text-slate-500">Em Andamento</p>
+          </div>
+        </button>
 
-              {/* Filtro de Status */}
-              <div className="lg:col-span-3">
-                <label className="block text-xs font-bold uppercase tracking-wider text-slate-700 mb-2">
-                  📊 Status
-                </label>
-                <select
-                  value={statusFilter}
-                  onChange={(event) => setStatusFilter(event.target.value as ProcessStatus | 'todos')}
-                  className="w-full px-4 py-3.5 rounded-xl border-2 border-slate-200 bg-white text-sm text-slate-800 font-medium focus:outline-none focus:ring-2 focus:ring-amber-500 focus:border-transparent transition-all shadow-sm hover:shadow-md cursor-pointer"
-                >
-                  <option value="todos">📋 Todos os status</option>
-                  {STATUS_OPTIONS.map((status) => (
-                    <option key={status.key} value={status.key}>
-                      {status.label}
-                    </option>
-                  ))}
-                </select>
-              </div>
+        <button
+          onClick={() => setStatusFilter('distribuido')}
+          className={`flex items-center gap-3 p-4 rounded-xl transition-all hover:shadow-md border ${
+            statusFilter === 'distribuido' ? 'ring-2 ring-purple-500 bg-purple-50 border-purple-200' : 'bg-white border-slate-200'
+          }`}
+        >
+          <div className="w-10 h-10 rounded-full bg-purple-500 flex items-center justify-center flex-shrink-0">
+            <FileText className="w-5 h-5 text-white" />
+          </div>
+          <div className="text-left">
+            <p className="text-2xl font-bold text-slate-900">{statusCounts.distribuido || 0}</p>
+            <p className="text-xs text-slate-500">Distribuídos</p>
+          </div>
+        </button>
 
-              {/* Ações */}
-              <div className="sm:col-span-2 lg:col-span-4 flex items-end gap-3">
-                <button
-                  onClick={() => setKanbanMode(!kanbanMode)}
-                  className={`flex-1 inline-flex items-center justify-center gap-2 font-bold px-4 py-3.5 rounded-xl transition-all duration-300 shadow-md hover:shadow-lg transform hover:-translate-y-0.5 ${
-                    kanbanMode
-                      ? 'bg-gradient-to-r from-purple-600 to-purple-700 hover:from-purple-500 hover:to-purple-600 text-white'
-                      : 'bg-white hover:bg-slate-50 text-slate-700 border-2 border-slate-300 hover:border-slate-400'
-                  }`}
-                  title={kanbanMode ? 'Alternar para Modo Lista' : 'Alternar para Modo Kanban'}
-                >
-                  {kanbanMode ? <List className="w-5 h-5" /> : <LayoutGrid className="w-5 h-5" />}
-                  <span className="text-sm">{kanbanMode ? 'Lista' : 'Kanban'}</span>
-                </button>
-
-                <button
-                  onClick={handleExportExcel}
-                  disabled={exportingExcel}
-                  className="flex-1 inline-flex items-center justify-center gap-2 bg-gradient-to-r from-emerald-600 to-emerald-700 hover:from-emerald-500 hover:to-emerald-600 disabled:from-emerald-400 disabled:to-emerald-500 text-white font-bold px-4 py-3.5 rounded-xl shadow-md hover:shadow-lg transition-all duration-300 disabled:cursor-not-allowed transform hover:-translate-y-0.5 disabled:transform-none"
-                  title="Exportar para Excel"
-                >
-                  {exportingExcel ? <Loader2 className="w-5 h-5 animate-spin" /> : <FileSpreadsheet className="w-5 h-5" />}
-                  <span className="text-sm">{exportingExcel ? 'Gerando...' : 'Excel'}</span>
-                </button>
-              </div>
-            </div>
+        <div className="flex items-center gap-3 p-4 rounded-xl bg-white border border-slate-200">
+          <div className="w-10 h-10 rounded-full bg-emerald-500 flex items-center justify-center flex-shrink-0">
+            <CheckCircle2 className="w-5 h-5 text-white" />
+          </div>
+          <div className="text-left">
+            <p className="text-2xl font-bold text-slate-900">{statusCounts.arquivado || 0}</p>
+            <p className="text-xs text-slate-500">Arquivados</p>
           </div>
         </div>
       </div>
 
-      {error && (
-        <div className="bg-red-50 border border-red-200 text-red-600 px-4 py-3 rounded-lg text-sm">
-          {error}
+      {/* Resultado da Sincronização DJEN */}
+      {syncResult && (
+        <div className={`flex items-start gap-3 px-4 py-3 rounded-xl text-sm ${
+          syncResult.errors > 0 
+            ? 'bg-amber-50 border border-amber-200 text-amber-800'
+            : syncResult.intimationsFound > 0
+              ? 'bg-green-50 border border-green-200 text-green-800'
+              : 'bg-blue-50 border border-blue-200 text-blue-800'
+        }`}>
+          {syncResult.errors > 0 ? (
+            <AlertCircle className="w-5 h-5 flex-shrink-0 mt-0.5" />
+          ) : (
+            <CheckCircle2 className="w-5 h-5 flex-shrink-0 mt-0.5" />
+          )}
+          <div className="flex-1">
+            <p className="font-semibold mb-1">Sincronização DJEN concluída</p>
+            {syncResult.total === 0 ? (
+              <p>Todos os processos já estão sincronizados!</p>
+            ) : (
+              <div className="space-y-1">
+                <p>
+                  <span className="font-medium">{syncResult.synced}</span> de <span className="font-medium">{syncResult.total}</span> processos verificados no DJEN
+                </p>
+                {syncResult.intimationsFound > 0 && (
+                  <p className="text-green-700">
+                    📋 <span className="font-semibold">{syncResult.intimationsFound}</span> intimações encontradas no total
+                  </p>
+                )}
+                {syncResult.updated > 0 && (
+                  <p className="text-green-700">
+                    ✓ <span className="font-semibold">{syncResult.updated}</span> processos atualizados com dados (vara, data)
+                  </p>
+                )}
+                {syncResult.errors > 0 && (
+                  <p className="text-red-600">
+                    ⚠ <span className="font-semibold">{syncResult.errors}</span> erros durante a sincronização
+                  </p>
+                )}
+                {syncResult.intimationsFound === 0 && syncResult.errors === 0 && (
+                  <p className="text-slate-600 text-xs mt-1">
+                    💡 Nenhuma intimação encontrada. Os processos podem ser muito recentes ou ainda não terem publicações no Diário de Justiça.
+                  </p>
+                )}
+              </div>
+            )}
+          </div>
+          <button
+            onClick={() => setSyncResult(null)}
+            className="text-slate-400 hover:text-slate-600 flex-shrink-0"
+          >
+            <X className="w-4 h-4" />
+          </button>
         </div>
       )}
 
-      {loading ? (
-        <div className="bg-white border border-gray-200 rounded-xl p-16 flex flex-col items-center gap-4">
-          <Loader2 className="w-8 h-8 text-amber-600 animate-spin" />
-          <p className="text-slate-600">Carregando processos...</p>
+      {/* Abas de Navegação e Ações */}
+      <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-4 border-b border-slate-100">
+          {/* Abas de Visualização */}
+          <div className="flex items-center gap-1 bg-slate-100 rounded-lg p-1">
+            <button
+              onClick={() => setKanbanMode(false)}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-all ${
+                !kanbanMode ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-700'
+              }`}
+            >
+              <List className="w-3.5 h-3.5" />
+              Lista
+            </button>
+            <button
+              onClick={() => setKanbanMode(true)}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-all ${
+                kanbanMode ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-700'
+              }`}
+            >
+              <LayoutGrid className="w-3.5 h-3.5" />
+              Kanban
+            </button>
+          </div>
+
+          {/* Botões de Ação */}
+          <div className="flex items-center gap-2">
+            <button
+              onClick={handleSyncAllDjen}
+              disabled={syncingDjen || pendingDjenCount === 0}
+              className={`relative flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-medium transition-all ${
+                pendingDjenCount > 0
+                  ? 'bg-blue-600 hover:bg-blue-700 text-white'
+                  : 'border border-slate-200 text-slate-400'
+              }`}
+            >
+              {syncingDjen ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5" />}
+              Sync DJEN
+              {pendingDjenCount > 0 && !syncingDjen && (
+                <span className="absolute -top-1.5 -right-1.5 bg-red-500 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full min-w-[18px] text-center">
+                  {pendingDjenCount}
+                </span>
+              )}
+            </button>
+            <button
+              onClick={handleExportExcel}
+              disabled={exportingExcel}
+              className="flex items-center gap-1.5 px-3 py-2 border border-slate-200 hover:bg-slate-50 text-slate-700 rounded-lg text-xs font-medium transition-all"
+            >
+              {exportingExcel ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <FileSpreadsheet className="w-3.5 h-3.5" />}
+              Exportar
+            </button>
+            <button
+              onClick={() => handleOpenModal()}
+              className="flex items-center gap-1.5 px-4 py-2 bg-amber-600 hover:bg-amber-700 text-white rounded-lg text-xs font-semibold transition-all shadow-sm"
+            >
+              <Plus className="w-3.5 h-3.5" />
+              Novo Processo
+            </button>
+          </div>
         </div>
-      ) : filteredProcesses.length === 0 ? (
-        <div className="bg-white border border-gray-200 rounded-xl p-12 text-center">
-          <p className="text-slate-600">Nenhum processo encontrado.</p>
+
+        {/* Barra de Filtros */}
+        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 p-3 bg-slate-50/50 border-b border-slate-100">
+          {/* Busca */}
+          <div className="relative flex-1">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+            <input
+              type="text"
+              value={searchTerm}
+              onChange={(event) => setSearchTerm(event.target.value)}
+              className="w-full pl-9 pr-3 py-2 bg-white border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500"
+              placeholder="Buscar processo..."
+            />
+          </div>
+
+          {/* Filtros */}
+          <div className="flex items-center gap-2">
+            <select
+              value={statusFilter}
+              onChange={(event) => setStatusFilter(event.target.value as ProcessStatus | 'todos')}
+              className="px-3 py-2 bg-white border border-slate-200 rounded-lg text-xs focus:outline-none focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500"
+            >
+              <option value="todos">Todos os status</option>
+              {STATUS_OPTIONS.map((status) => (
+                <option key={status.key} value={status.key}>{status.label}</option>
+              ))}
+            </select>
+          </div>
         </div>
-      ) : kanbanMode ? (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-6 gap-3 sm:gap-4">
+
+        {/* Conteúdo */}
+        <div className="p-4">
+          {error && (
+            <div className="bg-red-50 border border-red-200 text-red-600 px-4 py-3 rounded-lg text-sm mb-4">
+              {error}
+            </div>
+          )}
+
+          {loading ? (
+            <div className="py-16 flex flex-col items-center gap-4">
+              <Loader2 className="w-8 h-8 text-amber-600 animate-spin" />
+              <p className="text-slate-600">Carregando processos...</p>
+            </div>
+          ) : filteredProcesses.length === 0 ? (
+            <div className="py-12 text-center">
+              <p className="text-slate-600">Nenhum processo encontrado.</p>
+            </div>
+          ) : kanbanMode ? (
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-6 gap-3 sm:gap-4">
           {STATUS_OPTIONS.map((statusOption) => {
             const processesInColumn = processesByStatus[statusOption.key] || [];
             return (
@@ -1858,9 +2352,9 @@ const ProcessesModule: React.FC<ProcessesModuleProps> = ({ forceCreate, entityId
               </div>
             );
           })}
-        </div>
-      ) : (
-        <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
+            </div>
+          ) : (
+            <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
           {/* Mobile Cards */}
           <div className="block lg:hidden divide-y divide-gray-200">
             {filteredProcesses.map((process) => {
@@ -2064,8 +2558,10 @@ const ProcessesModule: React.FC<ProcessesModuleProps> = ({ forceCreate, entityId
               </tbody>
             </table>
           </div>
+            </div>
+          )}
         </div>
-      )}
+      </div>
 
       {processModal}
     </div>
