@@ -24,7 +24,7 @@ import {
   Settings,
 } from 'lucide-react';
 import Login from './components/Login';
-import ProfileModal, { AppProfile } from './components/ProfileModal';
+import ProfileModal, { AppProfile, UserRole } from './components/ProfileModal';
 import { ClientFormModal } from './components/ClientFormModal';
 import { NotificationCenterNew as NotificationCenter } from './components/NotificationCenterNew';
 import { NotificationPermissionBanner } from './components/NotificationPermissionBanner';
@@ -192,7 +192,7 @@ function App() {
             const normalized = {
               name: data.name || 'Área Jurídica',
               email: data.email || user.email || '',
-              role: data.role || 'Advogado',
+              role: (data.role as UserRole) || 'Advogado',
               oab: data.oab || '',
               phone: data.phone || '',
               bio: data.bio || '',
@@ -208,7 +208,7 @@ function App() {
               name: user.user_metadata.full_name || user.email?.split('@')[0] || 'Usuário',
               email: user.email || '',
               avatarUrl: GENERIC_AVATAR,
-              role: 'Advogado',
+              role: 'Advogado' as UserRole,
               phone: '',
               oab: '',
               bio: '',
@@ -257,7 +257,7 @@ function App() {
           name: 'Usuário',
           email: '',
           avatarUrl: GENERIC_AVATAR,
-          role: 'Advogado',
+          role: 'Advogado' as UserRole,
           oab: '',
           phone: '',
           bio: '',

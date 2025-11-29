@@ -31,7 +31,7 @@ import { djenSyncStatusService, type DjenSyncLog } from '../services/djenSyncSta
 import { djenLocalService } from '../services/djenLocal.service';
 import { supabase } from '../config/supabase';
 
-type UserRole = 'Advogado' | 'Auxiliar' | 'Estagiário' | 'Administrador' | 'Sócio';
+export type UserRole = 'Advogado' | 'Auxiliar' | 'Estagiário' | 'Administrador' | 'Sócio';
 type ActiveTab = 'dados' | 'profissional' | 'sobre' | 'security' | 'stats';
 
 export interface AppProfile {
