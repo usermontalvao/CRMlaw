@@ -36,6 +36,7 @@ import { processService } from '../services/process.service';
 import { deadlineService } from '../services/deadline.service';
 import { calendarService } from '../services/calendar.service';
 import { profileService } from '../services/profile.service';
+import { settingsService, type DjenConfig } from '../services/settings.service';
 import { userNotificationService } from '../services/userNotification.service';
 import { aiService } from '../services/ai.service';
 import { intimationAnalysisService } from '../services/intimationAnalysis.service';
@@ -139,6 +140,8 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
   });
   const [settingsLoaded, setSettingsLoaded] = useState(false);
   const [copyStatus, setCopyStatus] = useState<'idle' | 'copied' | 'error'>('idle');
+  const [globalDjenConfig, setGlobalDjenConfig] = useState<DjenConfig | null>(null);
+  const [monitoredLawyers, setMonitoredLawyers] = useState<string[]>([]);
   const overviewSectionRef = useRef<HTMLDivElement | null>(null);
   const configSectionRef = useRef<HTMLDivElement | null>(null);
   const filterSectionRef = useRef<HTMLDivElement | null>(null);
@@ -169,7 +172,7 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
         setLastLocalSyncAt(parsedDate);
       }
     }
-  }, []);
+  }, [monitoredLawyers]);
 
   // Persistir configurações ao alterar
   useEffect(() => {
@@ -420,18 +423,33 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
   const loadData = useCallback(async (runAutoAnalysis: boolean = false) => {
     try {
       setLoading(true);
-      const [intimationsData, clientsData, processesData, membersData, userProfile] = await Promise.all([
+      const [intimationsData, clientsData, processesData, membersData, userProfile, djenSettings] = await Promise.all([
         djenLocalService.listComunicacoes(),
         clientService.listClients(),
         processService.listProcesses(),
         profileService.listMembers(),
         profileService.getMyProfile(),
+        settingsService.getDjenConfig(),
       ]);
       setIntimations(intimationsData);
       setClients(clientsData);
       setProcesses(processesData);
       setMembers(membersData);
       setCurrentUserProfile(userProfile);
+      setGlobalDjenConfig(djenSettings);
+      
+      // Integrar nomes dos advogados dos perfis com lawyers_to_monitor
+      const lawyerNamesFromProfiles = membersData
+        .filter((m: any) => m.lawyer_full_name?.trim())
+        .map((m: any) => m.lawyer_full_name.trim());
+      
+      // Mesclar nomes do banco com nomes dos perfis (sem duplicatas)
+      const mergedLawyers = Array.from(new Set([
+        ...(djenSettings.lawyers_to_monitor || []),
+        ...lawyerNamesFromProfiles,
+      ]));
+      
+      setMonitoredLawyers(mergedLawyers);
 
       // Carregar análises salvas do banco de dados
       if (intimationsData.length > 0) {
@@ -491,14 +509,24 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
         let savedFromAdvocate = 0;
         let savedFromProcesses = 0;
 
-        // Buscar por nome do advogado (apenas se configurado)
-        const lawyerName = currentUserProfile?.lawyer_full_name || '';
-        
-        if (lawyerName) {
+        const lawyerNames = Array.from(
+          new Set(
+            [
+              ...(monitoredLawyers || []).map((name) => name.trim()).filter(Boolean),
+              currentUserProfile?.lawyer_full_name?.trim(),
+            ].filter(Boolean) as string[],
+          ),
+        );
+
+        if (lawyerNames.length === 0) {
+          console.log('ℹ️ Nenhum advogado monitorado definido. Configure nas Configurações → DJEN.');
+        }
+
+        for (const lawyerName of lawyerNames) {
           console.log(`🔍 Buscando intimações para: ${lawyerName}`);
           const params: DjenConsultaParams = {
             nomeAdvogado: lawyerName,
-            dataDisponibilizacaoInicio: djenService.getDataDiasAtras(7), // Última semana (inclui fins de semana)
+            dataDisponibilizacaoInicio: djenService.getDataDiasAtras(7),
             dataDisponibilizacaoFim: djenService.getDataHoje(),
             meio: 'D',
             itensPorPagina: 100,
@@ -507,21 +535,18 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
 
           try {
             const response = await djenService.consultarTodasComunicacoes(params);
-            console.log(`📥 Resposta DJEN: ${response.items?.length || 0} itens`);
+            console.log(`📥 Resposta DJEN (${lawyerName}): ${response.items?.length || 0} itens`);
 
             if (response.items && response.items.length > 0) {
               const result = await djenLocalService.saveComunicacoes(response.items, {
                 clients,
                 processes,
               });
-              savedFromAdvocate = result.saved;
-              console.log(`💾 Salvos do advogado: ${savedFromAdvocate}`);
+              savedFromAdvocate += result.saved;
             }
           } catch (djenErr: any) {
-            console.error('❌ Erro ao consultar DJEN por advogado:', djenErr);
+            console.error(`❌ Erro ao consultar DJEN para ${lawyerName}:`, djenErr);
           }
-        } else {
-          console.log('ℹ️ Nome DJEN não configurado - buscando apenas por processos cadastrados');
         }
 
         const processNumbers = Array.from(

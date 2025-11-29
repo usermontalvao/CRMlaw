@@ -1,4 +1,4 @@
-import { useEffect, useState, useMemo, lazy, Suspense } from 'react';
+import { useEffect, useState, useMemo, lazy, Suspense, useRef } from 'react';
 import { useNavigation } from './contexts/NavigationContext';
 import {
   Scale,
@@ -21,6 +21,7 @@ import {
   Home,
   FileText,
   Activity,
+  Settings,
 } from 'lucide-react';
 import Login from './components/Login';
 import ProfileModal from './components/ProfileModal';
@@ -42,6 +43,7 @@ const CalendarModule = lazy(() => import('./components/CalendarModule'));
 const TasksModule = lazy(() => import('./components/TasksModule'));
 const NotificationsModuleNew = lazy(() => import('./components/NotificationsModuleNew'));
 const FinancialModule = lazy(() => import('./components/FinancialModule'));
+const SettingsModule = lazy(() => import('./components/SettingsModule'));
 const CronEndpoint = lazy(() => import('./components/CronEndpoint'));
 import { useNotifications } from './hooks/useNotifications';
 import { usePresence } from './hooks/usePresence';
@@ -106,6 +108,37 @@ function App() {
   const [notifications, setNotifications] = useState<NotificationItem[]>([]);
   const [notificationsOpen, setNotificationsOpen] = useState(false);
   const [notificationsLoading, setNotificationsLoading] = useState(false);
+  const [profileMenuOpen, setProfileMenuOpen] = useState(false);
+  const profileMenuRef = useRef<HTMLDivElement | null>(null);
+
+  const canAccessConfig = ['admin', 'administrador', 'advogado'].includes(
+    (profile.role || '').toLowerCase(),
+  );
+
+  useEffect(() => {
+    if (!profileMenuOpen) return;
+
+    const handleClickOutside = (event: MouseEvent) => {
+      if (profileMenuRef.current && !profileMenuRef.current.contains(event.target as Node)) {
+        setProfileMenuOpen(false);
+      }
+    };
+
+    const handleEsc = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        setProfileMenuOpen(false);
+      }
+    };
+
+    document.addEventListener('mousedown', handleClickOutside);
+    document.addEventListener('keydown', handleEsc);
+
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+      document.removeEventListener('keydown', handleEsc);
+    };
+  }, [profileMenuOpen]);
+
   const [leadToConvert, setLeadToConvert] = useState<Lead | null>(null);
   const [pendingTasksCount, setPendingTasksCount] = useState(0);
   const [clientSearchTerm, setClientSearchTerm] = useState('');
@@ -685,13 +718,13 @@ function App() {
             <div className="text-slate-500 text-xs">⋮</div>
           </div>
 
-          {/* Configurações */}
-          <div className="border-t border-slate-800 py-2">
+          {/* Perfil */}
+          <div className="border-t border-slate-800 py-2 space-y-1">
             <button
               onClick={() => setIsProfileModalOpen(true)}
-              className="flex flex-col items-center justify-center py-3 px-2 w-full transition-all hover:bg-slate-800"
+              className="flex flex-col items-center justify-center py-2.5 px-2 w-full transition-all hover:bg-slate-800 text-slate-300 hover:text-white rounded-lg"
             >
-              <UserCog className="w-6 h-6 mb-1.5" />
+              <UserCog className="w-5 h-5 mb-1.5" />
               <span className="text-[10px] font-medium text-center leading-tight">Perfil</span>
             </button>
           </div>
@@ -725,6 +758,7 @@ function App() {
                     {activeModule === 'agenda' && 'Agenda'}
                     {activeModule === 'tarefas' && 'Tarefas'}
                     {activeModule === 'documentos' && 'Documentos'}
+                    {activeModule === 'configuracoes' && 'Configurações'}
                   </h2>
                   <p className="hidden md:block text-xs sm:text-sm text-slate-600 mt-1 truncate">
                     {activeModule === 'dashboard' && 'Visão geral do escritório e atividades recentes'}
@@ -738,6 +772,7 @@ function App() {
                     {activeModule === 'agenda' && 'Organize compromissos e prazos'}
                     {activeModule === 'tarefas' && 'Gerencie suas tarefas e lembretes'}
                     {activeModule === 'documentos' && 'Crie modelos e gere documentos personalizados'}
+                    {activeModule === 'configuracoes' && 'Gerencie usuários, permissões e preferências do sistema'}
                   </p>
                 </div>
               </div>
@@ -846,19 +881,45 @@ function App() {
                     <p className="text-sm font-semibold text-slate-900 truncate max-w-[150px]">{profile.name}</p>
                     <p className="text-xs text-slate-600">{profile.role}</p>
                   </div>
-                  <div className="relative group">
+                  <div className="relative" ref={profileMenuRef}>
                     <button
-                      onClick={openProfileModal}
-                      className="focus:outline-none"
+                      type="button"
+                      onClick={() => setProfileMenuOpen((prev) => !prev)}
+                      className={`focus:outline-none border-2 rounded-full ${
+                        profileMenuOpen ? 'border-amber-500' : 'border-transparent'
+                      }`}
+                      aria-haspopup="menu"
+                      aria-expanded={profileMenuOpen}
                       title="Meu Perfil"
                     >
-                      <div className="relative w-9 h-9 sm:w-10 sm:h-10 lg:w-12 lg:h-12 rounded-full overflow-hidden border-2 border-amber-500 shadow-md">
+                      <div className="relative w-9 h-9 sm:w-10 sm:h-10 lg:w-12 lg:h-12 rounded-full overflow-hidden border border-amber-500 shadow-md">
                         <img src={profile.avatarUrl || GENERIC_AVATAR} alt={profile.name} className="w-full h-full object-cover" />
                       </div>
                     </button>
-                    <div className="absolute right-0 mt-2 w-40 bg-white border border-gray-200 rounded-lg shadow-lg py-2 opacity-0 translate-y-2 pointer-events-none group-hover:opacity-100 group-hover:translate-y-0 group-hover:pointer-events-auto transition-all z-50">
+                    <div
+                      className={`absolute right-0 mt-2 w-44 bg-white border border-gray-200 rounded-lg shadow-lg py-2 transition-all z-50 ${
+                        profileMenuOpen
+                          ? 'opacity-100 translate-y-0 pointer-events-auto'
+                          : 'opacity-0 translate-y-2 pointer-events-none'
+                      }`}
+                    >
+                      {canAccessConfig && (
+                        <button
+                          onClick={() => {
+                            setProfileMenuOpen(false);
+                            navigateTo('configuracoes');
+                          }}
+                          className="w-full flex items-center gap-2 px-4 py-2 text-sm text-slate-700 hover:bg-amber-50"
+                        >
+                          <Settings className="w-4 h-4 text-amber-600" />
+                          Configurações
+                        </button>
+                      )}
                       <button
-                        onClick={openProfileModal}
+                        onClick={() => {
+                          setProfileMenuOpen(false);
+                          openProfileModal();
+                        }}
                         className="w-full flex items-center gap-2 px-4 py-2 text-sm text-slate-700 hover:bg-amber-50"
                       >
                         <UserCog className="w-4 h-4 text-amber-600" />
@@ -979,6 +1040,7 @@ function App() {
             )}
             {activeModule === 'notificacoes' && <NotificationsModuleNew onNavigateToModule={handleNavigateToModule} />}
             {activeModule === 'financeiro' && <FinancialModule />}
+            {activeModule === 'configuracoes' && <SettingsModule />}
             {activeModule === 'cron' && <CronEndpoint />}
           </Suspense>
         </main>

@@ -1,103 +1,324 @@
-import { useState, useEffect, useRef, useCallback, type ReactNode } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import {
-  X, Save, Loader2, Camera, Shield, Key, Activity, TrendingUp, Users, 
-  Briefcase, CheckCircle, Mail, Phone, Building, Award, Calendar
+  X,
+  Save,
+  Loader2,
+  Camera,
+  Shield,
+  Key,
+  Activity,
+  TrendingUp,
+  Users,
+  Briefcase,
+  CheckCircle,
+  Mail,
+  Award,
+  Calendar,
+  ChevronDown,
+  RefreshCw,
+  Settings,
+  Download,
+  History,
+  Filter,
 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { profileService } from '../services/profile.service';
 import { clientService } from '../services/client.service';
 import { caseService } from '../services/case.service';
 import { taskService } from '../services/task.service';
+import { settingsService } from '../services/settings.service';
+import { djenSyncStatusService, type DjenSyncLog } from '../services/djenSyncStatus.service';
+import { djenLocalService } from '../services/djenLocal.service';
 import { supabase } from '../config/supabase';
+
+type UserRole = 'Advogado' | 'Auxiliar' | 'Estagiário' | 'Administrador' | 'Sócio';
+type ActiveTab = 'dados' | 'profissional' | 'sobre' | 'security' | 'stats';
+
+interface AppProfile {
+  name?: string;
+  email?: string;
+  avatarUrl?: string;
+  role?: UserRole;
+  oab?: string;
+  phone?: string;
+  bio?: string;
+  lawyerFullName?: string;
+}
 
 interface ProfileModalProps {
   isOpen: boolean;
   onClose: () => void;
-  profile: any;
-  onProfileUpdate: (profile: any) => void;
+  profile: AppProfile;
+  onProfileUpdate: (profile: AppProfile) => void;
 }
 
-export default function ProfileModal({ isOpen, onClose, profile: initialProfile, onProfileUpdate }: ProfileModalProps) {
-  const { user } = useAuth();
-  const [activeTab, setActiveTab] = useState<'dados' | 'profissional' | 'sobre' | 'security' | 'stats'>('dados');
-  const [saving, setSaving] = useState(false);
-  const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
-  
-  const GENERIC_AVATAR = 'https://www.gravatar.com/avatar/?d=mp&s=300';
+interface ProfileFormData {
+  name: string;
+  email: string;
+  avatarUrl: string;
+  role: UserRole;
+  oab: string;
+  phone: string;
+  bio: string;
+  lawyerFullName: string;
+}
 
-  const [profileForm, setProfileForm] = useState({
+interface PasswordFormData {
+  newPassword: string;
+  confirmPassword: string;
+}
+
+interface StatsData {
+  totalClients: number;
+  totalCases: number;
+  totalTasks: number;
+  completedTasks: number;
+}
+
+interface DjenStatusState {
+  autoSyncEnabled: boolean;
+  syncIntervalHours: number;
+  lastSyncAt: string | null;
+  nextSyncAt: string | null;
+  pendingCount: number;
+}
+
+type MessageState = { type: 'success' | 'error'; text: string } | null;
+
+const GENERIC_AVATAR = 'https://www.gravatar.com/avatar/?d=mp&s=300';
+const MAX_AVATAR_SIZE_MB = 2;
+
+export default function ProfileModal({
+  isOpen,
+  onClose,
+  profile: initialProfile,
+  onProfileUpdate,
+}: ProfileModalProps) {
+  const { user } = useAuth();
+
+  const [activeTab, setActiveTab] = useState<ActiveTab>('dados');
+  const [saving, setSaving] = useState(false);
+  const [message, setMessage] = useState<MessageState>(null);
+
+  const [profileForm, setProfileForm] = useState<ProfileFormData>({
     name: initialProfile.name || 'Usuário',
     email: initialProfile.email || '',
     avatarUrl: initialProfile.avatarUrl || GENERIC_AVATAR,
-    role: initialProfile.role || 'Advogado',
+    role: (initialProfile.role as UserRole) || 'Advogado',
     oab: initialProfile.oab || '',
     phone: initialProfile.phone || '',
     bio: initialProfile.bio || '',
     lawyerFullName: initialProfile.lawyerFullName || '',
   });
 
-  const [passwordForm, setPasswordForm] = useState({ newPassword: '', confirmPassword: '' });
-  
-  const [stats, setStats] = useState({
+  const [passwordForm, setPasswordForm] = useState<PasswordFormData>({
+    newPassword: '',
+    confirmPassword: '',
+  });
+
+  const [stats, setStats] = useState<StatsData>({
     totalClients: 0,
     totalCases: 0,
     totalTasks: 0,
     completedTasks: 0,
   });
 
-  useEffect(() => {
-    if (isOpen) {
-      setProfileForm({
-        name: initialProfile.name || 'Usuário',
-        email: initialProfile.email || '',
-        avatarUrl: initialProfile.avatarUrl || GENERIC_AVATAR,
-        role: initialProfile.role || 'Advogado',
-        oab: initialProfile.oab || '',
-        phone: initialProfile.phone || '',
-        bio: initialProfile.bio || '',
-        lawyerFullName: initialProfile.lawyerFullName || '',
-      });
-      loadStats();
-    }
-  }, [isOpen, initialProfile]);
+  const [djenCardOpen, setDjenCardOpen] = useState(false);
+  const [djenStatus, setDjenStatus] = useState<DjenStatusState>({
+    autoSyncEnabled: true,
+    syncIntervalHours: 6,
+    lastSyncAt: null,
+    nextSyncAt: null,
+    pendingCount: 0,
+  });
+  const [djenStatusLoading, setDjenStatusLoading] = useState(false);
+  const [djenHistory, setDjenHistory] = useState<DjenSyncLog[]>([]);
+  const [djenHistoryOpen, setDjenHistoryOpen] = useState(false);
+  const [djenHistoryLoading, setDjenHistoryLoading] = useState(false);
+  const [djenExporting, setDjenExporting] = useState(false);
+  const [djenSettingsOpen, setDjenSettingsOpen] = useState(false);
+  const [djenFiltersOpen, setDjenFiltersOpen] = useState(false);
+  const [djenMessage, setDjenMessage] = useState<string | null>(null);
+  const [djenFilterStatus, setDjenFilterStatus] = useState('all');
+  const [djenFilterTribunal, setDjenFilterTribunal] = useState('all');
+  const [djenFilterDateRange, setDjenFilterDateRange] = useState('30d');
 
-  const loadStats = async () => {
+  const formatDateTime = useCallback((iso: string | null) => {
+    if (!iso) return '—';
+    return new Date(iso).toLocaleString('pt-BR', {
+      day: '2-digit',
+      month: 'short',
+      hour: '2-digit',
+      minute: '2-digit',
+    });
+  }, []);
+
+  const refreshDjenStatus = useCallback(async () => {
+    try {
+      setDjenStatusLoading(true);
+      setDjenMessage(null);
+
+      const [config, logs, pending] = await Promise.all([
+        settingsService.getDjenConfig(),
+        djenSyncStatusService.listRecent(1).catch(() => []),
+        djenLocalService.contarNaoLidas().catch(() => 0),
+      ]);
+
+      const lastLog = logs[0];
+      const lastSyncAt = lastLog?.run_finished_at || lastLog?.run_started_at || null;
+      const intervalHours = config.sync_interval_hours ?? 6;
+      const nextSyncAt = lastSyncAt
+        ? new Date(new Date(lastSyncAt).getTime() + intervalHours * 60 * 60 * 1000).toISOString()
+        : null;
+
+      setDjenStatus({
+        autoSyncEnabled: config.auto_sync ?? true,
+        syncIntervalHours: intervalHours,
+        lastSyncAt,
+        nextSyncAt,
+        pendingCount: pending ?? 0,
+      });
+
+      if (lastLog?.status || lastLog?.message) {
+        const statusLabel =
+          lastLog.status === 'success'
+            ? 'Concluída com sucesso'
+            : lastLog.status === 'running'
+            ? 'Sincronização em andamento'
+            : 'Falhou';
+        setDjenMessage(lastLog?.message || `Última sincronização: ${statusLabel}`);
+      }
+    } catch (error) {
+      console.error('Erro ao atualizar status do DJEN:', error);
+      setDjenMessage('Não foi possível atualizar o status do DJEN.');
+    } finally {
+      setDjenStatusLoading(false);
+    }
+  }, []);
+
+  const loadDjenHistory = useCallback(async () => {
+    try {
+      setDjenHistoryLoading(true);
+      const logs = await djenSyncStatusService.listRecent(5);
+      setDjenHistory(logs);
+    } catch (error) {
+      console.error('Erro ao carregar histórico do DJEN:', error);
+      setDjenMessage('Erro ao carregar histórico de sincronização.');
+    } finally {
+      setDjenHistoryLoading(false);
+    }
+  }, []);
+
+  const handleExportDjen = useCallback(async () => {
+    try {
+      setDjenExporting(true);
+      setDjenMessage(null);
+      const data = await djenLocalService.listComunicacoes();
+      const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `intimacoes-djen-${Date.now()}.json`;
+      link.click();
+      URL.revokeObjectURL(url);
+      setDjenMessage('Exportação concluída.');
+    } catch (error) {
+      console.error('Erro ao exportar intimações:', error);
+      setDjenMessage('Erro ao exportar intimações.');
+    } finally {
+      setDjenExporting(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (djenCardOpen) {
+      refreshDjenStatus();
+    }
+  }, [djenCardOpen, refreshDjenStatus]);
+
+  useEffect(() => {
+    if (djenHistoryOpen) {
+      loadDjenHistory();
+    }
+  }, [djenHistoryOpen, loadDjenHistory]);
+
+  const resetProfileFormFromProps = useCallback(() => {
+    setProfileForm({
+      name: initialProfile.name || 'Usuário',
+      email: initialProfile.email || '',
+      avatarUrl: initialProfile.avatarUrl || GENERIC_AVATAR,
+      role: (initialProfile.role as UserRole) || 'Advogado',
+      oab: initialProfile.oab || '',
+      phone: initialProfile.phone || '',
+      bio: initialProfile.bio || '',
+      lawyerFullName: initialProfile.lawyerFullName || '',
+    });
+  }, [initialProfile]);
+
+  const loadStats = useCallback(async () => {
     if (!user) return;
+
     try {
       const [clients, cases, tasks] = await Promise.all([
         clientService.listClients().catch(() => []),
         caseService.listCases().catch(() => []),
         taskService.listTasks().catch(() => []),
       ]);
+
       setStats({
         totalClients: clients.length,
         totalCases: cases.length,
         totalTasks: tasks.length,
-        completedTasks: tasks.filter(t => t.status === 'completed').length,
+        completedTasks: tasks.filter((t: any) => t.status === 'completed').length,
       });
     } catch (error) {
       console.error('Erro ao carregar estatísticas:', error);
     }
-  };
+  }, [user]);
 
-  const handleProfileChange = (field: string, value: string) => {
+  useEffect(() => {
+    if (isOpen) {
+      resetProfileFormFromProps();
+      loadStats();
+      setMessage(null);
+      setActiveTab((prev) => prev); // mantém aba ativa ao reabrir
+    }
+  }, [isOpen, resetProfileFormFromProps, loadStats]);
+
+  const handleProfileChange = (field: keyof ProfileFormData, value: string) => {
     setProfileForm((prev) => ({ ...prev, [field]: value }));
   };
 
   const handleAvatarChange = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (!file) return;
+
     if (!file.type.startsWith('image/')) {
       setMessage({ type: 'error', text: 'Selecione um arquivo de imagem válido.' });
+      event.target.value = '';
       return;
     }
+
+    const fileSizeMb = file.size / (1024 * 1024);
+    if (fileSizeMb > MAX_AVATAR_SIZE_MB) {
+      setMessage({
+        type: 'error',
+        text: `A imagem deve ter no máximo ${MAX_AVATAR_SIZE_MB}MB.`,
+      });
+      event.target.value = '';
+      return;
+    }
+
     try {
       const reader = new FileReader();
       reader.onload = () => {
-        setProfileForm((prev) => ({ ...prev, avatarUrl: reader.result as string }));
+        setProfileForm((prev) => ({
+          ...prev,
+          avatarUrl: (reader.result as string) || GENERIC_AVATAR,
+        }));
       };
       reader.readAsDataURL(file);
-    } catch (error: any) {
+    } catch {
       setMessage({ type: 'error', text: 'Erro ao carregar imagem.' });
     } finally {
       event.target.value = '';
@@ -107,11 +328,13 @@ export default function ProfileModal({ isOpen, onClose, profile: initialProfile,
   const handleSaveProfile = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!user) return;
+
     try {
       setSaving(true);
       setMessage(null);
+
       const payload = {
-        name: profileForm.name,
+        name: profileForm.name.trim(),
         email: profileForm.email || user.email || '',
         role: profileForm.role,
         phone: profileForm.phone || null,
@@ -120,12 +343,27 @@ export default function ProfileModal({ isOpen, onClose, profile: initialProfile,
         bio: profileForm.bio || null,
         avatar_url: profileForm.avatarUrl || GENERIC_AVATAR,
       };
+
       await profileService.upsertProfile(user.id, payload);
-      onProfileUpdate({ ...profileForm, email: payload.email });
+
+      onProfileUpdate({
+        name: payload.name,
+        email: payload.email,
+        avatarUrl: payload.avatar_url,
+        role: payload.role,
+        oab: payload.oab ?? undefined,
+        phone: payload.phone ?? undefined,
+        bio: payload.bio ?? undefined,
+        lawyerFullName: payload.lawyer_full_name ?? undefined,
+      });
+
       setMessage({ type: 'success', text: 'Perfil atualizado com sucesso!' });
       setTimeout(() => onClose(), 1000);
     } catch (error: any) {
-      setMessage({ type: 'error', text: error.message || 'Erro ao atualizar perfil.' });
+      setMessage({
+        type: 'error',
+        text: error?.message || 'Erro ao atualizar perfil.',
+      });
     } finally {
       setSaving(false);
     }
@@ -134,23 +372,34 @@ export default function ProfileModal({ isOpen, onClose, profile: initialProfile,
   const handlePasswordSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!user) return;
+
     if (!passwordForm.newPassword || passwordForm.newPassword.length < 8) {
       setMessage({ type: 'error', text: 'A senha deve ter pelo menos 8 caracteres.' });
       return;
     }
+
     if (passwordForm.newPassword !== passwordForm.confirmPassword) {
       setMessage({ type: 'error', text: 'As senhas não coincidem.' });
       return;
     }
+
     try {
       setSaving(true);
       setMessage(null);
-      const { error } = await supabase.auth.updateUser({ password: passwordForm.newPassword });
+
+      const { error } = await supabase.auth.updateUser({
+        password: passwordForm.newPassword,
+      });
+
       if (error) throw error;
+
       setMessage({ type: 'success', text: 'Senha atualizada com sucesso!' });
       setPasswordForm({ newPassword: '', confirmPassword: '' });
     } catch (error: any) {
-      setMessage({ type: 'error', text: error.message || 'Erro ao atualizar senha.' });
+      setMessage({
+        type: 'error',
+        text: error?.message || 'Erro ao atualizar senha.',
+      });
     } finally {
       setSaving(false);
     }
@@ -158,141 +407,153 @@ export default function ProfileModal({ isOpen, onClose, profile: initialProfile,
 
   if (!isOpen) return null;
 
+  const completionRate =
+    stats.totalTasks > 0
+      ? Math.round((stats.completedTasks / stats.totalTasks) * 100)
+      : 0;
+
   return (
-    <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-2 sm:p-4 animate-in fade-in duration-200">
-      <div className="bg-white rounded-2xl sm:rounded-3xl shadow-2xl w-full max-w-3xl max-h-[95vh] sm:max-h-[90vh] overflow-hidden flex flex-col animate-in zoom-in duration-200">
-        {/* Header Moderno */}
-        <div className="relative bg-gradient-to-br from-slate-50 via-white to-slate-50 px-4 sm:px-6 md:px-8 py-4 sm:py-6 border-b border-slate-200 flex-shrink-0">
-          <div className="flex items-center justify-between gap-2">
-            <div className="flex items-center gap-3 sm:gap-4 min-w-0">
-              <div className="relative">
-                <div className="w-16 h-16 rounded-2xl overflow-hidden ring-2 ring-slate-200 shadow-lg">
-                  <img src={profileForm.avatarUrl || GENERIC_AVATAR} alt={profileForm.name} className="w-full h-full object-cover" />
-                </div>
-                <div className="absolute -bottom-1 -right-1 w-5 h-5 bg-green-500 rounded-full border-2 border-white"></div>
+    <div className="fixed inset-0 bg-black/40 backdrop-blur-md flex items-center justify-center z-50 p-4 animate-in fade-in duration-300">
+      <div className="bg-white rounded-[2rem] shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-hidden flex flex-col animate-in zoom-in-95 duration-300 ring-1 ring-black/5">
+        {/* Header Minimalista */}
+        <div className="relative px-8 pt-8 pb-4 flex-shrink-0">
+          <button
+            onClick={onClose}
+            disabled={saving}
+            className="absolute top-6 right-6 text-slate-400 hover:text-slate-600 hover:bg-slate-50 p-2 rounded-full transition-all disabled:opacity-50"
+          >
+            <X className="w-6 h-6" />
+          </button>
+
+          <div className="flex flex-col items-center text-center">
+            <div className="relative group">
+              <div className="w-24 h-24 rounded-full p-1 ring-2 ring-slate-100 bg-white shadow-sm">
+                <img
+                  src={profileForm.avatarUrl || GENERIC_AVATAR}
+                  alt={profileForm.name}
+                  className="w-full h-full object-cover rounded-full"
+                />
               </div>
-              <div className="min-w-0 flex-1">
-                <h3 className="text-lg sm:text-xl md:text-2xl font-bold text-slate-900 truncate">Perfil Profissional</h3>
-                <p className="text-xs sm:text-sm text-slate-600 mt-0.5 truncate">{profileForm.name} • {profileForm.role}</p>
-              </div>
+              <label className="absolute bottom-0 right-0 p-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-full cursor-pointer shadow-lg transition-transform hover:scale-110 active:scale-95">
+                <Camera className="w-4 h-4" />
+                <input
+                  type="file"
+                  accept="image/*"
+                  onChange={handleAvatarChange}
+                  className="hidden"
+                />
+              </label>
             </div>
-            <button 
-              onClick={onClose} 
-              className="text-slate-400 hover:text-slate-600 hover:bg-slate-100 p-2 rounded-xl transition flex-shrink-0"
-            >
-              <X className="w-5 h-5" />
-            </button>
+            <h2 className="mt-4 text-xl font-bold text-slate-900 tracking-tight">
+              {profileForm.name}
+            </h2>
+            <p className="text-sm font-medium text-slate-500 flex items-center gap-2 mt-1">
+              <span className="px-2 py-0.5 rounded-full bg-blue-50 text-blue-700 text-xs font-bold uppercase tracking-wider">
+                {profileForm.role}
+              </span>
+              <span>{profileForm.email}</span>
+            </p>
           </div>
         </div>
 
-        {/* Tabs Modernos */}
-        <div className="px-2 sm:px-4 md:px-8 pt-3 sm:pt-4 bg-slate-50/50 flex-shrink-0">
-          <div className="flex gap-1 sm:gap-2 overflow-x-auto scrollbar-hide">
+        {/* Modern Tabs */}
+        <div className="px-8 mt-2 flex-shrink-0">
+          <div className="flex p-1 bg-slate-100 rounded-xl overflow-x-auto scrollbar-hide">
             {[
-              { id: 'dados', label: 'Dados', icon: Users },
-              { id: 'profissional', label: 'Profissional', icon: Briefcase },
-              { id: 'sobre', label: 'Sobre', icon: Award },
-              { id: 'security', label: 'Segurança', icon: Shield },
-              { id: 'stats', label: 'Stats', icon: Activity },
-            ].map((tab) => {
-              const Icon = tab.icon;
-              const isActive = activeTab === tab.id;
-              return (
-                <button
-                  key={tab.id}
-                  onClick={() => setActiveTab(tab.id as any)}
-                  className={`flex items-center gap-1.5 sm:gap-2 px-3 sm:px-4 md:px-6 py-2 sm:py-3 font-semibold rounded-t-xl sm:rounded-t-2xl transition-all duration-200 whitespace-nowrap flex-shrink-0 ${
-                    isActive
-                      ? 'bg-white text-blue-600 shadow-sm border-t-2 border-x border-slate-200 border-t-blue-600'
-                      : 'text-slate-600 hover:text-slate-900 hover:bg-white/50'
-                  }`}
-                >
-                  <Icon className="w-3 h-3 sm:w-4 sm:h-4" />
-                  <span className="text-xs sm:text-sm">{tab.label}</span>
-                </button>
-              );
-            })}
+              { id: 'dados', label: 'Dados Pessoais' },
+              { id: 'profissional', label: 'Profissional' },
+              { id: 'sobre', label: 'Bio' },
+              { id: 'security', label: 'Senha' },
+              { id: 'stats', label: 'Métricas' },
+            ].map((tab) => (
+              <button
+                key={tab.id}
+                onClick={() => setActiveTab(tab.id as ActiveTab)}
+                className={`flex-1 px-4 py-2 text-sm font-medium rounded-lg whitespace-nowrap transition-all duration-200 ${
+                  activeTab === tab.id
+                    ? 'bg-white text-slate-900 shadow-sm'
+                    : 'text-slate-500 hover:text-slate-700 hover:bg-slate-200/50'
+                }`}
+              >
+                {tab.label}
+              </button>
+            ))}
           </div>
         </div>
 
-        {/* Message */}
+        {/* Message Toast */}
         {message && (
-          <div className={`mx-4 sm:mx-6 md:mx-8 mt-4 sm:mt-6 rounded-xl p-3 sm:p-4 text-xs sm:text-sm font-medium flex items-center gap-2 sm:gap-3 shadow-sm animate-in slide-in-from-top duration-300 ${
-            message.type === 'success' 
-              ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' 
-              : 'bg-red-50 text-red-700 border border-red-200'
-          }`}>
-            <div className={`w-2 h-2 rounded-full flex-shrink-0 ${
-              message.type === 'success' ? 'bg-emerald-500' : 'bg-red-500'
-            }`} />
-            {message.text}
+          <div className="px-8 mt-4">
+            <div
+              className={`rounded-xl p-3 text-sm font-medium flex items-center gap-3 animate-in slide-in-from-top-2 ${
+                message.type === 'success'
+                  ? 'bg-emerald-50 text-emerald-700 border border-emerald-100'
+                  : 'bg-red-50 text-red-700 border border-red-100'
+              }`}
+            >
+              <div
+                className={`w-2 h-2 rounded-full ${
+                  message.type === 'success' ? 'bg-emerald-500' : 'bg-red-500'
+                }`}
+              />
+              {message.text}
+            </div>
           </div>
         )}
 
-        {/* Content */}
-        <div className="flex-1 overflow-y-auto px-4 sm:px-6 py-4 bg-white">
+        {/* Content Area */}
+        <div className="flex-1 overflow-y-auto p-8">
           {/* Aba Dados */}
           {activeTab === 'dados' && (
-            <form onSubmit={handleSaveProfile} className="space-y-4">
-              {/* Foto de Perfil */}
-              <div className="bg-slate-50 rounded-xl p-4 border border-slate-200">
-                <h4 className="text-sm font-bold text-slate-900 mb-4">Foto de Perfil</h4>
-                <div className="flex items-center gap-6">
-                  <div className="flex-shrink-0">
-                    <div className="relative w-28 h-28 rounded-2xl overflow-hidden ring-4 ring-blue-100 group shadow-lg">
-                      <img src={profileForm.avatarUrl || GENERIC_AVATAR} alt={profileForm.name} className="w-full h-full object-cover" />
-                      <label className="absolute inset-0 bg-black/0 group-hover:bg-black/70 flex items-center justify-center cursor-pointer transition-all">
-                        <div className="text-center opacity-0 group-hover:opacity-100 transition-opacity">
-                          <Camera className="w-7 h-7 text-white mx-auto mb-1" />
-                          <span className="text-xs text-white font-medium">Alterar</span>
-                        </div>
-                        <input type="file" accept="image/*" onChange={handleAvatarChange} className="hidden" />
-                      </label>
-                    </div>
-                  </div>
-                  <div className="flex-1">
-                    <p className="text-sm font-semibold text-slate-900 mb-1">Escolha uma foto profissional</p>
-                    <p className="text-xs text-slate-600">JPG, PNG ou GIF. Tamanho máximo de 2MB.</p>
-                  </div>
+            <form onSubmit={handleSaveProfile} className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-300">
+              <div className="grid gap-6">
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-2">
+                    Nome Completo
+                  </label>
+                  <input
+                    type="text"
+                    value={profileForm.name}
+                    onChange={(e) => handleProfileChange('name', e.target.value)}
+                    className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
+                    required
+                  />
                 </div>
-              </div>
 
-              {/* Informações Básicas */}
-              <div className="bg-slate-50 rounded-xl p-4 border border-slate-200">
-                <h4 className="text-sm font-bold text-slate-900 mb-3">Informações Básicas</h4>
-                <div className="space-y-3">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
                   <div>
-                    <label className="block text-xs font-medium text-slate-700 mb-1.5">Nome Completo *</label>
-                    <input type="text" value={profileForm.name} onChange={(e) => handleProfileChange('name', e.target.value)} className="input-field text-sm" required />
+                    <label className="block text-sm font-medium text-slate-700 mb-2">
+                      Telefone
+                    </label>
+                    <input
+                      type="tel"
+                      value={profileForm.phone}
+                      onChange={(e) => handleProfileChange('phone', e.target.value)}
+                      className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
+                      placeholder="(00) 00000-0000"
+                    />
                   </div>
-                  <div className="grid grid-cols-2 gap-4">
-                    <div>
-                      <label className="block text-xs font-medium text-slate-700 mb-1.5">Telefone</label>
-                      <input type="tel" value={profileForm.phone} onChange={(e) => handleProfileChange('phone', e.target.value)} className="input-field text-sm" placeholder="(00) 00000-0000" />
-                    </div>
-                    <div>
-                      <label className="block text-xs font-medium text-slate-700 mb-1.5">E-mail <span className="text-slate-400">(não editável)</span></label>
-                      <input type="email" value={profileForm.email} className="input-field text-sm bg-slate-100 text-slate-500 cursor-not-allowed" disabled />
-                    </div>
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700 mb-2">
+                      E-mail
+                    </label>
+                    <input
+                      type="email"
+                      value={profileForm.email}
+                      className="w-full px-4 py-2.5 bg-slate-100 border-transparent rounded-xl text-slate-500 cursor-not-allowed"
+                      disabled
+                    />
                   </div>
                 </div>
               </div>
 
-              {/* Botões de Ação */}
-              <div className="flex items-center justify-end gap-3 pt-3 border-t border-slate-200">
-                <button 
-                  type="button" 
-                  onClick={onClose}
-                  className="px-6 py-2.5 text-sm font-semibold text-slate-600 hover:text-slate-900 hover:bg-slate-100 rounded-xl transition-colors"
+              <div className="flex justify-end pt-4">
+                <button
+                  type="submit"
+                  disabled={saving}
+                  className="px-8 py-3 bg-slate-900 hover:bg-slate-800 text-white font-semibold rounded-xl transition-all flex items-center gap-2 shadow-lg shadow-slate-900/20 hover:shadow-xl hover:scale-[1.02] active:scale-[0.98] disabled:opacity-70 disabled:cursor-not-allowed disabled:transform-none"
                 >
-                  Cancelar
-                </button>
-                <button 
-                  type="submit" 
-                  disabled={saving} 
-                  className="px-6 py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-semibold rounded-xl transition-all flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed shadow-lg hover:shadow-xl hover:scale-105 duration-200"
-                >
-                  {saving ? <><Loader2 className="w-4 h-4 animate-spin" />Salvando...</> : <><Save className="w-4 h-4" />Salvar Alterações</>}
+                  {saving ? <Loader2 className="w-5 h-5 animate-spin" /> : 'Salvar Alterações'}
                 </button>
               </div>
             </form>
@@ -300,259 +561,332 @@ export default function ProfileModal({ isOpen, onClose, profile: initialProfile,
 
           {/* Aba Profissional */}
           {activeTab === 'profissional' && (
-            <form onSubmit={handleSaveProfile} className="space-y-4">
-              {/* Informações Profissionais */}
-              <div className="bg-slate-50 rounded-xl p-4 border border-slate-200">
-                <h4 className="text-sm font-bold text-slate-900 mb-3">Informações Profissionais</h4>
-                <div className="space-y-3">
-                  <div className="grid grid-cols-2 gap-4">
-                    <div>
-                      <label className="block text-xs font-medium text-slate-700 mb-1.5">Cargo / Função</label>
-                      <select value={profileForm.role} onChange={(e) => handleProfileChange('role', e.target.value)} className="input-field text-sm">
-                        <option value="Advogado">Advogado</option>
-                        <option value="Auxiliar">Auxiliar</option>
-                        <option value="Estagiário">Estagiário</option>
-                        <option value="Administrador">Administrador</option>
-                        <option value="Sócio">Sócio</option>
-                      </select>
-                    </div>
-                    <div>
-                      <label className="block text-xs font-medium text-slate-700 mb-1.5">Número OAB</label>
-                      <input type="text" value={profileForm.oab} onChange={(e) => handleProfileChange('oab', e.target.value)} className="input-field text-sm" placeholder="OAB/SP 12345" />
-                    </div>
+            <form onSubmit={handleSaveProfile} className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-300">
+              <div className="grid grid-cols-2 gap-6">
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-2">
+                    Cargo
+                  </label>
+                  <div className="relative">
+                    <select
+                      value={profileForm.role}
+                      onChange={(e) => handleProfileChange('role', e.target.value as UserRole)}
+                      className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 appearance-none transition-all"
+                    >
+                      <option value="Advogado">Advogado</option>
+                      <option value="Sócio">Sócio</option>
+                      <option value="Administrador">Administrador</option>
+                      <option value="Auxiliar">Auxiliar</option>
+                      <option value="Estagiário">Estagiário</option>
+                    </select>
+                    <Briefcase className="absolute right-4 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" />
                   </div>
-                  {/* Campo DJEN apenas para Advogados e Sócios */}
-                  {(profileForm.role === 'Advogado' || profileForm.role === 'Sócio') && (
-                    <div>
-                      <label className="block text-xs font-medium text-slate-700 mb-1.5">Nome Completo para DJEN <span className="text-slate-400">(Opcional)</span></label>
-                      <input type="text" value={profileForm.lawyerFullName} onChange={(e) => handleProfileChange('lawyerFullName', e.target.value)} className="input-field text-sm" placeholder="Nome completo para pesquisa no Diário Oficial" />
-                      <p className="text-xs text-slate-500 mt-1.5 flex items-start gap-2">
-                        <span className="text-blue-500 mt-0.5">ℹ️</span>
-                        <span>Utilizado para consultas automáticas no Diário de Justiça Eletrônico Nacional (DJEN)</span>
-                      </p>
-                    </div>
-                  )}
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-2">
+                    OAB
+                  </label>
+                  <input
+                    type="text"
+                    value={profileForm.oab}
+                    onChange={(e) => handleProfileChange('oab', e.target.value)}
+                    className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
+                    placeholder="UF 000000"
+                  />
                 </div>
               </div>
 
-              {/* Botões de Ação */}
-              <div className="flex items-center justify-end gap-3 pt-3 border-t border-slate-200">
-                <button 
-                  type="button" 
-                  onClick={onClose}
-                  className="px-6 py-2.5 text-sm font-semibold text-slate-600 hover:text-slate-900 hover:bg-slate-100 rounded-xl transition-colors"
+              {(profileForm.role === 'Advogado' || profileForm.role === 'Sócio') && (
+                <>
+                  <div className="bg-blue-50/50 p-6 rounded-2xl border border-blue-100">
+                    <label className="block text-sm font-bold text-blue-900 mb-2">
+                      Monitoramento DJEN
+                    </label>
+                    <p className="text-xs text-blue-700 mb-4">
+                      Nome exato para busca automática de publicações no Diário de Justiça.
+                    </p>
+                    <input
+                      type="text"
+                      value={profileForm.lawyerFullName}
+                      onChange={(e) => handleProfileChange('lawyerFullName', e.target.value)}
+                      className="w-full px-4 py-2.5 bg-white border border-blue-200 rounded-xl text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
+                      placeholder="Nome completo do advogado"
+                    />
+                  </div>
+
+                  <div className="rounded-2xl border border-slate-200 bg-white/80 p-5 shadow-sm">
+                    <button
+                      type="button"
+                      onClick={() => setDjenCardOpen((prev) => !prev)}
+                      className="flex w-full items-center justify-between text-left"
+                      aria-expanded={djenCardOpen}
+                    >
+                      <div>
+                        <p className="text-sm font-semibold text-slate-900">Intimações DJEN</p>
+                        <p className="text-xs text-slate-500">Monitoramento contínuo das comunicações judiciais pelo cron do Supabase.</p>
+                      </div>
+                      <span className={`rounded-full bg-slate-100 p-1.5 text-slate-500 transition-transform ${djenCardOpen ? 'rotate-180' : ''}`}>
+                        <ChevronDown className="w-4 h-4" />
+                      </span>
+                    </button>
+
+                    {djenCardOpen && (
+                      <div className="mt-5 space-y-4 animate-in fade-in">
+                        <div className="flex flex-wrap items-center gap-2 text-xs font-semibold">
+                          <span className="rounded-full bg-emerald-50 px-3 py-1 text-emerald-600">Monitoramento contínuo</span>
+                          <span className="rounded-full bg-blue-50 px-3 py-1 text-blue-600">Sincronização automática • a cada 6h</span>
+                          <span className="flex items-center gap-1 rounded-full bg-slate-100 px-3 py-1 text-slate-600">
+                            <RefreshCw className="w-3 h-3 animate-spin" /> Sincronizando...
+                          </span>
+                        </div>
+                        <p className="text-sm text-slate-600">
+                          Acompanhe todas as publicações oficiais e sincronize dados relevantes diretamente para clientes e processos vinculados.
+                        </p>
+
+                        <div className="flex flex-wrap gap-3">
+                          <button
+                            type="button"
+                            className="flex items-center gap-2 rounded-xl bg-slate-900 px-4 py-2 text-sm font-semibold text-white transition hover:bg-slate-800"
+                          >
+                            <RefreshCw className="w-4 h-4" /> Atualizar status
+                          </button>
+                          <button
+                            type="button"
+                            className="flex items-center gap-2 rounded-xl border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
+                          >
+                            <History className="w-4 h-4" /> Gerenciar histórico
+                          </button>
+                          <button
+                            type="button"
+                            className="flex items-center gap-2 rounded-xl border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
+                          >
+                            <Download className="w-4 h-4" /> Exportar
+                          </button>
+                          <button
+                            type="button"
+                            className="flex items-center gap-2 rounded-xl border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
+                          >
+                            <Settings className="w-4 h-4" /> Configurações
+                          </button>
+                        </div>
+
+                        <div className="space-y-2">
+                          <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Filtros rápidos</p>
+                          <div className="flex flex-wrap gap-2">
+                            {['Todas', 'Pendentes', 'Com prazo', 'Arquivadas'].map((filter) => (
+                              <button
+                                key={filter}
+                                type="button"
+                                className="rounded-full border border-slate-200 px-3 py-1 text-xs font-medium text-slate-600 transition hover:border-slate-900 hover:text-slate-900"
+                              >
+                                {filter}
+                              </button>
+                            ))}
+                          </div>
+                          <button
+                            type="button"
+                            className="inline-flex items-center gap-2 text-xs font-semibold text-slate-600 hover:text-slate-900"
+                          >
+                            <Filter className="w-3.5 h-3.5" /> Filtros avançados
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </>
+              )}
+
+              <div className="flex justify-end pt-4">
+                <button
+                  type="submit"
+                  disabled={saving}
+                  className="px-8 py-3 bg-slate-900 hover:bg-slate-800 text-white font-semibold rounded-xl transition-all flex items-center gap-2 shadow-lg shadow-slate-900/20 hover:shadow-xl hover:scale-[1.02] active:scale-[0.98] disabled:opacity-70 disabled:cursor-not-allowed disabled:transform-none"
                 >
-                  Cancelar
-                </button>
-                <button 
-                  type="submit" 
-                  disabled={saving} 
-                  className="px-6 py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-semibold rounded-xl transition-all flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed shadow-lg hover:shadow-xl hover:scale-105 duration-200"
-                >
-                  {saving ? <><Loader2 className="w-4 h-4 animate-spin" />Salvando...</> : <><Save className="w-4 h-4" />Salvar Alterações</>}
+                  {saving ? <Loader2 className="w-5 h-5 animate-spin" /> : 'Salvar Alterações'}
                 </button>
               </div>
             </form>
           )}
 
-          {/* Aba Sobre Você */}
+          {/* Aba Bio */}
           {activeTab === 'sobre' && (
-            <form onSubmit={handleSaveProfile} className="space-y-4">
-              {/* Biografia */}
-              <div className="bg-slate-50 rounded-xl p-4 border border-slate-200">
-                <h4 className="text-sm font-bold text-slate-900 mb-3">Sobre Você</h4>
-                <div className="space-y-3">
-                  <div>
-                    <label className="block text-xs font-medium text-slate-700 mb-1.5">Descrição Profissional</label>
-                    <textarea 
-                      value={profileForm.bio} 
-                      onChange={(e) => handleProfileChange('bio', e.target.value)} 
-                      rows={6} 
-                      className="input-field text-sm resize-none" 
-                      placeholder="Escreva uma breve descrição sobre você...&#10;&#10;Exemplo:&#10;• Áreas de atuação&#10;• Especialidades&#10;• Experiência profissional&#10;• Formação acadêmica" 
-                    />
-                    <p className="text-xs text-slate-500 mt-1.5">Esta informação pode ser útil para apresentações e perfis profissionais.</p>
+            <form onSubmit={handleSaveProfile} className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-300">
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-2">
+                  Biografia Profissional
+                </label>
+                <div className="relative">
+                  <textarea
+                    value={profileForm.bio}
+                    onChange={(e) => handleProfileChange('bio', e.target.value)}
+                    rows={8}
+                    className="w-full px-4 py-4 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 resize-none transition-all leading-relaxed"
+                    placeholder="Compartilhe sua experiência, especializações e conquistas..."
+                  />
+                  <div className="absolute bottom-4 right-4 text-xs text-slate-400 pointer-events-none">
+                    {profileForm.bio.length} caracteres
                   </div>
                 </div>
               </div>
 
-              {/* Botões de Ação */}
-              <div className="flex items-center justify-end gap-3 pt-3 border-t border-slate-200">
-                <button 
-                  type="button" 
-                  onClick={onClose}
-                  className="px-6 py-2.5 text-sm font-semibold text-slate-600 hover:text-slate-900 hover:bg-slate-100 rounded-xl transition-colors"
+              <div className="flex justify-end pt-4">
+                <button
+                  type="submit"
+                  disabled={saving}
+                  className="px-8 py-3 bg-slate-900 hover:bg-slate-800 text-white font-semibold rounded-xl transition-all flex items-center gap-2 shadow-lg shadow-slate-900/20 hover:shadow-xl hover:scale-[1.02] active:scale-[0.98] disabled:opacity-70 disabled:cursor-not-allowed disabled:transform-none"
                 >
-                  Cancelar
-                </button>
-                <button 
-                  type="submit" 
-                  disabled={saving} 
-                  className="px-6 py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-semibold rounded-xl transition-all flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed shadow-lg hover:shadow-xl hover:scale-105 duration-200"
-                >
-                  {saving ? <><Loader2 className="w-4 h-4 animate-spin" />Salvando...</> : <><Save className="w-4 h-4" />Salvar Alterações</>}
+                  {saving ? <Loader2 className="w-5 h-5 animate-spin" /> : 'Salvar Alterações'}
                 </button>
               </div>
             </form>
           )}
 
-          {/* Security Tab */}
+          {/* Aba Segurança */}
           {activeTab === 'security' && (
-            <form onSubmit={handlePasswordSubmit} className="space-y-4">
-              {/* Alterar Senha */}
-              <div className="bg-slate-50 rounded-xl p-4 border border-slate-200">
-                <div className="flex items-start gap-3 mb-4">
-                  <div className="w-10 h-10 rounded-xl bg-blue-100 flex items-center justify-center">
-                    <Shield className="w-5 h-5 text-blue-600" />
+            <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-300">
+              <form onSubmit={handlePasswordSubmit} className="space-y-6">
+                <div className="flex items-center gap-3 pb-4 border-b border-slate-100">
+                  <div className="p-2 bg-rose-50 text-rose-600 rounded-lg">
+                    <Key className="w-5 h-5" />
                   </div>
                   <div>
-                    <h4 className="text-sm font-bold text-slate-900">Alterar Senha</h4>
-                    <p className="text-xs text-slate-600 mt-1">Use uma senha forte com pelo menos 8 caracteres.</p>
+                    <h3 className="text-sm font-bold text-slate-900">Alterar Senha</h3>
+                    <p className="text-xs text-slate-500">Mantenha sua conta segura.</p>
                   </div>
                 </div>
 
-                <div className="space-y-3">
+                <div className="space-y-4">
                   <div>
-                    <label className="block text-xs font-medium text-slate-700 mb-1.5">Nova Senha</label>
-                    <input 
-                      type="password" 
-                      value={passwordForm.newPassword} 
-                      onChange={(e) => setPasswordForm(prev => ({ ...prev, newPassword: e.target.value }))} 
-                      className="input-field text-sm" 
-                      placeholder="Mínimo 8 caracteres" 
+                    <label className="block text-sm font-medium text-slate-700 mb-2">
+                      Nova Senha
+                    </label>
+                    <input
+                      type="password"
+                      value={passwordForm.newPassword}
+                      onChange={(e) => setPasswordForm(prev => ({ ...prev, newPassword: e.target.value }))}
+                      className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-rose-500/20 focus:border-rose-500 transition-all"
+                      placeholder="••••••••"
                     />
                   </div>
-
                   <div>
-                    <label className="block text-xs font-medium text-slate-700 mb-1.5">Confirmar Nova Senha</label>
-                    <input 
-                      type="password" 
-                      value={passwordForm.confirmPassword} 
-                      onChange={(e) => setPasswordForm(prev => ({ ...prev, confirmPassword: e.target.value }))} 
-                      className="input-field text-sm" 
-                      placeholder="Repita a senha" 
+                    <label className="block text-sm font-medium text-slate-700 mb-2">
+                      Confirmar Senha
+                    </label>
+                    <input
+                      type="password"
+                      value={passwordForm.confirmPassword}
+                      onChange={(e) => setPasswordForm(prev => ({ ...prev, confirmPassword: e.target.value }))}
+                      className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-rose-500/20 focus:border-rose-500 transition-all"
+                      placeholder="••••••••"
                     />
                   </div>
                 </div>
-              </div>
 
-              {/* Informações da Conta */}
-              <div className="bg-slate-50 rounded-xl p-4 border border-slate-200">
-                <h4 className="text-sm font-bold text-slate-900 mb-3">Informações da Conta</h4>
-                <div className="space-y-3">
-                  <div className="flex items-center justify-between p-3 bg-white rounded-xl">
-                    <div className="flex items-center gap-3">
-                      <Mail className="w-4 h-4 text-slate-400" />
-                      <span className="text-sm text-slate-600">E-mail</span>
-                    </div>
-                    <span className="text-sm font-semibold text-slate-900">{profileForm.email}</span>
+                <div className="flex justify-end">
+                  <button
+                    type="submit"
+                    disabled={saving}
+                    className="px-6 py-2.5 bg-rose-600 hover:bg-rose-700 text-white font-medium rounded-xl transition-all shadow-lg shadow-rose-600/20 hover:shadow-xl hover:scale-[1.02] active:scale-[0.98] disabled:opacity-70"
+                  >
+                    {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Atualizar Senha'}
+                  </button>
+                </div>
+              </form>
+
+              <div className="space-y-4">
+                <div className="flex items-center gap-3 pb-4 border-b border-slate-100">
+                  <div className="p-2 bg-slate-50 text-slate-600 rounded-lg">
+                    <Shield className="w-5 h-5" />
                   </div>
-                  <div className="flex items-center justify-between p-3 bg-white rounded-xl">
-                    <div className="flex items-center gap-3">
-                      <Calendar className="w-4 h-4 text-slate-400" />
-                      <span className="text-sm text-slate-600">Membro desde</span>
-                    </div>
-                    <span className="text-sm font-semibold text-slate-900">
-                      {user?.created_at ? new Date(user.created_at).toLocaleDateString('pt-BR', { day: '2-digit', month: 'long', year: 'numeric' }) : '-'}
-                    </span>
+                  <div>
+                    <h3 className="text-sm font-bold text-slate-900">Detalhes da Conta</h3>
+                    <p className="text-xs text-slate-500">Informações de registro.</p>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="p-4 bg-slate-50 rounded-xl border border-slate-100">
+                    <p className="text-xs text-slate-500 mb-1">ID do Usuário</p>
+                    <p className="text-xs font-mono text-slate-900 truncate">{user?.id}</p>
+                  </div>
+                  <div className="p-4 bg-slate-50 rounded-xl border border-slate-100">
+                    <p className="text-xs text-slate-500 mb-1">Criado em</p>
+                    <p className="text-sm font-medium text-slate-900">
+                      {user?.created_at ? new Date(user.created_at).toLocaleDateString('pt-BR') : '-'}
+                    </p>
                   </div>
                 </div>
               </div>
-
-              {/* Botões de Ação */}
-              <div className="flex items-center justify-end gap-3 pt-3 border-t border-slate-200">
-                <button 
-                  type="button" 
-                  onClick={() => setPasswordForm({ newPassword: '', confirmPassword: '' })}
-                  className="px-6 py-2.5 text-sm font-semibold text-slate-600 hover:text-slate-900 hover:bg-slate-100 rounded-xl transition-colors"
-                >
-                  Limpar
-                </button>
-                <button 
-                  type="submit" 
-                  disabled={saving} 
-                  className="px-6 py-2.5 bg-slate-900 hover:bg-slate-800 text-white font-semibold rounded-xl transition-all flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed shadow-lg hover:shadow-xl hover:scale-105 duration-200"
-                >
-                  {saving ? <><Loader2 className="w-4 h-4 animate-spin" />Atualizando...</> : <><Key className="w-4 h-4" />Atualizar Senha</>}
-                </button>
-              </div>
-            </form>
+            </div>
           )}
 
-          {/* Stats Tab */}
+          {/* Aba Métricas */}
           {activeTab === 'stats' && (
-            <div className="space-y-4">
-              <div className="grid grid-cols-2 gap-3">
-                <div className="bg-gradient-to-br from-blue-50 to-blue-100 rounded-lg p-4 border border-blue-200">
-                  <div className="flex items-center justify-between mb-2">
-                    <Users className="w-8 h-8 text-blue-600" />
-                    <TrendingUp className="w-4 h-4 text-blue-600" />
+            <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-300">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div className="relative p-6 bg-gradient-to-br from-blue-500 to-blue-600 rounded-2xl text-white shadow-lg shadow-blue-500/20 overflow-hidden group">
+                  <div className="relative z-10">
+                    <div className="flex items-center justify-between mb-4">
+                      <Users className="w-5 h-5 opacity-80" />
+                      <TrendingUp className="w-4 h-4 opacity-60" />
+                    </div>
+                    <p className="text-3xl font-bold mb-1 tracking-tight">{stats.totalClients}</p>
+                    <p className="text-sm font-medium opacity-80">Clientes Ativos</p>
                   </div>
-                  <div className="text-2xl font-bold text-blue-900">{stats.totalClients}</div>
-                  <div className="text-xs text-blue-700">Clientes</div>
+                  <div className="absolute -right-4 -bottom-4 w-24 h-24 bg-white/10 rounded-full blur-2xl group-hover:bg-white/20 transition-colors" />
                 </div>
 
-                <div className="bg-gradient-to-br from-purple-50 to-purple-100 rounded-lg p-4 border border-purple-200">
-                  <div className="flex items-center justify-between mb-2">
-                    <Briefcase className="w-8 h-8 text-purple-600" />
-                    <TrendingUp className="w-4 h-4 text-purple-600" />
+                <div className="p-6 bg-white border border-slate-100 rounded-2xl shadow-sm hover:shadow-md transition-shadow group">
+                  <div className="flex items-center justify-between mb-4">
+                    <Briefcase className="w-5 h-5 text-purple-600" />
+                    <div className="p-1.5 bg-purple-50 rounded-lg group-hover:bg-purple-100 transition-colors">
+                      <TrendingUp className="w-3.5 h-3.5 text-purple-600" />
+                    </div>
                   </div>
-                  <div className="text-2xl font-bold text-purple-900">{stats.totalCases}</div>
-                  <div className="text-xs text-purple-700">Processos</div>
+                  <p className="text-3xl font-bold text-slate-900 mb-1 tracking-tight">{stats.totalCases}</p>
+                  <p className="text-sm font-medium text-slate-500">Processos Ativos</p>
                 </div>
 
-                <div className="bg-gradient-to-br from-green-50 to-green-100 rounded-lg p-4 border border-green-200">
-                  <div className="flex items-center justify-between mb-2">
-                    <CheckCircle className="w-8 h-8 text-green-600" />
-                    <TrendingUp className="w-4 h-4 text-green-600" />
+                <div className="p-6 bg-white border border-slate-100 rounded-2xl shadow-sm hover:shadow-md transition-shadow group">
+                  <div className="flex items-center justify-between mb-4">
+                    <CheckCircle className="w-5 h-5 text-emerald-600" />
+                    <div className="p-1.5 bg-emerald-50 rounded-lg group-hover:bg-emerald-100 transition-colors">
+                      <TrendingUp className="w-3.5 h-3.5 text-emerald-600" />
+                    </div>
                   </div>
-                  <div className="text-2xl font-bold text-green-900">{stats.completedTasks}</div>
-                  <div className="text-xs text-green-700">Concluídas</div>
+                  <p className="text-3xl font-bold text-slate-900 mb-1 tracking-tight">{stats.completedTasks}</p>
+                  <p className="text-sm font-medium text-slate-500">Tarefas Concluídas</p>
                 </div>
 
-                <div className="bg-gradient-to-br from-amber-50 to-amber-100 rounded-lg p-4 border border-amber-200">
-                  <div className="flex items-center justify-between mb-2">
-                    <Activity className="w-8 h-8 text-amber-600" />
-                    <TrendingUp className="w-4 h-4 text-amber-600" />
+                <div className="p-6 bg-white border border-slate-100 rounded-2xl shadow-sm hover:shadow-md transition-shadow group">
+                  <div className="flex items-center justify-between mb-4">
+                    <Activity className="w-5 h-5 text-amber-600" />
+                    <div className="p-1.5 bg-amber-50 rounded-lg group-hover:bg-amber-100 transition-colors">
+                      <TrendingUp className="w-3.5 h-3.5 text-amber-600" />
+                    </div>
                   </div>
-                  <div className="text-2xl font-bold text-amber-900">{stats.totalTasks}</div>
-                  <div className="text-xs text-amber-700">Total Tarefas</div>
+                  <p className="text-3xl font-bold text-slate-900 mb-1 tracking-tight">{stats.totalTasks}</p>
+                  <p className="text-sm font-medium text-slate-500">Total de Tarefas</p>
                 </div>
               </div>
 
-              <div className="bg-gradient-to-br from-amber-50 to-orange-50 rounded-lg p-4 border border-amber-200">
-                <h4 className="text-sm font-semibold text-slate-900 mb-3 flex items-center gap-2">
-                  <Activity className="w-4 h-4 text-amber-600" />
-                  Taxa de Conclusão
-                </h4>
-                <div className="space-y-2">
-                  <div className="flex justify-between text-xs">
-                    <span className="text-slate-600">Tarefas concluídas</span>
-                    <span className="font-semibold text-slate-900">{stats.completedTasks} de {stats.totalTasks}</span>
+              <div className="p-6 bg-slate-900 rounded-2xl text-white shadow-xl relative overflow-hidden">
+                <div className="relative z-10">
+                  <div className="flex justify-between items-end mb-4">
+                    <div>
+                      <h4 className="text-lg font-bold">Produtividade</h4>
+                      <p className="text-sm text-slate-400">Taxa de conclusão de tarefas</p>
+                    </div>
+                    <span className="text-3xl font-bold text-emerald-400">{completionRate}%</span>
                   </div>
-                  <div className="w-full bg-gray-200 rounded-full h-2">
-                    <div className="bg-gradient-to-r from-amber-500 to-orange-500 h-2 rounded-full transition-all" style={{ width: `${stats.totalTasks > 0 ? (stats.completedTasks / stats.totalTasks) * 100 : 0}%` }} />
-                  </div>
-                  <div className="text-xl font-bold text-amber-600">{stats.totalTasks > 0 ? Math.round((stats.completedTasks / stats.totalTasks) * 100) : 0}%</div>
-                </div>
-              </div>
-
-              <div className="bg-slate-50 rounded-lg p-4 border border-slate-200">
-                <h4 className="text-sm font-semibold text-slate-900 mb-3">Resumo Geral</h4>
-                <div className="space-y-2 text-xs">
-                  <div className="flex justify-between items-center py-1.5 border-b border-slate-200">
-                    <span className="text-slate-600 flex items-center gap-2"><Users className="w-3 h-3" />Clientes gerenciados</span>
-                    <span className="text-lg font-bold text-blue-600">{stats.totalClients}</span>
-                  </div>
-                  <div className="flex justify-between items-center py-1.5 border-b border-slate-200">
-                    <span className="text-slate-600 flex items-center gap-2"><Briefcase className="w-3 h-3" />Processos ativos</span>
-                    <span className="text-lg font-bold text-purple-600">{stats.totalCases}</span>
-                  </div>
-                  <div className="flex justify-between items-center py-1.5">
-                    <span className="text-slate-600 flex items-center gap-2"><CheckCircle className="w-3 h-3" />Tarefas finalizadas</span>
-                    <span className="text-lg font-bold text-green-600">{stats.completedTasks}</span>
+                  <div className="w-full bg-slate-800 rounded-full h-2 overflow-hidden">
+                    <div
+                      className="bg-gradient-to-r from-emerald-400 to-emerald-600 h-full rounded-full transition-all duration-1000 ease-out"
+                      style={{ width: `${completionRate}%` }}
+                    />
                   </div>
                 </div>
+                <div className="absolute right-0 top-0 w-32 h-32 bg-emerald-500/10 rounded-full blur-3xl -translate-y-1/2 translate-x-1/2" />
               </div>
             </div>
           )}

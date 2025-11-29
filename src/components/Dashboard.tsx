@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import {
   Users,
   Briefcase,
@@ -144,6 +144,7 @@ interface ModuleShortcut {
 // Cache keys e configuração
 const DASHBOARD_CACHE_KEY = 'crm-dashboard-cache';
 const CACHE_DURATION = 30 * 60 * 1000; // 30 minutos (reduzir requisições)
+const REQUEST_TIMEOUT_MS = 15000; // 15s por requisição pesada
 
 interface DashboardCache {
   timestamp: number;
@@ -180,7 +181,32 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToModule }) => {
     loadDashboardData();
   }, []);
 
-  const loadDashboardData = async (forceRefresh = false) => {
+  const withTimeout = useCallback(<T,>(promise: Promise<T>, label: string): Promise<T> => {
+    return new Promise((resolve, reject) => {
+      const timer = setTimeout(() => {
+        reject(new Error(`${label} excedeu ${REQUEST_TIMEOUT_MS / 1000}s`));
+      }, REQUEST_TIMEOUT_MS);
+
+      promise
+        .then((value) => {
+          clearTimeout(timer);
+          resolve(value);
+        })
+        .catch((error) => {
+          clearTimeout(timer);
+          reject(error);
+        });
+    });
+  }, []);
+
+  const safeFetch = useCallback(<T,>(factory: () => Promise<T>, fallback: T, label: string): Promise<T> => {
+    return withTimeout(factory(), label).catch((error: unknown) => {
+      console.warn(`Dashboard: ${label} indisponível`, error);
+      return fallback;
+    });
+  }, [withTimeout]);
+
+  const loadDashboardData = useCallback(async (forceRefresh = false) => {
     try {
       setLoading(true);
 
@@ -229,44 +255,77 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToModule }) => {
         allInstallmentsData,
         djenIntimacoesData,
       ] = await Promise.all([
-        // Apenas clientes ativos (reduz volume)
-        clientService.listClients().then(clients => clients.filter(c => c.status === 'ativo')),
-        // Apenas processos ativos (não arquivados)
-        processService.listProcesses().then(procs => procs.filter(p => p.status !== 'arquivado').slice(0, 100)),
-        // Apenas prazos pendentes
-        deadlineService.listDeadlines().then(deadlines => deadlines.filter(d => d.status === 'pendente').slice(0, 50)),
-        // Apenas tarefas pendentes
-        taskService.listTasks().then(tasks => tasks.filter(t => t.status === 'pending').slice(0, 50)),
-        // Apenas eventos futuros (próximos 60 dias)
-        calendarService.listEvents().then(events => {
-          const now = new Date();
-          now.setHours(0, 0, 0, 0);
-          const futureDate = new Date(now.getTime() + 60 * 24 * 60 * 60 * 1000);
-          return events
-            .filter(e => {
-              if (!e.start_at) return false;
-              const eventDate = new Date(e.start_at);
-              return eventDate >= now && eventDate <= futureDate;
-            })
-            .slice(0, 100);
-        }),
-        // Apenas requerimentos aguardando confecção
-        requirementService.listRequirements().then(reqs => reqs.filter(r => r.status === 'aguardando_confeccao').slice(0, 50)),
-        financialService.getFinancialStats(new Date().toISOString().slice(0, 7)),
-        // Apenas parcelas vencidas/pendentes dos últimos 30 dias
-        financialService.listAllInstallments().then(insts => 
-          insts.filter(i => 
-            (i.status === 'pendente' || i.status === 'vencido') && 
-            i.due_date >= thirtyDaysAgo
-          ).slice(0, 50)
+        safeFetch(
+          () => clientService.listClients().then((clients) => clients.filter((c) => c.status === 'ativo')),
+          [],
+          'Clientes'
         ),
-        // Apenas intimações não lidas
-        djenLocalService.listComunicacoes({ lida: false }),
+        safeFetch(
+          () => processService.listProcesses().then((procs) => procs.filter((p) => p.status !== 'arquivado').slice(0, 100)),
+          [],
+          'Processos'
+        ),
+        safeFetch(
+          () => deadlineService.listDeadlines().then((deadlines) => deadlines.filter((d) => d.status === 'pendente').slice(0, 50)),
+          [],
+          'Prazos'
+        ),
+        safeFetch(
+          () => taskService.listTasks().then((tasks) => tasks.filter((t) => t.status === 'pending').slice(0, 50)),
+          [],
+          'Tarefas'
+        ),
+        safeFetch(
+          () =>
+            calendarService.listEvents().then((events) => {
+              const now = new Date();
+              now.setHours(0, 0, 0, 0);
+              const futureDate = new Date(now.getTime() + 60 * 24 * 60 * 60 * 1000);
+              return events
+                .filter((e) => {
+                  if (!e.start_at) return false;
+                  const eventDate = new Date(e.start_at);
+                  return eventDate >= now && eventDate <= futureDate;
+                })
+                .slice(0, 100);
+            }),
+          [],
+          'Agenda'
+        ),
+        safeFetch(
+          () => requirementService
+            .listRequirements()
+            .then((reqs) => reqs.filter((r) => r.status === 'aguardando_confeccao').slice(0, 50)),
+          [],
+          'Requerimentos'
+        ),
+        safeFetch(
+          () => financialService.getFinancialStats(new Date().toISOString().slice(0, 7)),
+          null,
+          'Financeiro'
+        ),
+        safeFetch(
+          () =>
+            financialService.listAllInstallments().then((insts) =>
+              insts
+                .filter(
+                  (i) => (i.status === 'pendente' || i.status === 'vencido') && i.due_date >= thirtyDaysAgo
+                )
+                .slice(0, 50)
+            ),
+          [],
+          'Parcelas'
+        ),
+        safeFetch(
+          () => djenLocalService.listComunicacoes({ lida: false }),
+          [],
+          'Intimações DJEN'
+        ),
       ]);
       
       // Filtrar parcelas vencidas (reutilizar variável today já declarada)
       const overdue = allInstallmentsData
-        .filter(inst => (inst.status === 'pendente' || inst.status === 'vencido') && inst.due_date < today)
+        .filter((inst) => (inst.status === 'pendente' || inst.status === 'vencido') && inst.due_date < today)
         .sort((a, b) => a.due_date.localeCompare(b.due_date))
         .slice(0, 5);
 
@@ -277,8 +336,8 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToModule }) => {
           const analyses = await intimationAnalysisService.getAnalysesByIntimationIds(intimationIds);
           
           const stats = { alta: 0, media: 0, baixa: 0, sem_analise: 0 };
-          djenIntimacoesData.forEach(int => {
-            const analysis = analyses.get(int.id);
+          djenIntimacoesData.forEach((intimacao) => {
+            const analysis = analyses.get(intimacao.id);
             if (analysis && analysis.urgency) {
               stats[analysis.urgency as 'alta' | 'media' | 'baixa']++;
             } else {
@@ -324,7 +383,7 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToModule }) => {
     } finally {
       setLoading(false);
     }
-  };
+  }, [safeFetch]);
 
   const activeClients = clients.filter((c) => c.status === 'ativo').length;
   const activeProcesses = processes.length;
