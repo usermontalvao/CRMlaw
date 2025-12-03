@@ -347,10 +347,8 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
       return;
     }
 
-    // BUG FIX: Remover filtro de 'lida' - analisar todas que não têm análise
-    // Intimações podem estar lidas mas sem análise de IA
     const toAnalyze = intimationsList.filter(
-      (intimation) => !aiAnalysis.has(intimation.id)
+      (intimation) => !intimation.lida && !aiAnalysis.has(intimation.id)
     );
 
     console.log(`📊 Intimações sem análise: ${toAnalyze.length} de ${intimationsList.length}`);

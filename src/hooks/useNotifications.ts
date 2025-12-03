@@ -59,19 +59,11 @@ export function useNotifications() {
   // Envia notificação com som
   const notify = useCallback(
     async (title: string, body: string, soundType: NotificationSoundType = 'default') => {
-      console.log('🔔 Notificação:', { title, body, soundType, settings });
-      
-      // Toca o som SEMPRE (mesmo sem permissão de notificação)
       if (settings.soundEnabled) {
-        console.log('🔊 Tocando som...');
         notificationSound.play(soundType);
-      } else {
-        console.log('🔇 Som desabilitado');
       }
 
-      // Envia notificação push se habilitado
       if (settings.pushEnabled) {
-        console.log('📤 Enviando push notification...');
         await pushNotifications.showNotification({
           title,
           body,
@@ -79,16 +71,12 @@ export function useNotifications() {
           icon: '/icon-192x192.png',
           badge: '/icon-192x192.png',
         });
-      } else {
-        console.log('⚠️ Push notifications não habilitadas');
-        // Mesmo sem push, mostra notificação do navegador se possível
-        if (Notification.permission === 'granted') {
-          new Notification(title, {
-            body,
-            icon: '/icon-192x192.png',
-            badge: '/icon-192x192.png',
-          });
-        }
+      } else if (Notification.permission === 'granted') {
+        new Notification(title, {
+          body,
+          icon: '/icon-192x192.png',
+          badge: '/icon-192x192.png',
+        });
       }
     },
     [settings.soundEnabled, settings.pushEnabled]

@@ -125,7 +125,9 @@ function App() {
   const [notificationsOpen, setNotificationsOpen] = useState(false);
   const [notificationsLoading, setNotificationsLoading] = useState(false);
   const [profileMenuOpen, setProfileMenuOpen] = useState(false);
+  const [loggingOut, setLoggingOut] = useState(false);
   const profileMenuRef = useRef<HTMLDivElement | null>(null);
+  const logoutCleanupDoneRef = useRef(false);
 
   const canAccessConfig = ['admin', 'administrador', 'advogado'].includes(
     (profile.role || '').toLowerCase(),
@@ -299,30 +301,36 @@ function App() {
   // Detectar quando usuário perde autenticação e limpar estado
   useEffect(() => {
     if (!user && !loading) {
-      // Limpar cache ao fazer logout/expiração de sessão
-      sessionStorage.removeItem(PROFILE_CACHE_KEY);
-      sessionStorage.removeItem(NOTIFICATIONS_CACHE_KEY);
-      
-      // Reset estado
-      setProfile({
-        name: 'Usuário',
-        email: '',
-        avatarUrl: GENERIC_AVATAR,
-        role: 'Advogado',
-        oab: '',
-        phone: '',
-        bio: '',
-        lawyerFullName: '',
-      });
-      setNotifications([]);
-      setPendingTasksCount(0);
-      setModuleParams({});
-      setClientPrefill(null);
-      
+      if (!logoutCleanupDoneRef.current) {
+        logoutCleanupDoneRef.current = true;
+
+        // Limpar cache ao fazer logout/expiração de sessão
+        sessionStorage.removeItem(PROFILE_CACHE_KEY);
+        sessionStorage.removeItem(NOTIFICATIONS_CACHE_KEY);
+        
+        // Reset estado
+        setProfile({
+          name: 'Usuário',
+          email: '',
+          avatarUrl: GENERIC_AVATAR,
+          role: 'Advogado',
+          oab: '',
+          phone: '',
+          bio: '',
+          lawyerFullName: '',
+        });
+        setNotifications([]);
+        setPendingTasksCount(0);
+        setModuleParams({});
+        setClientPrefill(null);
+      }
+
       // Redirecionar para login se não estiver autenticado
       if (activeModule !== 'login') {
         navigateTo('login');
       }
+    } else if (user) {
+      logoutCleanupDoneRef.current = false;
     }
   }, [user, loading, activeModule, navigateTo]);
 
@@ -530,6 +538,15 @@ function App() {
     setTimeout(() => setProfileBanner(null), 3000);
   };
 
+  // Logout com animação
+  const handleLogout = async () => {
+    setLoggingOut(true);
+    // Aguardar animação antes de fazer logout
+    await new Promise(resolve => setTimeout(resolve, 3000));
+    await signOut();
+    setLoggingOut(false);
+  };
+
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gray-100">
@@ -553,6 +570,74 @@ function App() {
   return (
     <CacheProvider>
       <div className="min-h-screen bg-gray-100">
+        {/* Overlay de Logout - Animação Nave Aterrissando */}
+        {loggingOut && (
+          <div className="fixed inset-0 z-[100] flex flex-col items-center justify-center bg-slate-900 animate-fade-in">
+            {/* Estrelas de fundo */}
+            <div className="absolute inset-0 overflow-hidden">
+              {Array.from({ length: 50 }).map((_, i) => (
+                <div
+                  key={i}
+                  className="absolute w-1 h-1 bg-white rounded-full animate-twinkle"
+                  style={{
+                    left: `${Math.random() * 100}%`,
+                    top: `${Math.random() * 100}%`,
+                    animationDelay: `${Math.random() * 2}s`,
+                    opacity: Math.random() * 0.8 + 0.2,
+                  }}
+                />
+              ))}
+            </div>
+            
+            {/* Nave/Foguete Descendo */}
+            <div className="relative z-10 animate-rocket-land">
+              <div className="relative transform scale-[1.8] sm:scale-[2.2] drop-shadow-[0_20px_45px_rgba(15,23,42,0.65)]">
+                {/* Corpo do foguete */}
+                <div className="relative w-12 h-24 bg-slate-100 rounded-[50%_50%_50%_50%_/_60%_60%_40%_40%] shadow-inner overflow-hidden z-20 mx-auto border border-slate-300">
+                  {/* Janela */}
+                  <div className="absolute top-6 left-1/2 -translate-x-1/2 w-6 h-6 bg-sky-300 rounded-full border-2 border-slate-300 shadow-inner">
+                    <div className="absolute top-1 left-1 w-2 h-2 bg-white rounded-full opacity-50" />
+                  </div>
+                  {/* Detalhes */}
+                  <div className="absolute bottom-0 w-full h-1 bg-red-500" />
+                  <div className="absolute bottom-2 w-full h-1 bg-red-500" />
+                </div>
+
+                {/* Asas esquerda */}
+                <div className="absolute bottom-2 -left-3 w-6 h-10 bg-red-600 rounded-tl-full rounded-bl-lg skew-y-12 z-10 border-l border-red-700" />
+                
+                {/* Asas direita */}
+                <div className="absolute bottom-2 -right-3 w-6 h-10 bg-red-600 rounded-tr-full rounded-br-lg -skew-y-12 z-10 border-r border-red-700" />
+
+                {/* Fogo de frenagem (menor, apontando para baixo) */}
+                <div className="absolute -bottom-12 left-1/2 -translate-x-1/2 w-10 h-16 z-0 animate-fire-brake">
+                  <div className="absolute inset-0 bg-gradient-to-t from-transparent via-blue-400 to-cyan-300 rounded-b-full blur-[2px]" />
+                  <div className="absolute inset-1 bg-gradient-to-t from-transparent via-blue-200 to-white rounded-b-full blur-[1px]" />
+                </div>
+
+                {/* Halo luminoso abaixo do foguete */}
+                <div className="absolute -bottom-6 left-1/2 -translate-x-1/2 w-32 h-12 bg-cyan-400/30 blur-[32px]" />
+              </div>
+            </div>
+            
+            {/* Anel de energia ao tocar a pista */}
+            <div className="absolute bottom-24 left-1/2 -translate-x-1/2 w-24 h-24 border-2 border-cyan-400/60 rounded-full animate-landing-ring" />
+            
+            {/* Plataforma de pouso */}
+            <div className="absolute bottom-20 left-1/2 -translate-x-1/2 w-48 h-4 bg-gradient-to-r from-slate-700 via-slate-600 to-slate-700 rounded-full shadow-[0_25px_50px_rgba(0,0,0,0.45)] animate-fade-in-up" style={{ animationDelay: '1s' }} />
+            
+            {/* Texto */}
+            <div className="relative z-10 mt-16 text-center animate-fade-in-up">
+              <p className="text-2xl font-bold text-white mb-2">
+                🛬 Aterrissando...
+              </p>
+              <p className="text-cyan-400 text-lg font-medium">
+                Até logo! Volte sempre.
+              </p>
+            </div>
+          </div>
+        )}
+
         {/* Aviso de sessão */}
         <SessionWarning />
       {/* Novo Sidebar - Estilo Compacto Vertical */}
@@ -949,8 +1034,9 @@ function App() {
                     </div>
                   </div>
                   <button
-                    onClick={() => signOut()}
-                    className="p-1.5 sm:p-2 text-slate-600 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                    onClick={handleLogout}
+                    disabled={loggingOut}
+                    className="p-1.5 sm:p-2 text-slate-600 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors disabled:opacity-50"
                     title="Sair"
                   >
                     <LogOut className="w-4 h-4 sm:w-5 sm:h-5" />

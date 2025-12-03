@@ -45,27 +45,9 @@ class AIService {
       return;
     }
     
-    // Fallback para OpenAI
-    const apiKey = import.meta.env.VITE_OPENAI_API_KEY;
-    
-    if (!apiKey || apiKey === 'your_openai_api_key_here') {
-      console.warn('⚠️ Nenhuma API Key de IA configurada. Funcionalidades de IA desabilitadas.');
-      this.enabled = false;
-      return;
-    }
-
-    try {
-      this.openai = new OpenAI({
-        apiKey,
-        dangerouslyAllowBrowser: true, // Para uso no cliente
-      });
-      this.useGroq = false;
-      this.enabled = true;
-      console.log('✅ OpenAI AI Service inicializado (fallback)');
-    } catch (error) {
-      console.error('❌ Erro ao inicializar OpenAI:', error);
-      this.enabled = false;
-    }
+    console.warn('⚠️ IA desabilitada: configure VITE_GROQ_API_KEY para ativar o serviço.');
+    this.enabled = false;
+    this.openai = null;
   }
 
   isEnabled(): boolean {

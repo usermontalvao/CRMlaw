@@ -491,3 +491,47 @@
 .animate-fade-in-up {
   animation: fade-in-up 1s ease-out 0.5s both;
 }
+
+/* Rocket Landing Animations (Logout) */
+@keyframes rocket-land {
+  0% {
+    transform: translateY(-120vh) scale(0.8);
+  }
+  20% {
+    transform: translateY(-60vh) scale(0.9);
+  }
+  40% {
+    transform: translateY(-30vh) scale(1);
+  }
+  60% {
+    transform: translateY(-10vh) scale(1.05);
+  }
+  80% {
+    transform: translateY(-2vh) scale(1.1);
+  }
+  90% {
+    transform: translateY(0) scale(1.05);
+  }
+  100% {
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes fire-brake {
+  0%, 100% {
+    transform: scaleY(1) translateY(0);
+    opacity: 0.9;
+  }
+  50% {
+    transform: scaleY(1.3) translateY(3px);
+    opacity: 1;
+  }
+}
+
+.animate-rocket-land {
+  animation: rocket-land 3s cubic-bezier(0.25, 0.1, 0.25, 1) forwards;
+}
+
+.animate-fire-brake {
+  animation: fire-brake 0.15s ease-in-out infinite;
+}

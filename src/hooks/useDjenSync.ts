@@ -12,17 +12,7 @@ export function useDjenSync() {
     // Função de sincronização
     const runSync = async () => {
       try {
-        console.log('=== SINCRONIZAÇÃO AUTOMÁTICA DJEN ===');
-        console.log('Iniciando sincronização de processos pendentes...');
-        
-        const result = await processDjenSyncService.syncPendingProcesses();
-        
-        console.log('Sincronização concluída:');
-        console.log(`- Total processado: ${result.total}`);
-        console.log(`- Sincronizados: ${result.synced}`);
-        console.log(`- Atualizados: ${result.updated}`);
-        console.log(`- Erros: ${result.errors}`);
-        console.log('=== FIM SINCRONIZAÇÃO ===');
+        await processDjenSyncService.syncPendingProcesses();
       } catch (error) {
         console.error('Erro na sincronização automática:', error);
       }

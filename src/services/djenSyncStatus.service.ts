@@ -23,7 +23,7 @@ class DjenSyncStatusService {
     const { data, error } = await supabase
       .from(this.tableName)
       .select('*')
-      .order('created_at', { ascending: false })
+      .order('id', { ascending: false })
       .limit(limit);
 
     if (error) {

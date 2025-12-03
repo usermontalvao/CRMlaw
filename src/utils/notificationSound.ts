@@ -11,7 +11,6 @@ class NotificationSoundService {
     const savedPreference = localStorage.getItem('notifications_sound_enabled');
     // Por padrão, som está HABILITADO (só desabilita se explicitamente definido como false)
     this.enabled = savedPreference !== 'false';
-    console.log('🔊 NotificationSound inicializado. Habilitado:', this.enabled);
   }
 
   /**
