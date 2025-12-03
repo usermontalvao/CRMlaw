@@ -24,6 +24,7 @@ import {
   Settings,
 } from 'lucide-react';
 import Login from './components/Login';
+import OfflinePage from './components/OfflinePage';
 import ProfileModal, { AppProfile, UserRole } from './components/ProfileModal';
 import { ClientFormModal } from './components/ClientFormModal';
 import { NotificationCenterNew as NotificationCenter } from './components/NotificationCenterNew';
@@ -79,6 +80,21 @@ function App() {
 
   const { currentModule: activeModule, moduleParams, navigateTo, setModuleParams, clearModuleParams } = useNavigation();
   const [isMobileNavOpen, setIsMobileNavOpen] = useState(false);
+  const [isOnline, setIsOnline] = useState(navigator.onLine);
+
+  // Detectar status de conexão
+  useEffect(() => {
+    const handleOnline = () => setIsOnline(true);
+    const handleOffline = () => setIsOnline(false);
+
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
+
+    return () => {
+      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('offline', handleOffline);
+    };
+  }, []);
   const { user, loading, signIn, signOut, resetPassword } = useAuth();
   
   // Ativar sincronização automática com DJEN
@@ -527,6 +543,11 @@ function App() {
 
   if (!user) {
     return <Login onLogin={signIn} onResetPassword={resetPassword} />;
+  }
+
+  // Mostrar página offline se sem conexão
+  if (!isOnline) {
+    return <OfflinePage />;
   }
 
   return (

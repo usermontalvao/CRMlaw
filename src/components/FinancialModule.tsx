@@ -306,6 +306,8 @@ const FinancialModule: React.FC = () => {
 
   const handleOpenEditModal = async (agreement: Agreement) => {
     setEditError(null);
+    // Evita que o modal de detalhes continue aberto atrás do modal de edição
+    setIsDetailsModalOpen(false);
     setSelectedAgreement(agreement);
     setIsEditModalOpen(true);
     setEditInitialLoading(true);

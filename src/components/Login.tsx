@@ -1,5 +1,5 @@
-import React, { useState, useEffect, useMemo, useCallback } from 'react';
-import { Loader2, Eye, EyeOff, CheckCircle2, AlertCircle, Scale, Shield, Sparkles, Heart, Gift, Egg, Flag, Ghost, TreePine, Star, Flame, Snowflake, PartyPopper, Music } from 'lucide-react';
+import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
+import { Loader2, Eye, EyeOff, CheckCircle2, AlertCircle, Scale, Shield, Sparkles, Heart, Gift, Egg, Flag, Ghost, TreePine, Star, Flame, Snowflake, PartyPopper, Music, Rocket } from 'lucide-react';
 
 const BrazilFlag: React.FC<{ className?: string }> = ({ className }) => (
   <svg
@@ -24,6 +24,21 @@ interface LoginProps {
   onLogin: (email: string, password: string) => Promise<void>;
   onResetPassword: (email: string) => Promise<void>;
 }
+
+const HERO_IMAGES = [
+  'https://images.unsplash.com/photo-1489515217757-5fd1be406fef?auto=format&fit=crop&w=1920&q=80', // Janeiro
+  'https://images.unsplash.com/photo-1487412720507-e7ab37603c6f?auto=format&fit=crop&w=1920&q=80', // Fevereiro
+  'https://images.unsplash.com/photo-1499636136210-6f4ee915583e?auto=format&fit=crop&w=1920&q=80', // Março
+  'https://images.unsplash.com/photo-1476041800959-2f6bb412c8ce?auto=format&fit=crop&w=1920&q=80', // Abril
+  'https://images.unsplash.com/photo-1494972688394-4cc796f9e4c1?auto=format&fit=crop&w=1920&q=80', // Maio
+  'https://images.unsplash.com/photo-1500530855697-b586d89ba3ee?auto=format&fit=crop&w=1920&q=80', // Junho
+  'https://images.unsplash.com/photo-1454496522488-7a8e488e8606?auto=format&fit=crop&w=1920&q=80', // Julho
+  'https://images.unsplash.com/photo-1529333166437-7750a6dd5a70?auto=format&fit=crop&w=1920&q=80', // Agosto
+  'https://images.unsplash.com/photo-1500534313736-46d310c28335?auto=format&fit=crop&w=1920&q=80', // Setembro
+  'https://images.unsplash.com/photo-1501471984908-815b9968623f?auto=format&fit=crop&w=1920&q=80', // Outubro
+  'https://images.unsplash.com/photo-1469474968028-56623f02e42e?auto=format&fit=crop&w=1920&q=80', // Novembro
+  'https://images.unsplash.com/photo-1482517967863-00e15c9b44be?auto=format&fit=crop&w=1920&q=80', // Dezembro
+];
 
 // Partícula animada
 interface Particle {
@@ -50,6 +65,7 @@ interface FestiveTheme {
   bannerAnimation: string;
   specialEffect: 'confetti' | 'snow' | 'fireworks' | 'hearts' | 'leaves' | 'balloons' | 'sparkles' | 'none';
   backgroundOverlay: string;
+  heroImage: string;
   symbolRenderer?: (className?: string) => React.ReactNode;
 }
 
@@ -71,6 +87,7 @@ const getFestiveTheme = (): FestiveTheme => {
   const now = new Date();
   const month = now.getMonth(); // 0-11
   const day = now.getDate();
+  const heroImage = HERO_IMAGES[month] ?? HERO_IMAGES[0];
 
   // Janeiro - Ano Novo / Verão
   if (month === 0) {
@@ -86,6 +103,7 @@ const getFestiveTheme = (): FestiveTheme => {
       bannerAnimation: 'animate-pulse',
       specialEffect: 'fireworks',
       backgroundOverlay: 'bg-gradient-to-br from-indigo-900/90 via-purple-900/80 to-pink-900/70',
+      heroImage,
     };
   }
 
@@ -103,6 +121,7 @@ const getFestiveTheme = (): FestiveTheme => {
       bannerAnimation: 'animate-bounce',
       specialEffect: 'confetti',
       backgroundOverlay: 'bg-gradient-to-br from-purple-900/80 via-pink-900/70 to-yellow-900/60',
+      heroImage,
     };
   }
 
@@ -120,6 +139,7 @@ const getFestiveTheme = (): FestiveTheme => {
       bannerAnimation: '',
       specialEffect: 'sparkles',
       backgroundOverlay: 'bg-gradient-to-br from-pink-900/70 via-purple-900/60 to-indigo-900/70',
+      heroImage,
     };
   }
 
@@ -137,6 +157,7 @@ const getFestiveTheme = (): FestiveTheme => {
       bannerAnimation: '',
       specialEffect: 'leaves',
       backgroundOverlay: 'bg-gradient-to-br from-orange-900/80 via-red-900/70 to-yellow-900/60',
+      heroImage,
     };
   }
 
@@ -154,6 +175,7 @@ const getFestiveTheme = (): FestiveTheme => {
       bannerAnimation: '',
       specialEffect: 'hearts',
       backgroundOverlay: 'bg-gradient-to-br from-pink-900/80 via-rose-900/70 to-red-900/60',
+      heroImage,
     };
   }
 
@@ -171,6 +193,7 @@ const getFestiveTheme = (): FestiveTheme => {
       bannerAnimation: '',
       specialEffect: 'sparkles',
       backgroundOverlay: 'bg-gradient-to-br from-orange-900/80 via-red-900/70 to-yellow-900/60',
+      heroImage,
     };
   }
 
@@ -188,6 +211,7 @@ const getFestiveTheme = (): FestiveTheme => {
       bannerAnimation: '',
       specialEffect: 'snow',
       backgroundOverlay: 'bg-gradient-to-br from-blue-900/80 via-cyan-900/70 to-sky-900/60',
+      heroImage,
     };
   }
 
@@ -205,6 +229,7 @@ const getFestiveTheme = (): FestiveTheme => {
       bannerAnimation: '',
       specialEffect: 'sparkles',
       backgroundOverlay: 'bg-gradient-to-br from-blue-900/80 via-indigo-900/70 to-purple-900/60',
+      heroImage,
     };
   }
 
@@ -222,6 +247,7 @@ const getFestiveTheme = (): FestiveTheme => {
       bannerAnimation: '',
       specialEffect: 'confetti',
       backgroundOverlay: 'bg-gradient-to-br from-green-900/80 via-yellow-900/60 to-blue-900/70',
+      heroImage,
     };
   }
 
@@ -239,6 +265,7 @@ const getFestiveTheme = (): FestiveTheme => {
       bannerAnimation: 'animate-bounce',
       specialEffect: 'balloons',
       backgroundOverlay: 'bg-gradient-to-br from-orange-900/70 via-pink-900/60 to-purple-900/70',
+      heroImage,
     };
   }
 
@@ -257,6 +284,7 @@ const getFestiveTheme = (): FestiveTheme => {
       specialEffect: 'sparkles',
       backgroundOverlay: 'bg-gradient-to-br from-green-900/85 via-yellow-900/70 to-green-900/80',
       symbolRenderer: (className) => <BrazilFlag className={`inline-block ${className ?? ''}`} />,
+      heroImage,
     };
   }
 
@@ -273,12 +301,13 @@ const getFestiveTheme = (): FestiveTheme => {
     bannerAnimation: '',
     specialEffect: 'snow',
     backgroundOverlay: 'bg-gradient-to-br from-red-900/80 via-green-900/70 to-red-900/60',
+    heroImage,
   };
 };
 
 // Componente de partículas animadas
 const AnimatedParticles: React.FC<{ theme: FestiveTheme }> = ({ theme }) => {
-  const particles = useMemo(() => generateParticles(30, theme.particleType, theme.particleColors), [theme]);
+  const particles = useMemo(() => generateParticles(15, theme.particleType, theme.particleColors), [theme]);
 
   const getParticleStyle = (particle: Particle): React.CSSProperties => {
     const baseStyle: React.CSSProperties = {
@@ -363,8 +392,37 @@ const Login: React.FC<LoginProps> = ({ onLogin, onResetPassword }) => {
   const [resetting, setResetting] = useState(false);
   const [mounted, setMounted] = useState(false);
   const [logoHover, setLogoHover] = useState(false);
+  const [launching, setLaunching] = useState(false);
+  const [rocketState, setRocketState] = useState<'idle' | 'launching' | 'crashing'>('idle');
+  const crashTimeoutRef = useRef<number | null>(null);
 
   const theme = useMemo(() => getFestiveTheme(), []);
+
+  const translateAuthError = useCallback((message?: string) => {
+    if (!message) {
+      return 'Ocorreu um erro inesperado. Tente novamente em instantes.';
+    }
+
+    const normalized = message.toLowerCase();
+
+    if (normalized.includes('invalid login credentials')) {
+      return 'Credenciais inválidas. Confira seu e-mail e senha e tente novamente.';
+    }
+
+    if (normalized.includes('email not confirmed')) {
+      return 'Seu e-mail ainda não foi confirmado. Verifique sua caixa de entrada.';
+    }
+
+    if (normalized.includes('rate limit') || normalized.includes('too many requests')) {
+      return 'Muitas tentativas em sequência. Aguarde alguns segundos e tente novamente.';
+    }
+
+    if (normalized.includes('network error') || normalized.includes('fetch')) {
+      return 'Não foi possível comunicar com o servidor. Verifique sua conexão.';
+    }
+
+    return 'Não foi possível fazer login. Verifique os dados e tente novamente.';
+  }, []);
 
   const renderThemeSymbol = useCallback(
     (className?: string) =>
@@ -377,16 +435,40 @@ const Login: React.FC<LoginProps> = ({ onLogin, onResetPassword }) => {
     return () => cancelAnimationFrame(frame);
   }, []);
 
+  useEffect(() => {
+    return () => {
+      if (crashTimeoutRef.current) {
+        clearTimeout(crashTimeoutRef.current);
+      }
+    };
+  }, []);
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
     setResetMessage(null);
     setLoading(true);
+    setLaunching(true);
+    setRocketState('launching');
 
     try {
+      // Delay para a animação do foguete (5 segundos) antes de tentar o login
+      await new Promise(resolve => setTimeout(resolve, 5000));
+      
+      // Tentar login após a animação
       await onLogin(email, password);
     } catch (err: any) {
-      setError(err.message || 'Erro ao fazer login. Verifique suas credenciais.');
+      setError(translateAuthError(err?.message));
+      setRocketState('crashing');
+
+      if (crashTimeoutRef.current) {
+        clearTimeout(crashTimeoutRef.current);
+      }
+
+      crashTimeoutRef.current = window.setTimeout(() => {
+        setLaunching(false);
+        setRocketState('idle');
+      }, 2500);
     } finally {
       setLoading(false);
     }
@@ -406,7 +488,7 @@ const Login: React.FC<LoginProps> = ({ onLogin, onResetPassword }) => {
       await onResetPassword(email);
       setResetMessage('Enviamos um link de redefinição de senha para seu e-mail.');
     } catch (err: any) {
-      setError(err.message || 'Não foi possível enviar o e-mail de recuperação.');
+      setError(translateAuthError(err?.message));
     } finally {
       setResetting(false);
     }
@@ -414,65 +496,103 @@ const Login: React.FC<LoginProps> = ({ onLogin, onResetPassword }) => {
 
   return (
     <div className="relative flex min-h-screen w-full overflow-hidden bg-slate-50">
-      {/* Animated Particles Layer */}
-      <AnimatedParticles theme={theme} />
+      {/* Overlay de Lançamento - Animação Nave */}
+      {launching && (
+        <div className="fixed inset-0 z-[100] flex flex-col items-center justify-center bg-slate-900 animate-fade-in">
+          {/* Estrelas de fundo */}
+          <div className="absolute inset-0 overflow-hidden">
+            {Array.from({ length: 50 }).map((_, i) => (
+              <div
+                key={i}
+                className="absolute w-1 h-1 bg-white rounded-full animate-twinkle"
+                style={{
+                  left: `${Math.random() * 100}%`,
+                  top: `${Math.random() * 100}%`,
+                  animationDelay: `${Math.random() * 2}s`,
+                  opacity: Math.random() * 0.8 + 0.2,
+                }}
+              />
+            ))}
+          </div>
+          
+          {/* Rastro da nave */}
+          <div className="absolute bottom-0 left-1/2 -translate-x-1/2 w-32 bg-gradient-to-t from-orange-500/0 via-orange-500/50 to-transparent animate-rocket-exhaust opacity-0" style={{ height: '40vh' }} />
+          
+          {/* Nave/Foguete Customizado */}
+          <div className="relative z-10 animate-rocket-launch">
+            <div className="relative transform scale-150">
+              {/* Corpo do foguete */}
+              <div className="relative w-12 h-24 bg-slate-100 rounded-[50%_50%_50%_50%_/_60%_60%_40%_40%] shadow-inner overflow-hidden z-20 mx-auto border border-slate-300">
+                {/* Janela */}
+                <div className="absolute top-6 left-1/2 -translate-x-1/2 w-6 h-6 bg-sky-300 rounded-full border-2 border-slate-300 shadow-inner">
+                  <div className="absolute top-1 left-1 w-2 h-2 bg-white rounded-full opacity-50" />
+                </div>
+                {/* Detalhes */}
+                <div className="absolute bottom-0 w-full h-1 bg-red-500" />
+                <div className="absolute bottom-2 w-full h-1 bg-red-500" />
+              </div>
 
-      {/* Animated Background Blobs - Themed */}
+              {/* Asas esquerda */}
+              <div className="absolute bottom-2 -left-3 w-6 h-10 bg-red-600 rounded-tl-full rounded-bl-lg skew-y-12 z-10 border-l border-red-700" />
+              
+              {/* Asas direita */}
+              <div className="absolute bottom-2 -right-3 w-6 h-10 bg-red-600 rounded-tr-full rounded-br-lg -skew-y-12 z-10 border-r border-red-700" />
+
+              {/* Fogo principal */}
+              <div className="absolute -bottom-12 left-1/2 -translate-x-1/2 w-8 h-16 z-0">
+                <div className="absolute inset-0 bg-gradient-to-t from-transparent via-yellow-400 to-red-500 rounded-b-full animate-fire blur-[2px]" />
+                <div className="absolute inset-2 bg-gradient-to-t from-transparent via-yellow-200 to-white rounded-b-full animate-fire-inner blur-[1px]" />
+              </div>
+              
+              {/* Partículas de propulsão */}
+              <div className="absolute -bottom-20 left-1/2 -translate-x-1/2 w-2 h-20 bg-white/20 blur-md animate-pulse" />
+            </div>
+          </div>
+          
+          {/* Texto */}
+          <div className="relative z-10 mt-12 text-center animate-fade-in-up">
+            <p className="text-2xl font-bold text-white mb-2">
+              🚀 Decolando...
+            </p>
+            <p className="text-amber-400 text-lg font-medium">
+              Entrando no melhor CRM jurídico!
+            </p>
+          </div>
+        </div>
+      )}
+      {/* Subtle Background Gradient */}
       <div className="absolute inset-0 overflow-hidden pointer-events-none">
         <div 
-          className="absolute top-20 left-10 w-72 h-72 rounded-full blur-3xl animate-pulse"
-          style={{ backgroundColor: `${theme.particleColors[0]}33` }}
+          className="absolute top-20 left-10 w-96 h-96 rounded-full blur-3xl opacity-30"
+          style={{ backgroundColor: `${theme.particleColors[0]}` }}
         />
         <div 
-          className="absolute bottom-20 right-10 w-96 h-96 rounded-full blur-3xl animate-pulse"
-          style={{ backgroundColor: `${theme.particleColors[1]}33`, animationDelay: '1s' }}
+          className="absolute bottom-20 right-10 w-80 h-80 rounded-full blur-3xl opacity-20"
+          style={{ backgroundColor: `${theme.particleColors[1]}` }}
         />
-        <div 
-          className="absolute top-1/2 left-1/4 w-64 h-64 rounded-full blur-3xl animate-pulse"
-          style={{ backgroundColor: `${theme.particleColors[2]}33`, animationDelay: '0.5s' }}
-        />
-      </div>
-
-      {/* Festive Banner - Interactive */}
-      <div 
-        className={`absolute top-0 left-0 right-0 z-30 bg-gradient-to-r ${theme.gradient} py-3 px-4 text-center text-white font-semibold flex items-center justify-center gap-3 shadow-xl ${theme.bannerAnimation} cursor-default select-none`}
-        style={{ backgroundSize: '200% 200%' }}
-      >
-        <span className="text-xl animate-bounce" style={{ animationDelay: '0s' }}>{renderThemeSymbol('w-6 h-auto')}</span>
-        <span className="text-sm md:text-base tracking-wide">{theme.message}</span>
-        <span className="text-xl animate-bounce" style={{ animationDelay: '0.2s' }}>{renderThemeSymbol('w-6 h-auto')}</span>
-        <span className="absolute left-4 opacity-50">{renderThemeSymbol('w-5 h-auto')}</span>
-        <span className="absolute right-4 opacity-50">{renderThemeSymbol('w-5 h-auto')}</span>
       </div>
 
       {/* Left Side - Login Form */}
       <div
-        className={`flex w-full flex-col items-center justify-center bg-white/80 backdrop-blur-sm p-8 pt-16 lg:w-1/2 lg:p-16 lg:pt-20 transition-all duration-700 ${
+        className={`flex w-full flex-col items-center justify-center bg-white p-8 lg:w-1/2 lg:p-16 transition-all duration-700 ${
           mounted ? 'opacity-100 translate-x-0' : 'opacity-0 -translate-x-4'
         }`}
       >
         <div className="flex w-full max-w-md flex-col items-start gap-8">
           {/* Logo & Title */}
           <div className="flex w-full flex-col items-start gap-2">
-            <div 
-              className="flex items-center gap-4 mb-4"
-              onMouseEnter={() => setLogoHover(true)}
-              onMouseLeave={() => setLogoHover(false)}
-            >
-              <div className="relative group">
-                <div className={`absolute -inset-1 bg-gradient-to-r ${theme.gradient} rounded-xl blur opacity-30 transition-all duration-500 ${logoHover ? 'opacity-60 scale-110' : ''}`} />
+            <div className="flex items-center gap-4 mb-4">
+              <div className="relative">
+                <div className="absolute -inset-1 bg-gradient-to-r from-amber-500 to-orange-500 rounded-xl blur opacity-20" />
                 <img
                   src="/icon-512.png"
                   alt="Advogado.WEB"
-                  className={`relative h-16 w-16 rounded-xl shadow-lg transition-transform duration-500 ${logoHover ? 'scale-105 rotate-3' : ''}`}
+                  className="relative h-16 w-16 rounded-xl shadow-lg"
                 />
-                <span className={`absolute -top-2 -right-2 ${theme.accentColor} transition-all duration-300 ${logoHover ? 'opacity-100 scale-100' : 'opacity-0 scale-50'}`}>
-                  {theme.icon}
-                </span>
               </div>
               <div>
                 <h1 className="text-4xl font-bold tracking-tight text-slate-900">
-                  Advogado<span className={`${theme.accentColor} font-semibold`}>.WEB</span>
+                  Advogado<span className="text-amber-600 font-semibold">.WEB</span>
                 </h1>
                 <p className="text-xs text-slate-400 flex items-center gap-1 mt-1">
                   <Shield className="w-3 h-3" />
@@ -509,21 +629,7 @@ const Login: React.FC<LoginProps> = ({ onLogin, onResetPassword }) => {
             <label className="flex flex-col w-full group">
               <div className="flex items-center justify-between w-full pb-2">
                 <p className="text-sm font-medium leading-normal text-slate-700 group-focus-within:text-amber-600 transition-colors">Senha</p>
-                <button
-                  type="button"
-                  onClick={handleResetPassword}
-                  disabled={resetting}
-                  className="text-sm font-medium text-slate-500 hover:text-amber-600 transition-colors duration-200 disabled:opacity-50"
-                >
-                  {resetting ? (
-                    <span className="flex items-center gap-1">
-                      <Loader2 className="w-3 h-3 animate-spin" />
-                      Enviando...
-                    </span>
-                  ) : (
-                    'Esqueceu a senha?'
-                  )}
-                </button>
+                <span className="text-[11px] uppercase tracking-wide text-slate-400">mín. 8 caracteres</span>
               </div>
               <div className="relative">
                 <input
@@ -543,6 +649,41 @@ const Login: React.FC<LoginProps> = ({ onLogin, onResetPassword }) => {
                 </button>
               </div>
             </label>
+
+            <div className="flex flex-col gap-2 text-sm">
+              <label className="inline-flex items-center gap-2 text-slate-600 select-none">
+                <input
+                  type="checkbox"
+                  className="h-4 w-4 rounded border-slate-300 text-amber-600 focus:ring-amber-500"
+                  defaultChecked
+                />
+                Manter sessão ativa neste dispositivo
+              </label>
+              <div className="flex flex-wrap items-center justify-between gap-2 text-slate-500">
+                <button
+                  type="button"
+                  onClick={handleResetPassword}
+                  disabled={resetting}
+                  className="inline-flex items-center gap-1 font-medium text-amber-600/80 hover:text-amber-600 transition-colors disabled:opacity-50"
+                >
+                  {resetting ? (
+                    <>
+                      <Loader2 className="w-3 h-3 animate-spin" />
+                      Enviando link de recuperação...
+                    </>
+                  ) : (
+                    'Esqueceu a senha?'
+                  )}
+                </button>
+                <a
+                  href="mailto:pedro@advcuiaba.com"
+                  className="inline-flex items-center gap-1 hover:text-slate-700 transition-colors"
+                >
+                  <Shield className="w-3.5 h-3.5" />
+                  Precisa de ajuda?
+                </a>
+              </div>
+            </div>
 
             {/* Error */}
             {error && (
@@ -570,12 +711,12 @@ const Login: React.FC<LoginProps> = ({ onLogin, onResetPassword }) => {
               <span className="relative flex items-center gap-2">
                 {loading ? (
                   <>
-                    <Loader2 className="w-5 h-5 animate-spin" />
-                    Entrando...
+                    <Rocket className="w-5 h-5 animate-bounce" />
+                    Decolando...
                   </>
                 ) : (
                   <>
-                    <Scale className="w-4 h-4" />
+                    <Rocket className="w-4 h-4 group-hover:animate-bounce" />
                     Entrar
                   </>
                 )}
@@ -594,83 +735,53 @@ const Login: React.FC<LoginProps> = ({ onLogin, onResetPassword }) => {
 
       {/* Right Side - Hero */}
       <div
-        className={`relative hidden w-1/2 flex-col items-start justify-between bg-slate-900 p-12 pt-20 text-white lg:flex transition-all duration-700 delay-200 ${
+        className={`relative hidden w-1/2 flex-col items-start justify-between bg-slate-900 p-12 text-white lg:flex transition-all duration-700 delay-200 ${
           mounted ? 'opacity-100 translate-x-0' : 'opacity-0 translate-x-4'
         }`}
       >
-        {/* Background Image with Ken Burns effect */}
+        {/* Background Image */}
         <div
-          className="absolute inset-0 bg-center bg-cover animate-slow-zoom"
+          className="absolute inset-0 bg-center bg-cover"
           style={{
-            backgroundImage: `url('https://images.unsplash.com/photo-1589829545856-d10d557cf95f?auto=format&fit=crop&w=1920&q=80')`,
+            backgroundImage: `url('${theme.heroImage}')`,
           }}
         />
-        {/* Themed Overlay */}
-        <div className={`absolute inset-0 ${theme.backgroundOverlay}`} />
-        
-        {/* Extra Animated Elements for Hero */}
-        <div className="absolute inset-0 overflow-hidden pointer-events-none">
-          {/* Floating themed icons */}
-          <div className="absolute top-1/4 right-1/4 text-2xl animate-float opacity-30">{renderThemeSymbol('w-8 h-auto')}</div>
-          <div className="absolute top-1/3 right-1/3 text-xl animate-float opacity-20" style={{ animationDelay: '1s' }}>{renderThemeSymbol('w-6 h-auto')}</div>
-          <div className="absolute bottom-1/3 left-1/4 text-3xl animate-float opacity-25" style={{ animationDelay: '2s' }}>{renderThemeSymbol('w-10 h-auto')}</div>
-          <div className="absolute top-1/2 right-1/5 text-lg animate-float opacity-20" style={{ animationDelay: '0.5s' }}>{renderThemeSymbol('w-5 h-auto')}</div>
-          <div className="absolute bottom-1/4 right-1/3 text-2xl animate-float opacity-30" style={{ animationDelay: '1.5s' }}>{renderThemeSymbol('w-7 h-auto')}</div>
-          
-          {/* Glowing orbs */}
-          <div 
-            className="absolute top-1/4 left-1/4 w-32 h-32 rounded-full blur-2xl animate-pulse"
-            style={{ backgroundColor: `${theme.particleColors[0]}40` }}
-          />
-          <div 
-            className="absolute bottom-1/3 right-1/4 w-24 h-24 rounded-full blur-2xl animate-pulse"
-            style={{ backgroundColor: `${theme.particleColors[1]}40`, animationDelay: '1s' }}
-          />
-        </div>
+        {/* Overlay */}
+        <div className="absolute inset-0 bg-gradient-to-br from-slate-900/95 via-slate-900/90 to-slate-900/85" />
 
         {/* Hero Content */}
-        <div className={`relative z-10 flex w-full max-w-lg flex-col items-start gap-4 transition-all duration-700 delay-500 ${mounted ? 'opacity-100 translate-y-0' : 'opacity-0 -translate-y-4'}`}>
-          {/* Festive Badge */}
-          <div className={`flex items-center gap-2 px-4 py-2 rounded-full bg-white/10 backdrop-blur-sm border border-white/20 ${theme.bannerAnimation}`}>
-            <span className="text-lg flex items-center">{renderThemeSymbol('w-6 h-auto')}</span>
-            <span className={`text-sm font-semibold ${theme.accentColor.replace('-500', '-300')}`}>{theme.name}</span>
-            {theme.icon}
-          </div>
-          
-          <h2 className="text-4xl font-bold text-white leading-tight">
+        <div className={`relative z-10 flex w-full max-w-lg flex-col items-start gap-6 transition-all duration-700 delay-500 ${mounted ? 'opacity-100 translate-y-0' : 'opacity-0 -translate-y-4'}`}>
+          <h2 className="text-5xl font-bold text-white leading-tight">
             Simplifique sua<br />
-            <span className={`bg-gradient-to-r ${theme.gradient} bg-clip-text text-transparent`}>gestão jurídica.</span>
+            gestão jurídica.
           </h2>
-          <p className="text-white/70 text-lg">
+          <p className="text-white/80 text-xl leading-relaxed">
             Centralize casos, clientes e documentos com a ferramenta mais completa do mercado.
           </p>
           
-          {/* Feature pills with theme colors */}
-          <div className="flex flex-wrap gap-2 mt-2">
-            {['Processos', 'Prazos', 'Clientes', 'Financeiro'].map((feature, idx) => (
+          {/* Feature pills */}
+          <div className="flex flex-wrap gap-2.5 mt-2">
+            {['Processos', 'Prazos', 'Clientes', 'Financeiro'].map((feature) => (
               <span 
                 key={feature}
-                className="px-3 py-1.5 rounded-full bg-white/10 text-white/90 text-xs font-medium backdrop-blur-sm border border-white/20 hover:bg-white/20 transition-all cursor-default"
-                style={{ animationDelay: `${idx * 0.1}s` }}
+                className="px-4 py-2 rounded-full bg-white/15 text-white text-sm font-medium backdrop-blur-md border border-white/30 hover:bg-white/25 transition-all cursor-default"
               >
-                <span className={theme.accentColor.replace('-500', '-400')}>✓</span> {feature}
+                {feature}
               </span>
             ))}
           </div>
         </div>
 
-        {/* Testimonial with themed border */}
+        {/* Testimonial */}
         <div 
-          className={`relative z-10 mt-auto w-full max-w-lg rounded-2xl bg-black/40 p-6 backdrop-blur-md border-2 transition-all duration-700 delay-700 ${mounted ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-4'}`}
-          style={{ borderColor: `${theme.particleColors[0]}50` }}
+          className={`relative z-10 mt-auto w-full max-w-lg rounded-2xl bg-black/30 p-6 backdrop-blur-md border border-white/20 transition-all duration-700 delay-700 ${mounted ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-4'}`}
         >
-          <div className="absolute -top-4 left-6 opacity-50">{renderThemeSymbol('w-10 h-auto')}</div>
-          <p className="text-lg font-medium leading-relaxed text-white/90 pl-4">
-            A organização é a chave para a justiça. Com este CRM, alcançamos um novo patamar de
-            eficiência e precisão em nosso escritório.
+          <p className="text-lg font-medium leading-relaxed text-white/90">
+            "A organização é a chave para a justiça. Com este CRM, alcançamos um novo patamar de
+            eficiência e precisão em nosso escritório."
           </p>
-          <p className="mt-4 pl-4 text-xs uppercase tracking-[0.3em] text-white/60">
-            Equipe Advogado.WEB
+          <p className="mt-4 text-sm text-white/60">
+            — Equipe Advogado.WEB
           </p>
         </div>
       </div>
