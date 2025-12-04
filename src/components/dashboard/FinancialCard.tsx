@@ -19,8 +19,8 @@ const formatCurrency = (value: number): string =>
   new Intl.NumberFormat('pt-BR', {
     style: 'currency',
     currency: 'BRL',
-    minimumFractionDigits: 0,
-    maximumFractionDigits: 0,
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
   }).format(value);
 
 export const FinancialCard: React.FC<FinancialCardProps> = ({ stats, onNavigate }) => {

@@ -31,16 +31,27 @@ export const ClientFormModal: React.FC<ClientFormModalProps> = ({
   };
 
   const modalContent = (
-    <div 
-      className="fixed inset-0 z-[60] flex items-center justify-center p-2 sm:p-4"
+    <div
+      className="fixed inset-0 z-[60] flex items-center justify-center p-4 sm:p-6 md:p-8"
       onSubmit={(e) => e.stopPropagation()}
     >
+      {/* Overlay com blur suave */}
       <div 
-        className="absolute inset-0 bg-slate-900/50 backdrop-blur-sm" 
-        onClick={onClose}
+        className="absolute inset-0 bg-black/60 backdrop-blur-sm transition-opacity duration-300"
+        onClick={onClose} 
       />
-      <div 
-        className="relative bg-white rounded-lg shadow-2xl w-full max-w-full sm:max-w-4xl max-h-[95vh] sm:max-h-[90vh] overflow-hidden"
+      
+      {/* Container do modal com animação */}
+      <div
+        className="
+          relative w-full max-w-5xl 
+          bg-white dark:bg-zinc-900 
+          rounded-2xl overflow-hidden 
+          shadow-2xl dark:shadow-black/50 
+          border border-zinc-200/50 dark:border-zinc-800/50 
+          transform transition-all duration-300 ease-out 
+          animate-in zoom-in-95 slide-in-from-bottom-4
+        "
         onClick={handleModalClick}
       >
         <ClientForm

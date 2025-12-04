@@ -22,6 +22,8 @@ import {
   FileText,
   Activity,
   Settings,
+  Moon,
+  Sun,
 } from 'lucide-react';
 import Login from './components/Login';
 import OfflinePage from './components/OfflinePage';
@@ -50,6 +52,7 @@ import { useNotifications } from './hooks/useNotifications';
 import { usePresence } from './hooks/usePresence';
 import { pushNotifications } from './utils/pushNotifications';
 import { useAuth } from './contexts/AuthContext';
+import { useTheme } from './contexts/ThemeContext';
 import { CacheProvider } from './contexts/CacheContext';
 import { useDjenSync } from './hooks/useDjenSync';
 import { profileService } from './services/profile.service';
@@ -79,6 +82,7 @@ function App() {
   }
 
   const { currentModule: activeModule, moduleParams, navigateTo, setModuleParams, clearModuleParams } = useNavigation();
+  const { theme, toggleTheme } = useTheme();
   const [isMobileNavOpen, setIsMobileNavOpen] = useState(false);
   const [isOnline, setIsOnline] = useState(navigator.onLine);
 
@@ -569,7 +573,7 @@ function App() {
 
   return (
     <CacheProvider>
-      <div className="min-h-screen bg-gray-100">
+      <div className="min-h-screen bg-gray-100 dark:bg-black transition-colors duration-300">
         {/* Overlay de Logout - Animação Nave Aterrissando */}
         {loggingOut && (
           <div className="fixed inset-0 z-[100] flex flex-col items-center justify-center bg-slate-900 animate-fade-in">
@@ -643,13 +647,13 @@ function App() {
       {/* Novo Sidebar - Estilo Compacto Vertical */}
       {isMobileNavOpen && <div className="fixed inset-0 bg-black/40 z-40 md:hidden" onClick={() => setIsMobileNavOpen(false)} />}
       <aside
-        className={`fixed inset-y-0 left-0 bg-slate-900 text-white transition-transform duration-300 z-50 flex flex-col w-20 ${
+        className={`fixed inset-y-0 left-0 bg-slate-900 dark:bg-black text-white border-r border-slate-800 dark:border-zinc-900 transition-all duration-300 z-50 flex flex-col w-20 ${
           isMobileNavOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0'
         }`}
       >
         <div className="flex flex-col h-full">
           {/* Logo */}
-          <div className="flex items-center justify-center py-5 border-b border-slate-800">
+          <div className="flex items-center justify-center py-5 border-b border-slate-800 dark:border-zinc-900">
             <div className="bg-amber-600 p-2 rounded-xl">
               <img src="/icon-192.png" alt="Advogado Web" className="w-10 h-10 object-contain" />
             </div>
@@ -840,7 +844,7 @@ function App() {
       {/* Main Content Area */}
       <div className="md:ml-20 ml-0 transition-all duration-300">
         {/* Top Bar */}
-        <header className="bg-white border-b border-gray-200 sticky top-0 z-30">
+        <header className="bg-white border-b border-gray-200 sticky top-0 z-30 transition-colors duration-300">
           <div className="px-3 sm:px-4 lg:px-8 py-3 sm:py-4">
             <div className="flex items-center justify-between gap-2 sm:gap-4">
               <div className="flex items-center gap-2 sm:gap-3 min-w-0 flex-1">
@@ -987,6 +991,16 @@ function App() {
                     <p className="text-sm font-semibold text-slate-900 truncate max-w-[150px]">{profile.name}</p>
                     <p className="text-xs text-slate-600">{profile.role}</p>
                   </div>
+                  
+                  {/* Theme Toggle */}
+                  <button 
+                    onClick={toggleTheme}
+                    className="p-1.5 sm:p-2 rounded-lg text-slate-600 hover:text-amber-600 hover:bg-amber-50 transition-colors"
+                    title={theme === 'dark' ? 'Mudar para modo claro' : 'Mudar para modo escuro'}
+                  >
+                    {theme === 'dark' ? <Sun className="w-4 h-4 sm:w-5 sm:h-5" /> : <Moon className="w-4 h-4 sm:w-5 sm:h-5" />}
+                  </button>
+
                   <div className="relative" ref={profileMenuRef}>
                     <button
                       type="button"

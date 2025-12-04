@@ -771,7 +771,7 @@ const DocumentsModule: React.FC = () => {
             <button
               onClick={handleGenerateDocx}
               disabled={generatingDocx || !selectedClientId || !selectedTemplateId}
-              className="w-full rounded-xl bg-slate-900 px-6 py-3 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:bg-slate-300"
+              className="w-full rounded-xl bg-blue-600 px-6 py-3 text-sm font-semibold text-white transition hover:bg-blue-700 disabled:bg-slate-300 disabled:text-slate-500"
             >
               {generatingDocx ? (
                 <span className="inline-flex items-center gap-2">

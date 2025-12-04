@@ -4,6 +4,7 @@ import App from './App';
 import { NavigationProvider } from './contexts/NavigationContext';
 import { AuthProvider } from './contexts/AuthContext';
 import { ToastProvider } from './contexts/ToastContext';
+import { ThemeProvider } from './contexts/ThemeContext';
 import './index.css';
 
 // Detectar rotas especiais antes de forçar "/"
@@ -22,9 +23,11 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
     <NavigationProvider initialModule="dashboard">
       <AuthProvider>
-        <ToastProvider>
-          <App />
-        </ToastProvider>
+        <ThemeProvider>
+          <ToastProvider>
+            <App />
+          </ToastProvider>
+        </ThemeProvider>
       </AuthProvider>
     </NavigationProvider>
   </React.StrictMode>,

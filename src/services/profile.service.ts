@@ -1,6 +1,7 @@
 import { supabase } from '../config/supabase';
 
 export type PresenceStatus = 'online' | 'away' | 'offline';
+export type ThemePreference = 'light' | 'dark' | 'system';
 
 export interface Profile {
   id: string;
@@ -10,10 +11,11 @@ export interface Profile {
   email: string;
   phone?: string | null;
   oab?: string | null;
-  lawyer_full_name?: string | null; // Nome completo para pesquisa no DJEN
+  lawyer_full_name?: string | null;
   bio?: string | null;
   avatar_url?: string | null;
   presence_status?: PresenceStatus;
+  theme_preference?: ThemePreference;
   last_seen_at?: string | null;
   updated_at: string;
   created_at: string;
@@ -28,6 +30,7 @@ export interface UpdateProfileInput {
   lawyer_full_name?: string | null;
   bio?: string | null;
   avatar_url?: string | null;
+  theme_preference?: ThemePreference;
 }
 
 class ProfileService {
@@ -80,6 +83,15 @@ class ProfileService {
     }
 
     return this.getProfile(user.id);
+  }
+
+  async updateThemePreference(userId: string, theme: ThemePreference): Promise<void> {
+    const { error } = await supabase
+      .from(this.tableName)
+      .update({ theme_preference: theme, updated_at: new Date().toISOString() })
+      .eq('user_id', userId);
+
+    if (error) throw new Error(error.message);
   }
 
   async setPresenceStatus(userId: string, status: PresenceStatus): Promise<void> {

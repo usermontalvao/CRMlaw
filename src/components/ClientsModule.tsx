@@ -245,7 +245,7 @@ const ClientsModule: React.FC<ClientsModuleProps> = ({
     setClientProcesses([]);
     setClientRequirements([]);
     loadClients();
-    
+
     // Notificar App.tsx sobre o resultado
     if (saved && onClientSaved) {
       onClientSaved();
@@ -257,10 +257,10 @@ const ClientsModule: React.FC<ClientsModuleProps> = ({
   const handleExportToExcel = async () => {
     try {
       setExporting(true);
-      
+
       // Buscar todos os clientes para exportação
       const allClients = await clientService.listClients({});
-      
+
       // Preparar dados para o Excel
       const exportData = allClients.map((client) => {
         const primaryPhone = client.phone || client.mobile || '';
@@ -286,11 +286,11 @@ const ClientsModule: React.FC<ClientsModuleProps> = ({
           'Atualizado em': new Date(client.updated_at).toLocaleDateString('pt-BR'),
         };
       });
-      
+
       // Criar workbook e worksheet
       const wb = XLSX.utils.book_new();
       const ws = XLSX.utils.json_to_sheet(exportData);
-      
+
       // Configurar largura das colunas
       const colWidths = [
         { wch: 25 }, // Nome
@@ -314,17 +314,17 @@ const ClientsModule: React.FC<ClientsModuleProps> = ({
         { wch: 12 }, // Atualizado em
       ];
       ws['!cols'] = colWidths;
-      
+
       // Adicionar worksheet ao workbook
       XLSX.utils.book_append_sheet(wb, ws, 'Clientes');
-      
+
       // Gerar nome do arquivo com data atual
       const today = new Date();
       const fileName = `clientes_${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}.xlsx`;
-      
+
       // Baixar arquivo
       XLSX.writeFile(wb, fileName);
-      
+
     } catch (error) {
       console.error('Erro ao exportar clientes:', error);
       alert('Erro ao exportar clientes. Tente novamente.');
@@ -521,7 +521,7 @@ const ClientsModule: React.FC<ClientsModuleProps> = ({
               </div>
             )}
           </div>
-          </>
+        </>
       )}
 
       {viewMode === 'list' && (missingFieldsMap.size > 0 || outdatedSet.size > 0) && (
@@ -585,7 +585,7 @@ const ClientsModule: React.FC<ClientsModuleProps> = ({
       {viewMode === 'form' && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-4">
           <div className="absolute inset-0 bg-slate-900/50 backdrop-blur-sm" onClick={() => handleBackToList(false)} />
-          <div className="relative bg-white rounded-lg shadow-2xl w-full max-w-full sm:max-w-4xl max-h-[95vh] sm:max-h-[90vh] overflow-hidden">
+          <div className="relative bg-[#1c1c1e] rounded-lg shadow-2xl w-full max-w-full sm:max-w-4xl max-h-[95vh] sm:max-h-[90vh] overflow-hidden">
             <ClientForm
               client={selectedClient}
               prefill={!selectedClient ? prefillData : null}
@@ -616,42 +616,42 @@ const ClientsModule: React.FC<ClientsModuleProps> = ({
                 onBack={() => handleBackToList(false)}
                 onEdit={() => handleEditClient(selectedClient)}
                 onCreateProcess={() => {
-                if (onNavigateToModule) {
-                  onNavigateToModule('processos', {
-                    mode: 'create',
-                    prefill: {
-                      client_id: selectedClient.id,
-                      client_name: selectedClient.full_name,
-                    }
-                  });
-                }
-              }}
-              onCreateRequirement={() => {
-                if (onNavigateToModule) {
-                  onNavigateToModule('requerimentos', {
-                    mode: 'create',
-                    prefill: {
-                      client_id: selectedClient.id,
-                      beneficiary: selectedClient.full_name,
-                      cpf: selectedClient.cpf_cnpj || '',
-                    }
-                  });
-                }
-              }}
-              onCreateDeadline={() => {
-                if (onNavigateToModule) {
-                  onNavigateToModule('prazos', {
-                    mode: 'create',
-                    prefill: {
-                      client_id: selectedClient.id,
-                      client_name: selectedClient.full_name,
-                    }
-                  });
-                }
-              }}
-              missingFields={missingFieldsMap?.get(selectedClient.id)}
-              isOutdated={outdatedSet?.has(selectedClient.id)}
-            />
+                  if (onNavigateToModule) {
+                    onNavigateToModule('processos', {
+                      mode: 'create',
+                      prefill: {
+                        client_id: selectedClient.id,
+                        client_name: selectedClient.full_name,
+                      }
+                    });
+                  }
+                }}
+                onCreateRequirement={() => {
+                  if (onNavigateToModule) {
+                    onNavigateToModule('requerimentos', {
+                      mode: 'create',
+                      prefill: {
+                        client_id: selectedClient.id,
+                        beneficiary: selectedClient.full_name,
+                        cpf: selectedClient.cpf_cnpj || '',
+                      }
+                    });
+                  }
+                }}
+                onCreateDeadline={() => {
+                  if (onNavigateToModule) {
+                    onNavigateToModule('prazos', {
+                      mode: 'create',
+                      prefill: {
+                        client_id: selectedClient.id,
+                        client_name: selectedClient.full_name,
+                      }
+                    });
+                  }
+                }}
+                missingFields={missingFieldsMap?.get(selectedClient.id)}
+                isOutdated={outdatedSet?.has(selectedClient.id)}
+              />
             </div>
           </div>
         </div>

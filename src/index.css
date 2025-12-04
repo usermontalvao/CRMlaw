@@ -1,5 +1,727 @@
 @import "tailwindcss";
 
+@custom-variant dark (&:where(.dark, .dark *));
+
+/* ===== APPLE DESIGN SYSTEM ===== */
+
+/* Fontes - San Francisco style */
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+
+:root {
+  /* Cores Apple Light */
+  --apple-bg: #f5f5f7;
+  --apple-surface: rgba(255, 255, 255, 0.72);
+  --apple-surface-elevated: rgba(255, 255, 255, 0.9);
+  --apple-border: rgba(0, 0, 0, 0.06);
+  --apple-border-strong: rgba(0, 0, 0, 0.1);
+  --apple-text-primary: #1d1d1f;
+  --apple-text-secondary: #86868b;
+  --apple-text-tertiary: #aeaeb2;
+  --apple-accent: #0071e3;
+  --apple-accent-hover: #0077ed;
+  --apple-success: #34c759;
+  --apple-warning: #ff9f0a;
+  --apple-danger: #ff3b30;
+  --apple-blur: 20px;
+  --apple-radius-sm: 8px;
+  --apple-radius-md: 12px;
+  --apple-radius-lg: 16px;
+  --apple-radius-xl: 20px;
+  --apple-shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.04), 0 1px 2px rgba(0, 0, 0, 0.06);
+  --apple-shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.05), 0 2px 4px -1px rgba(0, 0, 0, 0.03);
+  --apple-shadow-lg: 0 10px 25px -3px rgba(0, 0, 0, 0.08), 0 4px 6px -2px rgba(0, 0, 0, 0.03);
+  --apple-shadow-xl: 0 20px 40px -4px rgba(0, 0, 0, 0.1), 0 8px 16px -4px rgba(0, 0, 0, 0.04);
+}
+
+.dark {
+  /* Cores Apple Dark */
+  --apple-bg: #000000;
+  --apple-surface: rgba(28, 28, 30, 0.72);
+  --apple-surface-elevated: rgba(44, 44, 46, 0.9);
+  --apple-border: rgba(255, 255, 255, 0.08);
+  --apple-border-strong: rgba(255, 255, 255, 0.12);
+  --apple-text-primary: #f5f5f7;
+  --apple-text-secondary: #98989d;
+  --apple-text-tertiary: #636366;
+  --apple-accent: #0a84ff;
+  --apple-accent-hover: #409cff;
+  --apple-success: #30d158;
+  --apple-warning: #ffd60a;
+  --apple-danger: #ff453a;
+  --apple-shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.3), 0 1px 2px rgba(0, 0, 0, 0.4);
+  --apple-shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.4), 0 2px 4px -1px rgba(0, 0, 0, 0.3);
+  --apple-shadow-lg: 0 10px 25px -3px rgba(0, 0, 0, 0.5), 0 4px 6px -2px rgba(0, 0, 0, 0.3);
+  --apple-shadow-xl: 0 20px 40px -4px rgba(0, 0, 0, 0.6), 0 8px 16px -4px rgba(0, 0, 0, 0.4);
+}
+
+/* Base styles */
+* {
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'SF Pro Text', 'Helvetica Neue', sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+body {
+  background: var(--apple-bg);
+  color: var(--apple-text-primary);
+  transition: background 0.3s ease, color 0.3s ease;
+}
+
+/* ===== COMPONENTES APPLE ===== */
+
+/* Glass Card */
+.apple-card {
+  background: var(--apple-surface);
+  backdrop-filter: blur(var(--apple-blur));
+  -webkit-backdrop-filter: blur(var(--apple-blur));
+  border: 1px solid var(--apple-border);
+  border-radius: var(--apple-radius-lg);
+  box-shadow: var(--apple-shadow-md);
+  transition: all 0.2s ease;
+}
+
+.apple-card:hover {
+  box-shadow: var(--apple-shadow-lg);
+  border-color: var(--apple-border-strong);
+}
+
+/* Glass Card Elevated */
+.apple-card-elevated {
+  background: var(--apple-surface-elevated);
+  backdrop-filter: blur(var(--apple-blur));
+  -webkit-backdrop-filter: blur(var(--apple-blur));
+  border: 1px solid var(--apple-border);
+  border-radius: var(--apple-radius-lg);
+  box-shadow: var(--apple-shadow-lg);
+}
+
+/* Apple Button Primary */
+.apple-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 8px 16px;
+  font-size: 13px;
+  font-weight: 500;
+  border-radius: var(--apple-radius-md);
+  transition: all 0.15s ease;
+  cursor: pointer;
+  border: none;
+  outline: none;
+}
+
+.apple-btn-primary {
+  background: var(--apple-accent);
+  color: white;
+}
+
+.apple-btn-primary:hover {
+  background: var(--apple-accent-hover);
+  transform: scale(1.02);
+}
+
+.apple-btn-primary:active {
+  transform: scale(0.98);
+}
+
+.apple-btn-secondary {
+  background: var(--apple-surface);
+  color: var(--apple-text-primary);
+  border: 1px solid var(--apple-border-strong);
+  backdrop-filter: blur(10px);
+}
+
+.apple-btn-secondary:hover {
+  background: var(--apple-surface-elevated);
+}
+
+/* Apple Input */
+.apple-input {
+  width: 100%;
+  padding: 10px 12px;
+  font-size: 14px;
+  background: var(--apple-surface);
+  border: 1px solid var(--apple-border);
+  border-radius: var(--apple-radius-md);
+  color: var(--apple-text-primary);
+  transition: all 0.15s ease;
+  backdrop-filter: blur(10px);
+}
+
+.apple-input:focus {
+  outline: none;
+  border-color: var(--apple-accent);
+  box-shadow: 0 0 0 3px rgba(0, 113, 227, 0.15);
+}
+
+.apple-input::placeholder {
+  color: var(--apple-text-tertiary);
+}
+
+/* Apple Select */
+.apple-select {
+  width: 100%;
+  padding: 10px 12px;
+  font-size: 14px;
+  background: var(--apple-surface);
+  border: 1px solid var(--apple-border);
+  border-radius: var(--apple-radius-md);
+  color: var(--apple-text-primary);
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.apple-select:focus {
+  outline: none;
+  border-color: var(--apple-accent);
+}
+
+/* Apple Badge */
+.apple-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 3px 8px;
+  font-size: 11px;
+  font-weight: 500;
+  border-radius: 6px;
+  background: var(--apple-surface);
+  color: var(--apple-text-secondary);
+  border: 1px solid var(--apple-border);
+}
+
+.apple-badge-success {
+  background: rgba(52, 199, 89, 0.12);
+  color: var(--apple-success);
+  border-color: rgba(52, 199, 89, 0.2);
+}
+
+.apple-badge-warning {
+  background: rgba(255, 159, 10, 0.12);
+  color: var(--apple-warning);
+  border-color: rgba(255, 159, 10, 0.2);
+}
+
+.apple-badge-danger {
+  background: rgba(255, 59, 48, 0.12);
+  color: var(--apple-danger);
+  border-color: rgba(255, 59, 48, 0.2);
+}
+
+/* Apple Modal */
+.apple-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.4);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  z-index: 50;
+  animation: fadeIn 0.2s ease;
+}
+
+.apple-modal {
+  background: var(--apple-surface-elevated);
+  backdrop-filter: blur(40px);
+  -webkit-backdrop-filter: blur(40px);
+  border: 1px solid var(--apple-border);
+  border-radius: var(--apple-radius-xl);
+  box-shadow: var(--apple-shadow-xl);
+  animation: slideUp 0.25s ease;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes slideUp {
+  from { 
+    opacity: 0;
+    transform: translateY(10px) scale(0.98);
+  }
+  to { 
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+/* Apple Sidebar */
+.apple-sidebar {
+  background: var(--apple-surface);
+  backdrop-filter: blur(var(--apple-blur));
+  -webkit-backdrop-filter: blur(var(--apple-blur));
+  border-right: 1px solid var(--apple-border);
+}
+
+/* Apple Table */
+.apple-table {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+}
+
+.apple-table th {
+  padding: 10px 16px;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--apple-text-secondary);
+  background: var(--apple-surface);
+  border-bottom: 1px solid var(--apple-border);
+  text-align: left;
+}
+
+.apple-table td {
+  padding: 12px 16px;
+  font-size: 13px;
+  color: var(--apple-text-primary);
+  border-bottom: 1px solid var(--apple-border);
+  transition: background 0.15s ease;
+}
+
+.apple-table tr:hover td {
+  background: var(--apple-surface);
+}
+
+/* Apple Metric Card */
+.apple-metric {
+  padding: 16px;
+  background: var(--apple-surface);
+  backdrop-filter: blur(var(--apple-blur));
+  border: 1px solid var(--apple-border);
+  border-radius: var(--apple-radius-lg);
+  transition: all 0.2s ease;
+}
+
+.apple-metric:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--apple-shadow-lg);
+}
+
+.apple-metric-value {
+  font-size: 28px;
+  font-weight: 600;
+  color: var(--apple-text-primary);
+  letter-spacing: -0.5px;
+}
+
+.apple-metric-label {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--apple-text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+}
+
+/* Apple Tooltip */
+.apple-tooltip {
+  padding: 6px 10px;
+  font-size: 12px;
+  background: var(--apple-surface-elevated);
+  backdrop-filter: blur(20px);
+  border: 1px solid var(--apple-border);
+  border-radius: var(--apple-radius-sm);
+  box-shadow: var(--apple-shadow-md);
+  color: var(--apple-text-primary);
+}
+
+/* Scrollbar Apple Style */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--apple-text-tertiary);
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--apple-text-secondary);
+}
+
+/* Micro-animations */
+.apple-hover-lift {
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.apple-hover-lift:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--apple-shadow-lg);
+}
+
+.apple-press {
+  transition: transform 0.1s ease;
+}
+
+.apple-press:active {
+  transform: scale(0.97);
+}
+
+/* ===== MODAIS - CORREÇÃO GLOBAL ===== */
+
+/* Reset - remover qualquer fundo azul/colorido */
+div[class*="fixed"][class*="inset-0"],
+div[class*="fixed"][class*="z-50"],
+div[class*="fixed"][class*="z-"][class*="inset-0"] {
+  background: rgba(0, 0, 0, 0.6) !important;
+  backdrop-filter: blur(8px) !important;
+  -webkit-backdrop-filter: blur(8px) !important;
+}
+
+/* Backdrop interno (se existir) */
+div[class*="fixed"] > div[class*="absolute"][class*="inset-0"],
+div[class*="fixed"] [class*="bg-black"],
+div[class*="fixed"] [class*="bg-slate-900"] {
+  background: transparent !important;
+}
+
+/* Container do modal - fundo escuro sólido */
+div[class*="fixed"][class*="z-50"] > div[class*="bg-white"],
+div[class*="fixed"][class*="z-50"] > div[class*="rounded"],
+div[class*="fixed"][class*="z-50"] div[class*="rounded-2xl"][class*="bg-white"],
+div[class*="fixed"][class*="z-50"] div[class*="rounded-2xl"][class*="shadow"],
+div[class*="fixed"][class*="z-"] > div[class*="w-full"][class*="max-w-"] {
+  background: #1c1c1e !important;
+  border: 1px solid rgba(255, 255, 255, 0.1) !important;
+  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5) !important;
+}
+
+/* Headers de modais */
+div[class*="fixed"][class*="z-50"] [class*="border-b"] {
+  border-color: var(--apple-border) !important;
+  background: transparent !important;
+}
+
+/* Títulos em modais */
+div[class*="fixed"][class*="z-50"] h3,
+div[class*="fixed"][class*="z-50"] h2 {
+  color: var(--apple-text-primary) !important;
+}
+
+/* Subtítulos em modais */
+div[class*="fixed"][class*="z-50"] p[class*="text-slate"],
+div[class*="fixed"][class*="z-50"] p[class*="text-gray"] {
+  color: var(--apple-text-secondary) !important;
+}
+
+/* Labels em modais */
+div[class*="fixed"][class*="z-50"] label {
+  color: var(--apple-text-secondary) !important;
+  font-size: 13px !important;
+  font-weight: 500 !important;
+}
+
+/* Inputs em modais - TAMANHO GRANDE */
+div[class*="fixed"][class*="z-50"] input,
+div[class*="fixed"][class*="z-50"] select,
+div[class*="fixed"][class*="z-50"] textarea,
+div[class*="fixed"][class*="z-50"] .input-field {
+  background: #2c2c2e !important;
+  border: 1px solid rgba(255, 255, 255, 0.1) !important;
+  border-radius: 12px !important;
+  color: #ffffff !important;
+  padding: 14px 16px !important;
+  font-size: 15px !important;
+  transition: all 0.15s ease !important;
+  width: 100% !important;
+}
+
+div[class*="fixed"][class*="z-50"] input:focus,
+div[class*="fixed"][class*="z-50"] select:focus,
+div[class*="fixed"][class*="z-50"] textarea:focus,
+div[class*="fixed"][class*="z-50"] .input-field:focus {
+  outline: none !important;
+  border-color: #0a84ff !important;
+  box-shadow: 0 0 0 3px rgba(10, 132, 255, 0.2) !important;
+}
+
+div[class*="fixed"][class*="z-50"] input::placeholder,
+div[class*="fixed"][class*="z-50"] textarea::placeholder {
+  color: #636366 !important;
+}
+
+/* Labels em modais - mais visíveis */
+div[class*="fixed"][class*="z-50"] label {
+  color: #98989d !important;
+  font-size: 14px !important;
+  font-weight: 500 !important;
+  margin-bottom: 8px !important;
+  display: block !important;
+}
+
+/* Títulos de seção em modais */
+div[class*="fixed"][class*="z-50"] h3 {
+  color: #d1d1d6 !important;
+  font-size: 13px !important;
+  font-weight: 600 !important;
+  text-transform: uppercase !important;
+  letter-spacing: 0.5px !important;
+  margin-bottom: 16px !important;
+}
+
+/* Botões primários em modais - TAMANHO GRANDE */
+div[class*="fixed"][class*="z-50"] button[class*="bg-blue"],
+div[class*="fixed"][class*="z-50"] button[class*="bg-emerald"],
+div[class*="fixed"][class*="z-50"] button[type="submit"]:not([class*="text-slate-400"]) {
+  background: #0a84ff !important;
+  color: white !important;
+  border: none !important;
+  border-radius: 12px !important;
+  font-weight: 600 !important;
+  font-size: 15px !important;
+  padding: 14px 24px !important;
+  transition: all 0.15s ease !important;
+}
+
+div[class*="fixed"][class*="z-50"] button[class*="bg-blue"]:hover,
+div[class*="fixed"][class*="z-50"] button[class*="bg-emerald"]:hover,
+div[class*="fixed"][class*="z-50"] button[type="submit"]:hover {
+  background: #409cff !important;
+}
+
+/* Botões secundários em modais - TAMANHO GRANDE */
+div[class*="fixed"][class*="z-50"] button[class*="border"],
+div[class*="fixed"][class*="z-50"] button[class*="bg-slate-100"],
+div[class*="fixed"][class*="z-50"] button[class*="bg-gray-100"],
+div[class*="fixed"][class*="z-50"] button[class*="btn-secondary"] {
+  background: #3a3a3c !important;
+  color: #ffffff !important;
+  border: 1px solid rgba(255, 255, 255, 0.1) !important;
+  border-radius: 12px !important;
+  font-weight: 500 !important;
+  font-size: 15px !important;
+  padding: 14px 24px !important;
+}
+
+div[class*="fixed"][class*="z-50"] button[class*="border"]:hover,
+div[class*="fixed"][class*="z-50"] button[class*="btn-secondary"]:hover {
+  background: #4a4a4c !important;
+}
+
+/* Botão de fechar (X) - maior */
+div[class*="fixed"][class*="z-50"] button[class*="text-slate-400"],
+div[class*="fixed"][class*="z-50"] button[class*="text-gray-400"] {
+  color: #98989d !important;
+  background: transparent !important;
+  border: none !important;
+  border-radius: 50% !important;
+  width: 40px !important;
+  height: 40px !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  transition: all 0.15s ease !important;
+}
+
+div[class*="fixed"][class*="z-50"] button[class*="text-slate-400"]:hover,
+div[class*="fixed"][class*="z-50"] button[class*="text-gray-400"]:hover {
+  background: rgba(255, 255, 255, 0.1) !important;
+  color: #ffffff !important;
+}
+
+/* Alertas/Feedback em modais */
+div[class*="fixed"][class*="z-50"] [class*="bg-green-50"],
+div[class*="fixed"][class*="z-50"] [class*="bg-emerald-50"] {
+  background: rgba(52, 199, 89, 0.1) !important;
+  border-color: rgba(52, 199, 89, 0.2) !important;
+}
+
+div[class*="fixed"][class*="z-50"] [class*="bg-yellow-50"],
+div[class*="fixed"][class*="z-50"] [class*="bg-amber-50"] {
+  background: rgba(255, 159, 10, 0.1) !important;
+  border-color: rgba(255, 159, 10, 0.2) !important;
+}
+
+div[class*="fixed"][class*="z-50"] [class*="bg-red-50"],
+div[class*="fixed"][class*="z-50"] [class*="bg-rose-50"] {
+  background: rgba(255, 59, 48, 0.1) !important;
+  border-color: rgba(255, 59, 48, 0.2) !important;
+}
+
+/* Seções dentro de modais */
+div[class*="fixed"][class*="z-50"] [class*="bg-slate-50"],
+div[class*="fixed"][class*="z-50"] [class*="bg-gray-50"] {
+  background: var(--apple-surface) !important;
+  border-radius: var(--apple-radius-md) !important;
+}
+
+/* Footer de modais */
+div[class*="fixed"][class*="z-50"] [class*="border-t"] {
+  border-color: var(--apple-border) !important;
+}
+
+/* Gradientes em headers de modais - remover */
+div[class*="fixed"][class*="z-50"] [class*="bg-gradient"] {
+  background: transparent !important;
+}
+
+/* Scrollbar em modais */
+div[class*="fixed"][class*="z-50"] ::-webkit-scrollbar {
+  width: 6px;
+}
+
+div[class*="fixed"][class*="z-50"] ::-webkit-scrollbar-thumb {
+  background: var(--apple-text-tertiary);
+  border-radius: 3px;
+}
+
+/* ===== LIGHT MODE - MODAIS ===== */
+
+/* Container do modal em light mode */
+:not(.dark) div[class*="fixed"][class*="z-50"] > div[class*="bg-white"],
+:not(.dark) div[class*="fixed"][class*="z-50"] div[class*="rounded-2xl"] {
+  background: #ffffff !important;
+  border: 1px solid rgba(0, 0, 0, 0.1) !important;
+}
+
+:not(.dark) div[class*="fixed"][class*="z-50"] input,
+:not(.dark) div[class*="fixed"][class*="z-50"] select,
+:not(.dark) div[class*="fixed"][class*="z-50"] textarea {
+  background: #f5f5f7 !important;
+  border-color: rgba(0, 0, 0, 0.1) !important;
+  color: #1d1d1f !important;
+}
+
+/* ===== DARK MODE - MODAIS ===== */
+
+/* Container do modal em dark mode */
+.dark div[class*="fixed"][class*="z-50"] > div[class*="bg-white"],
+.dark div[class*="fixed"][class*="z-50"] div[class*="rounded-2xl"],
+.dark div[class*="fixed"][class*="z-50"] div[class*="rounded-lg"][class*="shadow"],
+.dark div[class*="fixed"][class*="z-"] > div[class*="w-full"] {
+  background: #1c1c1e !important;
+  border: 1px solid rgba(255, 255, 255, 0.1) !important;
+}
+
+/* Inputs em dark mode */
+.dark div[class*="fixed"][class*="z-50"] input,
+.dark div[class*="fixed"][class*="z-50"] select,
+.dark div[class*="fixed"][class*="z-50"] textarea,
+.dark div[class*="fixed"][class*="z-50"] .input-field {
+  background: #2c2c2e !important;
+  border: 1px solid rgba(255, 255, 255, 0.1) !important;
+  color: #f5f5f7 !important;
+}
+
+.dark div[class*="fixed"][class*="z-50"] input:focus,
+.dark div[class*="fixed"][class*="z-50"] select:focus,
+.dark div[class*="fixed"][class*="z-50"] textarea:focus {
+  border-color: #0a84ff !important;
+  box-shadow: 0 0 0 3px rgba(10, 132, 255, 0.2) !important;
+}
+
+/* Seções internas */
+.dark div[class*="fixed"][class*="z-50"] [class*="bg-slate-50"],
+.dark div[class*="fixed"][class*="z-50"] [class*="bg-gray-50"],
+.dark div[class*="fixed"][class*="z-50"] [class*="bg-slate-100"],
+.dark div[class*="fixed"][class*="z-50"] [class*="bg-gray-100"] {
+  background: #2c2c2e !important;
+}
+
+/* Bordas */
+.dark div[class*="fixed"][class*="z-50"] [class*="border-b"],
+.dark div[class*="fixed"][class*="z-50"] [class*="border-t"],
+.dark div[class*="fixed"][class*="z-50"] [class*="border-slate"],
+.dark div[class*="fixed"][class*="z-50"] [class*="border-gray"] {
+  border-color: rgba(255, 255, 255, 0.08) !important;
+}
+
+/* Texto em modais dark */
+.dark div[class*="fixed"][class*="z-50"] h2,
+.dark div[class*="fixed"][class*="z-50"] h3,
+.dark div[class*="fixed"][class*="z-50"] [class*="text-slate-900"],
+.dark div[class*="fixed"][class*="z-50"] [class*="text-gray-900"] {
+  color: #f5f5f7 !important;
+}
+
+.dark div[class*="fixed"][class*="z-50"] p,
+.dark div[class*="fixed"][class*="z-50"] label,
+.dark div[class*="fixed"][class*="z-50"] [class*="text-slate-700"],
+.dark div[class*="fixed"][class*="z-50"] [class*="text-gray-700"],
+.dark div[class*="fixed"][class*="z-50"] [class*="text-slate-600"],
+.dark div[class*="fixed"][class*="z-50"] [class*="text-gray-600"],
+.dark div[class*="fixed"][class*="z-50"] [class*="text-slate-500"],
+.dark div[class*="fixed"][class*="z-50"] [class*="text-gray-500"] {
+  color: #98989d !important;
+}
+
+/* Botões primários */
+.dark div[class*="fixed"][class*="z-50"] button[class*="bg-blue"],
+.dark div[class*="fixed"][class*="z-50"] button[class*="bg-emerald"],
+.dark div[class*="fixed"][class*="z-50"] button[type="submit"]:not([class*="border"]) {
+  background: #0a84ff !important;
+  color: white !important;
+}
+
+.dark div[class*="fixed"][class*="z-50"] button[class*="bg-blue"]:hover {
+  background: #409cff !important;
+}
+
+/* Botões secundários */
+.dark div[class*="fixed"][class*="z-50"] button[class*="border"],
+.dark div[class*="fixed"][class*="z-50"] button[class*="bg-slate-100"],
+.dark div[class*="fixed"][class*="z-50"] button[class*="bg-gray-100"] {
+  background: #3a3a3c !important;
+  border-color: rgba(255, 255, 255, 0.12) !important;
+  color: #f5f5f7 !important;
+}
+
+/* Botão fechar (X) */
+.dark div[class*="fixed"][class*="z-50"] button[class*="text-slate-400"],
+.dark div[class*="fixed"][class*="z-50"] button[class*="text-gray-400"] {
+  color: #98989d !important;
+}
+
+/* Alertas em dark mode */
+.dark div[class*="fixed"][class*="z-50"] [class*="bg-green-50"],
+.dark div[class*="fixed"][class*="z-50"] [class*="bg-emerald-50"] {
+  background: rgba(48, 209, 88, 0.15) !important;
+}
+
+.dark div[class*="fixed"][class*="z-50"] [class*="bg-yellow-50"],
+.dark div[class*="fixed"][class*="z-50"] [class*="bg-amber-50"] {
+  background: rgba(255, 214, 10, 0.15) !important;
+}
+
+.dark div[class*="fixed"][class*="z-50"] [class*="bg-red-50"],
+.dark div[class*="fixed"][class*="z-50"] [class*="bg-rose-50"] {
+  background: rgba(255, 69, 58, 0.15) !important;
+}
+
+/* Texto de alertas */
+.dark div[class*="fixed"][class*="z-50"] [class*="text-green"],
+.dark div[class*="fixed"][class*="z-50"] [class*="text-emerald"] {
+  color: #30d158 !important;
+}
+
+.dark div[class*="fixed"][class*="z-50"] [class*="text-yellow"],
+.dark div[class*="fixed"][class*="z-50"] [class*="text-amber"] {
+  color: #ffd60a !important;
+}
+
+.dark div[class*="fixed"][class*="z-50"] [class*="text-red"],
+.dark div[class*="fixed"][class*="z-50"] [class*="text-rose"] {
+  color: #ff453a !important;
+}
+
+/* Botões com bg-slate-900 */
+.dark button[class*="bg-slate-900"],
+.dark [class*="bg-slate-900"]:not(div[class*="fixed"]) {
+  background: #0a84ff !important;
+  color: white !important;
+}
+
+/* Gradientes - remover em modais */
+.dark div[class*="fixed"][class*="z-50"] [class*="bg-gradient"] {
+  background: transparent !important;
+}
+
 @theme {
   --color-primary-50: #f0f9ff;
   --color-primary-100: #e0f2fe;
@@ -54,7 +776,1296 @@
 
 @layer base {
   body {
-    @apply bg-gray-50 text-gray-900;
+    @apply bg-gray-50 text-gray-900 transition-colors duration-300;
+  }
+  
+  html.dark {
+    color-scheme: dark;
+  }
+  
+  /* Dark Mode Global - Cinza Escuro Suave (menos cansativo) */
+  .dark body {
+    @apply bg-zinc-950 text-slate-100;
+  }
+  
+  .dark .bg-white {
+    background-color: #121212 !important;
+  }
+  
+  .dark .bg-gray-50,
+  .dark .bg-gray-100,
+  .dark .bg-slate-50,
+  .dark .bg-slate-100 {
+    background-color: #171717 !important;
+  }
+  
+  .dark .bg-gray-200,
+  .dark .bg-slate-200 {
+    background-color: #1f1f1f !important;
+  }
+  
+  .dark .border-gray-100,
+  .dark .border-gray-200,
+  .dark .border-slate-100,
+  .dark .border-slate-200 {
+    border-color: #27272a !important;
+  }
+  
+  .dark .text-gray-900,
+  .dark .text-slate-900 {
+    color: #f4f4f5 !important;
+  }
+  
+  .dark .text-gray-800,
+  .dark .text-slate-800 {
+    color: #e4e4e7 !important;
+  }
+  
+  .dark .text-gray-700,
+  .dark .text-slate-700 {
+    color: #d4d4d8 !important;
+  }
+  
+  .dark .text-gray-600,
+  .dark .text-slate-600 {
+    color: #a1a1aa !important;
+  }
+  
+  .dark .text-gray-500,
+  .dark .text-slate-500 {
+    color: #71717a !important;
+  }
+  
+  /* Inputs e Selects */
+  .dark input,
+  .dark select,
+  .dark textarea {
+    background-color: #18181b !important;
+    border-color: #3f3f46 !important;
+    color: #f4f4f5 !important;
+  }
+  
+  .dark input::placeholder,
+  .dark textarea::placeholder {
+    color: #71717a !important;
+  }
+  
+  /* Cards e Containers */
+  .dark .rounded-lg,
+  .dark .rounded-xl,
+  .dark .rounded-2xl {
+    border-color: #27272a;
+  }
+  
+  /* Tabelas */
+  .dark table {
+    background-color: #121212;
+  }
+  
+  .dark thead {
+    background-color: #1a1a1a !important;
+  }
+  
+  .dark th {
+    color: #a1a1aa !important;
+    border-color: #27272a !important;
+  }
+  
+  .dark td {
+    border-color: #27272a !important;
+  }
+  
+  .dark tbody tr:hover {
+    background-color: #18181b !important;
+  }
+  
+  /* Modais */
+  .dark [class*="bg-white"] {
+    background-color: #000000 !important;
+  }
+  
+  /* Dropdowns */
+  .dark [class*="shadow-lg"] {
+    box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.5), 0 4px 6px -2px rgba(0, 0, 0, 0.3) !important;
+  }
+  
+  /* Hover states */
+  .dark .hover\:bg-gray-50:hover,
+  .dark .hover\:bg-slate-50:hover {
+    background-color: #18181b !important;
+  }
+  
+  .dark .hover\:bg-gray-100:hover,
+  .dark .hover\:bg-slate-100:hover {
+    background-color: #27272a !important;
+  }
+  
+  /* Cards coloridos - Dashboard Stats */
+  .dark .bg-blue-50 {
+    background-color: #172554 !important;
+  }
+  
+  .dark .bg-emerald-50,
+  .dark .bg-green-50 {
+    background-color: #052e16 !important;
+  }
+  
+  .dark .bg-amber-50,
+  .dark .bg-yellow-50,
+  .dark .bg-orange-50 {
+    background-color: #451a03 !important;
+  }
+  
+  .dark .bg-red-50 {
+    background-color: #450a0a !important;
+  }
+  
+  .dark .bg-purple-50,
+  .dark .bg-violet-50,
+  .dark .bg-indigo-50 {
+    background-color: #2e1065 !important;
+  }
+  
+  .dark .bg-pink-50,
+  .dark .bg-rose-50 {
+    background-color: #4c0519 !important;
+  }
+  
+  .dark .bg-cyan-50,
+  .dark .bg-teal-50 {
+    background-color: #042f2e !important;
+  }
+  
+  /* Bordas coloridas */
+  .dark .border-blue-200,
+  .dark .border-blue-100 {
+    border-color: #1e3a5f !important;
+  }
+  
+  .dark .border-emerald-200,
+  .dark .border-green-200 {
+    border-color: #064e3b !important;
+  }
+  
+  .dark .border-amber-200,
+  .dark .border-yellow-200 {
+    border-color: #78350f !important;
+  }
+  
+  .dark .border-red-200 {
+    border-color: #7f1d1d !important;
+  }
+  
+  .dark .border-purple-200,
+  .dark .border-violet-200 {
+    border-color: #4c1d95 !important;
+  }
+  
+  /* Backgrounds de 100 */
+  .dark .bg-blue-100 {
+    background-color: #1e3a5f !important;
+  }
+  
+  .dark .bg-emerald-100,
+  .dark .bg-green-100 {
+    background-color: #064e3b !important;
+  }
+  
+  .dark .bg-amber-100,
+  .dark .bg-yellow-100 {
+    background-color: #78350f !important;
+  }
+  
+  .dark .bg-red-100 {
+    background-color: #7f1d1d !important;
+  }
+  
+  .dark .bg-purple-100 {
+    background-color: #4c1d95 !important;
+  }
+  
+  /* Ícone container branco transparente */
+  .dark .bg-white\/50 {
+    background-color: rgba(39, 39, 42, 0.5) !important;
+  }
+  
+  /* Gradientes */
+  .dark [class*="from-slate-900"] {
+    --tw-gradient-from: #000000 !important;
+  }
+  
+  .dark [class*="to-slate-800"] {
+    --tw-gradient-to: #18181b !important;
+  }
+  
+  /* Badges e tags */
+  .dark .bg-slate-800 {
+    background-color: #18181b !important;
+  }
+  
+  .dark .bg-zinc-800 {
+    background-color: #18181b !important;
+  }
+  
+  .dark .bg-zinc-900 {
+    background-color: #09090b !important;
+  }
+  
+  /* Scrollbar para dark mode */
+  .dark ::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+  
+  .dark ::-webkit-scrollbar-track {
+    background: #18181b;
+  }
+  
+  .dark ::-webkit-scrollbar-thumb {
+    background: #3f3f46;
+    border-radius: 4px;
+  }
+  
+  .dark ::-webkit-scrollbar-thumb:hover {
+    background: #52525b;
+  }
+  
+  /* Hover em cards coloridos */
+  .dark .hover\:bg-blue-100:hover {
+    background-color: #1e3a5f !important;
+  }
+  
+  .dark .hover\:bg-emerald-100:hover {
+    background-color: #064e3b !important;
+  }
+  
+  .dark .hover\:bg-amber-100:hover,
+  .dark .hover\:bg-amber-50:hover {
+    background-color: #78350f !important;
+  }
+  
+  .dark .hover\:bg-red-100:hover {
+    background-color: #7f1d1d !important;
+  }
+  
+  .dark .hover\:bg-purple-100:hover {
+    background-color: #4c1d95 !important;
+  }
+  
+  /* ===== CORREÇÕES ESPECÍFICAS DARK MODE ===== */
+  
+  /* Todos os elementos com fundo branco */
+  .dark div[class*="bg-white"],
+  .dark section[class*="bg-white"],
+  .dark article[class*="bg-white"],
+  .dark aside[class*="bg-white"],
+  .dark main[class*="bg-white"],
+  .dark header[class*="bg-white"],
+  .dark footer[class*="bg-white"],
+  .dark nav[class*="bg-white"] {
+    background-color: #000000 !important;
+  }
+  
+  /* Cards com bordas - fundo escuro */
+  .dark [class*="border"][class*="rounded"] {
+    background-color: #0a0a0a;
+    border-color: #27272a !important;
+  }
+  
+  /* Alertas amarelos/âmbar */
+  .dark .bg-amber-100,
+  .dark .bg-yellow-100,
+  .dark [class*="bg-amber-50"],
+  .dark [class*="bg-yellow-50"] {
+    background-color: #451a03 !important;
+    border-color: #78350f !important;
+  }
+  
+  .dark .text-amber-800,
+  .dark .text-yellow-800,
+  .dark .text-amber-700,
+  .dark .text-yellow-700 {
+    color: #fcd34d !important;
+  }
+  
+  /* Badges de status */
+  .dark .bg-green-100 {
+    background-color: #052e16 !important;
+  }
+  
+  .dark .text-green-800,
+  .dark .text-green-700 {
+    color: #4ade80 !important;
+  }
+  
+  .dark .bg-red-100 {
+    background-color: #450a0a !important;
+  }
+  
+  .dark .text-red-800,
+  .dark .text-red-700 {
+    color: #f87171 !important;
+  }
+  
+  .dark .bg-orange-100 {
+    background-color: #431407 !important;
+  }
+  
+  .dark .text-orange-800,
+  .dark .text-orange-700 {
+    color: #fb923c !important;
+  }
+  
+  /* Linhas de tabela alternadas */
+  .dark tr:nth-child(even) {
+    background-color: #171717 !important;
+  }
+  
+  .dark tr:nth-child(odd) {
+    background-color: #121212 !important;
+  }
+  
+  /* Divisores e separadores */
+  .dark .divide-gray-200 > * + *,
+  .dark .divide-slate-200 > * + * {
+    border-color: #27272a !important;
+  }
+  
+  .dark hr,
+  .dark [class*="border-b"],
+  .dark [class*="border-t"],
+  .dark [class*="border-l"],
+  .dark [class*="border-r"] {
+    border-color: #27272a !important;
+  }
+  
+  /* Ícones e SVGs */
+  .dark .text-slate-400,
+  .dark .text-gray-400 {
+    color: #71717a !important;
+  }
+  
+  .dark .text-slate-300,
+  .dark .text-gray-300 {
+    color: #a1a1aa !important;
+  }
+  
+  /* Botões outline/ghost */
+  .dark button[class*="border"][class*="bg-white"],
+  .dark button[class*="border"]:not([class*="bg-"]) {
+    background-color: transparent !important;
+    border-color: #3f3f46 !important;
+    color: #e4e4e7 !important;
+  }
+  
+  .dark button[class*="border"]:hover {
+    background-color: #27272a !important;
+  }
+  
+  /* Links e textos interativos */
+  .dark a:not([class*="bg-"]) {
+    color: #60a5fa !important;
+  }
+  
+  /* Placeholders mais visíveis */
+  .dark ::placeholder {
+    color: #71717a !important;
+    opacity: 1 !important;
+  }
+  
+  /* Focus rings */
+  .dark *:focus {
+    outline-color: #f59e0b !important;
+  }
+  
+  /* Shadows mais sutis */
+  .dark [class*="shadow"] {
+    --tw-shadow-color: rgba(0, 0, 0, 0.5) !important;
+  }
+  
+  /* Avatares e imagens com borda */
+  .dark [class*="border"][class*="rounded-full"] {
+    border-color: #3f3f46 !important;
+  }
+  
+  /* Select dropdowns */
+  .dark select option {
+    background-color: #18181b !important;
+    color: #f4f4f5 !important;
+  }
+  
+  /* Checkboxes e radios */
+  .dark input[type="checkbox"],
+  .dark input[type="radio"] {
+    background-color: #27272a !important;
+    border-color: #3f3f46 !important;
+  }
+  
+  .dark input[type="checkbox"]:checked,
+  .dark input[type="radio"]:checked {
+    background-color: #f59e0b !important;
+    border-color: #f59e0b !important;
+  }
+  
+  /* Tooltips */
+  .dark [role="tooltip"],
+  .dark [data-tooltip] {
+    background-color: #27272a !important;
+    color: #f4f4f5 !important;
+    border-color: #3f3f46 !important;
+  }
+  
+  /* Progress bars */
+  .dark [role="progressbar"],
+  .dark progress {
+    background-color: #27272a !important;
+  }
+  
+  /* Badges genéricos */
+  .dark span[class*="rounded"][class*="px-"][class*="py-"] {
+    border-color: #3f3f46;
+  }
+  
+  /* Cards de estatísticas específicos */
+  .dark .border-l-4,
+  .dark .border-l-2 {
+    background-color: #0a0a0a !important;
+  }
+  
+  /* Texto em elementos coloridos */
+  .dark .text-blue-600 {
+    color: #60a5fa !important;
+  }
+  
+  .dark .text-emerald-600,
+  .dark .text-green-600 {
+    color: #34d399 !important;
+  }
+  
+  .dark .text-amber-600,
+  .dark .text-yellow-600 {
+    color: #fbbf24 !important;
+  }
+  
+  .dark .text-red-600 {
+    color: #f87171 !important;
+  }
+  
+  .dark .text-purple-600 {
+    color: #a78bfa !important;
+  }
+  
+  /* ===== FORÇA BRUTA - GARANTIR DARK MODE EM TUDO ===== */
+  
+  /* Qualquer elemento com bg-white */
+  .dark [class*="bg-white"] {
+    background-color: #121212 !important;
+  }
+  
+  /* Containers principais */
+  .dark .space-y-4 > div,
+  .dark .space-y-3 > div,
+  .dark .space-y-2 > div {
+    background-color: #121212;
+  }
+  
+  /* Cards com border e rounded */
+  .dark div[class*="rounded"][class*="border"] {
+    background-color: #171717 !important;
+    border-color: #2a2a2a !important;
+  }
+  
+  /* Headers de módulos */
+  .dark div[class*="shadow-sm"] {
+    background-color: #171717 !important;
+  }
+  
+  /* Grid items */
+  .dark .grid > div {
+    background-color: #171717 !important;
+    border-color: #2a2a2a !important;
+  }
+  
+  /* Textos principais */
+  .dark h1, .dark h2, .dark h3, .dark h4, .dark h5, .dark h6 {
+    color: #f4f4f5 !important;
+  }
+  
+  .dark p {
+    color: #a1a1aa !important;
+  }
+  
+  .dark span:not([class*="text-"]):not([class*="bg-"]) {
+    color: #d4d4d8 !important;
+  }
+  
+  .dark label {
+    color: #a1a1aa !important;
+  }
+  
+  /* Tabela completa */
+  .dark table,
+  .dark tbody,
+  .dark thead,
+  .dark tr,
+  .dark td,
+  .dark th {
+    background-color: #121212 !important;
+    border-color: #2a2a2a !important;
+    color: #e4e4e7 !important;
+  }
+  
+  .dark thead,
+  .dark thead tr,
+  .dark thead th {
+    background-color: #1a1a1a !important;
+    color: #a1a1aa !important;
+  }
+  
+  .dark tbody tr:hover {
+    background-color: #1f1f1f !important;
+  }
+  
+  /* Badges de tipo (Pessoa Física, etc) */
+  .dark span[class*="rounded"][class*="bg-blue"] {
+    background-color: #1e3a5f !important;
+    color: #93c5fd !important;
+  }
+  
+  .dark span[class*="rounded"][class*="bg-green"],
+  .dark span[class*="rounded"][class*="bg-emerald"] {
+    background-color: #064e3b !important;
+    color: #6ee7b7 !important;
+  }
+  
+  .dark span[class*="rounded"][class*="bg-amber"],
+  .dark span[class*="rounded"][class*="bg-yellow"] {
+    background-color: #78350f !important;
+    color: #fcd34d !important;
+  }
+  
+  .dark span[class*="rounded"][class*="bg-red"] {
+    background-color: #7f1d1d !important;
+    color: #fca5a5 !important;
+  }
+  
+  .dark span[class*="rounded"][class*="bg-purple"] {
+    background-color: #4c1d95 !important;
+    color: #c4b5fd !important;
+  }
+  
+  /* Botões com cores específicas - não alterar */
+  
+  /* Ícones dentro de elementos */
+  .dark svg {
+    color: inherit;
+  }
+  
+  /* Overlay de modais */
+  .dark [class*="fixed"][class*="inset-0"][class*="bg-black"] {
+    background-color: rgba(0, 0, 0, 0.8) !important;
+  }
+  
+  /* Dropdown menus */
+  .dark [class*="absolute"][class*="bg-white"] {
+    background-color: #1a1a1a !important;
+    border-color: #333333 !important;
+  }
+  
+  /* Hover em itens de lista */
+  .dark [class*="hover:bg-slate-50"]:hover,
+  .dark [class*="hover:bg-gray-50"]:hover {
+    background-color: #18181b !important;
+  }
+  
+  /* Status badges específicos */
+  .dark .text-emerald-600 {
+    color: #34d399 !important;
+  }
+  
+  .dark .text-slate-600 {
+    color: #a1a1aa !important;
+  }
+  
+  .dark .text-slate-900 {
+    color: #f4f4f5 !important;
+  }
+  
+  .dark .text-slate-800 {
+    color: #e4e4e7 !important;
+  }
+  
+  /* Inputs específicos */
+  .dark input[class*="border-slate"],
+  .dark select[class*="border-slate"],
+  .dark textarea[class*="border-slate"] {
+    background-color: #18181b !important;
+    border-color: #3f3f46 !important;
+    color: #f4f4f5 !important;
+  }
+  
+  /* ===== GRADIENTES - CONVERTER PARA DARK ===== */
+  
+  /* Gradientes de azul */
+  .dark [class*="from-blue"],
+  .dark [class*="bg-gradient"][class*="blue"] {
+    background: linear-gradient(135deg, #1e3a5f 0%, #172554 100%) !important;
+  }
+  
+  /* Gradientes de verde/emerald */
+  .dark [class*="from-emerald"],
+  .dark [class*="from-green"],
+  .dark [class*="bg-gradient"][class*="green"],
+  .dark [class*="bg-gradient"][class*="emerald"] {
+    background: linear-gradient(135deg, #064e3b 0%, #052e16 100%) !important;
+  }
+  
+  /* Gradientes de amber/yellow */
+  .dark [class*="from-amber"],
+  .dark [class*="from-yellow"],
+  .dark [class*="bg-gradient"][class*="amber"],
+  .dark [class*="bg-gradient"][class*="yellow"] {
+    background: linear-gradient(135deg, #78350f 0%, #451a03 100%) !important;
+  }
+  
+  /* Gradientes de red */
+  .dark [class*="from-red"],
+  .dark [class*="bg-gradient"][class*="red"] {
+    background: linear-gradient(135deg, #7f1d1d 0%, #450a0a 100%) !important;
+  }
+  
+  /* Gradientes de purple/violet */
+  .dark [class*="from-purple"],
+  .dark [class*="from-violet"],
+  .dark [class*="bg-gradient"][class*="purple"],
+  .dark [class*="bg-gradient"][class*="violet"] {
+    background: linear-gradient(135deg, #4c1d95 0%, #2e1065 100%) !important;
+  }
+  
+  /* Gradientes de indigo */
+  .dark [class*="from-indigo"],
+  .dark [class*="bg-gradient"][class*="indigo"] {
+    background: linear-gradient(135deg, #312e81 0%, #1e1b4b 100%) !important;
+  }
+  
+  /* Gradientes de cyan/teal */
+  .dark [class*="from-cyan"],
+  .dark [class*="from-teal"],
+  .dark [class*="bg-gradient"][class*="cyan"],
+  .dark [class*="bg-gradient"][class*="teal"] {
+    background: linear-gradient(135deg, #134e4a 0%, #042f2e 100%) !important;
+  }
+  
+  /* Gradientes de slate/gray */
+  .dark [class*="from-slate"],
+  .dark [class*="from-gray"],
+  .dark [class*="bg-gradient"][class*="slate"],
+  .dark [class*="bg-gradient"][class*="gray"] {
+    background: linear-gradient(135deg, #18181b 0%, #09090b 100%) !important;
+  }
+  
+  /* Gradientes de pink/rose */
+  .dark [class*="from-pink"],
+  .dark [class*="from-rose"],
+  .dark [class*="bg-gradient"][class*="pink"],
+  .dark [class*="bg-gradient"][class*="rose"] {
+    background: linear-gradient(135deg, #831843 0%, #4c0519 100%) !important;
+  }
+  
+  /* Gradientes de orange */
+  .dark [class*="from-orange"],
+  .dark [class*="bg-gradient"][class*="orange"] {
+    background: linear-gradient(135deg, #7c2d12 0%, #431407 100%) !important;
+  }
+  
+  /* ===== DASHBOARD - CARDS ESPECÍFICOS ===== */
+  
+  /* Cards de estatísticas do Dashboard */
+  .dark [class*="border-2"][class*="rounded-xl"] {
+    background-color: #1e1e1e !important;
+    border-color: #333333 !important;
+  }
+  
+  /* Container de ícones com fundo branco/50 */
+  .dark [class*="bg-white/50"],
+  .dark [class*="bg-white\\/50"] {
+    background-color: rgba(60, 60, 60, 0.5) !important;
+  }
+  
+  /* Cards de estatísticas - remover gradientes e usar fundo sólido */
+  .dark [class*="rounded-2xl"][class*="border"][class*="shadow"] {
+    background: #1e1e1e !important;
+    border-color: #333333 !important;
+  }
+  
+  /* Remover gradientes de fundo nos cards do dashboard */
+  .dark [class*="bg-gradient-to-r"][class*="from-emerald"],
+  .dark [class*="bg-gradient-to-r"][class*="from-blue"],
+  .dark [class*="bg-gradient-to-r"][class*="from-amber"],
+  .dark [class*="bg-gradient-to-r"][class*="from-red"],
+  .dark [class*="bg-gradient-to-r"][class*="from-purple"] {
+    background: transparent !important;
+  }
+  
+  /* Cards internos do dashboard */
+  .dark [class*="rounded-2xl"][class*="bg-white/80"],
+  .dark [class*="rounded-2xl"][class*="bg-white\\/80"] {
+    background-color: #252525 !important;
+    border-color: #3a3a3a !important;
+  }
+  
+  /* Badges e chips no dashboard */
+  .dark [class*="rounded-full"][class*="bg-slate-100"],
+  .dark [class*="rounded-full"][class*="bg-gray-100"] {
+    background-color: #2a2a2a !important;
+    color: #d0d0d0 !important;
+  }
+  
+  .dark [class*="rounded-full"][class*="bg-amber-50"] {
+    background-color: #3d2a0a !important;
+  }
+  
+  .dark [class*="rounded-full"][class*="bg-rose-50"] {
+    background-color: #3d1a1a !important;
+  }
+  
+  .dark [class*="rounded-full"][class*="bg-emerald-100"] {
+    background-color: #0a3d2a !important;
+  }
+  
+  /* ===== LEADS MODULE ===== */
+  
+  /* Kanban columns */
+  .dark [class*="bg-slate-50"],
+  .dark [class*="bg-gray-50"] {
+    background-color: #171717 !important;
+  }
+  
+  /* Lead cards */
+  .dark [class*="bg-white"][class*="shadow"] {
+    background-color: #1a1a1a !important;
+    border-color: #2a2a2a !important;
+  }
+  
+  /* ===== INTIMAÇÕES - ANÁLISE IA ===== */
+  
+  /* Cards de análise */
+  .dark [class*="bg-white"][class*="p-4"],
+  .dark [class*="bg-white"][class*="p-6"] {
+    background-color: #171717 !important;
+  }
+  
+  /* ===== MODAIS - MELHORADO ===== */
+  
+  /* Modal backdrop */
+  .dark [class*="fixed"][class*="inset-0"][class*="bg-black\\/"],
+  .dark [class*="fixed"][class*="inset-0"][class*="bg-black/"] {
+    background-color: rgba(0, 0, 0, 0.75) !important;
+  }
+  
+  /* Modal container principal */
+  .dark [class*="fixed"][class*="z-50"] > div[class*="bg-white"],
+  .dark [class*="fixed"][class*="z-"] [class*="bg-white"][class*="rounded"] {
+    background-color: #1e1e1e !important;
+    border: 1px solid #3a3a3a !important;
+  }
+  
+  /* Modal header */
+  .dark [class*="border-b"][class*="px-"],
+  .dark [class*="border-b"][class*="p-"] {
+    border-color: #3a3a3a !important;
+  }
+  
+  /* Modal footer */
+  .dark [class*="border-t"][class*="px-"],
+  .dark [class*="border-t"][class*="p-"] {
+    border-color: #3a3a3a !important;
+  }
+  
+  /* Cards dentro de modais - mais claros para contraste */
+  .dark [class*="fixed"] [class*="rounded"][class*="border"][class*="p-"] {
+    background-color: #252525 !important;
+    border-color: #3a3a3a !important;
+  }
+  
+  /* Seções dentro de modais */
+  .dark [class*="fixed"] [class*="space-y-"] > div {
+    background-color: transparent !important;
+  }
+  
+  /* Inputs dentro de modais - mais claros */
+  .dark [class*="fixed"] input,
+  .dark [class*="fixed"] select,
+  .dark [class*="fixed"] textarea {
+    background-color: #2a2a2a !important;
+    border-color: #404040 !important;
+    color: #f0f0f0 !important;
+  }
+  
+  .dark [class*="fixed"] input:focus,
+  .dark [class*="fixed"] select:focus,
+  .dark [class*="fixed"] textarea:focus {
+    border-color: #f59e0b !important;
+    box-shadow: 0 0 0 2px rgba(245, 158, 11, 0.2) !important;
+  }
+  
+  /* Labels dentro de modais */
+  .dark [class*="fixed"] label {
+    color: #b0b0b0 !important;
+  }
+  
+  /* Títulos de seção dentro de modais */
+  .dark [class*="fixed"] h2,
+  .dark [class*="fixed"] h3,
+  .dark [class*="fixed"] h4 {
+    color: #f0f0f0 !important;
+  }
+  
+  /* Botões secundários/outline em modais */
+  .dark [class*="fixed"] button[class*="border"]:not([class*="bg-blue"]):not([class*="bg-emerald"]):not([class*="bg-amber"]):not([class*="bg-red"]) {
+    background-color: #2a2a2a !important;
+    border-color: #404040 !important;
+    color: #e0e0e0 !important;
+  }
+  
+  .dark [class*="fixed"] button[class*="border"]:hover:not([class*="bg-blue"]):not([class*="bg-emerald"]):not([class*="bg-amber"]):not([class*="bg-red"]) {
+    background-color: #353535 !important;
+    border-color: #505050 !important;
+  }
+  
+  /* Radio buttons e checkboxes em modais */
+  .dark [class*="fixed"] input[type="radio"],
+  .dark [class*="fixed"] input[type="checkbox"] {
+    background-color: #2a2a2a !important;
+    border-color: #505050 !important;
+  }
+  
+  .dark [class*="fixed"] input[type="radio"]:checked,
+  .dark [class*="fixed"] input[type="checkbox"]:checked {
+    background-color: #f59e0b !important;
+    border-color: #f59e0b !important;
+  }
+  
+  /* Placeholders em modais */
+  .dark [class*="fixed"] input::placeholder,
+  .dark [class*="fixed"] textarea::placeholder {
+    color: #666666 !important;
+  }
+  
+  /* ===== MODAIS COMPACTOS ===== */
+  
+  /* Inputs compactos em modais */
+  .dark [class*="fixed"] input,
+  .dark [class*="fixed"] select {
+    padding: 0.25rem 0.5rem !important;
+    font-size: 0.75rem !important;
+    line-height: 1.25rem !important;
+  }
+  
+  /* Labels compactos em modais */
+  .dark [class*="fixed"] label {
+    font-size: 0.625rem !important;
+    margin-bottom: 0.125rem !important;
+  }
+  
+  /* Títulos de seção compactos */
+  .dark [class*="fixed"] h3 {
+    font-size: 0.75rem !important;
+    margin-bottom: 0.375rem !important;
+  }
+  
+  /* Espaçamento compacto em seções */
+  .dark [class*="fixed"] [class*="space-y-"] {
+    gap: 0.5rem !important;
+  }
+  
+  .dark [class*="fixed"] [class*="gap-"] {
+    gap: 0.5rem !important;
+  }
+  
+  /* ===== CARDS DE DETALHES (Cliente, Processo, etc) ===== */
+  
+  /* Cards de seção (Dados Pessoais, Contato, Endereço) */
+  .dark [class*="rounded-lg"][class*="border"][class*="bg-white"] {
+    background-color: #1e1e1e !important;
+    border-color: #333333 !important;
+  }
+  
+  /* Títulos de seção com ícone */
+  .dark [class*="flex"][class*="items-center"][class*="gap-"] h2,
+  .dark [class*="flex"][class*="items-center"][class*="gap-"] h3 {
+    color: #f0f0f0 !important;
+  }
+  
+  /* Linhas de dados (CPF, RG, etc) */
+  .dark [class*="border-b"][class*="py-"] {
+    border-color: #2a2a2a !important;
+  }
+  
+  /* Labels de campos */
+  .dark [class*="text-xs"][class*="text-slate-"],
+  .dark [class*="text-xs"][class*="text-gray-"],
+  .dark [class*="text-sm"][class*="text-slate-"],
+  .dark [class*="text-sm"][class*="text-gray-"] {
+    color: #888888 !important;
+  }
+  
+  /* Valores de campos */
+  .dark [class*="font-medium"][class*="text-slate-"],
+  .dark [class*="font-semibold"][class*="text-slate-"] {
+    color: #e0e0e0 !important;
+  }
+  
+  /* Links (telefone, email, etc) */
+  .dark a[class*="text-blue-"],
+  .dark a[class*="text-emerald-"],
+  .dark a[class*="text-cyan-"] {
+    color: #60a5fa !important;
+  }
+  
+  .dark a[class*="text-blue-"]:hover,
+  .dark a[class*="text-emerald-"]:hover {
+    color: #93c5fd !important;
+  }
+  
+  /* Ícones em cards de detalhes */
+  .dark [class*="text-blue-600"],
+  .dark [class*="text-emerald-600"],
+  .dark [class*="text-cyan-600"] {
+    color: #60a5fa !important;
+  }
+  
+  /* Texto em cards brancos */
+  .dark [class*="bg-white"] p,
+  .dark [class*="bg-white"] span,
+  .dark [class*="bg-white"] h1,
+  .dark [class*="bg-white"] h2,
+  .dark [class*="bg-white"] h3,
+  .dark [class*="bg-white"] h4 {
+    color: #e4e4e7 !important;
+  }
+  
+  /* ===== PRAZOS - RELATÓRIO ===== */
+  
+  /* Cards de estatísticas de prazos */
+  .dark [class*="text-3xl"],
+  .dark [class*="text-4xl"],
+  .dark [class*="text-5xl"] {
+    color: #f4f4f5 !important;
+  }
+  
+  /* Labels de estatísticas */
+  .dark [class*="text-xs"][class*="uppercase"],
+  .dark [class*="text-sm"][class*="uppercase"] {
+    color: #a1a1aa !important;
+  }
+  
+  /* Porcentagens e valores */
+  .dark [class*="font-bold"],
+  .dark [class*="font-semibold"] {
+    color: #f4f4f5 !important;
+  }
+  
+  /* ===== AGENDA / CALENDÁRIO ===== */
+  
+  /* Grid do calendário */
+  .dark [class*="grid-cols-7"] {
+    background-color: #121212 !important;
+  }
+  
+  /* Células do calendário */
+  .dark [class*="grid-cols-7"] > div {
+    background-color: #171717 !important;
+    border-color: #2a2a2a !important;
+  }
+  
+  /* Dia atual */
+  .dark [class*="bg-blue-600"] {
+    background-color: #2563eb !important;
+  }
+  
+  /* Dias com eventos */
+  .dark [class*="bg-blue-50"] {
+    background-color: #172554 !important;
+  }
+  
+  /* Header do calendário (dias da semana) */
+  .dark [class*="grid-cols-7"] > div:first-child,
+  .dark [class*="text-center"][class*="font-medium"] {
+    color: #a1a1aa !important;
+  }
+  
+  /* Eventos no calendário */
+  .dark [class*="truncate"][class*="text-xs"] {
+    color: #d4d4d8 !important;
+  }
+  
+  /* Modal de evento */
+  .dark [class*="fixed"][class*="z-50"] [class*="bg-white"] {
+    background-color: #1a1a1a !important;
+  }
+  
+  /* ===== CORES DE TEXTO EM FUNDOS ESCUROS ===== */
+  
+  /* Garantir legibilidade */
+  .dark .text-white {
+    color: #ffffff !important;
+  }
+  
+  .dark [class*="text-slate-900"],
+  .dark [class*="text-gray-900"] {
+    color: #f4f4f5 !important;
+  }
+  
+  .dark [class*="text-slate-800"],
+  .dark [class*="text-gray-800"] {
+    color: #e4e4e7 !important;
+  }
+  
+  .dark [class*="text-slate-700"],
+  .dark [class*="text-gray-700"] {
+    color: #d4d4d8 !important;
+  }
+  
+  .dark [class*="text-slate-600"],
+  .dark [class*="text-gray-600"] {
+    color: #a1a1aa !important;
+  }
+  
+  .dark [class*="text-slate-500"],
+  .dark [class*="text-gray-500"] {
+    color: #71717a !important;
+  }
+  
+  /* ===== BACKGROUNDS ESPECÍFICOS ===== */
+  
+  /* Qualquer bg-50 ou bg-100 */
+  .dark [class*="bg-"][class*="-50"],
+  .dark [class*="bg-"][class*="-100"] {
+    background-color: #171717 !important;
+  }
+  
+  /* Qualquer bg-200 */
+  .dark [class*="bg-"][class*="-200"] {
+    background-color: #1f1f1f !important;
+  }
+  
+  /* ===== BORDAS ===== */
+  
+  .dark [class*="border-"][class*="-100"],
+  .dark [class*="border-"][class*="-200"],
+  .dark [class*="border-"][class*="-300"] {
+    border-color: #27272a !important;
+  }
+  
+  /* ===== SOMBRAS ===== */
+  
+  .dark [class*="shadow-sm"],
+  .dark [class*="shadow-md"],
+  .dark [class*="shadow-lg"],
+  .dark [class*="shadow-xl"] {
+    box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.5), 0 2px 4px -1px rgba(0, 0, 0, 0.3) !important;
+  }
+  
+  /* ===== HOVER STATES ===== */
+  
+  .dark [class*="hover:bg-"]:hover {
+    filter: brightness(1.2);
+  }
+  
+  /* ===== RING/FOCUS ===== */
+  
+  .dark [class*="ring-"] {
+    --tw-ring-color: #f59e0b !important;
+  }
+  
+  .dark [class*="focus:ring-"] {
+    --tw-ring-color: #f59e0b !important;
+  }
+  
+  /* ===== FULLCALENDAR DARK MODE ===== */
+  
+  .dark .fc {
+    --fc-border-color: #2a2a2a;
+    --fc-button-bg-color: #1a1a1a;
+    --fc-button-border-color: #333333;
+    --fc-button-text-color: #e4e4e7;
+    --fc-button-hover-bg-color: #252525;
+    --fc-button-hover-border-color: #404040;
+    --fc-button-active-bg-color: #f59e0b;
+    --fc-button-active-border-color: #f59e0b;
+    --fc-page-bg-color: #121212;
+    --fc-neutral-bg-color: #171717;
+    --fc-neutral-text-color: #a1a1aa;
+    --fc-today-bg-color: #1f1f1f;
+    --fc-event-bg-color: #2563eb;
+    --fc-event-border-color: #1d4ed8;
+    --fc-event-text-color: #ffffff;
+    --fc-list-event-hover-bg-color: #1f1f1f;
+  }
+  
+  .dark .fc-theme-standard td,
+  .dark .fc-theme-standard th,
+  .dark .fc-theme-standard .fc-scrollgrid {
+    border-color: #2a2a2a !important;
+  }
+  
+  .dark .fc-col-header-cell {
+    background-color: #171717 !important;
+  }
+  
+  .dark .fc-col-header-cell-cushion {
+    color: #a1a1aa !important;
+  }
+  
+  .dark .fc-daygrid-day {
+    background-color: #121212 !important;
+  }
+  
+  .dark .fc-daygrid-day:hover {
+    background-color: #1f1f1f !important;
+  }
+  
+  .dark .fc-daygrid-day-number {
+    color: #e4e4e7 !important;
+  }
+  
+  .dark .fc-day-today {
+    background-color: #1a1a1a !important;
+  }
+  
+  .dark .fc-day-today .fc-daygrid-day-number {
+    color: #f59e0b !important;
+    font-weight: bold;
+  }
+  
+  .dark .fc-daygrid-day-events {
+    color: #e4e4e7;
+  }
+  
+  .dark .fc-event {
+    border-radius: 4px;
+  }
+  
+  .dark .fc-toolbar-title {
+    color: #f4f4f5 !important;
+  }
+  
+  .dark .fc-button {
+    background-color: #1a1a1a !important;
+    border-color: #333333 !important;
+    color: #e4e4e7 !important;
+  }
+  
+  .dark .fc-button:hover {
+    background-color: #252525 !important;
+    border-color: #404040 !important;
+  }
+  
+  .dark .fc-button-active {
+    background-color: #f59e0b !important;
+    border-color: #f59e0b !important;
+    color: #121212 !important;
+  }
+  
+  .dark .fc-list {
+    background-color: #121212 !important;
+  }
+  
+  .dark .fc-list-day-cushion {
+    background-color: #171717 !important;
+  }
+  
+  .dark .fc-list-day-text,
+  .dark .fc-list-day-side-text {
+    color: #e4e4e7 !important;
+  }
+  
+  .dark .fc-list-event:hover td {
+    background-color: #1f1f1f !important;
+  }
+  
+  .dark .fc-list-event-title,
+  .dark .fc-list-event-time {
+    color: #e4e4e7 !important;
+  }
+  
+  .dark .fc-timegrid-slot {
+    border-color: #2a2a2a !important;
+  }
+  
+  .dark .fc-timegrid-slot-label {
+    color: #71717a !important;
+  }
+  
+  .dark .fc-timegrid-axis {
+    color: #71717a !important;
+  }
+  
+  .dark .fc-popover {
+    background-color: #1a1a1a !important;
+    border-color: #333333 !important;
+  }
+  
+  .dark .fc-popover-header {
+    background-color: #252525 !important;
+    color: #e4e4e7 !important;
+  }
+  
+  .dark .fc-popover-body {
+    color: #e4e4e7 !important;
+  }
+  
+  .dark .fc-more-link {
+    color: #60a5fa !important;
+  }
+  
+  .dark .fc-daygrid-more-link {
+    color: #60a5fa !important;
+  }
+  
+  /* ===== CORES DE EVENTOS DO CALENDÁRIO ===== */
+  
+  /* Deadline - Vermelho */
+  .dark .fc-event[class*="deadline"],
+  .dark [data-event-type="deadline"] {
+    background-color: #dc2626 !important;
+    border-color: #b91c1c !important;
+  }
+  
+  /* Hearing - Azul */
+  .dark .fc-event[class*="hearing"],
+  .dark [data-event-type="hearing"] {
+    background-color: #2563eb !important;
+    border-color: #1d4ed8 !important;
+  }
+  
+  /* Requirement - Verde */
+  .dark .fc-event[class*="requirement"],
+  .dark [data-event-type="requirement"] {
+    background-color: #16a34a !important;
+    border-color: #15803d !important;
+  }
+  
+  /* Payment - Amarelo */
+  .dark .fc-event[class*="payment"],
+  .dark [data-event-type="payment"] {
+    background-color: #ca8a04 !important;
+    border-color: #a16207 !important;
+  }
+  
+  /* Meeting - Roxo */
+  .dark .fc-event[class*="meeting"],
+  .dark [data-event-type="meeting"] {
+    background-color: #7c3aed !important;
+    border-color: #6d28d9 !important;
+  }
+  
+  /* Pericia - Laranja */
+  .dark .fc-event[class*="pericia"],
+  .dark [data-event-type="pericia"] {
+    background-color: #ea580c !important;
+    border-color: #c2410c !important;
   }
 }
 
@@ -74,9 +2085,17 @@
   .input-field {
     @apply w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent;
   }
+
+  .dark .input-field {
+    @apply bg-zinc-800 border-zinc-700 text-slate-100 focus:ring-primary-400;
+  }
   
   .card {
     @apply bg-white rounded-lg shadow-md p-6;
+  }
+
+  .dark .card {
+    @apply bg-zinc-900 border border-zinc-800 text-slate-100;
   }
 
   /* Ocultar scrollbar mas manter funcionalidade */

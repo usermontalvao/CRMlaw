@@ -147,8 +147,8 @@ const parseNotes = (value?: string | null): ProcessNote[] => {
           parent_id: typeof item.parent_id === 'string' ? item.parent_id : null,
         }));
     }
-  } catch (error) {
-    // Mantém compatibilidade com notas antigas
+  } catch {
+    // compatibilidade com notas antigas
   }
 
   return [
@@ -247,7 +247,7 @@ const ProcessesModule: React.FC<ProcessesModuleProps> = ({ forceCreate, entityId
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [clients, setClients] = useState<Client[]>([]);
-  const [allClients, setAllClients] = useState<Client[]>([]); // Para busca global
+  const [allClients, setAllClients] = useState<Client[]>([]);
   const [clientsLoading, setClientsLoading] = useState(false);
   const [clientSearchTerm, setClientSearchTerm] = useState('');
   const [showClientSuggestions, setShowClientSuggestions] = useState(false);
@@ -282,8 +282,8 @@ const ProcessesModule: React.FC<ProcessesModuleProps> = ({ forceCreate, entityId
   const [currentProfile, setCurrentProfile] = useState<Profile | null>(null);
   const [syncingDjen, setSyncingDjen] = useState(false);
   const [syncResult, setSyncResult] = useState<{ total: number; synced: number; updated: number; errors: number; intimationsFound: number } | null>(null);
-  
-  // Timeline states
+
+  // Timeline
   const [timeline, setTimeline] = useState<TimelineEvent[]>([]);
   const [loadingTimeline, setLoadingTimeline] = useState(false);
   const [timelineError, setTimelineError] = useState<string | null>(null);
@@ -321,7 +321,6 @@ const ProcessesModule: React.FC<ProcessesModuleProps> = ({ forceCreate, entityId
     return parseNotes(selectedProcessForView.notes);
   }, [selectedProcessForView]);
 
-  // Mapa de todos os clientes para busca rápida
   const allClientsMap = useMemo(() => new Map(allClients.map((c) => [c.id, c])), [allClients]);
 
   const filteredProcesses = useMemo(() => {
@@ -335,23 +334,11 @@ const ProcessesModule: React.FC<ProcessesModuleProps> = ({ forceCreate, entityId
     if (!term) return baseList;
 
     return baseList.filter((process) => {
-      // Usar allClientsMap para busca (contém todos os clientes)
       const client = allClientsMap.get(process.client_id);
       const processCode = process.process_code || '';
-      
-      if (term.length > 3 && processCode.includes('0000000-00.0000.0.00.0000')) { // Log apenas para um processo de teste ou aleatório para não floodar
-         console.log('Debug Filter:', {
-           processId: process.id,
-           clientId: process.client_id,
-           clientFound: !!client,
-           clientName: client?.full_name,
-           term
-         });
-      }
 
       const practiceAreaLabel =
-        PRACTICE_AREAS.find((area) => area.key === process.practice_area)?.label ??
-        process.practice_area;
+        PRACTICE_AREAS.find((area) => area.key === process.practice_area)?.label ?? process.practice_area;
 
       const composite = [
         process.process_code,
@@ -386,12 +373,10 @@ const ProcessesModule: React.FC<ProcessesModuleProps> = ({ forceCreate, entityId
     fetchProcesses();
   }, []);
 
-  // Carregar todos os clientes uma vez para busca global
   useEffect(() => {
     const loadAllClients = async () => {
       try {
         const data = await clientService.listClients();
-        console.log('[ProcessesModule] Clientes carregados para busca:', data.length);
         setAllClients(data);
       } catch (err) {
         console.error('Erro ao carregar clientes:', err);
@@ -436,19 +421,18 @@ const ProcessesModule: React.FC<ProcessesModuleProps> = ({ forceCreate, entityId
   useEffect(() => {
     if (forceCreate && !isModalOpen) {
       handleOpenModal();
-      
-      // Aplicar prefill se fornecido
+
       if (prefillData) {
-        setFormData(prev => ({
+        setFormData((prev) => ({
           ...prev,
           client_id: prefillData.client_id || prev.client_id,
         }));
-        
+
         if (prefillData.client_name) {
           setClientSearchTerm(prefillData.client_name);
         }
       }
-      
+
       if (onParamConsumed) {
         onParamConsumed();
       }
@@ -457,7 +441,7 @@ const ProcessesModule: React.FC<ProcessesModuleProps> = ({ forceCreate, entityId
 
   useEffect(() => {
     if (entityId && processes.length > 0) {
-      const process = processes.find(p => p.id === entityId);
+      const process = processes.find((p) => p.id === entityId);
       if (process) {
         setSelectedProcessForView(process);
         setViewMode('details');
@@ -516,7 +500,6 @@ const ProcessesModule: React.FC<ProcessesModuleProps> = ({ forceCreate, entityId
     };
   }, [user, members]);
 
-  // Carregar timeline quando processo é selecionado para visualização
   useEffect(() => {
     if (selectedProcessForView && viewMode === 'details') {
       loadTimeline(selectedProcessForView.process_code);
@@ -545,10 +528,6 @@ const ProcessesModule: React.FC<ProcessesModuleProps> = ({ forceCreate, entityId
   };
 
   const handleOpenModal = (process?: Process) => {
-    console.log('=== ABRINDO MODAL ===');
-    console.log('Processo:', process?.id);
-    console.log('Modo:', process ? 'EDITAR' : 'CRIAR');
-    
     if (process) {
       setSelectedProcess(process);
       setFormData({
@@ -570,19 +549,13 @@ const ProcessesModule: React.FC<ProcessesModuleProps> = ({ forceCreate, entityId
       if (client) {
         setClientSearchTerm(client.full_name);
       }
-      console.log('FormData preenchido:', {
-        process_code: process.process_code,
-        client_id: process.client_id,
-      });
     } else {
       setSelectedProcess(null);
       setFormData(emptyForm);
       setClientSearchTerm('');
-      console.log('FormData limpo para novo processo');
     }
 
     setIsModalOpen(true);
-    console.log('Modal aberto: isModalOpen = true');
   };
 
   const handleCloseModal = () => {
@@ -591,7 +564,7 @@ const ProcessesModule: React.FC<ProcessesModuleProps> = ({ forceCreate, entityId
     setSelectedProcess(null);
     setFormData(emptyForm);
     setClientSearchTerm('');
-    setDjenData(null); // Limpar dados do DJEN
+    setDjenData(null);
   };
 
   const handleFormChange = (field: keyof typeof formData, value: string) => {
@@ -638,15 +611,9 @@ const ProcessesModule: React.FC<ProcessesModuleProps> = ({ forceCreate, entityId
     };
   };
 
-  // Buscar dados do processo no DJEN
   const handleSearchDjen = async () => {
     const processNumber = formData.process_code.replace(/\D/g, '');
-    
-    console.log('=== BUSCA DJEN ===');
-    console.log('Número digitado:', formData.process_code);
-    console.log('Número limpo:', processNumber);
-    console.log('Tamanho:', processNumber.length);
-    
+
     if (processNumber.length < 20) {
       setError('Número do processo inválido. Deve ter 20 dígitos.');
       return;
@@ -655,91 +622,59 @@ const ProcessesModule: React.FC<ProcessesModuleProps> = ({ forceCreate, entityId
     try {
       setSearchingDjen(true);
       setError(null);
-      
-      // Extrair ano do número do processo (posições 9-12)
-      // Formato: NNNNNNN-DD.AAAA.J.TT.OOOO
+
       const yearMatch = formData.process_code.match(/\d{7}-\d{2}\.(\d{4})\./);
       const year = yearMatch ? yearMatch[1] : null;
-      
-      console.log('Ano extraído do processo:', year);
-      
-      // Se tiver ano, buscar desde o início do ano
+
       const searchParams: any = {
         numeroProcesso: processNumber,
-        itensPorPagina: 100, // Aumentar para pegar mais resultados
+        itensPorPagina: 100,
       };
-      
+
       if (year) {
         searchParams.dataDisponibilizacaoInicio = `${year}-01-01`;
-        console.log('Buscando desde:', searchParams.dataDisponibilizacaoInicio);
       }
-      
-      console.log('Iniciando busca no DJEN com parâmetros:', searchParams);
-      
-      const response = await djenService.consultarComunicacoes(searchParams);
 
-      console.log('Resposta DJEN:', response);
-      console.log('Status:', response.status);
-      console.log('Count:', response.count);
-      console.log('Items:', response.items?.length || 0);
+      const response = await djenService.consultarComunicacoes(searchParams);
 
       if (response.items && response.items.length > 0) {
         const firstItem = response.items[0];
-        console.log('Primeiro item:', firstItem);
-        
+
         setDjenData(firstItem);
-        
-        // Preencher dados automaticamente
-        setFormData(prev => ({
+
+        setFormData((prev) => ({
           ...prev,
           court: firstItem.nomeOrgao || prev.court,
           practice_area: mapClasseToArea(firstItem.nomeClasse) || prev.practice_area,
         }));
-        
-        console.log('Dados preenchidos - Vara:', firstItem.nomeOrgao);
-        console.log('Dados preenchidos - Classe:', firstItem.nomeClasse);
-        
-        // Buscar partes envolvidas
-        if (firstItem.destinatarios && firstItem.destinatarios.length > 0) {
-          const partes = firstItem.destinatarios.map(d => `${d.nome} (${d.polo})`).join(', ');
-          console.log('Partes envolvidas:', partes);
-        }
       } else {
-        console.log('Nenhum item encontrado na resposta');
-        setError('Nenhuma comunicação encontrada no DJEN para este processo. Possíveis motivos: processo muito recente, sem publicações ainda, ou tribunal não integrado ao DJEN.');
-        
-        // Mostrar mensagem informativa mesmo sem dados
+        setError(
+          'Nenhuma comunicação encontrada no DJEN para este processo. Possíveis motivos: processo muito recente, sem publicações ainda, ou tribunal não integrado ao DJEN.',
+        );
+
         setDjenData({
           _noData: true,
           message: 'Processo consultado mas sem comunicações no DJEN',
         });
       }
     } catch (err: any) {
-      console.error('=== ERRO DJEN ===');
-      console.error('Tipo:', err.constructor.name);
-      console.error('Mensagem:', err.message);
-      console.error('Stack:', err.stack);
-      console.error('Erro completo:', err);
       setError(`Erro ao buscar dados no DJEN: ${err.message || 'Erro desconhecido'}`);
     } finally {
       setSearchingDjen(false);
-      console.log('=== FIM BUSCA DJEN ===');
     }
   };
 
-  // Mapear classe do processo para área de atuação
   const mapClasseToArea = (nomeClasse?: string): ProcessPracticeArea | undefined => {
     if (!nomeClasse) return undefined;
-    
+
     const classe = nomeClasse.toLowerCase();
-    
+
     if (classe.includes('trabalh')) return 'trabalhista';
     if (classe.includes('cível') || classe.includes('civil')) return 'civel';
     if (classe.includes('família') || classe.includes('familia')) return 'familia';
     if (classe.includes('previdenc')) return 'previdenciario';
     if (classe.includes('consumidor')) return 'consumidor';
-    
-    // Padrão para casos não mapeados
+
     return 'civel';
   };
 
@@ -763,38 +698,30 @@ const ProcessesModule: React.FC<ProcessesModuleProps> = ({ forceCreate, entityId
       setSaving(true);
       setError(null);
 
-      const responsibleMember = formData.responsible_lawyer_id
-        ? memberMap.get(formData.responsible_lawyer_id)
-        : null;
+      const responsibleMember = formData.responsible_lawyer_id ? memberMap.get(formData.responsible_lawyer_id) : null;
 
-      // Preencher data de distribuição automaticamente se não foi informada
       let distributedAt = formData.distributed_at;
       if (!distributedAt && trimmedProcessCode) {
         const autoDate = processDjenSyncService.extractDistributedDate(trimmedProcessCode);
         if (autoDate) {
           distributedAt = autoDate;
-          console.log('Data de distribuição extraída automaticamente:', autoDate);
         }
       }
 
-      // Converter data de distribuição com validação
       let distributedAtISO: string | null = null;
       if (distributedAt) {
         try {
           const dateObj = new Date(distributedAt);
           if (!Number.isNaN(dateObj.getTime())) {
             distributedAtISO = dateObj.toISOString();
-          } else {
-            console.error('Data de distribuição inválida:', distributedAt);
           }
-        } catch (error) {
-          console.error('Erro ao converter data de distribuição:', distributedAt, error);
+        } catch (err) {
+          console.error('Erro ao converter data de distribuição:', distributedAt, err);
         }
       }
 
-      // Marcar como sincronizado se tiver dados do DJEN
       const hasDjenData = djenData && !djenData._noData;
-      
+
       const payloadBase = {
         client_id: formData.client_id,
         process_code: requiresProcessCode ? trimmedProcessCode : null,
@@ -865,22 +792,18 @@ const ProcessesModule: React.FC<ProcessesModuleProps> = ({ forceCreate, entityId
         }
 
         const newProcess = await processService.createProcess(createPayload as any);
-        
-        // Buscar dados no DJEN automaticamente após criar
+
         if (newProcess && trimmedProcessCode) {
-          console.log('Iniciando sincronização automática com DJEN...');
-          processDjenSyncService.syncProcessWithDjen(newProcess as Process)
-            .then(result => {
+          processDjenSyncService
+            .syncProcessWithDjen(newProcess as Process)
+            .then((result) => {
               if (result.updated) {
-                console.log('Processo atualizado com dados do DJEN!');
-                handleReload(); // Recarregar para mostrar dados atualizados
-              } else {
-                console.log('DJEN consultado, mas sem dados para preencher');
+                handleReload();
               }
             })
-            .catch(err => console.error('Erro na sincronização automática:', err));
+            .catch((err) => console.error('Erro na sincronização automática:', err));
         }
-        
+
         await handleReload();
       }
       setIsModalOpen(false);
@@ -1044,7 +967,7 @@ const ProcessesModule: React.FC<ProcessesModuleProps> = ({ forceCreate, entityId
 
     try {
       const existingNotes = parseNotes(selectedProcessForView.notes);
-      const updatedNotes = existingNotes.filter(note => note.id !== noteId);
+      const updatedNotes = existingNotes.filter((note) => note.id !== noteId);
       const serialized = serializeNotes(updatedNotes);
       await processService.updateProcess(selectedProcessForView.id, { notes: serialized });
 
@@ -1053,7 +976,7 @@ const ProcessesModule: React.FC<ProcessesModuleProps> = ({ forceCreate, entityId
         setSelectedProcessForView(refreshed);
         setProcesses((prev) => prev.map((item) => (item.id === refreshed.id ? refreshed : item)));
       }
-    } catch (err: any) {
+    } catch (err) {
       console.error('Erro ao excluir nota:', err);
       alert('Não foi possível excluir a nota.');
     }
@@ -1071,16 +994,15 @@ const ProcessesModule: React.FC<ProcessesModuleProps> = ({ forceCreate, entityId
     }
   };
 
-  // Timeline functions
   const loadTimeline = async (processCode: string) => {
     try {
       setLoadingTimeline(true);
       setTimelineError(null);
       setTimeline([]);
-      
+
       const events = await processTimelineService.fetchProcessTimeline(processCode);
       setTimeline(events);
-      
+
       if (events.length === 0) {
         setTimelineError('Nenhuma publicação encontrada no DJEN para este processo.');
       }
@@ -1094,18 +1016,18 @@ const ProcessesModule: React.FC<ProcessesModuleProps> = ({ forceCreate, entityId
 
   const analyzeTimelineWithAI = async () => {
     if (!selectedProcessForView || timeline.length === 0 || analyzingTimeline) return;
-    
+
     try {
       setAnalyzingTimeline(true);
       setAnalyzeProgress({ current: 0, total: Math.min(timeline.length, 10) });
-      
+
       const analyzedEvents = await processTimelineService.fetchAndAnalyzeTimeline(
         selectedProcessForView.process_code,
-        (current, total) => setAnalyzeProgress({ current, total })
+        (current, total) => setAnalyzeProgress({ current, total }),
       );
-      
+
       setTimeline(analyzedEvents);
-    } catch (err: any) {
+    } catch (err) {
       console.error('Erro ao analisar timeline:', err);
     } finally {
       setAnalyzingTimeline(false);
@@ -1113,7 +1035,7 @@ const ProcessesModule: React.FC<ProcessesModuleProps> = ({ forceCreate, entityId
   };
 
   const toggleTimelineEvent = (eventId: string) => {
-    setExpandedTimelineEvents(prev => {
+    setExpandedTimelineEvents((prev) => {
       const next = new Set(prev);
       if (next.has(eventId)) {
         next.delete(eventId);
@@ -1126,51 +1048,61 @@ const ProcessesModule: React.FC<ProcessesModuleProps> = ({ forceCreate, entityId
 
   const getUrgencyColor = (urgency?: string) => {
     switch (urgency) {
-      case 'critica': return 'bg-red-100 text-red-800 border-red-200';
-      case 'alta': return 'bg-orange-100 text-orange-800 border-orange-200';
-      case 'media': return 'bg-yellow-100 text-yellow-800 border-yellow-200';
-      case 'baixa': return 'bg-green-100 text-green-800 border-green-200';
-      default: return 'bg-slate-100 text-slate-800 border-slate-200';
+      case 'critica':
+        return 'bg-red-100 text-red-800 border-red-200';
+      case 'alta':
+        return 'bg-orange-100 text-orange-800 border-orange-200';
+      case 'media':
+        return 'bg-yellow-100 text-yellow-800 border-yellow-200';
+      case 'baixa':
+        return 'bg-green-100 text-green-800 border-green-200';
+      default:
+        return 'bg-slate-100 text-slate-800 border-slate-200';
     }
   };
 
   const getEventTypeIcon = (type: TimelineEvent['type']) => {
     switch (type) {
-      case 'intimacao': return <FileText className="w-4 h-4" />;
-      case 'citacao': return <AlertTriangle className="w-4 h-4" />;
-      case 'despacho': return <FileText className="w-4 h-4" />;
-      case 'sentenca': return <CheckCircle2 className="w-4 h-4" />;
-      case 'decisao': return <FileText className="w-4 h-4" />;
-      default: return <Clock className="w-4 h-4" />;
+      case 'intimacao':
+        return <FileText className="w-4 h-4" />;
+      case 'citacao':
+        return <AlertTriangle className="w-4 h-4" />;
+      case 'despacho':
+        return <FileText className="w-4 h-4" />;
+      case 'sentenca':
+        return <CheckCircle2 className="w-4 h-4" />;
+      case 'decisao':
+        return <FileText className="w-4 h-4" />;
+      default:
+        return <Clock className="w-4 h-4" />;
     }
   };
 
   const handleSyncAllDjen = async () => {
     if (syncingDjen) return;
-    
+
     try {
       setSyncingDjen(true);
       setSyncResult(null);
-      
-      // Buscar processos que não foram sincronizados com DJEN
-      const pendingProcesses = processes.filter(p => 
-        !p.djen_synced || (p.djen_synced && !p.djen_has_data)
+
+      const pendingProcesses = processes.filter(
+        (p) => !p.djen_synced || (p.djen_synced && !p.djen_has_data),
       );
-      
+
       if (pendingProcesses.length === 0) {
         setSyncResult({ total: 0, synced: 0, updated: 0, errors: 0, intimationsFound: 0 });
         return;
       }
-      
+
       let synced = 0;
       let updated = 0;
       let errors = 0;
       let intimationsFound = 0;
-      
+
       for (const process of pendingProcesses) {
         try {
           const result = await processDjenSyncService.syncProcessWithDjen(process);
-          
+
           if (result.success) {
             synced++;
             if (result.updated) {
@@ -1182,14 +1114,13 @@ const ProcessesModule: React.FC<ProcessesModuleProps> = ({ forceCreate, entityId
           } else {
             errors++;
           }
-          
-          // Aguardar 1 segundo entre requisições
-          await new Promise(resolve => setTimeout(resolve, 1000));
-        } catch (err) {
+
+          await new Promise((resolve) => setTimeout(resolve, 1000));
+        } catch {
           errors++;
         }
       }
-      
+
       setSyncResult({
         total: pendingProcesses.length,
         synced,
@@ -1197,10 +1128,8 @@ const ProcessesModule: React.FC<ProcessesModuleProps> = ({ forceCreate, entityId
         errors,
         intimationsFound,
       });
-      
-      // Recarregar lista de processos
+
       await handleReload();
-      
     } catch (err: any) {
       console.error('Erro na sincronização em massa:', err);
       setError(err.message || 'Erro ao sincronizar processos com DJEN.');
@@ -1218,23 +1147,22 @@ const ProcessesModule: React.FC<ProcessesModuleProps> = ({ forceCreate, entityId
     try {
       setExportingExcel(true);
 
-      // Preparar dados para Excel
       const excelData = processes.map((process) => {
         const client = clientMap.get(process.client_id);
         const lawyer = process.responsible_lawyer_id ? memberMap.get(process.responsible_lawyer_id) : null;
 
         return {
           'Código do Processo': process.process_code,
-          'Cliente': client?.full_name || 'Cliente removido',
+          Cliente: client?.full_name || 'Cliente removido',
           'CPF/CNPJ': client?.cpf_cnpj || '',
-          'Email': client?.email || '',
-          'Telefone': client?.phone || '',
-          'Celular': client?.mobile || '',
-          'Status': getStatusLabel(process.status),
-          'Área': getPracticeAreaLabel(process.practice_area),
+          Email: client?.email || '',
+          Telefone: client?.phone || '',
+          Celular: client?.mobile || '',
+          Status: getStatusLabel(process.status),
+          Área: getPracticeAreaLabel(process.practice_area),
           'Distribuído em': formatDate(process.distributed_at),
           'Vara/Comarca': process.court || '',
-          'Advogado Responsável': lawyer?.avatar_url || process.responsible_lawyer || '',
+          'Advogado Responsável': lawyer?.name || process.responsible_lawyer || '',
           'Audiência Agendada': process.hearing_scheduled ? 'Sim' : 'Não',
           'Data da Audiência': process.hearing_date ? formatDate(process.hearing_date) : '',
           'Horário da Audiência': process.hearing_time || '',
@@ -1244,42 +1172,37 @@ const ProcessesModule: React.FC<ProcessesModuleProps> = ({ forceCreate, entityId
         };
       });
 
-      // Criar workbook e worksheet
       const wb = XLSX.utils.book_new();
       const ws = XLSX.utils.json_to_sheet(excelData);
 
-      // Configurar larguras das colunas
       const colWidths = [
-        { wch: 20 }, // Código do Processo
-        { wch: 30 }, // Cliente
-        { wch: 15 }, // CPF/CNPJ
-        { wch: 25 }, // Email
-        { wch: 15 }, // Telefone
-        { wch: 15 }, // Celular
-        { wch: 15 }, // Status
-        { wch: 15 }, // Área
-        { wch: 15 }, // Distribuído em
-        { wch: 20 }, // Vara/Comarca
-        { wch: 20 }, // Advogado Responsável
-        { wch: 15 }, // Audiência Agendada
-        { wch: 15 }, // Data da Audiência
-        { wch: 15 }, // Horário da Audiência
-        { wch: 15 }, // Modo da Audiência
-        { wch: 12 }, // Criado em
-        { wch: 12 }, // Atualizado em
+        { wch: 20 },
+        { wch: 30 },
+        { wch: 15 },
+        { wch: 25 },
+        { wch: 15 },
+        { wch: 15 },
+        { wch: 15 },
+        { wch: 15 },
+        { wch: 15 },
+        { wch: 20 },
+        { wch: 20 },
+        { wch: 15 },
+        { wch: 15 },
+        { wch: 15 },
+        { wch: 15 },
+        { wch: 12 },
+        { wch: 12 },
       ];
       ws['!cols'] = colWidths;
 
-      // Adicionar worksheet ao workbook
       XLSX.utils.book_append_sheet(wb, ws, 'Processos');
 
-      // Gerar arquivo e fazer download
       const now = new Date();
       const dateSlug = now.toISOString().split('T')[0];
       const filename = `processos_${dateSlug}.xlsx`;
 
       XLSX.writeFile(wb, filename);
-
     } catch (err: any) {
       console.error(err);
       setError(err.message || 'Não foi possível exportar os dados para Excel.');
@@ -1353,7 +1276,7 @@ const ProcessesModule: React.FC<ProcessesModuleProps> = ({ forceCreate, entityId
           </div>
         )}
 
-        {note.replies && note.replies.map(reply => renderNote(reply, depth + 1))}
+        {note.replies && note.replies.map((reply) => renderNote(reply, depth + 1))}
       </div>
     );
   };
@@ -1379,14 +1302,17 @@ const ProcessesModule: React.FC<ProcessesModuleProps> = ({ forceCreate, entityId
   }, [filteredProcesses]);
 
   const pendingDjenCount = useMemo(() => {
-    return processes.filter(p => !p.djen_synced || (p.djen_synced && !p.djen_has_data)).length;
+    return processes.filter((p) => !p.djen_synced || (p.djen_synced && !p.djen_has_data)).length;
   }, [processes]);
 
-  // Contadores por status
   const statusCounts = useMemo(() => {
     const counts: Record<string, number> = { todos: processes.length };
-    STATUS_OPTIONS.forEach(s => { counts[s.key] = 0; });
-    processes.forEach(p => { if (counts[p.status] !== undefined) counts[p.status]++; });
+    STATUS_OPTIONS.forEach((s) => {
+      counts[s.key] = 0;
+    });
+    processes.forEach((p) => {
+      if (counts[p.status] !== undefined) counts[p.status]++;
+    });
     return counts;
   }, [processes]);
 
@@ -1395,267 +1321,222 @@ const ProcessesModule: React.FC<ProcessesModuleProps> = ({ forceCreate, entityId
     return buildNoteThreads(parseNotes(selectedProcessForView.notes));
   }, [selectedProcessForView]);
 
-  const processModal =
-    isModalOpen && (
-      <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center z-50 p-2 sm:p-4 overflow-y-auto">
-        <div className="bg-white rounded-2xl shadow-2xl max-w-full sm:max-w-3xl w-full my-4 sm:my-8 max-h-[95vh] sm:max-h-[90vh] overflow-y-auto">
-          <div className="px-3 sm:px-6 py-2 sm:py-4 border-b border-gray-200 flex items-center justify-between">
+  const inputStyle =
+    'w-full h-10 px-3 rounded-lg text-sm bg-white dark:bg-zinc-800 border border-zinc-300 dark:border-zinc-600 text-zinc-900 dark:text-white placeholder:text-zinc-400 focus:outline-none focus:ring-1 focus:ring-amber-500 focus:border-amber-500 transition-colors';
+  const labelStyle = 'block text-xs text-zinc-500 dark:text-zinc-400 mb-1.5';
+
+  const processModal = isModalOpen && (
+    <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4">
+      <div className="w-full max-w-2xl bg-white dark:bg-zinc-900 rounded-2xl shadow-2xl overflow-hidden">
+        <div className="flex justify-between items-center px-6 py-4 border-b border-zinc-200 dark:border-zinc-800">
+          <h1 className="text-lg font-semibold text-zinc-900 dark:text-white">
+            {selectedProcess ? 'Editar Processo' : 'Novo Processo'}
+          </h1>
+          <button
+            onClick={handleCloseModal}
+            className="p-1 text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300 rounded-lg hover:bg-zinc-100 dark:hover:bg-zinc-800"
+          >
+            <X className="w-5 h-5" />
+          </button>
+        </div>
+
+        <form onSubmit={handleSubmit}>
+          <div className="p-6 space-y-5 max-h-[70vh] overflow-y-auto">
+            <ClientSearchSelect
+              value={formData.client_id}
+              onChange={(clientId, clientName) => {
+                handleFormChange('client_id', clientId);
+                setClientSearchTerm(clientName);
+              }}
+              label="Cliente"
+              placeholder="Buscar cliente..."
+              required
+              allowCreate={true}
+            />
+
             <div>
-              <h3 className="text-base sm:text-lg font-semibold text-slate-900">
-                {selectedProcess ? 'Editar Processo' : 'Novo Processo'}
-              </h3>
-              <p className="text-xs sm:text-sm text-slate-600 hidden sm:block">
-                Vincule o processo a um cliente e defina o status atual.
-              </p>
-            </div>
-            <button
-              onClick={handleCloseModal}
-              className="text-slate-400 hover:text-slate-600 flex-shrink-0"
-              title="Fechar"
-            >
-              <X className="w-5 h-5" />
-            </button>
-          </div>
-
-          <form onSubmit={handleSubmit} className="p-3 sm:p-6 space-y-3 sm:space-y-5">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-3 sm:gap-4">
-              <ClientSearchSelect
-                value={formData.client_id}
-                onChange={(clientId, clientName) => {
-                  handleFormChange('client_id', clientId);
-                  setClientSearchTerm(clientName);
-                }}
-                label="Cliente *"
-                placeholder="Buscar cliente pelo nome, CPF ou email"
-                required
-                allowCreate={true}
-              />
-
-              <div className="md:col-span-2">
-                <label className="text-sm font-medium text-slate-700">Código do Processo *</label>
-                <div className="flex flex-col sm:flex-row gap-2">
-                  <input
-                    value={formData.process_code}
-                    onChange={(event) => handleFormChange('process_code', event.target.value)}
-                    className="input-field flex-1"
-                    placeholder="Ex: 0001234-56.2024.8.26.0100"
-                    required
-                  />
-                  <button
-                    type="button"
-                    onClick={handleSearchDjen}
-                    disabled={searchingDjen || formData.process_code.replace(/\D/g, '').length < 20}
-                    className="px-3 py-1.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:bg-gray-300 disabled:cursor-not-allowed flex items-center justify-center gap-2 whitespace-nowrap sm:w-auto w-full text-xs sm:text-sm"
-                  >
-                    {searchingDjen ? (
-                      <>
-                        <Loader2 className="w-4 h-4 animate-spin" />
-                        <span>Buscando...</span>
-                      </>
-                    ) : (
-                      <>
-                        <Search className="w-4 h-4" />
-                        <span>Buscar DJEN</span>
-                      </>
-                    )}
-                  </button>
-                </div>
-                {djenData && (
-                  <div className={`mt-2 p-3 rounded-lg text-sm ${
-                    djenData._noData 
-                      ? 'bg-yellow-50 border border-yellow-200' 
-                      : 'bg-green-50 border border-green-200'
-                  }`}>
-                    {djenData._noData ? (
-                      <>
-                        <p className="font-semibold text-yellow-800">⚠️ Processo consultado no DJEN</p>
-                        <p className="text-yellow-700 mt-1">
-                          Nenhuma comunicação encontrada. O processo pode ser muito recente ou ainda não ter publicações.
-                        </p>
-                        <p className="text-yellow-600 text-xs mt-2">
-                          💡 Dica: Preencha os dados manualmente ou tente novamente mais tarde.
-                        </p>
-                      </>
-                    ) : (
-                      <>
-                        <p className="font-semibold text-green-800">✓ Dados encontrados no DJEN:</p>
-                        <p className="text-green-700 mt-1">
-                          <strong>Vara:</strong> {djenData.nomeOrgao}
-                        </p>
-                        <p className="text-green-700">
-                          <strong>Classe:</strong> {djenData.nomeClasse}
-                        </p>
-                        {djenData.destinatarios && djenData.destinatarios.length > 0 && (
-                          <p className="text-green-700">
-                            <strong>Partes:</strong> {djenData.destinatarios.map((d: any) => `${d.nome} (${d.polo})`).join(', ')}
-                          </p>
-                        )}
-                      </>
-                    )}
-                  </div>
-                )}
+              <label className={labelStyle}>Número do Processo</label>
+              <div className="flex gap-2">
+                <input
+                  value={formData.process_code}
+                  onChange={(e) => handleFormChange('process_code', e.target.value)}
+                  className={`${inputStyle} flex-1`}
+                  placeholder="0001234-56.2024.8.26.0100"
+                  required
+                />
+                <button
+                  type="button"
+                  onClick={handleSearchDjen}
+                  disabled={searchingDjen || formData.process_code.replace(/\D/g, '').length < 20}
+                  className="px-3 h-10 flex-shrink-0 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center text-sm"
+                >
+                  {searchingDjen ? <Loader2 className="w-4 h-4 animate-spin" /> : <Search className="w-4 h-4" />}
+                </button>
               </div>
+              {djenData && (
+                <div
+                  className={`mt-2 p-2 rounded-lg text-xs ${
+                    djenData._noData
+                      ? 'bg-yellow-50 dark:bg-yellow-900/20 text-yellow-700 dark:text-yellow-400'
+                      : 'bg-green-50 dark:bg-green-900/20 text-green-700 dark:text-green-400'
+                  }`}
+                >
+                  {djenData._noData ? 'Nenhum dado encontrado no DJEN' : `Vara: ${djenData.nomeOrgao}`}
+                </div>
+              )}
+            </div>
 
+            <div className="grid grid-cols-2 gap-4">
               <div>
-                <label className="text-sm font-medium text-slate-700">Área do Processo</label>
+                <label className={labelStyle}>Área</label>
                 <select
                   value={formData.practice_area}
-                  onChange={(event) => handleFormChange('practice_area', event.target.value as ProcessPracticeArea)}
-                  className="input-field"
+                  onChange={(e) => handleFormChange('practice_area', e.target.value as ProcessPracticeArea)}
+                  className={inputStyle}
                 >
-                  {PRACTICE_AREAS.map((area) => (
-                    <option key={area.key} value={area.key}>
-                      {area.label}
+                  {PRACTICE_AREAS.map((a) => (
+                    <option key={a.key} value={a.key}>
+                      {a.label}
                     </option>
                   ))}
                 </select>
               </div>
-
               <div>
-                <label className="text-sm font-medium text-slate-700">Status</label>
+                <label className={labelStyle}>Status</label>
                 <select
                   value={formData.status}
-                  onChange={(event) => handleFormChange('status', event.target.value as ProcessStatus)}
-                  className="input-field"
+                  onChange={(e) => handleFormChange('status', e.target.value as ProcessStatus)}
+                  className={inputStyle}
                 >
-                  {STATUS_OPTIONS.map((status) => (
-                    <option key={status.key} value={status.key}>
-                      {status.label}
+                  {STATUS_OPTIONS.map((s) => (
+                    <option key={s.key} value={s.key}>
+                      {s.label}
                     </option>
                   ))}
                 </select>
               </div>
+            </div>
 
+            <div className="grid grid-cols-2 gap-4">
               <div>
-                <label className="text-sm font-medium text-slate-700">Data de Distribuição</label>
+                <label className={labelStyle}>Distribuição</label>
                 <input
                   type="date"
                   value={formData.distributed_at}
-                  onChange={(event) => handleFormChange('distributed_at', event.target.value)}
-                  className="input-field"
+                  onChange={(e) => handleFormChange('distributed_at', e.target.value)}
+                  className={inputStyle}
                 />
               </div>
-
               <div>
-                <label className="text-sm font-medium text-slate-700">Vara / Comarca</label>
+                <label className={labelStyle}>Vara / Comarca</label>
                 <input
                   value={formData.court}
-                  onChange={(event) => handleFormChange('court', event.target.value)}
-                  className="input-field"
-                  placeholder="Informe a vara ou comarca"
+                  onChange={(e) => handleFormChange('court', e.target.value)}
+                  className={inputStyle}
                 />
-              </div>
-
-              <div>
-                <label className="text-sm font-medium text-slate-700">Advogado responsável</label>
-                <select
-                  value={formData.responsible_lawyer_id}
-                  onChange={(event) => {
-                    const memberId = event.target.value;
-                    handleFormChange('responsible_lawyer_id', memberId);
-                    const member = memberMap.get(memberId);
-                    if (member) {
-                      handleFormChange('responsible_lawyer', member.name);
-                    }
-                  }}
-                  className="input-field"
-                >
-                  <option value="">Selecione um advogado</option>
-                  {members.map((member) => (
-                    <option key={member.id} value={member.id}>
-                      {member.name} {member.oab ? `(OAB: ${member.oab})` : ''}
-                    </option>
-                  ))}
-                </select>
-              </div>
-            </div>
-
-            <div className="border-t border-gray-200 pt-4">
-              <label className="text-sm font-medium text-slate-700 mb-3 block">Audiência</label>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div>
-                  <label className="text-sm font-medium text-slate-700">Audiência agendada?</label>
-                  <select
-                    value={formData.hearing_scheduled}
-                    onChange={(event) => handleFormChange('hearing_scheduled', event.target.value)}
-                    className="input-field"
-                  >
-                    <option value="nao">Não</option>
-                    <option value="sim">Sim</option>
-                  </select>
-                </div>
-
-                {formData.hearing_scheduled === 'sim' && (
-                  <>
-                    <div>
-                      <label className="text-sm font-medium text-slate-700">Data da audiência</label>
-                      <input
-                        type="date"
-                        value={formData.hearing_date}
-                        onChange={(event) => handleFormChange('hearing_date', event.target.value)}
-                        className="input-field"
-                      />
-                    </div>
-
-                    <div>
-                      <label className="text-sm font-medium text-slate-700">Horário</label>
-                      <input
-                        type="time"
-                        value={formData.hearing_time}
-                        onChange={(event) => handleFormChange('hearing_time', event.target.value)}
-                        className="input-field"
-                      />
-                    </div>
-
-                    <div>
-                      <label className="text-sm font-medium text-slate-700">Tipo</label>
-                      <select
-                        value={formData.hearing_mode}
-                        onChange={(event) => handleFormChange('hearing_mode', event.target.value as HearingMode)}
-                        className="input-field"
-                      >
-                        <option value="presencial">Presencial</option>
-                        <option value="online">Online</option>
-                      </select>
-                    </div>
-                  </>
-                )}
               </div>
             </div>
 
             <div>
-              <label className="text-sm font-medium text-slate-700">Notas Internas</label>
-              <textarea
-                value={formData.notes}
-                onChange={(event) => handleFormChange('notes', event.target.value)}
-                rows={4}
-                className="input-field"
-                placeholder="Observações, prazos ou próximos passos"
-              />
+              <label className={labelStyle}>Advogado Responsável</label>
+              <select
+                value={formData.responsible_lawyer_id}
+                onChange={(e) => {
+                  handleFormChange('responsible_lawyer_id', e.target.value);
+                  const m = memberMap.get(e.target.value);
+                  if (m) handleFormChange('responsible_lawyer', m.name);
+                }}
+                className={inputStyle}
+              >
+                <option value="">Selecione</option>
+                {members.map((m) => (
+                  <option key={m.id} value={m.id}>
+                    {m.name}
+                  </option>
+                ))}
+              </select>
             </div>
 
-            <div className="flex justify-end gap-3 pt-2">
-              <button
-                type="button"
-                onClick={handleCloseModal}
-                className="px-4 py-2.5 rounded-lg text-sm font-medium text-slate-600 bg-slate-100 hover:bg-slate-200 transition"
-                disabled={saving}
-              >
-                Cancelar
-              </button>
-              <button
-                type="submit"
-                disabled={saving}
-                className="px-4 py-2.5 rounded-lg text-sm font-semibold text-white bg-amber-600 hover:bg-amber-700 transition flex items-center gap-2"
-              >
-                {saving && <Loader2 className="w-4 h-4 animate-spin" />}
-                {selectedProcess ? 'Salvar alterações' : 'Criar processo'}
-              </button>
+            <div className="grid grid-cols-4 gap-4">
+              <div>
+                <label className={labelStyle}>Audiência</label>
+                <select
+                  value={formData.hearing_scheduled}
+                  onChange={(e) => handleFormChange('hearing_scheduled', e.target.value)}
+                  className={inputStyle}
+                >
+                  <option value="nao">Não</option>
+                  <option value="sim">Sim</option>
+                </select>
+              </div>
+              {formData.hearing_scheduled === 'sim' && (
+                <>
+                  <div>
+                    <label className={labelStyle}>Data</label>
+                    <input
+                      type="date"
+                      value={formData.hearing_date}
+                      onChange={(e) => handleFormChange('hearing_date', e.target.value)}
+                      className={inputStyle}
+                    />
+                  </div>
+                  <div>
+                    <label className={labelStyle}>Hora</label>
+                    <input
+                      type="time"
+                      value={formData.hearing_time}
+                      onChange={(e) => handleFormChange('hearing_time', e.target.value)}
+                      className={inputStyle}
+                    />
+                  </div>
+                  <div>
+                    <label className={labelStyle}>Modo</label>
+                    <select
+                      value={formData.hearing_mode}
+                      onChange={(e) => handleFormChange('hearing_mode', e.target.value as HearingMode)}
+                      className={inputStyle}
+                    >
+                      <option value="presencial">Presencial</option>
+                      <option value="online">Online</option>
+                    </select>
+                  </div>
+                </>
+              )}
             </div>
-          </form>
-        </div>
+
+            <div>
+              <label className={labelStyle}>Observações</label>
+              <textarea
+                value={formData.notes}
+                onChange={(e) => handleFormChange('notes', e.target.value)}
+                className={`${inputStyle} h-20 resize-none`}
+                placeholder="Notas internas..."
+              />
+            </div>
+          </div>
+
+          <div className="flex justify-end gap-3 px-6 py-4 border-t border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-800/50">
+            <button
+              type="button"
+              onClick={handleCloseModal}
+              disabled={saving}
+              className="px-4 py-2 text-sm text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-white"
+            >
+              Cancelar
+            </button>
+            <button
+              type="submit"
+              disabled={saving}
+              className="px-5 py-2 bg-amber-500 hover:bg-amber-600 text-white text-sm font-medium rounded-lg flex items-center gap-2"
+            >
+              {saving && <Loader2 className="w-4 h-4 animate-spin" />}
+              Salvar
+            </button>
+          </div>
+        </form>
       </div>
-    );
+    </div>
+  );
 
   if (viewMode === 'details' && selectedProcessForView) {
     const client = clientMap.get(selectedProcessForView.client_id);
@@ -1668,14 +1549,9 @@ const ProcessesModule: React.FC<ProcessesModuleProps> = ({ forceCreate, entityId
           <div className="flex items-center justify-between mb-6">
             <div>
               <h3 className="text-xl font-semibold text-slate-900">Detalhes do Processo</h3>
-              <p className="text-sm text-slate-600 mt-1">
-                Consulte rapidamente os dados principais e o histórico de anotações.
-              </p>
+              <p className="text-sm text-slate-600 mt-1">Consulte rapidamente os dados principais e o histórico de anotações.</p>
             </div>
-            <button
-              onClick={handleBackToList}
-              className="text-slate-600 hover:text-slate-900 font-medium text-sm flex items-center gap-2"
-            >
+            <button onClick={handleBackToList} className="text-slate-600 hover:text-slate-900 font-medium text-sm flex items-center gap-2">
               ← Voltar para lista
             </button>
           </div>
@@ -1684,11 +1560,7 @@ const ProcessesModule: React.FC<ProcessesModuleProps> = ({ forceCreate, entityId
             <div>
               <label className="text-xs font-semibold text-slate-500 uppercase">Cliente</label>
               <p className="text-base text-slate-900 mt-1 flex items-center gap-2">
-                {client?.client_type === 'pessoa_juridica' ? (
-                  <Building2 className="w-4 h-4 text-purple-500" />
-                ) : (
-                  <User className="w-4 h-4 text-blue-500" />
-                )}
+                {client?.client_type === 'pessoa_juridica' ? <Building2 className="w-4 h-4 text-purple-500" /> : <User className="w-4 h-4 text-blue-500" />}
                 {client?.full_name || 'Cliente removido'}
               </p>
             </div>
@@ -1697,21 +1569,10 @@ const ProcessesModule: React.FC<ProcessesModuleProps> = ({ forceCreate, entityId
               <label className="text-xs font-semibold text-slate-500 uppercase">Código do Processo</label>
               <div className="flex items-center gap-2 mt-1">
                 <p className="text-base text-slate-900 font-mono">{selectedProcessForView.process_code}</p>
-                {selectedProcessForView.djen_synced === false || (selectedProcessForView.djen_synced && !selectedProcessForView.djen_has_data) ? (
-                  <span className="px-2 py-1 text-xs font-medium bg-yellow-100 text-yellow-800 rounded-full flex items-center gap-1">
-                    ⏳ Aguardando DJEN
-                  </span>
-                ) : selectedProcessForView.djen_has_data ? (
-                  <span className="px-2 py-1 text-xs font-medium bg-green-100 text-green-800 rounded-full flex items-center gap-1">
-                    ✓ Sincronizado
-                  </span>
+                {selectedProcessForView.djen_has_data ? (
+                  <span className="px-2 py-1 text-xs font-medium bg-green-100 text-green-800 rounded-full">✓ Sincronizado</span>
                 ) : null}
               </div>
-              {selectedProcessForView.djen_synced === false || (selectedProcessForView.djen_synced && !selectedProcessForView.djen_has_data) ? (
-                <p className="text-xs text-yellow-700 mt-1">
-                  💡 Este processo será sincronizado automaticamente com o DJEN nas próximas 24 horas
-                </p>
-              ) : null}
             </div>
 
             <div>
@@ -1736,16 +1597,11 @@ const ProcessesModule: React.FC<ProcessesModuleProps> = ({ forceCreate, entityId
             <div>
               <label className="text-xs font-semibold text-slate-500 uppercase">Área</label>
               <p className="text-base text-slate-900 mt-1">{practiceAreaInfo ? practiceAreaInfo.label : selectedProcessForView.practice_area}</p>
-              {practiceAreaInfo?.description && (
-                <p className="text-xs text-slate-500 mt-1">{practiceAreaInfo.description}</p>
-              )}
             </div>
 
             <div>
               <label className="text-xs font-semibold text-slate-500 uppercase">Advogado responsável</label>
-              <p className="text-base text-slate-900 mt-1">
-                {selectedProcessForView.responsible_lawyer || 'Não informado'}
-              </p>
+              <p className="text-base text-slate-900 mt-1">{selectedProcessForView.responsible_lawyer || 'Não informado'}</p>
             </div>
 
             <div>
@@ -1767,21 +1623,12 @@ const ProcessesModule: React.FC<ProcessesModuleProps> = ({ forceCreate, entityId
               </p>
             </div>
 
-            <div>
-              <label className="text-xs font-semibold text-slate-500 uppercase">Notas registradas</label>
-              <p className="text-base text-slate-900 mt-1">
-                {noteCount > 0 ? `${noteCount} anotação(ões)` : 'Nenhuma nota registrada ainda'}
-              </p>
-            </div>
-
             <div className="md:col-span-2">
               <label className="text-xs font-semibold text-slate-500 uppercase">Histórico de notas</label>
               {noteThreads.length === 0 ? (
                 <p className="text-sm text-slate-500 mt-2">Nenhuma nota registrada no momento.</p>
               ) : (
-                <div className="mt-2 space-y-4">
-                  {noteThreads.map((thread) => renderNote(thread))}
-                </div>
+                <div className="mt-2 space-y-4">{noteThreads.map((thread) => renderNote(thread))}</div>
               )}
             </div>
           </div>
@@ -1809,7 +1656,6 @@ const ProcessesModule: React.FC<ProcessesModuleProps> = ({ forceCreate, entityId
 
         <div className="bg-white border border-gray-200 rounded-xl p-6">
           <h4 className="text-base font-semibold text-slate-900">Adicionar nota</h4>
-          <p className="text-sm text-slate-600 mt-1">Registre atualizações, compromissos ou observações importantes.</p>
           <div className="mt-4 space-y-3">
             {noteError && <p className="text-sm text-red-600">{noteError}</p>}
             <textarea
@@ -1832,7 +1678,6 @@ const ProcessesModule: React.FC<ProcessesModuleProps> = ({ forceCreate, entityId
           </div>
         </div>
 
-        {/* Timeline do Processo - Publicações DJEN */}
         <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
           <div className="px-6 py-4 border-b border-gray-200 bg-gradient-to-r from-blue-50 to-indigo-50">
             <div className="flex items-center justify-between">
@@ -1846,7 +1691,7 @@ const ProcessesModule: React.FC<ProcessesModuleProps> = ({ forceCreate, entityId
                 </div>
               </div>
               <div className="flex items-center gap-2">
-                {timeline.length > 0 && !timeline.some(e => e.aiAnalysis) && (
+                {timeline.length > 0 && !timeline.some((e) => e.aiAnalysis) && (
                   <button
                     onClick={analyzeTimelineWithAI}
                     disabled={analyzingTimeline}
@@ -1889,9 +1734,6 @@ const ProcessesModule: React.FC<ProcessesModuleProps> = ({ forceCreate, entityId
                   <AlertCircle className="w-6 h-6 text-yellow-600" />
                 </div>
                 <p className="text-slate-600">{timelineError}</p>
-                <p className="text-xs text-slate-500 mt-2">
-                  O processo pode ser muito recente ou ainda não ter publicações no Diário de Justiça.
-                </p>
               </div>
             ) : timeline.length === 0 ? (
               <div className="text-center py-8">
@@ -1902,60 +1744,39 @@ const ProcessesModule: React.FC<ProcessesModuleProps> = ({ forceCreate, entityId
               </div>
             ) : (
               <div className="relative">
-                {/* Linha vertical */}
                 <div className="absolute left-4 top-0 bottom-0 w-0.5 bg-slate-200" />
-                
                 <div className="space-y-4">
-                  {timeline.map((event, index) => {
+                  {timeline.map((event) => {
                     const isExpanded = expandedTimelineEvents.has(event.id);
                     const hasAnalysis = !!event.aiAnalysis;
-                    
                     return (
                       <div key={event.id} className="relative pl-10">
-                        {/* Marcador */}
-                        <div className={`absolute left-0 w-8 h-8 rounded-full flex items-center justify-center ${
-                          hasAnalysis && event.aiAnalysis?.urgency === 'critica' ? 'bg-red-500 text-white' :
-                          hasAnalysis && event.aiAnalysis?.urgency === 'alta' ? 'bg-orange-500 text-white' :
-                          hasAnalysis && event.aiAnalysis?.urgency === 'media' ? 'bg-yellow-500 text-white' :
-                          'bg-blue-500 text-white'
-                        }`}>
+                        <div
+                          className={`absolute left-0 w-8 h-8 rounded-full flex items-center justify-center ${
+                            hasAnalysis && event.aiAnalysis?.urgency === 'critica'
+                              ? 'bg-red-500 text-white'
+                              : hasAnalysis && event.aiAnalysis?.urgency === 'alta'
+                              ? 'bg-orange-500 text-white'
+                              : 'bg-blue-500 text-white'
+                          }`}
+                        >
                           {getEventTypeIcon(event.type)}
                         </div>
-                        
-                        {/* Card do evento */}
-                        <div className={`border rounded-lg overflow-hidden transition-all ${
-                          hasAnalysis ? `border-l-4 ${getUrgencyColor(event.aiAnalysis?.urgency)}` : 'border-slate-200'
-                        }`}>
+                        <div className={`border rounded-lg overflow-hidden transition-all ${hasAnalysis ? `border-l-4 ${getUrgencyColor(event.aiAnalysis?.urgency)}` : 'border-slate-200'}`}>
                           <button
                             onClick={() => toggleTimelineEvent(event.id)}
                             className="w-full px-4 py-3 flex items-start justify-between gap-3 hover:bg-slate-50 transition text-left"
                           >
                             <div className="flex-1 min-w-0">
                               <div className="flex items-center gap-2 flex-wrap">
-                                <span className="text-xs font-medium text-blue-600">
-                                  {new Date(event.date).toLocaleDateString('pt-BR')}
-                                </span>
-                                <span className="text-xs px-2 py-0.5 bg-slate-100 text-slate-600 rounded">
-                                  {event.type}
-                                </span>
-                                {hasAnalysis && event.aiAnalysis?.actionRequired && (
-                                  <span className="text-xs px-2 py-0.5 bg-red-100 text-red-700 rounded font-medium">
-                                    ⚡ Ação necessária
-                                  </span>
-                                )}
+                                <span className="text-xs font-medium text-blue-600">{new Date(event.date).toLocaleDateString('pt-BR')}</span>
+                                <span className="text-xs px-2 py-0.5 bg-slate-100 text-slate-600 rounded">{event.type}</span>
                               </div>
-                              <p className="text-sm font-medium text-slate-900 mt-1 truncate">
-                                {hasAnalysis ? event.aiAnalysis?.summary : event.title}
-                              </p>
+                              <p className="text-sm font-medium text-slate-900 mt-1 truncate">{hasAnalysis ? event.aiAnalysis?.summary : event.title}</p>
                               <p className="text-xs text-slate-500 mt-0.5">{event.orgao}</p>
                             </div>
-                            {isExpanded ? (
-                              <ChevronUp className="w-5 h-5 text-slate-400 flex-shrink-0" />
-                            ) : (
-                              <ChevronDown className="w-5 h-5 text-slate-400 flex-shrink-0" />
-                            )}
+                            {isExpanded ? <ChevronUp className="w-5 h-5 text-slate-400 flex-shrink-0" /> : <ChevronDown className="w-5 h-5 text-slate-400 flex-shrink-0" />}
                           </button>
-                          
                           {isExpanded && (
                             <div className="px-4 pb-4 border-t border-slate-100">
                               {hasAnalysis && event.aiAnalysis?.keyPoints && event.aiAnalysis.keyPoints.length > 0 && (
@@ -1975,9 +1796,7 @@ const ProcessesModule: React.FC<ProcessesModuleProps> = ({ forceCreate, entityId
                               )}
                               <div className="mt-3">
                                 <p className="text-xs font-semibold text-slate-500 mb-1">Texto completo:</p>
-                                <p className="text-xs text-slate-700 whitespace-pre-wrap max-h-48 overflow-y-auto bg-slate-50 p-3 rounded">
-                                  {event.description || 'Conteúdo não disponível'}
-                                </p>
+                                <p className="text-xs text-slate-700 whitespace-pre-wrap max-h-48 overflow-y-auto bg-slate-50 p-3 rounded">{event.description || 'Conteúdo não disponível'}</p>
                               </div>
                             </div>
                           )}
@@ -1986,12 +1805,6 @@ const ProcessesModule: React.FC<ProcessesModuleProps> = ({ forceCreate, entityId
                     );
                   })}
                 </div>
-                
-                {timeline.length > 0 && (
-                  <p className="text-xs text-slate-500 text-center mt-4">
-                    {timeline.length} publicação(ões) encontrada(s) no DJEN
-                  </p>
-                )}
               </div>
             )}
           </div>
@@ -2004,7 +1817,6 @@ const ProcessesModule: React.FC<ProcessesModuleProps> = ({ forceCreate, entityId
 
   return (
     <div className="space-y-4">
-      {/* Header Principal */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold text-slate-900">Gestão de Processos</h1>
@@ -2012,13 +1824,10 @@ const ProcessesModule: React.FC<ProcessesModuleProps> = ({ forceCreate, entityId
         </div>
       </div>
 
-      {/* Cards de Estatísticas */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
         <button
           onClick={() => setStatusFilter('todos')}
-          className={`flex items-center gap-3 p-4 rounded-xl transition-all hover:shadow-md border ${
-            statusFilter === 'todos' ? 'ring-2 ring-amber-500 bg-amber-50 border-amber-200' : 'bg-white border-slate-200'
-          }`}
+          className={`flex items-center gap-3 p-4 rounded-xl transition-all hover:shadow-md border ${statusFilter === 'todos' ? 'ring-2 ring-amber-500 bg-amber-50 border-amber-200' : 'bg-white border-slate-200'}`}
         >
           <div className="w-10 h-10 rounded-full bg-amber-500 flex items-center justify-center flex-shrink-0">
             <Building2 className="w-5 h-5 text-white" />
@@ -2031,9 +1840,7 @@ const ProcessesModule: React.FC<ProcessesModuleProps> = ({ forceCreate, entityId
 
         <button
           onClick={() => setStatusFilter('andamento')}
-          className={`flex items-center gap-3 p-4 rounded-xl transition-all hover:shadow-md border ${
-            statusFilter === 'andamento' ? 'ring-2 ring-blue-500 bg-blue-50 border-blue-200' : 'bg-white border-slate-200'
-          }`}
+          className={`flex items-center gap-3 p-4 rounded-xl transition-all hover:shadow-md border ${statusFilter === 'andamento' ? 'ring-2 ring-blue-500 bg-blue-50 border-blue-200' : 'bg-white border-slate-200'}`}
         >
           <div className="w-10 h-10 rounded-full bg-blue-500 flex items-center justify-center flex-shrink-0">
             <Clock className="w-5 h-5 text-white" />
@@ -2046,9 +1853,7 @@ const ProcessesModule: React.FC<ProcessesModuleProps> = ({ forceCreate, entityId
 
         <button
           onClick={() => setStatusFilter('distribuido')}
-          className={`flex items-center gap-3 p-4 rounded-xl transition-all hover:shadow-md border ${
-            statusFilter === 'distribuido' ? 'ring-2 ring-purple-500 bg-purple-50 border-purple-200' : 'bg-white border-slate-200'
-          }`}
+          className={`flex items-center gap-3 p-4 rounded-xl transition-all hover:shadow-md border ${statusFilter === 'distribuido' ? 'ring-2 ring-purple-500 bg-purple-50 border-purple-200' : 'bg-white border-slate-200'}`}
         >
           <div className="w-10 h-10 rounded-full bg-purple-500 flex items-center justify-center flex-shrink-0">
             <FileText className="w-5 h-5 text-white" />
@@ -2070,20 +1875,9 @@ const ProcessesModule: React.FC<ProcessesModuleProps> = ({ forceCreate, entityId
         </div>
       </div>
 
-      {/* Resultado da Sincronização DJEN */}
       {syncResult && (
-        <div className={`flex items-start gap-3 px-4 py-3 rounded-xl text-sm ${
-          syncResult.errors > 0 
-            ? 'bg-amber-50 border border-amber-200 text-amber-800'
-            : syncResult.intimationsFound > 0
-              ? 'bg-green-50 border border-green-200 text-green-800'
-              : 'bg-blue-50 border border-blue-200 text-blue-800'
-        }`}>
-          {syncResult.errors > 0 ? (
-            <AlertCircle className="w-5 h-5 flex-shrink-0 mt-0.5" />
-          ) : (
-            <CheckCircle2 className="w-5 h-5 flex-shrink-0 mt-0.5" />
-          )}
+        <div className={`flex items-start gap-3 px-4 py-3 rounded-xl text-sm ${syncResult.errors > 0 ? 'bg-amber-50 border border-amber-200 text-amber-800' : 'bg-green-50 border border-green-200 text-green-800'}`}>
+          {syncResult.errors > 0 ? <AlertCircle className="w-5 h-5 flex-shrink-0 mt-0.5" /> : <CheckCircle2 className="w-5 h-5 flex-shrink-0 mt-0.5" />}
           <div className="flex-1">
             <p className="font-semibold mb-1">Sincronização DJEN concluída</p>
             {syncResult.total === 0 ? (
@@ -2091,82 +1885,48 @@ const ProcessesModule: React.FC<ProcessesModuleProps> = ({ forceCreate, entityId
             ) : (
               <div className="space-y-1">
                 <p>
-                  <span className="font-medium">{syncResult.synced}</span> de <span className="font-medium">{syncResult.total}</span> processos verificados no DJEN
+                  <span className="font-medium">{syncResult.synced}</span> de <span className="font-medium">{syncResult.total}</span> processos verificados
                 </p>
-                {syncResult.intimationsFound > 0 && (
-                  <p className="text-green-700">
-                    📋 <span className="font-semibold">{syncResult.intimationsFound}</span> intimações encontradas no total
-                  </p>
-                )}
-                {syncResult.updated > 0 && (
-                  <p className="text-green-700">
-                    ✓ <span className="font-semibold">{syncResult.updated}</span> processos atualizados com dados (vara, data)
-                  </p>
-                )}
-                {syncResult.errors > 0 && (
-                  <p className="text-red-600">
-                    ⚠ <span className="font-semibold">{syncResult.errors}</span> erros durante a sincronização
-                  </p>
-                )}
-                {syncResult.intimationsFound === 0 && syncResult.errors === 0 && (
-                  <p className="text-slate-600 text-xs mt-1">
-                    💡 Nenhuma intimação encontrada. Os processos podem ser muito recentes ou ainda não terem publicações no Diário de Justiça.
-                  </p>
-                )}
+                {syncResult.updated > 0 && <p className="text-green-700">✓ {syncResult.updated} processos atualizados</p>}
+                {syncResult.errors > 0 && <p className="text-red-600">⚠ {syncResult.errors} erros</p>}
               </div>
             )}
           </div>
-          <button
-            onClick={() => setSyncResult(null)}
-            className="text-slate-400 hover:text-slate-600 flex-shrink-0"
-          >
+          <button onClick={() => setSyncResult(null)} className="text-slate-400 hover:text-slate-600 flex-shrink-0">
             <X className="w-4 h-4" />
           </button>
         </div>
       )}
 
-      {/* Abas de Navegação e Ações */}
       <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-4 border-b border-slate-100">
-          {/* Abas de Visualização */}
           <div className="flex items-center gap-1 bg-slate-100 rounded-lg p-1">
             <button
               onClick={() => setKanbanMode(false)}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-all ${
-                !kanbanMode ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-700'
-              }`}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-all ${!kanbanMode ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
             >
               <List className="w-3.5 h-3.5" />
               Lista
             </button>
             <button
               onClick={() => setKanbanMode(true)}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-all ${
-                kanbanMode ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-700'
-              }`}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-all ${kanbanMode ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
             >
               <LayoutGrid className="w-3.5 h-3.5" />
               Kanban
             </button>
           </div>
 
-          {/* Botões de Ação */}
           <div className="flex items-center gap-2">
             <button
               onClick={handleSyncAllDjen}
               disabled={syncingDjen || pendingDjenCount === 0}
-              className={`relative flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-medium transition-all ${
-                pendingDjenCount > 0
-                  ? 'bg-blue-600 hover:bg-blue-700 text-white'
-                  : 'border border-slate-200 text-slate-400'
-              }`}
+              className={`relative flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-medium transition-all ${pendingDjenCount > 0 ? 'bg-blue-600 hover:bg-blue-700 text-white' : 'border border-slate-200 text-slate-400'}`}
             >
               {syncingDjen ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5" />}
               Sync DJEN
               {pendingDjenCount > 0 && !syncingDjen && (
-                <span className="absolute -top-1.5 -right-1.5 bg-red-500 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full min-w-[18px] text-center">
-                  {pendingDjenCount}
-                </span>
+                <span className="absolute -top-1.5 -right-1.5 bg-red-500 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full min-w-[18px] text-center">{pendingDjenCount}</span>
               )}
             </button>
             <button
@@ -2177,19 +1937,14 @@ const ProcessesModule: React.FC<ProcessesModuleProps> = ({ forceCreate, entityId
               {exportingExcel ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <FileSpreadsheet className="w-3.5 h-3.5" />}
               Exportar
             </button>
-            <button
-              onClick={() => handleOpenModal()}
-              className="flex items-center gap-1.5 px-4 py-2 bg-amber-600 hover:bg-amber-700 text-white rounded-lg text-xs font-semibold transition-all shadow-sm"
-            >
+            <button onClick={() => handleOpenModal()} className="flex items-center gap-1.5 px-4 py-2 bg-amber-600 hover:bg-amber-700 text-white rounded-lg text-xs font-semibold transition-all shadow-sm">
               <Plus className="w-3.5 h-3.5" />
               Novo Processo
             </button>
           </div>
         </div>
 
-        {/* Barra de Filtros */}
         <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 p-3 bg-slate-50/50 border-b border-slate-100">
-          {/* Busca */}
           <div className="relative flex-1">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
             <input
@@ -2201,7 +1956,6 @@ const ProcessesModule: React.FC<ProcessesModuleProps> = ({ forceCreate, entityId
             />
           </div>
 
-          {/* Filtros */}
           <div className="flex items-center gap-2">
             <select
               value={statusFilter}
@@ -2210,19 +1964,16 @@ const ProcessesModule: React.FC<ProcessesModuleProps> = ({ forceCreate, entityId
             >
               <option value="todos">Todos os status</option>
               {STATUS_OPTIONS.map((status) => (
-                <option key={status.key} value={status.key}>{status.label}</option>
+                <option key={status.key} value={status.key}>
+                  {status.label}
+                </option>
               ))}
             </select>
           </div>
         </div>
 
-        {/* Conteúdo */}
         <div className="p-4">
-          {error && (
-            <div className="bg-red-50 border border-red-200 text-red-600 px-4 py-3 rounded-lg text-sm mb-4">
-              {error}
-            </div>
-          )}
+          {error && <div className="bg-red-50 border border-red-200 text-red-600 px-4 py-3 rounded-lg text-sm mb-4">{error}</div>}
 
           {loading ? (
             <div className="py-16 flex flex-col items-center gap-4">
@@ -2235,329 +1986,217 @@ const ProcessesModule: React.FC<ProcessesModuleProps> = ({ forceCreate, entityId
             </div>
           ) : kanbanMode ? (
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-6 gap-3 sm:gap-4">
-          {STATUS_OPTIONS.map((statusOption) => {
-            const processesInColumn = processesByStatus[statusOption.key] || [];
-            return (
-              <div key={statusOption.key} className="bg-white border border-gray-200 rounded-xl overflow-hidden flex flex-col">
-                <div className={`px-4 py-3 font-semibold text-sm ${statusOption.badge}`}>
-                  <div className="flex items-center justify-between">
-                    <span>{statusOption.label}</span>
-                    <span className="text-xs opacity-75">({processesInColumn.length})</span>
-                  </div>
-                </div>
-                <div
-                  className="p-3 space-y-3 flex-1 overflow-y-auto max-h-[calc(100vh-300px)]"
-                  onDragOver={(event) => {
-                    if (!draggingProcessId) return;
-                    event.preventDefault();
-                    event.dataTransfer.dropEffect = 'move';
-                  }}
-                  onDrop={async (event) => {
-                    if (!draggingProcessId) return;
-                    event.preventDefault();
-                    setIsDragging(false);
-                    setDraggingProcessId(null);
-                    const draggedProcess = processes.find((item) => item.id === draggingProcessId);
-                    if (!draggedProcess || draggedProcess.status === statusOption.key) return;
-                    await handleStatusChange(draggingProcessId, statusOption.key);
-                  }}
-                >
-                  {processesInColumn.map((process) => {
-                    const client = clientMap.get(process.client_id);
-                    const isUpdating = statusUpdatingId === process.id;
-                    return (
-                      <div
-                        key={process.id}
-                        className="bg-white border border-slate-200 rounded-lg p-3 hover:shadow-md transition-shadow cursor-pointer"
-                        onClick={() => {
-                          if (isDragging) return;
-                          handleViewProcess(process);
-                        }}
-                        draggable
-                        onDragStart={(event) => {
-                          event.stopPropagation();
-                          setIsDragging(true);
-                          setDraggingProcessId(process.id);
-                          event.dataTransfer.effectAllowed = 'move';
-                          event.dataTransfer.setData('text/plain', process.id);
-                        }}
-                        onDragEnd={() => {
-                          setIsDragging(false);
-                          setDraggingProcessId(null);
-                        }}
-                      >
-                        <div className="flex items-start justify-between gap-2 mb-2">
-                          <div className="flex items-center gap-2 flex-1 min-w-0">
-                            <div className={`flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center text-xs ${
-                              client?.client_type === 'pessoa_fisica'
-                                ? 'bg-blue-100 text-blue-600'
-                                : 'bg-purple-100 text-purple-600'
-                            }`}>
-                              {client?.client_type === 'pessoa_fisica' ? (
-                                <User className="w-4 h-4" />
-                              ) : (
-                                <Building2 className="w-4 h-4" />
-                              )}
-                            </div>
-                            <div className="flex-1 min-w-0">
-                              <p className="text-xs font-semibold text-slate-900 truncate">
-                                {client?.full_name || 'Cliente removido'}
-                              </p>
-                              <div className="flex items-center gap-2">
-                                <p className="text-xs text-slate-500 font-mono truncate">
-                                  {process.process_code}
-                                </p>
-                                {process.djen_synced === false || (process.djen_synced && !process.djen_has_data) ? (
-                                  <span className="px-1.5 py-0.5 text-xs font-medium bg-yellow-100 text-yellow-800 rounded" title="Aguardando dados do DJEN">
-                                    ⏳
-                                  </span>
-                                ) : process.djen_has_data ? (
-                                  <span className="px-1.5 py-0.5 text-xs font-medium bg-green-100 text-green-800 rounded" title="Sincronizado com DJEN">
-                                    ✓
-                                  </span>
-                                ) : null}
+              {STATUS_OPTIONS.map((statusOption) => {
+                const processesInColumn = processesByStatus[statusOption.key] || [];
+                return (
+                  <div key={statusOption.key} className="bg-white border border-gray-200 rounded-xl overflow-hidden flex flex-col">
+                    <div className={`px-4 py-3 font-semibold text-sm ${statusOption.badge}`}>
+                      <div className="flex items-center justify-between">
+                        <span>{statusOption.label}</span>
+                        <span className="text-xs opacity-75">({processesInColumn.length})</span>
+                      </div>
+                    </div>
+                    <div
+                      className="p-3 space-y-3 flex-1 overflow-y-auto max-h-[calc(100vh-300px)]"
+                      onDragOver={(event) => {
+                        if (!draggingProcessId) return;
+                        event.preventDefault();
+                        event.dataTransfer.dropEffect = 'move';
+                      }}
+                      onDrop={async (event) => {
+                        if (!draggingProcessId) return;
+                        event.preventDefault();
+                        setIsDragging(false);
+                        setDraggingProcessId(null);
+                        const draggedProcess = processes.find((item) => item.id === draggingProcessId);
+                        if (!draggedProcess || draggedProcess.status === statusOption.key) return;
+                        await handleStatusChange(draggingProcessId, statusOption.key);
+                      }}
+                    >
+                      {processesInColumn.map((process) => {
+                        const client = clientMap.get(process.client_id);
+                        const isUpdating = statusUpdatingId === process.id;
+                        return (
+                          <div
+                            key={process.id}
+                            className="bg-white border border-slate-200 rounded-lg p-3 hover:shadow-md transition-shadow cursor-pointer"
+                            onClick={() => {
+                              if (isDragging) return;
+                              handleViewProcess(process);
+                            }}
+                            draggable
+                            onDragStart={(event) => {
+                              event.stopPropagation();
+                              setIsDragging(true);
+                              setDraggingProcessId(process.id);
+                              event.dataTransfer.effectAllowed = 'move';
+                              event.dataTransfer.setData('text/plain', process.id);
+                            }}
+                            onDragEnd={() => {
+                              setIsDragging(false);
+                              setDraggingProcessId(null);
+                            }}
+                          >
+                            <div className="flex items-start justify-between gap-2 mb-2">
+                              <div className="flex items-center gap-2 flex-1 min-w-0">
+                                <div
+                                  className={`flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center text-xs ${client?.client_type === 'pessoa_fisica' ? 'bg-blue-100 text-blue-600' : 'bg-purple-100 text-purple-600'}`}
+                                >
+                                  {client?.client_type === 'pessoa_fisica' ? <User className="w-4 h-4" /> : <Building2 className="w-4 h-4" />}
+                                </div>
+                                <div className="flex-1 min-w-0">
+                                  <p className="text-xs font-semibold text-slate-900 truncate">{client?.full_name || 'Cliente removido'}</p>
+                                  <p className="text-xs text-slate-500 font-mono truncate">{process.process_code}</p>
+                                </div>
                               </div>
                             </div>
+                            {process.court && <p className="text-xs text-slate-600 mb-2 line-clamp-2">{process.court}</p>}
+                            <div className="flex items-center justify-between mt-2 pt-2 border-t border-slate-100">
+                              <select
+                                value={process.status}
+                                onChange={(e) => {
+                                  e.stopPropagation();
+                                  handleStatusChange(process.id, e.target.value as ProcessStatus);
+                                }}
+                                disabled={isUpdating}
+                                className="text-xs px-2 py-1 border border-slate-300 rounded focus:outline-none focus:ring-2 focus:ring-amber-500 disabled:opacity-50"
+                                onClick={(e) => e.stopPropagation()}
+                              >
+                                {STATUS_OPTIONS.map((opt) => (
+                                  <option key={opt.key} value={opt.key}>
+                                    {opt.label}
+                                  </option>
+                                ))}
+                              </select>
+                              {isUpdating && <Loader2 className="w-3 h-3 animate-spin text-amber-600" />}
+                            </div>
                           </div>
-                        </div>
-                        {process.court && (
-                          <p className="text-xs text-slate-600 mb-2 line-clamp-2">{process.court}</p>
-                        )}
-                        <div className="flex items-center justify-between mt-2 pt-2 border-t border-slate-100">
-                          <select
-                            value={process.status}
-                            onChange={(e) => {
-                              e.stopPropagation();
-                              handleStatusChange(process.id, e.target.value as ProcessStatus);
-                            }}
-                            disabled={isUpdating}
-                            className="text-xs px-2 py-1 border border-slate-300 rounded focus:outline-none focus:ring-2 focus:ring-amber-500 disabled:opacity-50"
-                            onClick={(e) => e.stopPropagation()}
-                          >
-                            {STATUS_OPTIONS.map((opt) => (
-                              <option key={opt.key} value={opt.key}>
-                                {opt.label}
-                              </option>
-                            ))}
-                          </select>
-                          {isUpdating && <Loader2 className="w-3 h-3 animate-spin text-amber-600" />}
-                        </div>
-                      </div>
-                    );
-                  })}
-                  {processesInColumn.length === 0 && (
-                    <p className="text-xs text-slate-400 text-center py-8">Nenhum processo</p>
-                  )}
-                </div>
-              </div>
-            );
-          })}
+                        );
+                      })}
+                      {processesInColumn.length === 0 && <p className="text-xs text-slate-400 text-center py-8">Nenhum processo</p>}
+                    </div>
+                  </div>
+                );
+              })}
             </div>
           ) : (
             <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
-          {/* Mobile Cards */}
-          <div className="block lg:hidden divide-y divide-gray-200">
-            {filteredProcesses.map((process) => {
-              const client = clientMap.get(process.client_id);
-              return (
-                <div key={process.id} className="p-3 sm:p-4 hover:bg-gray-50 transition-colors">
-                  <div className="flex items-start gap-2 sm:gap-3 mb-2 sm:mb-3">
-                    <div className={`flex-shrink-0 h-8 w-8 sm:h-10 sm:w-10 rounded-full flex items-center justify-center ${
-                      client?.client_type === 'pessoa_fisica'
-                        ? 'bg-blue-100 text-blue-600'
-                        : 'bg-purple-100 text-purple-600'
-                    }`}>
-                      {client?.client_type === 'pessoa_fisica' ? (
-                        <User className="w-4 h-4 sm:w-5 sm:h-5" />
-                      ) : (
-                        <Building2 className="w-4 h-4 sm:w-5 sm:h-5" />
-                      )}
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <div className="text-xs sm:text-sm font-medium text-gray-900 mb-1 truncate">
-                        {client?.full_name || 'Cliente removido'}
-                      </div>
-                      <div className="flex items-center gap-2 mb-1 flex-wrap">
-                        <div className="text-[10px] sm:text-xs font-mono text-gray-700 break-all">{process.process_code}</div>
-                        {process.djen_synced === false || (process.djen_synced && !process.djen_has_data) ? (
-                          <span className="px-1.5 py-0.5 text-xs font-medium bg-yellow-100 text-yellow-800 rounded" title="Aguardando dados do DJEN">
-                            ⏳
-                          </span>
-                        ) : process.djen_has_data ? (
-                          <span className="px-1.5 py-0.5 text-xs font-medium bg-green-100 text-green-800 rounded" title="Dados sincronizados com DJEN">
-                            ✓
-                          </span>
-                        ) : null}
-                      </div>
-                      {process.court && (
-                        <div className="text-xs text-gray-500 mb-2">{process.court}</div>
-                      )}
-                      <div className="flex flex-wrap gap-2 text-xs text-gray-500">
-                        <span className="inline-flex items-center gap-1">
-                          Área:
-                          <span className="font-medium">
-                            {PRACTICE_AREAS.find((area) => area.key === process.practice_area)?.label ?? process.practice_area}
-                          </span>
-                        </span>
-                        {process.responsible_lawyer && (
-                          <span className="inline-flex items-center gap-1">
-                            Advogado:
-                            <span className="font-medium">{process.responsible_lawyer}</span>
-                          </span>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-                  <div className="flex items-center justify-between gap-2 mb-3">
-                    <span className={`px-2 py-1 inline-flex text-xs leading-5 font-semibold rounded-full ${getStatusBadge(process.status)}`}>
-                      {getStatusLabel(process.status)}
-                    </span>
-                    <span className="text-xs text-gray-600">{formatDate(process.distributed_at)}</span>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <button
-                      onClick={() => handleViewProcess(process)}
-                      className="flex-1 inline-flex items-center justify-center gap-2 px-3 py-2 bg-blue-50 text-blue-700 rounded-lg hover:bg-blue-100 transition-colors text-sm font-medium"
-                    >
-                      <Eye className="w-4 h-4" />
-                      Ver
-                    </button>
-                    <button
-                      onClick={() => handleOpenModal(process)}
-                      className="flex-1 inline-flex items-center justify-center gap-2 px-3 py-2 bg-amber-50 text-amber-700 rounded-lg hover:bg-amber-100 transition-colors text-sm font-medium"
-                    >
-                      <Edit2 className="w-4 h-4" />
-                      Editar
-                    </button>
-                    <button
-                      onClick={() => handleDeleteProcess(process.id)}
-                      className="px-3 py-2 bg-red-50 text-red-700 rounded-lg hover:bg-red-100 transition-colors"
-                      title="Excluir"
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </button>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-          {/* Desktop Table */}
-          <div className="hidden lg:block overflow-x-auto">
-            <table className="min-w-full divide-y divide-gray-200">
-              <thead className="bg-slate-50">
-                <tr>
-                  <th className="px-6 py-4 text-left text-xs font-semibold text-slate-700 uppercase tracking-wider">
-                    Nome do Cliente
-                  </th>
-                  <th className="px-6 py-4 text-left text-xs font-semibold text-slate-700 uppercase tracking-wider">
-                    Código do Processo
-                  </th>
-                  <th className="px-6 py-4 text-left text-xs font-semibold text-slate-700 uppercase tracking-wider">
-                    Distribuído
-                  </th>
-                  <th className="px-6 py-4 text-left text-xs font-semibold text-slate-700 uppercase tracking-wider">
-                    Status
-                  </th>
-                  <th className="px-6 py-4 text-right text-xs font-semibold text-slate-700 uppercase tracking-wider">
-                    Ações
-                  </th>
-                </tr>
-              </thead>
-              <tbody className="bg-white divide-y divide-gray-200">
+              <div className="block lg:hidden divide-y divide-gray-200">
                 {filteredProcesses.map((process) => {
                   const client = clientMap.get(process.client_id);
                   return (
-                    <tr key={process.id} className="hover:bg-gray-50 transition-colors">
-                      <td className="px-6 py-4 whitespace-nowrap">
-                        <div className="flex items-center gap-3">
-                          <div className={`flex-shrink-0 h-10 w-10 rounded-full flex items-center justify-center ${
-                            client?.client_type === 'pessoa_fisica'
-                              ? 'bg-blue-100 text-blue-600'
-                              : 'bg-purple-100 text-purple-600'
-                          }`}>
-                            {client?.client_type === 'pessoa_fisica' ? (
-                              <User className="w-5 h-5" />
-                            ) : (
-                              <Building2 className="w-5 h-5" />
-                            )}
-                          </div>
-                          <div>
-                            <div className="text-sm font-medium text-gray-900">
-                              {client?.full_name || 'Cliente removido'}
+                    <div key={process.id} className="p-3 sm:p-4 hover:bg-gray-50 transition-colors">
+                      <div className="flex items-start gap-2 sm:gap-3 mb-2 sm:mb-3">
+                        <div
+                          className={`flex-shrink-0 h-8 w-8 sm:h-10 sm:w-10 rounded-full flex items-center justify-center ${client?.client_type === 'pessoa_fisica' ? 'bg-blue-100 text-blue-600' : 'bg-purple-100 text-purple-600'}`}
+                        >
+                          {client?.client_type === 'pessoa_fisica' ? <User className="w-4 h-4 sm:w-5 sm:h-5" /> : <Building2 className="w-4 h-4 sm:w-5 sm:h-5" />}
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <div className="text-xs sm:text-sm font-medium text-gray-900 mb-1 truncate">{client?.full_name || 'Cliente removido'}</div>
+                          <div className="text-[10px] sm:text-xs font-mono text-gray-700 break-all">{process.process_code}</div>
+                          {process.court && <div className="text-xs text-gray-500 mb-2">{process.court}</div>}
+                        </div>
+                      </div>
+                      <div className="flex items-center justify-between gap-2 mb-3">
+                        <span className={`px-2 py-1 inline-flex text-xs leading-5 font-semibold rounded-full ${getStatusBadge(process.status)}`}>{getStatusLabel(process.status)}</span>
+                        <span className="text-xs text-gray-600">{formatDate(process.distributed_at)}</span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <button
+                          onClick={() => handleViewProcess(process)}
+                          className="flex-1 inline-flex items-center justify-center gap-2 px-3 py-2 bg-blue-50 text-blue-700 rounded-lg hover:bg-blue-100 transition-colors text-sm font-medium"
+                        >
+                          <Eye className="w-4 h-4" />
+                          Ver
+                        </button>
+                        <button
+                          onClick={() => handleOpenModal(process)}
+                          className="flex-1 inline-flex items-center justify-center gap-2 px-3 py-2 bg-amber-50 text-amber-700 rounded-lg hover:bg-amber-100 transition-colors text-sm font-medium"
+                        >
+                          <Edit2 className="w-4 h-4" />
+                          Editar
+                        </button>
+                        <button onClick={() => handleDeleteProcess(process.id)} className="px-3 py-2 bg-red-50 text-red-700 rounded-lg hover:bg-red-100 transition-colors" title="Excluir">
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+              <div className="hidden lg:block overflow-x-auto">
+                <table className="min-w-full divide-y divide-gray-200">
+                  <thead className="bg-slate-50">
+                    <tr>
+                      <th className="px-6 py-4 text-left text-xs font-semibold text-slate-700 uppercase tracking-wider">Nome do Cliente</th>
+                      <th className="px-6 py-4 text-left text-xs font-semibold text-slate-700 uppercase tracking-wider">Código do Processo</th>
+                      <th className="px-6 py-4 text-left text-xs font-semibold text-slate-700 uppercase tracking-wider">Distribuído</th>
+                      <th className="px-6 py-4 text-left text-xs font-semibold text-slate-700 uppercase tracking-wider">Status</th>
+                      <th className="px-6 py-4 text-right text-xs font-semibold text-slate-700 uppercase tracking-wider">Ações</th>
+                    </tr>
+                  </thead>
+                  <tbody className="bg-white divide-y divide-gray-200">
+                    {filteredProcesses.map((process) => {
+                      const client = clientMap.get(process.client_id);
+                      return (
+                        <tr key={process.id} className="hover:bg-gray-50 transition-colors">
+                          <td className="px-6 py-4 whitespace-nowrap">
+                            <div className="flex items-center gap-3">
+                              <div
+                                className={`flex-shrink-0 h-10 w-10 rounded-full flex items-center justify-center ${client?.client_type === 'pessoa_fisica' ? 'bg-blue-100 text-blue-600' : 'bg-purple-100 text-purple-600'}`}
+                              >
+                                {client?.client_type === 'pessoa_fisica' ? <User className="w-5 h-5" /> : <Building2 className="w-5 h-5" />}
+                              </div>
+                              <div>
+                                <div className="text-sm font-medium text-gray-900">{client?.full_name || 'Cliente removido'}</div>
+                                <div className="flex flex-wrap gap-2 mt-1 text-xs text-gray-500">
+                                  <span className="inline-flex items-center gap-1">
+                                    Área: <span className="font-medium">{PRACTICE_AREAS.find((area) => area.key === process.practice_area)?.label ?? process.practice_area}</span>
+                                  </span>
+                                  {process.responsible_lawyer && (
+                                    <span className="inline-flex items-center gap-1">
+                                      Advogado: <span className="font-medium">{process.responsible_lawyer}</span>
+                                    </span>
+                                  )}
+                                </div>
+                              </div>
                             </div>
-                            <div className="flex flex-wrap gap-2 mt-1 text-xs text-gray-500">
-                              <span className="inline-flex items-center gap-1">
-                                Área:
-                                <span className="font-medium">
-                                  {PRACTICE_AREAS.find((area) => area.key === process.practice_area)?.label ?? process.practice_area}
-                                </span>
-                              </span>
-                              {process.responsible_lawyer && (
-                                <span className="inline-flex items-center gap-1">
-                                  Advogado:
-                                  <span className="font-medium">{process.responsible_lawyer}</span>
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap">
+                            <div className="flex items-center gap-2">
+                              <div className="text-sm font-mono text-gray-900">{process.process_code}</div>
+                              {process.djen_has_data && (
+                                <span className="px-2 py-0.5 text-xs font-medium bg-green-100 text-green-800 rounded-full" title="Dados sincronizados com DJEN">
+                                  ✓ DJEN
                                 </span>
                               )}
                             </div>
-                          </div>
-                        </div>
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap">
-                        <div className="flex items-center gap-2">
-                          <div className="text-sm font-mono text-gray-900">{process.process_code}</div>
-                          {process.djen_synced === false || (process.djen_synced && !process.djen_has_data) ? (
-                            <span className="px-2 py-0.5 text-xs font-medium bg-yellow-100 text-yellow-800 rounded-full" title="Aguardando dados do DJEN">
-                              ⏳ DJEN
-                            </span>
-                          ) : process.djen_has_data ? (
-                            <span className="px-2 py-0.5 text-xs font-medium bg-green-100 text-green-800 rounded-full" title="Dados sincronizados com DJEN">
-                              ✓ DJEN
-                            </span>
-                          ) : null}
-                        </div>
-                        {process.court && (
-                          <div className="text-xs text-gray-500 mt-1">{process.court}</div>
-                        )}
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                        {formatDate(process.distributed_at)}
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap">
-                        <span className={`px-3 py-1 inline-flex text-xs leading-5 font-semibold rounded-full ${getStatusBadge(process.status)}`}>
-                          {getStatusLabel(process.status)}
-                        </span>
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
-                        <div className="flex items-center justify-end gap-2">
-                          <button
-                            onClick={() => handleViewProcess(process)}
-                            className="text-blue-600 hover:text-blue-900 transition-colors"
-                            title="Ver detalhes"
-                          >
-                            <Eye className="w-5 h-5" />
-                          </button>
-                          <button
-                            onClick={() => handleOpenModal(process)}
-                            className="text-amber-600 hover:text-amber-900 transition-colors"
-                            title="Editar"
-                          >
-                            <Edit2 className="w-5 h-5" />
-                          </button>
-                          <button
-                            onClick={() => handleDeleteProcess(process.id)}
-                            className="text-red-600 hover:text-red-900 transition-colors"
-                            title="Excluir"
-                          >
-                            <Trash2 className="w-5 h-5" />
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
+                            {process.court && <div className="text-xs text-gray-500 mt-1">{process.court}</div>}
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{formatDate(process.distributed_at)}</td>
+                          <td className="px-6 py-4 whitespace-nowrap">
+                            <span className={`px-3 py-1 inline-flex text-xs leading-5 font-semibold rounded-full ${getStatusBadge(process.status)}`}>{getStatusLabel(process.status)}</span>
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
+                            <div className="flex items-center justify-end gap-2">
+                              <button onClick={() => handleViewProcess(process)} className="text-blue-600 hover:text-blue-900 transition-colors" title="Ver detalhes">
+                                <Eye className="w-5 h-5" />
+                              </button>
+                              <button onClick={() => handleOpenModal(process)} className="text-amber-600 hover:text-amber-900 transition-colors" title="Editar">
+                                <Edit2 className="w-5 h-5" />
+                              </button>
+                              <button onClick={() => handleDeleteProcess(process.id)} className="text-red-600 hover:text-red-900 transition-colors" title="Excluir">
+                                <Trash2 className="w-5 h-5" />
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
             </div>
           )}
         </div>
