@@ -55,7 +55,7 @@ const ProcessForm: React.FC<ProcessFormProps> = ({
       });
       // Buscar nome do cliente
       if (process.client_id) {
-        clientService.getClient(process.client_id).then(client => {
+        clientService.getClientById(process.client_id).then((client: Client | null) => {
           if (client) {
             setClientName(client.full_name);
             setClientSearchTerm(client.full_name);
@@ -75,7 +75,7 @@ const ProcessForm: React.FC<ProcessFormProps> = ({
       
       // Buscar nome do cliente se prefill tiver client_id
       if (prefill.client_id) {
-        clientService.getClient(prefill.client_id).then(client => {
+        clientService.getClientById(prefill.client_id).then((client: Client | null) => {
           if (client) {
             setClientName(client.full_name);
             setClientSearchTerm(client.full_name);
