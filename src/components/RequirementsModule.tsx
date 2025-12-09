@@ -1327,36 +1327,49 @@ const RequirementsModule: React.FC<RequirementsModuleProps> = ({ forceCreate, en
     return buildNoteThreads(parseNotes(selectedRequirementForView.notes));
   }, [selectedRequirementForView]);
 
-  const requirementModal = isModalOpen && (
-    <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center z-50 p-4 overflow-y-auto">
-      <div className="bg-white rounded-2xl shadow-2xl max-w-3xl w-full my-8 max-h-[90vh] overflow-y-auto">
-        <div className="px-6 py-4 border-b border-gray-200 flex items-center justify-between">
-          <div>
-            <h3 className="text-lg font-semibold text-slate-900">
-              {selectedRequirement ? 'Editar Requerimento' : 'Novo Requerimento'}
-            </h3>
-            <p className="text-sm text-slate-600">Cadastre os dados do requerimento administrativo.</p>
-          </div>
-          <button onClick={handleCloseModal} className="text-slate-400 hover:text-slate-600" title="Fechar">
-            <X className="w-5 h-5" />
-          </button>
-        </div>
+  const inputClass = "form-input flex w-full min-w-0 flex-1 resize-none overflow-hidden rounded-lg text-gray-900 focus:outline-0 focus:ring-2 focus:ring-[#2b8cee]/50 border border-gray-300 bg-white h-12 placeholder:text-gray-500 px-4 py-3 text-sm font-normal leading-normal";
+  const selectClass = "form-select flex w-full min-w-0 flex-1 resize-none overflow-hidden rounded-lg text-gray-900 focus:outline-0 focus:ring-2 focus:ring-[#2b8cee]/50 border border-gray-300 bg-white h-12 px-4 py-3 text-sm font-normal leading-normal";
+  const textareaClass = "form-input flex w-full min-w-0 flex-1 resize-none overflow-hidden rounded-lg text-gray-900 focus:outline-0 focus:ring-2 focus:ring-[#2b8cee]/50 border border-gray-300 bg-white min-h-20 placeholder:text-gray-500 px-4 py-3 text-sm font-normal leading-normal";
+  const labelClass = "text-gray-900 text-sm font-medium leading-normal pb-1";
 
-        <form onSubmit={handleSubmit} className="p-3 sm:p-6 space-y-3 sm:space-y-5">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-3 sm:gap-4">
-            <div>
-              <label className="text-sm font-medium text-slate-700">Protocolo do INSS *</label>
+  const requirementModal = isModalOpen && (
+    <div className="fixed inset-0 bg-gray-900/40 flex items-center justify-center z-50 p-4">
+      <div className="relative w-full max-w-4xl rounded-xl bg-white shadow-lg">
+        <form onSubmit={handleSubmit} className="flex flex-col p-5 gap-4">
+          {/* Header */}
+          <div className="flex flex-wrap justify-between gap-2">
+            <div className="flex flex-col">
+              <h1 className="text-gray-900 tracking-tight text-xl font-bold leading-tight">
+                {selectedRequirement ? 'Editar Requerimento' : 'Novo Requerimento'}
+              </h1>
+              <p className="text-gray-500 text-xs font-normal">Cadastre os dados do requerimento administrativo.</p>
+            </div>
+            <button 
+              type="button"
+              onClick={handleCloseModal} 
+              className="flex items-center justify-center h-8 w-8 rounded-full text-gray-500 hover:text-gray-800"
+            >
+              <X className="w-5 h-5" />
+            </button>
+          </div>
+
+          {/* Form Fields */}
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+            {/* Protocolo */}
+            <label className="flex flex-col w-full">
+              <p className={labelClass}>Protocolo do INSS *</p>
               <input
                 value={formData.protocol}
                 onChange={(event) => handleFormChange('protocol', event.target.value)}
-                className="input-field"
-                placeholder="Ex: 123456789"
+                className={inputClass}
+                placeholder="Digite o protocolo do INSS"
                 required
               />
-            </div>
+            </label>
 
-            <div>
-              <label className="text-sm font-medium text-slate-700">Beneficiário *</label>
+            {/* Beneficiário */}
+            <label className="flex flex-col w-full">
+              <p className={labelClass}>Beneficiário *</p>
               <div className="relative">
                 <input
                   value={beneficiarySearchTerm}
@@ -1371,25 +1384,25 @@ const RequirementsModule: React.FC<RequirementsModuleProps> = ({ forceCreate, en
                   }}
                   onFocus={() => setShowBeneficiarySuggestions(true)}
                   onBlur={() => setTimeout(() => setShowBeneficiarySuggestions(false), 150)}
-                  className="input-field"
-                  placeholder="Digite para buscar clientes"
+                  className={inputClass}
+                  placeholder="Digite o nome do beneficiário"
                   required
                 />
                 {clientsLoading && (
-                  <Loader2 className="w-4 h-4 text-blue-500 absolute right-3 top-1/2 -translate-y-1/2 animate-spin" />
+                  <Loader2 className="w-4 h-4 text-[#2b8cee] absolute right-4 top-1/2 -translate-y-1/2 animate-spin" />
                 )}
                 {showBeneficiarySuggestions && (
-                  <div className="absolute mt-2 w-full bg-white border border-slate-200 rounded-xl shadow-lg max-h-60 overflow-y-auto z-10">
+                  <div className="absolute mt-2 w-full bg-white border border-gray-200 rounded-lg shadow-lg max-h-60 overflow-y-auto z-10">
                     {clientsLoading ? (
-                      <div className="px-4 py-3 text-sm text-slate-500">Buscando clientes...</div>
+                      <div className="px-4 py-3 text-sm text-gray-500">Buscando clientes...</div>
                     ) : clients.length === 0 ? (
-                      <div className="px-4 py-3 text-xs text-slate-500">Nenhum cliente encontrado.</div>
+                      <div className="px-4 py-3 text-sm text-gray-500">Nenhum cliente encontrado.</div>
                     ) : (
                       clients.map((client) => (
                         <button
                           type="button"
                           key={client.id}
-                          className="w-full text-left px-4 py-3 text-sm hover:bg-slate-50 transition"
+                          className="w-full text-left px-4 py-3 text-sm hover:bg-gray-50 transition"
                           onMouseDown={(event) => event.preventDefault()}
                           onClick={() => {
                             handleFormChange('beneficiary', client.full_name);
@@ -1405,8 +1418,8 @@ const RequirementsModule: React.FC<RequirementsModuleProps> = ({ forceCreate, en
                             setShowBeneficiarySuggestions(false);
                           }}
                         >
-                          <div className="font-semibold text-slate-800">{client.full_name}</div>
-                          <div className="text-xs text-slate-500">
+                          <div className="font-semibold text-gray-800">{client.full_name}</div>
+                          <div className="text-xs text-gray-500">
                             {client.cpf_cnpj ? formatCPF(client.cpf_cnpj) : 'CPF não informado'} • {client.email || 'Sem e-mail'}
                           </div>
                         </button>
@@ -1415,133 +1428,135 @@ const RequirementsModule: React.FC<RequirementsModuleProps> = ({ forceCreate, en
                   </div>
                 )}
               </div>
-            </div>
+            </label>
 
-            <div>
-              <label className="text-sm font-medium text-slate-700">CPF *</label>
+            {/* CPF */}
+            <label className="flex flex-col w-full">
+              <p className={labelClass}>CPF *</p>
               <input
                 value={formData.cpf}
                 onChange={(event) => handleFormChange('cpf', event.target.value)}
-                className="input-field"
+                className={inputClass}
                 placeholder="000.000.000-00"
                 maxLength={14}
                 required
               />
-            </div>
+            </label>
 
-            <div>
-              <label className="text-sm font-medium text-slate-700">Tipo de Benefício</label>
+            {/* Tipo de Benefício */}
+            <label className="flex flex-col w-full">
+              <p className={labelClass}>Tipo de Benefício</p>
               <select
                 value={formData.benefit_type}
                 onChange={(event) => handleFormChange('benefit_type', event.target.value as BenefitType | '')}
-                className="input-field"
+                className={selectClass}
               >
-                <option value="" disabled>
-                  Selecione o tipo de benefício
-                </option>
+                <option value="" disabled>Selecione o tipo de benefício</option>
                 {BENEFIT_TYPES.map((type) => (
-                  <option key={type.key} value={type.key}>
-                    {type.label}
-                  </option>
+                  <option key={type.key} value={type.key}>{type.label}</option>
                 ))}
               </select>
-            </div>
+            </label>
 
-            <div>
-              <label className="text-sm font-medium text-slate-700">Status</label>
+            {/* Status */}
+            <label className="flex flex-col w-full">
+              <p className={labelClass}>Status</p>
               <select
                 value={formData.status}
                 onChange={(event) => handleFormChange('status', event.target.value as RequirementStatus)}
-                className="input-field"
+                className={selectClass}
               >
                 {STATUS_OPTIONS.map((status) => (
-                  <option key={status.key} value={status.key}>
-                    {status.label}
-                  </option>
+                  <option key={status.key} value={status.key}>{status.label}</option>
                 ))}
               </select>
-            </div>
+            </label>
 
-            {formData.status === 'em_exigencia' && (
-              <div>
-                <label className="text-sm font-medium text-slate-700">Prazo da Exigência</label>
-                <input
-                  type="date"
-                  value={formData.exigency_due_date}
-                  onChange={(event) => handleFormChange('exigency_due_date', event.target.value)}
-                  className="input-field"
-                />
-              </div>
-            )}
-
-            <div>
-              <label className="text-sm font-medium text-slate-700">Data de Entrada</label>
+            {/* Data de Entrada */}
+            <label className="flex flex-col w-full">
+              <p className={labelClass}>Data de Entrada</p>
               <input
                 type="date"
                 value={formData.entry_date}
                 onChange={(event) => handleFormChange('entry_date', event.target.value)}
-                className="input-field"
+                className={inputClass}
               />
-            </div>
+            </label>
 
-            <div>
-              <label className="text-sm font-medium text-slate-700">Telefone</label>
+            {/* Prazo da Exigência (condicional) */}
+            {formData.status === 'em_exigencia' && (
+              <label className="flex flex-col w-full">
+                <p className={labelClass}>Prazo da Exigência</p>
+                <input
+                  type="date"
+                  value={formData.exigency_due_date}
+                  onChange={(event) => handleFormChange('exigency_due_date', event.target.value)}
+                  className={inputClass}
+                />
+              </label>
+            )}
+
+            {/* Telefone */}
+            <label className="flex flex-col w-full">
+              <p className={labelClass}>Telefone</p>
               <input
                 value={formData.phone}
                 onChange={(event) => handleFormChange('phone', event.target.value)}
-                className="input-field"
+                className={inputClass}
                 placeholder="(00) 00000-0000"
                 maxLength={15}
               />
-            </div>
+            </label>
 
-            <div>
-              <label className="text-sm font-medium text-slate-700">Senha do INSS</label>
+            {/* Senha do INSS */}
+            <label className="flex flex-col w-full">
+              <p className={labelClass}>Senha do INSS</p>
               <input
                 type="text"
                 value={formData.inss_password}
                 onChange={(event) => handleFormChange('inss_password', event.target.value)}
-                className="input-field"
-                placeholder="Senha de acesso ao INSS"
+                className={inputClass}
+                placeholder="Digite a senha do INSS"
               />
-            </div>
+            </label>
+
+            {/* Observações */}
+            <label className="flex flex-col w-full col-span-2">
+              <p className={labelClass}>Observações</p>
+              <textarea
+                value={formData.observations}
+                onChange={(event) => handleFormChange('observations', event.target.value)}
+                className={textareaClass}
+                placeholder="Digite as observações"
+              />
+            </label>
+
+            {/* Notas Internas */}
+            <label className="flex flex-col w-full col-span-2">
+              <p className={labelClass}>Notas Internas</p>
+              <textarea
+                value={formData.notes}
+                onChange={(event) => handleFormChange('notes', event.target.value)}
+                className={textareaClass}
+                placeholder="Digite as notas internas"
+              />
+            </label>
           </div>
 
-          <div>
-            <label className="text-sm font-medium text-slate-700">Observações</label>
-            <textarea
-              value={formData.observations}
-              onChange={(event) => handleFormChange('observations', event.target.value)}
-              rows={3}
-              className="input-field"
-              placeholder="Informações adicionais sobre o requerimento"
-            />
-          </div>
-
-          <div>
-            <label className="text-sm font-medium text-slate-700">Notas Internas</label>
-            <textarea
-              value={formData.notes}
-              onChange={(event) => handleFormChange('notes', event.target.value)}
-              rows={3}
-              className="input-field"
-              placeholder="Anotações internas sobre o requerimento"
-            />
-          </div>
-
-          <div className="flex flex-col sm:flex-row justify-end gap-2 sm:gap-3 pt-2">
+          {/* Buttons */}
+          <div className="flex justify-end gap-3 pt-2 border-t border-gray-200">
             <button
               type="button"
               onClick={handleCloseModal}
-              className="px-4 py-2.5 rounded-lg text-sm font-medium text-slate-600 bg-slate-100 hover:bg-slate-200 transition"
               disabled={saving}
+              className="flex min-w-[84px] cursor-pointer items-center justify-center rounded-lg h-9 px-4 bg-gray-100 text-gray-900 text-sm font-semibold hover:bg-gray-200 disabled:opacity-50"
             >
               Cancelar
             </button>
             <button
               type="submit"
               disabled={saving}
-              className="px-3 sm:px-4 py-2 sm:py-2.5 rounded-lg text-xs sm:text-sm font-semibold text-white bg-blue-600 hover:bg-blue-700 transition flex items-center justify-center gap-2 w-full sm:w-auto"
+              className="flex min-w-[84px] cursor-pointer items-center justify-center rounded-lg h-9 px-4 bg-[#2b8cee] text-white text-sm font-semibold hover:bg-[#2b8cee]/90 disabled:opacity-50 gap-2"
             >
               {saving && <Loader2 className="w-4 h-4 animate-spin" />}
               {selectedRequirement ? 'Salvar alterações' : 'Criar requerimento'}

@@ -27,6 +27,7 @@ import * as XLSX from 'xlsx';
 import { processService } from '../services/process.service';
 import { clientService } from '../services/client.service';
 import { profileService } from '../services/profile.service';
+import { settingsService } from '../services/settings.service';
 import { djenService } from '../services/djen.service';
 import { processDjenSyncService } from '../services/processDjenSync.service';
 import { processTimelineService, type TimelineEvent } from '../services/processTimeline.service';
@@ -456,7 +457,8 @@ const ProcessesModule: React.FC<ProcessesModuleProps> = ({ forceCreate, entityId
     let active = true;
     const loadMembers = async () => {
       try {
-        const data = await profileService.listMembers();
+        // Usar settingsService.listUsers() que filtra is_active = true
+        const data = await settingsService.listUsers();
         if (!active) return;
         setMembers(data);
       } catch (err) {
@@ -1322,26 +1324,26 @@ const ProcessesModule: React.FC<ProcessesModuleProps> = ({ forceCreate, entityId
   }, [selectedProcessForView]);
 
   const inputStyle =
-    'w-full h-10 px-3 rounded-lg text-sm bg-white dark:bg-zinc-800 border border-zinc-300 dark:border-zinc-600 text-zinc-900 dark:text-white placeholder:text-zinc-400 focus:outline-none focus:ring-1 focus:ring-amber-500 focus:border-amber-500 transition-colors';
-  const labelStyle = 'block text-xs text-zinc-500 dark:text-zinc-400 mb-1.5';
+    'w-full h-11 px-3 py-2 rounded-lg text-sm leading-normal bg-white dark:bg-zinc-800 border border-zinc-300 dark:border-zinc-600 text-zinc-900 dark:text-white placeholder:text-zinc-400 focus:outline-none focus:ring-1 focus:ring-amber-500 focus:border-amber-500 transition-colors';
+  const labelStyle = 'block text-sm text-zinc-600 dark:text-zinc-300 mb-1';
 
   const processModal = isModalOpen && (
     <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4">
-      <div className="w-full max-w-2xl bg-white dark:bg-zinc-900 rounded-2xl shadow-2xl overflow-hidden">
-        <div className="flex justify-between items-center px-6 py-4 border-b border-zinc-200 dark:border-zinc-800">
-          <h1 className="text-lg font-semibold text-zinc-900 dark:text-white">
+      <div className="w-full max-w-[75%] bg-white dark:bg-zinc-900 rounded-xl shadow-2xl flex flex-col max-h-[90vh]">
+        <div className="flex justify-between items-center px-4 py-3 border-b border-zinc-200 dark:border-zinc-800">
+          <h1 className="text-base font-semibold text-zinc-900 dark:text-white">
             {selectedProcess ? 'Editar Processo' : 'Novo Processo'}
           </h1>
           <button
             onClick={handleCloseModal}
-            className="p-1 text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300 rounded-lg hover:bg-zinc-100 dark:hover:bg-zinc-800"
+            className="p-1 text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300 rounded-lg"
           >
-            <X className="w-5 h-5" />
+            <X className="w-4 h-4" />
           </button>
         </div>
 
-        <form onSubmit={handleSubmit}>
-          <div className="p-6 space-y-5 max-h-[70vh] overflow-y-auto">
+        <form onSubmit={handleSubmit} className="flex flex-col h-full">
+          <div className="p-4 space-y-3 flex-1 overflow-y-auto min-h-0">
             <ClientSearchSelect
               value={formData.client_id}
               onChange={(clientId, clientName) => {
@@ -1386,7 +1388,7 @@ const ProcessesModule: React.FC<ProcessesModuleProps> = ({ forceCreate, entityId
               )}
             </div>
 
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-4 gap-2">
               <div>
                 <label className={labelStyle}>Área</label>
                 <select
@@ -1415,9 +1417,6 @@ const ProcessesModule: React.FC<ProcessesModuleProps> = ({ forceCreate, entityId
                   ))}
                 </select>
               </div>
-            </div>
-
-            <div className="grid grid-cols-2 gap-4">
               <div>
                 <label className={labelStyle}>Distribuição</label>
                 <input
@@ -1437,27 +1436,26 @@ const ProcessesModule: React.FC<ProcessesModuleProps> = ({ forceCreate, entityId
               </div>
             </div>
 
-            <div>
-              <label className={labelStyle}>Advogado Responsável</label>
-              <select
-                value={formData.responsible_lawyer_id}
-                onChange={(e) => {
-                  handleFormChange('responsible_lawyer_id', e.target.value);
-                  const m = memberMap.get(e.target.value);
-                  if (m) handleFormChange('responsible_lawyer', m.name);
-                }}
-                className={inputStyle}
-              >
-                <option value="">Selecione</option>
-                {members.map((m) => (
-                  <option key={m.id} value={m.id}>
-                    {m.name}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            <div className="grid grid-cols-4 gap-4">
+            <div className="grid grid-cols-4 gap-2">
+              <div>
+                <label className={labelStyle}>Advogado</label>
+                <select
+                  value={formData.responsible_lawyer_id}
+                  onChange={(e) => {
+                    handleFormChange('responsible_lawyer_id', e.target.value);
+                    const m = memberMap.get(e.target.value);
+                    if (m) handleFormChange('responsible_lawyer', m.name);
+                  }}
+                  className={inputStyle}
+                >
+                  <option value="">Selecione</option>
+                  {members.map((m) => (
+                    <option key={m.id} value={m.id}>
+                      {m.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
               <div>
                 <label className={labelStyle}>Audiência</label>
                 <select
@@ -1489,18 +1487,20 @@ const ProcessesModule: React.FC<ProcessesModuleProps> = ({ forceCreate, entityId
                       className={inputStyle}
                     />
                   </div>
-                  <div>
-                    <label className={labelStyle}>Modo</label>
-                    <select
-                      value={formData.hearing_mode}
-                      onChange={(e) => handleFormChange('hearing_mode', e.target.value as HearingMode)}
-                      className={inputStyle}
-                    >
-                      <option value="presencial">Presencial</option>
-                      <option value="online">Online</option>
-                    </select>
-                  </div>
                 </>
+              )}
+              {formData.hearing_scheduled === 'sim' && (
+                <div>
+                  <label className={labelStyle}>Modo</label>
+                  <select
+                    value={formData.hearing_mode}
+                    onChange={(e) => handleFormChange('hearing_mode', e.target.value as HearingMode)}
+                    className={inputStyle}
+                  >
+                    <option value="presencial">Presencial</option>
+                    <option value="online">Online</option>
+                  </select>
+                </div>
               )}
             </div>
 
@@ -1509,27 +1509,27 @@ const ProcessesModule: React.FC<ProcessesModuleProps> = ({ forceCreate, entityId
               <textarea
                 value={formData.notes}
                 onChange={(e) => handleFormChange('notes', e.target.value)}
-                className={`${inputStyle} h-20 resize-none`}
-                placeholder="Notas internas..."
+                className={`${inputStyle} h-16 resize-none`}
+                placeholder=""
               />
             </div>
           </div>
 
-          <div className="flex justify-end gap-3 px-6 py-4 border-t border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-800/50">
+          <div className="flex justify-end gap-2 px-4 py-2 border-t border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-800/50">
             <button
               type="button"
               onClick={handleCloseModal}
               disabled={saving}
-              className="px-4 py-2 text-sm text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-white"
+              className="px-3 py-1.5 text-xs text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-white"
             >
               Cancelar
             </button>
             <button
               type="submit"
               disabled={saving}
-              className="px-5 py-2 bg-amber-500 hover:bg-amber-600 text-white text-sm font-medium rounded-lg flex items-center gap-2"
+              className="px-3 py-1.5 bg-amber-500 hover:bg-amber-600 text-white text-xs font-medium rounded-md flex items-center gap-1"
             >
-              {saving && <Loader2 className="w-4 h-4 animate-spin" />}
+              {saving && <Loader2 className="w-3 h-3 animate-spin" />}
               Salvar
             </button>
           </div>

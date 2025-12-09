@@ -28,7 +28,7 @@ import {
 import Login from './components/Login';
 import OfflinePage from './components/OfflinePage';
 import ProfileModal, { AppProfile, UserRole } from './components/ProfileModal';
-import { ClientFormModal } from './components/ClientFormModal';
+// import { ClientFormModal } from './components/ClientFormModal';
 import { NotificationCenterNew as NotificationCenter } from './components/NotificationCenterNew';
 import { NotificationPermissionBanner } from './components/NotificationPermissionBanner';
 import SessionWarning from './components/SessionWarning';
@@ -167,8 +167,8 @@ function App() {
   const [clientSearchResults, setClientSearchResults] = useState<ClientSearchResult[]>([]);
   const [clientSearchLoading, setClientSearchLoading] = useState(false);
   const [clientSearchOpen, setClientSearchOpen] = useState(false);
-  const [isClientFormModalOpen, setIsClientFormModalOpen] = useState(false);
-  const [clientFormPrefill, setClientFormPrefill] = useState<Partial<CreateClientDTO> | null>(null);
+  // const [isClientFormModalOpen, setIsClientFormModalOpen] = useState(false);
+  // const [clientFormPrefill, setClientFormPrefill] = useState<Partial<CreateClientDTO> | null>(null);
   const unreadCount = useMemo(() => notifications.filter((n) => !n.read).length, [notifications]);
 
   const clientsParams = useMemo(() => {
@@ -915,9 +915,8 @@ function App() {
                             type="button"
                             onMouseDown={(event) => event.preventDefault()}
                             onClick={() => {
+                              // fluxo de novo cliente agora é pelo módulo Clientes; evitar modal duplicado
                               setClientSearchOpen(false);
-                              setClientFormPrefill({ full_name: clientSearchTerm });
-                              setIsClientFormModalOpen(true);
                               setClientSearchTerm('');
                             }}
                             className="w-full text-left px-3 py-2.5 hover:bg-emerald-50 transition border-t border-slate-100 flex items-center gap-2 text-emerald-600 font-medium"
@@ -950,9 +949,8 @@ function App() {
                           type="button"
                           onMouseDown={(event) => event.preventDefault()}
                           onClick={() => {
+                            // fluxo de novo cliente agora é pelo módulo Clientes; evitar modal duplicado
                             setClientSearchOpen(false);
-                            setClientFormPrefill(null);
-                            setIsClientFormModalOpen(true);
                             setClientSearchTerm('');
                           }}
                           className="w-full text-left px-3 py-2 hover:bg-emerald-50 transition border-t border-slate-100 flex items-center gap-2 text-emerald-600 font-medium"
@@ -1174,21 +1172,7 @@ function App() {
           onProfileUpdate={handleProfileUpdate}
         />
 
-        {/* Client Form Modal */}
-        <ClientFormModal
-          isOpen={isClientFormModalOpen}
-          onClose={() => {
-            setIsClientFormModalOpen(false);
-            setClientFormPrefill(null);
-          }}
-          onClientCreated={(clientId, clientName) => {
-            console.log('✅ Cliente criado:', clientId, clientName);
-            // Apenas fecha o modal, permanece na mesma tela
-            setIsClientFormModalOpen(false);
-            setClientFormPrefill(null);
-          }}
-          prefillData={clientFormPrefill || undefined}
-        />
+        {/* ClientFormModal removido para evitar overlay duplicado; usar fluxo do módulo Clientes */}
       </div>
       </div>
     </CacheProvider>

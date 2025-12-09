@@ -1,15 +1,14 @@
 import React, { useState, useEffect } from 'react';
-import { X, Save, User, Building2 } from 'lucide-react';
+import { X, Save, Calendar } from 'lucide-react';
 import { clientService } from '../services/client.service';
 import type { Client, CreateClientDTO, ClientType, MaritalStatus } from '../types/client.types';
 
-// Estilos minimalistas
+// Estilos compactos para página
 const inputClass =
-  'w-full h-10 px-3 rounded-lg text-sm bg-white dark:bg-zinc-800 border border-zinc-300 dark:border-zinc-600 ' +
-  'text-zinc-900 dark:text-white placeholder:text-zinc-400 ' +
-  'focus:outline-none focus:ring-1 focus:ring-emerald-500 focus:border-emerald-500 transition-colors';
+  'w-full px-3 py-2 rounded-md border border-slate-200 bg-slate-50 text-sm text-slate-800 ' +
+  'placeholder-slate-400 focus:outline-0 focus:ring-1 focus:ring-orange-500 focus:border-orange-500';
 
-const labelClass = 'block text-xs text-zinc-500 dark:text-zinc-400 mb-1.5';
+const labelClass = 'block text-xs font-medium text-slate-500 mb-1';
 
 interface ClientFormProps {
   client: Client | null;
@@ -290,167 +289,215 @@ const ClientForm: React.FC<ClientFormProps> = ({
   const isPessoaFisica = formData.client_type === 'pessoa_fisica';
 
   return (
-    <div className="w-full max-w-4xl mx-auto bg-white dark:bg-[#1a1a1a] rounded-xl shadow-xl overflow-hidden flex flex-col max-h-[90vh]">
-      {/* HEADER */}
-      <div className="flex justify-between items-center px-6 py-5 border-b border-zinc-200 dark:border-zinc-800">
-        <div>
-          <h1 className="text-xl font-semibold text-zinc-900 dark:text-white">
-            {client ? 'Editar Cliente' : 'Novo Cliente'}
-          </h1>
-          <p className="text-sm text-zinc-500 mt-0.5">Preencha os dados para cadastrar</p>
-        </div>
-        <button type="button" onClick={onBack} className="text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300">
-          <X className="w-5 h-5" />
-        </button>
+    <div className="w-full min-h-full bg-white font-display">
+      {/* Top Orange Stripe */}
+      <div className="h-1 w-full bg-orange-500" />
+      
+      {/* Header */}
+      <div className="px-4 py-3 border-b border-slate-200">
+        <h1 className="text-lg font-bold text-slate-900">
+          {client ? 'Editar Cliente' : 'Novo Cliente'}
+        </h1>
+        <p className="text-xs text-slate-500">Preencha os dados para cadastrar</p>
       </div>
 
-      <form onSubmit={handleSubmit} className="flex flex-col flex-1 min-h-0">
-        <div className="p-6 space-y-6 overflow-y-auto flex-1">
+      <form
+        id="client-form"
+        onSubmit={handleSubmit}
+        className="flex flex-col min-h-[calc(100vh-64px)]"
+      >
+        {/* Body - compacto */}
+        <div className="px-4 py-4 space-y-4 flex-1">
           
-          {/* TIPO DE CLIENTE */}
-          <div className="flex gap-3">
-            <button
-              type="button"
-              onClick={() => handleChange('client_type', 'pessoa_fisica' as ClientType)}
-              className={`flex-1 py-3 rounded-lg text-sm font-medium transition-all ${
-                isPessoaFisica
-                  ? 'bg-emerald-500 text-white dark:bg-red-500 dark:text-white'
-                  : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-300 hover:bg-zinc-200 dark:hover:bg-zinc-700'
-              }`}
-            >
-              Pessoa Física
-            </button>
-            <button
-              type="button"
-              onClick={() => handleChange('client_type', 'pessoa_juridica' as ClientType)}
-              className={`flex-1 py-3 rounded-lg text-sm font-medium transition-all ${
-                !isPessoaFisica
-                  ? 'bg-emerald-500 text-white dark:bg-red-500 dark:text-white'
-                  : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-300 hover:bg-zinc-200 dark:hover:bg-zinc-700'
-              }`}
-            >
-              Pessoa Jurídica
-            </button>
-          </div>
-
-          {/* DADOS PRINCIPAIS */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div className="md:col-span-2">
-              <label className={labelClass}>{isPessoaFisica ? 'Nome Completo' : 'Razão Social'}</label>
-              <input type="text" required className={inputClass} value={formData.full_name} onChange={(e) => handleChange('full_name', e.target.value)} placeholder={isPessoaFisica ? 'Nome completo' : 'Razão social'} />
-            </div>
-            <div>
-              <label className={labelClass}>{isPessoaFisica ? 'CPF' : 'CNPJ'}</label>
-              <input type="text" className={inputClass} value={formData.cpf_cnpj} onChange={(e) => handleChange('cpf_cnpj', isPessoaFisica ? applyCpfMask(e.target.value) : applyCnpjMask(e.target.value))} placeholder={isPessoaFisica ? '000.000.000-00' : '00.000.000/0000-00'} maxLength={isPessoaFisica ? 14 : 18} />
-            </div>
-            {isPessoaFisica && (
-              <div>
-                <label className={labelClass}>RG</label>
-                <input type="text" className={inputClass} value={formData.rg} onChange={(e) => handleChange('rg', e.target.value)} placeholder="" />
-              </div>
-            )}
-            <div>
-              <label className={labelClass}>Email</label>
-              <input type="email" className={inputClass} value={formData.email} onChange={(e) => handleChange('email', e.target.value)} placeholder="email@exemplo.com" />
-            </div>
-            <div>
-              <label className={labelClass}>Telefone</label>
-              <input type="tel" className={inputClass} value={formData.phone} onChange={(e) => handleChange('phone', applyPhoneMask(e.target.value))} placeholder="(00) 0 0000-0000" maxLength={16} />
+          {/* Client Type - inline */}
+          <div className="flex gap-4 items-center">
+            <span className="text-xs font-medium text-slate-500">Tipo:</span>
+            <div className="flex p-0.5 rounded-md bg-slate-100">
+              <button
+                type="button"
+                onClick={() => handleChange('client_type', 'pessoa_fisica' as ClientType)}
+                className={`px-3 py-1 text-xs font-medium rounded transition-all ${
+                  isPessoaFisica
+                    ? 'bg-orange-500 text-white'
+                    : 'text-slate-600 hover:bg-white/60'
+                }`}
+              >
+                Pessoa Física
+              </button>
+              <button
+                type="button"
+                onClick={() => handleChange('client_type', 'pessoa_juridica' as ClientType)}
+                className={`px-3 py-1 text-xs font-medium rounded transition-all ${
+                  !isPessoaFisica
+                    ? 'bg-orange-500 text-white'
+                    : 'text-slate-600 hover:bg-white/60'
+                }`}
+              >
+                Pessoa Jurídica
+              </button>
             </div>
           </div>
 
-          {/* DADOS PESSOAIS (apenas PF) */}
-          {isPessoaFisica && (
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-              <div>
-                <label className={labelClass}>Nascimento</label>
-                <input type="date" className={inputClass} value={formData.birth_date} onChange={(e) => handleChange('birth_date', e.target.value)} />
-              </div>
-              <div>
-                <label className={labelClass}>Estado Civil</label>
-                <select className={inputClass} value={formData.marital_status || ''} onChange={(e) => handleChange('marital_status', e.target.value as MaritalStatus)}>
-                  <option value="">Selecione</option>
-                  <option value="solteiro">Solteiro(a)</option>
-                  <option value="casado">Casado(a)</option>
-                  <option value="divorciado">Divorciado(a)</option>
-                  <option value="viuvo">Viúvo(a)</option>
-                  <option value="uniao_estavel">União Estável</option>
-                </select>
-              </div>
-              <div>
-                <label className={labelClass}>Nacionalidade</label>
-                <input type="text" className={inputClass} value={formData.nationality} onChange={(e) => handleChange('nationality', e.target.value)} placeholder="Brasileiro(a)" />
-              </div>
-              <div>
-                <label className={labelClass}>Profissão</label>
-                <input type="text" className={inputClass} value={formData.profession} onChange={(e) => handleChange('profession', e.target.value)} placeholder="" />
-              </div>
+          {/* Personal Data Section */}
+          <div className="space-y-2">
+            <h2 className="text-xs font-bold tracking-wider uppercase text-slate-500">Dados Pessoais</h2>
+            <div className="grid grid-cols-2 md:grid-cols-6 gap-3">
+              {/* Linha 1: Nome | Nascimento | CPF | RG */}
+              <label className="flex flex-col col-span-2 md:col-span-3">
+                <span className={labelClass}>{isPessoaFisica ? 'Nome Completo' : 'Razão Social'}</span>
+                <input type="text" required className={inputClass} value={formData.full_name} onChange={(e) => handleChange('full_name', e.target.value)} placeholder="" />
+              </label>
+              {isPessoaFisica && (
+                <label className="flex flex-col">
+                  <span className={labelClass}>Nascimento</span>
+                  <input
+                    type="date"
+                    className={`${inputClass} appearance-none [&::-webkit-calendar-picker-indicator]:hidden [&::-webkit-inner-spin-button]:hidden [&::-webkit-clear-button]:hidden`}
+                    value={formData.birth_date}
+                    onChange={(e) => handleChange('birth_date', e.target.value)}
+                  />
+                </label>
+              )}
+              <label className="flex flex-col">
+                <span className={labelClass}>{isPessoaFisica ? 'CPF' : 'CNPJ'}</span>
+                <input type="text" className={inputClass} value={formData.cpf_cnpj} onChange={(e) => handleChange('cpf_cnpj', isPessoaFisica ? applyCpfMask(e.target.value) : applyCnpjMask(e.target.value))} placeholder="" maxLength={isPessoaFisica ? 14 : 18} />
+              </label>
+              {isPessoaFisica && (
+                <label className="flex flex-col">
+                  <span className={labelClass}>RG</span>
+                  <input type="text" className={inputClass} value={formData.rg} onChange={(e) => handleChange('rg', e.target.value)} placeholder="" />
+                </label>
+              )}
+              {/* Linha 2: Estado Civil | Email | Telefone */}
+              {isPessoaFisica && (
+                <label className="flex flex-col">
+                  <span className={labelClass}>Estado Civil</span>
+                  <select
+                    className={`${inputClass} appearance-none`}
+                    value={formData.marital_status || ''}
+                    onChange={(e) => handleChange('marital_status', e.target.value as MaritalStatus)}
+                  >
+                    <option value="">Selecione</option>
+                    <option value="solteiro">Solteiro(a)</option>
+                    <option value="casado">Casado(a)</option>
+                    <option value="divorciado">Divorciado(a)</option>
+                    <option value="viuvo">Viúvo(a)</option>
+                    <option value="uniao_estavel">União Estável</option>
+                  </select>
+                </label>
+              )}
+              <label className="flex flex-col col-span-2">
+                <span className={labelClass}>Email</span>
+                <input type="email" className={inputClass} value={formData.email} onChange={(e) => handleChange('email', e.target.value)} placeholder="" />
+              </label>
+              <label className="flex flex-col">
+                <span className={labelClass}>Telefone</span>
+                <input type="tel" className={inputClass} value={formData.phone} onChange={(e) => handleChange('phone', applyPhoneMask(e.target.value))} placeholder="" maxLength={16} />
+              </label>
             </div>
-          )}
+          </div>
 
-          {/* ENDEREÇO */}
-          <div className="pt-4 border-t border-zinc-200 dark:border-zinc-800">
-            <div className="flex items-center gap-2 mb-4">
-              <span className="text-sm font-medium text-zinc-700 dark:text-zinc-300">Endereço</span>
-              {cepError && <span className="text-xs text-red-500">{cepError}</span>}
-            </div>
-            <div className="grid grid-cols-2 md:grid-cols-6 gap-4">
-              <div className="relative">
-                <label className={labelClass}>CEP</label>
+          {/* Address Section */}
+          <div className="space-y-2">
+            <h3 className="text-xs font-bold tracking-wider uppercase text-slate-500">Endereço</h3>
+            {cepError && <span className="text-xs text-red-500 block">{cepError}</span>}
+            <div className="grid grid-cols-4 md:grid-cols-8 gap-3">
+              {/* Linha 1: CEP | Rua | Nº | Compl */}
+              <label className="flex flex-col">
+                <span className={labelClass}>CEP</span>
                 <input type="text" className={inputClass} value={formData.address_zip_code} onChange={(e) => handleChange('address_zip_code', e.target.value)} placeholder="" />
-                {isCepLoading && <div className="absolute right-3 top-8 h-4 w-4 animate-spin rounded-full border-2 border-emerald-500 border-t-transparent" />}
-              </div>
-              <div className="md:col-span-3">
-                <label className={labelClass}>Rua</label>
+              </label>
+              <label className="flex flex-col col-span-3 md:col-span-4">
+                <span className={labelClass}>Rua</span>
                 <input type="text" className={inputClass} value={formData.address_street} onChange={(e) => handleChange('address_street', e.target.value)} placeholder="" />
-              </div>
-              <div>
-                <label className={labelClass}>Nº</label>
+              </label>
+              <label className="flex flex-col">
+                <span className={labelClass}>Nº</span>
                 <input type="text" className={inputClass} value={formData.address_number} onChange={(e) => handleChange('address_number', e.target.value)} placeholder="" />
-              </div>
-              <div>
-                <label className={labelClass}>Compl.</label>
+              </label>
+              <label className="flex flex-col col-span-2">
+                <span className={labelClass}>Compl.</span>
                 <input type="text" className={inputClass} value={formData.address_complement} onChange={(e) => handleChange('address_complement', e.target.value)} placeholder="" />
-              </div>
-              <div className="md:col-span-2">
-                <label className={labelClass}>Bairro</label>
+              </label>
+              <label className="flex flex-col col-span-2">
+                <span className={labelClass}>Bairro</span>
                 <input type="text" className={inputClass} value={formData.address_neighborhood} onChange={(e) => handleChange('address_neighborhood', e.target.value)} placeholder="" />
-              </div>
-              <div className="md:col-span-3">
-                <label className={labelClass}>Cidade</label>
+              </label>
+              <label className="flex flex-col col-span-2 md:col-span-4">
+                <span className={labelClass}>Cidade</span>
                 <input type="text" className={inputClass} value={formData.address_city} onChange={(e) => handleChange('address_city', e.target.value)} placeholder="" />
-              </div>
-              <div>
-                <label className={labelClass}>UF</label>
-                <input type="text" className={`${inputClass} uppercase text-center`} value={formData.address_state} onChange={(e) => handleChange('address_state', e.target.value)} maxLength={2} placeholder="" />
-              </div>
+              </label>
+              <label className="flex flex-col">
+                <span className={labelClass}>UF</span>
+                <input type="text" className={`${inputClass} uppercase`} value={formData.address_state} onChange={(e) => handleChange('address_state', e.target.value)} maxLength={2} placeholder="" />
+              </label>
             </div>
           </div>
 
-          {/* STATUS E OBSERVAÇÕES */}
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <div>
-              <label className={labelClass}>Status</label>
-              <select className={inputClass} value={formData.status} onChange={(e) => handleChange('status', e.target.value)}>
-                <option value="ativo">Ativo</option>
-                <option value="inativo">Inativo</option>
-                <option value="suspenso">Suspenso</option>
-              </select>
-            </div>
-            <div className="md:col-span-2">
-              <label className={labelClass}>Observações</label>
-              <input type="text" className={inputClass} value={formData.notes} onChange={(e) => handleChange('notes', e.target.value)} placeholder="Notas adicionais..." />
+          {/* Status & Observations - inline */}
+          <div className="space-y-2">
+            <h3 className="text-xs font-bold tracking-wider uppercase text-slate-500">Status e Observações</h3>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+              <div className="flex flex-col">
+                <span className={labelClass}>Status</span>
+                <div className="flex p-0.5 rounded-md bg-slate-100">
+                  <button
+                    type="button"
+                    onClick={() => handleChange('status', 'ativo')}
+                    className={`flex-1 px-2 py-1 text-xs font-medium rounded transition-all ${
+                      formData.status === 'ativo'
+                        ? 'bg-orange-500 text-white'
+                        : 'text-slate-600 hover:bg-white/60'
+                    }`}
+                  >
+                    Ativo
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleChange('status', 'inativo')}
+                    className={`flex-1 px-2 py-1 text-xs font-medium rounded transition-all ${
+                      formData.status === 'inativo'
+                        ? 'bg-orange-500 text-white'
+                        : 'text-slate-600 hover:bg-white/60'
+                    }`}
+                  >
+                    Inativo
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleChange('status', 'suspenso')}
+                    className={`flex-1 px-2 py-1 text-xs font-medium rounded transition-all ${
+                      formData.status === 'suspenso'
+                        ? 'bg-orange-500 text-white'
+                        : 'text-slate-600 hover:bg-white/60'
+                    }`}
+                  >
+                    Suspenso
+                  </button>
+                </div>
+              </div>
+              <label className="flex flex-col md:col-span-2">
+                <span className={labelClass}>Observações</span>
+                <input type="text" className={inputClass} placeholder="" value={formData.notes} onChange={(e) => handleChange('notes', e.target.value)} />
+              </label>
             </div>
           </div>
         </div>
 
-        {/* FOOTER */}
-        <div className="flex justify-end gap-3 px-6 py-4 bg-zinc-50 dark:bg-zinc-900/50 border-t border-zinc-200 dark:border-zinc-800">
-          <button type="button" onClick={onBack} className="px-4 py-2 text-sm font-medium text-zinc-600 dark:text-zinc-400 hover:text-zinc-800 dark:hover:text-zinc-200 transition-colors">
+        {/* Footer fixo */}
+        <div className="sticky bottom-0 left-0 w-full bg-white border-t border-slate-200 px-4 py-3 flex justify-end gap-2">
+          <button
+            type="button"
+            onClick={onBack}
+            className="px-4 py-2 rounded-lg text-sm font-medium text-slate-600 hover:bg-slate-100 transition-colors"
+          >
             Cancelar
           </button>
-          <button type="submit" disabled={loading} className="flex items-center gap-2 px-5 py-2 bg-emerald-500 hover:bg-emerald-600 text-white text-sm font-medium rounded-lg transition-colors disabled:opacity-50">
-            <Save className="w-4 h-4" />
+          <button
+            type="submit"
+            disabled={loading}
+            className="px-4 py-2 rounded-lg text-sm font-medium text-white bg-orange-500 hover:bg-orange-600 transition-colors disabled:opacity-50"
+          >
             {loading ? 'Salvando...' : 'Salvar Cliente'}
           </button>
         </div>

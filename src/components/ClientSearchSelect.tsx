@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
-import { Search, Plus, X } from 'lucide-react';
+import { Plus, X } from 'lucide-react';
 import { clientService } from '../services/client.service';
-import { ClientFormModal } from './ClientFormModal';
+// import { ClientFormModal } from './ClientFormModal';
 import type { CreateClientDTO } from '../types/client.types';
 
 interface ClientSearchSelectProps {
@@ -30,8 +30,8 @@ export const ClientSearchSelect: React.FC<ClientSearchSelectProps> = ({
   const [searchLoading, setSearchLoading] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
   const [selectedClientName, setSelectedClientName] = useState('');
-  const [isClientFormModalOpen, setIsClientFormModalOpen] = useState(false);
-  const [clientFormPrefill, setClientFormPrefill] = useState<Partial<CreateClientDTO> | null>(null);
+  // const [isClientFormModalOpen, setIsClientFormModalOpen] = useState(false);
+  // const [clientFormPrefill, setClientFormPrefill] = useState<Partial<CreateClientDTO> | null>(null);
 
   // Carregar nome do cliente selecionado
   useEffect(() => {
@@ -94,18 +94,10 @@ export const ClientSearchSelect: React.FC<ClientSearchSelectProps> = ({
     setSearchTerm('');
   };
 
-  const handleCreateNew = (prefill?: Partial<CreateClientDTO>) => {
+  const handleCreateNew = (_prefill?: Partial<CreateClientDTO>) => {
+    // fluxo de novo cliente agora é pelo módulo Clientes; evitar modal duplicado
     setSearchOpen(false);
-    setClientFormPrefill(prefill || null);
-    setIsClientFormModalOpen(true);
     setSearchTerm('');
-  };
-
-  const handleClientCreated = (clientId: string, clientName: string) => {
-    onChange(clientId, clientName);
-    setSelectedClientName(clientName);
-    setIsClientFormModalOpen(false);
-    setClientFormPrefill(null);
   };
 
   return (
@@ -120,48 +112,43 @@ export const ClientSearchSelect: React.FC<ClientSearchSelectProps> = ({
       <div className="relative">
         {/* Campo de busca */}
         {!value && (
-          <>
-            <div className="absolute inset-y-0 left-3 flex items-center pointer-events-none text-slate-400">
-              <Search className="w-4 h-4" />
-            </div>
-            <input
-              type="text"
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              onFocus={() => setSearchOpen(true)}
-              onBlur={() => setTimeout(() => setSearchOpen(false), 200)}
-              placeholder={placeholder}
-              required={required}
-              className="w-full rounded-lg border border-slate-200 pl-9 pr-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-500 focus:border-amber-500"
-            />
-          </>
+          <input
+            type="text"
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            onFocus={() => setSearchOpen(true)}
+            onBlur={() => setTimeout(() => setSearchOpen(false), 200)}
+            placeholder={placeholder}
+            required={required}
+            className="w-full rounded-lg border border-zinc-200 dark:border-zinc-700/50 bg-white dark:bg-zinc-800 text-zinc-900 dark:text-white h-11 px-4 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/50 placeholder:text-zinc-500"
+          />
         )}
 
         {/* Cliente selecionado */}
         {value && selectedClientName && (
-          <div className="flex items-center justify-between w-full rounded-lg border border-slate-200 px-3 py-2 text-sm bg-white">
-            <span className="text-slate-900 font-medium truncate">{selectedClientName}</span>
+          <div className="flex items-center justify-between w-full rounded-lg border border-zinc-200 dark:border-zinc-700/50 h-11 px-4 text-sm bg-white dark:bg-zinc-800">
+            <span className="text-zinc-900 dark:text-white font-medium truncate">{selectedClientName}</span>
             <button
               type="button"
               onClick={handleClear}
-              className="ml-2 p-1 hover:bg-slate-100 rounded transition flex-shrink-0"
+              className="ml-2 p-1 hover:bg-zinc-100 dark:hover:bg-zinc-600 rounded transition flex-shrink-0"
               title="Remover seleção"
             >
-              <X className="w-4 h-4 text-slate-400" />
+              <X className="w-4 h-4 text-zinc-400" />
             </button>
           </div>
         )}
 
         {/* Dropdown de resultados */}
         {searchOpen && !value && (searchLoading || searchResults.length > 0 || searchTerm.trim().length >= 2) && (
-          <div className="absolute left-0 right-0 mt-1 bg-white border border-slate-200 rounded-lg shadow-lg z-50 max-h-60 overflow-y-auto">
+          <div className="client-search-dropdown absolute left-0 right-0 mt-1 rounded-lg shadow-xl z-[60] max-h-60 overflow-y-auto">
             {searchLoading && (
-              <div className="px-3 py-2 text-slate-500 text-sm">Buscando...</div>
+              <div className="px-3 py-2 text-slate-500 text-sm" style={{ background: '#ffffff' }}>Buscando...</div>
             )}
             
             {!searchLoading && searchResults.length === 0 && searchTerm.trim().length >= 2 && (
               <>
-                <div className="px-3 py-2 text-slate-400 text-sm border-b border-slate-100">
+                <div className="px-3 py-2 text-zinc-500 text-sm border-b border-zinc-100" style={{ background: '#ffffff' }}>
                   Nenhum cliente encontrado para "{searchTerm}"
                 </div>
                 {allowCreate && (
@@ -169,12 +156,13 @@ export const ClientSearchSelect: React.FC<ClientSearchSelectProps> = ({
                     type="button"
                     onMouseDown={(e) => e.preventDefault()}
                     onClick={() => handleCreateNew({ full_name: searchTerm })}
-                    className="w-full text-left px-3 py-2.5 hover:bg-emerald-50 transition flex items-center gap-2 text-emerald-600 font-medium"
+                    className="w-full text-left px-3 py-2.5 hover:bg-sky-50 transition flex items-center gap-2 text-sky-600 font-medium"
+                    style={{ background: '#ffffff' }}
                   >
                     <Plus className="w-4 h-4" />
                     <div>
                       <p className="text-sm font-semibold">Adicionar Novo Cliente</p>
-                      <p className="text-xs text-slate-500">Criar cadastro para "{searchTerm}"</p>
+                      <p className="text-xs text-zinc-500">Criar cadastro para "{searchTerm}"</p>
                     </div>
                   </button>
                 )}
@@ -189,10 +177,11 @@ export const ClientSearchSelect: React.FC<ClientSearchSelectProps> = ({
                   type="button"
                   onMouseDown={(e) => e.preventDefault()}
                   onClick={() => handleSelect(client)}
-                  className="w-full text-left px-3 py-2 hover:bg-amber-50 transition border-b border-slate-50 last:border-0"
+                  className="w-full text-left px-3 py-2.5 hover:bg-zinc-100 transition border-b border-zinc-100 last:border-0"
+                  style={{ background: '#ffffff', color: '#18181b' }}
                 >
-                  <p className="text-sm font-semibold text-slate-900 truncate">{client.full_name}</p>
-                  <p className="text-xs text-slate-500 truncate">{client.email || primaryPhone || 'Sem contato cadastrado'}</p>
+                  <p className="text-sm font-semibold truncate" style={{ color: '#18181b' }}>{client.full_name}</p>
+                  <p className="text-xs truncate" style={{ color: '#71717a' }}>{client.email || primaryPhone || 'Sem contato cadastrado'}</p>
                 </button>
               );
             })}
@@ -202,7 +191,8 @@ export const ClientSearchSelect: React.FC<ClientSearchSelectProps> = ({
                 type="button"
                 onMouseDown={(e) => e.preventDefault()}
                 onClick={() => handleCreateNew()}
-                className="w-full text-left px-3 py-2 hover:bg-emerald-50 transition border-t border-slate-100 flex items-center gap-2 text-emerald-600 font-medium"
+                className="w-full text-left px-3 py-2.5 hover:bg-sky-50 transition border-t border-zinc-200 flex items-center gap-2 text-sky-600 font-medium"
+                style={{ background: '#ffffff' }}
               >
                 <Plus className="w-4 h-4" />
                 <span className="text-sm font-semibold">Adicionar Novo Cliente</span>
@@ -212,16 +202,7 @@ export const ClientSearchSelect: React.FC<ClientSearchSelectProps> = ({
         )}
       </div>
 
-      {/* Client Form Modal */}
-      <ClientFormModal
-        isOpen={isClientFormModalOpen}
-        onClose={() => {
-          setIsClientFormModalOpen(false);
-          setClientFormPrefill(null);
-        }}
-        onClientCreated={handleClientCreated}
-        prefillData={clientFormPrefill || undefined}
-      />
+      {/* ClientFormModal removido para evitar overlay duplicado; usar fluxo do módulo Clientes */}
     </div>
   );
 };

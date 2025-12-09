@@ -39,6 +39,7 @@ import { processService } from '../services/process.service';
 import { requirementService } from '../services/requirement.service';
 import { clientService } from '../services/client.service';
 import { profileService } from '../services/profile.service';
+import { settingsService } from '../services/settings.service';
 import { ClientSearchSelect } from './ClientSearchSelect';
 import type { Deadline, DeadlineStatus, DeadlinePriority, DeadlineType } from '../types/deadline.types';
 import type { Process } from '../types/process.types';
@@ -821,7 +822,8 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
 
     const loadMembers = async () => {
       try {
-        const data = await profileService.listMembers();
+        // Usar settingsService.listUsers() que filtra is_active = true
+        const data = await settingsService.listUsers();
         if (!active) return;
         setMembers(data);
       } catch (err) {
@@ -1947,80 +1949,100 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
   );
 
   const deadlineModal = isModalOpen && (
-    <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center z-50 p-3 overflow-y-auto">
-      <div className="bg-white rounded-xl shadow-2xl max-w-2xl w-full my-6 max-h-[90vh] overflow-y-auto">
-        <div className="px-4 py-3 border-b border-gray-200 flex items-center justify-between">
-          <div>
-            <h3 className="text-base font-semibold text-slate-900">
-              {selectedDeadline ? 'Editar Prazo' : 'Novo Prazo'}
-            </h3>
-            <p className="text-xs text-slate-500">Cadastre prazos e vincule a processos ou requerimentos.</p>
+    <div className="fixed inset-0 bg-black/30 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+      <div className="bg-white shadow-2xl rounded-xl max-w-[85%] w-full mx-auto text-zinc-900 max-h-[90vh] flex flex-col">
+        {/* Header */}
+        <div className="px-4 py-3 border-b border-zinc-200 flex-shrink-0">
+          <div className="flex justify-between items-center">
+            <div>
+              <h2 className="text-base font-bold text-zinc-900">
+                {selectedDeadline ? 'Editar Prazo' : 'Novo Prazo'}
+              </h2>
+              <p className="text-zinc-500 text-xs">Cadastre prazos e vincule a processos</p>
+            </div>
+            <button 
+              onClick={handleCloseModal}
+              className="text-zinc-500 hover:text-zinc-900 transition-colors"
+            >
+              <X className="w-4 h-4" />
+            </button>
           </div>
-          <button onClick={handleCloseModal} className="text-slate-400 hover:text-slate-600" title="Fechar">
-            <X className="w-5 h-5" />
-          </button>
         </div>
 
-        <form onSubmit={handleSubmit} className="p-4 space-y-4 text-sm">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-            <div className="md:col-span-2">
-              <label className="text-sm font-medium text-slate-700">Título do Prazo *</label>
-              <input
-                value={formData.title}
-                onChange={(event) => handleFormChange('title', event.target.value)}
-                className="input-field"
-                placeholder="Ex: Contestação - Processo 123456"
-                required
-              />
+        {/* Content */}
+        <form onSubmit={handleSubmit} className="flex flex-col flex-1 min-h-0">
+          <div className="p-3 space-y-2 flex-1 overflow-y-auto">
+            {/* Título e Tipo */}
+            <div className="grid grid-cols-4 gap-2">
+              <div className="col-span-3">
+                <label className="block text-xs font-medium text-zinc-500 mb-0.5">
+                  Título <span className="text-red-500">*</span>
+                </label>
+                <input
+                  value={formData.title}
+                  onChange={(event) => handleFormChange('title', event.target.value)}
+                  className="w-full bg-zinc-100 border border-zinc-200 rounded-md px-2 py-1.5 text-sm text-zinc-900 focus:ring-2 focus:ring-sky-500 transition"
+                  required
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-zinc-500 mb-0.5">Tipo</label>
+                <select
+                  value={formData.type}
+                  onChange={(event) => {
+                    const newType = event.target.value as DeadlineType;
+                    handleFormChange('type', newType);
+                    if (newType === 'processo') {
+                      handleFormChange('requirement_id', '');
+                      setRequirementSearchTerm('');
+                    } else if (newType === 'requerimento') {
+                      handleFormChange('process_id', '');
+                      setProcessSearchTerm('');
+                    } else {
+                      handleFormChange('process_id', '');
+                      handleFormChange('requirement_id', '');
+                      setProcessSearchTerm('');
+                      setRequirementSearchTerm('');
+                    }
+                  }}
+                  className="w-full bg-zinc-100 border border-zinc-200 rounded-md px-2 py-1.5 text-sm text-zinc-900 focus:ring-2 focus:ring-sky-500"
+                >
+                  {TYPE_OPTIONS.map((type) => (
+                    <option key={type.key} value={type.key}>{type.label}</option>
+                  ))}
+                </select>
+              </div>
             </div>
 
-            {/* Calculadora de Prazo Processual */}
-            <div className="md:col-span-2 bg-blue-50 rounded-lg p-3 border border-blue-200">
-              <div className="flex items-center gap-2 mb-3">
-                <Calendar className="w-4 h-4 text-blue-700" />
-                <div>
-                  <p className="text-sm font-semibold text-blue-900">Calculadora de Prazo Processual</p>
-                  <p className="text-[11px] text-blue-700">
-                    Informe a data de publicação no DJEN e os dias de prazo. O sistema calcula automaticamente ignorando finais de semana.
-                  </p>
-                </div>
-              </div>
+            {/* Calculadora de Prazo */}
+            <div className="bg-zinc-100 p-2 rounded-lg border border-zinc-200 space-y-1.5">
+              <h3 className="font-semibold text-xs text-zinc-900">Calculadora de Prazo</h3>
 
-              <div className="flex flex-col gap-3">
+              {/* Tipo de Prazo + Data + Dias em uma linha */}
+              <div className="grid grid-cols-4 gap-2">
                 <div>
-                  <p className="text-xs font-semibold text-blue-900 mb-1">Tipo de prazo</p>
-                  <div className="flex flex-wrap gap-2">
-                    {[
-                      { label: 'Processual (dias úteis)', value: 'processual' },
-                      { label: 'Material (dias corridos)', value: 'material' },
-                    ].map((option) => (
-                      <button
-                        type="button"
-                        key={option.value}
-                        onClick={() => {
-                          setTipoPrazoCalculadora(option.value as TipoPrazo);
-                          if (dataPublicacao && diasPrazo) {
-                            const dias = Number(diasPrazo);
-                            if (!Number.isNaN(dias) && dias > 0) {
-                              const dataVenc = calcularDataVencimento(dataPublicacao, dias, option.value as TipoPrazo);
-                              handleFormChange('due_date', dataVenc);
-                            }
-                          }
-                        }}
-                        className={`px-3 py-1.5 rounded-lg text-xs font-medium border transition ${
-                          tipoPrazoCalculadora === option.value
-                            ? 'bg-blue-600 text-white border-blue-600'
-                            : 'bg-white text-blue-700 border-blue-200 hover:border-blue-400'
-                        }`}
-                      >
-                        {option.label}
-                      </button>
-                    ))}
-                  </div>
+                  <label className="block text-xs font-medium text-zinc-500 mb-0.5">Tipo</label>
+                  <select
+                    value={tipoPrazoCalculadora}
+                    onChange={(e) => {
+                      const value = e.target.value as TipoPrazo;
+                      setTipoPrazoCalculadora(value);
+                      if (dataPublicacao && diasPrazo) {
+                        const dias = Number(diasPrazo);
+                        if (!Number.isNaN(dias) && dias > 0) {
+                          const dataVenc = calcularDataVencimento(dataPublicacao, dias, value);
+                          handleFormChange('due_date', dataVenc);
+                        }
+                      }
+                    }}
+                    className="w-full bg-white border border-zinc-200 rounded-md px-2 py-1.5 text-sm text-zinc-900 focus:ring-2 focus:ring-sky-500"
+                  >
+                    <option value="processual">Dias úteis</option>
+                    <option value="material">Dias corridos</option>
+                  </select>
                 </div>
-
                 <div>
-                  <label className="text-xs font-medium text-blue-800">Data Publicação DJEN</label>
+                  <label className="block text-xs font-medium text-zinc-500 mb-0.5">Publicação</label>
                   <input
                     type="date"
                     value={dataPublicacao}
@@ -2032,13 +2054,12 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
                         handleFormChange('due_date', dataVenc);
                       }
                     }}
-                    className="w-full mt-1 px-3 py-2 border border-blue-300 rounded-lg text-sm bg-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                    className="w-full bg-white border border-zinc-200 rounded-md px-2 py-1.5 text-sm text-zinc-900 focus:ring-2 focus:ring-sky-500"
                   />
                 </div>
-
                 <div>
-                  <label className="text-xs font-medium text-blue-800">Dias de Prazo (úteis)</label>
-                  <div className="mt-1 flex gap-2">
+                  <label className="block text-xs font-medium text-zinc-500 mb-0.5">Dias</label>
+                  <div className="flex items-center gap-1">
                     <input
                       type="number"
                       min={1}
@@ -2054,347 +2075,182 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
                           }
                         }
                       }}
-                      className="flex-1 px-3 py-2 border border-blue-300 rounded-lg text-sm bg-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                      placeholder="Ex: 15"
+                      className="w-14 bg-white border border-zinc-200 rounded-md px-2 py-1.5 text-sm text-zinc-900 focus:ring-2 focus:ring-sky-500"
                     />
-                    <select
-                      value=""
-                      onChange={(e) => {
-                        if (!e.target.value) return;
-                        setDiasPrazo(e.target.value);
-                        if (dataPublicacao) {
-                          const dias = parseInt(e.target.value, 10);
-                          const dataVenc = calcularDataVencimento(dataPublicacao, dias, tipoPrazoCalculadora);
-                          handleFormChange('due_date', dataVenc);
-                        }
-                        e.currentTarget.selectedIndex = 0;
-                      }}
-                      className="px-2 py-2 border border-blue-300 rounded-lg text-xs text-blue-700 bg-white"
-                    >
-                      <option value="">Atalhos</option>
-                      <option value="5">5 dias</option>
-                      <option value="10">10 dias</option>
-                      <option value="15">15 dias</option>
-                      <option value="20">20 dias</option>
-                      <option value="30">30 dias</option>
-                    </select>
+                    {[5, 10, 15].map((dias) => (
+                      <button
+                        key={dias}
+                        type="button"
+                        onClick={() => {
+                          setDiasPrazo(String(dias));
+                          if (dataPublicacao) {
+                            const dataVenc = calcularDataVencimento(dataPublicacao, dias, tipoPrazoCalculadora);
+                            handleFormChange('due_date', dataVenc);
+                          }
+                        }}
+                        className={`px-1.5 py-1 text-xs rounded font-medium transition ${
+                          diasPrazo === String(dias)
+                            ? 'bg-sky-500 text-white'
+                            : 'bg-zinc-200 hover:bg-zinc-300 text-zinc-600'
+                        }`}
+                      >
+                        {dias}
+                      </button>
+                    ))}
                   </div>
                 </div>
-
                 <div>
-                  <label className="text-xs font-medium text-blue-800">Data de Vencimento Calculada</label>
-                  <div className="mt-1 px-3 py-2 bg-white border border-blue-300 rounded-lg text-sm font-semibold text-blue-900 min-h-[42px] flex items-center justify-between">
-                    {formData.due_date ? (
-                      <>
-                        <span>{formatDate(formData.due_date)}</span>
-                        <span className="text-xs font-normal text-blue-600">
-                          {new Date(formData.due_date + 'T12:00:00').toLocaleDateString('pt-BR', { weekday: 'long' })}
-                        </span>
-                      </>
-                    ) : (
-                      <span className="text-slate-400">Preencha data e dias para calcular</span>
-                    )}
-                  </div>
-                  {calculadoraAtiva && (
-                    <p className="text-[10px] text-blue-600 mt-1">
-                      Resultado pronto! Salve o prazo para registrar esta data calculada.
-                    </p>
-                  )}
-                </div>
-              </div>
-
-              <div className="mt-3 border-t border-blue-200 pt-3">
-                <p className="text-xs font-semibold text-blue-900 mb-2">Precisa ajustar manualmente?</p>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                  <div>
-                    <label className="text-xs font-medium text-slate-700">Data de Vencimento *</label>
-                    <input
-                      type="date"
-                      value={formData.due_date}
-                      onChange={(event) => {
-                        const selectedDate = new Date(event.target.value + 'T12:00:00');
-                        const dayOfWeek = selectedDate.getDay();
-                        
-                        if (dayOfWeek === 0 || dayOfWeek === 6) {
-                          alert('⚠️ Não é permitido cadastrar prazos em finais de semana.\n\nSelecione um dia útil (segunda a sexta).');
-                          return;
-                        }
-                        setDataPublicacao('');
-                        setDiasPrazo('');
-                        handleFormChange('due_date', event.target.value);
-                      }}
-                      className="w-full mt-1 px-3 py-2 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500"
-                      required
-                    />
-                  </div>
-                  <div className="flex items-end">
-                    {formData.due_date && (
-                      <p className="text-sm text-slate-600 pb-2">
-                        {new Date(formData.due_date + 'T12:00:00').toLocaleDateString('pt-BR', { weekday: 'long', day: 'numeric', month: 'long' })}
-                      </p>
-                    )}
-                  </div>
-                </div>
-              </div>
-
-              <div className="text-[10px] text-blue-700 mt-2 space-y-1">
-                <p>💡 Regras do CPC/2015 (art. 219):</p>
-                <ul className="list-disc list-inside space-y-1">
-                  <li>Processuais contam apenas dias úteis, iniciam no primeiro dia útil após a intimação e excluem finais de semana/feriados.</li>
-                  <li>Materiais seguem dias corridos; use esta opção apenas quando a lei não determina dias úteis.</li>
-                  <li>Feriado local precisa ser comprovado; nacionais são aplicados automaticamente.</li>
-                </ul>
-                <p className="text-[10px] text-blue-600">O prazo projetado é estimado; sempre confirme com o diário e normas locais.</p>
-              </div>
-            </div>
-
-            <div>
-              <label className="text-sm font-medium text-slate-700">Prioridade</label>
-              <select
-                value={formData.priority}
-                onChange={(event) => handleFormChange('priority', event.target.value as DeadlinePriority)}
-                className="input-field"
-              >
-                {PRIORITY_OPTIONS.map((priority) => (
-                  <option key={priority.key} value={priority.key}>
-                    {priority.label}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            <div>
-              <label className="text-sm font-medium text-slate-700">Tipo</label>
-              <select
-                value={formData.type}
-                onChange={(event) => {
-                  const newType = event.target.value as DeadlineType;
-                  handleFormChange('type', newType);
-                  if (newType === 'processo') {
-                    handleFormChange('requirement_id', '');
-                    setRequirementSearchTerm('');
-                  } else if (newType === 'requerimento') {
-                    handleFormChange('process_id', '');
-                    setProcessSearchTerm('');
-                  } else {
-                    handleFormChange('process_id', '');
-                    handleFormChange('requirement_id', '');
-                    setProcessSearchTerm('');
-                    setRequirementSearchTerm('');
-                  }
-                }}
-                className="input-field"
-              >
-                {TYPE_OPTIONS.map((type) => (
-                  <option key={type.key} value={type.key}>
-                    {type.label}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            <div>
-              <label className="text-sm font-medium text-slate-700">Status</label>
-              <select
-                value={formData.status}
-                onChange={(event) => handleFormChange('status', event.target.value as DeadlineStatus)}
-                className="input-field"
-              >
-                {STATUS_OPTIONS.map((status) => (
-                  <option key={status.key} value={status.key}>
-                    {status.label}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            <div className="md:col-span-2">
-              <ClientSearchSelect
-                value={formData.client_id}
-                onChange={(clientId) => {
-                  handleFormChange('client_id', clientId);
-                  // Limpar processo ao trocar cliente
-                  if (!clientId) {
-                    handleFormChange('process_id', '');
-                    setProcessSearchTerm('');
-                  }
-                }}
-                label="Cliente *"
-                placeholder="Buscar cliente..."
-                required
-                allowCreate={true}
-              />
-            </div>
-
-            {formData.type === 'processo' && (
-              <div className="md:col-span-2">
-                <div className="flex items-center justify-between">
-                  <label className="text-sm font-medium text-slate-700">Vincular a Processo</label>
-                  <span className="text-xs text-slate-500">
-                    {formData.client_id ? 'Filtrando processos do cliente selecionado' : 'Selecione um cliente para habilitar os processos'}
-                  </span>
-                </div>
-                <div className="relative">
+                  <label className="block text-xs font-medium text-zinc-500 mb-0.5">
+                    Vencimento <span className="text-red-500">*</span>
+                  </label>
                   <input
-                    value={processSearchTerm}
+                    type="date"
+                    value={formData.due_date}
                     onChange={(event) => {
-                      setProcessSearchTerm(event.target.value);
-                      if (!event.target.value) {
-                        handleFormChange('process_id', '');
+                      const selectedDate = new Date(event.target.value + 'T12:00:00');
+                      const dayOfWeek = selectedDate.getDay();
+                      if (dayOfWeek === 0 || dayOfWeek === 6) {
+                        alert('⚠️ Não é permitido cadastrar prazos em finais de semana.');
+                        return;
                       }
+                      setDataPublicacao('');
+                      setDiasPrazo('');
+                      handleFormChange('due_date', event.target.value);
                     }}
-                    onFocus={() => setShowProcessSuggestions(true)}
-                    onBlur={() => setTimeout(() => setShowProcessSuggestions(false), 150)}
-                    className="input-field"
-                    placeholder="Digite o código do processo"
+                    className="w-full bg-white border border-zinc-200 rounded-md px-2 py-1.5 text-sm text-zinc-900 focus:ring-2 focus:ring-sky-500"
+                    required
                   />
-                  {showProcessSuggestions && (
-                    <div className="absolute mt-2 w-full bg-white border border-slate-200 rounded-xl shadow-lg max-h-60 overflow-y-auto z-10">
-                      {formData.client_id && filteredProcesses.length === 0 ? (
-                        <div className="px-4 py-3 text-xs text-slate-500">Nenhum processo encontrado para este cliente.</div>
-                      ) : !formData.client_id ? (
-                        <div className="px-4 py-3 text-xs text-slate-500">Selecione um cliente para listar processos.</div>
-                      ) : (
-                        filteredProcesses.map((process) => (
-                          <button
-                            type="button"
-                            key={process.id}
-                            className="w-full text-left px-4 py-3 text-sm hover:bg-slate-50 transition"
-                            onMouseDown={(event) => event.preventDefault()}
-                            onClick={() => {
-                              handleFormChange('process_id', process.id);
-                              setProcessSearchTerm(process.process_code);
-                              setShowProcessSuggestions(false);
-                            }}
-                          >
-                            <div className="font-semibold text-slate-800">{process.process_code}</div>
-                            <div className="text-xs text-slate-500">{process.court || 'Vara não informada'} • {process.status}</div>
-                          </button>
-                        ))
-                      )}
-                    </div>
-                  )}
                 </div>
-                {formData.process_id && (
-                  <div className="mt-3 bg-slate-50 border border-slate-100 rounded-lg p-3 text-xs text-slate-600">
-                    <span className="font-semibold text-slate-700">Processo selecionado:</span> {processSearchTerm || 'Código desconhecido'}
-                  </div>
+              </div>
+            </div>
+
+            {/* Prioridade, Status, Responsável */}
+            <div className="grid grid-cols-3 gap-2">
+              <div>
+                <label className="block text-xs font-medium text-zinc-500 mb-0.5">Prioridade</label>
+                <select
+                  value={formData.priority}
+                  onChange={(event) => handleFormChange('priority', event.target.value as DeadlinePriority)}
+                  className="w-full bg-zinc-100 border border-zinc-200 rounded-md px-2 py-1.5 text-sm text-zinc-900 focus:ring-2 focus:ring-sky-500"
+                >
+                  {PRIORITY_OPTIONS.map((priority) => (
+                    <option key={priority.key} value={priority.key}>{priority.label}</option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-zinc-500 mb-0.5">Status</label>
+                <select
+                  value={formData.status}
+                  onChange={(event) => handleFormChange('status', event.target.value as DeadlineStatus)}
+                  className="w-full bg-zinc-100 border border-zinc-200 rounded-md px-2 py-1.5 text-sm text-zinc-900 focus:ring-2 focus:ring-sky-500"
+                >
+                  {STATUS_OPTIONS.map((status) => (
+                    <option key={status.key} value={status.key}>{status.label}</option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-zinc-500 mb-0.5">
+                  Responsável <span className="text-red-500">*</span>
+                </label>
+                <select
+                  value={formData.responsible_id}
+                  onChange={(event) => handleFormChange('responsible_id', event.target.value)}
+                  className="w-full bg-zinc-100 border border-zinc-200 rounded-md px-2 py-1.5 text-sm text-zinc-900 focus:ring-2 focus:ring-sky-500"
+                  required
+                >
+                  <option value="" disabled>Selecione</option>
+                  {members.map((member) => (
+                    <option key={member.id} value={member.id}>{member.name}</option>
+                  ))}
+                </select>
+              </div>
+            </div>
+
+            {/* Cliente, Vínculo e Descrição */}
+            <div className="grid grid-cols-3 gap-2">
+              <div>
+                <label className="block text-xs font-medium text-zinc-500 mb-0.5">Cliente <span className="text-red-500">*</span></label>
+                <ClientSearchSelect
+                  value={formData.client_id}
+                  onChange={(clientId) => {
+                    handleFormChange('client_id', clientId);
+                    if (!clientId) {
+                      handleFormChange('process_id', '');
+                      setProcessSearchTerm('');
+                    }
+                  }}
+                  label=""
+                  placeholder="Buscar..."
+                  required
+                  allowCreate={true}
+                />
+              </div>
+              <div>
+                {formData.type === 'processo' && (
+                  <>
+                    <label className="block text-xs font-medium text-zinc-500 mb-0.5">Processo</label>
+                    <select
+                      value={formData.process_id}
+                      onChange={(event) => handleFormChange('process_id', event.target.value)}
+                      disabled={!formData.client_id}
+                      className="w-full bg-zinc-100 border border-zinc-200 rounded-md px-2 py-1.5 text-sm text-zinc-900 focus:ring-2 focus:ring-sky-500 disabled:opacity-50"
+                    >
+                      <option value="">Selecione</option>
+                      {filteredProcesses.map((process) => (
+                        <option key={process.id} value={process.id}>{process.process_code}</option>
+                      ))}
+                    </select>
+                  </>
+                )}
+                {formData.type === 'requerimento' && (
+                  <>
+                    <label className="block text-xs font-medium text-zinc-500 mb-0.5">Requerimento</label>
+                    <select
+                      value={formData.requirement_id}
+                      onChange={(event) => handleFormChange('requirement_id', event.target.value)}
+                      className="w-full bg-zinc-100 border border-zinc-200 rounded-md px-2 py-1.5 text-sm text-zinc-900 focus:ring-2 focus:ring-sky-500"
+                    >
+                      <option value="">Selecione</option>
+                      {filteredRequirements.map((requirement) => (
+                        <option key={requirement.id} value={requirement.id}>{requirement.protocol}</option>
+                      ))}
+                    </select>
+                  </>
+                )}
+                {formData.type !== 'processo' && formData.type !== 'requerimento' && (
+                  <>
+                    <label className="block text-xs font-medium text-zinc-500 mb-0.5">Notificar (dias)</label>
+                    <input
+                      type="number"
+                      value={formData.notify_days_before}
+                      onChange={(event) => handleFormChange('notify_days_before', event.target.value)}
+                      className="w-full bg-zinc-100 border border-zinc-200 rounded-md px-2 py-1.5 text-sm text-zinc-900 focus:ring-2 focus:ring-sky-500"
+                      min="0"
+                      max="30"
+                      placeholder="2"
+                    />
+                  </>
                 )}
               </div>
-            )}
-
-            {formData.type === 'requerimento' && (
-              <div className="md:col-span-2">
-                <label className="text-sm font-medium text-slate-700">Vincular a Requerimento</label>
-                <div className="relative">
-                  <input
-                    value={requirementSearchTerm}
-                    onChange={(event) => {
-                      setRequirementSearchTerm(event.target.value);
-                      if (!event.target.value) {
-                        handleFormChange('requirement_id', '');
-                      }
-                    }}
-                    onFocus={() => setShowRequirementSuggestions(true)}
-                    onBlur={() => setTimeout(() => setShowRequirementSuggestions(false), 150)}
-                    className="input-field"
-                    placeholder="Digite o protocolo ou beneficiário"
-                  />
-                  {showRequirementSuggestions && (
-                    <div className="absolute mt-2 w-full bg-white border border-slate-200 rounded-xl shadow-lg max-h-60 overflow-y-auto z-10">
-                      {filteredRequirements.length === 0 ? (
-                        <div className="px-4 py-3 text-xs text-slate-500">Nenhum requerimento encontrado.</div>
-                      ) : (
-                        filteredRequirements.map((requirement) => (
-                          <button
-                            type="button"
-                            key={requirement.id}
-                            className="w-full text-left px-4 py-3 text-sm hover:bg-slate-50 transition"
-                            onMouseDown={(event) => event.preventDefault()}
-                            onClick={() => {
-                              handleFormChange('requirement_id', requirement.id);
-                              setRequirementSearchTerm(`${requirement.protocol} - ${requirement.beneficiary}`);
-                              setShowRequirementSuggestions(false);
-                            }}
-                          >
-                            <div className="font-semibold text-slate-800">{requirement.protocol}</div>
-                            <div className="text-xs text-slate-500">{requirement.beneficiary}</div>
-                          </button>
-                        ))
-                      )}
-                    </div>
-                  )}
-                </div>
+              <div>
+                <label className="block text-xs font-medium text-zinc-500 mb-0.5">Descrição</label>
+                <input
+                  value={formData.description}
+                  onChange={(event) => handleFormChange('description', event.target.value)}
+                  className="w-full bg-zinc-100 border border-zinc-200 rounded-md px-2 py-1.5 text-sm text-zinc-900 focus:ring-2 focus:ring-sky-500"
+                />
               </div>
-            )}
-
-            <div>
-              <label className="text-sm font-medium text-slate-700 mb-2 block">Responsável *</label>
-              <div className="flex flex-wrap gap-2">
-                {members.map((member) => (
-                  <button
-                    key={member.id}
-                    type="button"
-                    onClick={() => handleFormChange('responsible_id', member.id)}
-                    className={`flex flex-col items-center gap-1 p-2 rounded-lg border-2 transition-all ${
-                      formData.responsible_id === member.id
-                        ? 'border-blue-500 bg-blue-50 ring-2 ring-blue-200'
-                        : 'border-slate-200 hover:border-slate-300 hover:bg-slate-50'
-                    }`}
-                    title={member.name}
-                  >
-                    {member.avatar_url ? (
-                      <img
-                        src={member.avatar_url}
-                        alt={member.name}
-                        className="w-10 h-10 rounded-full object-cover"
-                      />
-                    ) : (
-                      <div className="w-10 h-10 rounded-full bg-slate-200 flex items-center justify-center text-sm font-semibold text-slate-600">
-                        {member.name.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase()}
-                      </div>
-                    )}
-                    <span className="text-[10px] text-slate-600 font-medium max-w-[60px] truncate">
-                      {member.name.split(' ')[0]}
-                    </span>
-                  </button>
-                ))}
-              </div>
-              {!formData.responsible_id && (
-                <p className="text-xs text-red-500 mt-1">Selecione um responsável</p>
-              )}
-            </div>
-
-            <div>
-              <label className="text-sm font-medium text-slate-700">Notificar (dias antes)</label>
-              <input
-                type="number"
-                value={formData.notify_days_before}
-                onChange={(event) => handleFormChange('notify_days_before', event.target.value)}
-                className="input-field"
-                min="0"
-                max="30"
-                placeholder="2"
-              />
             </div>
           </div>
 
-          <div>
-            <label className="text-sm font-medium text-slate-700">Descrição</label>
-            <textarea
-              value={formData.description}
-              onChange={(event) => handleFormChange('description', event.target.value)}
-              rows={4}
-              className="input-field"
-              placeholder="Informações adicionais sobre o prazo"
-            />
-          </div>
-
-          <div className="flex justify-end gap-3 pt-2">
+          {/* Footer */}
+          <div className="bg-zinc-100 px-4 py-2 flex justify-end items-center gap-2 border-t border-zinc-200 rounded-b-xl flex-shrink-0">
             <button
               type="button"
               onClick={handleCloseModal}
-              className="px-4 py-2.5 rounded-lg text-sm font-medium text-slate-600 bg-slate-100 hover:bg-slate-200 transition"
+              className="px-3 py-1.5 text-xs text-zinc-600 hover:text-zinc-900 transition-colors"
               disabled={saving}
             >
               Cancelar
@@ -2402,10 +2258,10 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
             <button
               type="submit"
               disabled={saving}
-              className="px-4 py-2 rounded-lg text-sm font-semibold text-white bg-blue-600 hover:bg-blue-700 transition flex items-center gap-2"
+              className="px-3 py-1.5 bg-sky-500 text-white rounded-md text-xs font-medium hover:bg-sky-400 transition-colors flex items-center gap-1 disabled:opacity-50"
             >
-              {saving && <Loader2 className="w-4 h-4 animate-spin" />}
-              {selectedDeadline ? 'Salvar alterações' : 'Criar prazo'}
+              {saving && <Loader2 className="w-3 h-3 animate-spin" />}
+              Salvar
             </button>
           </div>
         </form>

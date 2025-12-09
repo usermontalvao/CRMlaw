@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { Plus, Mail, Phone, Loader2, Trash2, ExternalLink, X, CheckCircle2, TrendingUp, Clock, FileCheck, Target, Edit2, Save } from 'lucide-react';
+import LeadModal from './LeadModal';
 import { leadService } from '../services/lead.service';
 import type { Lead, LeadStage, CreateLeadDTO } from '../types/lead.types';
 
@@ -187,7 +188,7 @@ const LeadsModule: React.FC<LeadsModuleProps> = ({ onConvertLead }) => {
           </div>
           <button
             onClick={handleOpenNewLeadModal}
-            className="bg-gradient-to-r from-amber-600 to-amber-500 hover:from-amber-700 hover:to-amber-600 text-white font-semibold px-6 py-3 rounded-lg flex items-center gap-2 transition-all shadow-lg hover:shadow-xl"
+            className="bg-gradient-to-r from-orange-500 to-orange-600 hover:from-orange-600 hover:to-orange-700 text-white font-semibold px-6 py-3 rounded-lg flex items-center gap-2 transition-all shadow-lg shadow-orange-500/40 hover:shadow-orange-500/60"
           >
             <Plus className="w-5 h-5" />
             Novo Lead
@@ -373,9 +374,9 @@ const LeadsModule: React.FC<LeadsModuleProps> = ({ onConvertLead }) => {
 
       {/* Modal Visualizar/Editar Lead */}
       {isViewModalOpen && selectedLead && (
-        <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-2xl shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
-            <div className="sticky top-0 bg-white px-6 py-4 border-b border-gray-200 flex items-center justify-between z-10">
+        <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center z-50 p-3 sm:p-4">
+          <div className="bg-white rounded-2xl shadow-2xl max-w-xl w-full max-h-[88vh] overflow-y-auto">
+            <div className="sticky top-0 bg-white px-4 sm:px-6 py-3 sm:py-4 border-b border-gray-200 flex items-center justify-between z-10">
               <div>
                 <h3 className="text-xl font-semibold text-slate-900">
                   {editMode ? 'Editar Lead' : 'Detalhes do Lead'}
@@ -407,7 +408,7 @@ const LeadsModule: React.FC<LeadsModuleProps> = ({ onConvertLead }) => {
               </div>
             </div>
 
-            <form onSubmit={handleUpdateLead} className="p-6 space-y-5">
+            <form onSubmit={handleUpdateLead} className="p-4 sm:p-6 space-y-4 sm:space-y-5">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div className="md:col-span-2">
                   <label className="block text-sm font-medium text-slate-700 mb-2">Nome *</label>
@@ -584,90 +585,14 @@ const LeadsModule: React.FC<LeadsModuleProps> = ({ onConvertLead }) => {
       )}
 
       {/* Modal Novo Lead */}
-      {isModalOpen && (
-        <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full">
-            <div className="px-6 py-4 border-b border-gray-200 flex items-center justify-between">
-              <h3 className="text-xl font-semibold text-slate-900">Novo Lead</h3>
-              <button onClick={() => setIsModalOpen(false)} className="text-slate-400 hover:text-slate-600">
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-
-            <form onSubmit={handleCreateLead} className="p-6 space-y-4">
-              <div>
-                <label className="block text-sm font-medium text-slate-700 mb-2">Nome *</label>
-                <input
-                  type="text"
-                  value={formData.name}
-                  onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                  className="input-field"
-                  required
-                />
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-slate-700 mb-2">E-mail</label>
-                <input
-                  type="email"
-                  value={formData.email}
-                  onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-                  className="input-field"
-                />
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-slate-700 mb-2">Telefone</label>
-                <input
-                  type="text"
-                  value={formData.phone}
-                  onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
-                  className="input-field"
-                />
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-slate-700 mb-2">Origem</label>
-                <input
-                  type="text"
-                  value={formData.source}
-                  onChange={(e) => setFormData({ ...formData, source: e.target.value })}
-                  className="input-field"
-                  placeholder="Ex: Indicação, Site, Instagram"
-                />
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-slate-700 mb-2">Observações</label>
-                <textarea
-                  value={formData.notes}
-                  onChange={(e) => setFormData({ ...formData, notes: e.target.value })}
-                  className="input-field"
-                  rows={3}
-                />
-              </div>
-
-              <div className="flex gap-3 pt-2">
-                <button
-                  type="button"
-                  onClick={() => setIsModalOpen(false)}
-                  className="flex-1 bg-slate-100 hover:bg-slate-200 text-slate-700 font-medium px-4 py-2.5 rounded-lg"
-                >
-                  Cancelar
-                </button>
-                <button
-                  type="submit"
-                  disabled={saving}
-                  className="flex-1 bg-amber-600 hover:bg-amber-700 text-white font-medium px-4 py-2.5 rounded-lg flex items-center justify-center gap-2 disabled:opacity-50"
-                >
-                  {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />}
-                  {saving ? 'Salvando...' : 'Criar Lead'}
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
+      <LeadModal
+        isOpen={isModalOpen}
+        saving={saving}
+        formData={formData}
+        onClose={() => setIsModalOpen(false)}
+        onSubmit={handleCreateLead}
+        onChange={(field, value) => setFormData({ ...formData, [field]: value })}
+      />
     </div>
   );
 };

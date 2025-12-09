@@ -16,6 +16,7 @@ import {
   Settings,
   Eye,
   Pencil,
+  Upload as UploadIcon,
 } from 'lucide-react';
 import PizZip from 'pizzip';
 import Docxtemplater from 'docxtemplater';
@@ -867,63 +868,110 @@ const DocumentsModule: React.FC = () => {
 
       {/* Novo template modal */}
       {isModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-4">
-          <div className="w-full max-w-xl rounded-2xl bg-white shadow-2xl">
-            <div className="flex items-center justify-between border-b border-slate-100 px-5 py-4">
-              <div>
-                <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Adicionar template</p>
-                <h3 className="text-lg font-semibold text-slate-900">Novo template</h3>
-              </div>
-              <button onClick={handleCloseModal} className="rounded-full p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-600">
-                <X className="h-5 w-5" />
-              </button>
-            </div>
-            <form onSubmit={handleUploadTemplate} className="space-y-4 px-5 py-5">
-              <div className="space-y-1">
-                <label className="text-xs font-semibold uppercase tracking-wide text-slate-500">Nome do template</label>
-                <input
-                  type="text"
-                  className="input-field text-sm"
-                  value={nameInput}
-                  onChange={(e) => setNameInput(e.target.value)}
-                  placeholder="Ex: Petição Inicial"
-                />
-              </div>
-              <div className="space-y-1">
-                <label className="text-xs font-semibold uppercase tracking-wide text-slate-500">Descrição</label>
-                <textarea
-                  className="input-field text-sm"
-                  rows={3}
-                  value={descriptionInput}
-                  onChange={(e) => setDescriptionInput(e.target.value)}
-                  placeholder="Breve resumo sobre o uso do template"
-                />
-              </div>
-              <div className="space-y-1">
-                <label className="text-xs font-semibold uppercase tracking-wide text-slate-500">Arquivo .docx *</label>
-                <input
-                  type="file"
-                  accept=".doc,.docx"
-                  className="input-field text-sm"
-                  onChange={(e) => setFileInput(e.target.files?.[0] || null)}
-                />
-              </div>
-              {uploadError && <p className="text-sm text-red-600">{uploadError}</p>}
-              <div className="flex flex-col gap-2 pt-2 sm:flex-row">
-                <button
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-gray-900/40 p-4">
+          <div className="relative w-full max-w-xl rounded-xl bg-white shadow-lg max-h-[90vh] overflow-hidden">
+            <form onSubmit={handleUploadTemplate} className="flex flex-col p-5 md:p-6 gap-5 overflow-y-auto">
+              {/* Header */}
+              <div className="flex flex-wrap justify-between gap-3 relative">
+                <div className="flex flex-col gap-1">
+                  <h1 className="text-gray-900 tracking-tight text-[32px] font-bold leading-tight">Adicionar template</h1>
+                  <p className="text-gray-500 text-sm font-normal leading-normal">Novo template</p>
+                </div>
+                <button 
                   type="button"
-                  onClick={handleCloseModal}
-                  className="w-full rounded-xl border border-slate-200 px-4 py-2.5 text-sm font-medium text-slate-600 hover:border-slate-300"
+                  onClick={handleCloseModal} 
+                  className="flex items-center justify-center h-9 w-9 rounded-full text-gray-600 hover:text-gray-800 absolute top-0 right-0"
                 >
-                  Cancelar
+                  <X className="w-5 h-5" />
                 </button>
-                <button
-                  type="submit"
-                  disabled={uploading}
-                  className="w-full rounded-xl bg-slate-900 px-4 py-2.5 text-sm font-semibold text-white transition disabled:bg-slate-300"
-                >
-                  {uploading ? 'Enviando...' : 'Salvar template'}
-                </button>
+              </div>
+
+              {/* Form Fields */}
+              <div className="flex flex-col gap-6">
+                {/* Nome */}
+                <label className="flex flex-col w-full">
+                  <p className="text-gray-900 text-base font-medium leading-normal pb-2">Nome do template</p>
+                  <input
+                    type="text"
+                    className="form-input flex w-full min-w-0 flex-1 resize-none overflow-hidden rounded-lg text-gray-900 focus:outline-0 focus:ring-2 focus:ring-[#2b8cee]/50 border border-gray-300 bg-white h-14 placeholder:text-gray-500 p-[15px] text-base font-normal leading-normal"
+                    value={nameInput}
+                    onChange={(e) => setNameInput(e.target.value)}
+                    placeholder="Digite o nome do template"
+                  />
+                </label>
+
+                {/* Descrição */}
+                <label className="flex flex-col w-full">
+                  <p className="text-gray-900 text-base font-medium leading-normal pb-2">Descrição</p>
+                  <textarea
+                    className="form-input flex w-full min-w-0 flex-1 resize-none overflow-hidden rounded-lg text-gray-900 focus:outline-0 focus:ring-2 focus:ring-[#2b8cee]/50 border border-gray-300 bg-white min-h-28 placeholder:text-gray-500 p-[13px] text-base font-normal leading-normal"
+                    value={descriptionInput}
+                    onChange={(e) => setDescriptionInput(e.target.value)}
+                    placeholder="Digite a descrição do template"
+                  />
+                </label>
+
+                {/* File Upload */}
+                <div className="flex flex-col">
+                  <div 
+                    className="flex flex-col items-center gap-6 rounded-lg border-2 border-dashed border-gray-300 px-6 py-10 cursor-pointer hover:border-[#2b8cee]/50 transition-colors"
+                    onClick={() => document.getElementById('template-file-input')?.click()}
+                  >
+                    <div className="flex items-center justify-center h-12 w-12 rounded-full bg-[#2b8cee]/10">
+                      <UploadIcon className="w-6 h-6 text-[#2b8cee]" />
+                    </div>
+                    <div className="flex max-w-[480px] flex-col items-center gap-2">
+                      <p className="text-gray-900 text-lg font-bold leading-tight tracking-[-0.015em] max-w-[480px] text-center">
+                        Arquivo .docx *
+                      </p>
+                      <p className="text-gray-500 text-sm font-normal leading-normal max-w-[480px] text-center">
+                        {fileInput ? fileInput.name : 'Arraste e solte o arquivo aqui ou clique para selecionar'}
+                      </p>
+                    </div>
+                    <button 
+                      type="button"
+                      className="flex min-w-[84px] max-w-[480px] cursor-pointer items-center justify-center overflow-hidden rounded-lg h-10 px-4 bg-gray-100 text-gray-900 text-sm font-bold leading-normal tracking-[0.015em] hover:bg-gray-200"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        document.getElementById('template-file-input')?.click();
+                      }}
+                    >
+                      <span className="truncate">Selecionar arquivo</span>
+                    </button>
+                    <input
+                      id="template-file-input"
+                      type="file"
+                      accept=".doc,.docx"
+                      className="hidden"
+                      onChange={(e) => setFileInput(e.target.files?.[0] || null)}
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {uploadError && <p className="text-sm text-red-600">{uploadError}</p>}
+
+              {/* Divider */}
+              <hr className="border-t border-gray-200" />
+
+              {/* Buttons */}
+              <div className="flex justify-end">
+                <div className="flex flex-1 gap-3 flex-wrap justify-end">
+                  <button
+                    type="button"
+                    onClick={handleCloseModal}
+                    className="flex min-w-[84px] max-w-[480px] cursor-pointer items-center justify-center overflow-hidden rounded-lg h-10 px-4 bg-gray-100 text-gray-900 text-sm font-bold leading-normal tracking-[0.015em] hover:bg-gray-200"
+                  >
+                    <span className="truncate">Cancelar</span>
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={uploading}
+                    className="flex min-w-[84px] max-w-[480px] cursor-pointer items-center justify-center overflow-hidden rounded-lg h-10 px-4 bg-[#2b8cee] text-white text-sm font-bold leading-normal tracking-[0.015em] hover:bg-[#2b8cee]/90 disabled:opacity-50"
+                  >
+                    <span className="truncate">{uploading ? 'Enviando...' : 'Salvar template'}</span>
+                  </button>
+                </div>
               </div>
             </form>
           </div>

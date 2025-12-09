@@ -1574,31 +1574,31 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({
           onClick={() => setSelectedEvent(null)}
         >
           <div
-            className="bg-white rounded-3xl shadow-2xl max-w-lg w-full overflow-hidden"
+            className="bg-white dark:bg-zinc-900 rounded-2xl shadow-2xl dark:shadow-black/50 max-w-lg w-full overflow-hidden border border-zinc-200 dark:border-zinc-700/50"
             onClick={(e) => e.stopPropagation()}
           >
-            <div className="bg-gradient-to-r from-slate-50 to-white p-6 border-b border-slate-100">
+            <div className="bg-gradient-to-r from-slate-50 to-white dark:from-zinc-800 dark:to-zinc-900 p-6 border-b border-slate-100 dark:border-zinc-700/50">
               <div className="flex items-start justify-between">
                 <div>
-                  <h3 className="text-xl font-bold text-slate-900">{selectedEvent.title}</h3>
+                  <h3 className="text-xl font-bold text-slate-900 dark:text-white">{selectedEvent.title}</h3>
                   {selectedEventModuleLabel && (
-                    <span className="inline-flex items-center gap-1 mt-2 px-3 py-1 rounded-full bg-blue-100 text-blue-700 text-xs font-semibold">
+                    <span className="inline-flex items-center gap-1 mt-2 px-3 py-1 rounded-full bg-blue-100 dark:bg-blue-900/50 text-blue-700 dark:text-blue-300 text-xs font-semibold">
                       {selectedEventModuleLabel}
                     </span>
                   )}
                 </div>
                 <button
                   onClick={() => setSelectedEvent(null)}
-                  className="text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-full p-2 transition-all"
+                  className="text-zinc-400 hover:text-zinc-600 dark:hover:text-white hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded-full p-2 transition-all"
                 >
                   <X className="w-5 h-5" />
                 </button>
               </div>
             </div>
-            <div className="space-y-4 text-sm">
+            <div className="p-6 space-y-4 text-sm">
               <div className="flex items-center gap-2">
-                <span className="font-semibold text-slate-700">Data:</span>
-                <span className="text-slate-600">
+                <span className="font-semibold text-zinc-700 dark:text-zinc-300">Data:</span>
+                <span className="text-zinc-600 dark:text-zinc-400">
                   {selectedEvent.start
                     ? new Intl.DateTimeFormat('pt-BR', {
                         day: '2-digit',
@@ -1613,51 +1613,51 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({
 
               {selectedEvent.extendedProps.type && (
                 <div className="flex items-center gap-2">
-                  <span className="font-semibold text-slate-700">Tipo:</span>
-                  <span className="text-slate-600 capitalize">{selectedEvent.extendedProps.type}</span>
+                  <span className="font-semibold text-zinc-700 dark:text-zinc-300">Tipo:</span>
+                  <span className="text-zinc-600 dark:text-zinc-400 capitalize">{selectedEvent.extendedProps.type}</span>
                 </div>
               )}
 
               {selectedEvent.extendedProps.priority && (
                 <div>
-                  <span className="font-semibold text-slate-700">Prioridade:</span>{' '}
-                  <span className="text-slate-600 capitalize">{selectedEvent.extendedProps.priority}</span>
+                  <span className="font-semibold text-zinc-700 dark:text-zinc-300">Prioridade:</span>{' '}
+                  <span className="text-zinc-600 dark:text-zinc-400 capitalize">{selectedEvent.extendedProps.priority}</span>
                 </div>
               )}
 
               {selectedEvent.extendedProps.status && (
                 <div className="flex items-center gap-2">
-                  <span className="font-semibold text-slate-700">Status:</span>
-                  <span className="text-slate-600 capitalize">{selectedEvent.extendedProps.status}</span>
+                  <span className="font-semibold text-zinc-700 dark:text-zinc-300">Status:</span>
+                  <span className="text-zinc-600 dark:text-zinc-400 capitalize">{selectedEvent.extendedProps.status}</span>
                 </div>
               )}
 
               {selectedEvent.extendedProps.clientName && (
                 <div className="flex items-center gap-2">
-                  <span className="font-semibold text-slate-700">Cliente:</span>
-                  <span className="text-slate-600">{selectedEvent.extendedProps.clientName}</span>
+                  <span className="font-semibold text-zinc-700 dark:text-zinc-300">Cliente:</span>
+                  <span className="text-zinc-600 dark:text-zinc-400">{selectedEvent.extendedProps.clientName}</span>
                 </div>
               )}
 
               {selectedEvent.extendedProps.clientPhone && (
                 <div className="flex items-center gap-2">
-                  <span className="font-semibold text-slate-700">Telefone:</span>
-                  <span className="text-slate-600">{selectedEvent.extendedProps.clientPhone}</span>
+                  <span className="font-semibold text-zinc-700 dark:text-zinc-300">Telefone:</span>
+                  <span className="text-zinc-600 dark:text-zinc-400">{selectedEvent.extendedProps.clientPhone}</span>
                 </div>
               )}
 
               {selectedEvent.extendedProps.description && (
                 <div>
-                  <span className="font-semibold text-slate-700">Descrição:</span>{' '}
-                  <p className="text-slate-600 mt-1 whitespace-pre-wrap">{selectedEvent.extendedProps.description}</p>
+                  <span className="font-semibold text-zinc-700 dark:text-zinc-300">Descrição:</span>{' '}
+                  <p className="text-zinc-600 dark:text-zinc-400 mt-1 whitespace-pre-wrap">{selectedEvent.extendedProps.description}</p>
                 </div>
               )}
 
               {selectedEventDataDetails.length > 0 && (
                 <div className="space-y-1">
                   {selectedEventDataDetails.map((detail) => (
-                    <div key={`${detail.label}-${detail.value}`} className="flex items-center gap-2 text-xs text-slate-600">
-                      <span className="font-semibold text-slate-700">{detail.label}:</span>
+                    <div key={`${detail.label}-${detail.value}`} className="flex items-center gap-2 text-xs text-zinc-600 dark:text-zinc-400">
+                      <span className="font-semibold text-zinc-700 dark:text-zinc-300">{detail.label}:</span>
                       <span>{detail.value}</span>
                     </div>
                   ))}
@@ -1665,10 +1665,10 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({
               )}
             </div>
 
-            <div className="mt-6 flex flex-wrap items-center justify-end gap-3">
+            <div className="px-6 pb-6 flex flex-wrap items-center justify-end gap-3">
               <button
                 onClick={() => setSelectedEvent(null)}
-                className="px-4 py-2 text-sm font-medium text-slate-600 hover:text-slate-800 transition"
+                className="px-4 py-2 text-sm font-medium text-zinc-600 dark:text-zinc-400 hover:text-zinc-800 dark:hover:text-white transition"
               >
                 Fechar
               </button>
@@ -1706,7 +1706,7 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({
                     selectedEvent.extendedProps.moduleLink,
                     selectedEvent.extendedProps.entityId
                   )}
-                  className="px-4 py-2 text-sm font-semibold bg-slate-700 hover:bg-slate-800 text-white rounded-lg transition"
+                  className="px-4 py-2 text-sm font-semibold bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition"
                 >
                   Ir para Módulo
                 </button>

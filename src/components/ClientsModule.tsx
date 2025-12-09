@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Plus, Search, UserPlus, Building2, User, Users, Download, AlertTriangle, Clock } from 'lucide-react';
+import { Plus, Users, User, Building2, ShieldAlert, Search, Filter, Download, Upload, Loader2, Edit, Trash2, AlertTriangle, CheckCircle2, X, Phone, Mail, FileText, Copy, FilePlus, UserPlus, Calendar, ChevronRight, Pencil, Clock } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { clientService } from '../services/client.service';
 import type { Client, ClientFilters, CreateClientDTO } from '../types/client.types';
@@ -80,8 +80,8 @@ const ClientsModule: React.FC<ClientsModuleProps> = ({
   const [missingFieldsMap, setMissingFieldsMap] = useState<Map<string, string[]>>(new Map());
   const [outdatedSet, setOutdatedSet] = useState<Set<string>>(new Set());
   const [showIncompleteOnly, setShowIncompleteOnly] = useState(false);
-  const [showFilters, setShowFilters] = useState(false);
   const [showMissingBanner, setShowMissingBanner] = useState(true);
+  const [showFilters, setShowFilters] = useState<boolean>(false);
 
   // Carregar clientes
   const loadClients = async () => {
@@ -348,6 +348,74 @@ const ClientsModule: React.FC<ClientsModuleProps> = ({
 
   const hasActiveFilters = Boolean(filters.status || filters.client_type || filters.search) || showIncompleteOnly;
 
+  // Se estiver no form ou details, renderiza diretamente sem wrapper
+  if (viewMode === 'form') {
+    return (
+      <ClientForm
+        client={selectedClient}
+        prefill={!selectedClient ? prefillData : null}
+        onBack={() => handleBackToList(false)}
+        onSave={(savedClient) => {
+          setSelectedClient(savedClient);
+          setViewMode('details');
+          loadClientRelations(savedClient.id);
+          if (onClientSaved) {
+            onClientSaved();
+          }
+        }}
+      />
+    );
+  }
+
+  if (viewMode === 'details' && selectedClient) {
+    return (
+      <ClientDetails
+        client={selectedClient}
+        processes={clientProcesses}
+        requirements={clientRequirements}
+        relationsLoading={relationsLoading}
+        onBack={() => handleBackToList(false)}
+        onEdit={() => handleEditClient(selectedClient)}
+        onCreateProcess={() => {
+          if (onNavigateToModule) {
+            onNavigateToModule('processos', {
+              mode: 'create',
+              prefill: {
+                client_id: selectedClient.id,
+                client_name: selectedClient.full_name,
+              }
+            });
+          }
+        }}
+        onCreateRequirement={() => {
+          if (onNavigateToModule) {
+            onNavigateToModule('requerimentos', {
+              mode: 'create',
+              prefill: {
+                client_id: selectedClient.id,
+                beneficiary: selectedClient.full_name,
+                cpf: selectedClient.cpf_cnpj || '',
+              }
+            });
+          }
+        }}
+        onCreateDeadline={() => {
+          if (onNavigateToModule) {
+            onNavigateToModule('prazos', {
+              mode: 'create',
+              prefill: {
+                client_id: selectedClient.id,
+                client_name: selectedClient.full_name,
+              }
+            });
+          }
+        }}
+        missingFields={missingFieldsMap?.get(selectedClient.id)}
+        isOutdated={outdatedSet?.has(selectedClient.id)}
+      />
+    );
+  }
+
   return (
     <div className="space-y-4">
       {/* Header Profissional e Limpo */}
@@ -367,7 +435,7 @@ const ClientsModule: React.FC<ClientsModuleProps> = ({
               </div>
               <button
                 onClick={handleNewClient}
-                className="inline-flex items-center gap-1.5 bg-blue-600 hover:bg-blue-700 transition-colors px-3 py-1.5 rounded-lg text-xs font-medium text-white"
+                className="inline-flex items-center gap-1.5 bg-orange-500 hover:bg-orange-600 active:bg-orange-700 transition-colors px-3 py-1.5 rounded-lg text-xs font-medium text-white shadow-sm shadow-orange-500/30"
               >
                 <Plus className="w-4 h-4" />
                 Novo Cliente
@@ -579,82 +647,6 @@ const ClientsModule: React.FC<ClientsModuleProps> = ({
           onEdit={handleEditClient}
           onDelete={handleDeleteClient}
         />
-      )}
-
-      {/* Modal de Formulário */}
-      {viewMode === 'form' && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-4">
-          <div className="absolute inset-0 bg-slate-900/50 backdrop-blur-sm" onClick={() => handleBackToList(false)} />
-          <div className="relative bg-[#1c1c1e] rounded-lg shadow-2xl w-full max-w-full sm:max-w-4xl max-h-[95vh] sm:max-h-[90vh] overflow-hidden">
-            <ClientForm
-              client={selectedClient}
-              prefill={!selectedClient ? prefillData : null}
-              onBack={() => handleBackToList(false)}
-              onSave={(savedClient) => {
-                setSelectedClient(savedClient);
-                setViewMode('details');
-                loadClientRelations(savedClient.id);
-                if (onClientSaved) {
-                  onClientSaved();
-                }
-              }}
-            />
-          </div>
-        </div>
-      )}
-
-      {viewMode === 'details' && selectedClient && (
-        <div className="fixed inset-0 z-40 flex items-center justify-center p-2 sm:p-4">
-          <div className="absolute inset-0 bg-slate-900/50 backdrop-blur-sm" onClick={() => handleBackToList(false)} />
-          <div className="relative bg-white rounded-lg shadow-2xl w-full max-w-full sm:max-w-5xl max-h-[95vh] sm:max-h-[90vh] overflow-hidden">
-            <div className="max-h-[95vh] sm:max-h-[90vh] overflow-y-auto">
-              <ClientDetails
-                client={selectedClient}
-                processes={clientProcesses}
-                requirements={clientRequirements}
-                relationsLoading={relationsLoading}
-                onBack={() => handleBackToList(false)}
-                onEdit={() => handleEditClient(selectedClient)}
-                onCreateProcess={() => {
-                  if (onNavigateToModule) {
-                    onNavigateToModule('processos', {
-                      mode: 'create',
-                      prefill: {
-                        client_id: selectedClient.id,
-                        client_name: selectedClient.full_name,
-                      }
-                    });
-                  }
-                }}
-                onCreateRequirement={() => {
-                  if (onNavigateToModule) {
-                    onNavigateToModule('requerimentos', {
-                      mode: 'create',
-                      prefill: {
-                        client_id: selectedClient.id,
-                        beneficiary: selectedClient.full_name,
-                        cpf: selectedClient.cpf_cnpj || '',
-                      }
-                    });
-                  }
-                }}
-                onCreateDeadline={() => {
-                  if (onNavigateToModule) {
-                    onNavigateToModule('prazos', {
-                      mode: 'create',
-                      prefill: {
-                        client_id: selectedClient.id,
-                        client_name: selectedClient.full_name,
-                      }
-                    });
-                  }
-                }}
-                missingFields={missingFieldsMap?.get(selectedClient.id)}
-                isOutdated={outdatedSet?.has(selectedClient.id)}
-              />
-            </div>
-          </div>
-        </div>
       )}
     </div>
   );
