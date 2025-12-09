@@ -28,33 +28,40 @@ const ProcessForm: React.FC<ProcessFormProps> = ({
   
   const [formData, setFormData] = useState<Partial<CreateProcessDTO>>({
     client_id: '',
-    client_name: '',
-    number: '',
-    area: 'Trabalhista',
-    status: 'Não Protocolado',
-    distribution_date: '',
-    court_jurisdiction: '',
-    lawyer_id: user?.id || '',
-    has_hearing: false,
+    process_code: '',
+    practice_area: 'trabalhista',
+    status: 'nao_protocolado',
+    distributed_at: '',
+    court: '',
+    responsible_lawyer_id: user?.id || '',
+    hearing_scheduled: false,
     notes: '',
   });
+  const [clientName, setClientName] = useState('');
 
   // Carregar dados do processo para edição
   useEffect(() => {
     if (process) {
       setFormData({
         client_id: process.client_id,
-        client_name: process.client_name,
-        number: process.number || '',
-        area: process.area || 'Trabalhista',
-        status: process.status || 'Não Protocolado',
-        distribution_date: process.distribution_date || '',
-        court_jurisdiction: process.court_jurisdiction || '',
-        lawyer_id: process.lawyer_id || user?.id || '',
-        has_hearing: process.has_hearing || false,
+        process_code: process.process_code || '',
+        practice_area: process.practice_area || 'trabalhista',
+        status: process.status || 'nao_protocolado',
+        distributed_at: process.distributed_at || '',
+        court: process.court || '',
+        responsible_lawyer_id: process.responsible_lawyer_id || user?.id || '',
+        hearing_scheduled: process.hearing_scheduled || false,
         notes: process.notes || '',
       });
-      setClientSearchTerm(process.client_name || '');
+      // Buscar nome do cliente
+      if (process.client_id) {
+        clientService.getClient(process.client_id).then(client => {
+          if (client) {
+            setClientName(client.full_name);
+            setClientSearchTerm(client.full_name);
+          }
+        }).catch(console.error);
+      }
     }
   }, [process, user?.id]);
 
@@ -66,8 +73,14 @@ const ProcessForm: React.FC<ProcessFormProps> = ({
         ...prefill
       }));
       
-      if (prefill.client_name) {
-        setClientSearchTerm(prefill.client_name);
+      // Buscar nome do cliente se prefill tiver client_id
+      if (prefill.client_id) {
+        clientService.getClient(prefill.client_id).then(client => {
+          if (client) {
+            setClientName(client.full_name);
+            setClientSearchTerm(client.full_name);
+          }
+        }).catch(console.error);
       }
     }
   }, [prefill, process]);
@@ -78,7 +91,7 @@ const ProcessForm: React.FC<ProcessFormProps> = ({
       try {
         // Implementar quando houver um serviço de membros
         setMembers([
-          { id: user?.id, name: user?.name || 'Você' }
+          { id: user?.id, name: user?.email?.split('@')[0] || 'Você' }
         ]);
       } catch (error) {
         console.error('Erro ao carregar membros:', error);
@@ -119,9 +132,9 @@ const ProcessForm: React.FC<ProcessFormProps> = ({
   const handleClientSelect = (client: Client) => {
     setFormData(prev => ({
       ...prev,
-      client_id: client.id,
-      client_name: client.full_name
+      client_id: client.id
     }));
+    setClientName(client.full_name);
     setClientSearchTerm(client.full_name);
     setShowClientSuggestions(false);
   };
@@ -222,8 +235,8 @@ const ProcessForm: React.FC<ProcessFormProps> = ({
                   id="numero-processo"
                   className="flex-grow bg-gray-100 dark:bg-gray-700 border-transparent rounded-lg focus:ring-orange-500 focus:border-orange-500 text-gray-900 dark:text-gray-100 placeholder-gray-500 dark:placeholder-gray-400"
                   type="text"
-                  value={formData.number || ''}
-                  onChange={(e) => handleChange('number', e.target.value)}
+                  value={formData.process_code || ''}
+                  onChange={(e) => handleChange('process_code', e.target.value)}
                   placeholder="0000000-00.0000.0.00.0000"
                 />
                 <button
@@ -245,15 +258,14 @@ const ProcessForm: React.FC<ProcessFormProps> = ({
                 <select
                   id="area"
                   className="w-full bg-gray-100 dark:bg-gray-700 border-transparent rounded-lg focus:ring-orange-500 focus:border-orange-500 text-gray-900 dark:text-gray-100"
-                  value={formData.area || 'Trabalhista'}
-                  onChange={(e) => handleChange('area', e.target.value)}
+                  value={formData.practice_area || 'trabalhista'}
+                  onChange={(e) => handleChange('practice_area', e.target.value as any)}
                 >
-                  <option value="Trabalhista">Trabalhista</option>
-                  <option value="Civil">Civil</option>
-                  <option value="Penal">Penal</option>
-                  <option value="Previdenciário">Previdenciário</option>
-                  <option value="Administrativo">Administrativo</option>
-                  <option value="Tributário">Tributário</option>
+                  <option value="trabalhista">Trabalhista</option>
+                  <option value="civel">Cível</option>
+                  <option value="familia">Família</option>
+                  <option value="consumidor">Consumidor</option>
+                  <option value="previdenciario">Previdenciário</option>
                 </select>
               </div>
               
@@ -265,14 +277,16 @@ const ProcessForm: React.FC<ProcessFormProps> = ({
                 <select
                   id="status"
                   className="w-full bg-gray-100 dark:bg-gray-700 border-transparent rounded-lg focus:ring-orange-500 focus:border-orange-500 text-gray-900 dark:text-gray-100"
-                  value={formData.status || 'Não Protocolado'}
-                  onChange={(e) => handleChange('status', e.target.value)}
+                  value={formData.status || 'nao_protocolado'}
+                  onChange={(e) => handleChange('status', e.target.value as any)}
                 >
-                  <option value="Não Protocolado">Não Protocolado</option>
-                  <option value="Protocolado">Protocolado</option>
-                  <option value="Em Andamento">Em Andamento</option>
-                  <option value="Concluído">Concluído</option>
-                  <option value="Arquivado">Arquivado</option>
+                  <option value="nao_protocolado">Não Protocolado</option>
+                  <option value="distribuido">Distribuído</option>
+                  <option value="aguardando_confeccao">Aguardando Confecção</option>
+                  <option value="andamento">Em Andamento</option>
+                  <option value="sentenca">Sentença</option>
+                  <option value="cumprimento">Cumprimento</option>
+                  <option value="arquivado">Arquivado</option>
                 </select>
               </div>
               
@@ -286,8 +300,8 @@ const ProcessForm: React.FC<ProcessFormProps> = ({
                     id="distribuicao"
                     className="w-full bg-gray-100 dark:bg-gray-700 border-transparent rounded-lg focus:ring-orange-500 focus:border-orange-500 text-gray-900 dark:text-gray-100 placeholder-gray-500 dark:placeholder-gray-400 pr-10"
                     type="date"
-                    value={formData.distribution_date || ''}
-                    onChange={(e) => handleChange('distribution_date', e.target.value)}
+                    value={formData.distributed_at || ''}
+                    onChange={(e) => handleChange('distributed_at', e.target.value)}
                   />
                   <span className="absolute inset-y-0 right-0 flex items-center pr-3 pointer-events-none text-gray-500 dark:text-gray-400">
                     <Calendar className="w-5 h-5" />
@@ -304,8 +318,8 @@ const ProcessForm: React.FC<ProcessFormProps> = ({
                   id="vara-comarca"
                   className="w-full bg-gray-100 dark:bg-gray-700 border-transparent rounded-lg focus:ring-orange-500 focus:border-orange-500 text-gray-900 dark:text-gray-100 placeholder-gray-500 dark:placeholder-gray-400"
                   type="text"
-                  value={formData.court_jurisdiction || ''}
-                  onChange={(e) => handleChange('court_jurisdiction', e.target.value)}
+                  value={formData.court || ''}
+                  onChange={(e) => handleChange('court', e.target.value)}
                 />
               </div>
             </div>
@@ -320,8 +334,8 @@ const ProcessForm: React.FC<ProcessFormProps> = ({
                 <select
                   id="advogado"
                   className="w-full bg-gray-100 dark:bg-gray-700 border-transparent rounded-lg focus:ring-orange-500 focus:border-orange-500 text-gray-900 dark:text-gray-100"
-                  value={formData.lawyer_id || user?.id || ''}
-                  onChange={(e) => handleChange('lawyer_id', e.target.value)}
+                  value={formData.responsible_lawyer_id || user?.id || ''}
+                  onChange={(e) => handleChange('responsible_lawyer_id', e.target.value)}
                 >
                   {members.map((member) => (
                     <option key={member.id} value={member.id}>
@@ -339,8 +353,8 @@ const ProcessForm: React.FC<ProcessFormProps> = ({
                 <select
                   id="audiencia"
                   className="w-full bg-gray-100 dark:bg-gray-700 border-transparent rounded-lg focus:ring-orange-500 focus:border-orange-500 text-gray-900 dark:text-gray-100"
-                  value={formData.has_hearing ? 'Sim' : 'Não'}
-                  onChange={(e) => handleChange('has_hearing', e.target.value === 'Sim')}
+                  value={formData.hearing_scheduled ? 'Sim' : 'Não'}
+                  onChange={(e) => handleChange('hearing_scheduled', e.target.value === 'Sim')}
                 >
                   <option value="Não">Não</option>
                   <option value="Sim">Sim</option>
