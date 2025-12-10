@@ -32,6 +32,8 @@ import {
   Bell,
   ChevronRight,
   User,
+  History,
+  ClipboardList,
 } from 'lucide-react';
 import { useToastContext } from '../contexts/ToastContext';
 import { useAuth } from '../contexts/AuthContext';
@@ -46,6 +48,7 @@ import type {
   Installment,
   InstallmentStatus,
   PayInstallmentDTO,
+  PaymentAuditLog,
 } from '../types/financial.types';
 import type { Client } from '../types/client.types';
 
@@ -142,6 +145,13 @@ const FinancialModule: React.FC = () => {
     customInstallments: [] as { dueDate: string; value: string }[],
   });
   const [formError, setFormError] = useState<string | null>(null);
+  
+  // Estados para auditoria
+  const [isAuditModalOpen, setIsAuditModalOpen] = useState(false);
+  const [auditLogs, setAuditLogs] = useState<PaymentAuditLog[]>([]);
+  const [loadingAudit, setLoadingAudit] = useState(false);
+  const [auditAgreementId, setAuditAgreementId] = useState<string | null>(null);
+  const [auditFilterMonth, setAuditFilterMonth] = useState(new Date().toISOString().slice(0, 7));
 
   const loadData = useCallback(async (month?: string) => {
     try {
@@ -512,9 +522,9 @@ const FinancialModule: React.FC = () => {
 
       const customInstallmentsPayload = editForm.customInstallments.length
         ? editForm.customInstallments.map((item) => ({
-            due_date: item.dueDate,
-            value: Number(item.value),
-          }))
+          due_date: item.dueDate,
+          value: parseCurrencyToNumber(item.value),
+        }))
         : undefined;
 
       const updated = await financialService.updateAgreement(selectedAgreement.id, {
@@ -640,7 +650,7 @@ const FinancialModule: React.FC = () => {
       if (!formData.installmentsCount || Number(formData.installmentsCount) < 2) return 'Informe a quantidade de parcelas (mínimo 2)';
       if (formData.customInstallments.length) {
         if (formData.customInstallments.length !== Number(formData.installmentsCount)) return 'Número de parcelas personalizadas diferente da quantidade informada';
-        const invalid = formData.customInstallments.find((item) => !item.dueDate || !item.value || Number(item.value) <= 0);
+        const invalid = formData.customInstallments.find((item) => !item.dueDate || !item.value || parseCurrencyToNumber(item.value) <= 0);
         if (invalid) return 'Preencha todas as datas e valores das parcelas personalizadas';
       }
     }
@@ -675,7 +685,7 @@ const FinancialModule: React.FC = () => {
         custom_installments: formData.customInstallments.length
           ? formData.customInstallments.map((item) => ({
               due_date: item.dueDate,
-              value: Number(item.value),
+              value: parseCurrencyToNumber(item.value),
             }))
           : undefined,
         notes: formData.notes?.trim() || undefined,
@@ -787,6 +797,116 @@ const FinancialModule: React.FC = () => {
   const generateMonthlyReport = () => {
     setIsReportModalOpen(true);
   };
+
+  // Funções de auditoria
+  const handleOpenAuditModal = async (agreementId: string) => {
+    setAuditAgreementId(agreementId);
+    setIsAuditModalOpen(true);
+    setLoadingAudit(true);
+    try {
+      const logs = await financialService.getPaymentAuditLog(agreementId);
+      setAuditLogs(logs);
+    } catch (err) {
+      console.error('Erro ao carregar auditoria:', err);
+      toast.error('Erro ao carregar histórico de auditoria');
+    } finally {
+      setLoadingAudit(false);
+    }
+  };
+
+  const loadAuditByMonth = async (month: string) => {
+    setLoadingAudit(true);
+    try {
+      const startDate = `${month}-01T00:00:00`;
+      const endDate = new Date(parseInt(month.split('-')[0]), parseInt(month.split('-')[1]), 0);
+      const endDateStr = `${month}-${endDate.getDate().toString().padStart(2, '0')}T23:59:59`;
+      
+      const logs = await financialService.getAllPaymentAuditLogs({
+        start_date: startDate,
+        end_date: endDateStr,
+        limit: 100,
+      });
+      setAuditLogs(logs);
+    } catch (err) {
+      console.error('Erro ao carregar auditoria:', err);
+      toast.error('Erro ao carregar histórico de auditoria');
+    } finally {
+      setLoadingAudit(false);
+    }
+  };
+
+  const handleCloseAuditModal = () => {
+    setIsAuditModalOpen(false);
+    setAuditLogs([]);
+    setAuditAgreementId(null);
+  };
+
+  // Buscar nome do cliente e título do acordo a partir do agreement_id
+  const getAuditAgreementInfo = (agreementId: string) => {
+    const agreement = agreements.find(a => a.id === agreementId);
+    if (!agreement) return { clientName: 'Cliente não encontrado', title: 'Acordo não encontrado' };
+    return {
+      clientName: getClientName(agreement.client_id),
+      title: agreement.title,
+    };
+  };
+
+  const getAuditActionLabel = (action: string) => {
+    const labels: Record<string, { label: string; color: string; bgColor: string }> = {
+      payment_registered: { label: 'Baixa Registrada', color: 'text-emerald-700', bgColor: 'bg-emerald-100 border-emerald-200' },
+      payment_cancelled: { label: 'Pagamento Cancelado', color: 'text-red-700', bgColor: 'bg-red-100 border-red-200' },
+      payment_edited: { label: 'Pagamento Editado', color: 'text-blue-700', bgColor: 'bg-blue-100 border-blue-200' },
+      installment_created: { label: 'Parcela Criada', color: 'text-indigo-700', bgColor: 'bg-indigo-100 border-indigo-200' },
+      installment_cancelled: { label: 'Parcela Cancelada', color: 'text-orange-700', bgColor: 'bg-orange-100 border-orange-200' },
+      agreement_created: { label: 'Acordo Criado', color: 'text-purple-700', bgColor: 'bg-purple-100 border-purple-200' },
+      agreement_edited: { label: 'Acordo Editado', color: 'text-cyan-700', bgColor: 'bg-cyan-100 border-cyan-200' },
+      agreement_cancelled: { label: 'Acordo Cancelado', color: 'text-gray-700', bgColor: 'bg-gray-100 border-gray-200' },
+    };
+    return labels[action] || { label: action, color: 'text-gray-700', bgColor: 'bg-gray-100 border-gray-200' };
+  };
+
+  // Helpers de moeda para inputs (ex: "1.000,00")
+  const parseCurrencyToNumber = (value: string | number | undefined | null): number => {
+    if (value === undefined || value === null) return 0;
+    if (typeof value === 'number') return value;
+    const trimmed = value.trim();
+    if (!trimmed) return 0;
+    const normalized = trimmed.replace(/\./g, '').replace(',', '.');
+    const num = Number(normalized);
+    return Number.isNaN(num) ? 0 : num;
+  };
+
+  const formatCurrencyInput = (raw: string): string => {
+    const digits = raw.replace(/\D/g, '');
+    if (!digits) return '';
+    const number = Number(digits) / 100;
+    return number.toLocaleString('pt-BR', {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    });
+  };
+
+  // Calcular totais da auditoria filtrada (incluindo honorários proporcionais)
+  const auditTotals = useMemo(() => {
+    let total = 0;
+    let totalHonorarios = 0;
+
+    auditLogs.forEach((log) => {
+      const paidValue = log.new_value?.paid_value;
+      if (typeof paidValue === 'number') {
+        total += paidValue;
+
+        // Calcular honorários proporcionais a partir do acordo
+        const agreement = agreements.find(a => a.id === log.agreement_id);
+        if (agreement && agreement.total_value > 0) {
+          const ratio = agreement.fee_value / agreement.total_value;
+          totalHonorarios += paidValue * ratio;
+        }
+      }
+    });
+
+    return { count: auditLogs.length, total, totalHonorarios };
+  }, [auditLogs, agreements]);
 
   const handleExportMonthlyReport = () => {
     const monthLabel = formatMonthYear(activeMonth).replace(/^./, (char) => char.toUpperCase());
@@ -1963,6 +2083,19 @@ ${clientAddress ? `<div class="flex"><span class="text-subtle-light dark:text-su
                 <FileSpreadsheet className="w-4 h-4" />
                 <span className="hidden sm:inline">Relatório IR</span>
                 <span className="sm:hidden">IR</span>
+              </button>
+              <button
+                onClick={() => {
+                  setIsAuditModalOpen(true);
+                  setAuditAgreementId(null);
+                  loadAuditByMonth(auditFilterMonth);
+                }}
+                className="inline-flex items-center justify-center gap-1.5 border border-purple-200 hover:bg-purple-50 transition-colors px-3 py-1.5 rounded-lg text-xs font-medium text-purple-700"
+                title="Histórico de Auditoria de Pagamentos"
+              >
+                <History className="w-4 h-4" />
+                <span className="hidden sm:inline">Auditoria</span>
+                <span className="sm:hidden">Aud</span>
               </button>
             </div>
             
@@ -3162,16 +3295,16 @@ ${clientAddress ? `<div class="flex"><span class="text-subtle-light dark:text-su
                     <>
                       <div className="flex flex-col w-full md:col-span-1">
                         <p className="text-zinc-900 dark:text-white text-sm font-medium pb-2">Valor fixo</p>
-                        <div className="relative">
-                          <span className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-500">R$</span>
+                        <div className="flex items-center gap-2 rounded-lg border border-zinc-200 dark:border-zinc-600 bg-white dark:bg-zinc-800 h-11 px-3">
+                          <span className="text-zinc-500 text-sm font-medium">R$</span>
                           <input
                             type="number"
                             min="0"
                             step="0.01"
-                            placeholder=""
+                            placeholder="0,00"
                             value={formData.feeFixedValue}
                             onChange={(e) => handleChange('feeFixedValue', e.target.value)}
-                            className="w-full rounded-lg text-zinc-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500/50 border border-zinc-200 dark:border-zinc-600 bg-white dark:bg-zinc-800 h-11 placeholder:text-zinc-500 pl-9 pr-4 text-sm appearance-none [appearance:textfield] [-moz-appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                            className="flex-1 bg-transparent outline-none border-none text-zinc-900 dark:text-white text-sm appearance-none [appearance:textfield] [-moz-appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
                             required
                           />
                         </div>
@@ -3294,25 +3427,21 @@ ${clientAddress ? `<div class="flex"><span class="text-subtle-light dark:text-su
                                 />
                               </td>
                               <td className="py-2 px-3">
-                                <div className="relative">
-                                  <span className="absolute left-2 top-1.5 text-zinc-500 text-sm">R$</span>
-                                  <input
-                                    type="number"
-                                    min="0"
-                                    step="0.01"
-                                    value={item.value}
-                                    onChange={(e) => {
-                                      const value = e.target.value;
-                                      setFormData((prev) => ({
-                                        ...prev,
-                                        customInstallments: prev.customInstallments.map((ci, ciIndex) =>
-                                          ciIndex === index ? { ...ci, value } : ci
-                                        ),
-                                      }));
-                                    }}
-                                    className="border border-zinc-200 dark:border-zinc-600 rounded-lg pl-8 pr-2 py-1 bg-white dark:bg-zinc-800 text-zinc-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500/50 appearance-none [appearance:textfield] [-moz-appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
-                                  />
-                                </div>
+                                <input
+                                  type="text"
+                                  placeholder="R$ 0,00"
+                                  value={item.value}
+                                  onChange={(e) => {
+                                    const formatted = formatCurrencyInput(e.target.value);
+                                    setFormData((prev) => ({
+                                      ...prev,
+                                      customInstallments: prev.customInstallments.map((ci, ciIndex) =>
+                                        ciIndex === index ? { ...ci, value: formatted } : ci
+                                      ),
+                                    }));
+                                  }}
+                                  className="w-full border border-zinc-200 dark:border-zinc-600 rounded-lg px-3 py-1 bg-white dark:bg-zinc-800 text-zinc-900 dark:text-white text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/50"
+                                />
                               </td>
                             </tr>
                           ))}
@@ -3321,8 +3450,8 @@ ${clientAddress ? `<div class="flex"><span class="text-subtle-light dark:text-su
                       <div className="bg-zinc-50 dark:bg-zinc-700 py-2 px-3 text-sm text-zinc-600 dark:text-zinc-300 flex justify-between">
                         <span>
                           Total: {
-                            formData.customInstallments.reduce((sum, item) => sum + (Number(item.value) || 0), 0)
-                              ? formatCurrency(formData.customInstallments.reduce((sum, item) => sum + (Number(item.value) || 0), 0))
+                            formData.customInstallments.reduce((sum, item) => sum + parseCurrencyToNumber(item.value), 0)
+                              ? formatCurrency(formData.customInstallments.reduce((sum, item) => sum + parseCurrencyToNumber(item.value), 0))
                               : '—'
                           }
                         </span>
@@ -3501,6 +3630,12 @@ ${clientAddress ? `<div class="flex"><span class="text-subtle-light dark:text-su
                         className="inline-flex items-center gap-1 text-[11px] px-2 py-0.5 rounded cursor-pointer hover:bg-gray-100 dark:hover:bg-zinc-800 text-red-600 dark:text-red-500 bg-transparent"
                       >
                         <Trash2 className="w-3 h-3" />Excluir
+                      </span>
+                      <span
+                        onClick={() => handleOpenAuditModal(selectedAgreement.id)}
+                        className="inline-flex items-center gap-1 text-[11px] px-2 py-0.5 rounded cursor-pointer hover:bg-gray-100 dark:hover:bg-zinc-800 text-purple-600 dark:text-purple-400 bg-transparent"
+                      >
+                        <History className="w-3 h-3" />Auditoria
                       </span>
                     </div>
                   </div>
@@ -3759,11 +3894,12 @@ ${clientAddress ? `<div class="flex"><span class="text-subtle-light dark:text-su
                           key={key}
                           type="button"
                           onClick={() => setPaymentData(prev => ({ ...prev, paymentMethod: key as typeof prev.paymentMethod }))}
-                          className={`flex items-center justify-center gap-2 rounded-lg py-2.5 px-3 text-sm font-medium transition-all border ${
-                            active
-                              ? 'bg-indigo-100 text-indigo-700 border-indigo-500 shadow-md dark:bg-indigo-900/40 dark:text-indigo-100 dark:border-indigo-400'
-                              : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50 hover:border-slate-300 dark:bg-slate-800 dark:text-slate-300 dark:border-slate-700 dark:hover:bg-slate-700'
-                          }`}
+                          aria-pressed={active}
+                          className={`flex items-center justify-center gap-2 rounded-lg py-2.5 px-3 text-sm font-semibold transition-all
+                            ${active
+                              ? 'bg-emerald-600 text-white shadow-lg shadow-emerald-500/30 scale-[1.02] dark:bg-emerald-500'
+                              : 'bg-slate-100 text-slate-700 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-100 dark:hover:bg-slate-700'}
+                          `}
                         >
                           <Icon className="w-4 h-4" />
                           <span className="truncate">{label}</span>
@@ -4010,6 +4146,224 @@ ${clientAddress ? `<div class="flex"><span class="text-subtle-light dark:text-su
               <p className="text-xs text-slate-500 text-center">
                 💡 O relatório incluirá todos os honorários recebidos no ano selecionado
               </p>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal de Auditoria de Pagamentos */}
+      {isAuditModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4">
+          <div className="w-full max-w-5xl rounded-2xl bg-white dark:bg-zinc-900 shadow-2xl border border-slate-200/80 dark:border-zinc-700 max-h-[90vh] flex flex-col overflow-hidden">
+            {/* Header */}
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 px-6 py-4 border-b border-slate-200 dark:border-zinc-700 bg-gradient-to-r from-purple-50 via-indigo-50 to-sky-50 dark:from-purple-900/40 dark:via-indigo-900/40 dark:to-sky-900/30 sticky top-0">
+              <div className="flex items-center gap-3">
+                <div className="flex items-center justify-center rounded-xl p-2.5 bg-purple-100 text-purple-700 border border-purple-200 shadow-sm">
+                  <ClipboardList className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-xs font-semibold tracking-[0.2em] text-purple-700 dark:text-purple-200 uppercase">Histórico de Baixas</h3>
+                  <p className="text-sm text-slate-700 dark:text-slate-200 font-medium leading-tight">Registro de pagamentos recebidos</p>
+                </div>
+              </div>
+              <div className="flex items-center gap-3">
+                {/* Filtro de Mês */}
+                <div className="flex items-center gap-2">
+                  <CalendarIcon className="w-4 h-4 text-slate-500" />
+                  <input
+                    type="month"
+                    value={auditFilterMonth}
+                    onChange={(e) => {
+                      setAuditFilterMonth(e.target.value);
+                      loadAuditByMonth(e.target.value);
+                    }}
+                    className="border border-slate-200 dark:border-zinc-600 rounded-lg px-3 py-1.5 text-sm bg-white dark:bg-zinc-800 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-purple-500"
+                  />
+                </div>
+                <button 
+                  onClick={handleCloseAuditModal} 
+                  className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 transition p-2 hover:bg-white/50 dark:hover:bg-zinc-800 rounded-lg"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+            </div>
+
+            {/* Resumo do Mês */}
+            <div className="px-6 py-4 bg-slate-50/80 dark:bg-zinc-900/60 border-b border-slate-200/80 dark:border-zinc-800/80 backdrop-blur-sm">
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                <div className="bg-white dark:bg-zinc-900 rounded-xl p-3 border border-slate-200 dark:border-zinc-800 shadow-sm">
+                  <p className="text-[10px] text-slate-500 dark:text-slate-400 uppercase font-medium mb-1">Período</p>
+                  <p className="text-base font-bold text-slate-900 dark:text-white">
+                    {new Date(auditFilterMonth + '-01').toLocaleDateString('pt-BR', { month: 'short', year: 'numeric' })}
+                  </p>
+                </div>
+                <div className="bg-white dark:bg-zinc-900 rounded-xl p-3 border border-slate-200 dark:border-zinc-800 shadow-sm">
+                  <p className="text-[10px] text-slate-500 dark:text-slate-400 uppercase font-medium mb-1">Baixas</p>
+                  <p className="text-base font-bold text-purple-600">{auditTotals.count}</p>
+                </div>
+                <div className="bg-white dark:bg-zinc-900 rounded-xl p-3 border border-blue-200 dark:border-blue-700 shadow-sm">
+                  <p className="text-[10px] text-blue-600 dark:text-blue-400 uppercase font-medium mb-1">Total Recebido</p>
+                  <p className="text-base font-bold text-blue-600">{formatCurrency(auditTotals.total)}</p>
+                </div>
+                <div className="bg-gradient-to-br from-emerald-50 via-emerald-50 to-green-50 dark:from-emerald-900/40 dark:via-emerald-900/30 dark:to-green-900/40 rounded-xl p-3 border border-emerald-300 dark:border-emerald-700 shadow-sm">
+                  <p className="text-[10px] text-emerald-700 dark:text-emerald-400 uppercase font-bold mb-1">💰 Honorários</p>
+                  <p className="text-base font-bold text-emerald-600">{formatCurrency(auditTotals.totalHonorarios)}</p>
+                </div>
+              </div>
+            </div>
+
+            {/* Conteúdo - Lista de Baixas */}
+            <div className="flex-1 overflow-y-auto px-6 py-4">
+              {loadingAudit ? (
+                <div className="flex items-center justify-center py-12">
+                  <Loader2 className="w-8 h-8 text-purple-500 animate-spin" />
+                </div>
+              ) : auditLogs.length === 0 ? (
+                <div className="text-center py-12">
+                  <History className="w-16 h-16 text-slate-300 dark:text-zinc-600 mx-auto mb-4" />
+                  <p className="text-slate-600 dark:text-slate-400 font-medium mb-2">Nenhuma baixa neste período</p>
+                  <p className="text-sm text-slate-500 dark:text-slate-500">
+                    Selecione outro mês para ver os registros
+                  </p>
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {/* Tabela de Baixas */}
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-sm">
+                      <thead>
+                        <tr className="border-b border-slate-200 dark:border-zinc-700 bg-slate-50/80 dark:bg-zinc-900/80">
+                          <th className="text-left py-3 px-3 text-[11px] font-semibold tracking-wide text-slate-600 dark:text-slate-300 uppercase">Data</th>
+                          <th className="text-left py-3 px-3 text-[11px] font-semibold tracking-wide text-slate-600 dark:text-slate-300 uppercase">Cliente</th>
+                          <th className="text-left py-3 px-3 text-[11px] font-semibold tracking-wide text-slate-600 dark:text-slate-300 uppercase hidden lg:table-cell">Acordo</th>
+                          <th className="text-center py-3 px-2 text-[11px] font-semibold tracking-wide text-slate-600 dark:text-slate-300 uppercase">Parc.</th>
+                          <th className="text-left py-3 px-2 text-[11px] font-semibold tracking-wide text-slate-600 dark:text-slate-300 uppercase hidden sm:table-cell">Método</th>
+                          <th className="text-right py-3 px-3 text-[11px] font-semibold tracking-wide text-slate-600 dark:text-slate-300 uppercase">Valor</th>
+                          <th className="text-right py-3 px-3 text-[11px] font-semibold tracking-wide text-emerald-700 dark:text-emerald-400 uppercase">Honorário</th>
+                          <th className="text-left py-3 px-3 text-[11px] font-semibold tracking-wide text-slate-600 dark:text-slate-300 uppercase">Usuário / Horário</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {auditLogs.map((log) => {
+                          const actionInfo = getAuditActionLabel(log.action);
+                          const agreementInfo = getAuditAgreementInfo(log.agreement_id);
+                          const paymentDate = log.new_value?.payment_date 
+                            ? new Date(log.new_value.payment_date + 'T12:00:00').toLocaleDateString('pt-BR')
+                            : new Date(log.created_at).toLocaleDateString('pt-BR');
+                          const paymentMethod = log.new_value?.payment_method;
+                          const methodLabel = paymentMethod === 'pix' ? 'PIX'
+                            : paymentMethod === 'transferencia' ? 'Transf.'
+                            : paymentMethod === 'dinheiro' ? 'Dinheiro'
+                            : paymentMethod === 'cartao_credito' ? 'Cartão Créd.'
+                            : paymentMethod === 'cartao_debito' ? 'Cartão Déb.'
+                            : paymentMethod === 'cheque' ? 'Cheque'
+                            : 'N/I';
+                          const paidValue = log.new_value?.paid_value || 0;
+                          // Extrair número da parcela da descrição
+                          const parcelaMatch = log.description.match(/parcela (\d+)/i);
+                          const parcelaNum = parcelaMatch ? parcelaMatch[1] : '-';
+
+                          const logDateTime = new Date(log.created_at);
+                          const userLabel = log.user_name === '(Migração automática)'
+                            ? 'Migração automática'
+                            : (log.user_name || '-');
+
+                          // Honorários proporcionais deste pagamento
+                          const agreement = agreements.find(a => a.id === log.agreement_id);
+                          let feeThisPayment = 0;
+                          if (agreement && agreement.total_value > 0 && typeof paidValue === 'number') {
+                            const ratio = agreement.fee_value / agreement.total_value;
+                            feeThisPayment = paidValue * ratio;
+                          }
+                          
+                          return (
+                            <tr 
+                              key={log.id} 
+                              className={`border-b border-slate-100 dark:border-zinc-800 hover:bg-slate-50 dark:hover:bg-zinc-800/50 transition ${actionInfo.bgColor}`}
+                            >
+                              <td className="py-3 px-3">
+                                <div className="flex items-center gap-2">
+                                  <CheckCircle className="w-4 h-4 text-emerald-500" />
+                                  <span className="font-medium text-slate-900 dark:text-white">{paymentDate}</span>
+                                </div>
+                              </td>
+                              <td className="py-3 px-3">
+                                <span className="font-semibold text-slate-900 dark:text-white">{agreementInfo.clientName}</span>
+                              </td>
+                              <td className="py-3 px-3 hidden lg:table-cell">
+                                <span className="text-slate-600 dark:text-slate-400 truncate max-w-[160px] block" title={agreementInfo.title}>
+                                  {agreementInfo.title.length > 25 ? agreementInfo.title.substring(0, 25) + '...' : agreementInfo.title}
+                                </span>
+                              </td>
+                              <td className="py-3 px-2 text-center">
+                                <span className="inline-flex items-center justify-center w-7 h-7 rounded-full bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300 text-xs font-bold">
+                                  {parcelaNum}
+                                </span>
+                              </td>
+                              <td className="py-3 px-2 hidden sm:table-cell">
+                                <span className={`inline-flex items-center gap-1 px-2 py-1 rounded text-xs font-medium ${
+                                  paymentMethod === 'pix' ? 'bg-cyan-100 text-cyan-700 dark:bg-cyan-900/30 dark:text-cyan-300' :
+                                  paymentMethod === 'transferencia' ? 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300' :
+                                  paymentMethod === 'dinheiro' ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300' :
+                                  'bg-slate-100 text-slate-700 dark:bg-slate-700 dark:text-slate-300'
+                                }`}>
+                                  {methodLabel}
+                                </span>
+                              </td>
+                              <td className="py-3 px-3 text-right">
+                                <span className="font-semibold text-slate-900 dark:text-slate-100">
+                                  {formatCurrency(paidValue)}
+                                </span>
+                              </td>
+                              <td className="py-3 px-3 text-right">
+                                <span className="font-semibold text-emerald-600 dark:text-emerald-400">
+                                  {formatCurrency(feeThisPayment)}
+                                </span>
+                              </td>
+                              <td className="py-3 px-3">
+                                <div className="flex flex-col text-xs text-slate-600 dark:text-slate-300">
+                                  <span className="font-medium truncate">{userLabel}</span>
+                                  <span className="text-[11px] text-slate-500 dark:text-slate-400">
+                                    {logDateTime.toLocaleDateString('pt-BR')} às {logDateTime.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}
+                                  </span>
+                                </div>
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                      <tfoot>
+                        <tr className="bg-slate-100 dark:bg-zinc-800 font-semibold">
+                          <td colSpan={6} className="py-3 px-4 text-right text-slate-700 dark:text-slate-300">
+                            Total do Período:
+                          </td>
+                          <td className="py-3 px-4 text-right text-slate-700 dark:text-slate-200">
+                            {formatCurrency(auditTotals.total)}
+                          </td>
+                          <td className="py-3 px-4 text-right text-emerald-600 dark:text-emerald-400">
+                            {formatCurrency(auditTotals.totalHonorarios)}
+                          </td>
+                        </tr>
+                      </tfoot>
+                    </table>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Footer */}
+            <div className="flex items-center justify-between px-6 py-4 border-t border-slate-200 dark:border-zinc-700 bg-slate-50/90 dark:bg-zinc-900/80 sticky bottom-0 backdrop-blur-sm">
+              <p className="text-xs text-slate-600 dark:text-slate-300 flex items-center gap-2">
+                <span className="text-red-500">▌</span>
+                {auditTotals.count} registro{auditTotals.count !== 1 ? 's' : ''} em {new Date(auditFilterMonth + '-01').toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' })}
+              </p>
+              <button
+                onClick={handleCloseAuditModal}
+                className="px-5 py-2 text-sm font-semibold text-slate-600 dark:text-slate-300 hover:text-slate-800 dark:hover:text-white bg-white dark:bg-zinc-700 border border-slate-200 dark:border-zinc-600 rounded-lg hover:bg-slate-100 dark:hover:bg-zinc-600 transition"
+              >
+                Fechar
+              </button>
             </div>
           </div>
         </div>

@@ -1716,17 +1716,18 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({
         </div>
       )}
 
-      {/* Modal de Criação de Compromisso */}
+      {/* Modal de Criação/Edição de Compromisso */}
       {isCreateModalOpen && (
         <div
           className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center z-50 p-4"
           onClick={handleCloseCreateModal}
         >
           <div
-            className="bg-white rounded-2xl shadow-2xl max-w-lg w-full p-6"
+            className="bg-white rounded-2xl shadow-2xl max-w-xl w-full max-h-[85vh] flex flex-col"
             onClick={(e) => e.stopPropagation()}
           >
-            <div className="flex items-start justify-between mb-4">
+            {/* Header */}
+            <div className="flex items-start justify-between px-6 pt-5 pb-3 border-b border-slate-200">
               <div>
                 <h3 className="text-lg font-semibold text-slate-900">
                   {editingEventId ? 'Editar Compromisso' : 'Novo Compromisso'}
@@ -1749,7 +1750,8 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({
               </button>
             </div>
 
-            <div className="space-y-4">
+            {/* Corpo rolável */}
+            <div className="flex-1 overflow-y-auto px-6 py-4 space-y-4">
               <div>
                 <label className="text-sm font-medium text-slate-700">Título *</label>
                 <input
@@ -1865,12 +1867,13 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({
               </div>
             </div>
 
-            <div className="mt-6 flex justify-end gap-3">
+            {/* Footer */}
+            <div className="px-6 py-4 border-t border-slate-200 flex justify-end gap-3 flex-shrink-0 bg-white">
               {editingEventId && (
                 <button
                   type="button"
                   onClick={handleDeleteEvent}
-                  className="px-4 py-2 text-sm font-semibold text-white bg-red-500 hover:bg-red-600 rounded-lg transition disabled:opacity-60"
+                  className="px-4 py-2 text-sm font-semibold text-white bg-red-600 hover:bg-red-700 rounded-lg transition disabled:cursor-not-allowed"
                   disabled={savingEvent}
                 >
                   Excluir

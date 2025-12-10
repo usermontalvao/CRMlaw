@@ -134,3 +134,40 @@ export interface FinancialStats {
 export interface InstallmentWithAgreement extends Installment {
   agreement: Agreement;
 }
+
+// Tipos de ação de auditoria de pagamento
+export type PaymentAuditAction = 
+  | 'payment_registered'    // Baixa registrada
+  | 'payment_cancelled'     // Pagamento cancelado/estornado
+  | 'payment_edited'        // Pagamento editado
+  | 'installment_created'   // Parcela criada
+  | 'installment_cancelled' // Parcela cancelada
+  | 'agreement_created'     // Acordo criado
+  | 'agreement_edited'      // Acordo editado
+  | 'agreement_cancelled';  // Acordo cancelado
+
+// Log de auditoria de pagamento
+export interface PaymentAuditLog {
+  id: string;
+  agreement_id: string;
+  installment_id?: string | null;
+  user_id: string;
+  user_name?: string | null;
+  action: PaymentAuditAction;
+  description: string;
+  old_value?: Record<string, any> | null;
+  new_value?: Record<string, any> | null;
+  ip_address?: string | null;
+  user_agent?: string | null;
+  created_at: string;
+}
+
+// DTO para criar log de auditoria
+export interface CreatePaymentAuditDTO {
+  agreement_id: string;
+  installment_id?: string;
+  action: PaymentAuditAction;
+  description: string;
+  old_value?: Record<string, any>;
+  new_value?: Record<string, any>;
+}

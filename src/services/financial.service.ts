@@ -7,6 +7,8 @@ import type {
   PayInstallmentDTO,
   FinancialStats,
   CustomInstallmentInput,
+  PaymentAuditLog,
+  CreatePaymentAuditDTO,
 } from '../types/financial.types';
 
 class FinancialService {
@@ -230,6 +232,13 @@ class FinancialService {
   }
 
   async payInstallment(id: string, data: PayInstallmentDTO): Promise<Installment> {
+    // Buscar dados anteriores para auditoria
+    const { data: oldData } = await supabase
+      .from('installments')
+      .select('*')
+      .eq('id', id)
+      .single();
+
     const { data: updated, error } = await supabase
       .from('installments')
       .update({
@@ -245,6 +254,36 @@ class FinancialService {
       .single();
 
     if (error) throw error;
+
+    // Registrar auditoria
+    const paymentMethodLabels: Record<string, string> = {
+      dinheiro: 'Dinheiro',
+      pix: 'PIX',
+      transferencia: 'Transferência',
+      cheque: 'Cheque',
+      cartao_credito: 'Cartão de Crédito',
+      cartao_debito: 'Cartão de Débito',
+    };
+    
+    await this.logPaymentAudit({
+      agreement_id: updated.agreement_id,
+      installment_id: id,
+      action: 'payment_registered',
+      description: `Baixa registrada na parcela ${updated.installment_number} - Valor: R$ ${data.paid_value.toFixed(2)} - Método: ${paymentMethodLabels[data.payment_method] || data.payment_method}`,
+      old_value: oldData ? {
+        status: oldData.status,
+        payment_date: oldData.payment_date,
+        payment_method: oldData.payment_method,
+        paid_value: oldData.paid_value,
+      } : undefined,
+      new_value: {
+        status: 'pago',
+        payment_date: data.payment_date,
+        payment_method: data.payment_method,
+        paid_value: data.paid_value,
+        notes: data.notes,
+      },
+    });
 
     // Verificar se todas as parcelas foram pagas para atualizar status do acordo
     await this.checkAndUpdateAgreementStatus(updated.agreement_id);
@@ -428,6 +467,122 @@ class FinancialService {
         .update({ status: 'concluido', updated_at: new Date().toISOString() })
         .eq('id', agreementId);
     }
+  }
+
+  // ============================================
+  // AUDITORIA DE PAGAMENTOS
+  // ============================================
+
+  /**
+   * Registra uma entrada no log de auditoria de pagamentos
+   */
+  async logPaymentAudit(data: CreatePaymentAuditDTO): Promise<void> {
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      
+      // Buscar nome do usuário
+      let userName: string | null = null;
+      if (user?.id) {
+        const { data: profile } = await supabase
+          .from('profiles')
+          .select('name')
+          .eq('user_id', user.id)
+          .single();
+        userName = profile?.name || user.email || null;
+      }
+
+      await supabase.from('payment_audit_log').insert({
+        agreement_id: data.agreement_id,
+        installment_id: data.installment_id || null,
+        user_id: user?.id || null,
+        user_name: userName,
+        action: data.action,
+        description: data.description,
+        old_value: data.old_value || null,
+        new_value: data.new_value || null,
+        user_agent: typeof navigator !== 'undefined' ? navigator.userAgent : null,
+      });
+    } catch (err) {
+      console.error('Erro ao registrar auditoria de pagamento:', err);
+      // Não lançar erro para não interromper a operação principal
+    }
+  }
+
+  /**
+   * Busca log de auditoria de um acordo
+   */
+  async getPaymentAuditLog(agreementId: string): Promise<PaymentAuditLog[]> {
+    const { data, error } = await supabase
+      .from('payment_audit_log')
+      .select('*')
+      .eq('agreement_id', agreementId)
+      .order('created_at', { ascending: false });
+
+    if (error) {
+      console.error('Erro ao buscar auditoria:', error);
+      return [];
+    }
+
+    return data || [];
+  }
+
+  /**
+   * Busca log de auditoria de uma parcela específica
+   */
+  async getInstallmentAuditLog(installmentId: string): Promise<PaymentAuditLog[]> {
+    const { data, error } = await supabase
+      .from('payment_audit_log')
+      .select('*')
+      .eq('installment_id', installmentId)
+      .order('created_at', { ascending: false });
+
+    if (error) {
+      console.error('Erro ao buscar auditoria da parcela:', error);
+      return [];
+    }
+
+    return data || [];
+  }
+
+  /**
+   * Busca todo o histórico de auditoria com filtros
+   */
+  async getAllPaymentAuditLogs(filters?: {
+    action?: string;
+    user_id?: string;
+    start_date?: string;
+    end_date?: string;
+    limit?: number;
+  }): Promise<PaymentAuditLog[]> {
+    let query = supabase
+      .from('payment_audit_log')
+      .select('*')
+      .order('created_at', { ascending: false });
+
+    if (filters?.action) {
+      query = query.eq('action', filters.action);
+    }
+    if (filters?.user_id) {
+      query = query.eq('user_id', filters.user_id);
+    }
+    if (filters?.start_date) {
+      query = query.gte('created_at', filters.start_date);
+    }
+    if (filters?.end_date) {
+      query = query.lte('created_at', filters.end_date);
+    }
+    if (filters?.limit) {
+      query = query.limit(filters.limit);
+    }
+
+    const { data, error } = await query;
+
+    if (error) {
+      console.error('Erro ao buscar logs de auditoria:', error);
+      return [];
+    }
+
+    return data || [];
   }
 }
 
