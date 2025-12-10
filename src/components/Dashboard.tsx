@@ -513,43 +513,61 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToModule }) => {
 
   return (
     <div className="space-y-4 bg-slate-50 -m-6 p-4 sm:p-6 min-h-screen">
-      
-      {/* Header com Saudação - Compacto */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-xl sm:text-2xl font-bold text-slate-900">
-            {getGreeting()}! 👋
-          </h1>
-          <p className="text-slate-500 text-xs sm:text-sm">
-            {new Date().toLocaleDateString('pt-BR', { weekday: 'long', day: 'numeric', month: 'long' })}
-          </p>
-        </div>
-        <button
-          onClick={() => handleNavigate('clientes?mode=create')}
-          className="flex items-center gap-1.5 px-3 py-2 bg-amber-500 hover:bg-amber-600 text-white rounded-lg font-semibold text-xs transition-all shadow-md"
-        >
-          <Plus className="w-3.5 h-3.5" />
-          <span className="hidden sm:inline">Novo Cliente</span>
-        </button>
-      </div>
 
-      {/* Alertas Urgentes - Compacto */}
+      {/* Header repaginado */}
+      <DashboardHeader onNewClient={() => handleNavigate('clientes?mode=create')} />
+
+      {/* Barra de Atenção / Alertas Urgentes (premium) */}
       {urgentAlerts.length > 0 && (
-        <div className="flex flex-wrap items-center gap-2 p-3 bg-gradient-to-r from-red-500 to-orange-500 rounded-xl shadow-md">
-          <div className="flex items-center gap-2 text-white">
-            <AlertTriangle className="w-4 h-4" />
-            <span className="text-sm font-semibold">Atenção:</span>
-          </div>
-          {urgentAlerts.map((alert, index) => (
+        <div className="relative overflow-hidden rounded-2xl border border-amber-200 bg-gradient-to-r from-amber-50 via-white to-orange-50 px-5 py-4 shadow-sm flex flex-col gap-3">
+          <div className="pointer-events-none absolute -left-10 -top-10 h-24 w-24 rounded-full bg-amber-200/40 blur-3xl" />
+          <div className="pointer-events-none absolute -right-6 -bottom-10 h-20 w-20 rounded-full bg-orange-200/40 blur-2xl" />
+
+          <div className="relative flex flex-wrap items-center gap-3">
+            <div className="flex items-center gap-3">
+              <div className="flex items-center justify-center w-10 h-10 rounded-2xl bg-gradient-to-br from-amber-500 to-orange-500 text-white shadow-md">
+                <AlertTriangle className="w-5 h-5" />
+              </div>
+              <div>
+                <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-amber-700">Centro de atenção</p>
+                <p className="text-xs text-amber-900/90">
+                  {urgentAlerts.reduce((sum, a) => sum + a.count, 0)} item(s) críticos hoje entre prazos, intimações e financeiro.
+                </p>
+              </div>
+            </div>
+
             <button
-              key={index}
-              onClick={() => handleNavigate(alert.action)}
-              className="flex items-center gap-2 bg-white/20 hover:bg-white/30 rounded-lg px-3 py-1.5 transition-all group"
+              type="button"
+              onClick={() => handleNavigate('prazos')}
+              className="ml-auto inline-flex items-center gap-1.5 rounded-full bg-amber-600 px-3 py-1.5 text-[11px] font-semibold text-white shadow hover:bg-amber-700 transition-all"
             >
-              <span className="text-white text-xs font-medium">{alert.type}</span>
-              <span className="bg-white text-red-600 text-xs font-bold px-1.5 py-0.5 rounded-full">{alert.count}</span>
+              Ver prioridades do dia
+              <ChevronRight className="w-3 h-3" />
             </button>
-          ))}
+          </div>
+
+          <div className="relative flex flex-wrap items-center gap-2">
+            {urgentAlerts.map((alert, index) => {
+              const baseColor =
+                alert.action === 'prazos' ? 'bg-red-50 text-red-700 border-red-100 hover:bg-red-100/70' :
+                alert.action === 'intimacoes' ? 'bg-orange-50 text-orange-700 border-orange-100 hover:bg-orange-100/70' :
+                'bg-amber-50 text-amber-800 border-amber-100 hover:bg-amber-100/70';
+
+              return (
+                <button
+                  key={index}
+                  onClick={() => handleNavigate(alert.action)}
+                  className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-[11px] font-semibold border transition-all ${baseColor}`}
+                >
+                  <span className="flex items-center justify-center w-5 h-5 rounded-full bg-white/80 text-[11px] font-bold text-amber-700">
+                    {alert.count}
+                  </span>
+                  {alert.icon}
+                  <span>{alert.type}</span>
+                </button>
+              );
+            })}
+          </div>
         </div>
       )}
 

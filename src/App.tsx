@@ -30,7 +30,6 @@ import OfflinePage from './components/OfflinePage';
 import ProfileModal, { AppProfile, UserRole } from './components/ProfileModal';
 // import { ClientFormModal } from './components/ClientFormModal';
 import { NotificationCenterNew as NotificationCenter } from './components/NotificationCenterNew';
-import { NotificationPermissionBanner } from './components/NotificationPermissionBanner';
 import SessionWarning from './components/SessionWarning';
 
 // Lazy loading dos módulos principais (carrega apenas quando acessado)
@@ -1061,9 +1060,6 @@ function App() {
 
         {/* Main Content */}
         <main className={`px-3 sm:px-4 lg:px-6 xl:px-8 space-y-4 sm:space-y-6 ${activeModule === 'agenda' ? 'py-0' : 'py-4 sm:py-6'}`}>
-          {/* Banner de Permissão de Notificações */}
-          <NotificationPermissionBanner />
-          
           {profileBanner && (
             <div className="bg-emerald-50 border border-emerald-200 text-emerald-700 px-4 py-3 rounded-lg text-sm flex justify-between items-center">
               <span>{profileBanner}</span>
