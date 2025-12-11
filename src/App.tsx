@@ -24,6 +24,7 @@ import {
   Settings,
   Moon,
   Sun,
+  Rocket,
 } from 'lucide-react';
 import Login from './components/Login';
 import OfflinePage from './components/OfflinePage';
@@ -31,6 +32,7 @@ import ProfileModal, { AppProfile, UserRole } from './components/ProfileModal';
 // import { ClientFormModal } from './components/ClientFormModal';
 import { NotificationCenterNew as NotificationCenter } from './components/NotificationCenterNew';
 import SessionWarning from './components/SessionWarning';
+import TermsPrivacyPage from './components/TermsPrivacyPage';
 
 // Lazy loading dos módulos principais (carrega apenas quando acessado)
 const Dashboard = lazy(() => import('./components/Dashboard'));
@@ -67,19 +69,7 @@ import type { NotificationItem } from './types/notification.types';
 
 type ClientSearchResult = Awaited<ReturnType<typeof clientService.searchClients>>[number];
 
-function App() {
-  const isCronRoute = typeof window !== 'undefined' && window.location.hash.includes('/cron/djen');
-
-  if (isCronRoute) {
-    return (
-      <div className="min-h-screen bg-gray-50">
-        <Suspense fallback={<div className="p-8 text-center text-slate-600">Carregando cron...</div>}>
-          <CronEndpoint />
-        </Suspense>
-      </div>
-    );
-  }
-
+const MainApp: React.FC = () => {
   const { currentModule: activeModule, moduleParams, navigateTo, setModuleParams, clearModuleParams } = useNavigation();
   const { theme, toggleTheme } = useTheme();
   const [isMobileNavOpen, setIsMobileNavOpen] = useState(false);
@@ -541,13 +531,34 @@ function App() {
     setTimeout(() => setProfileBanner(null), 3000);
   };
 
-  // Logout com animação
+  const [loggingIn, setLoggingIn] = useState(false);
+
+  const handleLogin = async (email: string, password: string) => {
+    setLoggingIn(true);
+
+    try {
+      await signIn(email, password);
+    } finally {
+      // Duração da animação de entrada: dobro da saída (definida abaixo)
+      setTimeout(() => {
+        setLoggingIn(false);
+      }, 4000);
+    }
+  };
+
+  // Logout com animação (sem atraso artificial longo)
   const handleLogout = async () => {
     setLoggingOut(true);
-    // Aguardar animação antes de fazer logout
-    await new Promise(resolve => setTimeout(resolve, 3000));
-    await signOut();
-    setLoggingOut(false);
+
+    try {
+      // Realiza o logout imediatamente
+      await signOut();
+    } finally {
+      // Duração base da animação de saída (~2s)
+      setTimeout(() => {
+        setLoggingOut(false);
+      }, 2000);
+    }
   };
 
   if (loading) {
@@ -561,8 +572,9 @@ function App() {
     );
   }
 
-  if (!user) {
-    return <Login onLogin={signIn} onResetPassword={resetPassword} />;
+  // Enquanto estiver animando login/logout, mantemos o overlay global
+  if (!user && !loggingIn && !loggingOut) {
+    return <Login onLogin={handleLogin} onResetPassword={resetPassword} />;
   }
 
   // Mostrar página offline se sem conexão
@@ -573,8 +585,8 @@ function App() {
   return (
     <CacheProvider>
       <div className="min-h-screen bg-gray-100 dark:bg-black transition-colors duration-300">
-        {/* Overlay de Logout - Animação Nave Aterrissando */}
-        {loggingOut && (
+        {/* Overlay de Login/Logout - Animação Nave */}
+        {(loggingIn || loggingOut) && (
           <div className="fixed inset-0 z-[100] flex flex-col items-center justify-center bg-slate-900 animate-fade-in">
             {/* Estrelas de fundo */}
             <div className="absolute inset-0 overflow-hidden">
@@ -592,51 +604,36 @@ function App() {
               ))}
             </div>
             
-            {/* Nave/Foguete Descendo */}
-            <div className="relative z-10 animate-rocket-land">
-              <div className="relative transform scale-[1.8] sm:scale-[2.2] drop-shadow-[0_20px_45px_rgba(15,23,42,0.65)]">
-                {/* Corpo do foguete */}
-                <div className="relative w-12 h-24 bg-slate-100 rounded-[50%_50%_50%_50%_/_60%_60%_40%_40%] shadow-inner overflow-hidden z-20 mx-auto border border-slate-300">
-                  {/* Janela */}
-                  <div className="absolute top-6 left-1/2 -translate-x-1/2 w-6 h-6 bg-sky-300 rounded-full border-2 border-slate-300 shadow-inner">
-                    <div className="absolute top-1 left-1 w-2 h-2 bg-white rounded-full opacity-50" />
-                  </div>
-                  {/* Detalhes */}
-                  <div className="absolute bottom-0 w-full h-1 bg-red-500" />
-                  <div className="absolute bottom-2 w-full h-1 bg-red-500" />
-                </div>
-
-                {/* Asas esquerda */}
-                <div className="absolute bottom-2 -left-3 w-6 h-10 bg-red-600 rounded-tl-full rounded-bl-lg skew-y-12 z-10 border-l border-red-700" />
-                
-                {/* Asas direita */}
-                <div className="absolute bottom-2 -right-3 w-6 h-10 bg-red-600 rounded-tr-full rounded-br-lg -skew-y-12 z-10 border-r border-red-700" />
-
-                {/* Fogo de frenagem (menor, apontando para baixo) */}
-                <div className="absolute -bottom-12 left-1/2 -translate-x-1/2 w-10 h-16 z-0 animate-fire-brake">
-                  <div className="absolute inset-0 bg-gradient-to-t from-transparent via-blue-400 to-cyan-300 rounded-b-full blur-[2px]" />
-                  <div className="absolute inset-1 bg-gradient-to-t from-transparent via-blue-200 to-white rounded-b-full blur-[1px]" />
-                </div>
-
-                {/* Halo luminoso abaixo do foguete */}
-                <div className="absolute -bottom-6 left-1/2 -translate-x-1/2 w-32 h-12 bg-cyan-400/30 blur-[32px]" />
+            {/* Nave/Foguete simples */}
+            <div className="relative z-10 flex flex-col items-center gap-4">
+              <div className="relative flex items-center justify-center w-16 h-16 rounded-full bg-amber-500/15 border border-amber-400/60 shadow-[0_0_40px_rgba(251,191,36,0.35)]">
+                <div className="absolute inset-0 rounded-full bg-amber-500/20 blur-xl" aria-hidden="true" />
+                <Rocket className="relative w-8 h-8 text-amber-300 animate-bounce" />
+                <span className="absolute inset-0 rounded-full border border-dashed border-amber-300/70 animate-spin-slow" aria-hidden="true" />
               </div>
             </div>
             
-            {/* Anel de energia ao tocar a pista */}
-            <div className="absolute bottom-24 left-1/2 -translate-x-1/2 w-24 h-24 border-2 border-cyan-400/60 rounded-full animate-landing-ring" />
-            
-            {/* Plataforma de pouso */}
-            <div className="absolute bottom-20 left-1/2 -translate-x-1/2 w-48 h-4 bg-gradient-to-r from-slate-700 via-slate-600 to-slate-700 rounded-full shadow-[0_25px_50px_rgba(0,0,0,0.45)] animate-fade-in-up" style={{ animationDelay: '1s' }} />
-            
             {/* Texto */}
             <div className="relative z-10 mt-16 text-center animate-fade-in-up">
-              <p className="text-2xl font-bold text-white mb-2">
-                🛬 Aterrissando...
-              </p>
-              <p className="text-cyan-400 text-lg font-medium">
-                Até logo! Volte sempre.
-              </p>
+              {loggingIn ? (
+                <>
+                  <p className="text-2xl font-bold text-white mb-2">
+                    🚀 Preparando seu painel...
+                  </p>
+                  <p className="text-cyan-400 text-lg font-medium">
+                    Carregando seus dados do escritório.
+                  </p>
+                </>
+              ) : (
+                <>
+                  <p className="text-2xl font-bold text-white mb-2">
+                    🛬 Aterrissando...
+                  </p>
+                  <p className="text-cyan-400 text-lg font-medium">
+                    Até logo! Volte sempre.
+                  </p>
+                </>
+              )}
             </div>
           </div>
         )}
@@ -1173,6 +1170,43 @@ function App() {
       </div>
     </CacheProvider>
   );
-}
+};
+
+const App: React.FC = () => {
+  const [hashRoute, setHashRoute] = useState(() => (typeof window !== 'undefined' ? window.location.hash : ''));
+
+  useEffect(() => {
+    const handleHashChange = () => {
+      setHashRoute(typeof window !== 'undefined' ? window.location.hash : '');
+    };
+
+    window.addEventListener('hashchange', handleHashChange);
+    return () => window.removeEventListener('hashchange', handleHashChange);
+  }, []);
+
+  const isTermsRoute = hashRoute?.includes('/terms');
+  const isPrivacyRoute = hashRoute?.includes('/privacidade') || hashRoute?.includes('/privacy');
+  const isCronRoute = hashRoute?.includes('/cron/djen');
+
+  if (isTermsRoute) {
+    return <TermsPrivacyPage type="terms" />;
+  }
+
+  if (isPrivacyRoute) {
+    return <TermsPrivacyPage type="privacy" />;
+  }
+
+  if (isCronRoute) {
+    return (
+      <div className="min-h-screen bg-gray-50">
+        <Suspense fallback={<div className="p-8 text-center text-slate-600">Carregando cron...</div>}>
+          <CronEndpoint />
+        </Suspense>
+      </div>
+    );
+  }
+
+  return <MainApp />;
+};
 
 export default App;

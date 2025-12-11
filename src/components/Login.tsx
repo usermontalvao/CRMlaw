@@ -1,5 +1,7 @@
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
-import { Loader2, Eye, EyeOff, CheckCircle2, AlertCircle, Scale, Shield, Sparkles, Heart, Gift, Egg, Flag, Ghost, TreePine, Star, Flame, Snowflake, PartyPopper, Music, Rocket } from 'lucide-react';
+import { Loader2, Eye, EyeOff, CheckCircle2, AlertCircle, Scale, Shield, Sparkles, Heart, Gift, Egg, Flag, Ghost, TreePine, Star, Flame, Snowflake, PartyPopper, Music, Rocket, User, Lock, ArrowRight } from 'lucide-react';
+import { supabase } from '../config/supabase';
+import { clientService } from '../services/client.service';
 
 const BrazilFlag: React.FC<{ className?: string }> = ({ className }) => (
   <svg
@@ -392,9 +394,35 @@ const Login: React.FC<LoginProps> = ({ onLogin, onResetPassword }) => {
   const [resetting, setResetting] = useState(false);
   const [mounted, setMounted] = useState(false);
   const [logoHover, setLogoHover] = useState(false);
-  const [launching, setLaunching] = useState(false);
-  const [rocketState, setRocketState] = useState<'idle' | 'launching' | 'crashing'>('idle');
-  const crashTimeoutRef = useRef<number | null>(null);
+  const [identifierConfirmed, setIdentifierConfirmed] = useState(false);
+  const [identifierRaw, setIdentifierRaw] = useState('');
+  const [identifierProfileName, setIdentifierProfileName] = useState<string | null>(null);
+  const [identifierProfileAvatar, setIdentifierProfileAvatar] = useState<string | null>(null);
+  const [identifierLoading, setIdentifierLoading] = useState(false);
+  const [testimonialIndex, setTestimonialIndex] = useState(0);
+
+  const testimonials = useMemo(
+    () => [
+      {
+        initials: 'AW',
+        name: 'Equipe Advogado.WEB',
+        role: 'Especialistas em gestão jurídica',
+        quote:
+          'Acreditamos que cada advogado merece tecnologia que inspire confiança e liberte tempo para cuidar das pessoas.',
+      },
+    ],
+    [],
+  );
+
+  useEffect(() => {
+    if (testimonials.length === 0) return;
+
+    const interval = setInterval(() => {
+      setTestimonialIndex((prev) => (prev + 1) % testimonials.length);
+    }, 8000);
+
+    return () => clearInterval(interval);
+  }, [testimonials.length]);
 
   const theme = useMemo(() => getFestiveTheme(), []);
 
@@ -435,40 +463,124 @@ const Login: React.FC<LoginProps> = ({ onLogin, onResetPassword }) => {
     return () => cancelAnimationFrame(frame);
   }, []);
 
-  useEffect(() => {
-    return () => {
-      if (crashTimeoutRef.current) {
-        clearTimeout(crashTimeoutRef.current);
+  const loadIdentifierProfile = useCallback(async (identifier: string): Promise<boolean> => {
+    setIdentifierLoading(true);
+
+    try {
+      const trimmed = identifier.trim();
+
+      // 1) Se for e-mail, buscamos direto em profiles
+      if (trimmed.includes('@')) {
+        const { data, error } = await supabase
+          .from('profiles')
+          .select('name, avatar_url, email')
+          .ilike('email', trimmed);
+
+        if (error) {
+          console.error('Erro ao buscar perfil para login:', error.message);
+          setIdentifierProfileName(null);
+          setIdentifierProfileAvatar(null);
+          return false;
+        }
+
+        const profile = data && data.length > 0 ? data[0] : null;
+        if (!profile) {
+          setIdentifierProfileName(null);
+          setIdentifierProfileAvatar(null);
+          return false;
+        }
+
+        // Garantimos que o e-mail do estado é o mesmo do perfil
+        if (profile.email && profile.email !== email) {
+          setEmail(profile.email);
+        }
+
+        setIdentifierProfileName(profile.name ?? null);
+        setIdentifierProfileAvatar(profile.avatar_url ?? null);
+        return true;
       }
-    };
-  }, []);
+
+      // 2) Se não for e-mail, tratamos como CPF/CNPJ: buscamos em clients.cpf_cnpj
+      const numericId = trimmed.replace(/\D/g, '');
+      if (!numericId) {
+        setIdentifierProfileName(null);
+        setIdentifierProfileAvatar(null);
+        return false;
+      }
+
+      try {
+        const client = await clientService.getClientByCpfCnpj(numericId);
+        if (!client || !client.email) {
+          setIdentifierProfileName(null);
+          setIdentifierProfileAvatar(null);
+          return false;
+        }
+
+        // Usamos o nome do cliente e o e-mail associado como identidade de login
+        setIdentifierProfileName(client.full_name || client.email);
+        setIdentifierProfileAvatar(null);
+        setEmail(client.email);
+
+        // Opcionalmente, podemos tentar buscar avatar no profiles usando o e-mail do cliente
+        const { data: profileData } = await supabase
+          .from('profiles')
+          .select('avatar_url')
+          .ilike('email', client.email);
+
+        const profileFromClientEmail = profileData && profileData.length > 0 ? profileData[0] : null;
+        if (profileFromClientEmail?.avatar_url) {
+          setIdentifierProfileAvatar(profileFromClientEmail.avatar_url);
+        }
+
+        return true;
+      } catch (clientError) {
+        console.error('Erro ao buscar cliente por CPF/CNPJ para login:', clientError);
+        setIdentifierProfileName(null);
+        setIdentifierProfileAvatar(null);
+        return false;
+      }
+    } catch (e) {
+      console.error('Erro inesperado ao buscar identificador para login:', e);
+      setIdentifierProfileName(null);
+      setIdentifierProfileAvatar(null);
+      return false;
+    } finally {
+      setIdentifierLoading(false);
+    }
+  }, [email]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    // Etapa 1: confirmar identificador (email/CPF/CNPJ)
+    if (!identifierConfirmed) {
+      if (!email.trim()) {
+        setError('Informe seu e-mail, CPF ou CNPJ para continuar.');
+        return;
+      }
+      setError(null);
+      setResetMessage(null);
+
+      // Verifica se existe perfil para este identificador
+      const found = await loadIdentifierProfile(email.trim());
+      if (!found) {
+        setError('Usuário não encontrado. Verifique o e-mail informado.');
+        setIdentifierConfirmed(false);
+        return;
+      }
+
+      setIdentifierConfirmed(true);
+      return;
+    }
+
+    // Etapa 2: login com senha
     setError(null);
     setResetMessage(null);
     setLoading(true);
-    setLaunching(true);
-    setRocketState('launching');
 
     try {
-      // Delay para a animação do foguete (5 segundos) antes de tentar o login
-      await new Promise(resolve => setTimeout(resolve, 5000));
-      
-      // Tentar login após a animação
       await onLogin(email, password);
     } catch (err: any) {
       setError(translateAuthError(err?.message));
-      setRocketState('crashing');
-
-      if (crashTimeoutRef.current) {
-        clearTimeout(crashTimeoutRef.current);
-      }
-
-      crashTimeoutRef.current = window.setTimeout(() => {
-        setLaunching(false);
-        setRocketState('idle');
-      }, 2500);
     } finally {
       setLoading(false);
     }
@@ -495,294 +607,370 @@ const Login: React.FC<LoginProps> = ({ onLogin, onResetPassword }) => {
   };
 
   return (
-    <div className="relative flex min-h-screen w-full overflow-hidden bg-slate-50">
-      {/* Overlay de Lançamento - Animação Nave */}
-      {launching && (
-        <div className="fixed inset-0 z-[100] flex flex-col items-center justify-center bg-slate-900 animate-fade-in">
-          {/* Estrelas de fundo */}
-          <div className="absolute inset-0 overflow-hidden">
-            {Array.from({ length: 50 }).map((_, i) => (
-              <div
-                key={i}
-                className="absolute w-1 h-1 bg-white rounded-full animate-twinkle"
-                style={{
-                  left: `${Math.random() * 100}%`,
-                  top: `${Math.random() * 100}%`,
-                  animationDelay: `${Math.random() * 2}s`,
-                  opacity: Math.random() * 0.8 + 0.2,
-                }}
-              />
-            ))}
-          </div>
-          
-          {/* Rastro da nave */}
-          <div className="absolute bottom-0 left-1/2 -translate-x-1/2 w-32 bg-gradient-to-t from-orange-500/0 via-orange-500/50 to-transparent animate-rocket-exhaust opacity-0" style={{ height: '40vh' }} />
-          
-          {/* Nave/Foguete Customizado */}
-          <div className="relative z-10 animate-rocket-launch">
-            <div className="relative transform scale-150">
-              {/* Corpo do foguete */}
-              <div className="relative w-12 h-24 bg-slate-100 rounded-[50%_50%_50%_50%_/_60%_60%_40%_40%] shadow-inner overflow-hidden z-20 mx-auto border border-slate-300">
-                {/* Janela */}
-                <div className="absolute top-6 left-1/2 -translate-x-1/2 w-6 h-6 bg-sky-300 rounded-full border-2 border-slate-300 shadow-inner">
-                  <div className="absolute top-1 left-1 w-2 h-2 bg-white rounded-full opacity-50" />
-                </div>
-                {/* Detalhes */}
-                <div className="absolute bottom-0 w-full h-1 bg-red-500" />
-                <div className="absolute bottom-2 w-full h-1 bg-red-500" />
-              </div>
-
-              {/* Asas esquerda */}
-              <div className="absolute bottom-2 -left-3 w-6 h-10 bg-red-600 rounded-tl-full rounded-bl-lg skew-y-12 z-10 border-l border-red-700" />
-              
-              {/* Asas direita */}
-              <div className="absolute bottom-2 -right-3 w-6 h-10 bg-red-600 rounded-tr-full rounded-br-lg -skew-y-12 z-10 border-r border-red-700" />
-
-              {/* Fogo principal */}
-              <div className="absolute -bottom-12 left-1/2 -translate-x-1/2 w-8 h-16 z-0">
-                <div className="absolute inset-0 bg-gradient-to-t from-transparent via-yellow-400 to-red-500 rounded-b-full animate-fire blur-[2px]" />
-                <div className="absolute inset-2 bg-gradient-to-t from-transparent via-yellow-200 to-white rounded-b-full animate-fire-inner blur-[1px]" />
-              </div>
-              
-              {/* Partículas de propulsão */}
-              <div className="absolute -bottom-20 left-1/2 -translate-x-1/2 w-2 h-20 bg-white/20 blur-md animate-pulse" />
-            </div>
-          </div>
-          
-          {/* Texto */}
-          <div className="relative z-10 mt-12 text-center animate-fade-in-up">
-            <p className="text-2xl font-bold text-white mb-2">
-              🚀 Decolando...
-            </p>
-            <p className="text-amber-400 text-lg font-medium">
-              Entrando no melhor CRM jurídico!
-            </p>
-          </div>
-        </div>
-      )}
-      {/* Subtle Background Gradient */}
-      <div className="absolute inset-0 overflow-hidden pointer-events-none">
-        <div 
-          className="absolute top-20 left-10 w-96 h-96 rounded-full blur-3xl opacity-30"
-          style={{ backgroundColor: `${theme.particleColors[0]}` }}
-        />
-        <div 
-          className="absolute bottom-20 right-10 w-80 h-80 rounded-full blur-3xl opacity-20"
-          style={{ backgroundColor: `${theme.particleColors[1]}` }}
-        />
-      </div>
-
-      {/* Left Side - Login Form */}
+    <div className="min-h-screen md:h-screen flex flex-col md:flex-row overflow-hidden bg-white">
+      {/* ===== LADO ESQUERDO - LOGIN ===== */}
       <div
-        className={`flex w-full flex-col items-center justify-center bg-white p-8 lg:w-1/2 lg:p-16 transition-all duration-700 ${
-          mounted ? 'opacity-100 translate-x-0' : 'opacity-0 -translate-x-4'
+        className={`w-full md:w-[45%] lg:w-[40%] flex flex-col justify-between p-8 md:p-10 lg:p-12 bg-white relative z-20 shadow-2xl min-h-screen md:h-screen md:overflow-y-auto transition-all duration-700 ${
+          mounted ? 'opacity-100' : 'opacity-0'
         }`}
       >
-        <div className="flex w-full max-w-md flex-col items-start gap-8">
-          {/* Logo & Title */}
-          <div className="flex w-full flex-col items-start gap-2">
-            <div className="flex items-center gap-4 mb-4">
-              <div className="relative">
-                <div className="absolute -inset-1 bg-gradient-to-r from-amber-500 to-orange-500 rounded-xl blur opacity-20" />
-                <img
-                  src="/icon-512.png"
-                  alt="Advogado.WEB"
-                  className="relative h-16 w-16 rounded-xl shadow-lg"
-                />
-              </div>
-              <div>
-                <h1 className="text-4xl font-bold tracking-tight text-slate-900">
-                  Advogado<span className="text-amber-600 font-semibold">.WEB</span>
-                </h1>
-                <p className="text-xs text-slate-400 flex items-center gap-1 mt-1">
-                  <Shield className="w-3 h-3" />
-                  Plataforma Segura
-                </p>
-              </div>
-            </div>
-            <h2 className={`text-3xl font-bold tracking-tight text-slate-800 transition-all duration-500 delay-100 ${mounted ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-2'}`}>
-              Acesse sua conta
-            </h2>
-            <p className={`text-base font-normal leading-normal text-slate-500 transition-all duration-500 delay-200 ${mounted ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-2'}`}>
-              Bem-vindo de volta! Insira seus dados abaixo.
-            </p>
+        {/* Header - Logo */}
+        <div className="flex items-center gap-3 select-none">
+          <div className="w-10 h-10 bg-gradient-to-br from-orange-500 to-orange-600 rounded-xl flex items-center justify-center text-white font-bold text-lg shadow-lg shadow-orange-500/20">
+            AW
+          </div>
+          <div className="flex flex-col">
+            <h1 className="text-xl font-bold tracking-tight text-slate-900 leading-none">
+              Advogado<span className="text-orange-500">.WEB</span>
+            </h1>
+            <span className="text-[11px] font-medium text-slate-400 tracking-wide uppercase mt-1">
+              Gestão Jurídica Inteligente
+            </span>
+          </div>
+        </div>
+
+        {/* Centro - Formulário */}
+        <div className="flex flex-col justify-center flex-grow py-8 max-w-md mx-auto w-full">
+          {/* Badge */}
+          <div
+            className={`inline-flex items-center self-start bg-orange-50 text-orange-700 text-[11px] font-bold tracking-wider px-3 py-1.5 rounded-full mb-8 border border-orange-100 uppercase transition-all duration-500 ${
+              mounted ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-2'
+            }`}
+          >
+            <span className="w-1.5 h-1.5 bg-orange-500 rounded-full mr-2 animate-pulse" />
+            Acesso Exclusivo
           </div>
 
-          {/* Form */}
-          <form onSubmit={handleSubmit} className={`flex w-full flex-col gap-4 transition-all duration-500 delay-300 ${mounted ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-4'}`}>
-            {/* Email */}
-            <label className="flex flex-col w-full group">
-              <p className="text-sm font-medium leading-normal text-slate-700 pb-2 group-focus-within:text-amber-600 transition-colors">
-                E-mail ou Usuário
-              </p>
-              <input
-                type="email"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                className="flex w-full rounded-lg border border-slate-300 bg-white h-12 px-4 text-base text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500 transition-all duration-200 hover:border-slate-400"
-                placeholder="seunome@exemplo.com"
-                required
-              />
-            </label>
+          {/* Título */}
+          <h2
+            className={`text-3xl md:text-4xl font-bold text-slate-900 mb-3 tracking-tight transition-all duration-500 delay-75 ${
+              mounted ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-2'
+            }`}
+          >
+            Bem-vindo de volta
+          </h2>
+          <p
+            className={`text-slate-500 mb-10 text-base leading-relaxed transition-all duration-500 delay-100 ${
+              mounted ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-2'
+            }`}
+          >
+            Acesse seu painel jurídico e gerencie seu escritório com eficiência e segurança.
+          </p>
 
-            {/* Password */}
-            <label className="flex flex-col w-full group">
-              <div className="flex items-center justify-between w-full pb-2">
-                <p className="text-sm font-medium leading-normal text-slate-700 group-focus-within:text-amber-600 transition-colors">Senha</p>
-                <span className="text-[11px] uppercase tracking-wide text-slate-400">mín. 8 caracteres</span>
+          {/* Formulário */}
+          <form
+            onSubmit={handleSubmit}
+            className={`space-y-5 transition-all duration-500 delay-150 ${
+              mounted ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-2'
+            }`}
+          >
+            {/* Etapa 1 - Identificador */}
+            {!identifierConfirmed && (
+              <div>
+                <label className="block text-sm font-semibold text-slate-700 mb-2">
+                  E-mail ou CPF
+                </label>
+                <div className="relative group">
+                  <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                    <User className="w-5 h-5 text-slate-400 group-focus-within:text-orange-500 transition-colors" />
+                  </div>
+                  <input
+                    type="text"
+                    value={identifierRaw}
+                    onChange={(e) => {
+                      setIdentifierRaw(e.target.value);
+                      setEmail(e.target.value);
+                    }}
+                    className="block w-full rounded-xl border border-slate-200 bg-slate-50 text-slate-900 pl-10 pr-4 py-3.5 focus:border-orange-500 focus:ring-2 focus:ring-orange-500/20 text-sm placeholder-slate-400 transition-all duration-200 hover:border-slate-300"
+                    placeholder="seuemail@advogado.com"
+                    required
+                  />
+                </div>
               </div>
-              <div className="relative">
-                <input
-                  type={showPassword ? 'text' : 'password'}
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  className="flex w-full rounded-lg border border-slate-300 bg-white h-12 px-4 pr-12 text-base text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500 transition-all duration-200 hover:border-slate-400"
-                  placeholder="••••••••"
-                  required
-                />
-                <button
-                  type="button"
-                  onClick={() => setShowPassword(!showPassword)}
-                  className="absolute inset-y-0 right-0 pr-4 flex items-center text-slate-400 hover:text-amber-500 transition-colors duration-200"
-                >
-                  {showPassword ? <EyeOff className="h-5 w-5" /> : <Eye className="h-5 w-5" />}
-                </button>
-              </div>
-            </label>
+            )}
 
-            <div className="flex flex-col gap-2 text-sm">
-              <label className="inline-flex items-center gap-2 text-slate-600 select-none">
-                <input
-                  type="checkbox"
-                  className="h-4 w-4 rounded border-slate-300 text-amber-600 focus:ring-amber-500"
-                  defaultChecked
-                />
-                Manter sessão ativa neste dispositivo
-              </label>
-              <div className="flex flex-wrap items-center justify-between gap-2 text-slate-500">
-                <button
-                  type="button"
-                  onClick={handleResetPassword}
-                  disabled={resetting}
-                  className="inline-flex items-center gap-1 font-medium text-amber-600/80 hover:text-amber-600 transition-colors disabled:opacity-50"
-                >
-                  {resetting ? (
-                    <>
-                      <Loader2 className="w-3 h-3 animate-spin" />
-                      Enviando link de recuperação...
-                    </>
-                  ) : (
-                    'Esqueceu a senha?'
-                  )}
-                </button>
-                <a
-                  href="mailto:pedro@advcuiaba.com"
-                  className="inline-flex items-center gap-1 hover:text-slate-700 transition-colors"
-                >
-                  <Shield className="w-3.5 h-3.5" />
-                  Precisa de ajuda?
-                </a>
+            {/* Loading de busca */}
+            {!identifierConfirmed && identifierLoading && (
+              <div className="flex items-center gap-2 text-sm text-orange-600">
+                <Loader2 className="w-4 h-4 animate-spin" />
+                <span>Localizando sua conta...</span>
               </div>
-            </div>
+            )}
 
-            {/* Error */}
+            {/* Etapa 2 - Senha */}
+            {identifierConfirmed && (
+              <>
+                {/* Card do usuário identificado */}
+                <div className="flex items-center gap-3 p-4 bg-gradient-to-r from-orange-50 to-amber-50 rounded-xl border border-orange-100">
+                  <div className="flex h-12 w-12 items-center justify-center rounded-full bg-gradient-to-br from-orange-500 to-orange-600 text-white font-bold text-lg uppercase overflow-hidden shadow-lg shadow-orange-500/20">
+                    {identifierProfileAvatar ? (
+                      <img
+                        src={identifierProfileAvatar}
+                        alt={identifierProfileName || identifierRaw || email}
+                        className="w-full h-full object-cover"
+                      />
+                    ) : (
+                      (identifierProfileName || identifierRaw || email).trim().charAt(0) || '?'
+                    )}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-semibold text-slate-900 truncate">
+                      {identifierProfileName || identifierRaw || email}
+                    </p>
+                    <p className="text-xs text-orange-600 flex items-center gap-1">
+                      <CheckCircle2 className="w-3 h-3" />
+                      Conta verificada
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIdentifierConfirmed(false);
+                      setPassword('');
+                    }}
+                    className="text-xs text-slate-500 hover:text-slate-700 font-medium px-2 py-1 rounded hover:bg-slate-100 transition-colors"
+                  >
+                    Trocar
+                  </button>
+                </div>
+
+                {/* Campo de senha */}
+                <div>
+                  <label className="block text-sm font-semibold text-slate-700 mb-2">
+                    Senha
+                  </label>
+                  <div className="relative group">
+                    <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                      <Lock className="w-5 h-5 text-slate-400 group-focus-within:text-orange-500 transition-colors" />
+                    </div>
+                    <input
+                      type={showPassword ? 'text' : 'password'}
+                      value={password}
+                      onChange={(e) => setPassword(e.target.value)}
+                      className="block w-full rounded-xl border border-slate-200 bg-slate-50 text-slate-900 pl-10 pr-12 py-3.5 focus:border-orange-500 focus:ring-2 focus:ring-orange-500/20 text-sm placeholder-slate-400 transition-all duration-200 hover:border-slate-300"
+                      placeholder="Digite sua senha"
+                      required
+                      autoFocus
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowPassword(!showPassword)}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 transition-colors"
+                    >
+                      {showPassword ? <EyeOff className="h-5 w-5" /> : <Eye className="h-5 w-5" />}
+                    </button>
+                  </div>
+                </div>
+
+                {/* Opções */}
+                <div className="flex items-center justify-between">
+                  <label className="flex items-center gap-2 text-sm text-slate-500 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      className="h-4 w-4 text-orange-500 focus:ring-orange-500 border-slate-300 rounded"
+                      defaultChecked
+                    />
+                    Lembrar-me
+                  </label>
+                  <button
+                    type="button"
+                    onClick={handleResetPassword}
+                    disabled={resetting}
+                    className="text-sm font-medium text-orange-500 hover:text-orange-600 disabled:opacity-50 transition-colors"
+                  >
+                    {resetting ? 'Enviando...' : 'Esqueceu a senha?'}
+                  </button>
+                </div>
+              </>
+            )}
+
+            {/* Mensagem de erro */}
             {error && (
-              <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg text-sm flex items-center gap-2 animate-shake">
-                <AlertCircle className="w-4 h-4 flex-shrink-0" />
-                <span>{error}</span>
+              <div className="flex items-start gap-3 p-4 bg-red-50 border border-red-100 rounded-xl">
+                <AlertCircle className="w-5 h-5 text-red-500 flex-shrink-0 mt-0.5" />
+                <div>
+                  <p className="text-sm font-medium text-red-800">Erro ao entrar</p>
+                  <p className="text-sm text-red-600 mt-0.5">{error}</p>
+                </div>
               </div>
             )}
 
-            {/* Success */}
+            {/* Mensagem de sucesso */}
             {resetMessage && (
-              <div className="bg-emerald-50 border border-emerald-200 text-emerald-700 px-4 py-3 rounded-lg text-sm flex items-center gap-2 animate-fade-in">
-                <CheckCircle2 className="w-4 h-4 flex-shrink-0" />
-                <span>{resetMessage}</span>
+              <div className="flex items-center gap-3 p-4 bg-emerald-50 border border-emerald-100 rounded-xl">
+                <CheckCircle2 className="w-5 h-5 text-emerald-500 flex-shrink-0" />
+                <p className="text-sm text-emerald-700">{resetMessage}</p>
               </div>
             )}
 
-            {/* Submit */}
+            {/* Botão de submit */}
             <button
               type="submit"
-              disabled={loading}
-              className="relative flex items-center justify-center font-semibold text-base text-white bg-slate-900 hover:bg-slate-800 rounded-lg w-full h-12 mt-4 transition-all duration-300 ease-out focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-slate-900 disabled:opacity-50 disabled:cursor-not-allowed overflow-hidden group"
+              disabled={loading || identifierLoading || (identifierConfirmed && !password)}
+              className="w-full flex justify-center items-center py-3.5 px-4 border border-transparent rounded-xl shadow-lg shadow-orange-500/20 text-sm font-semibold text-white bg-gradient-to-r from-slate-900 to-slate-800 hover:from-black hover:to-slate-900 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-orange-500 transition-all duration-300 transform active:scale-[0.98] group mt-2 disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              <span className="absolute inset-0 bg-gradient-to-r from-amber-500 to-amber-600 opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
-              <span className="relative flex items-center gap-2">
-                {loading ? (
-                  <>
-                    <Rocket className="w-5 h-5 animate-bounce" />
-                    Decolando...
-                  </>
-                ) : (
-                  <>
-                    <Rocket className="w-4 h-4 group-hover:animate-bounce" />
-                    Entrar
-                  </>
-                )}
-              </span>
+              {loading ? (
+                <>
+                  <Loader2 className="w-5 h-5 animate-spin mr-2" />
+                  Entrando...
+                </>
+              ) : identifierConfirmed ? (
+                <>
+                  Acessar Plataforma
+                  <ArrowRight className="w-4 h-4 ml-2 group-hover:translate-x-1 transition-transform" />
+                </>
+              ) : (
+                <>
+                  Continuar
+                  <ArrowRight className="w-4 h-4 ml-2 group-hover:translate-x-1 transition-transform" />
+                </>
+              )}
             </button>
           </form>
 
-          {/* Footer */}
-          <div className="w-full text-center mt-4">
-            <p className="text-sm text-slate-400">
-              © {new Date().getFullYear()} Advogado.WEB. Todos os direitos reservados.
+          {/* Link para contato */}
+          <div className="mt-8 pt-6 border-t border-slate-100">
+            <p className="text-center text-xs text-slate-400">
+              Precisa de ajuda?{' '}
+              <a href="mailto:pedro@advcuiaba.com" className="font-semibold text-orange-500 hover:text-orange-600 transition-colors">
+                Fale com um consultor
+              </a>
             </p>
+          </div>
+        </div>
+
+        {/* Footer */}
+        <div className="flex justify-between items-center text-xs text-slate-400 mt-auto">
+          <span>© {new Date().getFullYear()} Advogado.WEB</span>
+          <div className="flex gap-4">
+            <a href="#/terms" className="hover:text-orange-500 transition-colors">Termos</a>
+            <a href="#/privacidade" className="hover:text-orange-500 transition-colors">Privacidade</a>
           </div>
         </div>
       </div>
 
-      {/* Right Side - Hero */}
+      {/* ===== LADO DIREITO - VISUAL ===== */}
       <div
-        className={`relative hidden w-1/2 flex-col items-start justify-between bg-slate-900 p-12 text-white lg:flex transition-all duration-700 delay-200 ${
-          mounted ? 'opacity-100 translate-x-0' : 'opacity-0 translate-x-4'
+        className={`hidden md:flex md:w-[55%] lg:w-[60%] relative bg-slate-900 items-center justify-center overflow-hidden min-h-screen md:h-screen transition-all duration-700 delay-100 ${
+          mounted ? 'opacity-100' : 'opacity-0'
         }`}
       >
-        {/* Background Image */}
-        <div
-          className="absolute inset-0 bg-center bg-cover"
-          style={{
-            backgroundImage: `url('${theme.heroImage}')`,
-          }}
-        />
-        {/* Overlay */}
-        <div className="absolute inset-0 bg-gradient-to-br from-slate-900/95 via-slate-900/90 to-slate-900/85" />
-
-        {/* Hero Content */}
-        <div className={`relative z-10 flex w-full max-w-lg flex-col items-start gap-6 transition-all duration-700 delay-500 ${mounted ? 'opacity-100 translate-y-0' : 'opacity-0 -translate-y-4'}`}>
-          <h2 className="text-5xl font-bold text-white leading-tight">
-            Simplifique sua<br />
-            gestão jurídica.
-          </h2>
-          <p className="text-white/80 text-xl leading-relaxed">
-            Centralize casos, clientes e documentos com a ferramenta mais completa do mercado.
-          </p>
-          
-          {/* Feature pills */}
-          <div className="flex flex-wrap gap-2.5 mt-2">
-            {['Processos', 'Prazos', 'Clientes', 'Financeiro'].map((feature) => (
-              <span 
-                key={feature}
-                className="px-4 py-2 rounded-full bg-white/15 text-white text-sm font-medium backdrop-blur-md border border-white/30 hover:bg-white/25 transition-all cursor-default"
-              >
-                {feature}
-              </span>
-            ))}
-          </div>
+        {/* Background */}
+        <div className="absolute inset-0 z-0">
+          <img
+            src={theme.heroImage}
+            alt="Background"
+            className="w-full h-full object-cover opacity-20"
+          />
+          <div className="absolute inset-0 bg-gradient-to-br from-slate-900 via-slate-900/95 to-slate-800/90" />
+          <div className="absolute top-0 right-0 w-[500px] h-[500px] bg-orange-500/20 rounded-full blur-[100px] -translate-y-1/2 translate-x-1/3" />
+          <div className="absolute bottom-0 left-0 w-[400px] h-[400px] bg-blue-600/10 rounded-full blur-[100px] translate-y-1/3 -translate-x-1/3" />
         </div>
 
-        {/* Testimonial */}
-        <div 
-          className={`relative z-10 mt-auto w-full max-w-lg rounded-2xl bg-black/30 p-6 backdrop-blur-md border border-white/20 transition-all duration-700 delay-700 ${mounted ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-4'}`}
-        >
-          <p className="text-lg font-medium leading-relaxed text-white/90">
-            "A organização é a chave para a justiça. Com este CRM, alcançamos um novo patamar de
-            eficiência e precisão em nosso escritório."
-          </p>
-          <p className="mt-4 text-sm text-white/60">
-            — Equipe Advogado.WEB
-          </p>
+        {/* Conteúdo */}
+        <div className="relative z-10 w-full max-w-4xl px-8 lg:px-14 py-10 text-white h-full flex flex-col justify-between">
+          {/* Header */}
+          <div className={`mb-8 transition-all duration-700 delay-200 ${mounted ? 'opacity-100 translate-y-0' : 'opacity-0 -translate-y-4'}`}>
+            <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-white/5 border border-white/10 backdrop-blur-sm mb-6 w-fit">
+              <span className="w-2 h-2 rounded-full bg-orange-500" />
+              <span className="text-xs font-medium tracking-wide uppercase text-slate-300">Plataforma All-in-One</span>
+            </div>
+            <h2 className="text-4xl lg:text-5xl font-bold leading-tight mb-4">
+              Simplifique a rotina do <br />
+              <span className="bg-gradient-to-r from-white to-slate-400 text-transparent bg-clip-text">seu escritório.</span>
+            </h2>
+            <p className="text-slate-300 text-base lg:text-lg leading-relaxed max-w-xl font-light">
+              Centralize operações, automatize prazos e foque no que realmente importa: seus clientes.
+            </p>
+          </div>
+
+          {/* Cards de módulos */}
+          <div className={`grid grid-cols-1 sm:grid-cols-2 gap-4 lg:gap-5 mb-8 transition-all duration-700 delay-300 ${mounted ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-4'}`}>
+            <div className="group bg-slate-800/40 backdrop-blur-md border border-white/5 hover:border-orange-500/30 p-4 rounded-2xl transition-all duration-300 hover:bg-slate-800/60 hover:-translate-y-1">
+              <div className="flex items-center gap-4">
+                <div className="w-11 h-11 rounded-xl bg-gradient-to-br from-orange-500 to-orange-600 flex items-center justify-center text-white shadow-lg shadow-orange-500/20 group-hover:scale-110 transition-transform duration-300">
+                  <User className="w-6 h-6" />
+                </div>
+                <div>
+                  <h3 className="font-semibold text-white text-base">Gerenciar Clientes</h3>
+                  <p className="text-xs text-slate-400 mt-1">CRM Jurídico completo</p>
+                </div>
+              </div>
+            </div>
+            <div className="group bg-slate-800/40 backdrop-blur-md border border-white/5 hover:border-orange-500/30 p-4 rounded-2xl transition-all duration-300 hover:bg-slate-800/60 hover:-translate-y-1">
+              <div className="flex items-center gap-4">
+                <div className="w-11 h-11 rounded-xl bg-gradient-to-br from-slate-700 to-slate-600 flex items-center justify-center text-white shadow-lg group-hover:scale-110 transition-transform duration-300">
+                  <Scale className="w-6 h-6" />
+                </div>
+                <div>
+                  <h3 className="font-semibold text-white text-base">Processos & Prazos</h3>
+                  <p className="text-xs text-slate-400 mt-1">Monitoramento 24/7</p>
+                </div>
+              </div>
+            </div>
+            <div className="group bg-slate-800/40 backdrop-blur-md border border-white/5 hover:border-orange-500/30 p-4 rounded-2xl transition-all duration-300 hover:bg-slate-800/60 hover:-translate-y-1">
+              <div className="flex items-center gap-4">
+                <div className="w-11 h-11 rounded-xl bg-gradient-to-br from-slate-700 to-slate-600 flex items-center justify-center text-white shadow-lg group-hover:scale-110 transition-transform duration-300">
+                  <AlertCircle className="w-6 h-6" />
+                </div>
+                <div>
+                  <h3 className="font-semibold text-white text-base">Intimações</h3>
+                  <p className="text-xs text-slate-400 mt-1">Captura automática</p>
+                </div>
+              </div>
+            </div>
+            <div className="group bg-slate-800/40 backdrop-blur-md border border-white/5 hover:border-orange-500/30 p-4 rounded-2xl transition-all duration-300 hover:bg-slate-800/60 hover:-translate-y-1">
+              <div className="flex items-center gap-4">
+                <div className="w-11 h-11 rounded-xl bg-gradient-to-br from-slate-700 to-slate-600 flex items-center justify-center text-white shadow-lg group-hover:scale-110 transition-transform duration-300">
+                  <Shield className="w-6 h-6" />
+                </div>
+                <div>
+                  <h3 className="font-semibold text-white text-base">Admin. Previdenciário</h3>
+                  <p className="text-xs text-slate-400 mt-1">Integração INSS</p>
+                </div>
+              </div>
+            </div>
+            <div className="group bg-slate-800/40 backdrop-blur-md border border-white/5 hover:border-orange-500/30 p-4 rounded-2xl transition-all duration-300 hover:bg-slate-800/60 hover:-translate-y-1">
+              <div className="flex items-center gap-4">
+                <div className="w-11 h-11 rounded-xl bg-gradient-to-br from-slate-700 to-slate-600 flex items-center justify-center text-white shadow-lg group-hover:scale-110 transition-transform duration-300">
+                  <Rocket className="w-6 h-6" />
+                </div>
+                <div>
+                  <h3 className="font-semibold text-white text-base">Gestão de Leads</h3>
+                  <p className="text-xs text-slate-400 mt-1">Converta mais clientes potenciais</p>
+                </div>
+              </div>
+            </div>
+            <div className="group bg-slate-800/40 backdrop-blur-md border border-white/5 hover:border-orange-500/30 p-4 rounded-2xl transition-all duration-300 hover:bg-slate-800/60 hover:-translate-y-1">
+              <div className="flex items-center gap-4">
+                <div className="w-11 h-11 rounded-xl bg-gradient-to-br from-amber-400 to-orange-500 flex items-center justify-center text-white shadow-lg shadow-orange-500/20 group-hover:scale-110 transition-transform duration-300">
+                  <Sparkles className="w-6 h-6" />
+                </div>
+                <div>
+                  <h3 className="font-semibold text-white text-base">...e muito mais</h3>
+                  <p className="text-xs text-slate-400 mt-1">Automação, integrações e insights para todo o escritório</p>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Depoimento */}
+          {testimonials.length > 0 && (
+            <div className={`relative pl-5 border-l-2 border-orange-500/50 transition-all duration-700 delay-400 ${mounted ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-4'}`}>
+              <p className="text-slate-200 italic mb-3 relative z-10 text-sm font-light leading-relaxed">
+                "{testimonials[testimonialIndex].quote}"
+              </p>
+              <div className="flex items-center gap-3">
+                <div className="w-8 h-8 rounded-full bg-slate-700 flex items-center justify-center text-white font-bold text-xs ring-2 ring-slate-800">
+                  {testimonials[testimonialIndex].initials}
+                </div>
+                <div>
+                  <div className="text-white font-medium text-sm">{testimonials[testimonialIndex].name}</div>
+                  <div className="text-slate-400 text-xs">{testimonials[testimonialIndex].role}</div>
+                </div>
+              </div>
+            </div>
+          )}
         </div>
       </div>
     </div>
