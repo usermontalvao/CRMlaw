@@ -1,5 +1,5 @@
 /**
- * Serviço de Clientes - Advogado\Web
+ * Serviço de Clientes - jurius.com.br
  * Gerencia todas as operações CRUD de clientes
  */
 

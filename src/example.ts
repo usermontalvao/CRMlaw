@@ -1,11 +1,11 @@
 /**
- * Exemplo de uso do módulo de Clientes - Advogado\Web
+ * Exemplo de uso do módulo de Clientes - jurius.com.br
  */
 import { clientService } from './services/client.service.js';
 import type { CreateClientDTO } from './types/client.types.js';
 
 async function main() {
-  console.log('\n🏛️  === ADVOGADO\\WEB - Sistema de Gestão de Clientes ===\n');
+  console.log('\n🏛️  === JURIUS.COM.BR - Sistema de Gestão de Clientes ===\n');
 
   try {
     // 1. Criar um novo cliente (Pessoa Física)

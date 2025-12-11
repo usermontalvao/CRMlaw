@@ -1,5 +1,5 @@
 /**
- * Tipos para o módulo de Clientes - Advogado\Web
+ * Tipos para o módulo de Clientes - jurius.com.br
  */
 
 export type ClientType = 'pessoa_fisica' | 'pessoa_juridica';

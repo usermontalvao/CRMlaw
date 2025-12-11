@@ -46,11 +46,9 @@ const OfflinePage: React.FC = () => {
           <div className="flex items-center justify-center gap-4 mb-6">
             <div className="relative">
               <div className="absolute -inset-1 bg-gradient-to-r from-amber-500 to-orange-500 rounded-xl blur opacity-30" />
-              <img
-                src="/icon-512.png"
-                alt="Advogado.WEB"
-                className="relative h-20 w-20 rounded-xl shadow-lg"
-              />
+              <div className="relative h-20 w-20 rounded-xl shadow-lg bg-amber-500 flex items-center justify-center">
+                <span className="text-white font-bold text-4xl">J</span>
+              </div>
               {/* Badge offline */}
               <div className="absolute -bottom-2 -right-2 bg-red-500 rounded-full p-1.5 shadow-lg">
                 <WifiOff className="w-4 h-4 text-white" />
@@ -60,7 +58,7 @@ const OfflinePage: React.FC = () => {
           
           {/* Nome do app */}
           <h1 className="text-3xl font-bold tracking-tight text-slate-900 mb-1">
-            Advogado<span className="text-amber-500">.WEB</span>
+            jurius<span className="text-amber-500">.com.br</span>
           </h1>
           <p className="text-xs text-slate-400 flex items-center justify-center gap-1">
             <Shield className="w-3 h-3" />
@@ -124,7 +122,7 @@ const OfflinePage: React.FC = () => {
 
         {/* Footer */}
         <p className="mt-6 text-xs text-slate-400">
-          © {new Date().getFullYear()} Advogado.WEB
+          © {new Date().getFullYear()} jurius.com.br
         </p>
       </div>
     </div>

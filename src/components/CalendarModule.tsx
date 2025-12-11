@@ -1053,19 +1053,13 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({
         const today = new Date().toLocaleDateString('pt-BR');
         const pageWidth = doc.internal.pageSize.getWidth();
 
-        // Adicionar logo
-        try {
-          const logoImg = new Image();
-          logoImg.src = '/icon-512.png';
-          await new Promise((resolve, reject) => {
-            logoImg.onload = resolve;
-            logoImg.onerror = reject;
-            setTimeout(reject, 3000); // timeout de 3s
-          });
-          doc.addImage(logoImg, 'PNG', 40, 30, 50, 50);
-        } catch (err) {
-          console.warn('Logo não carregada:', err);
-        }
+        // Adicionar logo "J" desenhada
+        doc.setFillColor(245, 158, 11); // amber-500
+        doc.roundedRect(40, 30, 50, 50, 8, 8, 'F');
+        doc.setTextColor(255, 255, 255);
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(32);
+        doc.text('J', 65, 65, { align: 'center' });
 
         // Cabeçalho - Título e Informações
         doc.setFillColor(15, 23, 42); // slate-900
@@ -1074,7 +1068,7 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({
         doc.setTextColor(255, 255, 255);
         doc.setFont('helvetica', 'bold');
         doc.setFontSize(10);
-        doc.text('ADVOGADO.WEB - GESTÃO JURÍDICA', pageWidth / 2, 16, { align: 'center' });
+        doc.text('JURIUS.COM.BR - GESTÃO JURÍDICA', pageWidth / 2, 16, { align: 'center' });
 
         // Título Principal
         doc.setTextColor(15, 23, 42);
@@ -1172,7 +1166,7 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({
             
             doc.setFontSize(7);
             doc.text(
-              'Advogado.Web - Sistema de Gestão Jurídica',
+              'jurius.com.br - Sistema de Gestão Jurídica',
               30,
               doc.internal.pageSize.getHeight() - 20
             );
@@ -2232,11 +2226,11 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({
               <button
                 type="button"
                 onClick={handleExportCalendar}
-                className={`flex-1 px-4 py-2.5 rounded-lg ${
+                className={`flex-1 px-4 py-2.5 rounded-lg text-white font-bold shadow-lg hover:shadow-xl transition-all transform hover:-translate-y-0.5 border border-transparent whitespace-nowrap ${
                   exportFormat === 'pdf'
-                    ? 'bg-gradient-to-r from-purple-600 to-purple-700 hover:from-purple-500 hover:to-purple-600'
-                    : 'bg-gradient-to-r from-emerald-600 to-emerald-700 hover:from-emerald-500 hover:to-emerald-600'
-                } text-white font-bold shadow-lg hover:shadow-xl transition-all transform hover:-translate-y-0.5`}
+                    ? 'bg-purple-600 hover:bg-purple-500 bg-gradient-to-r from-purple-600 to-purple-700'
+                    : 'bg-emerald-600 hover:bg-emerald-500 bg-gradient-to-r from-emerald-600 to-emerald-700'
+                }`}
               >
                 {exportFormat === 'pdf' ? '📄 Exportar PDF' : '📥 Exportar Excel'}
               </button>

@@ -404,8 +404,8 @@ const Login: React.FC<LoginProps> = ({ onLogin, onResetPassword }) => {
   const testimonials = useMemo(
     () => [
       {
-        initials: 'AW',
-        name: 'Equipe Advogado.WEB',
+        initials: 'JT',
+        name: 'Equipe jurius.com.br',
         role: 'Especialistas em gestão jurídica',
         quote:
           'Acreditamos que cada advogado merece tecnologia que inspire confiança e liberte tempo para cuidar das pessoas.',
@@ -617,11 +617,11 @@ const Login: React.FC<LoginProps> = ({ onLogin, onResetPassword }) => {
         {/* Header - Logo */}
         <div className="flex items-center gap-3 select-none">
           <div className="w-10 h-10 bg-gradient-to-br from-orange-500 to-orange-600 rounded-xl flex items-center justify-center text-white font-bold text-lg shadow-lg shadow-orange-500/20">
-            AW
+            J
           </div>
           <div className="flex flex-col">
             <h1 className="text-xl font-bold tracking-tight text-slate-900 leading-none">
-              Advogado<span className="text-orange-500">.WEB</span>
+              jurius<span className="text-orange-500">.com.br</span>
             </h1>
             <span className="text-[11px] font-medium text-slate-400 tracking-wide uppercase mt-1">
               Gestão Jurídica Inteligente
@@ -682,7 +682,7 @@ const Login: React.FC<LoginProps> = ({ onLogin, onResetPassword }) => {
                       setEmail(e.target.value);
                     }}
                     className="block w-full rounded-xl border border-slate-200 bg-slate-50 text-slate-900 pl-10 pr-4 py-3.5 focus:border-orange-500 focus:ring-2 focus:ring-orange-500/20 text-sm placeholder-slate-400 transition-all duration-200 hover:border-slate-300"
-                    placeholder="seuemail@advogado.com"
+                    placeholder="seuemail@jurius.com.br"
                     required
                   />
                 </div>
@@ -841,7 +841,7 @@ const Login: React.FC<LoginProps> = ({ onLogin, onResetPassword }) => {
 
         {/* Footer */}
         <div className="flex justify-between items-center text-xs text-slate-400 mt-auto">
-          <span>© {new Date().getFullYear()} Advogado.WEB</span>
+          <span>© {new Date().getFullYear()} jurius.com.br</span>
           <div className="flex gap-4">
             <a href="#/terms" className="hover:text-orange-500 transition-colors">Termos</a>
             <a href="#/privacidade" className="hover:text-orange-500 transition-colors">Privacidade</a>

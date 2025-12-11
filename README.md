@@ -1,4 +1,4 @@
-# Advogado\Web - Sistema de Gestão para Escritórios de Advocacia
+# jurius.com.br - Sistema de Gestão para Escritórios de Advocacia
 
 Sistema completo de CRM desenvolvido especificamente para escritórios de advocacia, com foco em gestão de clientes, processos e agenda.
 
@@ -190,4 +190,4 @@ Sistema desenvolvido para escritórios de advocacia profissionais.
 
 ---
 
-**Advogado\Web** - Gestão Inteligente para Advogados Profissionais
+**jurius.com.br** - Gestão Inteligente para Advogados Profissionais

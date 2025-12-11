@@ -19,14 +19,14 @@ type PageConfig = {
 
 const pageConfig: Record<PageType, PageConfig> = {
   terms: {
-    title: 'Termos de Uso Advogado.WEB',
+    title: 'Termos de Uso jurius.com.br',
     subtitle: 'Regras claras para garantir transparência, segurança e excelência no uso da plataforma.',
     badge: 'TERMOS DE USO',
     highlights: ['Relacionamento transparente', 'Compromisso com compliance'],
     sections: [
       {
         title: '1. Concordância e acesso',
-        description: 'Ao utilizar o Advogado.WEB, você concorda com estes termos e declara possuir poderes para representar seu escritório.',
+        description: 'Ao utilizar o jurius.com.br, você concorda com estes termos e declara possuir poderes para representar seu escritório.',
         bullets: [
           'Uso permitido apenas para fins profissionais jurídicos',
           'Modificações nos termos serão notificadas no painel',
@@ -101,7 +101,7 @@ const pageConfig: Record<PageType, PageConfig> = {
         bullets: [
           'Criptografia TLS 1.3 e AES-256 at rest',
           'Backups diários com retenção de 30 dias',
-          'Acesso restrito e auditável pela equipe Advogado.WEB',
+          'Acesso restrito e auditável pela equipe jurius.com.br',
         ],
       },
       {
@@ -165,10 +165,10 @@ const DocumentCard: React.FC<{
     <header className="px-10 pt-12 pb-10 border-b border-slate-100 space-y-6">
       <div className="flex items-center gap-4">
         <div className="h-12 w-12 rounded-xl border border-slate-200 bg-slate-900 text-white font-semibold flex items-center justify-center tracking-tight">
-          AW
+          J
         </div>
         <div className="flex flex-col">
-          <span className="text-sm font-semibold text-slate-900">Advogado.WEB</span>
+          <span className="text-sm font-semibold text-slate-900">jurius.com.br</span>
           <span className="text-xs text-slate-500">Gestão Jurídica Inteligente</span>
         </div>
       </div>
@@ -176,7 +176,7 @@ const DocumentCard: React.FC<{
         <span className="inline-flex items-center gap-2 rounded-full border border-slate-300 px-3 py-1 text-[11px] font-semibold tracking-[0.3em] text-slate-600">
           {config.badge}
         </span>
-        <span className="text-[11px] font-semibold uppercase tracking-[0.4em] text-slate-400">Advogado.WEB</span>
+        <span className="text-[11px] font-semibold uppercase tracking-[0.4em] text-slate-400">jurius.com.br</span>
       </div>
       <h1 className="text-[34px] font-serif font-semibold leading-tight text-slate-900 tracking-tight">{config.title}</h1>
       <p className="text-base text-slate-500 max-w-3xl leading-relaxed">{config.subtitle}</p>
@@ -241,7 +241,7 @@ const DocumentCard: React.FC<{
 
     <footer className="px-10 py-8 border-t border-slate-100 text-xs text-slate-500 flex flex-wrap items-center gap-4 justify-between">
       <div>
-        <p className="font-semibold text-slate-700">Equipe Advogado.WEB</p>
+        <p className="font-semibold text-slate-700">Equipe jurius.com.br</p>
         <p>
           Contato oficial:{' '}
           <a href="mailto:pedro@advcuiaba.com" className="text-orange-600 hover:text-orange-500">
@@ -249,7 +249,7 @@ const DocumentCard: React.FC<{
           </a>
         </p>
       </div>
-      <p>© {currentYear} Advogado.WEB · Todos os direitos reservados</p>
+      <p>© {currentYear} jurius.com.br · Todos os direitos reservados</p>
     </footer>
   </article>
 );

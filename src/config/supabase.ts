@@ -1,5 +1,5 @@
 /**
- * Configuração do Supabase - Advogado\Web
+ * Configuração do Supabase - jurius.com.br
  */
 import { createClient } from '@supabase/supabase-js';
 

@@ -81,7 +81,7 @@ export function exportToExcel(
       </style>
     </head>
     <body>
-      <h1>Relatório de Intimações DJEN</h1>
+      <h1>jurius.com.br - Relatório de Intimações DJEN</h1>
       <p>Gerado em: ${new Date().toLocaleString('pt-BR')}</p>
       <p>Total de intimações: ${intimations.length}</p>
       <br>
@@ -178,7 +178,7 @@ export function exportToPDF(
     </head>
     <body>
       <div class="header">
-        <h1>📋 Relatório de Intimações DJEN</h1>
+        <h1>📋 jurius.com.br - Relatório de Intimações DJEN</h1>
         <p><strong>Gerado em:</strong> ${new Date().toLocaleString('pt-BR')}</p>
         <p><strong>Total de intimações:</strong> ${intimations.length}</p>
       </div>

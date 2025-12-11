@@ -650,8 +650,8 @@ const MainApp: React.FC = () => {
         <div className="flex flex-col h-full">
           {/* Logo */}
           <div className="flex items-center justify-center py-5 border-b border-slate-800 dark:border-zinc-900">
-            <div className="bg-amber-600 p-2 rounded-xl">
-              <img src="/icon-192.png" alt="Advogado Web" className="w-10 h-10 object-contain" />
+            <div className="bg-amber-600 p-2 rounded-xl w-14 h-14 flex items-center justify-center">
+              <span className="text-white font-bold text-2xl">J</span>
             </div>
           </div>
 
