@@ -1,5 +1,6 @@
 import React from 'react';
 import { Menu, X, Search, CheckSquare, LogOut } from 'lucide-react';
+import { BrandLogo } from '../ui/BrandLogo';
 import type { ModuleName } from '../../contexts/NavigationContext';
 
 interface HeaderProps {
@@ -61,6 +62,7 @@ export const Header: React.FC<HeaderProps> = ({
               {isMobileNavOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
             </button>
             <div className="min-w-0 flex-1">
+              <BrandLogo size="sm" showTagline={false} className="hidden sm:flex items-center gap-2" wordmarkClassName="text-slate-900" />
               <h2 className="text-base sm:text-xl lg:text-2xl font-bold text-slate-900 truncate">
                 {moduleInfo.title}
               </h2>

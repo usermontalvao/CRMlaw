@@ -1,7 +1,8 @@
+import { BrandLogo } from './components/ui/BrandLogo';
 import { useEffect, useState, useMemo, lazy, Suspense, useRef } from 'react';
 import { useNavigation } from './contexts/NavigationContext';
 import {
-  Scale,
+  LucideIcon,
   Users,
   Calendar,
   X,
@@ -23,16 +24,19 @@ import {
   Activity,
   Settings,
   Moon,
+  Scale,
   Sun,
-  Rocket,
+  UploadCloud,
+  User,
 } from 'lucide-react';
 import Login from './components/Login';
 import OfflinePage from './components/OfflinePage';
-import ProfileModal, { AppProfile, UserRole } from './components/ProfileModal';
-// import { ClientFormModal } from './components/ClientFormModal';
+import AppLayout from './components/layout/AppLayout';
+import Header from './components/layout/Header';
 import { NotificationCenterNew as NotificationCenter } from './components/NotificationCenterNew';
 import SessionWarning from './components/SessionWarning';
 import TermsPrivacyPage from './components/TermsPrivacyPage';
+import ProfileModal, { type AppProfile, type UserRole } from './components/ProfileModal';
 
 // Lazy loading dos módulos principais (carrega apenas quando acessado)
 const Dashboard = lazy(() => import('./components/Dashboard'));
@@ -585,55 +589,52 @@ const MainApp: React.FC = () => {
   return (
     <CacheProvider>
       <div className="min-h-screen bg-gray-100 dark:bg-black transition-colors duration-300">
-        {/* Overlay de Login/Logout - Animação Nave */}
+        {/* Overlay de Login/Logout - Identidade jurius */}
         {(loggingIn || loggingOut) && (
-          <div className="fixed inset-0 z-[100] flex flex-col items-center justify-center bg-slate-900 animate-fade-in">
-            {/* Estrelas de fundo */}
+          <div className="fixed inset-0 z-[100] flex flex-col items-center justify-center overflow-hidden bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 animate-fade-in">
+            {/* Ambient blobs */}
             <div className="absolute inset-0 overflow-hidden">
-              {Array.from({ length: 50 }).map((_, i) => (
-                <div
-                  key={i}
-                  className="absolute w-1 h-1 bg-white rounded-full animate-twinkle"
-                  style={{
-                    left: `${Math.random() * 100}%`,
-                    top: `${Math.random() * 100}%`,
-                    animationDelay: `${Math.random() * 2}s`,
-                    opacity: Math.random() * 0.8 + 0.2,
-                  }}
+              <div className="absolute -top-32 -left-24 w-[360px] h-[360px] rounded-full bg-amber-500/25 blur-3xl animate-blob" />
+              <div className="absolute top-24 -right-20 w-[420px] h-[420px] rounded-full bg-orange-400/20 blur-3xl animate-blob" style={{ animationDelay: '4s' }} />
+              <div className="absolute bottom-[-60px] left-1/2 -translate-x-1/2 w-[520px] h-[520px] rounded-full bg-slate-700/30 blur-[140px] animate-pulse-glow" />
+            </div>
+
+            {/* Animated concentric rings */}
+            <div className="relative z-10 flex flex-col items-center gap-8 text-center px-6">
+              <div className="relative">
+                <div className="absolute inset-[-80px] rounded-full border border-white/5 animate-spin-slower" />
+                <div className="absolute inset-[-120px] rounded-full border border-white/5 animate-spin-reverse-slower opacity-70" />
+                <div className="absolute inset-[-40px] bg-gradient-to-r from-amber-500/20 via-orange-400/20 to-rose-500/20 blur-3xl rounded-full animate-pulse-glow" />
+                <BrandLogo
+                  size="lg"
+                  stacked
+                  showTagline
+                  className="text-white drop-shadow-[0_15px_45px_rgba(0,0,0,0.45)] animate-float-slow"
+                  wordmarkClassName="text-white"
                 />
-              ))}
-            </div>
-            
-            {/* Nave/Foguete simples */}
-            <div className="relative z-10 flex flex-col items-center gap-4">
-              <div className="relative flex items-center justify-center w-16 h-16 rounded-full bg-amber-500/15 border border-amber-400/60 shadow-[0_0_40px_rgba(251,191,36,0.35)]">
-                <div className="absolute inset-0 rounded-full bg-amber-500/20 blur-xl" aria-hidden="true" />
-                <Rocket className="relative w-8 h-8 text-amber-300 animate-bounce" />
-                <span className="absolute inset-0 rounded-full border border-dashed border-amber-300/70 animate-spin-slow" aria-hidden="true" />
               </div>
-            </div>
-            
-            {/* Texto */}
-            <div className="relative z-10 mt-16 text-center animate-fade-in-up">
-              {loggingIn ? (
-                <>
-                  <p className="text-2xl font-bold text-white mb-2">
-                    🚀 Preparando seu painel...
-                  </p>
-                  <p className="text-cyan-400 text-lg font-medium">
-                    Carregando seus dados do escritório.
-                  </p>
-                </>
-              ) : (
-                <>
-                  <p className="text-2xl font-bold text-white mb-2">
-                    🛬 Aterrissando...
-                  </p>
-                  <p className="text-cyan-400 text-lg font-medium">
-                    Até logo! Volte sempre.
-                  </p>
-                </>
-              )}
+
+              <div className="relative space-y-3 animate-fade-in-up">
+                <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full border border-white/10 bg-white/5 text-xs uppercase tracking-[0.4em] text-white/70">
+                  {loggingIn ? 'Preparando ambiente' : 'Encerrando sessão'}
+                  <span className="w-2 h-2 rounded-full bg-amber-300 animate-pulse" />
+                </div>
+                {loggingIn ? (
+                  <>
+                    <p className="text-3xl font-bold text-white">Carregando seu painel...</p>
+                    <p className="text-lg font-medium text-amber-200">
+                      jurius.com.br • Gestão Jurídica Inteligente
+                    </p>
+                  </>
+                ) : (
+                  <>
+                    <p className="text-3xl font-bold text-white">Até logo!</p>
+                    <p className="text-lg font-medium text-amber-200">
+                      Voltaremos a cuidar do seu escritório em instantes.
+                    </p>
+                  </>
+                )}
+              </div>
             </div>
           </div>
         )}
