@@ -15,6 +15,7 @@ interface ClientFormProps {
   prefill?: Partial<CreateClientDTO> | null;
   onBack: () => void;
   onSave: (savedClient: Client) => void;
+  variant?: 'standalone' | 'modal';
 }
 
 // Máscara CPF
@@ -66,6 +67,7 @@ const ClientForm: React.FC<ClientFormProps> = ({
   prefill,
   onBack,
   onSave,
+  variant = 'standalone',
 }) => {
   const [loading, setLoading] = useState(false);
   const [isCepLoading, setIsCepLoading] = useState(false);
@@ -287,27 +289,33 @@ const ClientForm: React.FC<ClientFormProps> = ({
   };
 
   const isPessoaFisica = formData.client_type === 'pessoa_fisica';
+  const isModalVariant = variant === 'modal';
 
   return (
-    <div className="w-full min-h-full bg-white font-display">
-      {/* Top Orange Stripe */}
-      <div className="h-1 w-full bg-orange-500" />
-      
-      {/* Header */}
-      <div className="px-4 py-3 border-b border-slate-200">
-        <h1 className="text-lg font-bold text-slate-900">
-          {client ? 'Editar Cliente' : 'Novo Cliente'}
-        </h1>
-        <p className="text-xs text-slate-500">Preencha os dados para cadastrar</p>
-      </div>
+    <div className={`w-full bg-white font-display ${isModalVariant ? '' : 'min-h-full'}`}>
+      {!isModalVariant && (
+        <>
+          <div className="h-1 w-full bg-orange-500" />
+          <div className="px-4 py-3 border-b border-slate-200">
+            <h1 className="text-lg font-bold text-slate-900">
+              {client ? 'Editar Cliente' : 'Novo Cliente'}
+            </h1>
+            <p className="text-xs text-slate-500">Preencha os dados para cadastrar</p>
+          </div>
+        </>
+      )}
 
       <form
         id="client-form"
         onSubmit={handleSubmit}
-        className="flex flex-col min-h-[calc(100vh-64px)]"
+        className={`flex flex-col ${isModalVariant ? 'h-full' : 'min-h-[calc(100vh-64px)]'}`}
       >
         {/* Body - compacto */}
-        <div className="px-4 py-4 space-y-4 flex-1">
+        <div
+          className={`px-4 py-4 space-y-4 ${
+            isModalVariant ? 'flex-1 overflow-y-auto max-h-[70vh]' : 'flex-1'
+          }`}
+        >
           
           {/* Client Type - inline */}
           <div className="flex gap-4 items-center">
@@ -484,8 +492,11 @@ const ClientForm: React.FC<ClientFormProps> = ({
           </div>
         </div>
 
-        {/* Footer fixo */}
-        <div className="sticky bottom-0 left-0 w-full bg-white border-t border-slate-200 px-4 py-3 flex justify-end gap-2">
+        <div
+          className={`w-full border-t border-slate-200 px-4 py-3 flex justify-end gap-2 bg-white ${
+            isModalVariant ? '' : 'sticky bottom-0 left-0'
+          }`}
+        >
           <button
             type="button"
             onClick={onBack}

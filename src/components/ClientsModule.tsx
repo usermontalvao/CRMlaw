@@ -6,12 +6,11 @@ import type { Client, ClientFilters, CreateClientDTO } from '../types/client.typ
 import ClientList from './ClientList';
 import ClientForm from './ClientForm';
 import ClientDetails from './ClientDetails';
+import ClientModal from './ClientModal';
 import { processService } from '../services/process.service';
 import { requirementService } from '../services/requirement.service';
 import type { Process } from '../types/process.types';
 import type { Requirement } from '../types/requirement.types';
-
-type ViewMode = 'list' | 'form' | 'details';
 
 interface ClientsModuleProps {
   prefillData?: Partial<CreateClientDTO> | null;
@@ -61,8 +60,13 @@ const ClientsModule: React.FC<ClientsModuleProps> = ({
 }) => {
   const [clients, setClients] = useState<Client[]>([]);
   const [loading, setLoading] = useState(true);
-  const [viewMode, setViewMode] = useState<ViewMode>('list');
+  const [modalState, setModalState] = useState<{ type: 'none' | 'create' | 'edit' | 'details'; client: Client | null }>({
+    type: 'none',
+    client: null,
+  });
   const [selectedClient, setSelectedClient] = useState<Client | null>(null);
+  const [formPrefill, setFormPrefill] = useState<Partial<CreateClientDTO> | null>(null);
+  const [formContext, setFormContext] = useState<'internal' | 'prefill' | 'param' | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [filters, setFilters] = useState<ClientFilters>({});
   const [exporting, setExporting] = useState(false);
@@ -132,33 +136,51 @@ const ClientsModule: React.FC<ClientsModuleProps> = ({
   }, [filters, showIncompleteOnly]);
 
   useEffect(() => {
-    if (prefillData) {
-      setSelectedClient(null);
-      setViewMode('form');
-    }
+    if (!prefillData) return;
+    setSelectedClient(null);
+    setFormPrefill(prefillData);
+    setFormContext((prev) => prev ?? 'prefill');
+    setModalState({ type: 'create', client: null });
   }, [prefillData]);
 
   useEffect(() => {
-    if (forceCreate && viewMode === 'list') {
-      setSelectedClient(null);
-      setViewMode('form');
-      if (onParamConsumed) {
-        onParamConsumed();
-      }
+    if (!forceCreate) return;
+    setSelectedClient(null);
+    setFormContext('param');
+    if (prefillData) {
+      setFormPrefill(prefillData);
     }
-  }, [forceCreate, viewMode, onParamConsumed]);
-
-  useEffect(() => {
-    if (!focusClientId) return;
-    const client = clients.find((item) => item.id === focusClientId);
-    if (!client) return;
-
-    setSelectedClient(client);
-    setViewMode('details');
-    loadClientRelations(client.id);
+    setModalState({ type: 'create', client: null });
     if (onParamConsumed) {
       onParamConsumed();
     }
+  }, [forceCreate, prefillData, onParamConsumed]);
+
+  useEffect(() => {
+    if (!focusClientId) return;
+
+    const openClient = async () => {
+      let client = clients.find((item) => item.id === focusClientId) || null;
+
+      if (!client) {
+        try {
+          client = await clientService.getClientById(focusClientId);
+        } catch (error) {
+          console.error('Erro ao localizar cliente focalizado:', error);
+        }
+      }
+
+      if (!client) return;
+
+      setSelectedClient(client);
+      setModalState({ type: 'details', client });
+      loadClientRelations(client.id);
+      if (onParamConsumed) {
+        onParamConsumed();
+      }
+    };
+
+    openClient();
   }, [focusClientId, clients, onParamConsumed]);
 
   // Buscar clientes
@@ -219,40 +241,34 @@ const ClientsModule: React.FC<ClientsModuleProps> = ({
     }
   };
 
-  // Criar novo cliente
-  const handleNewClient = () => {
+  const openCreateModal = (context: 'internal' | 'prefill' | 'param' = 'internal', prefill?: Partial<CreateClientDTO> | null) => {
     setSelectedClient(null);
-    setViewMode('form');
+    setFormContext(context);
+    setFormPrefill(prefill ?? null);
+    setModalState({ type: 'create', client: null });
   };
 
-  // Editar cliente
-  const handleEditClient = (client: Client) => {
+  const openEditModal = (client: Client) => {
     setSelectedClient(client);
-    setViewMode('form');
+    setFormContext('internal');
+    setFormPrefill(null);
+    setModalState({ type: 'edit', client });
   };
 
-  // Ver detalhes do cliente
-  const handleViewClient = (client: Client) => {
+  const openDetailsModal = (client: Client) => {
     setSelectedClient(client);
-    setViewMode('details');
+    setModalState({ type: 'details', client });
     loadClientRelations(client.id);
   };
 
-  // Voltar para lista
-  const handleBackToList = (saved: boolean = false) => {
-    setViewMode('list');
-    setSelectedClient(null);
-    setClientProcesses([]);
-    setClientRequirements([]);
-    loadClients();
+  // Criar novo cliente
+  const handleNewClient = () => openCreateModal('internal');
 
-    // Notificar App.tsx sobre o resultado
-    if (saved && onClientSaved) {
-      onClientSaved();
-    } else if (!saved && onClientCancelled) {
-      onClientCancelled();
-    }
-  };
+  // Editar cliente
+  const handleEditClient = (client: Client) => openEditModal(client);
+
+  // Ver detalhes do cliente
+  const handleViewClient = (client: Client) => openDetailsModal(client);
 
   const handleExportToExcel = async () => {
     try {
@@ -348,295 +364,239 @@ const ClientsModule: React.FC<ClientsModuleProps> = ({
 
   const hasActiveFilters = Boolean(filters.status || filters.client_type || filters.search) || showIncompleteOnly;
 
-  // Se estiver no form ou details, renderiza diretamente sem wrapper
-  if (viewMode === 'form') {
-    return (
-      <ClientForm
-        client={selectedClient}
-        prefill={!selectedClient ? prefillData : null}
-        onBack={() => handleBackToList(false)}
-        onSave={(savedClient) => {
-          setSelectedClient(savedClient);
-          setViewMode('details');
-          loadClientRelations(savedClient.id);
-          if (onClientSaved) {
-            onClientSaved();
-          }
-        }}
-      />
-    );
-  }
+  const isFormModalOpen = modalState.type === 'create' || modalState.type === 'edit';
+  const isDetailsModalOpen = modalState.type === 'details' && Boolean(selectedClient);
 
-  if (viewMode === 'details' && selectedClient) {
-    return (
-      <ClientDetails
-        client={selectedClient}
-        processes={clientProcesses}
-        requirements={clientRequirements}
-        relationsLoading={relationsLoading}
-        onBack={() => handleBackToList(false)}
-        onEdit={() => handleEditClient(selectedClient)}
-        onCreateProcess={() => {
-          if (onNavigateToModule) {
-            onNavigateToModule('processos', {
-              mode: 'create',
-              prefill: {
-                client_id: selectedClient.id,
-                client_name: selectedClient.full_name,
-              }
-            });
-          }
-        }}
-        onCreateRequirement={() => {
-          if (onNavigateToModule) {
-            onNavigateToModule('requerimentos', {
-              mode: 'create',
-              prefill: {
-                client_id: selectedClient.id,
-                beneficiary: selectedClient.full_name,
-                cpf: selectedClient.cpf_cnpj || '',
-              }
-            });
-          }
-        }}
-        onCreateDeadline={() => {
-          if (onNavigateToModule) {
-            onNavigateToModule('prazos', {
-              mode: 'create',
-              prefill: {
-                client_id: selectedClient.id,
-                client_name: selectedClient.full_name,
-              }
-            });
-          }
-        }}
-        missingFields={missingFieldsMap?.get(selectedClient.id)}
-        isOutdated={outdatedSet?.has(selectedClient.id)}
-      />
-    );
-  }
+  const closeFormModal = (triggerCancel = false) => {
+    setModalState({ type: 'none', client: null });
+    setFormPrefill(null);
+    setFormContext(null);
+    if (triggerCancel && onClientCancelled) {
+      onClientCancelled();
+    }
+  };
+
+  const closeDetailsModal = () => {
+    setModalState({ type: 'none', client: null });
+    setSelectedClient(null);
+    setClientProcesses([]);
+    setClientRequirements([]);
+  };
+
+  const handleFormSaved = (savedClient: Client) => {
+    loadClients();
+    setSelectedClient(savedClient);
+    setModalState({ type: 'details', client: savedClient });
+    loadClientRelations(savedClient.id);
+    if (onClientSaved) {
+      onClientSaved();
+    }
+  };
 
   return (
-    <div className="space-y-4">
-      {/* Header Profissional e Limpo */}
-      {viewMode === 'list' && (
-        <>
-          {/* Header Compacto */}
-          <div className="bg-white border border-slate-200 rounded-lg shadow-sm p-4">
-            <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
-              <div>
-                <h1 className="text-2xl font-semibold text-slate-900 flex items-center gap-2">
-                  <Users className="w-6 h-6 text-blue-600" />
-                  Gestão de Clientes
-                </h1>
-                <p className="text-sm text-slate-600 mt-1">
-                  Cadastro e gerenciamento de clientes
-                </p>
-              </div>
-              <button
-                onClick={handleNewClient}
-                className="inline-flex items-center gap-1.5 bg-orange-500 hover:bg-orange-600 active:bg-orange-700 transition-colors px-3 py-1.5 rounded-lg text-xs font-medium text-white shadow-sm shadow-orange-500/30"
-              >
-                <Plus className="w-4 h-4" />
-                Novo Cliente
-              </button>
+    <>
+      <div className="space-y-4">
+        {/* Header */}
+        <div className="bg-white border border-slate-200 rounded-lg shadow-sm p-4">
+          <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
+            <div>
+              <h1 className="text-2xl font-semibold text-slate-900 flex items-center gap-2">
+                <Users className="w-6 h-6 text-blue-600" />
+                Gestão de Clientes
+              </h1>
+              <p className="text-sm text-slate-600 mt-1">
+                Cadastro e gerenciamento de clientes
+              </p>
             </div>
+            <button
+              onClick={handleNewClient}
+              className="inline-flex items-center gap-1.5 bg-orange-500 hover:bg-orange-600 active:bg-orange-700 transition-colors px-3 py-1.5 rounded-lg text-xs font-medium text-white shadow-sm shadow-orange-500/30"
+            >
+              <Plus className="w-4 h-4" />
+              Novo Cliente
+            </button>
           </div>
+        </div>
 
-          {/* Stats Minimalistas (mais compactos em mobile) */}
-          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2 sm:gap-3">
-            {/* Total - sempre visível */}
-            <div className="bg-white border border-slate-200 rounded-lg p-2.5 sm:p-3 hover:shadow-sm transition">
-              <div className="flex items-center justify-between mb-1.5">
-                <span className="text-[10px] sm:text-xs font-medium text-slate-600 uppercase">Total</span>
-                <User className="w-4 h-4 text-slate-600" />
-              </div>
-              <p className="text-lg sm:text-xl font-semibold text-slate-900">{stats.total}</p>
+        {/* Stats */}
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2 sm:gap-3">
+          <div className="bg-white border border-slate-200 rounded-lg p-2.5 sm:p-3 hover:shadow-sm transition">
+            <div className="flex items-center justify-between mb-1.5">
+              <span className="text-[10px] sm:text-xs font-medium text-slate-600 uppercase">Total</span>
+              <User className="w-4 h-4 text-slate-600" />
             </div>
-
-            {/* Ativos - sempre visível */}
-            <div className="bg-white border border-slate-200 rounded-lg p-2.5 sm:p-3 hover:shadow-sm transition">
-              <div className="flex items-center justify-between mb-1.5">
-                <span className="text-[10px] sm:text-xs font-medium text-emerald-600 uppercase">Ativos</span>
-                <UserPlus className="w-4 h-4 text-emerald-600" />
-              </div>
-              <p className="text-lg sm:text-xl font-semibold text-emerald-600">{stats.active}</p>
-            </div>
-
-            {/* Demais stats: apenas em sm+ para não ocupar altura em mobile */}
-            <div className="hidden sm:block bg-white border border-slate-200 rounded-lg p-3 hover:shadow-sm transition">
-              <div className="flex items-center justify-between mb-2">
-                <span className="text-xs font-medium text-blue-600 uppercase">P. Física</span>
-                <User className="w-4 h-4 text-blue-600" />
-              </div>
-              <p className="text-xl font-semibold text-blue-600">{stats.pessoaFisica}</p>
-            </div>
-
-            <div className="hidden sm:block bg-white border border-slate-200 rounded-lg p-3 hover:shadow-sm transition">
-              <div className="flex items-center justify-between mb-2">
-                <span className="text-xs font-medium text-purple-600 uppercase">P. Jurídica</span>
-                <Building2 className="w-4 h-4 text-purple-600" />
-              </div>
-              <p className="text-xl font-semibold text-purple-600">{stats.pessoaJuridica}</p>
-            </div>
-
-            <div className="hidden sm:block bg-white border border-slate-200 rounded-lg p-3 hover:shadow-sm transition">
-              <div className="flex items-center justify-between mb-2">
-                <span className="text-xs font-medium text-amber-600 uppercase">Incompletos</span>
-                <AlertTriangle className="w-4 h-4 text-amber-600" />
-              </div>
-              <p className="text-xl font-semibold text-amber-600">{stats.incomplete}</p>
-            </div>
+            <p className="text-lg sm:text-xl font-semibold text-slate-900">{stats.total}</p>
           </div>
-
-          {/* Filtros e Busca Compactos (retraídos por padrão) */}
-          <div className="bg-white border border-slate-200 rounded-lg p-3 shadow-sm">
+          <div className="bg-white border border-slate-200 rounded-lg p-2.5 sm:p-3 hover:shadow-sm transition">
+            <div className="flex items-center justify-between mb-1.5">
+              <span className="text-[10px] sm:text-xs font-medium text-emerald-600 uppercase">Ativos</span>
+              <UserPlus className="w-4 h-4 text-emerald-600" />
+            </div>
+            <p className="text-lg sm:text-xl font-semibold text-emerald-600">{stats.active}</p>
+          </div>
+          <div className="hidden sm:block bg-white border border-slate-200 rounded-lg p-3 hover:shadow-sm transition">
             <div className="flex items-center justify-between mb-2">
-              <span className="text-xs sm:text-sm text-slate-600">Buscar e filtrar clientes</span>
-              <button
-                type="button"
-                onClick={() => setShowFilters((prev) => !prev)}
-                className="text-xs sm:text-sm font-medium text-blue-600 hover:text-blue-700 underline-offset-2 hover:underline"
-              >
-                {showFilters ? 'Ocultar filtros' : 'Mostrar filtros'}
-              </button>
+              <span className="text-xs font-medium text-blue-600 uppercase">P. Física</span>
+              <User className="w-4 h-4 text-blue-600" />
             </div>
+            <p className="text-xl font-semibold text-blue-600">{stats.pessoaFisica}</p>
+          </div>
+          <div className="hidden sm:block bg-white border border-slate-200 rounded-lg p-3 hover:shadow-sm transition">
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-xs font-medium text-purple-600 uppercase">P. Jurídica</span>
+              <Building2 className="w-4 h-4 text-purple-600" />
+            </div>
+            <p className="text-xl font-semibold text-purple-600">{stats.pessoaJuridica}</p>
+          </div>
+          <div className="hidden sm:block bg-white border border-slate-200 rounded-lg p-3 hover:shadow-sm transition">
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-xs font-medium text-amber-600 uppercase">Incompletos</span>
+              <AlertTriangle className="w-4 h-4 text-amber-600" />
+            </div>
+            <p className="text-xl font-semibold text-amber-600">{stats.incomplete}</p>
+          </div>
+        </div>
 
-            {showFilters && (
-              <div className="mt-2 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-12 gap-3">
-                {/* Busca */}
-                <div className="sm:col-span-2 lg:col-span-4">
-                  <label className="block text-xs font-medium text-slate-600 mb-1.5">
-                    Buscar Cliente
-                  </label>
-                  <div className="relative">
-                    <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-slate-400 w-4 h-4" />
-                    <input
-                      type="text"
-                      value={searchTerm}
-                      onChange={(e) => setSearchTerm(e.target.value)}
-                      onKeyPress={(e) => e.key === 'Enter' && handleSearch()}
-                      className="w-full pl-9 pr-3 py-1.5 rounded-lg border border-slate-200 bg-white text-sm text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition"
-                      placeholder="Nome, CPF, e-mail..."
-                    />
+        {/* Warnings */}
+        {(missingFieldsMap.size > 0 || outdatedSet.size > 0) && (
+          <div className="space-y-2">
+            {missingFieldsMap.size > 0 && showMissingBanner && (
+              <div className="bg-amber-50 border border-amber-200 text-amber-800 px-4 py-2.5 rounded-lg flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
+                <div className="flex items-start gap-3 flex-1">
+                  <AlertTriangle className="w-5 h-5 mt-0.5 flex-shrink-0" />
+                  <div>
+                    <p className="font-semibold text-sm">Cadastros com dados obrigatórios pendentes</p>
+                    <p className="text-xs mt-1">
+                      Identificamos {missingFieldsMap.size} cliente(s) com informações essenciais ausentes. Complete os dados para garantir consistência.
+                    </p>
                   </div>
                 </div>
-
-                {/* Filtro de Status */}
-                <div className="lg:col-span-2">
-                  <label className="block text-xs font-medium text-slate-600 mb-1.5">
-                    Status
-                  </label>
-                  <select
-                    value={filters.status || ''}
-                    onChange={(e) => setFilters({ ...filters, status: e.target.value as any })}
-                    className="w-full px-3 py-1.5 rounded-lg border border-slate-200 bg-white text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition"
-                  >
-                    <option value="">Todos</option>
-                    <option value="ativo">Ativos</option>
-                    <option value="inativo">Inativos</option>
-                    <option value="suspenso">Suspensos</option>
-                  </select>
-                </div>
-
-                {/* Filtro de Tipo */}
-                <div className="lg:col-span-2">
-                  <label className="block text-xs font-medium text-slate-600 mb-1.5">
-                    Tipo
-                  </label>
-                  <select
-                    value={filters.client_type || ''}
-                    onChange={(e) => setFilters({ ...filters, client_type: e.target.value as any })}
-                    className="w-full px-3 py-1.5 rounded-lg border border-slate-200 bg-white text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition"
-                  >
-                    <option value="">Todos</option>
-                    <option value="pessoa_fisica">Pessoa Física</option>
-                    <option value="pessoa_juridica">Pessoa Jurídica</option>
-                  </select>
-                </div>
-
-                {/* Ações */}
-                <div className="sm:col-span-2 lg:col-span-4 flex items-end gap-2">
-                  <label className="flex-1 inline-flex items-center gap-1.5 text-xs font-medium text-slate-700 border border-slate-200 hover:bg-slate-50 rounded-lg px-3 py-1.5 bg-white cursor-pointer transition">
-                    <input
-                      type="checkbox"
-                      className="rounded border-slate-300 text-amber-600 focus:ring-amber-500 w-3.5 h-3.5"
-                      checked={showIncompleteOnly}
-                      onChange={(e) => setShowIncompleteOnly(e.target.checked)}
-                    />
-                    <span className="text-xs">Incompletos</span>
-                  </label>
-
+                <div className="flex items-center gap-2 self-stretch sm:self-auto">
+                  {!showIncompleteOnly && (
+                    <button
+                      onClick={() => setShowIncompleteOnly(true)}
+                      className="inline-flex items-center justify-center px-3 py-1.5 text-xs font-semibold text-amber-900 bg-amber-200/70 hover:bg-amber-200 rounded-md transition-colors"
+                    >
+                      Mostrar incompletos
+                    </button>
+                  )}
                   <button
-                    onClick={handleExportToExcel}
-                    disabled={exporting}
-                    className="flex-1 inline-flex items-center justify-center gap-1.5 border border-emerald-600 text-emerald-700 hover:bg-emerald-50 disabled:border-emerald-300 disabled:text-emerald-400 bg-white font-medium px-3 py-2 rounded-lg shadow-sm transition disabled:cursor-not-allowed"
-                    title="Exportar para Excel"
+                    type="button"
+                    onClick={() => setShowMissingBanner(false)}
+                    className="ml-auto text-amber-700 hover:text-amber-900 text-xs font-semibold px-2 py-1 rounded-md hover:bg-amber-100 transition-colors"
+                    aria-label="Fechar aviso de cadastros incompletos"
                   >
-                    {exporting ? (
-                      <>
-                        <div className="w-4 h-4 border-2 border-emerald-600 border-t-transparent rounded-full animate-spin" />
-                        <span className="text-xs">Gerando...</span>
-                      </>
-                    ) : (
-                      <>
-                        <Download className="w-4 h-4" />
-                        <span className="text-xs">Excel</span>
-                      </>
-                    )}
+                    ×
                   </button>
                 </div>
               </div>
             )}
-          </div>
-        </>
-      )}
-
-      {viewMode === 'list' && (missingFieldsMap.size > 0 || outdatedSet.size > 0) && (
-        <div className="space-y-2">
-          {missingFieldsMap.size > 0 && showMissingBanner && (
-            <div className="bg-amber-50 border border-amber-200 text-amber-800 px-4 py-2.5 rounded-lg flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
-              <div className="flex items-start gap-3 flex-1">
-                <AlertTriangle className="w-5 h-5 mt-0.5 flex-shrink-0" />
+            {outdatedSet.size > 0 && (
+              <div className="bg-sky-50 border border-sky-200 text-sky-800 px-4 py-2.5 rounded-lg flex items-start gap-3">
+                <Clock className="w-5 h-5 mt-0.5 flex-shrink-0" />
                 <div>
-                  <p className="font-semibold text-sm">Cadastros com dados obrigatórios pendentes</p>
-                  <p className="text-xs mt-1">Identificamos {missingFieldsMap.size} cliente(s) com informações essenciais ausentes. Complete os dados para garantir consistência.</p>
+                  <p className="font-semibold text-sm">Cadastros desatualizados</p>
+                  <p className="text-xs mt-1">
+                    Encontramos {outdatedSet.size} cliente(s) com última atualização superior a {OUTDATED_THRESHOLD_DAYS} dias.
+                  </p>
                 </div>
               </div>
-              <div className="flex items-center gap-2 self-stretch sm:self-auto">
-                {!showIncompleteOnly && (
-                  <button
-                    onClick={() => setShowIncompleteOnly(true)}
-                    className="inline-flex items-center justify-center px-3 py-1.5 text-xs font-semibold text-amber-900 bg-amber-200/70 hover:bg-amber-200 rounded-md transition-colors"
-                  >
-                    Mostrar incompletos
-                  </button>
-                )}
-                <button
-                  type="button"
-                  onClick={() => setShowMissingBanner(false)}
-                  className="ml-auto text-amber-700 hover:text-amber-900 text-xs font-semibold px-2 py-1 rounded-md hover:bg-amber-100 transition-colors"
-                  aria-label="Fechar aviso de cadastros incompletos"
+            )}
+          </div>
+        )}
+
+        {/* Filters */}
+        <div className="bg-white border border-slate-200 rounded-lg p-3 shadow-sm">
+          <div className="flex items-center justify-between mb-2">
+            <span className="text-xs sm:text-sm text-slate-600">Buscar e filtrar clientes</span>
+            <button
+              type="button"
+              onClick={() => setShowFilters((prev) => !prev)}
+              className="text-xs sm:text-sm font-medium text-blue-600 hover:text-blue-700 underline-offset-2 hover:underline"
+            >
+              {showFilters ? 'Ocultar filtros' : 'Mostrar filtros'}
+            </button>
+          </div>
+
+          {showFilters && (
+            <div className="mt-2 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-12 gap-3">
+              <div className="sm:col-span-2 lg:col-span-4">
+                <label className="block text-xs font-medium text-slate-600 mb-1.5">Buscar Cliente</label>
+                <div className="relative">
+                  <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-slate-400 w-4 h-4" />
+                  <input
+                    type="text"
+                    value={searchTerm}
+                    onChange={(e) => setSearchTerm(e.target.value)}
+                    onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
+                    className="w-full pl-9 pr-3 py-1.5 rounded-lg border border-slate-200 bg-white text-sm text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition"
+                    placeholder="Nome, CPF, e-mail..."
+                  />
+                </div>
+              </div>
+
+              <div className="lg:col-span-2">
+                <label className="block text-xs font-medium text-slate-600 mb-1.5">Status</label>
+                <select
+                  value={filters.status || ''}
+                  onChange={(e) => setFilters({ ...filters, status: e.target.value as any })}
+                  className="w-full px-3 py-1.5 rounded-lg border border-slate-200 bg-white text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition"
                 >
-                  ×
+                  <option value="">Todos</option>
+                  <option value="ativo">Ativos</option>
+                  <option value="inativo">Inativos</option>
+                  <option value="suspenso">Suspensos</option>
+                </select>
+              </div>
+
+              <div className="lg:col-span-2">
+                <label className="block text-xs font-medium text-slate-600 mb-1.5">Tipo</label>
+                <select
+                  value={filters.client_type || ''}
+                  onChange={(e) => setFilters({ ...filters, client_type: e.target.value as any })}
+                  className="w-full px-3 py-1.5 rounded-lg border border-slate-200 bg-white text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition"
+                >
+                  <option value="">Todos</option>
+                  <option value="pessoa_fisica">Pessoa Física</option>
+                  <option value="pessoa_juridica">Pessoa Jurídica</option>
+                </select>
+              </div>
+
+              <div className="sm:col-span-2 lg:col-span-4 flex items-end gap-2">
+                <label className="flex-1 inline-flex items-center gap-1.5 text-xs font-medium text-slate-700 border border-slate-200 hover:bg-slate-50 rounded-lg px-3 py-1.5 bg-white cursor-pointer transition">
+                  <input
+                    type="checkbox"
+                    className="rounded border-slate-300 text-amber-600 focus:ring-amber-500 w-3.5 h-3.5"
+                    checked={showIncompleteOnly}
+                    onChange={(e) => setShowIncompleteOnly(e.target.checked)}
+                  />
+                  <span className="text-xs">Incompletos</span>
+                </label>
+
+                <button
+                  onClick={handleExportToExcel}
+                  disabled={exporting}
+                  className="flex-1 inline-flex items-center justify-center gap-1.5 border border-emerald-600 text-emerald-700 hover:bg-emerald-50 disabled:border-emerald-300 disabled:text-emerald-400 bg-white font-medium px-3 py-2 rounded-lg shadow-sm transition disabled:cursor-not-allowed"
+                  title="Exportar para Excel"
+                >
+                  {exporting ? (
+                    <>
+                      <div className="w-4 h-4 border-2 border-emerald-600 border-t-transparent rounded-full animate-spin" />
+                      <span className="text-xs">Gerando...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Download className="w-4 h-4" />
+                      <span className="text-xs">Excel</span>
+                    </>
+                  )}
                 </button>
               </div>
             </div>
           )}
-          {outdatedSet.size > 0 && (
-            <div className="bg-sky-50 border border-sky-200 text-sky-800 px-4 py-2.5 rounded-lg flex items-start gap-3">
-              <Clock className="w-5 h-5 mt-0.5 flex-shrink-0" />
-              <div>
-                <p className="font-semibold text-sm">Cadastros desatualizados</p>
-                <p className="text-xs mt-1">Encontramos {outdatedSet.size} cliente(s) com última atualização superior a {OUTDATED_THRESHOLD_DAYS} dias.</p>
-              </div>
-            </div>
-          )}
         </div>
-      )}
 
-      {/* Conteúdo principal */}
-      {viewMode === 'list' && (
+        {/* Client List */}
         <ClientList
           clients={clients}
           loading={loading}
@@ -647,8 +607,112 @@ const ClientsModule: React.FC<ClientsModuleProps> = ({
           onEdit={handleEditClient}
           onDelete={handleDeleteClient}
         />
+      </div>
+
+      {/* Form Modal */}
+      {isFormModalOpen && (
+        <ClientModal
+          isOpen={isFormModalOpen}
+          onClose={() => closeFormModal(true)}
+          title={modalState.type === 'edit' ? 'Editar Cliente' : 'Novo Cliente'}
+          subtitle={formContext === 'prefill' ? 'Dados pré-preenchidos automaticamente' : undefined}
+          size="xl"
+        >
+          <div className="p-4">
+            <ClientForm
+              client={modalState.client}
+              prefill={modalState.type === 'create' ? formPrefill : null}
+              onBack={() => closeFormModal(true)}
+              onSave={handleFormSaved}
+              variant="modal"
+            />
+          </div>
+        </ClientModal>
       )}
-    </div>
+
+      {/* Details Modal */}
+      {isDetailsModalOpen && selectedClient && (
+        <ClientModal
+          isOpen={isDetailsModalOpen}
+          onClose={closeDetailsModal}
+          title={selectedClient.full_name}
+          subtitle="Detalhes do cliente"
+          size="xl"
+          footer={
+            <div className="flex items-center justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  closeDetailsModal();
+                  handleEditClient(selectedClient);
+                }}
+                className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-blue-600 text-white text-sm font-semibold hover:bg-blue-700 transition"
+              >
+                <Edit className="w-4 h-4" />
+                Editar
+              </button>
+              <button
+                type="button"
+                onClick={closeDetailsModal}
+                className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-slate-100 text-slate-600 text-sm font-semibold hover:bg-slate-200 transition"
+              >
+                Fechar
+              </button>
+            </div>
+          }
+        >
+          <div className="p-4">
+            <ClientDetails
+              client={selectedClient}
+              processes={clientProcesses}
+              requirements={clientRequirements}
+              relationsLoading={relationsLoading}
+              onBack={closeDetailsModal}
+              onEdit={() => {
+                closeDetailsModal();
+                handleEditClient(selectedClient);
+              }}
+              onCreateProcess={() => {
+                if (onNavigateToModule) {
+                  onNavigateToModule('processos', {
+                    mode: 'create',
+                    prefill: {
+                      client_id: selectedClient.id,
+                      client_name: selectedClient.full_name,
+                    },
+                  });
+                }
+              }}
+              onCreateRequirement={() => {
+                if (onNavigateToModule) {
+                  onNavigateToModule('requerimentos', {
+                    mode: 'create',
+                    prefill: {
+                      client_id: selectedClient.id,
+                      beneficiary: selectedClient.full_name,
+                      cpf: selectedClient.cpf_cnpj || '',
+                    },
+                  });
+                }
+              }}
+              onCreateDeadline={() => {
+                if (onNavigateToModule) {
+                  onNavigateToModule('prazos', {
+                    mode: 'create',
+                    prefill: {
+                      client_id: selectedClient.id,
+                      client_name: selectedClient.full_name,
+                    },
+                  });
+                }
+              }}
+              missingFields={missingFieldsMap?.get(selectedClient.id)}
+              isOutdated={outdatedSet?.has(selectedClient.id)}
+            />
+          </div>
+        </ClientModal>
+      )}
+    </>
   );
 };
 

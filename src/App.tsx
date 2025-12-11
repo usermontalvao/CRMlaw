@@ -911,9 +911,10 @@ const MainApp: React.FC = () => {
                             type="button"
                             onMouseDown={(event) => event.preventDefault()}
                             onClick={() => {
-                              // fluxo de novo cliente agora é pelo módulo Clientes; evitar modal duplicado
+                              setClientPrefill({ full_name: clientSearchTerm.trim() });
                               setClientSearchOpen(false);
                               setClientSearchTerm('');
+                              navigateTo('clientes');
                             }}
                             className="w-full text-left px-3 py-2.5 hover:bg-emerald-50 transition border-t border-slate-100 flex items-center gap-2 text-emerald-600 font-medium"
                           >
@@ -945,9 +946,10 @@ const MainApp: React.FC = () => {
                           type="button"
                           onMouseDown={(event) => event.preventDefault()}
                           onClick={() => {
-                            // fluxo de novo cliente agora é pelo módulo Clientes; evitar modal duplicado
+                            setClientPrefill({ full_name: clientSearchTerm.trim() });
                             setClientSearchOpen(false);
                             setClientSearchTerm('');
+                            navigateTo('clientes');
                           }}
                           className="w-full text-left px-3 py-2 hover:bg-emerald-50 transition border-t border-slate-100 flex items-center gap-2 text-emerald-600 font-medium"
                         >
