@@ -589,53 +589,80 @@ const MainApp: React.FC = () => {
   return (
     <CacheProvider>
       <div className="min-h-screen bg-gray-100 dark:bg-black transition-colors duration-300">
-        {/* Overlay de Login/Logout - Identidade jurius */}
+        {/* Overlay de Login/Logout - Epic Animation */}
         {(loggingIn || loggingOut) && (
-          <div className="fixed inset-0 z-[100] flex flex-col items-center justify-center overflow-hidden bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 animate-fade-in">
-            {/* Ambient blobs */}
+          <div className="fixed inset-0 z-[100] flex items-center justify-center overflow-hidden bg-slate-950">
+            {/* Animated gradient background */}
+            <div className="absolute inset-0">
+              <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_center,rgba(251,146,60,0.15)_0%,transparent_70%)]" />
+              <div className="absolute top-0 left-1/4 w-96 h-96 bg-orange-500/20 rounded-full blur-[120px] animate-pulse" />
+              <div className="absolute bottom-0 right-1/4 w-80 h-80 bg-amber-500/15 rounded-full blur-[100px] animate-pulse" style={{ animationDelay: '1s' }} />
+              <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[600px] bg-orange-600/10 rounded-full blur-[150px] animate-pulse" style={{ animationDelay: '0.5s' }} />
+            </div>
+
+            {/* Floating particles */}
             <div className="absolute inset-0 overflow-hidden">
-              <div className="absolute -top-32 -left-24 w-[360px] h-[360px] rounded-full bg-amber-500/25 blur-3xl animate-blob" />
-              <div className="absolute top-24 -right-20 w-[420px] h-[420px] rounded-full bg-orange-400/20 blur-3xl animate-blob" style={{ animationDelay: '4s' }} />
-              <div className="absolute bottom-[-60px] left-1/2 -translate-x-1/2 w-[520px] h-[520px] rounded-full bg-slate-700/30 blur-[140px] animate-pulse-glow" />
-            </div>
-
-            {/* Animated concentric rings */}
-            <div className="relative z-10 flex flex-col items-center gap-8 text-center px-6">
-              <div className="relative">
-                <div className="absolute inset-[-80px] rounded-full border border-white/5 animate-spin-slower" />
-                <div className="absolute inset-[-120px] rounded-full border border-white/5 animate-spin-reverse-slower opacity-70" />
-                <div className="absolute inset-[-40px] bg-gradient-to-r from-amber-500/20 via-orange-400/20 to-rose-500/20 blur-3xl rounded-full animate-pulse-glow" />
-                <BrandLogo
-                  size="lg"
-                  stacked
-                  showTagline
-                  className="text-white drop-shadow-[0_15px_45px_rgba(0,0,0,0.45)] animate-float-slow"
-                  wordmarkClassName="text-white"
+              {Array.from({ length: 20 }).map((_, i) => (
+                <div
+                  key={i}
+                  className="absolute w-1 h-1 bg-orange-400/60 rounded-full animate-float-particle"
+                  style={{
+                    left: `${Math.random() * 100}%`,
+                    top: `${Math.random() * 100}%`,
+                    animationDelay: `${Math.random() * 5}s`,
+                    animationDuration: `${3 + Math.random() * 4}s`,
+                  }}
                 />
+              ))}
+            </div>
+
+            {/* Main content */}
+            <div className="relative z-10 flex flex-col items-center">
+              {/* Glowing logo container */}
+              <div className="relative mb-8">
+                {/* Outer glow rings */}
+                <div className="absolute inset-[-40px] rounded-full border border-orange-500/20 animate-ping-slow" />
+                <div className="absolute inset-[-25px] rounded-full border border-orange-400/30 animate-ping-slower" />
+                <div className="absolute inset-[-60px] rounded-full bg-gradient-to-r from-orange-500/10 via-amber-500/5 to-orange-500/10 blur-2xl animate-pulse" />
+                
+                {/* Logo */}
+                <div className="relative w-20 h-20 rounded-3xl bg-gradient-to-br from-orange-500 via-amber-500 to-orange-600 flex items-center justify-center shadow-2xl shadow-orange-500/50">
+                  <span className="text-white font-black text-4xl tracking-tight">J</span>
+                  <div className="absolute inset-0 rounded-3xl bg-gradient-to-t from-white/0 to-white/20" />
+                </div>
               </div>
 
-              <div className="relative space-y-3 animate-fade-in-up">
-                <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full border border-white/10 bg-white/5 text-xs uppercase tracking-[0.4em] text-white/70">
-                  {loggingIn ? 'Preparando ambiente' : 'Encerrando sessão'}
-                  <span className="w-2 h-2 rounded-full bg-amber-300 animate-pulse" />
+              {/* Brand name with glow */}
+              <div className="text-center mb-8">
+                <h1 className="text-3xl font-bold text-white mb-2 tracking-tight">
+                  jurius<span className="text-orange-400">.com.br</span>
+                </h1>
+                <p className="text-sm text-white/50 tracking-[0.3em] uppercase">
+                  Gestão Jurídica Inteligente
+                </p>
+              </div>
+
+              {/* Animated loading bar */}
+              <div className="w-64 mb-6">
+                <div className="h-1 bg-white/10 rounded-full overflow-hidden backdrop-blur-sm">
+                  <div className="h-full bg-gradient-to-r from-orange-500 via-amber-400 to-orange-500 rounded-full animate-loading-bar" />
                 </div>
-                {loggingIn ? (
-                  <>
-                    <p className="text-3xl font-bold text-white">Carregando seu painel...</p>
-                    <p className="text-lg font-medium text-amber-200">
-                      jurius.com.br • Gestão Jurídica Inteligente
-                    </p>
-                  </>
-                ) : (
-                  <>
-                    <p className="text-3xl font-bold text-white">Até logo!</p>
-                    <p className="text-lg font-medium text-amber-200">
-                      Voltaremos a cuidar do seu escritório em instantes.
-                    </p>
-                  </>
-                )}
+              </div>
+
+              {/* Status text */}
+              <div className="text-center">
+                <p className="text-lg font-medium text-white/90 mb-1">
+                  {loggingIn ? 'Preparando seu ambiente' : 'Encerrando sessão'}
+                </p>
+                <p className="text-sm text-white/50 flex items-center gap-2 justify-center">
+                  <span className="inline-block w-1.5 h-1.5 bg-orange-400 rounded-full animate-pulse" />
+                  {loggingIn ? 'Carregando dados do escritório...' : 'Salvando suas alterações...'}
+                </p>
               </div>
             </div>
+
+            {/* Bottom gradient fade */}
+            <div className="absolute bottom-0 left-0 right-0 h-32 bg-gradient-to-t from-slate-950 to-transparent" />
           </div>
         )}
 

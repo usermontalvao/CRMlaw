@@ -18,17 +18,19 @@ interface ClientFormProps {
   variant?: 'standalone' | 'modal';
 }
 
-// Máscara CPF
-const applyCpfMask = (value: string): string => {
+import { maskCpfInput } from '../utils/formatters';
+
+// Máscara telefone
+const applyPhoneMask = (value: string): string => {
   const numbers = value.replace(/\D/g, '').slice(0, 11);
-  if (numbers.length <= 3) return numbers;
-  if (numbers.length <= 6) return `${numbers.slice(0, 3)}.${numbers.slice(3)}`;
-  if (numbers.length <= 9)
-    return `${numbers.slice(0, 3)}.${numbers.slice(3, 6)}.${numbers.slice(6)}`;
-  return `${numbers.slice(0, 3)}.${numbers.slice(3, 6)}.${numbers.slice(
-    6,
-    9,
-  )}-${numbers.slice(9, 11)}`;
+  if (numbers.length <= 2) return numbers;
+  if (numbers.length <= 7) return `(${numbers.slice(0, 2)}) ${numbers.slice(2)}`;
+  if (numbers.length <= 10)
+    return `(${numbers.slice(0, 2)}) ${numbers.slice(2, 6)}-${numbers.slice(6)}`;
+  return `(${numbers.slice(0, 2)}) ${numbers.slice(2, 3)} ${numbers.slice(
+    3,
+    7,
+  )}-${numbers.slice(7, 11)}`;
 };
 
 // Máscara CNPJ
@@ -47,19 +49,6 @@ const applyCnpjMask = (value: string): string => {
     5,
     8,
   )}/${numbers.slice(8, 12)}-${numbers.slice(12, 14)}`;
-};
-
-// Máscara telefone
-const applyPhoneMask = (value: string): string => {
-  const numbers = value.replace(/\D/g, '').slice(0, 11);
-  if (numbers.length <= 2) return numbers;
-  if (numbers.length <= 7) return `(${numbers.slice(0, 2)}) ${numbers.slice(2)}`;
-  if (numbers.length <= 10)
-    return `(${numbers.slice(0, 2)}) ${numbers.slice(2, 6)}-${numbers.slice(6)}`;
-  return `(${numbers.slice(0, 2)}) ${numbers.slice(2, 3)} ${numbers.slice(
-    3,
-    7,
-  )}-${numbers.slice(7, 11)}`;
 };
 
 const ClientForm: React.FC<ClientFormProps> = ({
@@ -103,7 +92,7 @@ const ClientForm: React.FC<ClientFormProps> = ({
       const rawCpfCnpj = client.cpf_cnpj || '';
       const maskedCpfCnpj =
         client.client_type === 'pessoa_fisica'
-          ? applyCpfMask(rawCpfCnpj)
+          ? maskCpfInput(rawCpfCnpj)
           : applyCnpjMask(rawCpfCnpj);
 
       const rawPhone = client.phone || client.mobile || '';
@@ -368,7 +357,7 @@ const ClientForm: React.FC<ClientFormProps> = ({
               )}
               <label className="flex flex-col">
                 <span className={labelClass}>{isPessoaFisica ? 'CPF' : 'CNPJ'}</span>
-                <input type="text" className={inputClass} value={formData.cpf_cnpj} onChange={(e) => handleChange('cpf_cnpj', isPessoaFisica ? applyCpfMask(e.target.value) : applyCnpjMask(e.target.value))} placeholder="" maxLength={isPessoaFisica ? 14 : 18} />
+                <input type="text" className={inputClass} value={formData.cpf_cnpj} onChange={(e) => handleChange('cpf_cnpj', isPessoaFisica ? maskCpfInput(e.target.value) : applyCnpjMask(e.target.value))} placeholder="" maxLength={isPessoaFisica ? 14 : 18} />
               </label>
               {isPessoaFisica && (
                 <label className="flex flex-col">
