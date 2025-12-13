@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import {
   Plus,
   FileText,
@@ -24,9 +25,11 @@ import { saveAs } from 'file-saver';
 import { Document as DocxDocument, Packer, Paragraph, TextRun } from 'docx';
 import { documentTemplateService } from '../services/documentTemplate.service';
 import { clientService } from '../services/client.service';
+import { processService } from '../services/process.service';
 import { ClientSearchSelect } from './ClientSearchSelect';
 import type { DocumentTemplate, CreateDocumentTemplateDTO } from '../types/document.types';
 import type { Client } from '../types/client.types';
+import type { Process } from '../types/process.types';
 
 
 const defaultTemplateContent = `[[NOME COMPLETO]], [[nacionalidade]], [[estado civil]], [[profissão]], inscrito(a) no CPF sob o nº [[CPF]], residente e domiciliado(a) na [[endereço]], nº [[número]], [[complemento]], Bairro [[bairro]], [[cidade]] – [[estado]], CEP [[CEP]], telefone/WhatsApp [[celular]]
@@ -106,6 +109,11 @@ const DocumentsModule: React.FC = () => {
   const [clientSearchTerm, setClientSearchTerm] = useState('');
   const [selectedClientId, setSelectedClientId] = useState('');
   const [showClientSuggestions, setShowClientSuggestions] = useState(false);
+  const [processes, setProcesses] = useState<Process[]>([]);
+  const [processesLoading, setProcessesLoading] = useState(true);
+  const [processSearchTerm, setProcessSearchTerm] = useState('');
+  const [selectedProcessId, setSelectedProcessId] = useState('');
+  const [showProcessSuggestions, setShowProcessSuggestions] = useState(false);
   const [selectedTemplateId, setSelectedTemplateId] = useState('');
   const [defendantInput, setDefendantInput] = useState('');
   const [generatingDocx, setGeneratingDocx] = useState(false);
@@ -196,9 +204,46 @@ const DocumentsModule: React.FC = () => {
     };
   }, [clientSearchTerm]);
 
+  useEffect(() => {
+    let isActive = true;
+    const handler = setTimeout(() => {
+      (async () => {
+        try {
+          setProcessesLoading(true);
+          const trimmed = processSearchTerm.trim();
+          const data = await processService.listProcesses(trimmed ? { search: trimmed } : undefined);
+          if (!isActive) return;
+          setProcesses(data);
+          setSelectedProcessId((prev) => {
+            if (!prev) return prev;
+            return data.some((process) => process.id === prev) ? prev : '';
+          });
+        } catch (err) {
+          if (isActive) {
+            console.error(err);
+          }
+        } finally {
+          if (isActive) {
+            setProcessesLoading(false);
+          }
+        }
+      })();
+    }, 400);
+
+    return () => {
+      isActive = false;
+      clearTimeout(handler);
+    };
+  }, [processSearchTerm]);
+
   const selectedClient = useMemo(
     () => clients.find((client) => client.id === selectedClientId) ?? null,
     [clients, selectedClientId],
+  );
+
+  const selectedProcess = useMemo(
+    () => processes.find((process) => process.id === selectedProcessId) ?? null,
+    [processes, selectedProcessId],
   );
 
   const selectedTemplate = useMemo(
@@ -672,8 +717,7 @@ const DocumentsModule: React.FC = () => {
   const templatesWithFile = templates.filter((template) => template.file_path).length;
 
   return (
-    <>
-      <div className="space-y-6">
+    <div className="space-y-6">
       {/* Header com tabs */}
       <div className="rounded-2xl border border-slate-200 bg-white">
         <div className="border-b border-slate-200 px-4 py-4 sm:px-6">
@@ -867,373 +911,419 @@ const DocumentsModule: React.FC = () => {
       )}
 
       {/* Novo template modal */}
-      {isModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-gray-900/40 p-4">
-          <div className="relative w-full max-w-xl rounded-xl bg-white shadow-lg max-h-[90vh] overflow-hidden">
-            <form onSubmit={handleUploadTemplate} className="flex flex-col p-5 md:p-6 gap-5 overflow-y-auto">
-              {/* Header */}
-              <div className="flex flex-wrap justify-between gap-3 relative">
-                <div className="flex flex-col gap-1">
-                  <h1 className="text-gray-900 tracking-tight text-[32px] font-bold leading-tight">Adicionar template</h1>
-                  <p className="text-gray-500 text-sm font-normal leading-normal">Novo template</p>
-                </div>
-                <button 
-                  type="button"
-                  onClick={handleCloseModal} 
-                  className="flex items-center justify-center h-9 w-9 rounded-full text-gray-600 hover:text-gray-800 absolute top-0 right-0"
-                >
-                  <X className="w-5 h-5" />
-                </button>
+      {isModalOpen && createPortal(
+        <div className="fixed inset-0 z-[70] flex items-center justify-center px-3 sm:px-6 py-4">
+          <div
+            className="absolute inset-0 bg-slate-900/70 backdrop-blur-sm"
+            onClick={handleCloseModal}
+            aria-hidden="true"
+          />
+          <div className="relative w-full max-w-xl max-h-[92vh] bg-white dark:bg-zinc-900 rounded-2xl shadow-2xl ring-1 ring-black/5 flex flex-col overflow-hidden">
+            <div className="h-2 w-full bg-orange-500" />
+            <div className="px-5 sm:px-8 py-5 border-b border-slate-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 flex items-start justify-between gap-4">
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400 dark:text-slate-500">
+                  Formulário
+                </p>
+                <h2 className="text-xl font-semibold text-slate-900 dark:text-white">Adicionar Template</h2>
               </div>
+              <button
+                type="button"
+                onClick={handleCloseModal}
+                className="p-2 text-slate-400 hover:text-slate-600 dark:text-slate-300 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-white/10 rounded-xl transition"
+                aria-label="Fechar modal"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
 
-              {/* Form Fields */}
-              <div className="flex flex-col gap-6">
-                {/* Nome */}
-                <label className="flex flex-col w-full">
-                  <p className="text-gray-900 text-base font-medium leading-normal pb-2">Nome do template</p>
-                  <input
-                    type="text"
-                    className="form-input flex w-full min-w-0 flex-1 resize-none overflow-hidden rounded-lg text-gray-900 focus:outline-0 focus:ring-2 focus:ring-[#2b8cee]/50 border border-gray-300 bg-white h-14 placeholder:text-gray-500 p-[15px] text-base font-normal leading-normal"
-                    value={nameInput}
-                    onChange={(e) => setNameInput(e.target.value)}
-                    placeholder="Digite o nome do template"
-                  />
-                </label>
-
-                {/* Descrição */}
-                <label className="flex flex-col w-full">
-                  <p className="text-gray-900 text-base font-medium leading-normal pb-2">Descrição</p>
-                  <textarea
-                    className="form-input flex w-full min-w-0 flex-1 resize-none overflow-hidden rounded-lg text-gray-900 focus:outline-0 focus:ring-2 focus:ring-[#2b8cee]/50 border border-gray-300 bg-white min-h-28 placeholder:text-gray-500 p-[13px] text-base font-normal leading-normal"
-                    value={descriptionInput}
-                    onChange={(e) => setDescriptionInput(e.target.value)}
-                    placeholder="Digite a descrição do template"
-                  />
-                </label>
-
-                {/* File Upload */}
-                <div className="flex flex-col">
-                  <div 
-                    className="flex flex-col items-center gap-6 rounded-lg border-2 border-dashed border-gray-300 px-6 py-10 cursor-pointer hover:border-[#2b8cee]/50 transition-colors"
-                    onClick={() => document.getElementById('template-file-input')?.click()}
-                  >
-                    <div className="flex items-center justify-center h-12 w-12 rounded-full bg-[#2b8cee]/10">
-                      <UploadIcon className="w-6 h-6 text-[#2b8cee]" />
-                    </div>
-                    <div className="flex max-w-[480px] flex-col items-center gap-2">
-                      <p className="text-gray-900 text-lg font-bold leading-tight tracking-[-0.015em] max-w-[480px] text-center">
-                        Arquivo .docx *
-                      </p>
-                      <p className="text-gray-500 text-sm font-normal leading-normal max-w-[480px] text-center">
-                        {fileInput ? fileInput.name : 'Arraste e solte o arquivo aqui ou clique para selecionar'}
-                      </p>
-                    </div>
-                    <button 
-                      type="button"
-                      className="flex min-w-[84px] max-w-[480px] cursor-pointer items-center justify-center overflow-hidden rounded-lg h-10 px-4 bg-gray-100 text-gray-900 text-sm font-bold leading-normal tracking-[0.015em] hover:bg-gray-200"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        document.getElementById('template-file-input')?.click();
-                      }}
-                    >
-                      <span className="truncate">Selecionar arquivo</span>
-                    </button>
+            <div className="flex-1 overflow-y-auto bg-white dark:bg-zinc-900">
+              <form id="template-form" onSubmit={handleUploadTemplate} className="flex flex-col p-6 md:p-8 gap-6">
+                {/* Form Fields */}
+                <div className="space-y-5">
+                  {/* Nome */}
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">Nome do Template</label>
                     <input
-                      id="template-file-input"
-                      type="file"
-                      accept=".doc,.docx"
-                      className="hidden"
-                      onChange={(e) => setFileInput(e.target.files?.[0] || null)}
+                      type="text"
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-orange-500 bg-white"
+                      value={nameInput}
+                      onChange={(e) => setNameInput(e.target.value)}
+                      placeholder="Digite o nome do template"
                     />
                   </div>
-                </div>
-              </div>
 
-              {uploadError && <p className="text-sm text-red-600">{uploadError}</p>}
-
-              {/* Divider */}
-              <hr className="border-t border-gray-200" />
-
-              {/* Buttons */}
-              <div className="flex justify-end">
-                <div className="flex flex-1 gap-3 flex-wrap justify-end">
-                  <button
-                    type="button"
-                    onClick={handleCloseModal}
-                    className="flex min-w-[84px] max-w-[480px] cursor-pointer items-center justify-center overflow-hidden rounded-lg h-10 px-4 bg-gray-100 text-gray-900 text-sm font-bold leading-normal tracking-[0.015em] hover:bg-gray-200"
-                  >
-                    <span className="truncate">Cancelar</span>
-                  </button>
-                  <button
-                    type="submit"
-                    disabled={uploading}
-                    className="flex min-w-[84px] max-w-[480px] cursor-pointer items-center justify-center overflow-hidden rounded-lg h-10 px-4 bg-[#2b8cee] text-white text-sm font-bold leading-normal tracking-[0.015em] hover:bg-[#2b8cee]/90 disabled:opacity-50"
-                  >
-                    <span className="truncate">{uploading ? 'Enviando...' : 'Salvar template'}</span>
-                  </button>
-                </div>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-
-      {/* Preview Modal */}
-      {isPreviewModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-4">
-          <div className="w-full max-w-4xl rounded-2xl bg-white shadow-2xl">
-            <div className="flex items-center justify-between border-b border-slate-100 px-6 py-4">
-              <div>
-                <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Visualizar template</p>
-                <h3 className="text-lg font-semibold text-slate-900">{previewTemplate?.name}</h3>
-              </div>
-              <button onClick={handleClosePreviewModal} className="rounded-full p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-600">
-                <X className="h-5 w-5" />
-              </button>
-            </div>
-            <div className="h-[70vh] overflow-hidden p-6">
-              {previewLoading ? (
-                <div className="flex h-full items-center justify-center">
-                  <Loader2 className="h-6 w-6 animate-spin text-slate-400" />
-                </div>
-              ) : previewError ? (
-                <div className="rounded-lg border border-red-100 bg-red-50 p-4 text-sm text-red-700">{previewError}</div>
-              ) : previewTemplate?.file_path ? (
-                <div className="flex h-full flex-col gap-4">
-                  {previewPdfUrl ? (
-                    <iframe src={previewPdfUrl} title="Preview DOCX" className="h-full w-full rounded-xl border border-slate-200" />
-                  ) : (
-                    <p className="text-sm text-slate-500">Carregando documento...</p>
-                  )}
-                  <div className="flex flex-wrap gap-3 text-sm">
-                    <button
-                      onClick={() => previewTemplate && handleOpenEditModal(previewTemplate)}
-                      className="inline-flex items-center gap-2 rounded-xl border border-slate-200 px-4 py-2 font-medium text-slate-700 hover:border-slate-300"
-                    >
-                      <Pencil className="h-4 w-4" />
-                      Editar template
-                    </button>
-                    <button
-                      onClick={() => previewTemplate && handleDownloadTemplate(previewTemplate)}
-                      className="inline-flex items-center gap-2 rounded-xl border border-slate-200 px-4 py-2 font-medium text-slate-700 hover:border-slate-300"
-                    >
-                      <FileDown className="h-4 w-4" />
-                      Baixar arquivo
-                    </button>
+                  {/* Descrição */}
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">Descrição</label>
+                    <textarea
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-orange-500"
+                      rows={3}
+                      value={descriptionInput}
+                      onChange={(e) => setDescriptionInput(e.target.value)}
+                      placeholder="Digite a descrição do template"
+                    />
                   </div>
-                  <p className="text-xs text-slate-500">A edição direta está disponível apenas para templates em texto. Para arquivos Word, substitua o arquivo pelo botão "Editar template".</p>
-                </div>
-              ) : previewTemplate ? (
-                isPreviewEditing ? (
-                  <form onSubmit={handleSavePreviewEdits} className="flex h-full flex-col gap-4">
-                    <div className="space-y-1">
-                      <label className="text-xs font-semibold uppercase tracking-wide text-slate-500">Nome</label>
+
+                  {/* File Upload */}
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">Arquivo do Template</label>
+                    <div className="flex items-center gap-3">
                       <input
-                        type="text"
-                        className="input-field text-sm"
-                        value={previewEditName}
-                        onChange={(e) => setPreviewEditName(e.target.value)}
+                        id="template-file-input"
+                        type="file"
+                        accept=".doc,.docx"
+                        className="hidden"
+                        onChange={(e) => setFileInput(e.target.files?.[0] || null)}
                       />
-                    </div>
-                    <div className="space-y-1">
-                      <label className="text-xs font-semibold uppercase tracking-wide text-slate-500">Descrição</label>
-                      <textarea
-                        className="input-field text-sm"
-                        rows={3}
-                        value={previewEditDescription}
-                        onChange={(e) => setPreviewEditDescription(e.target.value)}
-                      />
-                    </div>
-                    <div className="flex-1 space-y-1">
-                      <label className="text-xs font-semibold uppercase tracking-wide text-slate-500">Conteúdo</label>
-                      <textarea
-                        className="input-field h-full min-h-[280px] text-sm"
-                        value={previewEditContent}
-                        onChange={(e) => setPreviewEditContent(e.target.value)}
-                      />
-                    </div>
-                    {previewEditError && <p className="text-sm text-red-600">{previewEditError}</p>}
-                    <div className="flex flex-col gap-2 pt-2 sm:flex-row">
                       <button
                         type="button"
-                        onClick={handleCancelPreviewEditing}
-                        className="w-full rounded-xl border border-slate-200 px-4 py-2.5 text-sm font-medium text-slate-600 hover:border-slate-300"
+                        onClick={() => document.getElementById('template-file-input')?.click()}
+                        className="flex items-center gap-2 px-4 py-2 border border-gray-300 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-50"
                       >
-                        Cancelar
+                        <UploadIcon className="w-4 h-4" />
+                        {fileInput ? fileInput.name : 'Selecionar arquivo...'}
                       </button>
-                      <button
-                        type="submit"
-                        disabled={previewSaving}
-                        className="w-full rounded-xl bg-slate-900 px-4 py-2.5 text-sm font-semibold text-white transition disabled:bg-slate-300"
-                      >
-                        {previewSaving ? 'Salvando...' : 'Salvar alterações'}
-                      </button>
+                      {fileInput && (
+                        <button
+                          type="button"
+                          onClick={() => setFileInput(null)}
+                          className="text-red-500 hover:text-red-700"
+                        >
+                          <X className="w-4 h-4" />
+                        </button>
+                      )}
                     </div>
-                  </form>
-                ) : (
-                  <div className="flex h-full flex-col gap-4">
-                    <div className="flex items-center justify-between">
-                      <p className="text-sm text-slate-500">Conteúdo em texto com variáveis prontas para edição.</p>
-                      <button
-                        onClick={handleStartPreviewEditing}
-                        className="inline-flex items-center gap-2 rounded-xl border border-slate-200 px-4 py-2 text-sm font-medium text-slate-700 hover:border-slate-300"
-                      >
-                        <Pencil className="h-4 w-4" />
-                        Editar conteúdo
-                      </button>
-                    </div>
-                    <pre className="flex-1 overflow-auto rounded-xl border border-slate-100 bg-slate-50 p-4 text-xs text-slate-700 whitespace-pre-wrap">
-                      {previewEditContent}
-                    </pre>
                   </div>
-                )
-              ) : (
-                <p className="text-sm text-slate-500">Nenhum conteúdo para visualizar.</p>
-              )}
+                </div>
+
+                {uploadError && (
+                  <div className="bg-red-50 border border-red-200 text-red-700 px-3 py-2 rounded-lg text-sm">
+                    {uploadError}
+                  </div>
+                )}
+              </form>
+            </div>
+
+            <div className="border-t border-slate-200 dark:border-zinc-800 bg-slate-50 dark:bg-zinc-900 px-4 sm:px-6 py-3">
+              <div className="flex justify-end gap-3">
+                <button
+                  type="button"
+                  onClick={handleCloseModal}
+                  className="px-4 py-2 text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-lg font-medium transition-colors"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  form="template-form"
+                  disabled={uploading}
+                  className="px-4 py-2 bg-orange-500 hover:bg-orange-600 text-white rounded-lg font-medium transition-colors disabled:opacity-50"
+                >
+                  {uploading ? 'Enviando...' : 'Salvar Template'}
+                </button>
+              </div>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
 
-      {/* Edit Modal */}
-      {isEditModalOpen && editingTemplate && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-4">
-          <div className="w-full max-w-2xl rounded-2xl bg-white shadow-2xl">
-            <div className="flex items-center justify-between border-b border-slate-100 px-6 py-4">
-              <div>
-                <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Editar template</p>
-                <h3 className="text-lg font-semibold text-slate-900">{editingTemplate.name}</h3>
-              </div>
-              <button onClick={handleCloseEditModal} className="rounded-full p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-600">
-                <X className="h-5 w-5" />
-              </button>
+    {/* Preview Modal */}
+    {isPreviewModalOpen && createPortal(
+      <div className="fixed inset-0 z-[70] flex items-center justify-center px-3 sm:px-6 py-4">
+        <div
+          className="absolute inset-0 bg-slate-900/70 backdrop-blur-sm"
+          onClick={handleClosePreviewModal}
+          aria-hidden="true"
+        />
+        <div className="relative w-full max-w-4xl max-h-[92vh] bg-white dark:bg-zinc-900 rounded-2xl shadow-2xl ring-1 ring-black/5 flex flex-col overflow-hidden">
+          <div className="h-2 w-full bg-orange-500" />
+          <div className="px-5 sm:px-8 py-5 border-b border-slate-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 flex items-start justify-between gap-4">
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400 dark:text-slate-500">
+                Visualizar Template
+              </p>
+              <h2 className="text-xl font-semibold text-slate-900 dark:text-white">{previewTemplate?.name}</h2>
             </div>
-            <form onSubmit={handleSaveTemplateEdits} className="space-y-4 p-6">
-              <div className="space-y-1">
-                <label className="text-xs font-semibold uppercase tracking-wide text-slate-500">Nome *</label>
+            <button
+              type="button"
+              onClick={handleClosePreviewModal}
+              className="p-2 text-slate-400 hover:text-slate-600 dark:text-slate-300 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-white/10 rounded-xl transition"
+              aria-label="Fechar modal"
+            >
+              <X className="w-5 h-5" />
+            </button>
+          </div>
+
+          <div className="flex-1 overflow-y-auto bg-white dark:bg-zinc-900 p-6">
+            {previewLoading ? (
+              <div className="flex h-full items-center justify-center">
+                <Loader2 className="h-6 w-6 animate-spin text-gray-400" />
+              </div>
+            ) : previewError ? (
+              <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg text-sm">{previewError}</div>
+            ) : previewTemplate?.file_path ? (
+              <div className="flex h-full flex-col gap-4">
+                {previewPdfUrl ? (
+                  <iframe src={previewPdfUrl} title="Preview DOCX" className="h-full w-full rounded-xl border border-gray-200" />
+                ) : (
+                  <p className="text-sm text-gray-500">Carregando documento...</p>
+                )}
+                <div className="flex flex-wrap gap-3">
+                  <button
+                    onClick={() => previewTemplate && handleOpenEditModal(previewTemplate)}
+                    className="inline-flex items-center gap-2 px-4 py-2 border border-gray-300 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-50"
+                  >
+                    <Pencil className="h-4 w-4" />
+                    Editar Template
+                  </button>
+                  <button
+                    onClick={() => previewTemplate && handleDownloadTemplate(previewTemplate)}
+                    className="inline-flex items-center gap-2 px-4 py-2 border border-gray-300 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-50"
+                  >
+                    <FileDown className="h-4 w-4" />
+                    Baixar Arquivo
+                  </button>
+                </div>
+                <p className="text-xs text-gray-500">A edição direta está disponível apenas para templates em texto.</p>
+              </div>
+            ) : previewTemplate ? (
+              isPreviewEditing ? (
+                <form onSubmit={handleSavePreviewEdits} className="flex h-full flex-col gap-4">
+                  <div className="space-y-2">
+                    <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Nome</label>
+                    <input
+                      type="text"
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-orange-500 text-sm"
+                      value={previewEditName}
+                      onChange={(e) => setPreviewEditName(e.target.value)}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Descrição</label>
+                    <textarea
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-orange-500 text-sm"
+                      rows={3}
+                      value={previewEditDescription}
+                      onChange={(e) => setPreviewEditDescription(e.target.value)}
+                    />
+                  </div>
+                  <div className="flex-1 space-y-2">
+                    <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Conteúdo</label>
+                    <textarea
+                      className="w-full h-full min-h-[280px] px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-orange-500 text-sm"
+                      value={previewEditContent}
+                      onChange={(e) => setPreviewEditContent(e.target.value)}
+                    />
+                  </div>
+                  {previewEditError && <p className="text-sm text-red-600">{previewEditError}</p>}
+                  <div className="flex gap-3 pt-2">
+                    <button
+                      type="button"
+                      onClick={handleCancelPreviewEditing}
+                      className="px-4 py-2 border border-gray-300 rounded-lg text-sm font-medium text-gray-600 hover:bg-gray-50"
+                    >
+                      Cancelar
+                    </button>
+                    <button
+                      type="submit"
+                      disabled={previewSaving}
+                      className="px-4 py-2 bg-orange-500 hover:bg-orange-600 text-white rounded-lg text-sm font-medium transition-colors disabled:opacity-50"
+                    >
+                      {previewSaving ? 'Salvando...' : 'Salvar Alterações'}
+                    </button>
+                  </div>
+                </form>
+              ) : (
+                <div className="flex h-full flex-col gap-4">
+                  <div className="flex items-center justify-between">
+                    <p className="text-sm text-gray-500">Conteúdo em texto com variáveis prontas para edição.</p>
+                    <button
+                      onClick={handleStartPreviewEditing}
+                      className="inline-flex items-center gap-2 px-4 py-2 border border-gray-300 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-50"
+                    >
+                      <Pencil className="h-4 w-4" />
+                      Editar Conteúdo
+                    </button>
+                  </div>
+                  <pre className="flex-1 overflow-auto rounded-xl border border-gray-200 bg-gray-50 p-4 text-xs text-gray-700 whitespace-pre-wrap">
+                    {previewEditContent}
+                  </pre>
+                </div>
+              )
+            ) : (
+              <p className="text-sm text-gray-500">Nenhum conteúdo para visualizar.</p>
+            )}
+          </div>
+        </div>
+      </div>,
+      document.body
+    )}
+
+    {/* Edit Modal */}
+    {isEditModalOpen && editingTemplate && createPortal(
+      <div className="fixed inset-0 z-[70] flex items-center justify-center px-3 sm:px-6 py-4">
+        <div
+          className="absolute inset-0 bg-slate-900/70 backdrop-blur-sm"
+          onClick={handleCloseEditModal}
+          aria-hidden="true"
+        />
+        <div className="relative w-full max-w-2xl max-h-[92vh] bg-white dark:bg-zinc-900 rounded-2xl shadow-2xl ring-1 ring-black/5 flex flex-col overflow-hidden">
+          <div className="h-2 w-full bg-orange-500" />
+          <div className="px-5 sm:px-8 py-5 border-b border-slate-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 flex items-start justify-between gap-4">
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400 dark:text-slate-500">
+                Editar Template
+              </p>
+              <h2 className="text-xl font-semibold text-slate-900 dark:text-white">{editingTemplate.name}</h2>
+            </div>
+            <button
+              type="button"
+              onClick={handleCloseEditModal}
+              className="p-2 text-slate-400 hover:text-slate-600 dark:text-slate-300 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-white/10 rounded-xl transition"
+              aria-label="Fechar modal"
+            >
+              <X className="w-5 h-5" />
+            </button>
+          </div>
+
+          <div className="flex-1 overflow-y-auto bg-white dark:bg-zinc-900">
+            <form id="edit-form" onSubmit={handleSaveTemplateEdits} className="p-6 space-y-4">
+              <div className="space-y-2">
+                <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Nome</label>
                 <input
                   type="text"
-                  className="input-field text-sm"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-orange-500 text-sm"
                   value={editName}
                   onChange={(e) => setEditName(e.target.value)}
-                  required
                 />
               </div>
-              <div className="space-y-1">
-                <label className="text-xs font-semibold uppercase tracking-wide text-slate-500">Descrição</label>
+              <div className="space-y-2">
+                <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Descrição</label>
                 <textarea
-                  className="input-field text-sm"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-orange-500 text-sm"
                   rows={3}
                   value={editDescription}
                   onChange={(e) => setEditDescription(e.target.value)}
                 />
               </div>
-              {!editingTemplate.file_path && (
-                <div className="space-y-1">
-                  <label className="text-xs font-semibold uppercase tracking-wide text-slate-500">Conteúdo</label>
-                  <textarea
-                    className="input-field text-sm"
-                    rows={8}
-                    value={editContent}
-                    onChange={(e) => setEditContent(e.target.value)}
-                  />
-                </div>
-              )}
-              {editingTemplate.file_path && (
-                <div className="space-y-1">
-                  <label className="text-xs font-semibold uppercase tracking-wide text-slate-500">Substituir arquivo (opcional)</label>
-                  <input
-                    type="file"
-                    accept=".docx"
-                    className="input-field text-sm"
-                    onChange={(e) => setEditFile(e.target.files?.[0] || null)}
-                  />
-                  <p className="text-xs text-slate-500">Deixe em branco para manter o arquivo atual.</p>
-                </div>
-              )}
-              {editError && <p className="text-sm text-red-600">{editError}</p>}
-              <div className="flex flex-col gap-2 pt-2 sm:flex-row">
-                <button
-                  type="button"
-                  onClick={handleCloseEditModal}
-                  className="w-full rounded-xl border border-slate-200 px-4 py-2.5 text-sm font-medium text-slate-600 hover:border-slate-300"
-                >
-                  Cancelar
-                </button>
-                <button
-                  type="submit"
-                  disabled={editSaving}
-                  className="w-full rounded-xl bg-slate-900 px-4 py-2.5 text-sm font-semibold text-white transition disabled:bg-slate-300"
-                >
-                  {editSaving ? 'Salvando...' : 'Salvar alterações'}
-                </button>
+              <div className="space-y-2">
+                <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Conteúdo</label>
+                <textarea
+                  className="w-full h-64 px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-orange-500 text-sm"
+                  value={editContent}
+                  onChange={(e) => setEditContent(e.target.value)}
+                  placeholder="Conteúdo do template com variáveis entre colchetes duplos, ex: [[NOME]]"
+                />
               </div>
+              {editError && <p className="text-sm text-red-600">{editError}</p>}
             </form>
           </div>
-        </div>
-      )}
 
-      {/* Delete confirmation modal */}
-      {deleteTemplateTarget && deleteCaptchaNumbers ? (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 p-4">
-          <div className="w-full max-w-lg rounded-2xl border border-slate-200 bg-white shadow-2xl">
-            <div className="flex items-center justify-between border-b border-slate-100 px-5 py-4">
-              <div>
-                <p className="text-xs font-semibold uppercase tracking-wide text-red-500">Excluir template</p>
-                <h3 className="text-lg font-semibold text-slate-900">{deleteTemplateTarget.name}</h3>
-              </div>
-              <button onClick={handleCloseDeleteModal} className="rounded-full p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-600">
-                <X className="h-4 w-4" />
+          <div className="border-t border-slate-200 dark:border-zinc-800 bg-slate-50 dark:bg-zinc-900 px-4 sm:px-6 py-3">
+            <div className="flex gap-3">
+              <button
+                type="button"
+                onClick={handleCloseEditModal}
+                className="px-4 py-2 border border-gray-300 rounded-lg text-sm font-medium text-gray-600 hover:bg-gray-50"
+              >
+                Cancelar
+              </button>
+              <button
+                type="submit"
+                form="edit-form"
+                disabled={previewSaving}
+                className="px-4 py-2 bg-orange-500 hover:bg-orange-600 text-white rounded-lg text-sm font-medium transition-colors disabled:opacity-50"
+              >
+                {previewSaving ? 'Salvando...' : 'Salvar Alterações'}
               </button>
             </div>
-            <form onSubmit={handleConfirmDelete} className="space-y-4 px-5 py-5">
-              <p className="text-sm text-slate-600">
-                Esta ação é permanente. Digite o <strong>nome completo</strong> do template abaixo e resolva o desafio para confirmar.
-              </p>
-              <div className="space-y-1">
-                <label className="text-xs font-semibold uppercase tracking-wide text-slate-500">Nome do template</label>
-                <input
-                  type="text"
-                  className="input-field text-sm"
-                  value={deleteConfirmName}
-                  onChange={(e) => setDeleteConfirmName(e.target.value)}
-                />
-              </div>
-              <div className="space-y-1">
-                <label className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-                  Desafio: quanto é {deleteCaptchaNumbers[0]} + {deleteCaptchaNumbers[1]}?
-                </label>
-                <input
-                  type="number"
-                  className="input-field text-sm"
-                  value={deleteCaptchaInput}
-                  onChange={(e) => setDeleteCaptchaInput(e.target.value)}
-                />
-              </div>
-              {deleteError && <p className="text-sm text-red-600">{deleteError}</p>}
-              <div className="flex flex-col gap-2 pt-2 sm:flex-row">
-                <button
-                  type="button"
-                  onClick={handleCloseDeleteModal}
-                  className="w-full rounded-xl border border-slate-200 px-4 py-2.5 text-sm font-medium text-slate-600 hover:border-slate-300"
-                >
-                  Cancelar
-                </button>
-                <button
-                  type="submit"
-                  disabled={deleteLoading}
-                  className="w-full rounded-xl bg-red-600 px-4 py-2.5 text-sm font-semibold text-white transition disabled:bg-red-300"
-                >
-                  {deleteLoading ? 'Removendo...' : 'Confirmar exclusão'}
-                </button>
-              </div>
-            </form>
           </div>
         </div>
-      ) : null}
-      </div>
-    </>
+      </div>,
+      document.body
+    )}
+
+    {/* Delete confirmation modal */}
+    {deleteTemplateTarget && deleteCaptchaNumbers && createPortal(
+      <div className="fixed inset-0 z-[70] flex items-center justify-center px-3 sm:px-6 py-4">
+        <div
+          className="absolute inset-0 bg-slate-900/70 backdrop-blur-sm"
+          onClick={handleCloseDeleteModal}
+          aria-hidden="true"
+        />
+        <div className="relative w-full max-w-md max-h-[92vh] bg-white dark:bg-zinc-900 rounded-2xl shadow-2xl ring-1 ring-black/5 flex flex-col overflow-hidden">
+          <div className="h-2 w-full bg-orange-500" />
+          <div className="px-5 sm:px-8 py-5 border-b border-slate-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 flex items-start justify-between gap-4">
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400 dark:text-slate-500">
+                Confirmar Exclusão
+              </p>
+              <h2 className="text-xl font-semibold text-slate-900 dark:text-white">Excluir Template</h2>
+            </div>
+            <button
+              type="button"
+              onClick={handleCloseDeleteModal}
+              className="p-2 text-slate-400 hover:text-slate-600 dark:text-slate-300 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-white/10 rounded-xl transition"
+              aria-label="Fechar modal"
+            >
+              <X className="w-5 h-5" />
+            </button>
+          </div>
+
+          <div className="flex-1 overflow-y-auto bg-white dark:bg-zinc-900 p-6">
+            <p className="text-sm text-gray-700 mb-4">
+              Tem certeza que deseja excluir o template <strong>{deleteTemplateTarget.name}</strong>?
+            </p>
+            <p className="text-sm text-gray-600 mb-4">
+              Esta ação não pode ser desfeita.
+            </p>
+            <div className="space-y-2">
+              <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Confirmação</label>
+              <p className="text-sm text-gray-700 mb-2">
+                Digite <strong>{deleteCaptchaNumbers[0] + deleteCaptchaNumbers[1]}</strong> para confirmar:
+              </p>
+              <input
+                type="text"
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-orange-500 text-sm"
+                value={deleteCaptchaInput}
+                onChange={(e) => setDeleteCaptchaInput(e.target.value)}
+                placeholder="Digite a soma"
+              />
+            </div>
+            {deleteError && (
+              <div className="mt-4 rounded-lg border border-red-100 bg-red-50 px-3 py-2 text-sm text-red-700">
+                {deleteError}
+              </div>
+            )}
+          </div>
+
+          <div className="border-t border-slate-200 dark:border-zinc-800 bg-slate-50 dark:bg-zinc-900 px-4 sm:px-6 py-3">
+            <div className="flex gap-3">
+              <button
+                type="button"
+                onClick={() => setDeleteTemplateTarget(null)}
+                className="px-4 py-2 border border-gray-300 rounded-lg text-sm font-medium text-gray-600 hover:bg-gray-50"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmDelete}
+                disabled={deleteLoading}
+                className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg text-sm font-medium transition-colors disabled:opacity-50"
+              >
+                {deleteLoading ? 'Excluindo...' : 'Excluir Template'}
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>,
+      document.body
+    )}
+    </div>
   );
-};
+}
 
 export default DocumentsModule;

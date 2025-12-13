@@ -173,7 +173,13 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToModule }) => {
   const [overdueInstallments, setOverdueInstallments] = useState<(Installment & { agreement?: Agreement })[]>([]);
   const [djenIntimacoes, setDjenIntimacoes] = useState<DjenComunicacaoLocal[]>([]);
   const [djenUrgencyStats, setDjenUrgencyStats] = useState({ alta: 0, media: 0, baixa: 0, sem_analise: 0 });
-  const [selectedEvent, setSelectedEvent] = useState<CalendarEvent | null>(null);
+  const [selectedEvent, setSelectedEvent] = useState<{
+    id: string;
+    title: string;
+    start_at: string;
+    type: string;
+    client_id?: string | null;
+  } | null>(null);
   const [selectedIntimacao, setSelectedIntimacao] = useState<DjenComunicacaoLocal | null>(null);
   const clientMap = useMemo(() => new Map(clients.map((client) => [client.id, client])), [clients]);
 
@@ -403,16 +409,51 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToModule }) => {
     .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
     .slice(0, 5);
 
-  const upcomingEvents = calendarEvents
-    .filter((e) => {
-      if (!e.start_at) return false;
-      const eventDate = new Date(e.start_at);
-      const today = new Date();
-      today.setHours(0, 0, 0, 0); // Início do dia de hoje
-      return eventDate >= today;
-    })
-    .sort((a, b) => new Date(a.start_at).getTime() - new Date(b.start_at).getTime())
-    .slice(0, 10);
+  // Combinar compromissos manuais + audiências dos processos
+  const upcomingEvents = useMemo(() => {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    // Compromissos manuais
+    const manualEvents = calendarEvents
+      .filter((e) => {
+        if (!e.start_at) return false;
+        const eventDate = new Date(e.start_at);
+        return eventDate >= today;
+      })
+      .map((e) => ({
+        id: e.id,
+        title: e.title,
+        start_at: e.start_at,
+        type: e.event_type || 'meeting',
+        client_id: e.client_id,
+      }));
+
+    // Audiências dos processos
+    const hearingEvents = processes
+      .filter((p) => p.hearing_scheduled && p.hearing_date)
+      .filter((p) => {
+        const hearingDate = new Date(p.hearing_date!);
+        return hearingDate >= today;
+      })
+      .map((p) => {
+        const client = clients.find((c) => c.id === p.client_id);
+        const clientName = client?.full_name || 'Sem cliente';
+        const modeLabel = p.hearing_mode ? p.hearing_mode.toUpperCase() : '';
+        return {
+          id: `hearing-${p.id}`,
+          title: `Audiência${modeLabel ? ` - ${modeLabel}` : ''} - ${clientName}`,
+          start_at: p.hearing_time ? `${p.hearing_date}T${p.hearing_time}` : p.hearing_date!,
+          type: 'hearing',
+          client_id: p.client_id,
+        };
+      });
+
+    // Combinar e ordenar
+    return [...manualEvents, ...hearingEvents]
+      .sort((a, b) => new Date(a.start_at).getTime() - new Date(b.start_at).getTime())
+      .slice(0, 10);
+  }, [calendarEvents, processes, clients]);
 
   const pendingRequirementsList = awaitingRequirements
     .sort((a, b) => {
@@ -437,6 +478,72 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToModule }) => {
       return dateB - dateA;
     })
     .slice(0, 5);
+
+  const nowDate = new Date();
+  const dayDescription = nowDate.toLocaleDateString('pt-BR', {
+    weekday: 'long',
+    day: 'numeric',
+    month: 'long',
+  });
+
+  const newClientsThisMonth = clients.filter((client) => {
+    if (!client.created_at) return false;
+    const created = new Date(client.created_at);
+    return created.getMonth() === nowDate.getMonth() && created.getFullYear() === nowDate.getFullYear();
+  }).length;
+
+  const newProcessesThisMonth = processes.filter((process) => {
+    if (!process.created_at) return false;
+    const created = new Date(process.created_at);
+    return created.getMonth() === nowDate.getMonth() && created.getFullYear() === nowDate.getFullYear();
+  }).length;
+
+  const completedTasksCount = tasks.filter((task) => {
+    const normalized = (task.status || '').toLowerCase();
+    return normalized === 'completed' || normalized === 'done' || normalized === 'concluido';
+  }).length;
+
+  const totalTrackedTasks = completedTasksCount + pendingTasks;
+  const tasksCompletionRate = totalTrackedTasks ? Math.round((completedTasksCount / totalTrackedTasks) * 100) : 0;
+
+  const summaryCards = [
+    {
+      id: 'clients',
+      label: 'Clientes',
+      value: activeClients,
+      helper: `${newClientsThisMonth} novos este mês`,
+      accent: 'text-blue-600 bg-blue-50',
+      icon: Users,
+      action: 'clientes',
+    },
+    {
+      id: 'processes',
+      label: 'Processos',
+      value: activeProcesses,
+      helper: `${newProcessesThisMonth} iniciados`,
+      accent: 'text-purple-600 bg-purple-50',
+      icon: Briefcase,
+      action: 'processos',
+    },
+    {
+      id: 'deadlines',
+      label: 'Prazos',
+      value: pendingDeadlines,
+      helper: 'pendentes',
+      accent: 'text-rose-600 bg-rose-50',
+      icon: CalendarDays,
+      action: 'prazos',
+    },
+    {
+      id: 'tasks',
+      label: 'Tarefas',
+      value: `${tasksCompletionRate}%`,
+      helper: `${completedTasksCount}/${totalTrackedTasks} concluídas`,
+      accent: 'text-amber-600 bg-amber-50',
+      icon: CheckSquare,
+      action: 'tarefas',
+    },
+  ];
 
   const handleNavigate = (moduleWithParams: string) => {
     if (!onNavigateToModule) return;
@@ -517,53 +624,44 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToModule }) => {
       {/* Header repaginado */}
       <DashboardHeader onNewClient={() => handleNavigate('clientes?mode=create')} />
 
-      {/* Barra de Atenção / Alertas Urgentes (premium) */}
+      {/* Barra de Atenção / Alertas Urgentes */}
       {urgentAlerts.length > 0 && (
-        <div className="relative overflow-hidden rounded-2xl border border-amber-200 bg-gradient-to-r from-amber-50 via-white to-orange-50 px-5 py-4 shadow-sm flex flex-col gap-3">
-          <div className="pointer-events-none absolute -left-10 -top-10 h-24 w-24 rounded-full bg-amber-200/40 blur-3xl" />
-          <div className="pointer-events-none absolute -right-6 -bottom-10 h-20 w-20 rounded-full bg-orange-200/40 blur-2xl" />
-
-          <div className="relative flex flex-wrap items-center gap-3">
-            <div className="flex items-center gap-3">
-              <div className="flex items-center justify-center w-10 h-10 rounded-2xl bg-gradient-to-br from-amber-500 to-orange-500 text-white shadow-md">
-                <AlertTriangle className="w-5 h-5" />
+        <div className="flex items-center justify-between gap-2 sm:gap-4 rounded-xl bg-gradient-to-r from-slate-800 to-slate-900 px-3 sm:px-5 py-2.5 sm:py-3 shadow-md">
+          {/* Header */}
+          <div className="flex items-center gap-2 sm:gap-3 min-w-0 flex-shrink-0">
+            <div className="relative flex-shrink-0">
+              <div className="flex items-center justify-center w-8 h-8 sm:w-10 sm:h-10 rounded-xl bg-orange-500 text-white">
+                <AlertTriangle className="w-4 h-4 sm:w-5 sm:h-5" />
               </div>
-              <div>
-                <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-amber-700">Centro de atenção</p>
-                <p className="text-xs text-amber-900/90">
-                  {urgentAlerts.reduce((sum, a) => sum + a.count, 0)} item(s) críticos hoje entre prazos, intimações e financeiro.
-                </p>
-              </div>
+              <span className="absolute -top-1 -right-1 flex items-center justify-center w-4 h-4 sm:w-5 sm:h-5 rounded-full bg-red-500 text-white text-[9px] sm:text-[10px] font-bold border-2 border-slate-900">
+                {urgentAlerts.reduce((sum, a) => sum + a.count, 0)}
+              </span>
             </div>
-
-            <button
-              type="button"
-              onClick={() => handleNavigate('prazos')}
-              className="ml-auto inline-flex items-center gap-1.5 rounded-full bg-amber-600 px-3 py-1.5 text-[11px] font-semibold text-white shadow hover:bg-amber-700 transition-all"
-            >
-              Ver prioridades do dia
-              <ChevronRight className="w-3 h-3" />
-            </button>
+            <div className="min-w-0 hidden sm:block">
+              <p className="text-sm font-semibold text-white">Centro de Atenção</p>
+              <p className="text-xs text-slate-400 truncate">
+                {urgentAlerts.reduce((sum, a) => sum + a.count, 0)} itens precisam da sua atenção
+              </p>
+            </div>
           </div>
 
-          <div className="relative flex flex-wrap items-center gap-2">
+          {/* Botões de alerta */}
+          <div className="flex items-center gap-1.5 sm:gap-2 overflow-x-auto no-scrollbar">
             {urgentAlerts.map((alert, index) => {
-              const baseColor =
-                alert.action === 'prazos' ? 'bg-red-50 text-red-700 border-red-100 hover:bg-red-100/70' :
-                alert.action === 'intimacoes' ? 'bg-orange-50 text-orange-700 border-orange-100 hover:bg-orange-100/70' :
-                'bg-amber-50 text-amber-800 border-amber-100 hover:bg-amber-100/70';
+              const colorClass =
+                alert.action === 'prazos' ? 'bg-red-500 hover:bg-red-600' :
+                alert.action === 'intimacoes' ? 'bg-orange-500 hover:bg-orange-600' :
+                'bg-amber-500 hover:bg-amber-600';
 
               return (
                 <button
                   key={index}
                   onClick={() => handleNavigate(alert.action)}
-                  className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-[11px] font-semibold border transition-all ${baseColor}`}
+                  className={`inline-flex items-center gap-1 sm:gap-2 rounded-lg ${colorClass} px-2.5 sm:px-4 py-1.5 sm:py-2 text-white text-[11px] sm:text-sm font-medium transition-colors flex-shrink-0`}
                 >
-                  <span className="flex items-center justify-center w-5 h-5 rounded-full bg-white/80 text-[11px] font-bold text-amber-700">
-                    {alert.count}
-                  </span>
-                  {alert.icon}
-                  <span>{alert.type}</span>
+                  <span className="font-bold">{alert.count}</span>
+                  <span className="hidden sm:inline truncate max-w-[180px]">{alert.type}</span>
+                  <ChevronRight className="w-3 h-3 sm:w-4 sm:h-4" />
                 </button>
               );
             })}
@@ -571,113 +669,73 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToModule }) => {
         </div>
       )}
 
-      {/* Grid de Estatísticas Principais - Compacto */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+      {/* Estatísticas em linha única */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 sm:gap-3">
         <button
           onClick={() => handleNavigate('clientes')}
-          className="group bg-white rounded-xl p-4 shadow-sm border border-slate-200 hover:shadow-md hover:border-blue-200 transition-all text-left"
+          className="bg-white rounded-xl p-3 sm:p-4 shadow-sm border border-slate-100 hover:shadow-md hover:border-blue-200 transition-all text-left"
         >
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-lg bg-blue-500 flex items-center justify-center">
-              <Users className="w-5 h-5 text-white" />
+          <div className="flex items-center gap-2 sm:gap-3">
+            <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-lg bg-blue-500 flex items-center justify-center flex-shrink-0">
+              <Users className="w-4 h-4 sm:w-5 sm:h-5 text-white" />
             </div>
-            <div>
-              <p className="text-2xl font-bold text-slate-900">{activeClients}</p>
-              <p className="text-xs text-slate-500">Clientes</p>
+            <div className="min-w-0">
+              <p className="text-lg sm:text-xl font-bold text-slate-900">{activeClients}</p>
+              <p className="text-[10px] sm:text-xs text-slate-500">Clientes</p>
             </div>
           </div>
         </button>
 
         <button
           onClick={() => handleNavigate('processos')}
-          className="group bg-white rounded-xl p-4 shadow-sm border border-slate-200 hover:shadow-md hover:border-purple-200 transition-all text-left"
+          className="bg-white rounded-xl p-3 sm:p-4 shadow-sm border border-slate-100 hover:shadow-md hover:border-purple-200 transition-all text-left"
         >
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-lg bg-purple-500 flex items-center justify-center">
-              <Gavel className="w-5 h-5 text-white" />
+          <div className="flex items-center gap-2 sm:gap-3">
+            <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-lg bg-purple-500 flex items-center justify-center flex-shrink-0">
+              <Gavel className="w-4 h-4 sm:w-5 sm:h-5 text-white" />
             </div>
-            <div>
-              <p className="text-2xl font-bold text-slate-900">{activeProcesses}</p>
-              <p className="text-xs text-slate-500">Processos</p>
+            <div className="min-w-0">
+              <p className="text-lg sm:text-xl font-bold text-slate-900">{activeProcesses}</p>
+              <p className="text-[10px] sm:text-xs text-slate-500">Processos</p>
             </div>
           </div>
         </button>
 
         <button
           onClick={() => handleNavigate('prazos')}
-          className="group bg-white rounded-xl p-4 shadow-sm border border-slate-200 hover:shadow-md hover:border-red-200 transition-all text-left"
+          className="bg-white rounded-xl p-3 sm:p-4 shadow-sm border border-slate-100 hover:shadow-md hover:border-red-200 transition-all text-left"
         >
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-lg bg-red-500 flex items-center justify-center">
-              <CalendarDays className="w-5 h-5 text-white" />
+          <div className="flex items-center gap-2 sm:gap-3">
+            <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-lg bg-red-500 flex items-center justify-center flex-shrink-0">
+              <CalendarDays className="w-4 h-4 sm:w-5 sm:h-5 text-white" />
             </div>
-            <div>
-              <p className="text-2xl font-bold text-slate-900">{pendingDeadlines}</p>
-              <p className="text-xs text-slate-500">Prazos</p>
+            <div className="min-w-0">
+              <p className="text-lg sm:text-xl font-bold text-slate-900">{pendingDeadlines}</p>
+              <p className="text-[10px] sm:text-xs text-slate-500">Prazos</p>
             </div>
           </div>
         </button>
 
         <button
           onClick={() => handleNavigate('tarefas')}
-          className="group bg-white rounded-xl p-4 shadow-sm border border-slate-200 hover:shadow-md hover:border-amber-200 transition-all text-left"
+          className="bg-white rounded-xl p-3 sm:p-4 shadow-sm border border-slate-100 hover:shadow-md hover:border-amber-200 transition-all text-left"
         >
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-lg bg-amber-500 flex items-center justify-center">
-              <CheckSquare className="w-5 h-5 text-white" />
+          <div className="flex items-center gap-2 sm:gap-3">
+            <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-lg bg-amber-500 flex items-center justify-center flex-shrink-0">
+              <CheckSquare className="w-4 h-4 sm:w-5 sm:h-5 text-white" />
             </div>
-            <div>
-              <p className="text-2xl font-bold text-slate-900">{pendingTasks}</p>
-              <p className="text-xs text-slate-500">Tarefas</p>
+            <div className="min-w-0">
+              <p className="text-lg sm:text-xl font-bold text-slate-900">{pendingTasks}</p>
+              <p className="text-[10px] sm:text-xs text-slate-500">Tarefas</p>
             </div>
           </div>
         </button>
       </div>
 
-      {/* Controle Financeiro - Novo Widget */}
-      {financialStats && (
-        <FinancialCard 
-          stats={financialStats}
-          onNavigate={() => handleNavigate('financeiro')}
-        />
-      )}
-
-      {/* Ações Rápidas - Compactas */}
-      <div className="flex flex-wrap gap-2">
-        <button
-          onClick={() => handleNavigate('clientes?mode=create')}
-          className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-blue-50 hover:bg-blue-100 text-blue-700 font-medium text-xs transition-all"
-        >
-          <UserPlus className="w-3.5 h-3.5" />
-          <span>Cliente</span>
-        </button>
-        <button
-          onClick={() => handleNavigate('processos?mode=create')}
-          className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-purple-50 hover:bg-purple-100 text-purple-700 font-medium text-xs transition-all"
-        >
-          <FileText className="w-3.5 h-3.5" />
-          <span>Processo</span>
-        </button>
-        <button
-          onClick={() => handleNavigate('prazos?mode=create')}
-          className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-red-50 hover:bg-red-100 text-red-700 font-medium text-xs transition-all"
-        >
-          <CalendarDays className="w-3.5 h-3.5" />
-          <span>Prazo</span>
-        </button>
-        <button
-          onClick={() => handleNavigate('agenda?mode=create')}
-          className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-emerald-50 hover:bg-emerald-100 text-emerald-700 font-medium text-xs transition-all"
-        >
-          <Calendar className="w-3.5 h-3.5" />
-          <span>Compromisso</span>
-        </button>
-      </div>
-
-      {/* Grid de Widgets Principais - Agenda e DJEN */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-        {/* Widget de Agenda - Destaque (2 colunas) */}
-        <div className="lg:col-span-2 bg-gradient-to-br from-slate-800 to-slate-900 rounded-xl shadow-lg overflow-hidden">
+      {/* Grid Principal - Agenda + Financeiro lado a lado */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        {/* Widget de Agenda */}
+        <div className="bg-gradient-to-br from-slate-800 to-slate-900 rounded-xl shadow-lg overflow-hidden">
         <div className="relative">
           <div className="relative p-4">
             <div className="flex items-center justify-between mb-4">
@@ -704,7 +762,7 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToModule }) => {
                 </button>
               </div>
             ) : (
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
                 {upcomingEvents.slice(0, 6).map((event, index) => {
                   const eventDate = new Date(event.start_at);
                   const isToday = eventDate.toDateString() === new Date().toDateString();
@@ -756,103 +814,13 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToModule }) => {
         </div>
         </div>
 
-        {/* Widget de Intimações DJEN */}
-      <div className="lg:col-span-1 bg-gradient-to-br from-red-800 to-red-900 rounded-xl shadow-lg overflow-hidden">
-        <div className="relative p-4">
-            <div className="flex items-center justify-between mb-3">
-              <div className="flex items-center gap-2">
-                <div className="w-9 h-9 rounded-lg bg-red-600 flex items-center justify-center">
-                  <Bell className="w-5 h-5 text-white" />
-                </div>
-                <div>
-                  <h2 className="text-sm font-bold text-white">Intimações DJEN</h2>
-                  <p className="text-[10px] text-white/60">{djenIntimacoes.length} não lida{djenIntimacoes.length !== 1 ? 's' : ''}</p>
-                </div>
-              </div>
-              {djenIntimacoes.length > 0 && (
-                <span className="px-2 py-0.5 bg-red-500 text-white text-[10px] font-bold rounded-full animate-pulse">
-                  {djenIntimacoes.length}
-                </span>
-              )}
-            </div>
-
-            {/* Estatísticas de Urgência - Compacto */}
-            {djenIntimacoes.length > 0 && (djenUrgencyStats.alta > 0 || djenUrgencyStats.media > 0 || djenUrgencyStats.baixa > 0) && (
-              <div className="mb-3 flex gap-2">
-                {djenUrgencyStats.alta > 0 && (
-                  <div className="flex items-center gap-1 bg-red-500/30 rounded px-2 py-1">
-                    <span className="text-sm font-bold text-white">{djenUrgencyStats.alta}</span>
-                    <span className="text-[10px] text-white/80">Alta</span>
-                  </div>
-                )}
-                {djenUrgencyStats.media > 0 && (
-                  <div className="flex items-center gap-1 bg-yellow-500/30 rounded px-2 py-1">
-                    <span className="text-sm font-bold text-white">{djenUrgencyStats.media}</span>
-                    <span className="text-[10px] text-white/80">Média</span>
-                  </div>
-                )}
-                {djenUrgencyStats.baixa > 0 && (
-                  <div className="flex items-center gap-1 bg-green-500/30 rounded px-2 py-1">
-                    <span className="text-sm font-bold text-white">{djenUrgencyStats.baixa}</span>
-                    <span className="text-[10px] text-white/80">Baixa</span>
-                  </div>
-                )}
-              </div>
-            )}
-
-            {djenIntimacoes.length === 0 ? (
-              <div className="bg-white/5 rounded-lg p-4 text-center border border-white/10">
-                <Scale className="w-8 h-8 text-white/30 mx-auto mb-2" />
-                <p className="text-white/60 text-xs">Nenhuma intimação não lida</p>
-              </div>
-            ) : (
-              <div className="space-y-2">
-                {djenIntimacoes.slice(0, 3).map((intimacao) => {
-                  const dataDisponibilizacao = new Date(intimacao.data_disponibilizacao);
-                  const isRecent = Date.now() - dataDisponibilizacao.getTime() < 24 * 60 * 60 * 1000;
-                  
-                  return (
-                    <div 
-                      key={intimacao.id} 
-                      className="bg-white/10 hover:bg-white/15 rounded-lg p-2.5 border border-white/10 cursor-pointer transition-all"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setSelectedIntimacao(intimacao);
-                      }}
-                    >
-                      <div className="flex items-center gap-2">
-                        <div className={`w-7 h-7 rounded flex items-center justify-center flex-shrink-0 text-[10px] font-bold ${
-                          isRecent ? 'bg-orange-500 text-white' : 'bg-white/20 text-white'
-                        }`}>
-                          {dataDisponibilizacao.getDate()}
-                        </div>
-                        <div className="flex-1 min-w-0">
-                          <p className="text-xs font-medium text-white truncate">
-                            {intimacao.tipo_comunicacao || 'Comunicação'}
-                          </p>
-                          <p className="text-[10px] text-white/50 truncate">
-                            {intimacao.sigla_tribunal} • {intimacao.numero_processo_mascara || intimacao.numero_processo}
-                          </p>
-                        </div>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-            
-            {/* Botão Ver Todas */}
-            <div className="mt-3 pt-3 border-t border-white/10">
-              <button
-                onClick={() => handleNavigate('intimacoes')}
-                className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-red-600 hover:bg-red-500 text-white rounded-lg font-medium text-sm transition-all"
-              >
-                Ver Todas Intimações
-                <ArrowRight className="w-4 h-4" />
-              </button>
-            </div>
-        </div>
-      </div>
+        {/* Controle Financeiro */}
+        {financialStats && (
+          <FinancialCard 
+            stats={financialStats}
+            onNavigate={() => handleNavigate('financeiro')}
+          />
+        )}
       </div>
 
       {/* Grid de 2 Colunas - Prazos e Tarefas */}
@@ -977,8 +945,49 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToModule }) => {
           </div>
       </div>
 
-      {/* Grid de 3 Colunas - Processos e Requerimentos */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+      {/* Grid de 4 Colunas - DJEN, Processos e Requerimentos */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
+        {/* Widget de Intimações DJEN */}
+        <div className="bg-gradient-to-br from-red-700 to-red-800 rounded-xl shadow-lg overflow-hidden">
+          <div className="p-4">
+            <div className="flex items-center justify-between mb-3">
+              <div className="flex items-center gap-2">
+                <div className="w-8 h-8 rounded-lg bg-red-600 flex items-center justify-center">
+                  <Bell className="w-4 h-4 text-white" />
+                </div>
+                <div>
+                  <h2 className="text-sm font-bold text-white">Intimações DJEN</h2>
+                  <p className="text-[10px] text-white/60">{djenIntimacoes.length} não lida{djenIntimacoes.length !== 1 ? 's' : ''}</p>
+                </div>
+              </div>
+            </div>
+            {djenIntimacoes.length === 0 ? (
+              <div className="bg-white/10 rounded-lg p-4 text-center border border-white/10">
+                <Scale className="w-6 h-6 text-white/30 mx-auto mb-1" />
+                <p className="text-white/60 text-xs">Nenhuma intimação</p>
+              </div>
+            ) : (
+              <div className="space-y-1.5">
+                {djenIntimacoes.slice(0, 2).map((intimacao) => (
+                  <div 
+                    key={intimacao.id} 
+                    className="bg-white/10 hover:bg-white/15 rounded-lg p-2 border border-white/10 cursor-pointer transition-all"
+                    onClick={() => setSelectedIntimacao(intimacao)}
+                  >
+                    <p className="text-xs font-medium text-white truncate">{intimacao.tipo_comunicacao || 'Comunicação'}</p>
+                    <p className="text-[10px] text-white/50 truncate">{intimacao.numero_processo_mascara}</p>
+                  </div>
+                ))}
+              </div>
+            )}
+            <button
+              onClick={() => handleNavigate('intimacoes')}
+              className="w-full mt-3 flex items-center justify-center gap-1 px-3 py-1.5 bg-red-600 hover:bg-red-500 text-white rounded-lg font-medium text-xs transition-all"
+            >
+              Ver Todas <ArrowRight className="w-3 h-3" />
+            </button>
+          </div>
+        </div>
         {/* Processos Aguardando Confecção */}
         <div className="bg-white rounded-2xl p-5 shadow-sm border border-slate-200 hover:shadow-md transition-shadow">
           <div className="mb-4 flex items-center justify-between">
@@ -1138,40 +1147,28 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToModule }) => {
             <div className="p-6 space-y-4">
               {/* Tipo de Evento */}
               <div className="flex items-center gap-2">
-                <div className="w-2 h-2 rounded-full bg-blue-500"></div>
+                <div className={`w-2 h-2 rounded-full ${
+                  selectedEvent.type === 'hearing' ? 'bg-red-500' :
+                  selectedEvent.type === 'deadline' ? 'bg-blue-500' :
+                  selectedEvent.type === 'payment' ? 'bg-green-500' :
+                  'bg-purple-500'
+                }`}></div>
                 <span className="font-semibold text-slate-700">Tipo:</span>
                 <span className="text-slate-600 capitalize">
-                  {selectedEvent.event_type === 'deadline' && 'Prazo'}
-                  {selectedEvent.event_type === 'hearing' && 'Audiência'}
-                  {selectedEvent.event_type === 'requirement' && 'Exigência'}
-                  {selectedEvent.event_type === 'payment' && 'Pagamento'}
-                  {selectedEvent.event_type === 'meeting' && 'Reunião'}
-                  {selectedEvent.event_type === 'pericia' && 'Perícia'}
+                  {selectedEvent.type === 'deadline' && 'Prazo'}
+                  {selectedEvent.type === 'hearing' && 'Audiência'}
+                  {selectedEvent.type === 'requirement' && 'Exigência'}
+                  {selectedEvent.type === 'payment' && 'Pagamento'}
+                  {selectedEvent.type === 'meeting' && 'Reunião'}
+                  {selectedEvent.type === 'pericia' && 'Perícia'}
                 </span>
               </div>
 
-              {/* Status */}
-              <div className="flex items-center gap-2">
-                <div className={`w-2 h-2 rounded-full ${
-                  selectedEvent.status === 'concluido' ? 'bg-green-500' : 
-                  selectedEvent.status === 'cancelado' ? 'bg-red-500' : 'bg-amber-500'
-                }`}></div>
-                <span className="font-semibold text-slate-700">Status:</span>
-                <span className={`px-2 py-1 rounded-full text-xs font-semibold ${
-                  selectedEvent.status === 'concluido' ? 'bg-green-100 text-green-700' : 
-                  selectedEvent.status === 'cancelado' ? 'bg-red-100 text-red-700' : 'bg-amber-100 text-amber-700'
-                }`}>
-                  {selectedEvent.status === 'pendente' && 'Pendente'}
-                  {selectedEvent.status === 'concluido' && 'Concluído'}
-                  {selectedEvent.status === 'cancelado' && 'Cancelado'}
-                </span>
-              </div>
-
-              {/* Data de Início */}
+              {/* Data */}
               <div className="flex items-center gap-2">
                 <Calendar className="w-5 h-5 text-slate-600" />
                 <div className="flex-1">
-                  <span className="font-semibold text-slate-700">Data de Início:</span>
+                  <span className="font-semibold text-slate-700">Data:</span>
                   <span className="text-slate-600 ml-2">
                     {new Date(selectedEvent.start_at).toLocaleDateString('pt-BR', {
                       day: '2-digit',
@@ -1184,25 +1181,6 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToModule }) => {
                 </div>
               </div>
 
-              {/* Data de Término */}
-              {selectedEvent.end_at && (
-                <div className="flex items-center gap-2">
-                  <Clock className="w-5 h-5 text-slate-600" />
-                  <div className="flex-1">
-                    <span className="font-semibold text-slate-700">Data de Término:</span>
-                    <span className="text-slate-600 ml-2">
-                      {new Date(selectedEvent.end_at).toLocaleDateString('pt-BR', {
-                        day: '2-digit',
-                        month: 'long',
-                        year: 'numeric',
-                        hour: '2-digit',
-                        minute: '2-digit',
-                      })}
-                    </span>
-                  </div>
-                </div>
-              )}
-
               {/* Cliente */}
               {selectedEvent.client_id && (
                 <div className="flex items-center gap-2">
@@ -1213,29 +1191,6 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToModule }) => {
                       {clientMap.get(selectedEvent.client_id)?.full_name || 'Cliente vinculado'}
                     </span>
                   </div>
-                </div>
-              )}
-
-              {/* Notificação */}
-              {selectedEvent.notify_minutes_before && (
-                <div className="flex items-center gap-2">
-                  <Bell className="w-5 h-5 text-slate-600" />
-                  <div className="flex-1">
-                    <span className="font-semibold text-slate-700">Notificar:</span>
-                    <span className="text-slate-600 ml-2">
-                      {selectedEvent.notify_minutes_before} minutos antes
-                    </span>
-                  </div>
-                </div>
-              )}
-
-              {/* Descrição */}
-              {selectedEvent.description && (
-                <div className="border-t border-slate-200 pt-4">
-                  <span className="font-semibold text-slate-700 block mb-2">Descrição:</span>
-                  <p className="text-slate-600 text-sm whitespace-pre-wrap bg-slate-50 p-3 rounded-lg">
-                    {selectedEvent.description}
-                  </p>
                 </div>
               )}
 

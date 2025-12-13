@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { createPortal } from 'react-dom';
 import {
   Plus,
   Loader2,
@@ -10,6 +11,7 @@ import {
   AlertCircle,
   CheckCircle,
   CheckCircle2,
+  Check,
   Clock,
   XCircle,
   Calendar,
@@ -343,6 +345,7 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
   const [activeStatusTab, setActiveStatusTab] = useState<DeadlineStatus | 'todos'>('todos');
   const [viewMode, setViewMode] = useState<'list' | 'kanban' | 'map' | 'details'>('list');
   const [selectedDeadlineForView, setSelectedDeadlineForView] = useState<Deadline | null>(null);
+  const [showViewDeadlineModal, setShowViewDeadlineModal] = useState(false);
   const [statusUpdatingId, setStatusUpdatingId] = useState<string | null>(null);
   const [exportingExcel, setExportingExcel] = useState(false);
   const [exportingPdf, setExportingPdf] = useState(false);
@@ -961,7 +964,7 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
       const deadline = deadlines.find(d => d.id === entityId);
       if (deadline) {
         setSelectedDeadlineForView(deadline);
-        setViewMode('details');
+        setShowViewDeadlineModal(true);
         if (onParamConsumed) {
           onParamConsumed();
         }
@@ -1145,7 +1148,12 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
 
   const handleViewDeadline = (deadline: Deadline) => {
     setSelectedDeadlineForView(deadline);
-    setViewMode('details');
+    setShowViewDeadlineModal(true);
+  };
+
+  const handleCloseViewDeadlineModal = () => {
+    setShowViewDeadlineModal(false);
+    setSelectedDeadlineForView(null);
   };
 
   const handleBackToList = () => {
@@ -1688,27 +1696,33 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
   }, [clients, clientSearchTerm]);
 
   // Modal de Relatórios
-  const reportModal = showReportModal && (
-    <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center z-50 p-4 overflow-y-auto">
-      <div className="bg-white rounded-2xl shadow-2xl max-w-4xl w-full my-8 max-h-[90vh] overflow-y-auto">
-        <div className="px-6 py-4 border-b border-gray-200 flex items-center justify-between sticky top-0 bg-white z-10">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center">
-              <BarChart3 className="w-5 h-5 text-white" />
-            </div>
-            <div>
-              <h3 className="text-lg font-semibold text-slate-900">Relatório de Prazos</h3>
-              <p className="text-sm text-slate-500">Análise detalhada do período selecionado</p>
-            </div>
+  const reportModal = showReportModal && createPortal(
+    <div className="fixed inset-0 z-[70] flex items-center justify-center px-3 sm:px-6 py-4">
+      <div
+        className="absolute inset-0 bg-slate-900/70 backdrop-blur-sm"
+        onClick={() => setShowReportModal(false)}
+        aria-hidden="true"
+      />
+      <div className="relative w-full max-w-4xl max-h-[92vh] bg-white dark:bg-zinc-900 rounded-2xl shadow-2xl ring-1 ring-black/5 flex flex-col overflow-hidden">
+        <div className="h-2 w-full bg-orange-500" />
+        <div className="px-5 sm:px-8 py-5 border-b border-slate-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 flex items-start justify-between gap-4">
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400 dark:text-slate-500">Relatório</p>
+            <h2 className="text-xl font-semibold text-slate-900 dark:text-white">Relatório de Prazos</h2>
           </div>
-          <button onClick={() => setShowReportModal(false)} className="text-slate-400 hover:text-slate-600" title="Fechar">
+          <button
+            type="button"
+            onClick={() => setShowReportModal(false)}
+            className="p-2 text-slate-400 hover:text-slate-600 dark:text-slate-300 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-white/10 rounded-xl transition"
+            aria-label="Fechar modal"
+          >
             <X className="w-5 h-5" />
           </button>
         </div>
 
-        <div className="p-6 space-y-6">
+        <div className="flex-1 overflow-y-auto p-6 space-y-6 bg-white dark:bg-zinc-900">
           {/* Seletor de Período */}
-          <div className="bg-slate-50 rounded-xl p-4">
+          <div className="bg-slate-50 dark:bg-zinc-800 rounded-xl p-4">
             <label className="text-sm font-semibold text-slate-700 mb-3 block">Período do Relatório</label>
             <div className="flex flex-wrap gap-2 mb-3">
               {[
@@ -1916,12 +1930,15 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
             </div>
           </div>
 
-          {/* Botões de Ação */}
-          <div className="flex justify-end gap-3 pt-4 border-t border-slate-200">
+        </div>
+
+        {/* Footer fixo */}
+        <div className="border-t border-slate-200 dark:border-zinc-800 bg-slate-50 dark:bg-zinc-900 px-5 sm:px-8 py-4">
+          <div className="flex justify-end gap-3">
             <button
               type="button"
               onClick={() => setShowReportModal(false)}
-              className="px-4 py-2 text-sm font-medium text-slate-600 hover:text-slate-800 transition-colors"
+              className="px-4 py-2 text-sm text-slate-600 dark:text-zinc-400 hover:text-slate-900 dark:hover:text-white transition"
             >
               Fechar
             </button>
@@ -1929,7 +1946,7 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
               type="button"
               onClick={handleExportPdf}
               disabled={exportingPdf}
-              className="flex items-center gap-2 px-4 py-2 bg-slate-900 text-white rounded-lg text-sm font-medium hover:bg-black transition-all disabled:opacity-50"
+              className="flex items-center gap-2 px-4 py-2 bg-slate-700 hover:bg-slate-800 text-white rounded-lg text-sm font-medium transition disabled:opacity-50"
             >
               {exportingPdf ? <Loader2 className="w-4 h-4 animate-spin" /> : <FileText className="w-4 h-4" />}
               Exportar PDF
@@ -1937,56 +1954,196 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
             <button
               type="button"
               onClick={handleExportReport}
-              className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-indigo-600 to-purple-600 text-white rounded-lg text-sm font-medium hover:from-indigo-700 hover:to-purple-700 transition-all"
+              className="flex items-center gap-2 px-4 py-2 bg-amber-500 hover:bg-amber-600 text-white rounded-lg text-sm font-medium transition"
             >
               <Download className="w-4 h-4" />
-              Exportar Relatório (Excel)
+              Exportar Excel
             </button>
           </div>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 
-  const deadlineModal = isModalOpen && (
-    <div className="fixed inset-0 bg-black/30 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-      <div className="bg-white shadow-2xl rounded-xl max-w-[85%] w-full mx-auto text-zinc-900 max-h-[90vh] flex flex-col">
-        {/* Header */}
-        <div className="px-4 py-3 border-b border-zinc-200 flex-shrink-0">
-          <div className="flex justify-between items-center">
-            <div>
-              <h2 className="text-base font-bold text-zinc-900">
-                {selectedDeadline ? 'Editar Prazo' : 'Novo Prazo'}
-              </h2>
-              <p className="text-zinc-500 text-xs">Cadastre prazos e vincule a processos</p>
+  const viewDeadlineModal = showViewDeadlineModal && selectedDeadlineForView && createPortal(
+    <div className="fixed inset-0 z-[70] flex items-center justify-center px-3 sm:px-6 py-4">
+      <div
+        className="absolute inset-0 bg-slate-900/70 backdrop-blur-sm"
+        onClick={handleCloseViewDeadlineModal}
+        aria-hidden="true"
+      />
+      <div className="relative w-full max-w-4xl max-h-[92vh] bg-white dark:bg-zinc-900 rounded-2xl shadow-2xl ring-1 ring-black/5 flex flex-col overflow-hidden">
+        <div className="h-2 w-full bg-orange-500" />
+        <div className="px-5 sm:px-8 py-5 border-b border-slate-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 flex items-start justify-between gap-4">
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400 dark:text-slate-500">Detalhes</p>
+            <h2 className="text-xl font-semibold text-slate-900 dark:text-white">Detalhes do Prazo</h2>
+          </div>
+          <button
+            type="button"
+            onClick={handleCloseViewDeadlineModal}
+            className="p-2 text-slate-400 hover:text-slate-600 dark:text-slate-300 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-white/10 rounded-xl transition"
+            aria-label="Fechar modal"
+          >
+            <X className="w-5 h-5" />
+          </button>
+        </div>
+
+        <div className="flex-1 overflow-y-auto bg-white dark:bg-zinc-900 p-6">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div className="md:col-span-2">
+              <label className="text-xs font-semibold text-slate-500 uppercase">Título</label>
+              <p className="text-base text-slate-900 dark:text-white mt-1 font-semibold">{selectedDeadlineForView.title}</p>
             </div>
-            <button 
-              onClick={handleCloseModal}
-              className="text-zinc-500 hover:text-zinc-900 transition-colors"
-            >
-              <X className="w-4 h-4" />
-            </button>
+
+            <div>
+              <label className="text-xs font-semibold text-slate-500 uppercase">Data de Vencimento</label>
+              <p className="text-base text-slate-900 dark:text-white mt-1">{formatDate(selectedDeadlineForView.due_date)}</p>
+              <p className="text-xs text-slate-500 mt-1">
+                {getDaysUntilDue(selectedDeadlineForView.due_date) >= 0 
+                  ? `Faltam ${getDaysUntilDue(selectedDeadlineForView.due_date)} dia(s)`
+                  : `Vencido há ${Math.abs(getDaysUntilDue(selectedDeadlineForView.due_date))} dia(s)`
+                }
+              </p>
+            </div>
+
+            <div>
+              <label className="text-xs font-semibold text-slate-500 uppercase">Status</label>
+              <p className="mt-1">
+                <span className={`inline-flex items-center gap-2 px-3 py-1 rounded-full text-xs font-semibold ${getStatusBadge(selectedDeadlineForView.status)}`}>
+                  {getStatusLabel(selectedDeadlineForView.status)}
+                </span>
+              </p>
+            </div>
+
+            <div>
+              <label className="text-xs font-semibold text-slate-500 uppercase">Prioridade</label>
+              <p className="mt-1">
+                <span className={`inline-flex items-center gap-2 px-3 py-1 rounded-full text-xs font-semibold ${getPriorityBadge(selectedDeadlineForView.priority)}`}>
+                  {getPriorityLabel(selectedDeadlineForView.priority)}
+                </span>
+              </p>
+            </div>
+
+            <div>
+              <label className="text-xs font-semibold text-slate-500 uppercase">Tipo</label>
+              <p className="text-base text-slate-900 dark:text-white mt-1">{getTypeLabel(selectedDeadlineForView.type)}</p>
+            </div>
+
+            <div>
+              <label className="text-xs font-semibold text-slate-500 uppercase">Cliente</label>
+              <p className="text-base text-slate-900 dark:text-white mt-1">
+                {selectedDeadlineForView.client_id ? clientMap.get(selectedDeadlineForView.client_id)?.full_name || 'Cliente não encontrado' : 'Não vinculado'}
+              </p>
+            </div>
+
+            <div>
+              <label className="text-xs font-semibold text-slate-500 uppercase">Responsável</label>
+              <p className="text-base text-slate-900 dark:text-white mt-1">
+                {selectedDeadlineForView.responsible_id ? memberMap.get(selectedDeadlineForView.responsible_id)?.name || 'Não encontrado' : 'Não definido'}
+              </p>
+            </div>
+
+            {(selectedDeadlineForView.process_id || selectedDeadlineForView.requirement_id) && (
+              <div>
+                <label className="text-xs font-semibold text-slate-500 uppercase">Vinculado a</label>
+                <p className="text-base text-slate-900 dark:text-white mt-1 font-mono">
+                  {selectedDeadlineForView.process_id 
+                    ? processes.find(p => p.id === selectedDeadlineForView.process_id)?.process_code || 'Processo'
+                    : requirements.find(r => r.id === selectedDeadlineForView.requirement_id)?.protocol || 'Requerimento'
+                  }
+                </p>
+              </div>
+            )}
+
+            <div>
+              <label className="text-xs font-semibold text-slate-500 uppercase">Notificação</label>
+              <p className="text-base text-slate-900 dark:text-white mt-1">{selectedDeadlineForView.notify_days_before ?? 2} dias antes</p>
+            </div>
+
+            <div className="md:col-span-2">
+              <label className="text-xs font-semibold text-slate-500 uppercase">Descrição / Observações</label>
+              <p className="text-base text-slate-900 dark:text-white mt-1 whitespace-pre-wrap">
+                {selectedDeadlineForView.description || 'Nenhuma descrição informada.'}
+              </p>
+            </div>
           </div>
         </div>
 
-        {/* Content */}
-        <form onSubmit={handleSubmit} className="flex flex-col flex-1 min-h-0">
-          <div className="p-3 space-y-2 flex-1 overflow-y-auto">
+        {/* Footer fixo */}
+        <div className="border-t border-slate-200 dark:border-zinc-800 bg-slate-50 dark:bg-zinc-900 px-5 sm:px-8 py-4">
+          <div className="flex justify-end gap-3">
+            <button
+              type="button"
+              onClick={handleCloseViewDeadlineModal}
+              className="px-4 py-2 text-sm text-slate-600 dark:text-zinc-400 hover:text-slate-900 dark:hover:text-white transition"
+            >
+              Fechar
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                handleCloseViewDeadlineModal();
+                handleOpenModal(selectedDeadlineForView);
+              }}
+              className="px-4 py-2 bg-amber-500 hover:bg-amber-600 text-white text-sm font-medium rounded-lg flex items-center gap-2 transition"
+            >
+              <Edit2 className="w-4 h-4" />
+              Editar Prazo
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>,
+    document.body
+  );
+
+  const inputStyle = 'w-full h-11 px-3 py-2 rounded-lg text-sm leading-normal bg-white dark:bg-zinc-800 border border-zinc-300 dark:border-zinc-600 text-zinc-900 dark:text-white placeholder:text-zinc-400 focus:outline-none focus:ring-1 focus:ring-amber-500 focus:border-amber-500 transition-colors';
+  const labelStyle = 'block text-sm text-zinc-600 dark:text-zinc-300 mb-1';
+
+  const deadlineModal = isModalOpen ? createPortal(
+    <div className="fixed inset-0 z-[80] flex items-center justify-center px-3 sm:px-6 py-4">
+      <div
+        className="absolute inset-0 bg-slate-900/70 backdrop-blur-sm"
+        onClick={handleCloseModal}
+        aria-hidden="true"
+      />
+      <div className="relative w-full max-w-4xl max-h-[92vh] bg-white dark:bg-zinc-900 rounded-2xl shadow-2xl ring-1 ring-black/5 flex flex-col overflow-hidden">
+        <div className="h-2 w-full bg-orange-500" />
+        <div className="px-5 sm:px-8 py-5 border-b border-slate-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 flex items-start justify-between gap-4">
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400 dark:text-slate-500">Formulário</p>
+            <h2 className="text-xl font-semibold text-slate-900 dark:text-white">
+              {selectedDeadline ? 'Editar Prazo' : 'Novo Prazo'}
+            </h2>
+          </div>
+          <button
+            type="button"
+            onClick={handleCloseModal}
+            className="p-2 text-slate-400 hover:text-slate-600 dark:text-slate-300 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-white/10 rounded-xl transition"
+            aria-label="Fechar modal"
+          >
+            <X className="w-5 h-5" />
+          </button>
+        </div>
+
+        <div className="flex-1 overflow-y-auto bg-white dark:bg-zinc-900">
+          <form onSubmit={handleSubmit} className="p-4 sm:p-6 space-y-4">
             {/* Título e Tipo */}
-            <div className="grid grid-cols-4 gap-2">
-              <div className="col-span-3">
-                <label className="block text-xs font-medium text-zinc-500 mb-0.5">
-                  Título <span className="text-red-500">*</span>
-                </label>
+            <div className="grid grid-cols-1 sm:grid-cols-4 gap-2">
+              <div className="sm:col-span-3">
+                <label className={labelStyle}>Título do Prazo *</label>
                 <input
                   value={formData.title}
                   onChange={(event) => handleFormChange('title', event.target.value)}
-                  className="w-full bg-zinc-100 border border-zinc-200 rounded-md px-2 py-1.5 text-sm text-zinc-900 focus:ring-2 focus:ring-sky-500 transition"
+                  className={inputStyle}
+                  placeholder="Ex: Contestação Processo 00123..."
                   required
                 />
               </div>
               <div>
-                <label className="block text-xs font-medium text-zinc-500 mb-0.5">Tipo</label>
+                <label className={labelStyle}>Tipo</label>
                 <select
                   value={formData.type}
                   onChange={(event) => {
@@ -2005,7 +2162,7 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
                       setRequirementSearchTerm('');
                     }
                   }}
-                  className="w-full bg-zinc-100 border border-zinc-200 rounded-md px-2 py-1.5 text-sm text-zinc-900 focus:ring-2 focus:ring-sky-500"
+                  className={inputStyle}
                 >
                   {TYPE_OPTIONS.map((type) => (
                     <option key={type.key} value={type.key}>{type.label}</option>
@@ -2014,14 +2171,52 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
               </div>
             </div>
 
-            {/* Calculadora de Prazo */}
-            <div className="bg-zinc-100 p-2 rounded-lg border border-zinc-200 space-y-1.5">
-              <h3 className="font-semibold text-xs text-zinc-900">Calculadora de Prazo</h3>
+            {/* Cliente e Responsável */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+              <ClientSearchSelect
+                value={formData.client_id}
+                onChange={(clientId) => {
+                  handleFormChange('client_id', clientId);
+                  if (!clientId) {
+                    handleFormChange('process_id', '');
+                    setProcessSearchTerm('');
+                  }
+                }}
+                label="Cliente"
+                placeholder="Buscar cliente..."
+                required
+                allowCreate={true}
+              />
+              <div>
+                <label className={labelStyle}>Responsável *</label>
+                <select
+                  value={formData.responsible_id}
+                  onChange={(event) => handleFormChange('responsible_id', event.target.value)}
+                  className={inputStyle}
+                  required
+                >
+                  <option value="" disabled>Selecionar advogado...</option>
+                  {members.map((member) => (
+                    <option key={member.id} value={member.id}>{member.name}</option>
+                  ))}
+                </select>
+              </div>
+            </div>
 
-              {/* Tipo de Prazo + Data + Dias em uma linha */}
-              <div className="grid grid-cols-4 gap-2">
+            {/* Calculadora de Prazo */}
+            <div className="rounded-xl border border-orange-200 dark:border-orange-800 bg-orange-50/50 dark:bg-orange-900/10 p-4">
+              <div className="flex items-center justify-between mb-3">
+                <p className="text-sm font-semibold text-slate-900 dark:text-white flex items-center gap-2">
+                  <Calendar className="w-4 h-4 text-orange-600" />
+                  Calculadora de Prazo
+                </p>
+                <span className="text-xs font-medium text-orange-600 bg-white dark:bg-zinc-800 px-2 py-1 rounded border border-orange-200 dark:border-orange-700">
+                  DJEN
+                </span>
+              </div>
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
                 <div>
-                  <label className="block text-xs font-medium text-zinc-500 mb-0.5">Tipo</label>
+                  <label className={labelStyle}>Tipo de Prazo</label>
                   <select
                     value={tipoPrazoCalculadora}
                     onChange={(e) => {
@@ -2035,14 +2230,14 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
                         }
                       }
                     }}
-                    className="w-full bg-white border border-zinc-200 rounded-md px-2 py-1.5 text-sm text-zinc-900 focus:ring-2 focus:ring-sky-500"
+                    className={inputStyle}
                   >
                     <option value="processual">Dias úteis</option>
                     <option value="material">Dias corridos</option>
                   </select>
                 </div>
                 <div>
-                  <label className="block text-xs font-medium text-zinc-500 mb-0.5">Publicação</label>
+                  <label className={labelStyle}>Publicação</label>
                   <input
                     type="date"
                     value={dataPublicacao}
@@ -2054,11 +2249,11 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
                         handleFormChange('due_date', dataVenc);
                       }
                     }}
-                    className="w-full bg-white border border-zinc-200 rounded-md px-2 py-1.5 text-sm text-zinc-900 focus:ring-2 focus:ring-sky-500"
+                    className={inputStyle}
                   />
                 </div>
                 <div>
-                  <label className="block text-xs font-medium text-zinc-500 mb-0.5">Dias</label>
+                  <label className={labelStyle}>Dias</label>
                   <div className="flex items-center gap-1">
                     <input
                       type="number"
@@ -2075,7 +2270,8 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
                           }
                         }
                       }}
-                      className="w-14 bg-white border border-zinc-200 rounded-md px-2 py-1.5 text-sm text-zinc-900 focus:ring-2 focus:ring-sky-500"
+                      className="w-14 h-11 px-2 py-2 rounded-lg text-sm text-center bg-white dark:bg-zinc-800 border border-zinc-300 dark:border-zinc-600 text-zinc-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-amber-500"
+                      placeholder="0"
                     />
                     {[5, 10, 15].map((dias) => (
                       <button
@@ -2088,10 +2284,10 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
                             handleFormChange('due_date', dataVenc);
                           }
                         }}
-                        className={`px-1.5 py-1 text-xs rounded font-medium transition ${
+                        className={`px-2 h-11 text-xs rounded-lg font-medium transition-all ${
                           diasPrazo === String(dias)
-                            ? 'bg-sky-500 text-white'
-                            : 'bg-zinc-200 hover:bg-zinc-300 text-zinc-600'
+                            ? 'bg-orange-500 text-white'
+                            : 'bg-white dark:bg-zinc-700 text-zinc-600 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-600 border border-zinc-300 dark:border-zinc-600'
                         }`}
                       >
                         {dias}
@@ -2100,9 +2296,7 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
                   </div>
                 </div>
                 <div>
-                  <label className="block text-xs font-medium text-zinc-500 mb-0.5">
-                    Vencimento <span className="text-red-500">*</span>
-                  </label>
+                  <label className={labelStyle}>Vencimento *</label>
                   <input
                     type="date"
                     value={formData.due_date}
@@ -2117,21 +2311,21 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
                       setDiasPrazo('');
                       handleFormChange('due_date', event.target.value);
                     }}
-                    className="w-full bg-white border border-zinc-200 rounded-md px-2 py-1.5 text-sm text-zinc-900 focus:ring-2 focus:ring-sky-500"
+                    className={inputStyle}
                     required
                   />
                 </div>
               </div>
             </div>
 
-            {/* Prioridade, Status, Responsável */}
-            <div className="grid grid-cols-3 gap-2">
+            {/* Prioridade, Status, Processo/Requerimento, Notificar */}
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
               <div>
-                <label className="block text-xs font-medium text-zinc-500 mb-0.5">Prioridade</label>
+                <label className={labelStyle}>Prioridade</label>
                 <select
                   value={formData.priority}
                   onChange={(event) => handleFormChange('priority', event.target.value as DeadlinePriority)}
-                  className="w-full bg-zinc-100 border border-zinc-200 rounded-md px-2 py-1.5 text-sm text-zinc-900 focus:ring-2 focus:ring-sky-500"
+                  className={inputStyle}
                 >
                   {PRIORITY_OPTIONS.map((priority) => (
                     <option key={priority.key} value={priority.key}>{priority.label}</option>
@@ -2139,11 +2333,11 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
                 </select>
               </div>
               <div>
-                <label className="block text-xs font-medium text-zinc-500 mb-0.5">Status</label>
+                <label className={labelStyle}>Status</label>
                 <select
                   value={formData.status}
                   onChange={(event) => handleFormChange('status', event.target.value as DeadlineStatus)}
-                  className="w-full bg-zinc-100 border border-zinc-200 rounded-md px-2 py-1.5 text-sm text-zinc-900 focus:ring-2 focus:ring-sky-500"
+                  className={inputStyle}
                 >
                   {STATUS_OPTIONS.map((status) => (
                     <option key={status.key} value={status.key}>{status.label}</option>
@@ -2151,123 +2345,90 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
                 </select>
               </div>
               <div>
-                <label className="block text-xs font-medium text-zinc-500 mb-0.5">
-                  Responsável <span className="text-red-500">*</span>
+                <label className={labelStyle}>
+                  {formData.type === 'processo' ? 'Processo' : formData.type === 'requerimento' ? 'Requerimento' : 'Processo'}
                 </label>
-                <select
-                  value={formData.responsible_id}
-                  onChange={(event) => handleFormChange('responsible_id', event.target.value)}
-                  className="w-full bg-zinc-100 border border-zinc-200 rounded-md px-2 py-1.5 text-sm text-zinc-900 focus:ring-2 focus:ring-sky-500"
-                  required
-                >
-                  <option value="" disabled>Selecione</option>
-                  {members.map((member) => (
-                    <option key={member.id} value={member.id}>{member.name}</option>
-                  ))}
-                </select>
-              </div>
-            </div>
-
-            {/* Cliente, Vínculo e Descrição */}
-            <div className="grid grid-cols-3 gap-2">
-              <div>
-                <label className="block text-xs font-medium text-zinc-500 mb-0.5">Cliente <span className="text-red-500">*</span></label>
-                <ClientSearchSelect
-                  value={formData.client_id}
-                  onChange={(clientId) => {
-                    handleFormChange('client_id', clientId);
-                    if (!clientId) {
-                      handleFormChange('process_id', '');
-                      setProcessSearchTerm('');
-                    }
-                  }}
-                  label=""
-                  placeholder="Buscar..."
-                  required
-                  allowCreate={true}
-                />
-              </div>
-              <div>
-                {formData.type === 'processo' && (
-                  <>
-                    <label className="block text-xs font-medium text-zinc-500 mb-0.5">Processo</label>
-                    <select
-                      value={formData.process_id}
-                      onChange={(event) => handleFormChange('process_id', event.target.value)}
-                      disabled={!formData.client_id}
-                      className="w-full bg-zinc-100 border border-zinc-200 rounded-md px-2 py-1.5 text-sm text-zinc-900 focus:ring-2 focus:ring-sky-500 disabled:opacity-50"
-                    >
-                      <option value="">Selecione</option>
-                      {filteredProcesses.map((process) => (
-                        <option key={process.id} value={process.id}>{process.process_code}</option>
-                      ))}
-                    </select>
-                  </>
-                )}
-                {formData.type === 'requerimento' && (
-                  <>
-                    <label className="block text-xs font-medium text-zinc-500 mb-0.5">Requerimento</label>
-                    <select
-                      value={formData.requirement_id}
-                      onChange={(event) => handleFormChange('requirement_id', event.target.value)}
-                      className="w-full bg-zinc-100 border border-zinc-200 rounded-md px-2 py-1.5 text-sm text-zinc-900 focus:ring-2 focus:ring-sky-500"
-                    >
-                      <option value="">Selecione</option>
-                      {filteredRequirements.map((requirement) => (
-                        <option key={requirement.id} value={requirement.id}>{requirement.protocol}</option>
-                      ))}
-                    </select>
-                  </>
-                )}
-                {formData.type !== 'processo' && formData.type !== 'requerimento' && (
-                  <>
-                    <label className="block text-xs font-medium text-zinc-500 mb-0.5">Notificar (dias)</label>
-                    <input
-                      type="number"
-                      value={formData.notify_days_before}
-                      onChange={(event) => handleFormChange('notify_days_before', event.target.value)}
-                      className="w-full bg-zinc-100 border border-zinc-200 rounded-md px-2 py-1.5 text-sm text-zinc-900 focus:ring-2 focus:ring-sky-500"
-                      min="0"
-                      max="30"
-                      placeholder="2"
-                    />
-                  </>
+                {formData.type === 'processo' ? (
+                  <select
+                    value={formData.process_id}
+                    onChange={(event) => handleFormChange('process_id', event.target.value)}
+                    disabled={!formData.client_id}
+                    className={`${inputStyle} disabled:opacity-50`}
+                  >
+                    <option value="">Selecione...</option>
+                    {filteredProcesses.map((process) => (
+                      <option key={process.id} value={process.id}>{process.process_code}</option>
+                    ))}
+                  </select>
+                ) : formData.type === 'requerimento' ? (
+                  <select
+                    value={formData.requirement_id}
+                    onChange={(event) => handleFormChange('requirement_id', event.target.value)}
+                    className={inputStyle}
+                  >
+                    <option value="">Selecione...</option>
+                    {filteredRequirements.map((requirement) => (
+                      <option key={requirement.id} value={requirement.id}>{requirement.protocol}</option>
+                    ))}
+                  </select>
+                ) : (
+                  <select disabled className={`${inputStyle} disabled:opacity-50`}>
+                    <option value="">Selecione...</option>
+                  </select>
                 )}
               </div>
               <div>
-                <label className="block text-xs font-medium text-zinc-500 mb-0.5">Descrição</label>
+                <label className={labelStyle}>Notificar (dias antes)</label>
                 <input
-                  value={formData.description}
-                  onChange={(event) => handleFormChange('description', event.target.value)}
-                  className="w-full bg-zinc-100 border border-zinc-200 rounded-md px-2 py-1.5 text-sm text-zinc-900 focus:ring-2 focus:ring-sky-500"
+                  type="number"
+                  min={0}
+                  max={30}
+                  value={formData.notify_days_before}
+                  onChange={(event) => handleFormChange('notify_days_before', event.target.value)}
+                  className={inputStyle}
+                  placeholder="2"
                 />
               </div>
             </div>
-          </div>
 
-          {/* Footer */}
-          <div className="bg-zinc-100 px-4 py-2 flex justify-end items-center gap-2 border-t border-zinc-200 rounded-b-xl flex-shrink-0">
+            {/* Descrição */}
+            <div>
+              <label className={labelStyle}>Descrição / Observações</label>
+              <textarea
+                value={formData.description}
+                onChange={(event) => handleFormChange('description', event.target.value)}
+                placeholder="Detalhes adicionais sobre o prazo..."
+                className={`${inputStyle} h-16 resize-none`}
+              />
+            </div>
+          </form>
+        </div>
+
+        <div className="border-t border-slate-200 dark:border-zinc-800 bg-slate-50 dark:bg-zinc-900 px-5 sm:px-8 py-4">
+          <div className="flex justify-end gap-3">
             <button
               type="button"
               onClick={handleCloseModal}
-              className="px-3 py-1.5 text-xs text-zinc-600 hover:text-zinc-900 transition-colors"
               disabled={saving}
+              className="px-4 py-2 text-sm text-slate-600 dark:text-zinc-400 hover:text-slate-900 dark:hover:text-white transition"
             >
               Cancelar
             </button>
             <button
               type="submit"
+              onClick={handleSubmit}
               disabled={saving}
-              className="px-3 py-1.5 bg-sky-500 text-white rounded-md text-xs font-medium hover:bg-sky-400 transition-colors flex items-center gap-1 disabled:opacity-50"
+              className="px-4 py-2 bg-amber-500 hover:bg-amber-600 text-white text-sm font-medium rounded-lg flex items-center gap-2 transition"
             >
-              {saving && <Loader2 className="w-3 h-3 animate-spin" />}
+              {saving && <Loader2 className="w-4 h-4 animate-spin" />}
               Salvar
             </button>
           </div>
-        </form>
+        </div>
       </div>
-    </div>
-  );
+    </div>,
+    document.body
+  ) : null;
 
   if (viewMode === 'details' && selectedDeadlineForView) {
     const statusConfig = getStatusConfig(selectedDeadlineForView.status);
@@ -2389,7 +2550,7 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
 
             <div>
               <label className="text-xs font-semibold text-slate-500 uppercase">Notificar (dias antes)</label>
-              <p className="text-base text-slate-900 mt-1">{selectedDeadlineForView.notify_days_before ?? 3} dias</p>
+              <p className="text-base text-slate-900 mt-1">{selectedDeadlineForView.notify_days_before ?? 2} dias</p>
             </div>
 
             {selectedDeadlineForView.completed_at && (
@@ -2482,61 +2643,61 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
       </div>
 
       {/* Cards de Estatísticas - Layout Horizontal */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 sm:gap-3">
         <button
           onClick={() => setActiveStatusTab('todos')}
-          className={`flex items-center gap-3 p-4 rounded-xl transition-all hover:shadow-md border ${
+          className={`flex items-center gap-2 sm:gap-3 p-3 sm:p-4 rounded-xl transition-all hover:shadow-md border ${
             activeStatusTab === 'todos' ? 'ring-2 ring-blue-500 bg-blue-50 border-blue-200' : 'bg-white border-slate-200'
           }`}
         >
-          <div className="w-10 h-10 rounded-full bg-blue-500 flex items-center justify-center flex-shrink-0">
-            <Calendar className="w-5 h-5 text-white" />
+          <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-full bg-blue-500 flex items-center justify-center flex-shrink-0">
+            <Calendar className="w-4 h-4 sm:w-5 sm:h-5 text-white" />
           </div>
-          <div className="text-left">
-            <p className="text-2xl font-bold text-slate-900">{monthlyDeadlines.length}</p>
-            <p className="text-xs text-slate-500">Total no mês</p>
+          <div className="text-left min-w-0">
+            <p className="text-lg sm:text-2xl font-bold text-slate-900">{monthlyDeadlines.length}</p>
+            <p className="text-[10px] sm:text-xs text-slate-500 truncate">Total</p>
           </div>
         </button>
 
         <button
           onClick={() => setActiveStatusTab('pendente')}
-          className={`flex items-center gap-3 p-4 rounded-xl transition-all hover:shadow-md border ${
+          className={`flex items-center gap-2 sm:gap-3 p-3 sm:p-4 rounded-xl transition-all hover:shadow-md border ${
             activeStatusTab === 'pendente' ? 'ring-2 ring-amber-500 bg-amber-50 border-amber-200' : 'bg-white border-slate-200'
           }`}
         >
-          <div className="w-10 h-10 rounded-full bg-amber-500 flex items-center justify-center flex-shrink-0">
-            <Clock className="w-5 h-5 text-white" />
+          <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-full bg-amber-500 flex items-center justify-center flex-shrink-0">
+            <Clock className="w-4 h-4 sm:w-5 sm:h-5 text-white" />
           </div>
-          <div className="text-left">
-            <p className="text-2xl font-bold text-slate-900">{monthlyPending.length}</p>
-            <p className="text-xs text-slate-500">Pendentes no mês</p>
+          <div className="text-left min-w-0">
+            <p className="text-lg sm:text-2xl font-bold text-slate-900">{monthlyPending.length}</p>
+            <p className="text-[10px] sm:text-xs text-slate-500 truncate">Pendentes</p>
           </div>
         </button>
 
         <button
           onClick={() => setActiveStatusTab('vencido')}
-          className={`flex items-center gap-3 p-4 rounded-xl transition-all hover:shadow-md border ${
+          className={`flex items-center gap-2 sm:gap-3 p-3 sm:p-4 rounded-xl transition-all hover:shadow-md border ${
             activeStatusTab === 'vencido' ? 'ring-2 ring-red-500 bg-red-50 border-red-200' : 'bg-white border-slate-200'
           }`}
         >
-          <div className={`w-10 h-10 rounded-full flex items-center justify-center flex-shrink-0 ${
+          <div className={`w-8 h-8 sm:w-10 sm:h-10 rounded-full flex items-center justify-center flex-shrink-0 ${
             monthlyAttentionCount > 0 ? 'bg-red-500' : 'bg-slate-300'
           }`}>
-            <AlertCircle className="w-5 h-5 text-white" />
+            <AlertCircle className="w-4 h-4 sm:w-5 sm:h-5 text-white" />
           </div>
-          <div className="text-left">
-            <p className="text-2xl font-bold text-slate-900">{monthlyAttentionCount}</p>
-            <p className="text-xs text-slate-500">Atenção no mês</p>
+          <div className="text-left min-w-0">
+            <p className="text-lg sm:text-2xl font-bold text-slate-900">{monthlyAttentionCount}</p>
+            <p className="text-[10px] sm:text-xs text-slate-500 truncate">Atenção</p>
           </div>
         </button>
 
-        <div className="flex items-center gap-3 p-4 rounded-xl bg-white border border-slate-200">
-          <div className="w-10 h-10 rounded-full bg-emerald-500 flex items-center justify-center flex-shrink-0">
-            <CheckCircle className="w-5 h-5 text-white" />
+        <div className="flex items-center gap-2 sm:gap-3 p-3 sm:p-4 rounded-xl bg-white border border-slate-200">
+          <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-full bg-emerald-500 flex items-center justify-center flex-shrink-0">
+            <CheckCircle className="w-4 h-4 sm:w-5 sm:h-5 text-white" />
           </div>
-          <div className="text-left">
-            <p className="text-2xl font-bold text-slate-900">{monthlyCompleted.length}</p>
-            <p className="text-xs text-slate-500">Concluídos no mês</p>
+          <div className="text-left min-w-0">
+            <p className="text-lg sm:text-2xl font-bold text-slate-900">{monthlyCompleted.length}</p>
+            <p className="text-[10px] sm:text-xs text-slate-500 truncate">Concluídos</p>
           </div>
         </div>
       </div>
@@ -2564,60 +2725,61 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
       <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-4 border-b border-slate-100">
           {/* Abas de Visualização */}
-          <div className="flex items-center gap-1 bg-slate-100 rounded-lg p-1">
+          <div className="flex items-center gap-1 bg-slate-100 rounded-lg p-1 overflow-x-auto">
             <button
               onClick={() => setViewMode('list')}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-all ${
+              className={`flex items-center gap-1 sm:gap-1.5 px-2 sm:px-3 py-1.5 rounded-md text-xs font-medium transition-all whitespace-nowrap ${
                 viewMode === 'list' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-700'
               }`}
             >
               <List className="w-3.5 h-3.5" />
-              Lista
+              <span className="hidden xs:inline">Lista</span>
             </button>
             <button
               onClick={() => setViewMode('kanban')}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-all ${
+              className={`flex items-center gap-1 sm:gap-1.5 px-2 sm:px-3 py-1.5 rounded-md text-xs font-medium transition-all whitespace-nowrap ${
                 viewMode === 'kanban' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-700'
               }`}
             >
               <LayoutGrid className="w-3.5 h-3.5" />
-              Kanban
+              <span className="hidden xs:inline">Kanban</span>
             </button>
             <button
               onClick={() => setViewMode('map')}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-all ${
+              className={`flex items-center gap-1 sm:gap-1.5 px-2 sm:px-3 py-1.5 rounded-md text-xs font-medium transition-all whitespace-nowrap ${
                 viewMode === 'map' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-700'
               }`}
             >
               <Calendar className="w-3.5 h-3.5" />
-              Mapa
+              <span className="hidden xs:inline">Mapa</span>
             </button>
             <button
               onClick={() => setCalendarExpanded(!calendarExpanded)}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-all ${
+              className={`flex items-center gap-1 sm:gap-1.5 px-2 sm:px-3 py-1.5 rounded-md text-xs font-medium transition-all whitespace-nowrap ${
                 calendarExpanded ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-700'
               }`}
             >
               <Calendar className="w-3.5 h-3.5" />
-              Calendário de Prazos
+              <span className="hidden sm:inline">Calendário</span>
             </button>
           </div>
 
           {/* Botões de Ação */}
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1.5 sm:gap-2">
             <button
               onClick={() => setShowReportModal(true)}
-              className="flex items-center gap-1.5 px-3 py-2 border border-slate-200 hover:bg-slate-50 text-slate-700 rounded-lg text-xs font-medium transition-all"
+              className="flex items-center gap-1 sm:gap-1.5 px-2 sm:px-3 py-2 border border-slate-200 hover:bg-slate-50 text-slate-700 rounded-lg text-xs font-medium transition-all"
             >
               <BarChart3 className="w-3.5 h-3.5" />
-              Relatórios
+              <span className="hidden sm:inline">Relatórios</span>
             </button>
             <button
               onClick={() => handleOpenModal()}
-              className="flex items-center gap-1.5 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-semibold transition-all shadow-sm"
+              className="flex items-center gap-1 sm:gap-1.5 px-3 sm:px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-semibold transition-all shadow-sm"
             >
               <Plus className="w-3.5 h-3.5" />
-              Novo Prazo
+              <span className="hidden xs:inline">Novo</span>
+              <span className="hidden sm:inline">Prazo</span>
             </button>
           </div>
         </div>
@@ -3352,6 +3514,7 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
       )}
 
       {deadlineModal}
+      {viewDeadlineModal}
       {reportModal}
 
       {/* Histórico de Prazos Cumpridos */}

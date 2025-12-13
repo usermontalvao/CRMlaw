@@ -668,201 +668,147 @@ const MainApp: React.FC = () => {
 
         {/* Aviso de sessão */}
         <SessionWarning />
-      {/* Novo Sidebar - Estilo Compacto Vertical */}
-      {isMobileNavOpen && <div className="fixed inset-0 bg-black/40 z-40 md:hidden" onClick={() => setIsMobileNavOpen(false)} />}
+      {/* Sidebar Minimalista */}
+      {isMobileNavOpen && (
+        <div 
+          className="fixed inset-0 bg-black/50 z-40 md:hidden" 
+          onClick={() => setIsMobileNavOpen(false)} 
+        />
+      )}
       <aside
-        className={`fixed inset-y-0 left-0 bg-slate-900 dark:bg-black text-white border-r border-slate-800 dark:border-zinc-900 transition-all duration-300 z-50 flex flex-col w-20 ${
+        className={`fixed inset-y-0 left-0 bg-slate-900 text-white z-50 flex flex-col w-20 border-r border-slate-800 ${
           isMobileNavOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0'
-        }`}
+        } transition-transform duration-300`}
       >
-        <div className="flex flex-col h-full">
-          {/* Logo */}
-          <div className="flex items-center justify-center py-5 border-b border-slate-800 dark:border-zinc-900">
-            <div className="bg-amber-600 p-2 rounded-xl w-14 h-14 flex items-center justify-center">
-              <span className="text-white font-bold text-2xl">J</span>
-            </div>
-          </div>
-
-          {/* Navigation */}
-          <nav className="flex-1 py-2 flex flex-col items-stretch gap-1 overflow-y-auto scrollbar-hide">
-            <button
-              onClick={() => {
-                setClientPrefill(null);
-                setIsMobileNavOpen(false);
-                navigateTo('dashboard');
-              }}
-              className={`flex flex-col items-center justify-center py-2.5 px-2 rounded-lg transition-all border-l-4 ${
-                activeModule === 'dashboard'
-                  ? 'bg-amber-600 text-white border-amber-400 shadow-lg'
-                  : 'border-transparent text-slate-300 hover:bg-slate-800 hover:text-white'
-              }`}
-            >
-              <Layers className="w-5 h-5 mb-1.5" />
-              <span className="text-[10px] font-medium text-center leading-tight">Dashboard</span>
-            </button>
-
-            <button
-              onClick={() => {
-                setClientPrefill(null);
-                setIsMobileNavOpen(false);
-                navigateTo('leads');
-              }}
-              className={`flex flex-col items-center justify-center py-2.5 px-2 rounded-lg transition-all border-l-4 ${
-                activeModule === 'leads'
-                  ? 'bg-amber-600 text-white border-amber-400 shadow-lg'
-                  : 'border-transparent text-slate-300 hover:bg-slate-800 hover:text-white'
-              }`}
-            >
-              <Target className="w-5 h-5 mb-1.5" />
-              <span className="text-[10px] font-medium text-center leading-tight">Leads</span>
-            </button>
-
-            <button
-              onClick={() => {
-                setClientPrefill(null);
-                setIsMobileNavOpen(false);
-                navigateTo('clientes');
-              }}
-              className={`flex flex-col items-center justify-center py-2.5 px-2 rounded-lg transition-all border-l-4 ${
-                activeModule === 'clientes'
-                  ? 'bg-amber-600 text-white border-amber-400 shadow-lg'
-                  : 'border-transparent text-slate-300 hover:bg-slate-800 hover:text-white'
-              }`}
-            >
-              <Users className="w-5 h-5 mb-1.5" />
-              <span className="text-[10px] font-medium text-center leading-tight">Clientes</span>
-            </button>
-
-            <button
-              onClick={() => {
-                setClientPrefill(null);
-                setIsMobileNavOpen(false);
-                navigateTo('documentos');
-              }}
-              className={`flex flex-col items-center justify-center py-2.5 px-2 rounded-lg transition-all border-l-4 ${
-                activeModule === 'documentos'
-                  ? 'bg-amber-600 text-white border-amber-400 shadow-lg'
-                  : 'border-transparent text-slate-300 hover:bg-slate-800 hover:text-white'
-              }`}
-            >
-              <Library className="w-5 h-5 mb-1.5" />
-              <span className="text-[10px] font-medium text-center leading-tight">Documentos</span>
-            </button>
-
-            <button
-              onClick={() => {
-                setClientPrefill(null);
-                setIsMobileNavOpen(false);
-                navigateTo('processos');
-              }}
-              className={`flex flex-col items-center justify-center py-2.5 px-2 rounded-lg transition-all border-l-4 ${
-                activeModule === 'processos'
-                  ? 'bg-amber-600 text-white border-amber-400 shadow-lg'
-                  : 'border-transparent text-slate-300 hover:bg-slate-800 hover:text-white'
-              }`}
-            >
-              <Scale className="w-5 h-5 mb-1.5" />
-              <span className="text-[10px] font-medium text-center leading-tight">Processos</span>
-            </button>
-
-            <button
-              onClick={() => {
-                setClientPrefill(null);
-                setIsMobileNavOpen(false);
-                navigateTo('requerimentos');
-              }}
-              className={`flex flex-col items-center justify-center py-2.5 px-2 rounded-lg transition-all border-l-4 ${
-                activeModule === 'requerimentos'
-                  ? 'bg-amber-600 text-white border-amber-400 shadow-lg'
-                  : 'border-transparent text-slate-300 hover:bg-slate-800 hover:text-white'
-              }`}
-            >
-              <Briefcase className="w-5 h-5 mb-1.5" />
-              <span className="text-[10px] font-medium text-center leading-tight">Requerimentos</span>
-            </button>
-
-            <button
-              onClick={() => {
-                setClientPrefill(null);
-                setIsMobileNavOpen(false);
-                navigateTo('prazos');
-              }}
-              className={`flex flex-col items-center justify-center py-2.5 px-2 rounded-lg transition-all border-l-4 ${
-                activeModule === 'prazos'
-                  ? 'bg-amber-600 text-white border-amber-400 shadow-lg'
-                  : 'border-transparent text-slate-300 hover:bg-slate-800 hover:text-white'
-              }`}
-            >
-              <AlarmClock className="w-5 h-5 mb-1.5" />
-              <span className="text-[10px] font-medium text-center leading-tight">Prazos</span>
-            </button>
-
-            <button
-              onClick={() => {
-                setClientPrefill(null);
-                setIsMobileNavOpen(false);
-                navigateTo('intimacoes');
-              }}
-              className={`flex flex-col items-center justify-center py-2.5 px-2 rounded-lg transition-all border-l-4 ${
-                activeModule === 'intimacoes'
-                  ? 'bg-amber-600 text-white border-amber-400 shadow-lg'
-                  : 'border-transparent text-slate-300 hover:bg-slate-800 hover:text-white'
-              }`}
-            >
-              <Bell className="w-5 h-5 mb-1.5" />
-              <span className="text-[10px] font-medium text-center leading-tight">Intimações</span>
-            </button>
-
-            <button
-              onClick={() => {
-                setClientPrefill(null);
-                setIsMobileNavOpen(false);
-                navigateTo('financeiro');
-              }}
-              className={`flex flex-col items-center justify-center py-2.5 px-2 rounded-lg transition-all border-l-4 ${
-                activeModule === 'financeiro'
-                  ? 'bg-amber-600 text-white border-amber-400 shadow-lg'
-                  : 'border-transparent text-slate-300 hover:bg-slate-800 hover:text-white'
-              }`}
-            >
-              <PiggyBank className="w-5 h-5 mb-1.5" />
-              <span className="text-[10px] font-medium text-center leading-tight">Financeiro</span>
-            </button>
-
-            <button
-              onClick={() => {
-                setClientPrefill(null);
-                setIsMobileNavOpen(false);
-                navigateTo('agenda');
-              }}
-              className={`flex flex-col items-center justify-center py-2.5 px-2 rounded-lg transition-all border-l-4 ${
-                activeModule === 'agenda'
-                  ? 'bg-amber-600 text-white border-amber-400 shadow-lg'
-                  : 'border-transparent text-slate-300 hover:bg-slate-800 hover:text-white'
-              }`}
-            >
-              <Calendar className="w-5 h-5 mb-1.5" />
-              <span className="text-[10px] font-medium text-center leading-tight">Agenda</span>
-            </button>
-
-          </nav>
-
-          {/* Indicador de mais itens */}
-          <div className="flex items-center justify-center py-1 border-t border-slate-800/50">
-            <div className="text-slate-500 text-xs">⋮</div>
-          </div>
-
-          {/* Perfil */}
-          <div className="border-t border-slate-800 py-2 space-y-1">
-            <button
-              onClick={() => setIsProfileModalOpen(true)}
-              className="flex flex-col items-center justify-center py-2.5 px-2 w-full transition-all hover:bg-slate-800 text-slate-300 hover:text-white rounded-lg"
-            >
-              <UserCog className="w-5 h-5 mb-1.5" />
-              <span className="text-[10px] font-medium text-center leading-tight">Perfil</span>
-            </button>
+        {/* Logo */}
+        <div className="flex items-center justify-center py-5 border-b border-slate-800">
+          <div className="bg-amber-500 p-2.5 rounded-xl">
+            <Scale className="w-6 h-6 text-white" />
           </div>
         </div>
+
+        {/* Navigation */}
+        <nav className="flex-1 py-3 px-1.5 flex flex-col gap-0.5 overflow-y-auto scrollbar-hide">
+          <button
+            onClick={() => { setClientPrefill(null); setIsMobileNavOpen(false); navigateTo('dashboard'); }}
+            className={`relative flex flex-col items-center py-2.5 px-1 rounded-lg transition-colors ${
+              activeModule === 'dashboard' ? 'text-amber-500' : 'text-slate-400 hover:text-white hover:bg-slate-800/50'
+            }`}
+          >
+            {activeModule === 'dashboard' && <div className="absolute left-0 top-1/2 -translate-y-1/2 w-0.5 h-6 bg-amber-500 rounded-r" />}
+            <Layers className="w-5 h-5" />
+            <span className="text-[9px] mt-1">Dashboard</span>
+          </button>
+
+          <button
+            onClick={() => { setClientPrefill(null); setIsMobileNavOpen(false); navigateTo('leads'); }}
+            className={`relative flex flex-col items-center py-2.5 px-1 rounded-lg transition-colors ${
+              activeModule === 'leads' ? 'text-amber-500' : 'text-slate-400 hover:text-white hover:bg-slate-800/50'
+            }`}
+          >
+            {activeModule === 'leads' && <div className="absolute left-0 top-1/2 -translate-y-1/2 w-0.5 h-6 bg-amber-500 rounded-r" />}
+            <Target className="w-5 h-5" />
+            <span className="text-[9px] mt-1">Leads</span>
+          </button>
+
+          <button
+            onClick={() => { setClientPrefill(null); setIsMobileNavOpen(false); navigateTo('clientes'); }}
+            className={`relative flex flex-col items-center py-2.5 px-1 rounded-lg transition-colors ${
+              activeModule === 'clientes' ? 'text-amber-500' : 'text-slate-400 hover:text-white hover:bg-slate-800/50'
+            }`}
+          >
+            {activeModule === 'clientes' && <div className="absolute left-0 top-1/2 -translate-y-1/2 w-0.5 h-6 bg-amber-500 rounded-r" />}
+            <Users className="w-5 h-5" />
+            <span className="text-[9px] mt-1">Clientes</span>
+          </button>
+
+          <button
+            onClick={() => { setClientPrefill(null); setIsMobileNavOpen(false); navigateTo('documentos'); }}
+            className={`relative flex flex-col items-center py-2.5 px-1 rounded-lg transition-colors ${
+              activeModule === 'documentos' ? 'text-amber-500' : 'text-slate-400 hover:text-white hover:bg-slate-800/50'
+            }`}
+          >
+            {activeModule === 'documentos' && <div className="absolute left-0 top-1/2 -translate-y-1/2 w-0.5 h-6 bg-amber-500 rounded-r" />}
+            <Library className="w-5 h-5" />
+            <span className="text-[9px] mt-1">Documentos</span>
+          </button>
+
+          <button
+            onClick={() => { setClientPrefill(null); setIsMobileNavOpen(false); navigateTo('processos'); }}
+            className={`relative flex flex-col items-center py-2.5 px-1 rounded-lg transition-colors ${
+              activeModule === 'processos' ? 'text-amber-500' : 'text-slate-400 hover:text-white hover:bg-slate-800/50'
+            }`}
+          >
+            {activeModule === 'processos' && <div className="absolute left-0 top-1/2 -translate-y-1/2 w-0.5 h-6 bg-amber-500 rounded-r" />}
+            <Scale className="w-5 h-5" />
+            <span className="text-[9px] mt-1">Processos</span>
+          </button>
+
+          <button
+            onClick={() => { setClientPrefill(null); setIsMobileNavOpen(false); navigateTo('requerimentos'); }}
+            className={`relative flex flex-col items-center py-2.5 px-1 rounded-lg transition-colors ${
+              activeModule === 'requerimentos' ? 'text-amber-500' : 'text-slate-400 hover:text-white hover:bg-slate-800/50'
+            }`}
+          >
+            {activeModule === 'requerimentos' && <div className="absolute left-0 top-1/2 -translate-y-1/2 w-0.5 h-6 bg-amber-500 rounded-r" />}
+            <Briefcase className="w-5 h-5" />
+            <span className="text-[9px] mt-1">Requerimentos</span>
+          </button>
+
+          <button
+            onClick={() => { setClientPrefill(null); setIsMobileNavOpen(false); navigateTo('prazos'); }}
+            className={`relative flex flex-col items-center py-2.5 px-1 rounded-lg transition-colors ${
+              activeModule === 'prazos' ? 'text-amber-500' : 'text-slate-400 hover:text-white hover:bg-slate-800/50'
+            }`}
+          >
+            {activeModule === 'prazos' && <div className="absolute left-0 top-1/2 -translate-y-1/2 w-0.5 h-6 bg-amber-500 rounded-r" />}
+            <AlarmClock className="w-5 h-5" />
+            <span className="text-[9px] mt-1">Prazos</span>
+          </button>
+
+          <button
+            onClick={() => { setClientPrefill(null); setIsMobileNavOpen(false); navigateTo('intimacoes'); }}
+            className={`relative flex flex-col items-center py-2.5 px-1 rounded-lg transition-colors ${
+              activeModule === 'intimacoes' ? 'text-amber-500' : 'text-slate-400 hover:text-white hover:bg-slate-800/50'
+            }`}
+          >
+            {activeModule === 'intimacoes' && <div className="absolute left-0 top-1/2 -translate-y-1/2 w-0.5 h-6 bg-amber-500 rounded-r" />}
+            <Bell className="w-5 h-5" />
+            <span className="text-[9px] mt-1">Intimações</span>
+          </button>
+
+          <button
+            onClick={() => { setClientPrefill(null); setIsMobileNavOpen(false); navigateTo('financeiro'); }}
+            className={`relative flex flex-col items-center py-2.5 px-1 rounded-lg transition-colors ${
+              activeModule === 'financeiro' ? 'text-amber-500' : 'text-slate-400 hover:text-white hover:bg-slate-800/50'
+            }`}
+          >
+            {activeModule === 'financeiro' && <div className="absolute left-0 top-1/2 -translate-y-1/2 w-0.5 h-6 bg-amber-500 rounded-r" />}
+            <PiggyBank className="w-5 h-5" />
+            <span className="text-[9px] mt-1">Financeiro</span>
+          </button>
+
+          <button
+            onClick={() => { setClientPrefill(null); setIsMobileNavOpen(false); navigateTo('agenda'); }}
+            className={`relative flex flex-col items-center py-2.5 px-1 rounded-lg transition-colors ${
+              activeModule === 'agenda' ? 'text-amber-500' : 'text-slate-400 hover:text-white hover:bg-slate-800/50'
+            }`}
+          >
+            {activeModule === 'agenda' && <div className="absolute left-0 top-1/2 -translate-y-1/2 w-0.5 h-6 bg-amber-500 rounded-r" />}
+            <Calendar className="w-5 h-5" />
+            <span className="text-[9px] mt-1">Agenda</span>
+          </button>
+
+          <div className="my-2 mx-2 h-px bg-slate-800" />
+
+          <button
+            onClick={() => { setIsMobileNavOpen(false); setIsProfileModalOpen(true); }}
+            className="flex flex-col items-center py-2.5 px-1 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800/50 transition-colors"
+          >
+            <UserCog className="w-5 h-5" />
+            <span className="text-[9px] mt-1">Perfil</span>
+          </button>
+        </nav>
       </aside>
 
       {/* Main Content Area */}

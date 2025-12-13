@@ -415,6 +415,7 @@ export default function ProfileModal({
   return (
     <div className="fixed inset-0 bg-black/40 backdrop-blur-md flex items-center justify-center z-50 p-4 animate-in fade-in duration-300">
       <div className="bg-white rounded-[2rem] shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-hidden flex flex-col animate-in zoom-in-95 duration-300 ring-1 ring-black/5">
+        <div className="h-2 w-full bg-orange-500" />
         {/* Header Minimalista */}
         <div className="relative px-8 pt-8 pb-4 flex-shrink-0">
           <button

@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import FullCalendar from '@fullcalendar/react';
 import dayGridPlugin from '@fullcalendar/daygrid';
 import timeGridPlugin from '@fullcalendar/timegrid';
@@ -6,7 +7,7 @@ import interactionPlugin from '@fullcalendar/interaction';
 import listPlugin from '@fullcalendar/list';
 import ptLocale from '@fullcalendar/core/locales/pt-br';
 import type { EventContentArg, EventInput } from '@fullcalendar/core';
-import { Loader2, Calendar as CalendarIcon, X } from 'lucide-react';
+import { Loader2, Calendar as CalendarIcon, X, Filter, FileSpreadsheet, FileText, Plus } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { deadlineService } from '../services/deadline.service';
 import { processService } from '../services/process.service';
@@ -1296,7 +1297,7 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({
   }
 
   return (
-    <div className="calendar-page">
+    <div className="calendar-page space-y-0">
       {feedback && (
         <div
           className={`fixed bottom-6 right-6 z-[9999] max-w-sm rounded-xl border px-4 py-3 shadow-lg transition transform ${
@@ -1309,192 +1310,188 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({
         </div>
       )}
 
-      {/* Header Premium Full Width */}
-      <div className="relative -mx-3 sm:-mx-4 lg:-mx-6 xl:-mx-8 bg-gradient-to-r from-slate-900 via-slate-800 to-slate-900 shadow-xl">
-        <div className="absolute inset-0 bg-gradient-to-r from-blue-600/10 via-transparent to-purple-600/10" />
-
-        <div className="relative px-3 sm:px-6 lg:px-8 py-3 sm:py-4">
-          {/* Tudo em uma única linha */}
-          <div className="flex items-center justify-between gap-2 overflow-x-auto">
-            {/* Esquerda: Título + Navegação + Mês */}
-            <div className="flex items-center gap-2 flex-shrink-0">
-              <div className="flex items-center gap-2">
-                <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-blue-500 to-blue-600 flex items-center justify-center shadow-lg">
-                  <CalendarIcon className="w-4 h-4 text-white" />
-                </div>
-                <h1 className="text-base font-bold text-white">Agenda</h1>
-              </div>
-              
-              <div className="flex items-center gap-1 bg-white/10 rounded-xl p-1">
-                <button
-                  type="button"
-                  onClick={() => calendarRef.current?.getApi().prev()}
-                  className="flex h-7 w-7 items-center justify-center rounded-lg bg-white/20 text-white font-bold hover:bg-white/30 transition"
-                >
-                  ‹
-                </button>
-                <button
-                  type="button"
-                  onClick={() => calendarRef.current?.getApi().today()}
-                  className="px-2 py-1 text-xs font-bold text-white rounded-lg bg-white/20 hover:bg-white/30 transition"
-                >
-                  Hoje
-                </button>
-                <button
-                  type="button"
-                  onClick={() => calendarRef.current?.getApi().next()}
-                  className="flex h-7 w-7 items-center justify-center rounded-lg bg-white/20 text-white font-bold hover:bg-white/30 transition"
-                >
-                  ›
-                </button>
-              </div>
-
-              <div className="px-3 py-1.5 bg-white/20 rounded-xl">
-                <span className="text-xs font-bold text-white capitalize whitespace-nowrap">{currentMonthName}</span>
-              </div>
-            </div>
-
-            {/* Centro: Views */}
-            <div className="hidden md:flex items-center gap-1 bg-white/10 rounded-xl p-1">
-              {([
-                { label: 'Mês', view: 'dayGridMonth' },
-                { label: 'Semana', view: 'timeGridWeek' },
-                { label: 'Dia', view: 'timeGridDay' },
-              ] as const).map(({ label, view }) => {
-                const isActive = calendarView === view;
-                return (
-                  <button
-                    key={view}
-                    type="button"
-                    onClick={() => handleChangeView(view)}
-                    className={`px-2 py-1 rounded-lg transition text-xs font-semibold ${
-                      isActive ? 'bg-white text-slate-900 shadow-lg' : 'text-white hover:bg-white/20'
-                    }`}
-                  >
-                    {label}
-                  </button>
-                );
-              })}
-            </div>
-
-            {/* Direita: Ações */}
-            <div className="flex items-center gap-1 flex-shrink-0">
+      {/* Barra de Controles - única linha (com scroll horizontal no mobile) */}
+      <div className="bg-white border border-slate-200 rounded-t-xl px-2 py-2 sm:p-4 shadow-sm">
+        <div className="flex items-center gap-2 overflow-x-auto no-scrollbar whitespace-nowrap">
+          {/* Navegação */}
+          <div className="flex items-center gap-1">
+            <div className="flex bg-slate-100 rounded-lg p-0.5 sm:p-1">
               <button
                 type="button"
-                onClick={() => openEventForm()}
-                className="px-3 py-1.5 bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-500 hover:to-blue-600 text-white rounded-xl font-semibold text-xs transition shadow-lg"
+                onClick={() => calendarRef.current?.getApi().prev()}
+                className="p-1 hover:bg-white rounded shadow-sm text-slate-600 transition"
+                aria-label="Anterior"
               >
-                + Novo
+                <span className="text-base sm:text-lg font-bold">‹</span>
               </button>
               <button
                 type="button"
-                onClick={() => setLegendExpanded((prev) => !prev)}
-                className="px-3 py-1.5 bg-white/10 hover:bg-white/20 text-white rounded-xl font-semibold text-xs transition border border-white/30"
+                onClick={() => calendarRef.current?.getApi().today()}
+                className="px-2 sm:px-3 text-xs sm:text-sm font-medium text-slate-700"
               >
-                Filtros
+                Hoje
               </button>
-              <div className="hidden lg:flex items-center gap-1">
-                <button
-                  type="button"
-                  onClick={() => handleOpenExportModal('excel')}
-                  className="px-2 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-semibold text-xs transition shadow-lg"
-                >
-                  Excel
-                </button>
-                <button
-                  type="button"
-                  onClick={() => handleOpenExportModal('pdf')}
-                  className="px-2 py-1.5 bg-rose-600 hover:bg-rose-700 text-white rounded-xl font-semibold text-xs transition shadow-lg"
-                >
-                  PDF
-                </button>
-              </div>
+              <button
+                type="button"
+                onClick={() => calendarRef.current?.getApi().next()}
+                className="p-1 hover:bg-white rounded shadow-sm text-slate-600 transition"
+                aria-label="Próximo"
+              >
+                <span className="text-base sm:text-lg font-bold">›</span>
+              </button>
             </div>
+            <h2 className="text-sm sm:text-lg font-bold text-slate-800 capitalize">{currentMonthName}</h2>
           </div>
 
-          {/* Filtros e Legenda */}
-          {legendExpanded && (
-            <div className="border-t border-white/20 pt-4 mt-4">
-            <div className="bg-white/10 rounded-xl p-4">
-              <h4 className="text-xs sm:text-sm font-bold text-white mb-3">Filtrar por Tipo</h4>
-              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2 sm:gap-3">
-                <label className="flex items-center gap-2 cursor-pointer group">
-                  <input
-                    type="checkbox"
-                    checked={viewFilters.deadline}
-                    onChange={() => setViewFilters((prev) => ({ ...prev, deadline: !prev.deadline }))}
-                    className="w-4 h-4 rounded border-2 border-white/30 text-blue-600 focus:ring-2 focus:ring-blue-500"
-                  />
-                  <span className="calendar-legend-chip calendar-legend-chip--deadline group-hover:scale-105 transition-transform">
-                    Prazos
-                  </span>
-                </label>
-                <label className="flex items-center gap-2 cursor-pointer group">
-                  <input
-                    type="checkbox"
-                    checked={viewFilters.hearing}
-                    onChange={() => setViewFilters((prev) => ({ ...prev, hearing: !prev.hearing }))}
-                    className="w-4 h-4 rounded border-2 border-white/30 text-blue-600 focus:ring-2 focus:ring-blue-500"
-                  />
-                  <span className="calendar-legend-chip calendar-legend-chip--hearing group-hover:scale-105 transition-transform">
-                    Audiências
-                  </span>
-                </label>
-                <label className="flex items-center gap-2 cursor-pointer group">
-                  <input
-                    type="checkbox"
-                    checked={viewFilters.requirement}
-                    onChange={() => setViewFilters((prev) => ({ ...prev, requirement: !prev.requirement }))}
-                    className="w-4 h-4 rounded border-2 border-white/30 text-blue-600 focus:ring-2 focus:ring-blue-500"
-                  />
-                  <span className="calendar-legend-chip calendar-legend-chip--requirement group-hover:scale-105 transition-transform">
-                    Exigências
-                  </span>
-                </label>
-                <label className="flex items-center gap-2 cursor-pointer group">
-                  <input
-                    type="checkbox"
-                    checked={viewFilters.payment}
-                    onChange={() => setViewFilters((prev) => ({ ...prev, payment: !prev.payment }))}
-                    className="w-4 h-4 rounded border-2 border-white/30 text-blue-600 focus:ring-2 focus:ring-blue-500"
-                  />
-                  <span className="calendar-legend-chip calendar-legend-chip--payment group-hover:scale-105 transition-transform">
-                    Recebimentos
-                  </span>
-                </label>
-                <label className="flex items-center gap-2 cursor-pointer group">
-                  <input
-                    type="checkbox"
-                    checked={viewFilters.pericia}
-                    onChange={() => setViewFilters((prev) => ({ ...prev, pericia: !prev.pericia }))}
-                    className="w-4 h-4 rounded border-2 border-white/30 text-blue-600 focus:ring-2 focus:ring-blue-500"
-                  />
-                  <span className="calendar-legend-chip calendar-legend-chip--pericia group-hover:scale-105 transition-transform">
-                    Perícias
-                  </span>
-                </label>
-                <label className="flex items-center gap-2 cursor-pointer group">
-                  <input
-                    type="checkbox"
-                    checked={viewFilters.meeting}
-                    onChange={() => setViewFilters((prev) => ({ ...prev, meeting: !prev.meeting }))}
-                    className="w-4 h-4 rounded border-2 border-white/30 text-blue-600 focus:ring-2 focus:ring-blue-500"
-                  />
-                  <span className="calendar-legend-chip calendar-legend-chip--meeting group-hover:scale-105 transition-transform">
-                    Reuniões
-                  </span>
-                </label>
-              </div>
-            </div>
-            </div>
-          )}
+          <div className="h-8 w-px bg-slate-200 mx-1" />
+
+          {/* Views */}
+          <div className="flex bg-slate-100 p-0.5 sm:p-1 rounded-lg">
+            {([
+              { label: 'Mês', shortLabel: 'M', view: 'dayGridMonth' },
+              { label: 'Semana', shortLabel: 'S', view: 'timeGridWeek' },
+              { label: 'Dia', shortLabel: 'D', view: 'timeGridDay' },
+            ] as const).map(({ label, shortLabel, view }) => {
+              const isActive = calendarView === view;
+              return (
+                <button
+                  key={view}
+                  type="button"
+                  onClick={() => handleChangeView(view)}
+                  className={`px-2 sm:px-4 py-1 sm:py-1.5 text-xs sm:text-sm font-medium rounded-md transition-all ${
+                    isActive
+                      ? 'bg-white text-blue-600 shadow'
+                      : 'text-slate-500 hover:text-slate-800'
+                  }`}
+                  aria-label={label}
+                >
+                  <span className="hidden sm:inline">{label}</span>
+                  <span className="sm:hidden">{shortLabel}</span>
+                </button>
+              );
+            })}
+          </div>
+
+          <div className="h-8 w-px bg-slate-200 mx-1" />
+
+          {/* Ações */}
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setLegendExpanded((prev) => !prev)}
+              className="inline-flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-slate-600 hover:bg-slate-100 border border-slate-200 rounded-lg transition-colors"
+              title="Filtros"
+            >
+              <Filter className="w-4 h-4" />
+              <span className="hidden sm:inline">Filtros</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => handleOpenExportModal('excel')}
+              className="inline-flex items-center justify-center w-9 h-9 text-emerald-600 hover:bg-emerald-50 rounded-lg border border-slate-200 transition-colors"
+              title="Exportar Excel"
+            >
+              <FileSpreadsheet className="w-4 h-4" />
+            </button>
+            <button
+              type="button"
+              onClick={() => handleOpenExportModal('pdf')}
+              className="inline-flex items-center justify-center w-9 h-9 text-red-600 hover:bg-red-50 rounded-lg border border-slate-200 transition-colors"
+              title="Exportar PDF"
+            >
+              <FileText className="w-4 h-4" />
+            </button>
+            <button
+              type="button"
+              onClick={() => openEventForm()}
+              className="inline-flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-lg shadow-sm transition-colors"
+            >
+              <Plus className="w-4 h-4" />
+              <span className="hidden sm:inline">Novo</span>
+            </button>
+          </div>
         </div>
       </div>
 
-      {/* Calendário com recuo */}
-      <div className="relative bg-white mt-4 sm:mt-6 rounded-t-2xl sm:rounded-t-3xl shadow-2xl">
-          <div className="calendar-container px-2 sm:px-4 md:px-6 py-4 sm:py-6 md:py-8">
-            <FullCalendar
+      {/* Filtros Expansíveis */}
+      {legendExpanded && (
+        <div className="bg-slate-50 border-x border-slate-200 p-2 sm:p-4">
+          <h4 className="text-[10px] sm:text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2 sm:mb-3">Filtrar por Tipo</h4>
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2 sm:gap-3">
+            <label className="flex items-center gap-1.5 sm:gap-2 cursor-pointer group">
+              <input
+                type="checkbox"
+                checked={viewFilters.deadline}
+                onChange={() => setViewFilters((prev) => ({ ...prev, deadline: !prev.deadline }))}
+                className="w-3.5 h-3.5 sm:w-4 sm:h-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
+              />
+              <span className="text-xs sm:text-sm font-medium text-indigo-700 bg-indigo-100 px-1.5 sm:px-2 py-0.5 sm:py-1 rounded border-l-2 sm:border-l-4 border-indigo-500">
+                Prazos
+              </span>
+            </label>
+            <label className="flex items-center gap-1.5 sm:gap-2 cursor-pointer group">
+              <input
+                type="checkbox"
+                checked={viewFilters.hearing}
+                onChange={() => setViewFilters((prev) => ({ ...prev, hearing: !prev.hearing }))}
+                className="w-3.5 h-3.5 sm:w-4 sm:h-4 rounded border-slate-300 text-red-600 focus:ring-red-500"
+              />
+              <span className="text-xs sm:text-sm font-medium text-red-700 bg-red-100 px-1.5 sm:px-2 py-0.5 sm:py-1 rounded border-l-2 sm:border-l-4 border-red-500">
+                Audiências
+              </span>
+            </label>
+            <label className="flex items-center gap-1.5 sm:gap-2 cursor-pointer group">
+              <input
+                type="checkbox"
+                checked={viewFilters.requirement}
+                onChange={() => setViewFilters((prev) => ({ ...prev, requirement: !prev.requirement }))}
+                className="w-3.5 h-3.5 sm:w-4 sm:h-4 rounded border-slate-300 text-orange-600 focus:ring-orange-500"
+              />
+              <span className="text-xs sm:text-sm font-medium text-orange-700 bg-orange-100 px-1.5 sm:px-2 py-0.5 sm:py-1 rounded border-l-2 sm:border-l-4 border-orange-500">
+                Exigências
+              </span>
+            </label>
+            <label className="flex items-center gap-1.5 sm:gap-2 cursor-pointer group">
+              <input
+                type="checkbox"
+                checked={viewFilters.payment}
+                onChange={() => setViewFilters((prev) => ({ ...prev, payment: !prev.payment }))}
+                className="w-3.5 h-3.5 sm:w-4 sm:h-4 rounded border-slate-300 text-sky-600 focus:ring-sky-500"
+              />
+              <span className="text-xs sm:text-sm font-medium text-sky-700 bg-sky-100 px-1.5 sm:px-2 py-0.5 sm:py-1 rounded border-l-2 sm:border-l-4 border-sky-500">
+                Recebimentos
+              </span>
+            </label>
+            <label className="flex items-center gap-1.5 sm:gap-2 cursor-pointer group">
+              <input
+                type="checkbox"
+                checked={viewFilters.pericia}
+                onChange={() => setViewFilters((prev) => ({ ...prev, pericia: !prev.pericia }))}
+                className="w-3.5 h-3.5 sm:w-4 sm:h-4 rounded border-slate-300 text-purple-600 focus:ring-purple-500"
+              />
+              <span className="text-xs sm:text-sm font-medium text-purple-700 bg-purple-100 px-1.5 sm:px-2 py-0.5 sm:py-1 rounded border-l-2 sm:border-l-4 border-purple-500">
+                Perícias
+              </span>
+            </label>
+            <label className="flex items-center gap-1.5 sm:gap-2 cursor-pointer group">
+              <input
+                type="checkbox"
+                checked={viewFilters.meeting}
+                onChange={() => setViewFilters((prev) => ({ ...prev, meeting: !prev.meeting }))}
+                className="w-3.5 h-3.5 sm:w-4 sm:h-4 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500"
+              />
+              <span className="text-xs sm:text-sm font-medium text-emerald-700 bg-emerald-100 px-1.5 sm:px-2 py-0.5 sm:py-1 rounded border-l-2 sm:border-l-4 border-emerald-500">
+                Reuniões
+              </span>
+            </label>
+          </div>
+        </div>
+      )}
+
+      {/* Calendário */}
+      <div className="bg-white border border-t-0 border-slate-200 rounded-b-xl shadow-sm overflow-hidden">
+        <div className="calendar-container">
+          <FullCalendar
               ref={calendarRef}
               plugins={[dayGridPlugin, timeGridPlugin, interactionPlugin, listPlugin]}
               initialView="dayGridMonth"
@@ -1552,11 +1549,11 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({
       {/* Botão Flutuante para Novo Compromisso */}
       <button
         onClick={() => openEventForm()}
-        className="fixed bottom-8 right-8 w-16 h-16 bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-500 hover:to-blue-600 text-white rounded-full shadow-2xl hover:shadow-3xl transition-all duration-300 hover:scale-110 z-40 flex items-center justify-center group"
+        className="fixed bottom-4 right-4 sm:bottom-8 sm:right-8 w-12 h-12 sm:w-16 sm:h-16 bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-500 hover:to-blue-600 text-white rounded-full shadow-2xl hover:shadow-3xl transition-all duration-300 hover:scale-110 z-40 flex items-center justify-center group"
         title="Criar novo compromisso"
       >
-        <CalendarIcon className="w-6 h-6 group-hover:scale-110 transition-transform" />
-        <div className="absolute -top-12 right-0 bg-slate-900 text-white text-xs px-3 py-1 rounded-lg opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap">
+        <CalendarIcon className="w-5 h-5 sm:w-6 sm:h-6 group-hover:scale-110 transition-transform" />
+        <div className="absolute -top-10 sm:-top-12 right-0 bg-slate-900 text-white text-[10px] sm:text-xs px-2 sm:px-3 py-1 rounded-lg opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap hidden sm:block">
           Novo Compromisso
         </div>
       </button>
@@ -1564,32 +1561,35 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({
       {/* Modal de Detalhes do Evento */}
       {selectedEvent && (
         <div
-          className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center z-50 p-4"
+          className="fixed inset-0 z-[70] flex items-center justify-center px-3 sm:px-6 py-4"
           onClick={() => setSelectedEvent(null)}
         >
+          <div className="absolute inset-0 bg-slate-900/70 backdrop-blur-sm" aria-hidden="true" />
           <div
-            className="bg-white dark:bg-zinc-900 rounded-2xl shadow-2xl dark:shadow-black/50 max-w-lg w-full overflow-hidden border border-zinc-200 dark:border-zinc-700/50"
+            className="relative w-full max-w-lg bg-white dark:bg-zinc-900 rounded-2xl shadow-2xl ring-1 ring-black/5 flex flex-col overflow-hidden"
             onClick={(e) => e.stopPropagation()}
           >
-            <div className="bg-gradient-to-r from-slate-50 to-white dark:from-zinc-800 dark:to-zinc-900 p-6 border-b border-slate-100 dark:border-zinc-700/50">
-              <div className="flex items-start justify-between">
-                <div>
-                  <h3 className="text-xl font-bold text-slate-900 dark:text-white">{selectedEvent.title}</h3>
-                  {selectedEventModuleLabel && (
-                    <span className="inline-flex items-center gap-1 mt-2 px-3 py-1 rounded-full bg-blue-100 dark:bg-blue-900/50 text-blue-700 dark:text-blue-300 text-xs font-semibold">
-                      {selectedEventModuleLabel}
-                    </span>
-                  )}
-                </div>
-                <button
-                  onClick={() => setSelectedEvent(null)}
-                  className="text-zinc-400 hover:text-zinc-600 dark:hover:text-white hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded-full p-2 transition-all"
-                >
-                  <X className="w-5 h-5" />
-                </button>
+            <div className="h-2 w-full bg-orange-500" />
+            <div className="px-5 sm:px-8 py-5 border-b border-slate-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 flex items-start justify-between gap-4">
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400 dark:text-slate-500">Evento</p>
+                <h2 className="text-xl font-semibold text-slate-900 dark:text-white">{selectedEvent.title}</h2>
+                {selectedEventModuleLabel && (
+                  <span className="inline-flex items-center gap-1 mt-2 px-3 py-1 rounded-full bg-orange-100 dark:bg-orange-900/30 text-orange-700 dark:text-orange-300 text-xs font-semibold">
+                    {selectedEventModuleLabel}
+                  </span>
+                )}
               </div>
+              <button
+                type="button"
+                onClick={() => setSelectedEvent(null)}
+                className="p-2 text-slate-400 hover:text-slate-600 dark:text-slate-300 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-white/10 rounded-xl transition"
+                aria-label="Fechar modal"
+              >
+                <X className="w-5 h-5" />
+              </button>
             </div>
-            <div className="p-6 space-y-4 text-sm">
+            <div className="p-6 space-y-4 text-sm bg-white dark:bg-zinc-900">
               <div className="flex items-center gap-2">
                 <span className="font-semibold text-zinc-700 dark:text-zinc-300">Data:</span>
                 <span className="text-zinc-600 dark:text-zinc-400">
@@ -1659,131 +1659,131 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({
               )}
             </div>
 
-            <div className="px-6 pb-6 flex flex-wrap items-center justify-end gap-3">
-              <button
-                onClick={() => setSelectedEvent(null)}
-                className="px-4 py-2 text-sm font-medium text-zinc-600 dark:text-zinc-400 hover:text-zinc-800 dark:hover:text-white transition"
-              >
-                Fechar
-              </button>
-              {showEditButton && (
+            <div className="border-t border-slate-200 dark:border-zinc-800 bg-slate-50 dark:bg-zinc-900 px-5 sm:px-8 py-4">
+              <div className="flex flex-wrap items-center justify-end gap-3">
                 <button
-                  onClick={handleEditSelectedEvent}
-                  className="px-4 py-2 text-sm font-semibold bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition"
+                  type="button"
+                  onClick={() => setSelectedEvent(null)}
+                  className="px-4 py-2 text-sm text-slate-600 dark:text-zinc-400 hover:text-slate-900 dark:hover:text-white transition"
                 >
-                  {editButtonLabel}
+                  Fechar
                 </button>
-              )}
-              {canCreateLinkedEvent && (
-                <button
-                  onClick={() => {
-                    const startDate = selectedEvent.start ? new Date(selectedEvent.start) : new Date();
-                    const validDate = !Number.isNaN(startDate.getTime());
-                    openEventForm({
-                      title: selectedEvent.title,
-                      date: validDate ? formatDateInputValue(startDate) : '',
-                      time: !selectedEvent.allDay && validDate ? formatTimeInputValue(startDate) : '',
-                      type: (selectedEvent.extendedProps.type as EventType) || 'meeting',
-                      description: selectedEvent.extendedProps.description ?? '',
-                      client_id: selectedEvent.extendedProps.data?.client_id ?? '',
-                    });
-                    setSelectedEvent(null);
-                  }}
-                  className="px-4 py-2 text-sm font-semibold bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg transition"
-                >
-                  Criar compromisso
-                </button>
-              )}
-              {selectedEvent.extendedProps.moduleLink && (
-                <button
-                  onClick={() => handleNavigateToModule(
-                    selectedEvent.extendedProps.moduleLink,
-                    selectedEvent.extendedProps.entityId
-                  )}
-                  className="px-4 py-2 text-sm font-semibold bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition"
-                >
-                  Ir para Módulo
-                </button>
-              )}
+                {showEditButton && (
+                  <button
+                    type="button"
+                    onClick={handleEditSelectedEvent}
+                    className="px-4 py-2 bg-amber-500 hover:bg-amber-600 text-white text-sm font-medium rounded-lg transition"
+                  >
+                    {editButtonLabel}
+                  </button>
+                )}
+                {canCreateLinkedEvent && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const startDate = selectedEvent.start ? new Date(selectedEvent.start) : new Date();
+                      const validDate = !Number.isNaN(startDate.getTime());
+                      openEventForm({
+                        title: selectedEvent.title,
+                        date: validDate ? formatDateInputValue(startDate) : '',
+                        time: !selectedEvent.allDay && validDate ? formatTimeInputValue(startDate) : '',
+                        type: (selectedEvent.extendedProps.type as EventType) || 'meeting',
+                        description: selectedEvent.extendedProps.description ?? '',
+                        client_id: selectedEvent.extendedProps.data?.client_id ?? '',
+                      });
+                      setSelectedEvent(null);
+                    }}
+                    className="px-4 py-2 bg-emerald-500 hover:bg-emerald-600 text-white text-sm font-medium rounded-lg transition"
+                  >
+                    Criar compromisso
+                  </button>
+                )}
+                {selectedEvent.extendedProps.moduleLink && (
+                  <button
+                    type="button"
+                    onClick={() => handleNavigateToModule(
+                      selectedEvent.extendedProps.moduleLink,
+                      selectedEvent.extendedProps.entityId
+                    )}
+                    className="px-4 py-2 bg-blue-500 hover:bg-blue-600 text-white text-sm font-medium rounded-lg transition"
+                  >
+                    Ir para Módulo
+                  </button>
+                )}
+              </div>
             </div>
           </div>
         </div>
       )}
 
       {/* Modal de Criação/Edição de Compromisso */}
-      {isCreateModalOpen && (
-        <div
-          className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center z-50 p-4"
-          onClick={handleCloseCreateModal}
-        >
+      {isCreateModalOpen && createPortal(
+        <div className="fixed inset-0 z-[70] flex items-center justify-center px-3 sm:px-6 py-4">
           <div
-            className="bg-white rounded-2xl shadow-2xl max-w-xl w-full max-h-[85vh] flex flex-col"
-            onClick={(e) => e.stopPropagation()}
-          >
-            {/* Header */}
-            <div className="flex items-start justify-between px-6 pt-5 pb-3 border-b border-slate-200">
+            className="absolute inset-0 bg-slate-900/70 backdrop-blur-sm"
+            onClick={handleCloseCreateModal}
+            aria-hidden="true"
+          />
+          <div className="relative w-full max-w-2xl max-h-[92vh] bg-white dark:bg-zinc-900 rounded-2xl shadow-2xl ring-1 ring-black/5 flex flex-col overflow-hidden">
+            <div className="h-2 w-full bg-orange-500" />
+            <div className="px-5 sm:px-8 py-5 border-b border-slate-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 flex items-start justify-between gap-4">
               <div>
-                <h3 className="text-lg font-semibold text-slate-900">
-                  {editingEventId ? 'Editar Compromisso' : 'Novo Compromisso'}
-                </h3>
-                <p className="text-sm text-slate-600 mt-1">
-                  {newEventForm.date
-                    ? new Date(newEventForm.date + 'T00:00:00').toLocaleDateString('pt-BR', {
-                        day: '2-digit',
-                        month: 'long',
-                        year: 'numeric',
-                      })
-                    : 'Selecione uma data'}
+                <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400 dark:text-slate-500">
+                  Formulário
                 </p>
+                <h2 className="text-xl font-semibold text-slate-900 dark:text-white">
+                  {editingEventId ? 'Editar Compromisso' : 'Novo Compromisso'}
+                </h2>
               </div>
               <button
+                type="button"
                 onClick={handleCloseCreateModal}
-                className="text-slate-400 hover:text-slate-600"
+                className="p-2 text-slate-400 hover:text-slate-600 dark:text-slate-300 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-white/10 rounded-xl transition"
+                aria-label="Fechar modal"
               >
                 <X className="w-5 h-5" />
               </button>
             </div>
 
-            {/* Corpo rolável */}
-            <div className="flex-1 overflow-y-auto px-6 py-4 space-y-4">
+            <div className="flex-1 overflow-y-auto bg-white dark:bg-zinc-900 p-4 sm:p-8 space-y-3 sm:space-y-4">
               <div>
-                <label className="text-sm font-medium text-slate-700">Título *</label>
+                <label className="text-xs sm:text-sm font-medium text-slate-700 dark:text-slate-300">Título *</label>
                 <input
                   value={newEventForm.title}
                   onChange={(e) => setNewEventForm({ ...newEventForm, title: e.target.value })}
-                  className="input-field"
+                  className="w-full px-3 sm:px-4 py-2 sm:py-2.5 bg-slate-50 border border-slate-200 rounded-lg sm:rounded-xl text-sm sm:text-base text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
                   placeholder="Ex: Reunião com cliente"
                   autoFocus
                 />
               </div>
 
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-2 gap-2 sm:gap-4">
                 <div>
-                  <label className="text-sm font-medium text-slate-700">Data *</label>
+                  <label className="text-xs sm:text-sm font-medium text-slate-700 dark:text-slate-300">Data *</label>
                   <input
                     type="date"
                     value={newEventForm.date}
                     onChange={(e) => setNewEventForm({ ...newEventForm, date: e.target.value })}
-                    className="input-field"
+                    className="w-full px-2 sm:px-4 py-2 sm:py-2.5 bg-slate-50 border border-slate-200 rounded-lg sm:rounded-xl text-sm sm:text-base text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
                   />
                 </div>
                 <div>
-                  <label className="text-sm font-medium text-slate-700">Horário</label>
+                  <label className="text-xs sm:text-sm font-medium text-slate-700 dark:text-slate-300">Horário</label>
                   <input
                     type="time"
                     value={newEventForm.time}
                     onChange={(e) => setNewEventForm({ ...newEventForm, time: e.target.value })}
-                    className="input-field"
+                    className="w-full px-2 sm:px-4 py-2 sm:py-2.5 bg-slate-50 border border-slate-200 rounded-lg sm:rounded-xl text-sm sm:text-base text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
                   />
                 </div>
               </div>
 
               <div>
-                <label className="text-sm font-medium text-slate-700">Tipo de Compromisso</label>
+                <label className="text-xs sm:text-sm font-medium text-slate-700 dark:text-slate-300">Tipo de Compromisso</label>
                 <select
                   value={newEventForm.type}
                   onChange={(e) => setNewEventForm({ ...newEventForm, type: e.target.value as EventType })}
-                  className="input-field"
+                  className="w-full px-3 sm:px-4 py-2 sm:py-2.5 bg-slate-50 border border-slate-200 rounded-lg sm:rounded-xl text-sm sm:text-base text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
                 >
                   <option value="meeting">Reunião</option>
                   <option value="deadline">Prazo</option>
@@ -1795,7 +1795,7 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({
               </div>
 
               <div>
-                <label className="text-sm font-medium text-slate-700">Cliente (Opcional)</label>
+                <label className="text-xs sm:text-sm font-medium text-slate-700 dark:text-slate-300">Cliente (Opcional)</label>
                 <div className="relative">
                   <input
                     value={clientSearchTerm}
@@ -1804,11 +1804,11 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({
                       setShowClientSuggestions(true);
                     }}
                     onFocus={() => setShowClientSuggestions(true)}
-                    className="input-field"
+                    className="w-full px-3 sm:px-4 py-2 sm:py-2.5 bg-slate-50 border border-slate-200 rounded-lg sm:rounded-xl text-sm sm:text-base text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
                     placeholder="Buscar cliente..."
                   />
                   {showClientSuggestions && clientSearchTerm.length > 0 && (
-                    <div className="absolute z-10 w-full mt-1 bg-white border border-slate-200 rounded-lg shadow-lg max-h-48 overflow-y-auto">
+                    <div className="absolute z-10 w-full mt-1 bg-white border border-slate-200 rounded-lg shadow-lg max-h-40 sm:max-h-48 overflow-y-auto">
                       {clients
                         .filter((c) =>
                           c.full_name.toLowerCase().includes(clientSearchTerm.toLowerCase()) ||
@@ -1819,7 +1819,7 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({
                           <button
                             key={client.id}
                             type="button"
-                            className="w-full text-left px-4 py-2 text-sm hover:bg-slate-50 transition"
+                            className="w-full text-left px-3 sm:px-4 py-2 text-xs sm:text-sm hover:bg-slate-50 transition"
                             onClick={() => {
                               setNewEventForm({ ...newEventForm, client_id: client.id });
                               setClientSearchTerm(client.full_name);
@@ -1827,7 +1827,7 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({
                             }}
                           >
                             <div className="font-semibold text-slate-800">{client.full_name}</div>
-                            <div className="text-xs text-slate-500 flex flex-col">
+                            <div className="text-[10px] sm:text-xs text-slate-500 flex flex-col">
                               <span>{client.cpf_cnpj || 'CPF não informado'}</span>
                               <span>{client.mobile || client.phone || 'Telefone não informado'}</span>
                             </div>
@@ -1837,7 +1837,7 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({
                   )}
                 </div>
                 {linkedClient && (
-                  <div className="mt-3 rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600 flex flex-col gap-1">
+                  <div className="mt-2 sm:mt-3 rounded-lg border border-slate-200 bg-slate-50 px-3 sm:px-4 py-2 sm:py-3 text-xs sm:text-sm text-slate-600 flex flex-col gap-0.5 sm:gap-1">
                     <div className="font-semibold text-slate-800">{linkedClient.full_name}</div>
                     {linkedClient.mobile || linkedClient.phone ? (
                       <span>Telefone: {linkedClient.mobile || linkedClient.phone}</span>
@@ -1850,50 +1850,51 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({
               </div>
 
               <div>
-                <label className="text-sm font-medium text-slate-700">Descrição</label>
+                <label className="text-xs sm:text-sm font-medium text-slate-700 dark:text-slate-300">Descrição</label>
                 <textarea
                   value={newEventForm.description}
                   onChange={(e) => setNewEventForm({ ...newEventForm, description: e.target.value })}
-                  rows={3}
-                  className="input-field"
+                  rows={2}
+                  className="w-full px-3 sm:px-4 py-2 sm:py-2.5 bg-slate-50 border border-slate-200 rounded-lg sm:rounded-xl text-sm sm:text-base text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 resize-none transition-all"
                   placeholder="Detalhes adicionais sobre o compromisso"
                 />
               </div>
             </div>
 
-            {/* Footer */}
-            <div className="px-6 py-4 border-t border-slate-200 flex justify-end gap-3 flex-shrink-0 bg-white">
-              {editingEventId && (
+            <div className="border-t border-slate-200 dark:border-zinc-800 bg-slate-50 dark:bg-zinc-900 px-3 sm:px-6 py-2 sm:py-3">
+              <div className="flex flex-wrap justify-end gap-2 sm:gap-3">
+                {editingEventId && (
+                  <button
+                    type="button"
+                    onClick={handleDeleteEvent}
+                    className="px-3 sm:px-4 py-1.5 sm:py-2 text-xs sm:text-sm font-semibold text-white bg-red-600 hover:bg-red-700 rounded-lg transition disabled:cursor-not-allowed"
+                    disabled={savingEvent}
+                  >
+                    Excluir
+                  </button>
+                )}
                 <button
                   type="button"
-                  onClick={handleDeleteEvent}
-                  className="px-4 py-2 text-sm font-semibold text-white bg-red-600 hover:bg-red-700 rounded-lg transition disabled:cursor-not-allowed"
+                  onClick={handleCloseCreateModal}
+                  className="px-3 sm:px-4 py-1.5 sm:py-2 text-xs sm:text-sm font-medium text-slate-600 hover:text-slate-800 transition"
                   disabled={savingEvent}
                 >
-                  Excluir
+                  Cancelar
                 </button>
-              )}
-              <button
-                type="button"
-                onClick={handleCloseCreateModal}
-                className="px-4 py-2 text-sm font-medium text-slate-600 hover:text-slate-800 transition"
-                disabled={savingEvent}
-              >
-                Cancelar
-              </button>
-              <button
-                type="button"
-                onClick={handleSubmitEvent}
-                className="inline-flex items-center gap-2 px-4 py-2 text-sm font-semibold bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition disabled:opacity-60"
-                disabled={savingEvent}
-              >
-                {savingEvent && <Loader2 className="w-4 h-4 animate-spin" />}
-                {editingEventId ? 'Salvar alterações' : 'Criar Compromisso'}
-              </button>
+                <button
+                  type="button"
+                  onClick={handleSubmitEvent}
+                  className="inline-flex items-center gap-1.5 sm:gap-2 px-3 sm:px-4 py-1.5 sm:py-2 text-xs sm:text-sm font-semibold bg-slate-900 hover:bg-slate-800 text-white rounded-lg transition disabled:opacity-60"
+                  disabled={savingEvent}
+                >
+                  {savingEvent && <Loader2 className="w-3.5 h-3.5 sm:w-4 sm:h-4 animate-spin" />}
+                  {editingEventId ? 'Salvar' : 'Criar'}
+                </button>
+              </div>
             </div>
           </div>
         </div>
-      )}
+      , document.body)}
 
       {/* CSS para FullCalendar */}
       <style>{`
@@ -2006,65 +2007,80 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({
         .calendar-chip {
           display: flex;
           align-items: center;
-          gap: 0.5rem;
-          border-radius: 8px;
-          padding: 0.35rem 0.6rem;
+          gap: 0.35rem;
+          border-radius: 4px;
+          padding: 0.4rem 0.5rem;
           font-size: 0.7rem;
-          font-weight: 600;
-          color: #ffffff;
-          box-shadow: 0 8px 18px -14px rgba(15, 23, 42, 0.8);
+          font-weight: 500;
           width: 100%;
           box-sizing: border-box;
+          border-left: 4px solid;
+          transition: opacity 0.15s;
+        }
+        .calendar-chip:hover {
+          opacity: 0.85;
         }
         .calendar-chip__time {
-          display: inline-flex;
-          align-items: center;
-          justify-content: center;
-          min-width: 1.8rem;
-          padding: 0.2rem 0.3rem;
-          border-radius: 5px;
-          background: rgba(15, 23, 42, 0.2);
-          font-size: 0.62rem;
+          font-size: 0.65rem;
           font-weight: 700;
-          letter-spacing: 0.05em;
+          margin-right: 0.25rem;
         }
         .calendar-chip__title {
           flex: 1;
-          line-height: 1.2;
+          line-height: 1.3;
           white-space: nowrap;
           overflow: hidden;
           text-overflow: ellipsis;
         }
         .calendar-chip--deadline {
-          background: linear-gradient(135deg, #8b5cf6, #7c3aed);
+          background: #e0e7ff;
+          color: #4338ca;
+          border-color: #6366f1;
         }
         .calendar-chip--deadline.calendar-event--priority-urgent {
-          background: linear-gradient(135deg, #7c3aed, #5b21b6);
+          background: #fef2f2;
+          color: #b91c1c;
+          border-color: #ef4444;
         }
         .calendar-chip--deadline.calendar-event--priority-high {
-          background: linear-gradient(135deg, #a855f7, #7c3aed);
+          background: #fef3c7;
+          color: #b45309;
+          border-color: #f59e0b;
         }
         .calendar-chip--deadline.calendar-event--priority-medium {
-          background: linear-gradient(135deg, #c4b5fd, #a855f7);
+          background: #e0e7ff;
+          color: #4338ca;
+          border-color: #6366f1;
         }
         .calendar-chip--deadline.calendar-event--priority-low {
-          background: linear-gradient(135deg, #ddd6fe, #c4b5fd);
-          color: #4c1d95;
+          background: #f1f5f9;
+          color: #475569;
+          border-color: #94a3b8;
         }
         .calendar-chip--hearing {
-          background: linear-gradient(135deg, #f43f5e, #ef4444);
+          background: #fee2e2;
+          color: #b91c1c;
+          border-color: #ef4444;
         }
         .calendar-chip--payment {
-          background: linear-gradient(135deg, #06b6d4, #3b82f6);
+          background: #e0f2fe;
+          color: #0369a1;
+          border-color: #0ea5e9;
         }
         .calendar-chip--pericia {
-          background: linear-gradient(135deg, #a855f7, #7c3aed);
+          background: #f3e8ff;
+          color: #7c3aed;
+          border-color: #a855f7;
         }
         .calendar-chip--meeting {
-          background: linear-gradient(135deg, #34d399, #059669);
+          background: #d1fae5;
+          color: #047857;
+          border-color: #10b981;
         }
         .calendar-chip--requirement {
-          background: linear-gradient(135deg, #f59e0b, #f97316);
+          background: #ffedd5;
+          color: #c2410c;
+          border-color: #f97316;
         }
         .calendar-container .fc-list-event-title {
           font-weight: 600;
@@ -2132,10 +2148,16 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({
 
       {/* Modal de Exportação */}
       {isExportModalOpen && (
-      <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-        <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full p-6 animate-in fade-in zoom-in duration-200">
-          <h3 className="text-2xl font-bold text-slate-900 mb-2">Exportar Agenda</h3>
-          <p className="text-sm text-slate-600 mb-6">Selecione o período que deseja exportar</p>
+      <div className="fixed inset-0 z-[70] flex items-center justify-center px-3 sm:px-6 py-4">
+        <div className="absolute inset-0 bg-slate-900/70 backdrop-blur-sm" onClick={() => setIsExportModalOpen(false)} aria-hidden="true" />
+        <div className="relative w-full max-w-md bg-white dark:bg-zinc-900 rounded-2xl shadow-2xl ring-1 ring-black/5 flex flex-col overflow-hidden">
+          <div className="h-2 w-full bg-orange-500" />
+          <div className="px-5 sm:px-8 py-5 border-b border-slate-200 dark:border-zinc-800 bg-white dark:bg-zinc-900">
+            <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400 dark:text-slate-500">Exportação</p>
+            <h2 className="text-xl font-semibold text-slate-900 dark:text-white">Exportar Agenda</h2>
+            <p className="text-sm text-slate-500 dark:text-slate-400 mt-0.5">Selecione o período que deseja exportar</p>
+          </div>
+          <div className="p-6 bg-white dark:bg-zinc-900">
 
           <div className="space-y-4">
             {/* Opções de Período */}
@@ -2171,8 +2193,8 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({
                 onClick={() => setExportPeriod('custom')}
                 className={`w-full px-4 py-2.5 rounded-lg border-2 font-medium text-sm transition-all ${
                   exportPeriod === 'custom'
-                    ? 'border-blue-500 bg-blue-50 text-blue-700'
-                    : 'border-slate-200 text-slate-700 hover:border-slate-300'
+                    ? 'border-orange-500 bg-orange-50 text-orange-700 dark:bg-orange-900/20 dark:text-orange-300 dark:border-orange-600'
+                    : 'border-slate-200 dark:border-zinc-700 text-slate-700 dark:text-slate-300 hover:border-slate-300 dark:hover:border-zinc-600'
                 }`}
               >
                 📆 Período Personalizado
@@ -2181,27 +2203,27 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({
 
             {/* Datas Personalizadas */}
             {exportPeriod === 'custom' && (
-              <div className="grid grid-cols-2 gap-3 p-4 bg-blue-50 rounded-lg border border-blue-200">
+              <div className="grid grid-cols-2 gap-3 p-4 bg-orange-50 dark:bg-orange-900/20 rounded-lg border border-orange-200 dark:border-orange-700">
                 <div>
-                  <label className="block text-xs font-semibold text-blue-900 mb-1.5">
+                  <label className="block text-xs font-semibold text-orange-900 dark:text-orange-300 mb-1.5">
                     Data Início
                   </label>
                   <input
                     type="date"
                     value={exportStartDate}
                     onChange={(e) => setExportStartDate(e.target.value)}
-                    className="w-full px-3 py-2 rounded-lg border-2 border-blue-200 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    className="w-full px-3 py-2 rounded-lg border-2 border-orange-200 dark:border-orange-600 dark:bg-zinc-800 dark:text-white text-sm focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-transparent"
                   />
                 </div>
                 <div>
-                  <label className="block text-xs font-semibold text-blue-900 mb-1.5">
+                  <label className="block text-xs font-semibold text-orange-900 dark:text-orange-300 mb-1.5">
                     Data Fim
                   </label>
                   <input
                     type="date"
                     value={exportEndDate}
                     onChange={(e) => setExportEndDate(e.target.value)}
-                    className="w-full px-3 py-2 rounded-lg border-2 border-blue-200 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    className="w-full px-3 py-2 rounded-lg border-2 border-orange-200 dark:border-orange-600 dark:bg-zinc-800 dark:text-white text-sm focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-transparent"
                   />
                 </div>
               </div>
@@ -2235,6 +2257,7 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({
                 {exportFormat === 'pdf' ? '📄 Exportar PDF' : '📥 Exportar Excel'}
               </button>
             </div>
+          </div>
           </div>
         </div>
       </div>

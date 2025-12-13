@@ -38,7 +38,7 @@ const ClientModal: React.FC<ClientModalProps> = ({
       <div
         className={`relative w-full ${sizeClassMap[size]} max-h-[92vh] bg-white dark:bg-zinc-900 rounded-2xl shadow-2xl ring-1 ring-black/5 flex flex-col overflow-hidden`}
       >
-        <div className="h-1.5 w-full bg-gradient-to-r from-blue-500 via-indigo-500 to-blue-700" />
+        <div className="h-2 w-full bg-orange-500" />
         <div className="px-5 sm:px-8 py-5 border-b border-slate-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 flex items-start justify-between gap-4">
           <div>
             <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400 dark:text-slate-500">

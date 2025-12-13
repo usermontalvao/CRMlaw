@@ -7,10 +7,42 @@ import type {
   ProcessStatus,
 } from '../types/process.types';
 
+// Cache configuration
+const CACHE_DURATION = 5 * 60 * 1000; // 5 minutes
+
+interface ProcessCache {
+  data: Process[];
+  timestamp: number;
+  filters?: string;
+}
+
 class ProcessService {
   private tableName = 'processes';
+  private cache: ProcessCache | null = null;
+
+  // Invalidate cache
+  invalidateCache(): void {
+    this.cache = null;
+  }
+
+  // Check if cache is valid
+  private isCacheValid(filters?: ProcessFilters): boolean {
+    if (!this.cache) return false;
+    
+    const now = Date.now();
+    const isExpired = now - this.cache.timestamp > CACHE_DURATION;
+    const filtersKey = filters ? JSON.stringify(filters) : '';
+    const sameFilters = this.cache.filters === filtersKey;
+    
+    return !isExpired && sameFilters;
+  }
 
   async listProcesses(filters?: ProcessFilters): Promise<Process[]> {
+    // Check cache first (only for no filters or empty filters)
+    const filtersKey = filters ? JSON.stringify(filters) : '';
+    if (this.isCacheValid(filters)) {
+      return this.cache!.data;
+    }
     let query = supabase
       .from(this.tableName)
       .select('*')
@@ -44,7 +76,16 @@ class ProcessService {
       throw new Error(error.message);
     }
 
-    return data ?? [];
+    const result = data ?? [];
+
+    // Save to cache
+    this.cache = {
+      data: result,
+      timestamp: Date.now(),
+      filters: filtersKey,
+    };
+
+    return result;
   }
 
   async getProcessById(id: string): Promise<Process | null> {
@@ -80,6 +121,9 @@ class ProcessService {
       throw new Error(error.message);
     }
 
+    // Invalidate cache on create
+    this.invalidateCache();
+
     return data;
   }
 
@@ -99,6 +143,9 @@ class ProcessService {
       throw new Error(error.message);
     }
 
+    // Invalidate cache on update
+    this.invalidateCache();
+
     return data;
   }
 
@@ -115,6 +162,9 @@ class ProcessService {
       throw new Error(error.message);
     }
 
+    // Invalidate cache on status update
+    this.invalidateCache();
+
     return data;
   }
 
@@ -128,6 +178,9 @@ class ProcessService {
       console.error('Erro ao deletar processo:', error);
       throw new Error(error.message);
     }
+
+    // Invalidate cache on delete
+    this.invalidateCache();
   }
 }
 

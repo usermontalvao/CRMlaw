@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import {
   Plus,
   Loader2,
@@ -1332,240 +1333,253 @@ const RequirementsModule: React.FC<RequirementsModuleProps> = ({ forceCreate, en
   const textareaClass = "form-input flex w-full min-w-0 flex-1 resize-none overflow-hidden rounded-lg text-gray-900 focus:outline-0 focus:ring-2 focus:ring-[#2b8cee]/50 border border-gray-300 bg-white min-h-20 placeholder:text-gray-500 px-4 py-3 text-sm font-normal leading-normal";
   const labelClass = "text-gray-900 text-sm font-medium leading-normal pb-1";
 
-  const requirementModal = isModalOpen && (
-    <div className="fixed inset-0 bg-gray-900/40 flex items-center justify-center z-50 p-4">
-      <div className="relative w-full max-w-4xl rounded-xl bg-white shadow-lg">
-        <form onSubmit={handleSubmit} className="flex flex-col p-5 gap-4">
-          {/* Header */}
-          <div className="flex flex-wrap justify-between gap-2">
-            <div className="flex flex-col">
-              <h1 className="text-gray-900 tracking-tight text-xl font-bold leading-tight">
-                {selectedRequirement ? 'Editar Requerimento' : 'Novo Requerimento'}
-              </h1>
-              <p className="text-gray-500 text-xs font-normal">Cadastre os dados do requerimento administrativo.</p>
-            </div>
-            <button 
-              type="button"
-              onClick={handleCloseModal} 
-              className="flex items-center justify-center h-8 w-8 rounded-full text-gray-500 hover:text-gray-800"
-            >
-              <X className="w-5 h-5" />
-            </button>
+  const requirementModal = isModalOpen && createPortal(
+    <div className="fixed inset-0 z-[70] flex items-center justify-center px-3 sm:px-6 py-4">
+      <div
+        className="absolute inset-0 bg-slate-900/70 backdrop-blur-sm"
+        onClick={handleCloseModal}
+        aria-hidden="true"
+      />
+      <div className="relative w-full max-w-4xl max-h-[92vh] bg-white dark:bg-zinc-900 rounded-2xl shadow-2xl ring-1 ring-black/5 flex flex-col overflow-hidden">
+        <div className="h-2 w-full bg-orange-500" />
+        <div className="px-5 sm:px-8 py-5 border-b border-slate-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 flex items-start justify-between gap-4">
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400 dark:text-slate-500">
+              Formulário
+            </p>
+            <h2 className="text-xl font-semibold text-slate-900 dark:text-white">
+              {selectedRequirement ? 'Editar Requerimento' : 'Novo Requerimento'}
+            </h2>
           </div>
+          <button
+            type="button"
+            onClick={handleCloseModal}
+            className="p-2 text-slate-400 hover:text-slate-600 dark:text-slate-300 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-white/10 rounded-xl transition"
+            aria-label="Fechar modal"
+          >
+            <X className="w-5 h-5" />
+          </button>
+        </div>
 
-          {/* Form Fields */}
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-            {/* Protocolo */}
-            <label className="flex flex-col w-full">
-              <p className={labelClass}>Protocolo do INSS *</p>
-              <input
-                value={formData.protocol}
-                onChange={(event) => handleFormChange('protocol', event.target.value)}
-                className={inputClass}
-                placeholder="Digite o protocolo do INSS"
-                required
-              />
-            </label>
+        <div className="flex-1 bg-white dark:bg-zinc-900">
+          <form onSubmit={handleSubmit} className="flex flex-col h-full">
+            <div className="p-4 sm:p-6 md:p-8 space-y-4 sm:space-y-5 flex-1 overflow-y-auto">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+                {/* Protocolo */}
+                <label className="flex flex-col w-full">
+                  <p className={labelClass}>Protocolo do INSS *</p>
+                  <input
+                    value={formData.protocol}
+                    onChange={(event) => handleFormChange('protocol', event.target.value)}
+                    className={inputClass}
+                    placeholder="Digite o protocolo do INSS"
+                    required
+                  />
+                </label>
 
-            {/* Beneficiário */}
-            <label className="flex flex-col w-full">
-              <p className={labelClass}>Beneficiário *</p>
-              <div className="relative">
-                <input
-                  value={beneficiarySearchTerm}
-                  onChange={(event) => {
-                    const value = event.target.value;
-                    setBeneficiarySearchTerm(value);
-                    handleFormChange('beneficiary', value);
-                    if (!value) {
-                      handleFormChange('cpf', '');
-                      handleFormChange('phone', '');
-                    }
-                  }}
-                  onFocus={() => setShowBeneficiarySuggestions(true)}
-                  onBlur={() => setTimeout(() => setShowBeneficiarySuggestions(false), 150)}
-                  className={inputClass}
-                  placeholder="Digite o nome do beneficiário"
-                  required
-                />
-                {clientsLoading && (
-                  <Loader2 className="w-4 h-4 text-[#2b8cee] absolute right-4 top-1/2 -translate-y-1/2 animate-spin" />
-                )}
-                {showBeneficiarySuggestions && (
-                  <div className="absolute mt-2 w-full bg-white border border-gray-200 rounded-lg shadow-lg max-h-60 overflow-y-auto z-10">
-                    {clientsLoading ? (
-                      <div className="px-4 py-3 text-sm text-gray-500">Buscando clientes...</div>
-                    ) : clients.length === 0 ? (
-                      <div className="px-4 py-3 text-sm text-gray-500">Nenhum cliente encontrado.</div>
-                    ) : (
-                      clients.map((client) => (
-                        <button
-                          type="button"
-                          key={client.id}
-                          className="w-full text-left px-4 py-3 text-sm hover:bg-gray-50 transition"
-                          onMouseDown={(event) => event.preventDefault()}
-                          onClick={() => {
-                            handleFormChange('beneficiary', client.full_name);
-                            handleFormChange('client_id', client.id);
-                            setBeneficiarySearchTerm(client.full_name);
-                            if (client.cpf_cnpj) {
-                              handleFormChange('cpf', formatCPF(client.cpf_cnpj));
-                            }
-                            const phoneValue = client.phone || client.mobile || '';
-                            if (phoneValue) {
-                              handleFormChange('phone', phoneValue);
-                            }
-                            setShowBeneficiarySuggestions(false);
-                          }}
-                        >
-                          <div className="font-semibold text-gray-800">{client.full_name}</div>
-                          <div className="text-xs text-gray-500">
-                            {client.cpf_cnpj ? formatCPF(client.cpf_cnpj) : 'CPF não informado'} • {client.email || 'Sem e-mail'}
-                          </div>
-                        </button>
-                      ))
+                {/* Beneficiário */}
+                <label className="flex flex-col w-full">
+                  <p className={labelClass}>Beneficiário *</p>
+                  <div className="relative">
+                    <input
+                      value={beneficiarySearchTerm}
+                      onChange={(event) => {
+                        const value = event.target.value;
+                        setBeneficiarySearchTerm(value);
+                        handleFormChange('beneficiary', value);
+                        if (!value) {
+                          handleFormChange('cpf', '');
+                          handleFormChange('phone', '');
+                        }
+                      }}
+                      onFocus={() => setShowBeneficiarySuggestions(true)}
+                      onBlur={() => setTimeout(() => setShowBeneficiarySuggestions(false), 150)}
+                      className={inputClass}
+                      placeholder="Digite o nome do beneficiário"
+                      required
+                    />
+                    {clientsLoading && (
+                      <Loader2 className="w-4 h-4 text-blue-600 absolute right-4 top-1/2 -translate-y-1/2 animate-spin" />
+                    )}
+                    {showBeneficiarySuggestions && (
+                      <div className="absolute mt-2 w-full bg-white border border-gray-200 rounded-lg shadow-lg max-h-60 overflow-y-auto z-10">
+                        {clientsLoading ? (
+                          <div className="px-4 py-3 text-sm text-gray-500">Buscando clientes...</div>
+                        ) : clients.length === 0 ? (
+                          <div className="px-4 py-3 text-sm text-gray-500">Nenhum cliente encontrado.</div>
+                        ) : (
+                          clients.map((client) => (
+                            <button
+                              type="button"
+                              key={client.id}
+                              className="w-full text-left px-4 py-3 text-sm hover:bg-gray-50 transition"
+                              onMouseDown={(event) => event.preventDefault()}
+                              onClick={() => {
+                                handleFormChange('beneficiary', client.full_name);
+                                handleFormChange('client_id', client.id);
+                                setBeneficiarySearchTerm(client.full_name);
+                                if (client.cpf_cnpj) {
+                                  handleFormChange('cpf', formatCPF(client.cpf_cnpj));
+                                }
+                                const phoneValue = client.phone || client.mobile || '';
+                                if (phoneValue) {
+                                  handleFormChange('phone', phoneValue);
+                                }
+                                setShowBeneficiarySuggestions(false);
+                              }}
+                            >
+                              <div className="font-semibold text-gray-800">{client.full_name}</div>
+                              <div className="text-xs text-gray-500">
+                                {client.cpf_cnpj ? formatCPF(client.cpf_cnpj) : 'CPF não informado'} • {client.email || 'Sem e-mail'}
+                              </div>
+                            </button>
+                          ))
+                        )}
+                      </div>
                     )}
                   </div>
+                </label>
+
+                {/* CPF */}
+                <label className="flex flex-col w-full">
+                  <p className={labelClass}>CPF *</p>
+                  <input
+                    value={formData.cpf}
+                    onChange={(event) => handleFormChange('cpf', event.target.value)}
+                    className={inputClass}
+                    placeholder="000.000.000-00"
+                    maxLength={14}
+                    required
+                  />
+                </label>
+
+                {/* Tipo de Benefício */}
+                <label className="flex flex-col w-full">
+                  <p className={labelClass}>Tipo de Benefício</p>
+                  <select
+                    value={formData.benefit_type}
+                    onChange={(event) => handleFormChange('benefit_type', event.target.value as BenefitType | '')}
+                    className={selectClass}
+                  >
+                    <option value="" disabled>Selecione o tipo de benefício</option>
+                    {BENEFIT_TYPES.map((type) => (
+                      <option key={type.key} value={type.key}>{type.label}</option>
+                    ))}
+                  </select>
+                </label>
+
+                {/* Status */}
+                <label className="flex flex-col w-full">
+                  <p className={labelClass}>Status</p>
+                  <select
+                    value={formData.status}
+                    onChange={(event) => handleFormChange('status', event.target.value as RequirementStatus)}
+                    className={selectClass}
+                  >
+                    {STATUS_OPTIONS.map((status) => (
+                      <option key={status.key} value={status.key}>{status.label}</option>
+                    ))}
+                  </select>
+                </label>
+
+                {/* Data de Entrada */}
+                <label className="flex flex-col w-full">
+                  <p className={labelClass}>Data de Entrada</p>
+                  <input
+                    type="date"
+                    value={formData.entry_date}
+                    onChange={(event) => handleFormChange('entry_date', event.target.value)}
+                    className={inputClass}
+                  />
+                </label>
+
+                {/* Prazo da Exigência (condicional) */}
+                {formData.status === 'em_exigencia' && (
+                  <label className="flex flex-col w-full">
+                    <p className={labelClass}>Prazo da Exigência</p>
+                    <input
+                      type="date"
+                      value={formData.exigency_due_date}
+                      onChange={(event) => handleFormChange('exigency_due_date', event.target.value)}
+                      className={inputClass}
+                    />
+                  </label>
                 )}
+
+                {/* Telefone */}
+                <label className="flex flex-col w-full">
+                  <p className={labelClass}>Telefone</p>
+                  <input
+                    value={formData.phone}
+                    onChange={(event) => handleFormChange('phone', event.target.value)}
+                    className={inputClass}
+                    placeholder="(00) 00000-0000"
+                    maxLength={15}
+                  />
+                </label>
+
+                {/* Senha do INSS */}
+                <label className="flex flex-col w-full">
+                  <p className={labelClass}>Senha do INSS</p>
+                  <input
+                    type="text"
+                    value={formData.inss_password}
+                    onChange={(event) => handleFormChange('inss_password', event.target.value)}
+                    className={inputClass}
+                    placeholder="Digite a senha do INSS"
+                  />
+                </label>
+
+                {/* Observações */}
+                <label className="flex flex-col w-full col-span-1 sm:col-span-2">
+                  <p className={labelClass}>Observações</p>
+                  <textarea
+                    value={formData.observations}
+                    onChange={(event) => handleFormChange('observations', event.target.value)}
+                    className={textareaClass}
+                    placeholder="Digite as observações"
+                  />
+                </label>
+
+                {/* Notas Internas */}
+                <label className="flex flex-col w-full col-span-1 sm:col-span-2">
+                  <p className={labelClass}>Notas Internas</p>
+                  <textarea
+                    value={formData.notes}
+                    onChange={(event) => handleFormChange('notes', event.target.value)}
+                    className={textareaClass}
+                    placeholder="Digite as notas internas"
+                  />
+                </label>
               </div>
-            </label>
+            </div>
+          </form>
+        </div>
 
-            {/* CPF */}
-            <label className="flex flex-col w-full">
-              <p className={labelClass}>CPF *</p>
-              <input
-                value={formData.cpf}
-                onChange={(event) => handleFormChange('cpf', event.target.value)}
-                className={inputClass}
-                placeholder="000.000.000-00"
-                maxLength={14}
-                required
-              />
-            </label>
-
-            {/* Tipo de Benefício */}
-            <label className="flex flex-col w-full">
-              <p className={labelClass}>Tipo de Benefício</p>
-              <select
-                value={formData.benefit_type}
-                onChange={(event) => handleFormChange('benefit_type', event.target.value as BenefitType | '')}
-                className={selectClass}
-              >
-                <option value="" disabled>Selecione o tipo de benefício</option>
-                {BENEFIT_TYPES.map((type) => (
-                  <option key={type.key} value={type.key}>{type.label}</option>
-                ))}
-              </select>
-            </label>
-
-            {/* Status */}
-            <label className="flex flex-col w-full">
-              <p className={labelClass}>Status</p>
-              <select
-                value={formData.status}
-                onChange={(event) => handleFormChange('status', event.target.value as RequirementStatus)}
-                className={selectClass}
-              >
-                {STATUS_OPTIONS.map((status) => (
-                  <option key={status.key} value={status.key}>{status.label}</option>
-                ))}
-              </select>
-            </label>
-
-            {/* Data de Entrada */}
-            <label className="flex flex-col w-full">
-              <p className={labelClass}>Data de Entrada</p>
-              <input
-                type="date"
-                value={formData.entry_date}
-                onChange={(event) => handleFormChange('entry_date', event.target.value)}
-                className={inputClass}
-              />
-            </label>
-
-            {/* Prazo da Exigência (condicional) */}
-            {formData.status === 'em_exigencia' && (
-              <label className="flex flex-col w-full">
-                <p className={labelClass}>Prazo da Exigência</p>
-                <input
-                  type="date"
-                  value={formData.exigency_due_date}
-                  onChange={(event) => handleFormChange('exigency_due_date', event.target.value)}
-                  className={inputClass}
-                />
-              </label>
-            )}
-
-            {/* Telefone */}
-            <label className="flex flex-col w-full">
-              <p className={labelClass}>Telefone</p>
-              <input
-                value={formData.phone}
-                onChange={(event) => handleFormChange('phone', event.target.value)}
-                className={inputClass}
-                placeholder="(00) 00000-0000"
-                maxLength={15}
-              />
-            </label>
-
-            {/* Senha do INSS */}
-            <label className="flex flex-col w-full">
-              <p className={labelClass}>Senha do INSS</p>
-              <input
-                type="text"
-                value={formData.inss_password}
-                onChange={(event) => handleFormChange('inss_password', event.target.value)}
-                className={inputClass}
-                placeholder="Digite a senha do INSS"
-              />
-            </label>
-
-            {/* Observações */}
-            <label className="flex flex-col w-full col-span-2">
-              <p className={labelClass}>Observações</p>
-              <textarea
-                value={formData.observations}
-                onChange={(event) => handleFormChange('observations', event.target.value)}
-                className={textareaClass}
-                placeholder="Digite as observações"
-              />
-            </label>
-
-            {/* Notas Internas */}
-            <label className="flex flex-col w-full col-span-2">
-              <p className={labelClass}>Notas Internas</p>
-              <textarea
-                value={formData.notes}
-                onChange={(event) => handleFormChange('notes', event.target.value)}
-                className={textareaClass}
-                placeholder="Digite as notas internas"
-              />
-            </label>
-          </div>
-
-          {/* Buttons */}
-          <div className="flex justify-end gap-3 pt-2 border-t border-gray-200">
+        <div className="border-t border-slate-200 dark:border-zinc-800 bg-slate-50 dark:bg-zinc-900 px-5 sm:px-8 py-4">
+          <div className="flex justify-end gap-3">
             <button
               type="button"
               onClick={handleCloseModal}
               disabled={saving}
-              className="flex min-w-[84px] cursor-pointer items-center justify-center rounded-lg h-9 px-4 bg-gray-100 text-gray-900 text-sm font-semibold hover:bg-gray-200 disabled:opacity-50"
+              className="px-4 py-2 text-sm text-slate-600 dark:text-zinc-400 hover:text-slate-900 dark:hover:text-white transition"
             >
               Cancelar
             </button>
             <button
               type="submit"
+              onClick={handleSubmit}
               disabled={saving}
-              className="flex min-w-[84px] cursor-pointer items-center justify-center rounded-lg h-9 px-4 bg-[#2b8cee] text-white text-sm font-semibold hover:bg-[#2b8cee]/90 disabled:opacity-50 gap-2"
+              className="px-4 py-2 bg-amber-500 hover:bg-amber-600 text-white text-sm font-medium rounded-lg flex items-center gap-2 transition"
             >
               {saving && <Loader2 className="w-4 h-4 animate-spin" />}
-              {selectedRequirement ? 'Salvar alterações' : 'Criar requerimento'}
+              Salvar
             </button>
           </div>
-        </form>
+        </div>
       </div>
     </div>
-  );
+  , document.body);
 
   const exigencyDeadlineModal = exigencyModal && (
     <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-[60] p-4">
@@ -1692,172 +1706,131 @@ const RequirementsModule: React.FC<RequirementsModuleProps> = ({ forceCreate, en
     </div>
   );
 
-  if (viewMode === 'details' && selectedRequirementForView) {
+  const detailsModal = viewMode === 'details' && selectedRequirementForView ? (() => {
     const noteCount = detailNotes.length;
     const detailStatusConfig = getStatusConfig(selectedRequirementForView.status);
-
-    return (
-      <div className="space-y-6">
-        <div className="bg-white border border-gray-200 rounded-xl p-6">
-          <div className="flex items-center justify-between mb-6">
+    return createPortal(
+      <div className="fixed inset-0 z-[70] flex items-center justify-center px-3 sm:px-6 py-4">
+        <div
+          className="absolute inset-0 bg-slate-900/70 backdrop-blur-sm"
+          onClick={handleBackToList}
+          aria-hidden="true"
+        />
+        <div className="relative w-full max-w-4xl max-h-[92vh] bg-white dark:bg-zinc-900 rounded-2xl shadow-2xl ring-1 ring-black/5 flex flex-col overflow-hidden">
+          <div className="h-2 w-full bg-orange-500" />
+          <div className="px-5 sm:px-8 py-5 border-b border-slate-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 flex items-start justify-between gap-4">
             <div>
-              <h3 className="text-xl font-semibold text-slate-900">Detalhes do Requerimento</h3>
-              <p className="text-sm text-slate-600 mt-1">
-                Consulte rapidamente os dados principais e o histórico de anotações.
-              </p>
+              <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400 dark:text-slate-500">Detalhes</p>
+              <h2 className="text-xl font-semibold text-slate-900 dark:text-white">Detalhes do Requerimento</h2>
             </div>
             <button
+              type="button"
               onClick={handleBackToList}
-              className="text-slate-600 hover:text-slate-900 font-medium text-sm flex items-center gap-2"
+              className="p-2 text-slate-400 hover:text-slate-600 dark:text-slate-300 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-white/10 rounded-xl transition"
+              aria-label="Fechar modal"
             >
-              ← Voltar para lista
+              <X className="w-5 h-5" />
             </button>
           </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-3 sm:gap-6">
-            <div>
-              <label className="text-xs font-semibold text-slate-500 uppercase">Protocolo</label>
-              <p className="text-base text-slate-900 mt-1 font-mono">{selectedRequirementForView.protocol}</p>
-            </div>
-
-            <div>
-              <label className="text-xs font-semibold text-slate-500 uppercase">Beneficiário</label>
-              <p className="text-base text-slate-900 mt-1">{selectedRequirementForView.beneficiary}</p>
-            </div>
-
-            <div>
-              <label className="text-xs font-semibold text-slate-500 uppercase">CPF</label>
-              <p className="text-base text-slate-900 mt-1">{selectedRequirementForView.cpf}</p>
-            </div>
-
-            <div>
-              <label className="text-xs font-semibold text-slate-500 uppercase">Tipo de Benefício</label>
-              <p className="text-base text-slate-900 mt-1">{getBenefitTypeLabel(selectedRequirementForView.benefit_type)}</p>
-            </div>
-
-            <div>
-              <label className="text-xs font-semibold text-slate-500 uppercase">Status</label>
-              <p className="mt-1">
-                <span
-                  className={`inline-flex items-center gap-2 px-3 py-1 rounded-full text-xs font-semibold ${getStatusBadge(selectedRequirementForView.status)}`}
-                  style={detailStatusConfig?.animationStyle}
-                >
-                  {getStatusLabel(selectedRequirementForView.status)}
-                  {detailStatusConfig?.icon === 'spinner' && (
-                    <Loader2 className="w-3 h-3 animate-spin" />
-                  )}
-                </span>
-              </p>
-            </div>
-
-            {selectedRequirementForView.status === 'em_exigencia' && (
+          <div className="flex-1 overflow-y-auto bg-white dark:bg-zinc-900 p-6">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               <div>
-                <label className="text-xs font-semibold text-slate-500 uppercase">Prazo da Exigência</label>
-                <p className="text-base text-slate-900 mt-1">
-                  {selectedRequirementForView.exigency_due_date
-                    ? formatDate(selectedRequirementForView.exigency_due_date)
-                    : 'Prazo não definido'}
+                <label className="text-xs font-semibold text-slate-500 uppercase">Protocolo</label>
+                <p className="text-base text-slate-900 mt-1 font-mono">{selectedRequirementForView.protocol}</p>
+              </div>
+              <div>
+                <label className="text-xs font-semibold text-slate-500 uppercase">Beneficiário</label>
+                <p className="text-base text-slate-900 mt-1">{selectedRequirementForView.beneficiary}</p>
+              </div>
+              <div>
+                <label className="text-xs font-semibold text-slate-500 uppercase">CPF</label>
+                <p className="text-base text-slate-900 mt-1">{selectedRequirementForView.cpf}</p>
+              </div>
+              <div>
+                <label className="text-xs font-semibold text-slate-500 uppercase">Tipo de Benefício</label>
+                <p className="text-base text-slate-900 mt-1">{getBenefitTypeLabel(selectedRequirementForView.benefit_type)}</p>
+              </div>
+              <div>
+                <label className="text-xs font-semibold text-slate-500 uppercase">Status</label>
+                <p className="mt-1">
+                  <span
+                    className={`inline-flex items-center gap-2 px-3 py-1 rounded-full text-xs font-semibold ${getStatusBadge(selectedRequirementForView.status)}`}
+                    style={detailStatusConfig?.animationStyle}
+                  >
+                    {getStatusLabel(selectedRequirementForView.status)}
+                    {detailStatusConfig?.icon === 'spinner' && (
+                      <Loader2 className="w-3 h-3 animate-spin" />
+                    )}
+                  </span>
                 </p>
               </div>
-            )}
-
-            <div>
-              <label className="text-xs font-semibold text-slate-500 uppercase">Data de Entrada</label>
-              <p className="text-base text-slate-900 mt-1">{formatDate(selectedRequirementForView.entry_date)}</p>
-            </div>
-
-            <div>
-              <label className="text-xs font-semibold text-slate-500 uppercase">Telefone</label>
-              <p className="text-base text-slate-900 mt-1">{selectedRequirementForView.phone || 'Não informado'}</p>
-            </div>
-
-            <div>
-              <label className="text-xs font-semibold text-slate-500 uppercase">Senha do INSS</label>
-              <p className="text-base text-slate-900 mt-1">{selectedRequirementForView.inss_password || 'Não informado'}</p>
-            </div>
-
-            <div className="md:col-span-2">
-              <label className="text-xs font-semibold text-slate-500 uppercase">Observações</label>
-              <p className="text-base text-slate-900 mt-1">{selectedRequirementForView.observations || 'Nenhuma observação'}</p>
-            </div>
-
-            <div>
-              <label className="text-xs font-semibold text-slate-500 uppercase">Notas registradas</label>
-              <p className="text-base text-slate-900 mt-1">
-                {noteCount > 0 ? `${noteCount} anotação(ões)` : 'Nenhuma nota registrada ainda'}
-              </p>
-            </div>
-
-            <div className="md:col-span-2">
-              <label className="text-xs font-semibold text-slate-500 uppercase">Histórico de notas</label>
-              {noteThreads.length === 0 ? (
-                <p className="text-sm text-slate-500 mt-2">Nenhuma nota registrada no momento.</p>
-              ) : (
-                <div className="mt-2 space-y-4">
-                  {noteThreads.map((thread) => renderNote(thread))}
+              {selectedRequirementForView.status === 'em_exigencia' && (
+                <div>
+                  <label className="text-xs font-semibold text-slate-500 uppercase">Prazo da Exigência</label>
+                  <p className="text-base text-slate-900 mt-1">
+                    {selectedRequirementForView.exigency_due_date
+                      ? formatDate(selectedRequirementForView.exigency_due_date)
+                      : 'Prazo não definido'}
+                  </p>
                 </div>
               )}
+              <div>
+                <label className="text-xs font-semibold text-slate-500 uppercase">Data de Entrada</label>
+                <p className="text-base text-slate-900 mt-1">{formatDate(selectedRequirementForView.entry_date)}</p>
+              </div>
+              <div>
+                <label className="text-xs font-semibold text-slate-500 uppercase">Telefone</label>
+                <p className="text-base text-slate-900 mt-1">{selectedRequirementForView.phone || 'Não informado'}</p>
+              </div>
+              <div>
+                <label className="text-xs font-semibold text-slate-500 uppercase">Senha do INSS</label>
+                <p className="text-base text-slate-900 mt-1">{selectedRequirementForView.inss_password || 'Não informado'}</p>
+              </div>
+              <div className="md:col-span-2">
+                <label className="text-xs font-semibold text-slate-500 uppercase">Observações</label>
+                <p className="text-base text-slate-900 mt-1">{selectedRequirementForView.observations || 'Nenhuma observação'}</p>
+              </div>
+              <div className="md:col-span-2">
+                <label className="text-xs font-semibold text-slate-500 uppercase">Histórico de notas</label>
+                {noteThreads.length === 0 ? (
+                  <p className="text-sm text-slate-500 mt-2">Nenhuma nota registrada no momento.</p>
+                ) : (
+                  <div className="mt-2 space-y-4">{noteThreads.map((thread) => renderNote(thread))}</div>
+                )}
+              </div>
             </div>
-          </div>
-
-          <div className="flex flex-col sm:flex-row sm:flex-wrap gap-2 sm:gap-3 mt-4 sm:mt-8 pt-4 sm:pt-6 border-t border-gray-200">
-            <button
-              onClick={() => handleOpenModal(selectedRequirementForView)}
-              className="inline-flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-700 text-white font-medium px-3 sm:px-4 py-2 sm:py-2.5 rounded-lg transition text-xs sm:text-sm w-full sm:w-auto"
-            >
-              <Edit2 className="w-4 h-4" />
-              Editar Requerimento
-            </button>
-            <button
-              onClick={() => handleWhatsApp(selectedRequirementForView.phone)}
-              className="inline-flex items-center justify-center gap-2 bg-green-600 hover:bg-green-700 text-white font-medium px-3 sm:px-4 py-2 sm:py-2.5 rounded-lg transition text-xs sm:text-sm w-full sm:w-auto"
-            >
-              <MessageSquare className="w-4 h-4" />
-              WhatsApp
-            </button>
-            <button
-              onClick={() => {
-                handleDeleteRequirement(selectedRequirementForView.id);
-                handleBackToList();
-              }}
-              className="inline-flex items-center justify-center gap-2 bg-red-50 hover:bg-red-100 text-red-600 font-medium px-3 sm:px-4 py-2 sm:py-2.5 rounded-lg transition text-xs sm:text-sm w-full sm:w-auto"
-            >
-              <Trash2 className="w-4 h-4" />
-              Excluir Requerimento
-            </button>
-          </div>
-        </div>
-
-        <div className="bg-white border border-gray-200 rounded-xl p-6">
-          <h4 className="text-base font-semibold text-slate-900">Adicionar nota</h4>
-          <p className="text-sm text-slate-600 mt-1">Registre atualizações ou observações importantes.</p>
-          <div className="mt-4 space-y-3">
-            {noteError && <p className="text-sm text-red-600">{noteError}</p>}
-            <textarea
-              value={noteDraft}
-              onChange={(event) => setNoteDraft(event.target.value)}
-              rows={4}
-              className="input-field"
-              placeholder="Ex: Cliente enviou documentos complementares em 04/10."
-            />
-            <div className="flex justify-end">
+            <div className="flex flex-wrap gap-3 mt-8 pt-6 border-t border-gray-200">
               <button
-                onClick={handleAddNote}
-                disabled={addingNote}
-                className="inline-flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white font-medium px-4 py-2.5 rounded-lg transition disabled:opacity-60"
+                onClick={() => handleOpenModal(selectedRequirementForView)}
+                className="inline-flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white font-medium px-4 py-2.5 rounded-lg transition"
               >
-                {addingNote && <Loader2 className="w-4 h-4 animate-spin" />}
-                {addingNote ? 'Salvando nota...' : 'Adicionar nota'}
+                <Edit2 className="w-4 h-4" />
+                Editar Requerimento
+              </button>
+              <button
+                onClick={() => handleWhatsApp(selectedRequirementForView.phone)}
+                className="inline-flex items-center gap-2 bg-green-600 hover:bg-green-700 text-white font-medium px-4 py-2.5 rounded-lg transition"
+              >
+                <MessageSquare className="w-4 h-4" />
+                WhatsApp
+              </button>
+              <button
+                onClick={() => {
+                  handleDeleteRequirement(selectedRequirementForView.id);
+                  handleBackToList();
+                }}
+                className="inline-flex items-center gap-2 bg-red-50 hover:bg-red-100 text-red-600 font-medium px-4 py-2.5 rounded-lg transition"
+              >
+                <Trash2 className="w-4 h-4" />
+                Excluir Requerimento
               </button>
             </div>
           </div>
         </div>
-        {requirementModal}
-        {exigencyDeadlineModal}
-        {periciaSchedulingModal}
-      </div>
+      </div>,
+      document.body
     );
-  }
+  })() : null;
 
   return (
     <div className="space-y-6">
@@ -2265,7 +2238,7 @@ const RequirementsModule: React.FC<RequirementsModuleProps> = ({ forceCreate, en
       {requirementModal}
       {exigencyDeadlineModal}
       {periciaSchedulingModal}
-
+      {detailsModal}
     </div>
   );
 }

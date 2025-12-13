@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
+import { createPortal } from 'react-dom';
 import {
   Plus,
   Loader2,
@@ -31,6 +32,7 @@ import { settingsService } from '../services/settings.service';
 import { djenService } from '../services/djen.service';
 import { processDjenSyncService } from '../services/processDjenSync.service';
 import { processTimelineService, type TimelineEvent } from '../services/processTimeline.service';
+import { ProcessTimeline } from './ProcessTimeline';
 import { ClientSearchSelect } from './ClientSearchSelect';
 import { useAuth } from '../contexts/AuthContext';
 import type { Process, ProcessStatus, ProcessPracticeArea, HearingMode } from '../types/process.types';
@@ -284,6 +286,14 @@ const ProcessesModule: React.FC<ProcessesModuleProps> = ({ forceCreate, entityId
   const [syncingDjen, setSyncingDjen] = useState(false);
   const [syncResult, setSyncResult] = useState<{ total: number; synced: number; updated: number; errors: number; intimationsFound: number } | null>(null);
 
+  // Quick add form for Aguardando Confecção
+  const [quickAddClientId, setQuickAddClientId] = useState('');
+  const [quickAddClientSearch, setQuickAddClientSearch] = useState('');
+  const [quickAddArea, setQuickAddArea] = useState<ProcessPracticeArea>('trabalhista');
+  const [quickAddSaving, setQuickAddSaving] = useState(false);
+  const [quickAddExpanded, setQuickAddExpanded] = useState(false);
+  const [quickAddShowSuggestions, setQuickAddShowSuggestions] = useState(false);
+
   // Timeline
   const [timeline, setTimeline] = useState<TimelineEvent[]>([]);
   const [loadingTimeline, setLoadingTimeline] = useState(false);
@@ -291,6 +301,10 @@ const ProcessesModule: React.FC<ProcessesModuleProps> = ({ forceCreate, entityId
   const [analyzingTimeline, setAnalyzingTimeline] = useState(false);
   const [analyzeProgress, setAnalyzeProgress] = useState({ current: 0, total: 0 });
   const [expandedTimelineEvents, setExpandedTimelineEvents] = useState<Set<string>>(new Set());
+  const [showTimelineModal, setShowTimelineModal] = useState(false);
+  const [timelineProcessCode, setTimelineProcessCode] = useState<string | null>(null);
+  const [timelineProcessId, setTimelineProcessId] = useState<string | null>(null);
+  const [timelineClientName, setTimelineClientName] = useState<string | null>(null);
 
   const clientMap = useMemo(() => new Map(clients.map((client) => [client.id, client])), [clients]);
 
@@ -680,6 +694,48 @@ const ProcessesModule: React.FC<ProcessesModuleProps> = ({ forceCreate, entityId
     return 'civel';
   };
 
+  const handleQuickAddAguardando = async () => {
+    if (!quickAddClientId) {
+      setError('Selecione um cliente.');
+      return;
+    }
+
+    try {
+      setQuickAddSaving(true);
+      setError(null);
+
+      // Criar o processo como "Aguardando Confecção" para o cliente selecionado
+      const newProcess = await processService.createProcess({
+        client_id: quickAddClientId,
+        process_code: '',
+        status: 'aguardando_confeccao',
+        practice_area: quickAddArea,
+      });
+
+      // Atualizar lista de processos
+      setProcesses((prev) => [...prev, newProcess]);
+
+      // Limpar formulário
+      setQuickAddClientId('');
+      setQuickAddClientSearch('');
+      setQuickAddArea('trabalhista');
+    } catch (err) {
+      console.error('Erro ao adicionar cliente aguardando confecção:', err);
+      setError('Erro ao adicionar. Tente novamente.');
+    } finally {
+      setQuickAddSaving(false);
+    }
+  };
+
+  // Filtrar clientes para sugestões no quick add
+  const quickAddFilteredClients = useMemo(() => {
+    if (!quickAddClientSearch.trim()) return [];
+    const search = quickAddClientSearch.toLowerCase();
+    return allClients
+      .filter((c) => c.full_name.toLowerCase().includes(search))
+      .slice(0, 5);
+  }, [allClients, quickAddClientSearch]);
+
   const handleSubmit = async (event: React.FormEvent) => {
     event.preventDefault();
 
@@ -838,6 +894,15 @@ const ProcessesModule: React.FC<ProcessesModuleProps> = ({ forceCreate, entityId
     setViewMode('details');
     setNoteDraft('');
     setNoteError(null);
+  };
+
+  const handleOpenTimeline = (process: Process) => {
+    if (!process.process_code) return;
+    const client = clientMap.get(process.client_id);
+    setTimelineProcessCode(process.process_code);
+    setTimelineProcessId(process.id);
+    setTimelineClientName(client?.full_name || null);
+    setShowTimelineModal(true);
   };
 
   const handleBackToList = () => {
@@ -1327,23 +1392,34 @@ const ProcessesModule: React.FC<ProcessesModuleProps> = ({ forceCreate, entityId
     'w-full h-11 px-3 py-2 rounded-lg text-sm leading-normal bg-white dark:bg-zinc-800 border border-zinc-300 dark:border-zinc-600 text-zinc-900 dark:text-white placeholder:text-zinc-400 focus:outline-none focus:ring-1 focus:ring-amber-500 focus:border-amber-500 transition-colors';
   const labelStyle = 'block text-sm text-zinc-600 dark:text-zinc-300 mb-1';
 
-  const processModal = isModalOpen && (
-    <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4">
-      <div className="w-full max-w-[75%] bg-white dark:bg-zinc-900 rounded-xl shadow-2xl flex flex-col max-h-[90vh]">
-        <div className="flex justify-between items-center px-4 py-3 border-b border-zinc-200 dark:border-zinc-800">
-          <h1 className="text-base font-semibold text-zinc-900 dark:text-white">
-            {selectedProcess ? 'Editar Processo' : 'Novo Processo'}
-          </h1>
+  const processModal = isModalOpen ? createPortal(
+    <div className="fixed inset-0 z-[80] flex items-center justify-center px-3 sm:px-6 py-4">
+      <div
+        className="absolute inset-0 bg-slate-900/70 backdrop-blur-sm"
+        onClick={handleCloseModal}
+        aria-hidden="true"
+      />
+      <div className="relative w-full max-w-4xl max-h-[92vh] bg-white dark:bg-zinc-900 rounded-2xl shadow-2xl ring-1 ring-black/5 flex flex-col overflow-hidden">
+        <div className="h-2 w-full bg-orange-500" />
+        <div className="px-5 sm:px-8 py-5 border-b border-slate-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 flex items-start justify-between gap-4">
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400 dark:text-slate-500">Formulário</p>
+            <h2 className="text-xl font-semibold text-slate-900 dark:text-white">
+              {selectedProcess ? 'Editar Processo' : 'Novo Processo'}
+            </h2>
+          </div>
           <button
+            type="button"
             onClick={handleCloseModal}
-            className="p-1 text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300 rounded-lg"
+            className="p-2 text-slate-400 hover:text-slate-600 dark:text-slate-300 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-white/10 rounded-xl transition"
+            aria-label="Fechar modal"
           >
-            <X className="w-4 h-4" />
+            <X className="w-5 h-5" />
           </button>
         </div>
 
-        <form onSubmit={handleSubmit} className="flex flex-col h-full">
-          <div className="p-4 space-y-3 flex-1 overflow-y-auto min-h-0">
+        <div className="flex-1 overflow-y-auto bg-white dark:bg-zinc-900">
+          <form onSubmit={handleSubmit} className="p-6 space-y-4">
             <ClientSearchSelect
               value={formData.client_id}
               onChange={(clientId, clientName) => {
@@ -1388,7 +1464,7 @@ const ProcessesModule: React.FC<ProcessesModuleProps> = ({ forceCreate, entityId
               )}
             </div>
 
-            <div className="grid grid-cols-4 gap-2">
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
               <div>
                 <label className={labelStyle}>Área</label>
                 <select
@@ -1436,7 +1512,7 @@ const ProcessesModule: React.FC<ProcessesModuleProps> = ({ forceCreate, entityId
               </div>
             </div>
 
-            <div className="grid grid-cols-4 gap-2">
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
               <div>
                 <label className={labelStyle}>Advogado</label>
                 <select
@@ -1513,307 +1589,171 @@ const ProcessesModule: React.FC<ProcessesModuleProps> = ({ forceCreate, entityId
                 placeholder=""
               />
             </div>
-          </div>
+          </form>
+        </div>
 
-          <div className="flex justify-end gap-2 px-4 py-2 border-t border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-800/50">
+        <div className="border-t border-slate-200 dark:border-zinc-800 bg-slate-50 dark:bg-zinc-900 px-5 sm:px-8 py-4">
+          <div className="flex justify-end gap-3">
             <button
               type="button"
               onClick={handleCloseModal}
               disabled={saving}
-              className="px-3 py-1.5 text-xs text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-white"
+              className="px-4 py-2 text-sm text-slate-600 dark:text-zinc-400 hover:text-slate-900 dark:hover:text-white transition"
             >
               Cancelar
             </button>
             <button
               type="submit"
+              onClick={handleSubmit}
               disabled={saving}
-              className="px-3 py-1.5 bg-amber-500 hover:bg-amber-600 text-white text-xs font-medium rounded-md flex items-center gap-1"
+              className="px-4 py-2 bg-amber-500 hover:bg-amber-600 text-white text-sm font-medium rounded-lg flex items-center gap-2 transition"
             >
-              {saving && <Loader2 className="w-3 h-3 animate-spin" />}
+              {saving && <Loader2 className="w-4 h-4 animate-spin" />}
               Salvar
             </button>
           </div>
-        </form>
+        </div>
       </div>
-    </div>
-  );
+    </div>,
+    document.body
+  ) : null;
 
-  if (viewMode === 'details' && selectedProcessForView) {
+  const detailsModal = viewMode === 'details' && selectedProcessForView ? (() => {
     const client = clientMap.get(selectedProcessForView.client_id);
     const practiceAreaInfo = PRACTICE_AREAS.find((area) => area.key === selectedProcessForView.practice_area);
-    const noteCount = detailNotes.length;
-
-    return (
-      <div className="space-y-6">
-        <div className="bg-white border border-gray-200 rounded-xl p-6">
-          <div className="flex items-center justify-between mb-6">
+    return createPortal(
+      <div className="fixed inset-0 z-[70] flex items-center justify-center px-3 sm:px-6 py-4">
+        <div
+          className="absolute inset-0 bg-slate-900/70 backdrop-blur-sm"
+          onClick={handleBackToList}
+          aria-hidden="true"
+        />
+        <div className="relative w-full max-w-4xl max-h-[92vh] bg-white dark:bg-zinc-900 rounded-2xl shadow-2xl ring-1 ring-black/5 flex flex-col overflow-hidden">
+          <div className="h-2 w-full bg-orange-500" />
+          <div className="px-5 sm:px-8 py-5 border-b border-slate-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 flex items-start justify-between gap-4">
             <div>
-              <h3 className="text-xl font-semibold text-slate-900">Detalhes do Processo</h3>
-              <p className="text-sm text-slate-600 mt-1">Consulte rapidamente os dados principais e o histórico de anotações.</p>
+              <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400 dark:text-slate-500">Detalhes</p>
+              <h2 className="text-xl font-semibold text-slate-900 dark:text-white">Detalhes do Processo</h2>
             </div>
-            <button onClick={handleBackToList} className="text-slate-600 hover:text-slate-900 font-medium text-sm flex items-center gap-2">
-              ← Voltar para lista
+            <button
+              type="button"
+              onClick={handleBackToList}
+              className="p-2 text-slate-400 hover:text-slate-600 dark:text-slate-300 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-white/10 rounded-xl transition"
+              aria-label="Fechar modal"
+            >
+              <X className="w-5 h-5" />
             </button>
           </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            <div>
-              <label className="text-xs font-semibold text-slate-500 uppercase">Cliente</label>
-              <p className="text-base text-slate-900 mt-1 flex items-center gap-2">
-                {client?.client_type === 'pessoa_juridica' ? <Building2 className="w-4 h-4 text-purple-500" /> : <User className="w-4 h-4 text-blue-500" />}
-                {client?.full_name || 'Cliente removido'}
-              </p>
-            </div>
-
-            <div>
-              <label className="text-xs font-semibold text-slate-500 uppercase">Código do Processo</label>
-              <div className="flex items-center gap-2 mt-1">
-                <p className="text-base text-slate-900 font-mono">{selectedProcessForView.process_code}</p>
-                {selectedProcessForView.djen_has_data ? (
-                  <span className="px-2 py-1 text-xs font-medium bg-green-100 text-green-800 rounded-full">✓ Sincronizado</span>
-                ) : null}
+          <div className="flex-1 overflow-y-auto bg-white dark:bg-zinc-900 p-6">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              <div>
+                <label className="text-xs font-semibold text-slate-500 uppercase">Cliente</label>
+                <p className="text-base text-slate-900 mt-1 flex items-center gap-2">
+                  {client?.client_type === 'pessoa_juridica' ? <Building2 className="w-4 h-4 text-purple-500" /> : <User className="w-4 h-4 text-blue-500" />}
+                  {client?.full_name || 'Cliente removido'}
+                </p>
+              </div>
+              <div>
+                <label className="text-xs font-semibold text-slate-500 uppercase">Código do Processo</label>
+                <div className="flex items-center gap-2 mt-1">
+                  <p className="text-base text-slate-900 font-mono">{selectedProcessForView.process_code}</p>
+                  {selectedProcessForView.djen_has_data ? (
+                    <span className="px-2 py-1 text-xs font-medium bg-green-100 text-green-800 rounded-full">✓ Sincronizado</span>
+                  ) : null}
+                </div>
+              </div>
+              <div>
+                <label className="text-xs font-semibold text-slate-500 uppercase">Distribuído em</label>
+                <p className="text-base text-slate-900 mt-1">{formatDate(selectedProcessForView.distributed_at)}</p>
+              </div>
+              <div>
+                <label className="text-xs font-semibold text-slate-500 uppercase">Vara / Comarca</label>
+                <p className="text-base text-slate-900 mt-1">{selectedProcessForView.court || 'Não informado'}</p>
+              </div>
+              <div>
+                <label className="text-xs font-semibold text-slate-500 uppercase">Status</label>
+                <p className="mt-1">
+                  <span className={`inline-flex px-3 py-1 rounded-full text-xs font-semibold ${getStatusBadge(selectedProcessForView.status)}`}>
+                    {getStatusLabel(selectedProcessForView.status)}
+                  </span>
+                </p>
+              </div>
+              <div>
+                <label className="text-xs font-semibold text-slate-500 uppercase">Área</label>
+                <p className="text-base text-slate-900 mt-1">{practiceAreaInfo ? practiceAreaInfo.label : selectedProcessForView.practice_area}</p>
+              </div>
+              <div>
+                <label className="text-xs font-semibold text-slate-500 uppercase">Advogado responsável</label>
+                <p className="text-base text-slate-900 mt-1">{selectedProcessForView.responsible_lawyer || 'Não informado'}</p>
+              </div>
+              <div>
+                <label className="text-xs font-semibold text-slate-500 uppercase">Audiência</label>
+                <p className="text-base text-slate-900 mt-1">
+                  {selectedProcessForView.hearing_scheduled ? (
+                    <span>
+                      {selectedProcessForView.hearing_date ? formatDate(selectedProcessForView.hearing_date) : 'Data não informada'}
+                      {selectedProcessForView.hearing_time && ` às ${selectedProcessForView.hearing_time.slice(0, 5)}`}
+                      {selectedProcessForView.hearing_mode && (
+                        <span className="ml-2 text-xs px-2 py-1 rounded bg-blue-100 text-blue-700">
+                          {selectedProcessForView.hearing_mode === 'presencial' ? 'Presencial' : 'Online'}
+                        </span>
+                      )}
+                    </span>
+                  ) : (
+                    'Não agendada'
+                  )}
+                </p>
+              </div>
+              <div className="md:col-span-2">
+                <label className="text-xs font-semibold text-slate-500 uppercase">Histórico de notas</label>
+                {noteThreads.length === 0 ? (
+                  <p className="text-sm text-slate-500 mt-2">Nenhuma nota registrada no momento.</p>
+                ) : (
+                  <div className="mt-2 space-y-4">{noteThreads.map((thread) => renderNote(thread))}</div>
+                )}
               </div>
             </div>
-
-            <div>
-              <label className="text-xs font-semibold text-slate-500 uppercase">Distribuído em</label>
-              <p className="text-base text-slate-900 mt-1">{formatDate(selectedProcessForView.distributed_at)}</p>
-            </div>
-
-            <div>
-              <label className="text-xs font-semibold text-slate-500 uppercase">Vara / Comarca</label>
-              <p className="text-base text-slate-900 mt-1">{selectedProcessForView.court || 'Não informado'}</p>
-            </div>
-
-            <div>
-              <label className="text-xs font-semibold text-slate-500 uppercase">Status</label>
-              <p className="mt-1">
-                <span className={`inline-flex px-3 py-1 rounded-full text-xs font-semibold ${getStatusBadge(selectedProcessForView.status)}`}>
-                  {getStatusLabel(selectedProcessForView.status)}
-                </span>
-              </p>
-            </div>
-
-            <div>
-              <label className="text-xs font-semibold text-slate-500 uppercase">Área</label>
-              <p className="text-base text-slate-900 mt-1">{practiceAreaInfo ? practiceAreaInfo.label : selectedProcessForView.practice_area}</p>
-            </div>
-
-            <div>
-              <label className="text-xs font-semibold text-slate-500 uppercase">Advogado responsável</label>
-              <p className="text-base text-slate-900 mt-1">{selectedProcessForView.responsible_lawyer || 'Não informado'}</p>
-            </div>
-
-            <div>
-              <label className="text-xs font-semibold text-slate-500 uppercase">Audiência</label>
-              <p className="text-base text-slate-900 mt-1">
-                {selectedProcessForView.hearing_scheduled ? (
-                  <span>
-                    {selectedProcessForView.hearing_date ? formatDate(selectedProcessForView.hearing_date) : 'Data não informada'}
-                    {selectedProcessForView.hearing_time && ` às ${selectedProcessForView.hearing_time.slice(0, 5)}`}
-                    {selectedProcessForView.hearing_mode && (
-                      <span className="ml-2 text-xs px-2 py-1 rounded bg-blue-100 text-blue-700">
-                        {selectedProcessForView.hearing_mode === 'presencial' ? 'Presencial' : 'Online'}
-                      </span>
-                    )}
-                  </span>
-                ) : (
-                  'Não agendada'
-                )}
-              </p>
-            </div>
-
-            <div className="md:col-span-2">
-              <label className="text-xs font-semibold text-slate-500 uppercase">Histórico de notas</label>
-              {noteThreads.length === 0 ? (
-                <p className="text-sm text-slate-500 mt-2">Nenhuma nota registrada no momento.</p>
-              ) : (
-                <div className="mt-2 space-y-4">{noteThreads.map((thread) => renderNote(thread))}</div>
+            <div className="flex flex-wrap gap-3 mt-8 pt-6 border-t border-gray-200">
+              {selectedProcessForView.process_code && (
+                <button
+                  onClick={() => {
+                    const client = clientMap.get(selectedProcessForView.client_id);
+                    setTimelineProcessCode(selectedProcessForView.process_code);
+                    setTimelineProcessId(selectedProcessForView.id);
+                    setTimelineClientName(client?.full_name || null);
+                    setShowTimelineModal(true);
+                  }}
+                  className="inline-flex items-center gap-2 bg-gradient-to-r from-orange-500 to-amber-500 hover:from-orange-600 hover:to-amber-600 text-white font-medium px-4 py-2.5 rounded-lg transition shadow-lg"
+                >
+                  <Clock className="w-4 h-4" />
+                  Linha do Tempo
+                  <Sparkles className="w-3.5 h-3.5" />
+                </button>
               )}
-            </div>
-          </div>
-
-          <div className="flex flex-wrap gap-3 mt-8 pt-6 border-t border-gray-200">
-            <button
-              onClick={() => handleOpenModal(selectedProcessForView)}
-              className="inline-flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white font-medium px-4 py-2.5 rounded-lg transition"
-            >
-              <Edit2 className="w-4 h-4" />
-              Editar Processo
-            </button>
-            <button
-              onClick={() => {
-                handleDeleteProcess(selectedProcessForView.id);
-                handleBackToList();
-              }}
-              className="inline-flex items-center gap-2 bg-red-50 hover:bg-red-100 text-red-600 font-medium px-4 py-2.5 rounded-lg transition"
-            >
-              <Trash2 className="w-4 h-4" />
-              Excluir Processo
-            </button>
-          </div>
-        </div>
-
-        <div className="bg-white border border-gray-200 rounded-xl p-6">
-          <h4 className="text-base font-semibold text-slate-900">Adicionar nota</h4>
-          <div className="mt-4 space-y-3">
-            {noteError && <p className="text-sm text-red-600">{noteError}</p>}
-            <textarea
-              value={noteDraft}
-              onChange={(event) => setNoteDraft(event.target.value)}
-              rows={4}
-              className="input-field"
-              placeholder="Ex: Cliente enviou documentos complementares em 04/10."
-            />
-            <div className="flex justify-end">
               <button
-                onClick={handleAddNote}
-                disabled={addingNote}
-                className="inline-flex items-center gap-2 bg-amber-600 hover:bg-amber-700 text-white font-medium px-4 py-2.5 rounded-lg transition disabled:opacity-60"
+                onClick={() => handleOpenModal(selectedProcessForView)}
+                className="inline-flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white font-medium px-4 py-2.5 rounded-lg transition"
               >
-                {addingNote && <Loader2 className="w-4 h-4 animate-spin" />}
-                {addingNote ? 'Salvando nota...' : 'Adicionar nota'}
+                <Edit2 className="w-4 h-4" />
+                Editar Processo
+              </button>
+              <button
+                onClick={() => {
+                  handleDeleteProcess(selectedProcessForView.id);
+                  handleBackToList();
+                }}
+                className="inline-flex items-center gap-2 bg-red-50 hover:bg-red-100 text-red-600 font-medium px-4 py-2.5 rounded-lg transition"
+              >
+                <Trash2 className="w-4 h-4" />
+                Excluir Processo
               </button>
             </div>
           </div>
         </div>
-
-        <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
-          <div className="px-6 py-4 border-b border-gray-200 bg-gradient-to-r from-blue-50 to-indigo-50">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 bg-blue-600 rounded-lg flex items-center justify-center">
-                  <Clock className="w-5 h-5 text-white" />
-                </div>
-                <div>
-                  <h4 className="text-base font-semibold text-slate-900">Linha do Tempo</h4>
-                  <p className="text-xs text-slate-600">Publicações do Diário de Justiça (DJEN)</p>
-                </div>
-              </div>
-              <div className="flex items-center gap-2">
-                {timeline.length > 0 && !timeline.some((e) => e.aiAnalysis) && (
-                  <button
-                    onClick={analyzeTimelineWithAI}
-                    disabled={analyzingTimeline}
-                    className="inline-flex items-center gap-2 px-3 py-2 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white text-sm font-medium rounded-lg transition disabled:opacity-60"
-                  >
-                    {analyzingTimeline ? (
-                      <>
-                        <Loader2 className="w-4 h-4 animate-spin" />
-                        <span>Analisando {analyzeProgress.current}/{analyzeProgress.total}...</span>
-                      </>
-                    ) : (
-                      <>
-                        <Sparkles className="w-4 h-4" />
-                        <span>Analisar com IA</span>
-                      </>
-                    )}
-                  </button>
-                )}
-                <button
-                  onClick={() => loadTimeline(selectedProcessForView.process_code)}
-                  disabled={loadingTimeline}
-                  className="inline-flex items-center gap-2 px-3 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 text-sm font-medium rounded-lg transition disabled:opacity-60"
-                >
-                  {loadingTimeline ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
-                  <span className="hidden sm:inline">Atualizar</span>
-                </button>
-              </div>
-            </div>
-          </div>
-
-          <div className="p-6">
-            {loadingTimeline ? (
-              <div className="flex flex-col items-center justify-center py-12">
-                <Loader2 className="w-8 h-8 text-blue-600 animate-spin mb-3" />
-                <p className="text-slate-600">Buscando publicações no DJEN...</p>
-              </div>
-            ) : timelineError ? (
-              <div className="text-center py-8">
-                <div className="w-12 h-12 bg-yellow-100 rounded-full flex items-center justify-center mx-auto mb-3">
-                  <AlertCircle className="w-6 h-6 text-yellow-600" />
-                </div>
-                <p className="text-slate-600">{timelineError}</p>
-              </div>
-            ) : timeline.length === 0 ? (
-              <div className="text-center py-8">
-                <div className="w-12 h-12 bg-slate-100 rounded-full flex items-center justify-center mx-auto mb-3">
-                  <Clock className="w-6 h-6 text-slate-400" />
-                </div>
-                <p className="text-slate-600">Nenhuma publicação encontrada</p>
-              </div>
-            ) : (
-              <div className="relative">
-                <div className="absolute left-4 top-0 bottom-0 w-0.5 bg-slate-200" />
-                <div className="space-y-4">
-                  {timeline.map((event) => {
-                    const isExpanded = expandedTimelineEvents.has(event.id);
-                    const hasAnalysis = !!event.aiAnalysis;
-                    return (
-                      <div key={event.id} className="relative pl-10">
-                        <div
-                          className={`absolute left-0 w-8 h-8 rounded-full flex items-center justify-center ${
-                            hasAnalysis && event.aiAnalysis?.urgency === 'critica'
-                              ? 'bg-red-500 text-white'
-                              : hasAnalysis && event.aiAnalysis?.urgency === 'alta'
-                              ? 'bg-orange-500 text-white'
-                              : 'bg-blue-500 text-white'
-                          }`}
-                        >
-                          {getEventTypeIcon(event.type)}
-                        </div>
-                        <div className={`border rounded-lg overflow-hidden transition-all ${hasAnalysis ? `border-l-4 ${getUrgencyColor(event.aiAnalysis?.urgency)}` : 'border-slate-200'}`}>
-                          <button
-                            onClick={() => toggleTimelineEvent(event.id)}
-                            className="w-full px-4 py-3 flex items-start justify-between gap-3 hover:bg-slate-50 transition text-left"
-                          >
-                            <div className="flex-1 min-w-0">
-                              <div className="flex items-center gap-2 flex-wrap">
-                                <span className="text-xs font-medium text-blue-600">{new Date(event.date).toLocaleDateString('pt-BR')}</span>
-                                <span className="text-xs px-2 py-0.5 bg-slate-100 text-slate-600 rounded">{event.type}</span>
-                              </div>
-                              <p className="text-sm font-medium text-slate-900 mt-1 truncate">{hasAnalysis ? event.aiAnalysis?.summary : event.title}</p>
-                              <p className="text-xs text-slate-500 mt-0.5">{event.orgao}</p>
-                            </div>
-                            {isExpanded ? <ChevronUp className="w-5 h-5 text-slate-400 flex-shrink-0" /> : <ChevronDown className="w-5 h-5 text-slate-400 flex-shrink-0" />}
-                          </button>
-                          {isExpanded && (
-                            <div className="px-4 pb-4 border-t border-slate-100">
-                              {hasAnalysis && event.aiAnalysis?.keyPoints && event.aiAnalysis.keyPoints.length > 0 && (
-                                <div className="mt-3 p-3 bg-purple-50 rounded-lg">
-                                  <p className="text-xs font-semibold text-purple-800 mb-2 flex items-center gap-1">
-                                    <Sparkles className="w-3 h-3" /> Análise da IA
-                                  </p>
-                                  <ul className="space-y-1">
-                                    {event.aiAnalysis.keyPoints.map((point, i) => (
-                                      <li key={i} className="text-xs text-purple-700 flex items-start gap-2">
-                                        <span className="text-purple-400">•</span>
-                                        {point}
-                                      </li>
-                                    ))}
-                                  </ul>
-                                </div>
-                              )}
-                              <div className="mt-3">
-                                <p className="text-xs font-semibold text-slate-500 mb-1">Texto completo:</p>
-                                <p className="text-xs text-slate-700 whitespace-pre-wrap max-h-48 overflow-y-auto bg-slate-50 p-3 rounded">{event.description || 'Conteúdo não disponível'}</p>
-                              </div>
-                            </div>
-                          )}
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-            )}
-          </div>
-        </div>
-
-        {processModal}
-      </div>
+      </div>,
+      document.body
     );
-  }
+  })() : null;
 
   return (
     <div className="space-y-4">
@@ -1824,56 +1764,229 @@ const ProcessesModule: React.FC<ProcessesModuleProps> = ({ forceCreate, entityId
         </div>
       </div>
 
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2 sm:gap-3">
         <button
           onClick={() => setStatusFilter('todos')}
-          className={`flex items-center gap-3 p-4 rounded-xl transition-all hover:shadow-md border ${statusFilter === 'todos' ? 'ring-2 ring-amber-500 bg-amber-50 border-amber-200' : 'bg-white border-slate-200'}`}
+          className={`flex items-center gap-2 sm:gap-3 p-3 sm:p-4 rounded-xl transition-all hover:shadow-md border ${statusFilter === 'todos' ? 'ring-2 ring-amber-500 bg-amber-50 border-amber-200' : 'bg-white border-slate-200'}`}
         >
-          <div className="w-10 h-10 rounded-full bg-amber-500 flex items-center justify-center flex-shrink-0">
-            <Building2 className="w-5 h-5 text-white" />
+          <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-full bg-amber-500 flex items-center justify-center flex-shrink-0">
+            <Building2 className="w-4 h-4 sm:w-5 sm:h-5 text-white" />
           </div>
-          <div className="text-left">
-            <p className="text-2xl font-bold text-slate-900">{statusCounts.todos}</p>
-            <p className="text-xs text-slate-500">Total</p>
+          <div className="text-left min-w-0">
+            <p className="text-lg sm:text-2xl font-bold text-slate-900">{statusCounts.todos}</p>
+            <p className="text-[10px] sm:text-xs text-slate-500 truncate">Total</p>
+          </div>
+        </button>
+
+        <button
+          onClick={() => setStatusFilter('aguardando_confeccao')}
+          className={`flex items-center gap-2 sm:gap-3 p-3 sm:p-4 rounded-xl transition-all hover:shadow-md border ${statusFilter === 'aguardando_confeccao' ? 'ring-2 ring-orange-500 bg-orange-50 border-orange-200' : 'bg-white border-slate-200'}`}
+        >
+          <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-full bg-orange-500 flex items-center justify-center flex-shrink-0">
+            <FileText className="w-4 h-4 sm:w-5 sm:h-5 text-white" />
+          </div>
+          <div className="text-left min-w-0">
+            <p className="text-lg sm:text-2xl font-bold text-slate-900">{statusCounts.aguardando_confeccao || 0}</p>
+            <p className="text-[10px] sm:text-xs text-slate-500 truncate">Aguardando</p>
           </div>
         </button>
 
         <button
           onClick={() => setStatusFilter('andamento')}
-          className={`flex items-center gap-3 p-4 rounded-xl transition-all hover:shadow-md border ${statusFilter === 'andamento' ? 'ring-2 ring-blue-500 bg-blue-50 border-blue-200' : 'bg-white border-slate-200'}`}
+          className={`flex items-center gap-2 sm:gap-3 p-3 sm:p-4 rounded-xl transition-all hover:shadow-md border ${statusFilter === 'andamento' ? 'ring-2 ring-blue-500 bg-blue-50 border-blue-200' : 'bg-white border-slate-200'}`}
         >
-          <div className="w-10 h-10 rounded-full bg-blue-500 flex items-center justify-center flex-shrink-0">
-            <Clock className="w-5 h-5 text-white" />
+          <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-full bg-blue-500 flex items-center justify-center flex-shrink-0">
+            <Clock className="w-4 h-4 sm:w-5 sm:h-5 text-white" />
           </div>
-          <div className="text-left">
-            <p className="text-2xl font-bold text-slate-900">{statusCounts.andamento || 0}</p>
-            <p className="text-xs text-slate-500">Em Andamento</p>
+          <div className="text-left min-w-0">
+            <p className="text-lg sm:text-2xl font-bold text-slate-900">{statusCounts.andamento || 0}</p>
+            <p className="text-[10px] sm:text-xs text-slate-500 truncate">Andamento</p>
           </div>
         </button>
 
         <button
           onClick={() => setStatusFilter('distribuido')}
-          className={`flex items-center gap-3 p-4 rounded-xl transition-all hover:shadow-md border ${statusFilter === 'distribuido' ? 'ring-2 ring-purple-500 bg-purple-50 border-purple-200' : 'bg-white border-slate-200'}`}
+          className={`flex items-center gap-2 sm:gap-3 p-3 sm:p-4 rounded-xl transition-all hover:shadow-md border ${statusFilter === 'distribuido' ? 'ring-2 ring-purple-500 bg-purple-50 border-purple-200' : 'bg-white border-slate-200'}`}
         >
-          <div className="w-10 h-10 rounded-full bg-purple-500 flex items-center justify-center flex-shrink-0">
-            <FileText className="w-5 h-5 text-white" />
+          <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-full bg-purple-500 flex items-center justify-center flex-shrink-0">
+            <FileText className="w-4 h-4 sm:w-5 sm:h-5 text-white" />
           </div>
-          <div className="text-left">
-            <p className="text-2xl font-bold text-slate-900">{statusCounts.distribuido || 0}</p>
-            <p className="text-xs text-slate-500">Distribuídos</p>
+          <div className="text-left min-w-0">
+            <p className="text-lg sm:text-2xl font-bold text-slate-900">{statusCounts.distribuido || 0}</p>
+            <p className="text-[10px] sm:text-xs text-slate-500 truncate">Distribuídos</p>
           </div>
         </button>
 
-        <div className="flex items-center gap-3 p-4 rounded-xl bg-white border border-slate-200">
-          <div className="w-10 h-10 rounded-full bg-emerald-500 flex items-center justify-center flex-shrink-0">
-            <CheckCircle2 className="w-5 h-5 text-white" />
+        <div className="flex items-center gap-2 sm:gap-3 p-3 sm:p-4 rounded-xl bg-white border border-slate-200 col-span-2 sm:col-span-1">
+          <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-full bg-emerald-500 flex items-center justify-center flex-shrink-0">
+            <CheckCircle2 className="w-4 h-4 sm:w-5 sm:h-5 text-white" />
           </div>
-          <div className="text-left">
-            <p className="text-2xl font-bold text-slate-900">{statusCounts.arquivado || 0}</p>
-            <p className="text-xs text-slate-500">Arquivados</p>
+          <div className="text-left min-w-0">
+            <p className="text-lg sm:text-2xl font-bold text-slate-900">{statusCounts.arquivado || 0}</p>
+            <p className="text-[10px] sm:text-xs text-slate-500 truncate">Arquivados</p>
           </div>
         </div>
       </div>
+
+      {/* Seção Aguardando Confecção - Compacta */}
+      {statusFilter === 'todos' && (
+        <div className="bg-white rounded-xl border border-orange-200 shadow-sm overflow-hidden">
+          {/* Header com botão de adicionar inline */}
+          <div className="flex items-center justify-between px-4 py-3 bg-gradient-to-r from-orange-50 to-amber-50 border-b border-orange-100">
+            <div className="flex items-center gap-2">
+              <div className="w-7 h-7 rounded-lg bg-orange-500 flex items-center justify-center">
+                <FileText className="w-3.5 h-3.5 text-white" />
+              </div>
+              <div>
+                <h3 className="text-sm font-semibold text-orange-900">Aguardando Confecção</h3>
+                <p className="text-[11px] text-orange-600">{processesByStatus.aguardando_confeccao.length} no fluxo</p>
+              </div>
+            </div>
+            <div className="flex items-center gap-2">
+              {!quickAddExpanded && (
+                <button
+                  onClick={() => setQuickAddExpanded(true)}
+                  className="flex items-center gap-1 px-2.5 py-1.5 bg-orange-500 hover:bg-orange-600 text-white text-xs font-medium rounded-lg transition-all"
+                >
+                  <Plus className="w-3.5 h-3.5" />
+                  Adicionar
+                </button>
+              )}
+              {processesByStatus.aguardando_confeccao.length > 4 && (
+                <button
+                  onClick={() => setStatusFilter('aguardando_confeccao')}
+                  className="text-xs font-medium text-orange-600 hover:text-orange-700"
+                >
+                  Ver todos
+                </button>
+              )}
+            </div>
+          </div>
+
+          {/* Formulário inline expandido */}
+          {quickAddExpanded && (
+            <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 px-3 sm:px-4 py-3 bg-orange-50/50 border-b border-orange-100">
+              <div className="relative flex-1">
+                <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400" />
+                <input
+                  type="text"
+                  value={quickAddClientSearch}
+                  onChange={(e) => {
+                    setQuickAddClientSearch(e.target.value);
+                    setQuickAddClientId('');
+                    setQuickAddShowSuggestions(true);
+                  }}
+                  onFocus={() => setQuickAddShowSuggestions(true)}
+                  placeholder="Buscar cliente..."
+                  className="w-full pl-8 pr-3 py-1.5 text-sm border border-orange-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 bg-white"
+                  autoFocus
+                  onKeyDown={(e) => {
+                    if (e.key === 'Escape') {
+                      setQuickAddExpanded(false);
+                      setQuickAddClientSearch('');
+                      setQuickAddClientId('');
+                    }
+                  }}
+                />
+                {quickAddShowSuggestions && quickAddFilteredClients.length > 0 && (
+                  <div className="absolute z-10 w-full mt-1 bg-white border border-slate-200 rounded-lg shadow-lg max-h-40 overflow-y-auto">
+                    {quickAddFilteredClients.map((client) => (
+                      <button
+                        key={client.id}
+                        type="button"
+                        onClick={() => {
+                          setQuickAddClientId(client.id);
+                          setQuickAddClientSearch(client.full_name);
+                          setQuickAddShowSuggestions(false);
+                        }}
+                        className="w-full px-3 py-2 text-left text-sm hover:bg-orange-50 flex items-center gap-2 border-b border-slate-100 last:border-0"
+                      >
+                        <User className="w-3.5 h-3.5 text-orange-400" />
+                        <span className="truncate">{client.full_name}</span>
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+              <select
+                value={quickAddArea}
+                onChange={(e) => setQuickAddArea(e.target.value as ProcessPracticeArea)}
+                className="px-2 py-1.5 text-xs border border-orange-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 bg-white"
+              >
+                {PRACTICE_AREAS.map((area) => (
+                  <option key={area.key} value={area.key}>{area.label}</option>
+                ))}
+              </select>
+              <button
+                onClick={async () => {
+                  await handleQuickAddAguardando();
+                  setQuickAddExpanded(false);
+                }}
+                disabled={quickAddSaving || !quickAddClientId}
+                className="flex items-center gap-1 px-3 py-1.5 bg-orange-500 hover:bg-orange-600 disabled:bg-orange-300 text-white text-xs font-medium rounded-lg transition"
+              >
+                {quickAddSaving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Plus className="w-3.5 h-3.5" />}
+              </button>
+              <button
+                onClick={() => {
+                  setQuickAddExpanded(false);
+                  setQuickAddClientSearch('');
+                  setQuickAddClientId('');
+                }}
+                className="p-1.5 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-lg transition"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+          )}
+
+          {/* Lista de clientes */}
+          {processesByStatus.aguardando_confeccao.length > 0 ? (
+            <div className="divide-y divide-slate-100">
+              {processesByStatus.aguardando_confeccao.slice(0, 4).map((process) => {
+                const client = process.client_id ? clients.find(c => c.id === process.client_id) : null;
+                return (
+                  <div
+                    key={process.id}
+                    onClick={() => setSelectedProcessForView(process)}
+                    className="flex items-center gap-3 px-4 py-2.5 hover:bg-orange-50/50 cursor-pointer transition-all group"
+                  >
+                    <div className="w-7 h-7 rounded-full bg-orange-100 flex items-center justify-center flex-shrink-0">
+                      <User className="w-3.5 h-3.5 text-orange-600" />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-medium text-slate-900 truncate">{client?.full_name || 'Cliente não informado'}</p>
+                      <p className="text-xs text-slate-500">{process.practice_area ? PRACTICE_AREAS.find(p => p.key === process.practice_area)?.label : 'Área não definida'}</p>
+                    </div>
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleOpenModal(process);
+                      }}
+                      className="p-1.5 text-orange-500 hover:text-orange-700 hover:bg-orange-100 rounded-lg transition opacity-0 group-hover:opacity-100"
+                      title="Editar e protocolar"
+                    >
+                      <Edit2 className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                );
+              })}
+              {processesByStatus.aguardando_confeccao.length > 4 && (
+                <button
+                  onClick={() => setStatusFilter('aguardando_confeccao')}
+                  className="w-full px-4 py-2 text-xs font-medium text-orange-600 hover:text-orange-700 hover:bg-orange-50 transition"
+                >
+                  Ver mais {processesByStatus.aguardando_confeccao.length - 4} cliente{processesByStatus.aguardando_confeccao.length - 4 !== 1 ? 's' : ''}...
+                </button>
+              )}
+            </div>
+          ) : (
+            <div className="px-4 py-6 text-center text-slate-400 text-sm">
+              Nenhum cliente aguardando confecção
+            </div>
+          )}
+        </div>
+      )}
 
       {syncResult && (
         <div className={`flex items-start gap-3 px-4 py-3 rounded-xl text-sm ${syncResult.errors > 0 ? 'bg-amber-50 border border-amber-200 text-amber-800' : 'bg-green-50 border border-green-200 text-green-800'}`}>
@@ -1917,14 +2030,14 @@ const ProcessesModule: React.FC<ProcessesModuleProps> = ({ forceCreate, entityId
             </button>
           </div>
 
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1.5 sm:gap-2 flex-wrap justify-end">
             <button
               onClick={handleSyncAllDjen}
               disabled={syncingDjen || pendingDjenCount === 0}
-              className={`relative flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-medium transition-all ${pendingDjenCount > 0 ? 'bg-blue-600 hover:bg-blue-700 text-white' : 'border border-slate-200 text-slate-400'}`}
+              className={`relative flex items-center gap-1 sm:gap-1.5 px-2 sm:px-3 py-2 rounded-lg text-xs font-medium transition-all ${pendingDjenCount > 0 ? 'bg-blue-600 hover:bg-blue-700 text-white' : 'border border-slate-200 text-slate-400'}`}
             >
               {syncingDjen ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5" />}
-              Sync DJEN
+              <span className="hidden sm:inline">Sync DJEN</span>
               {pendingDjenCount > 0 && !syncingDjen && (
                 <span className="absolute -top-1.5 -right-1.5 bg-red-500 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full min-w-[18px] text-center">{pendingDjenCount}</span>
               )}
@@ -1932,14 +2045,15 @@ const ProcessesModule: React.FC<ProcessesModuleProps> = ({ forceCreate, entityId
             <button
               onClick={handleExportExcel}
               disabled={exportingExcel}
-              className="flex items-center gap-1.5 px-3 py-2 border border-slate-200 hover:bg-slate-50 text-slate-700 rounded-lg text-xs font-medium transition-all"
+              className="flex items-center gap-1 sm:gap-1.5 px-2 sm:px-3 py-2 border border-slate-200 hover:bg-slate-50 text-slate-700 rounded-lg text-xs font-medium transition-all"
             >
               {exportingExcel ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <FileSpreadsheet className="w-3.5 h-3.5" />}
-              Exportar
+              <span className="hidden sm:inline">Exportar</span>
             </button>
-            <button onClick={() => handleOpenModal()} className="flex items-center gap-1.5 px-4 py-2 bg-amber-600 hover:bg-amber-700 text-white rounded-lg text-xs font-semibold transition-all shadow-sm">
+            <button onClick={() => handleOpenModal()} className="flex items-center gap-1 sm:gap-1.5 px-3 sm:px-4 py-2 bg-amber-600 hover:bg-amber-700 text-white rounded-lg text-xs font-semibold transition-all shadow-sm">
               <Plus className="w-3.5 h-3.5" />
-              Novo Processo
+              <span className="hidden xs:inline">Novo</span>
+              <span className="hidden sm:inline">Processo</span>
             </button>
           </div>
         </div>
@@ -1985,7 +2099,7 @@ const ProcessesModule: React.FC<ProcessesModuleProps> = ({ forceCreate, entityId
               <p className="text-slate-600">Nenhum processo encontrado.</p>
             </div>
           ) : kanbanMode ? (
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-6 gap-3 sm:gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3 sm:gap-4 overflow-x-auto">
               {STATUS_OPTIONS.map((statusOption) => {
                 const processesInColumn = processesByStatus[statusOption.key] || [];
                 return (
@@ -2103,6 +2217,15 @@ const ProcessesModule: React.FC<ProcessesModuleProps> = ({ forceCreate, entityId
                         <span className="text-xs text-gray-600">{formatDate(process.distributed_at)}</span>
                       </div>
                       <div className="flex items-center gap-2">
+                        {process.process_code && (
+                          <button
+                            onClick={() => handleOpenTimeline(process)}
+                            className="px-3 py-2 bg-orange-50 text-orange-600 rounded-lg hover:bg-orange-100 transition-colors"
+                            title="Linha do Tempo"
+                          >
+                            <Clock className="w-4 h-4" />
+                          </button>
+                        )}
                         <button
                           onClick={() => handleViewProcess(process)}
                           className="flex-1 inline-flex items-center justify-center gap-2 px-3 py-2 bg-blue-50 text-blue-700 rounded-lg hover:bg-blue-100 transition-colors text-sm font-medium"
@@ -2112,10 +2235,10 @@ const ProcessesModule: React.FC<ProcessesModuleProps> = ({ forceCreate, entityId
                         </button>
                         <button
                           onClick={() => handleOpenModal(process)}
-                          className="flex-1 inline-flex items-center justify-center gap-2 px-3 py-2 bg-amber-50 text-amber-700 rounded-lg hover:bg-amber-100 transition-colors text-sm font-medium"
+                          className="px-3 py-2 bg-amber-50 text-amber-700 rounded-lg hover:bg-amber-100 transition-colors"
+                          title="Editar"
                         >
                           <Edit2 className="w-4 h-4" />
-                          Editar
                         </button>
                         <button onClick={() => handleDeleteProcess(process.id)} className="px-3 py-2 bg-red-50 text-red-700 rounded-lg hover:bg-red-100 transition-colors" title="Excluir">
                           <Trash2 className="w-4 h-4" />
@@ -2140,7 +2263,7 @@ const ProcessesModule: React.FC<ProcessesModuleProps> = ({ forceCreate, entityId
                     {filteredProcesses.map((process) => {
                       const client = clientMap.get(process.client_id);
                       return (
-                        <tr key={process.id} className="hover:bg-gray-50 transition-colors">
+                        <tr key={process.id} className="hover:bg-gray-50 transition-colors cursor-pointer" onClick={() => process.process_code && handleOpenTimeline(process)}>
                           <td className="px-6 py-4 whitespace-nowrap">
                             <div className="flex items-center gap-3">
                               <div
@@ -2178,8 +2301,13 @@ const ProcessesModule: React.FC<ProcessesModuleProps> = ({ forceCreate, entityId
                           <td className="px-6 py-4 whitespace-nowrap">
                             <span className={`px-3 py-1 inline-flex text-xs leading-5 font-semibold rounded-full ${getStatusBadge(process.status)}`}>{getStatusLabel(process.status)}</span>
                           </td>
-                          <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
+                          <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium" onClick={(e) => e.stopPropagation()}>
                             <div className="flex items-center justify-end gap-2">
+                              {process.process_code && (
+                                <button onClick={() => handleOpenTimeline(process)} className="text-orange-500 hover:text-orange-700 transition-colors" title="Linha do Tempo">
+                                  <Clock className="w-5 h-5" />
+                                </button>
+                              )}
                               <button onClick={() => handleViewProcess(process)} className="text-blue-600 hover:text-blue-900 transition-colors" title="Ver detalhes">
                                 <Eye className="w-5 h-5" />
                               </button>
@@ -2203,6 +2331,40 @@ const ProcessesModule: React.FC<ProcessesModuleProps> = ({ forceCreate, entityId
       </div>
 
       {processModal}
+      {detailsModal}
+
+      {/* Timeline Modal */}
+      {showTimelineModal && timelineProcessCode && createPortal(
+        <div className="fixed inset-0 z-[80] flex items-center justify-center px-4 py-6">
+          <div
+            className="absolute inset-0 bg-slate-900/70 backdrop-blur-sm"
+            onClick={() => {
+              setShowTimelineModal(false);
+              setTimelineProcessCode(null);
+              setTimelineProcessId(null);
+              setTimelineClientName(null);
+            }}
+          />
+          <div className="relative z-10">
+            <ProcessTimeline
+              processCode={timelineProcessCode}
+              processId={timelineProcessId || undefined}
+              clientName={timelineClientName || undefined}
+              onClose={() => {
+                setShowTimelineModal(false);
+                setTimelineProcessCode(null);
+                setTimelineProcessId(null);
+                setTimelineClientName(null);
+              }}
+              onStatusUpdated={(newStatus) => {
+                // Atualizar a lista de processos quando o status mudar
+                handleReload();
+              }}
+            />
+          </div>
+        </div>,
+        document.body
+      )}
     </div>
   );
 };

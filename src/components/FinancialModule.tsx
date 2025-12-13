@@ -8,6 +8,7 @@ import {
   FileSpreadsheet,
   CheckCircle,
   AlertCircle,
+  AlertTriangle,
   Clock,
   Eye,
   Edit,
@@ -15,6 +16,7 @@ import {
   X,
   Receipt,
   CalendarIcon,
+  Calendar,
   Download,
   Loader2,
   PiggyBank,
@@ -65,7 +67,33 @@ const FinancialModule: React.FC = () => {
   const [isDetailsModalOpen, setIsDetailsModalOpen] = useState(false);
   const [installments, setInstallments] = useState<Installment[]>([]);
   const [loadingInstallments, setLoadingInstallments] = useState(false);
-  const today = new Date().toISOString().split('T')[0];
+  const today = (() => {
+    const d = new Date();
+    const yyyy = d.getFullYear();
+    const mm = String(d.getMonth() + 1).padStart(2, '0');
+    const dd = String(d.getDate()).padStart(2, '0');
+    return `${yyyy}-${mm}-${dd}`;
+  })();
+  const parseLocalDate = (raw?: string | null) => {
+    if (!raw) return null;
+    const s = String(raw).trim();
+    const iso = s.slice(0, 10);
+    if (iso.includes('-')) {
+      const [y, m, d] = iso.split('-').map(Number);
+      if (y && m && d) return new Date(y, m - 1, d);
+    }
+    if (s.includes('/')) {
+      const [d, m, y] = s.split('/').slice(0, 3).map(Number);
+      if (y && m && d) return new Date(y, m - 1, d);
+    }
+    return null;
+  };
+  const formatLocalISODate = (date: Date) => {
+    const yyyy = date.getFullYear();
+    const mm = String(date.getMonth() + 1).padStart(2, '0');
+    const dd = String(date.getDate()).padStart(2, '0');
+    return `${yyyy}-${mm}-${dd}`;
+  };
   const [isPaymentModalOpen, setIsPaymentModalOpen] = useState(false);
   const [selectedInstallment, setSelectedInstallment] = useState<Installment | null>(null);
   const [paymentData, setPaymentData] = useState({
@@ -110,6 +138,7 @@ const FinancialModule: React.FC = () => {
   const [editError, setEditError] = useState<string | null>(null);
   const [isIRModalOpen, setIsIRModalOpen] = useState(false);
   const [showAllCompleted, setShowAllCompleted] = useState(false);
+  const [viewMode, setViewMode] = useState<'grid' | 'list'>('list');
   const pendingStatuses: InstallmentStatus[] = ['pendente', 'vencido'];
   const [editForm, setEditForm] = useState({
     clientId: '',
@@ -117,7 +146,7 @@ const FinancialModule: React.FC = () => {
     title: '',
     description: '',
     notes: '',
-    agreementDate: new Date().toISOString().split('T')[0],
+    agreementDate: today,
     status: 'ativo' as AgreementStatus,
     totalValue: '',
     feeType: 'percentage' as 'percentage' | 'fixed',
@@ -125,7 +154,7 @@ const FinancialModule: React.FC = () => {
     feeFixedValue: '',
     paymentType: 'installments' as 'installments' | 'upfront',
     installmentsCount: '1',
-    firstDueDate: new Date().toISOString().split('T')[0],
+    firstDueDate: today,
     customInstallments: [] as { dueDate: string; value: string }[],
   });
   const [formData, setFormData] = useState({
@@ -535,10 +564,10 @@ const FinancialModule: React.FC = () => {
         agreement_date: editForm.agreementDate,
         status: editForm.status,
         notes: editForm.notes.trim() || undefined,
-        total_value: Number(editForm.totalValue),
+        total_value: parseCurrencyToNumber(editForm.totalValue),
         fee_type: editForm.feeType,
         fee_percentage: editForm.feeType === 'percentage' ? Number(editForm.feePercentage) : undefined,
-        fee_fixed_value: editForm.feeType === 'fixed' ? Number(editForm.feeFixedValue) : undefined,
+        fee_fixed_value: editForm.feeType === 'fixed' ? parseCurrencyToNumber(editForm.feeFixedValue) : undefined,
         payment_type: editForm.paymentType,
         installments_count: editForm.paymentType === 'upfront' ? 1 : Number(editForm.installmentsCount),
         first_due_date: editForm.firstDueDate,
@@ -559,23 +588,13 @@ const FinancialModule: React.FC = () => {
   const agreementSummary = useMemo(() => {
     if (!selectedAgreement) return null;
 
-    const hasInstallments = installments.length > 0;
-    const totalInstallments = hasInstallments
-      ? Number(installments.reduce((sum, inst) => sum + (inst.value || 0), 0).toFixed(2))
-      : selectedAgreement.total_value;
-
-    const totalValue = Number(totalInstallments.toFixed(2));
-    const feeValue = selectedAgreement.fee_type === 'percentage'
-      ? Number(((totalValue * (selectedAgreement.fee_percentage ?? 0)) / 100).toFixed(2))
-      : Number(selectedAgreement.fee_value.toFixed(2));
+    // Usar sempre o total_value do acordo como fonte de verdade
+    const totalValue = selectedAgreement.total_value;
+    const feeValue = selectedAgreement.fee_value;
     const netValue = Number((totalValue - feeValue).toFixed(2));
 
-    const installmentsCount = hasInstallments
-      ? installments.length
-      : selectedAgreement.installments_count;
-    const installmentValue = installmentsCount > 0
-      ? Number((totalValue / installmentsCount).toFixed(2))
-      : Number(selectedAgreement.installment_value.toFixed(2));
+    const installmentsCount = selectedAgreement.installments_count;
+    const installmentValue = installmentsCount > 0 ? totalValue / installmentsCount : totalValue;
 
     return {
       totalValue,
@@ -584,7 +603,7 @@ const FinancialModule: React.FC = () => {
       installmentsCount,
       installmentValue,
     };
-  }, [selectedAgreement, installments]);
+  }, [selectedAgreement]);
 
   const handleOpenModal = () => {
     setFormError(null);
@@ -675,10 +694,10 @@ const FinancialModule: React.FC = () => {
         title: formData.title.trim(),
         description: formData.description?.trim() || undefined,
         agreement_date: formData.agreementDate,
-        total_value: Number(formData.totalValue),
+        total_value: parseCurrencyToNumber(formData.totalValue),
         fee_type: formData.feeType,
         fee_percentage: formData.feeType === 'percentage' ? Number(formData.feePercentage) : undefined,
-        fee_fixed_value: formData.feeType === 'fixed' ? Number(formData.feeFixedValue) : undefined,
+        fee_fixed_value: formData.feeType === 'fixed' ? parseCurrencyToNumber(formData.feeFixedValue) : undefined,
         payment_type: formData.paymentType,
         installments_count: formData.paymentType === 'upfront' ? 1 : Number(formData.installmentsCount),
         first_due_date: formData.firstDueDate || (formData.customInstallments[0]?.dueDate ?? today),
@@ -787,7 +806,7 @@ const FinancialModule: React.FC = () => {
   const checkOverdueInstallments = () => {
     const twoDaysAgo = new Date();
     twoDaysAgo.setDate(twoDaysAgo.getDate() - 2);
-    const twoDaysAgoStr = twoDaysAgo.toISOString().split('T')[0];
+    const twoDaysAgoStr = formatLocalISODate(twoDaysAgo);
     
     return installments.filter(
       inst => inst.status === 'pendente' && inst.due_date < twoDaysAgoStr
@@ -871,9 +890,33 @@ const FinancialModule: React.FC = () => {
     if (typeof value === 'number') return value;
     const trimmed = value.trim();
     if (!trimmed) return 0;
-    const normalized = trimmed.replace(/\./g, '').replace(',', '.');
+
+    const cleaned = trimmed.replace(/\s+/g, '');
+    const lastDot = cleaned.lastIndexOf('.');
+    const lastComma = cleaned.lastIndexOf(',');
+
+    let normalized = cleaned;
+
+    if (lastDot !== -1 && lastComma !== -1) {
+      const decimalSeparator = lastDot > lastComma ? '.' : ',';
+      if (decimalSeparator === '.') {
+        normalized = cleaned.replace(/,/g, '');
+      } else {
+        normalized = cleaned.replace(/\./g, '').replace(',', '.');
+      }
+    } else if (lastComma !== -1) {
+      normalized = cleaned.replace(/\./g, '').replace(',', '.');
+    } else if (lastDot !== -1) {
+      const decimals = cleaned.length - lastDot - 1;
+      if (decimals === 1 || decimals === 2) {
+        normalized = cleaned;
+      } else {
+        normalized = cleaned.replace(/\./g, '');
+      }
+    }
+
     const num = Number(normalized);
-    return Number.isNaN(num) ? 0 : num;
+    return Number.isFinite(num) ? num : 0;
   };
 
   const formatCurrencyInput = (raw: string): string => {
@@ -1610,7 +1653,7 @@ const FinancialModule: React.FC = () => {
       dueDate.setMonth(dueDate.getMonth() + i);
       schedule.push({
         number: i + 1,
-        dueDate: dueDate.toISOString().split('T')[0],
+        dueDate: formatLocalISODate(dueDate),
         value: Number(installmentValue.toFixed(2)),
       });
     }
@@ -1676,7 +1719,8 @@ const FinancialModule: React.FC = () => {
       await Promise.all(
         installmentsList
           .filter((inst) => {
-            const dueDate = new Date(inst.due_date);
+            const dueDate = parseLocalDate(inst.due_date);
+            if (!dueDate) return false;
             const threshold = new Date();
             threshold.setDate(threshold.getDate() - 2);
             return inst.status === 'pendente' && dueDate < threshold;
@@ -1692,14 +1736,15 @@ const FinancialModule: React.FC = () => {
             if (exists) return;
 
             const clientName = getClientName(agreement.client_id);
-            const deadlineDate = new Date(inst.due_date);
+            const deadlineDate = parseLocalDate(inst.due_date);
+            if (!deadlineDate) return;
             deadlineDate.setDate(deadlineDate.getDate() + 2);
 
             await calendarService.createEvent({
               title: `Prazo: Denúncia de inadimplência - ${clientName}`,
               description: `Acordo: ${agreement.title}\nParcela ${inst.installment_number}/${agreement.installments_count}\nValor: ${formatCurrency(inst.value)}\n[inadimplencia] [agreement_id:${agreement.id}] [installment:${inst.installment_number}]`,
               event_type: 'deadline',
-              start_at: `${deadlineDate.toISOString().split('T')[0]}T00:00:00`,
+              start_at: `${formatLocalISODate(deadlineDate)}T00:00:00`,
               notify_minutes_before: 60,
               client_id: agreement.client_id,
               process_id: agreement.process_id ?? undefined,
@@ -1746,7 +1791,7 @@ const FinancialModule: React.FC = () => {
       : installment?.payment_date
         ? new Date(installment.payment_date).toLocaleDateString('pt-BR')
         : installment?.due_date
-          ? new Date(installment.due_date).toLocaleDateString('pt-BR')
+          ? (parseLocalDate(installment.due_date) ?? new Date(installment.due_date)).toLocaleDateString('pt-BR')
           : '_____/_____/_____';
     
     const description = options?.descriptionOverride
@@ -1943,42 +1988,7 @@ ${clientAddress ? `<div class="flex"><span class="text-subtle-light dark:text-su
       totalPaid,
       paymentMethodLabel: methodLabel,
       paymentDate: lastDate,
-      descriptionOverride: `Honorários advocatícios referentes à quitação integral do acordo "${agreement.title}" (${installments.length} parcelas).`,
     });
-  };
-
-  
-  const handleAddDeadline = async (agreement: Agreement) => {
-    if (!installments.length) {
-      toast.info('Acordo', 'Sem parcelas para gerar prazo');
-      return;
-    }
-
-    const nextPending = installments.find((inst) => inst.status !== 'pago');
-    if (!nextPending) {
-      toast.info('Acordo', 'Todas as parcelas já foram quitadas');
-      return;
-    }
-
-    try {
-      const clientName = getClientName(agreement.client_id);
-      const deadlineDate = new Date(nextPending.due_date);
-      deadlineDate.setDate(deadlineDate.getDate() + 2);
-
-      await calendarService.createEvent({
-        title: `Prazo interno - ${clientName}`,
-        description: `Monitorar pagamento da parcela ${nextPending.installment_number}/${agreement.installments_count} do acordo "${agreement.title}".\n[agreement_id:${agreement.id}] [installment:${nextPending.installment_number}]`,
-        event_type: 'deadline',
-        start_at: `${deadlineDate.toISOString().split('T')[0]}T00:00:00`,
-        notify_minutes_before: 60,
-        client_id: agreement.client_id,
-        process_id: agreement.process_id ?? undefined,
-      });
-
-      toast.success('Prazo criado', 'O prazo foi adicionado ao calendário');
-    } catch (error: any) {
-      toast.error('Prazo', 'Não foi possível adicionar o prazo ao calendário');
-    }
   };
 
   const handleExportAgreement = (agreement: Agreement) => {
@@ -2041,143 +2051,183 @@ ${clientAddress ? `<div class="flex"><span class="text-subtle-light dark:text-su
 
   return (
     <div className="space-y-4">
-      {/* Header Compacto e Profissional */}
-      <div className="bg-white border border-slate-200 rounded-lg shadow-sm p-3 sm:p-4">
-        <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3 sm:gap-4">
-          <div>
-            <h1 className="text-lg sm:text-2xl font-semibold text-slate-900 flex items-center gap-2">
-              <PiggyBank className="w-5 h-5 sm:w-6 sm:h-6 text-emerald-600" />
-              Gestão Financeira
-            </h1>
-            <p className="text-sm text-slate-600 mt-1">
-              Controle de acordos e honorários
-            </p>
-          </div>
-          <div className="flex flex-col sm:flex-row flex-wrap items-stretch sm:items-center gap-2">
-            {/* Navegação de Mês + Relatório IR */}
-            <div className="flex items-center gap-2">
-              <div className="flex items-center gap-1 border border-slate-200 rounded-lg px-2 py-1.5">
-                <button
-                  onClick={handlePreviousMonth}
-                  className="hover:bg-slate-100 p-1 rounded transition"
-                  title="Mês anterior"
-                >
-                  <ChevronLeft className="w-4 h-4 text-slate-600" />
+      {/* Header Unificado */}
+      <div className="bg-white border border-slate-200 rounded-xl shadow-sm">
+        {/* Linha 1: Título + Badges + Ações */}
+        <div className="p-4 border-b border-slate-100">
+          <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3">
+            <div className="flex items-center gap-3">
+              <div className="bg-emerald-100 text-emerald-700 p-2 rounded-lg">
+                <PiggyBank className="w-5 h-5" />
+              </div>
+              <div>
+                <h1 className="text-lg font-bold text-slate-900">Gestão Financeira</h1>
+                <div className="flex items-center gap-2 mt-0.5 text-xs">
+                  <span className="px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 font-medium">
+                    {filteredAgreements.filter(a => a.status === 'ativo').length} ativos
+                  </span>
+                  <span className="px-2 py-0.5 rounded-full bg-blue-50 text-blue-700 font-medium">
+                    {filteredAgreements.filter(a => a.status === 'concluido').length} concluídos
+                  </span>
+                </div>
+              </div>
+            </div>
+            <div className="flex flex-wrap items-center gap-1.5 sm:gap-2">
+              {/* Navegação de Mês */}
+              <div className="flex items-center gap-0.5 sm:gap-1 border border-slate-200 rounded-lg px-1.5 sm:px-2 py-1 sm:py-1.5">
+                <button onClick={handlePreviousMonth} className="hover:bg-slate-100 p-0.5 rounded transition" title="Mês anterior">
+                  <ChevronLeft className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-slate-600" />
                 </button>
-                <span className="text-xs font-medium min-w-[100px] text-center capitalize text-slate-700">
+                <span className="text-[10px] sm:text-xs font-medium min-w-[70px] sm:min-w-[90px] text-center capitalize text-slate-700">
                   {formatMonthYear(activeMonth)}
                 </span>
-                <button
-                  onClick={handleNextMonth}
-                  className="hover:bg-slate-100 p-1 rounded transition"
-                  title="Próximo mês"
-                >
-                  <ChevronRight className="w-4 h-4 text-slate-600" />
+                <button onClick={handleNextMonth} className="hover:bg-slate-100 p-0.5 rounded transition" title="Próximo mês">
+                  <ChevronRight className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-slate-600" />
                 </button>
               </div>
-              <button
-                onClick={() => setIsIRModalOpen(true)}
-                className="inline-flex items-center justify-center gap-1.5 border border-slate-200 hover:bg-slate-50 transition-colors px-3 py-1.5 rounded-lg text-xs font-medium text-slate-700"
-                title="Relatório de Imposto de Renda"
-              >
-                <FileSpreadsheet className="w-4 h-4" />
-                <span className="hidden sm:inline">Relatório IR</span>
-                <span className="sm:hidden">IR</span>
+              <button onClick={() => setIsIRModalOpen(true)} className="p-1.5 sm:p-2 border border-slate-200 hover:bg-slate-50 rounded-lg transition" title="Relatório IR">
+                <FileSpreadsheet className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-slate-600" />
               </button>
-              <button
-                onClick={() => {
-                  setIsAuditModalOpen(true);
-                  setAuditAgreementId(null);
-                  loadAuditByMonth(auditFilterMonth);
-                }}
-                className="inline-flex items-center justify-center gap-1.5 border border-purple-200 hover:bg-purple-50 transition-colors px-3 py-1.5 rounded-lg text-xs font-medium text-purple-700"
-                title="Histórico de Auditoria de Pagamentos"
-              >
-                <History className="w-4 h-4" />
-                <span className="hidden sm:inline">Auditoria</span>
-                <span className="sm:hidden">Aud</span>
+              <button onClick={() => { setIsAuditModalOpen(true); setAuditAgreementId(null); loadAuditByMonth(auditFilterMonth); }} className="p-1.5 sm:p-2 border border-purple-200 hover:bg-purple-50 rounded-lg transition" title="Auditoria">
+                <History className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-purple-600" />
+              </button>
+              <button onClick={handleOpenModal} className="inline-flex items-center gap-1 sm:gap-1.5 bg-emerald-600 hover:bg-emerald-700 text-white px-2 sm:px-3 py-1.5 sm:py-2 rounded-lg text-[10px] sm:text-xs font-semibold transition">
+                <PlusCircle className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+                <span className="hidden xs:inline">Novo</span> Acordo
               </button>
             </div>
-            
-            {/* Botão Novo Acordo */}
-            <button
-              onClick={handleOpenModal}
-              className="inline-flex items-center justify-center gap-1.5 bg-emerald-600 hover:bg-emerald-700 transition-colors px-3 py-1.5 rounded-lg text-xs font-medium text-white w-full sm:w-auto"
+          </div>
+        </div>
+        {/* Linha 2: Busca + Filtros */}
+        <div className="px-4 py-3 bg-slate-50 border-t border-slate-100 flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
+          <div className="relative flex-1">
+            <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+            <input
+              type="text"
+              placeholder="Buscar acordos..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              className="w-full pl-9 pr-4 py-2 border border-slate-200 rounded-lg text-sm bg-white focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 transition-all"
+            />
+          </div>
+          <div className="flex flex-wrap gap-1.5 sm:gap-2">
+            <select
+              value={filterStatus}
+              onChange={(e) => setFilterStatus(e.target.value as any)}
+              className="px-2 sm:px-3 py-1.5 sm:py-2 border border-slate-200 rounded-lg text-[10px] sm:text-xs focus:ring-2 focus:ring-emerald-500 bg-white cursor-pointer"
             >
-              <PlusCircle className="w-4 h-4" />
-              Novo Acordo
-            </button>
+              <option value="all">Status</option>
+              <option value="ativo">Ativos</option>
+              <option value="concluido">Concluídos</option>
+              <option value="cancelado">Cancelados</option>
+            </select>
+            <select
+              value={filterPaymentStatus}
+              onChange={(e) => setFilterPaymentStatus(e.target.value as any)}
+              className="px-2 sm:px-3 py-1.5 sm:py-2 border border-slate-200 rounded-lg text-[10px] sm:text-xs focus:ring-2 focus:ring-emerald-500 bg-white cursor-pointer"
+            >
+              <option value="all">Pagamento</option>
+              <option value="with_pending">Pendentes</option>
+              <option value="fully_paid">Pagos</option>
+            </select>
+            {/* Toggle Grade/Lista */}
+            <div className="flex items-center border border-slate-200 rounded-lg overflow-hidden">
+              <button
+                onClick={() => setViewMode('grid')}
+                className={`p-1.5 sm:p-2 transition ${viewMode === 'grid' ? 'bg-emerald-500 text-white' : 'bg-white text-slate-500 hover:bg-slate-50'}`}
+                title="Visualização em grade"
+              >
+                <svg className="w-3.5 h-3.5 sm:w-4 sm:h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z" />
+                </svg>
+              </button>
+              <button
+                onClick={() => setViewMode('list')}
+                className={`p-1.5 sm:p-2 transition ${viewMode === 'list' ? 'bg-emerald-500 text-white' : 'bg-white text-slate-500 hover:bg-slate-50'}`}
+                title="Visualização em lista"
+              >
+                <svg className="w-3.5 h-3.5 sm:w-4 sm:h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
+                </svg>
+              </button>
+            </div>
           </div>
         </div>
       </div>
 
-      {/* Stats Minimalistas */}
-      <div className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-4 gap-2 sm:gap-4">
-        <div className="bg-white border border-slate-200 rounded-lg p-3 sm:p-4 hover:shadow-md hover:border-emerald-300 transition-all duration-200 cursor-pointer group">
-          <div className="flex items-center justify-between mb-2 sm:mb-3">
-            <span className="text-[10px] sm:text-xs font-medium text-slate-600 uppercase group-hover:text-emerald-600 transition-colors">A Receber</span>
-            <TrendingUp className="w-3 h-3 sm:w-4 sm:h-4 text-emerald-600 group-hover:scale-110 transition-transform" />
+      {/* Stats Cards */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-2 sm:gap-4">
+        {/* A Receber */}
+        <div className="rounded-xl bg-emerald-600 text-white p-3 sm:p-4 shadow-md hover:shadow-lg transition">
+          <div className="flex items-center gap-1.5 sm:gap-2">
+            <div className="w-6 h-6 sm:w-7 sm:h-7 rounded-lg bg-white/20 flex items-center justify-center">
+              <TrendingUp className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+            </div>
+            <span className="text-[9px] sm:text-[10px] font-semibold uppercase tracking-wider opacity-90">A Receber</span>
           </div>
-          <p className="text-base sm:text-2xl font-bold text-slate-900 group-hover:text-emerald-600 transition-colors">{formatCurrency(stats?.monthly_fees || 0)}</p>
-          <p className="text-[9px] sm:text-xs text-slate-500 mt-0.5 sm:mt-1 hidden sm:block">Previsto no mês</p>
+          <p className="mt-2 sm:mt-3 text-lg sm:text-2xl font-bold">{formatCurrency(stats?.monthly_fees || 0)}</p>
+          <p className="text-[10px] sm:text-xs opacity-85 mt-0.5 sm:mt-1 hidden xs:block">Previsto no mês</p>
         </div>
-        <div className="bg-white border border-slate-200 rounded-lg p-3 sm:p-4 hover:shadow-md hover:border-blue-300 transition-all duration-200 cursor-pointer group">
-          <div className="flex items-center justify-between mb-2 sm:mb-3">
-            <span className="text-[10px] sm:text-xs font-medium text-slate-600 uppercase group-hover:text-blue-600 transition-colors">Recebido</span>
-            <CheckCircle className="w-3 h-3 sm:w-4 sm:h-4 text-blue-600 group-hover:scale-110 transition-transform" />
+
+        {/* Recebido */}
+        <div className="rounded-xl bg-blue-600 text-white p-3 sm:p-4 shadow-md hover:shadow-lg transition">
+          <div className="flex items-center gap-1.5 sm:gap-2">
+            <div className="w-6 h-6 sm:w-7 sm:h-7 rounded-lg bg-white/20 flex items-center justify-center">
+              <CheckCircle className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+            </div>
+            <span className="text-[9px] sm:text-[10px] font-semibold uppercase tracking-wider opacity-90">Recebido</span>
           </div>
-          <p className="text-base sm:text-2xl font-bold text-slate-900 group-hover:text-blue-600 transition-colors">{formatCurrency(stats?.monthly_fees_received || 0)}</p>
-          <p className="text-[9px] sm:text-xs text-slate-500 mt-0.5 sm:mt-1 hidden sm:block">Já quitado</p>
+          <p className="mt-2 sm:mt-3 text-lg sm:text-2xl font-bold">{formatCurrency(stats?.monthly_fees_received || 0)}</p>
+          <p className="text-[10px] sm:text-xs opacity-85 mt-0.5 sm:mt-1 hidden xs:block">Já quitado</p>
         </div>
-        <div className="bg-white border border-slate-200 rounded-lg p-3 sm:p-4 hover:shadow-md hover:border-amber-300 transition-all duration-200 cursor-pointer group">
-          <div className="flex items-center justify-between mb-2 sm:mb-3">
-            <span className="text-[10px] sm:text-xs font-medium text-slate-600 uppercase group-hover:text-amber-600 transition-colors">Pendente</span>
-            <Clock className="w-3 h-3 sm:w-4 sm:h-4 text-amber-600 group-hover:scale-110 transition-transform" />
+
+        {/* Pendente */}
+        <div className="rounded-xl bg-orange-500 text-white p-3 sm:p-4 shadow-md hover:shadow-lg transition">
+          <div className="flex items-center gap-1.5 sm:gap-2">
+            <div className="w-6 h-6 sm:w-7 sm:h-7 rounded-lg bg-white/20 flex items-center justify-center">
+              <Clock className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+            </div>
+            <span className="text-[9px] sm:text-[10px] font-semibold uppercase tracking-wider opacity-90">Pendente</span>
           </div>
-          <p className="text-base sm:text-2xl font-bold text-slate-900 group-hover:text-amber-600 transition-colors">{formatCurrency(stats?.monthly_fees_pending || 0)}</p>
-          <p className="text-[9px] sm:text-xs text-slate-500 mt-0.5 sm:mt-1 hidden sm:block">Aguardando</p>
+          <p className="mt-2 sm:mt-3 text-lg sm:text-2xl font-bold">{formatCurrency(stats?.monthly_fees_pending || 0)}</p>
+          <p className="text-[10px] sm:text-xs opacity-85 mt-0.5 sm:mt-1 hidden xs:block">Aguardando</p>
         </div>
-        <div className={`bg-white border rounded-lg p-3 sm:p-4 hover:shadow-md transition-all duration-200 cursor-pointer group ${
-          stats?.overdue_installments ? 'border-red-300 hover:border-red-400' : 'border-slate-200 hover:border-slate-300'
-        }`}>
-          <div className="flex items-center justify-between mb-2 sm:mb-3">
-            <span className={`text-[10px] sm:text-xs font-medium uppercase transition-colors ${
-              stats?.overdue_installments ? 'text-red-600 group-hover:text-red-700' : 'text-slate-600 group-hover:text-slate-700'
-            }`}>Vencidas</span>
-            <AlertCircle className={`w-3 h-3 sm:w-4 sm:h-4 transition-transform group-hover:scale-110 ${
-              stats?.overdue_installments ? 'text-red-600 animate-pulse' : 'text-slate-400'
-            }`} />
+
+        {/* Vencidas */}
+        <div className="rounded-xl bg-slate-700 text-white p-3 sm:p-4 shadow-md hover:shadow-lg transition">
+          <div className="flex items-center gap-1.5 sm:gap-2">
+            <div className="w-6 h-6 sm:w-7 sm:h-7 rounded-lg bg-white/20 flex items-center justify-center">
+              <AlertCircle className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+            </div>
+            <span className="text-[9px] sm:text-[10px] font-semibold uppercase tracking-wider opacity-90">Vencidas</span>
           </div>
-          <p className={`text-base sm:text-2xl font-bold transition-colors ${
-            stats?.overdue_installments ? 'text-red-600 group-hover:text-red-700' : 'text-slate-900 group-hover:text-slate-700'
-          }`}>{stats?.overdue_installments || 0}</p>
-          <p className="text-[9px] sm:text-xs text-slate-500 mt-0.5 sm:mt-1 hidden sm:block">
-            {stats?.overdue_installments ? 'Parcelas em atraso' : 'Nenhuma vencida'}
-          </p>
+          <p className="mt-2 sm:mt-3 text-lg sm:text-2xl font-bold">{stats?.overdue_installments || 0}</p>
+          <p className="text-[10px] sm:text-xs opacity-85 mt-0.5 sm:mt-1 hidden xs:block">{stats?.overdue_installments ? 'Em atraso' : 'Nenhuma'}</p>
         </div>
       </div>
 
       {/* Modal de edição de acordo */}
       {isEditModalOpen && selectedAgreement && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-          <div className="absolute inset-0 bg-black/40 dark:bg-black/70 backdrop-blur-sm" onClick={handleCloseEditModal} />
-          <div className="relative w-full max-w-4xl rounded-2xl bg-white dark:bg-zinc-900 shadow-2xl dark:shadow-black/50 max-h-[90vh] flex flex-col border border-zinc-200 dark:border-zinc-700/50">
-            <form onSubmit={handleSubmitEdit} className="flex flex-col flex-1 min-h-0">
-              <div className="flex flex-col p-6 gap-4 flex-1 overflow-y-auto">
-                {/* Header */}
-                <div className="flex flex-wrap justify-between gap-3">
-                  <div className="flex flex-col gap-1">
-                    <h1 className="text-zinc-900 dark:text-white text-2xl font-bold leading-tight">Editar Acordo</h1>
-                    <p className="text-zinc-500 dark:text-zinc-400 text-sm font-normal">Atualize os dados financeiros abaixo</p>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={handleCloseEditModal}
-                    className="flex items-center justify-center h-10 w-10 rounded-lg text-zinc-500 dark:text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors"
-                  >
-                    <X className="w-5 h-5" />
-                  </button>
-                </div>
+        <div className="fixed inset-0 z-[70] flex items-center justify-center px-3 sm:px-6 py-4">
+          <div className="absolute inset-0 bg-slate-900/70 backdrop-blur-sm" onClick={handleCloseEditModal} aria-hidden="true" />
+          <div className="relative w-full max-w-4xl max-h-[92vh] bg-white dark:bg-zinc-900 rounded-2xl shadow-2xl ring-1 ring-black/5 flex flex-col overflow-hidden">
+            <div className="h-2 w-full bg-orange-500" />
+            <div className="px-5 sm:px-8 py-5 border-b border-slate-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 flex items-start justify-between gap-4">
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400 dark:text-slate-500">Edição</p>
+                <h2 className="text-xl font-semibold text-slate-900 dark:text-white">Editar Acordo</h2>
+              </div>
+              <button
+                type="button"
+                onClick={handleCloseEditModal}
+                className="p-2 text-slate-400 hover:text-slate-600 dark:text-slate-300 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-white/10 rounded-xl transition"
+                aria-label="Fechar modal"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <form id="edit-agreement-form" onSubmit={handleSubmitEdit} className="flex flex-col flex-1 min-h-0">
+              <div className="flex flex-col p-6 gap-4 flex-1 overflow-y-auto bg-white dark:bg-zinc-900">
 
                 {editInitialLoading ? (
                   <div className="flex items-center justify-center py-8">
@@ -2475,125 +2525,113 @@ ${clientAddress ? `<div class="flex"><span class="text-subtle-light dark:text-su
                   </>
                 )}
               </div>
-
-              {/* Footer */}
-              <div className="border-t border-zinc-200 dark:border-zinc-700 px-6 py-4 flex-shrink-0">
-                <div className="flex justify-between gap-3">
+            </form>
+            {/* Footer */}
+            <div className="border-t border-slate-200 dark:border-zinc-800 bg-slate-50 dark:bg-zinc-900 px-5 sm:px-8 py-4">
+              <div className="flex justify-between gap-3">
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (window.confirm('Tem certeza que deseja excluir este acordo?')) {
+                      handleDeleteAgreement(selectedAgreement);
+                      handleCloseEditModal();
+                    }
+                  }}
+                  disabled={editLoading}
+                  className="px-4 py-2 text-sm text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/30 rounded-lg flex items-center gap-2 transition"
+                >
+                  <Trash2 className="w-4 h-4" />
+                  Excluir
+                </button>
+                <div className="flex gap-3">
                   <button
                     type="button"
-                    onClick={() => {
-                      if (window.confirm('Tem certeza que deseja excluir este acordo?')) {
-                        handleDeleteAgreement(selectedAgreement);
-                        handleCloseEditModal();
-                      }
-                    }}
+                    onClick={handleCloseEditModal}
                     disabled={editLoading}
-                    className="flex min-w-[84px] cursor-pointer items-center justify-center gap-2 rounded-lg h-10 px-4 bg-red-50 dark:bg-red-900/30 text-red-600 dark:text-red-400 text-sm font-bold hover:bg-red-100 dark:hover:bg-red-900/50"
+                    className="px-4 py-2 text-sm text-slate-600 dark:text-zinc-400 hover:text-slate-900 dark:hover:text-white transition"
                   >
-                    <Trash2 className="w-4 h-4" />
-                    Excluir
+                    Cancelar
                   </button>
-                  <div className="flex gap-3">
-                    <button
-                      type="button"
-                      onClick={handleCloseEditModal}
-                      disabled={editLoading}
-                      className="flex min-w-[84px] cursor-pointer items-center justify-center rounded-lg h-10 px-4 bg-zinc-100 dark:bg-zinc-700 text-zinc-900 dark:text-white text-sm font-bold hover:bg-zinc-200 dark:hover:bg-zinc-600"
-                    >
-                      Cancelar
-                    </button>
-                    <button
-                      type="submit"
-                      disabled={editLoading}
-                      className="flex min-w-[84px] cursor-pointer items-center justify-center rounded-lg h-10 px-4 bg-blue-500 text-white text-sm font-bold hover:bg-blue-600 disabled:opacity-60"
-                    >
-                      {editLoading ? (
-                        <>
-                          <Loader2 className="w-4 h-4 animate-spin mr-2" /> Salvando...
-                        </>
-                      ) : (
-                        'Salvar Alterações'
-                      )}
-                    </button>
-                  </div>
+                  <button
+                    type="submit"
+                    form="edit-agreement-form"
+                    disabled={editLoading}
+                    className="px-4 py-2 bg-amber-500 hover:bg-amber-600 text-white text-sm font-medium rounded-lg flex items-center gap-2 transition disabled:opacity-50"
+                  >
+                    {editLoading ? (
+                      <>
+                        <Loader2 className="w-4 h-4 animate-spin" /> Salvando...
+                      </>
+                    ) : (
+                      'Salvar Alterações'
+                    )}
+                  </button>
                 </div>
               </div>
-            </form>
+            </div>
           </div>
         </div>
       )}
 
-      {/* Parcelas Vencidas - Destaque */}
+      {/* Parcelas Vencidas */}
       {stats && stats.overdue_installments > 0 && (
-        <div className="bg-gradient-to-r from-red-50 to-orange-50 border-2 border-red-300 rounded-2xl shadow-lg p-4 sm:p-6">
-          <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 mb-4">
+        <div className="bg-white border border-red-200 rounded-xl overflow-hidden shadow-sm">
+          <div className="flex items-center justify-between px-4 py-3 bg-red-50 border-b border-red-100">
             <div className="flex items-center gap-3">
-              <div className="bg-red-600 text-white rounded-full p-3 animate-pulse">
-                <AlertCircle className="w-5 h-5 sm:w-6 sm:h-6" />
+              <div className="w-8 h-8 bg-red-500 text-white rounded-lg flex items-center justify-center">
+                <AlertCircle className="w-4 h-4" />
               </div>
               <div>
-                <h3 className="text-lg sm:text-xl font-bold text-red-900">⚠️ Atenção: Parcelas Vencidas</h3>
-                <p className="text-xs sm:text-sm text-red-700 mt-1">
-                  {stats.overdue_installments} parcela{stats.overdue_installments > 1 ? 's' : ''} com pagamento em atraso
+                <p className="text-sm font-bold text-red-900">
+                  {stats.overdue_installments} parcela{stats.overdue_installments > 1 ? 's' : ''} em atraso
                 </p>
+                <p className="text-xs text-red-600">Regularize para evitar problemas</p>
               </div>
             </div>
             <button
               onClick={() => setShowOverdueOnly(!showOverdueOnly)}
-              className="w-full sm:w-auto bg-red-600 hover:bg-red-700 text-white px-4 sm:px-6 py-2.5 sm:py-3 rounded-lg font-semibold transition-all duration-200 flex items-center justify-center gap-2 shadow-md hover:shadow-lg active:scale-[0.98]"
+              className="px-3 py-1.5 bg-red-100 hover:bg-red-200 text-red-700 rounded-lg text-xs font-semibold transition flex items-center gap-1"
             >
-              {showOverdueOnly ? <X className="w-4 h-4 sm:w-5 sm:h-5" /> : <Eye className="w-4 h-4 sm:w-5 sm:h-5" />}
-              {showOverdueOnly ? 'Ocultar' : 'Ver Detalhes'}
+              {showOverdueOnly ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+              {showOverdueOnly ? 'Ocultar' : 'Expandir'}
             </button>
           </div>
 
           {showOverdueOnly && (
-            <div className="space-y-3 mt-4 pt-4 border-t-2 border-red-200">
+            <div className="divide-y divide-slate-100">
               {allInstallments
                 .filter(inst => pendingStatuses.includes(inst.status as InstallmentStatus) && inst.due_date < today)
                 .sort((a, b) => a.due_date.localeCompare(b.due_date))
                 .map(inst => {
-                  const daysOverdue = Math.floor((new Date().getTime() - new Date(inst.due_date).getTime()) / (1000 * 60 * 60 * 24));
-                  const clientName = inst.agreement ? getClientName(inst.agreement.client_id) : 'Cliente não encontrado';
+                  const dueMidnight = parseLocalDate(inst.due_date);
+                  const now = new Date();
+                  const todayMidnight = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+                  const daysOverdue = dueMidnight
+                    ? Math.floor((todayMidnight.getTime() - dueMidnight.getTime()) / (1000 * 60 * 60 * 24))
+                    : 0;
+                  const clientName = inst.agreement ? getClientName(inst.agreement.client_id) : 'N/A';
                   return (
-                    <div key={inst.id} className="bg-white border-2 border-red-300 rounded-xl p-4 hover:shadow-md transition">
-                      <div className="flex items-center justify-between gap-4">
-                        <div className="flex items-center gap-4 flex-1">
-                          <div className="bg-red-600 text-white rounded-full w-12 h-12 flex items-center justify-center font-bold text-lg">
-                            {inst.installment_number}
-                          </div>
-                          <div className="flex-1">
-                            <div className="flex items-center gap-2 mb-1">
-                              <span className="bg-red-100 text-red-800 text-xs font-bold px-2 py-1 rounded uppercase">
-                                Cliente em Atraso
-                              </span>
-                            </div>
-                            <p className="text-lg font-bold text-slate-900">{clientName}</p>
-                            <p className="text-sm text-slate-600 mt-1">
-                              {inst.agreement?.title || 'Acordo não encontrado'}
-                            </p>
-                            <div className="flex items-center gap-3 mt-2">
-                              <p className="text-sm text-red-700 font-semibold flex items-center gap-1">
-                                <Clock className="w-4 h-4" />
-                                Venceu há {daysOverdue} dia{daysOverdue > 1 ? 's' : ''}
-                              </p>
-                              <p className="text-sm text-slate-500">
-                                📅 {new Date(inst.due_date).toLocaleDateString('pt-BR', { 
-                                  day: '2-digit', 
-                                  month: 'long', 
-                                  year: 'numeric' 
-                                })}
-                              </p>
-                            </div>
+                    <div key={inst.id} className="flex items-center justify-between gap-4 px-4 py-3 hover:bg-slate-50 transition">
+                      <div className="flex items-center gap-3 flex-1 min-w-0">
+                        <div className="flex-shrink-0 w-10 h-10 bg-red-100 text-red-700 rounded-lg flex items-center justify-center font-bold text-sm">
+                          {inst.installment_number}º
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-semibold text-slate-900 truncate">{clientName}</p>
+                          <div className="flex items-center gap-2 mt-0.5">
+                            <p className="text-xs text-slate-500 truncate">{inst.agreement?.title}</p>
+                            <span className="text-[10px] font-bold text-red-600 bg-red-100 px-1.5 py-0.5 rounded">
+                              {daysOverdue} dia{daysOverdue > 1 ? 's' : ''} atraso
+                            </span>
                           </div>
                         </div>
+                      </div>
+                      <div className="flex items-center gap-3 flex-shrink-0">
                         <div className="text-right">
-                          <p className="text-2xl font-bold text-red-900">{formatCurrency(inst.value)}</p>
-                          {inst.agreement && (
-                            <p className="text-xs text-emerald-600 mt-1">
-                              💰 Honorário: {formatCurrency(inst.agreement.fee_value / inst.agreement.installments_count)}
-                            </p>
-                          )}
+                          <p className="text-base font-bold text-slate-900">{formatCurrency(inst.value)}</p>
+                          <p className="text-[10px] text-slate-400">
+                            {(parseLocalDate(inst.due_date) ?? new Date(inst.due_date)).toLocaleDateString('pt-BR', { day: '2-digit', month: 'short' })}
+                          </p>
                         </div>
                         <button
                           onClick={() => {
@@ -2602,9 +2640,10 @@ ${clientAddress ? `<div class="flex"><span class="text-subtle-light dark:text-su
                               handleOpenPaymentModal(inst);
                             }
                           }}
-                          className="bg-emerald-600 hover:bg-emerald-700 text-white px-5 py-3 rounded-lg font-semibold transition flex items-center gap-2 shadow-lg"
+                          className="inline-flex items-center gap-1.5 px-3 py-2 bg-emerald-500 hover:bg-emerald-600 text-white rounded-lg text-xs font-semibold transition shadow-sm hover:shadow"
                         >
-                          <CheckCircle className="w-5 h-5" /> Dar Baixa
+                          <CheckCircle className="w-3.5 h-3.5" />
+                          Dar Baixa
                         </button>
                       </div>
                     </div>
@@ -2615,100 +2654,8 @@ ${clientAddress ? `<div class="flex"><span class="text-subtle-light dark:text-su
         </div>
       )}
 
-      {/* Header Principal Simplificado */}
-      <div className="bg-white border-b border-slate-200 shadow-sm">
-        <div className="max-w-[1600px] mx-auto px-4 xl:px-6 py-4">
-          <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-            {/* Título e resumo */}
-            <div className="flex items-start gap-3">
-              <div className="bg-emerald-100 text-emerald-700 p-2 rounded-lg">
-                <PiggyBank className="w-6 h-6" />
-              </div>
-              <div>
-                <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">Módulo Financeiro</p>
-                <h1 className="text-2xl font-bold text-slate-900 leading-tight">Acordos e recebíveis</h1>
-                <div className="flex flex-wrap items-center gap-2 mt-2 text-xs font-medium">
-                  <span className="px-2.5 py-1 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-100">
-                    {filteredAgreements.filter(a => a.status === 'ativo').length} ativos
-                  </span>
-                  <span className="px-2.5 py-1 rounded-full bg-blue-50 text-blue-700 border border-blue-100">
-                    {filteredAgreements.filter(a => a.status === 'concluido').length} concluídos
-                  </span>
-                  <span className="text-slate-400 hidden sm:inline">•</span>
-                  <span className="text-slate-500">Monitorando clientes e próximos vencimentos.</span>
-                </div>
-              </div>
-            </div>
-
-            {/* Barra de Ferramentas */}
-            <div className="flex flex-col sm:flex-row gap-3 w-full lg:w-auto">
-              {/* Busca */}
-              <div className="relative flex-1 sm:w-64">
-                <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-                <input
-                  type="text"
-                  placeholder="Buscar..."
-                  value={searchTerm}
-                  onChange={(e) => setSearchTerm(e.target.value)}
-                  className="w-full pl-9 pr-4 py-2 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 transition-all"
-                />
-              </div>
-
-              {/* Filtros */}
-              <div className="flex gap-2">
-                <select
-                  value={filterStatus}
-                  onChange={(e) => setFilterStatus(e.target.value as any)}
-                  className="px-3 py-2 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-emerald-500 bg-white cursor-pointer"
-                >
-                  <option value="all">Status: Todos</option>
-                  <option value="ativo">Ativos</option>
-                  <option value="concluido">Concluídos</option>
-                  <option value="cancelado">Cancelados</option>
-                </select>
-
-                <select
-                  value={filterPaymentStatus}
-                  onChange={(e) => setFilterPaymentStatus(e.target.value as any)}
-                  className="px-3 py-2 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-emerald-500 bg-white cursor-pointer"
-                >
-                  <option value="all">Pagamento: Todos</option>
-                  <option value="with_pending">Pendentes</option>
-                  <option value="fully_paid">Pagos</option>
-                </select>
-              </div>
-
-              {/* Ações Principais */}
-              <div className="flex gap-2 border-t border-slate-200 pt-2 mt-2 sm:border-t-0 sm:pt-0 sm:mt-0 sm:border-l sm:pl-2 sm:ml-2">
-                <button
-                  onClick={() => setIsReportModalOpen(true)}
-                  className="p-2 text-slate-600 hover:bg-slate-100 rounded-lg transition-colors"
-                  title="Relatório Mensal"
-                >
-                  <FileBarChart className="w-5 h-5" />
-                </button>
-                <button
-                  onClick={() => setIsIRModalOpen(true)}
-                  className="p-2 text-slate-600 hover:bg-slate-100 rounded-lg transition-colors"
-                  title="Relatório IR"
-                >
-                  <FileSpreadsheet className="w-5 h-5" />
-                </button>
-                <button
-                  onClick={handleOpenModal}
-                  className="flex items-center gap-2 bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-lg text-sm font-semibold transition-colors shadow-sm sm:ml-2"
-                >
-                  <PlusCircle className="w-4 h-4" />
-                  Novo acordo
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-
       {/* Lista de Acordos */}
-      <div className="max-w-[1600px] mx-auto px-4 xl:px-6 py-6 space-y-6">
+      <div className="py-6 space-y-6">
         {filteredAgreements.length === 0 ? (
           <div className="bg-white border border-slate-200 rounded-2xl shadow-sm p-12 text-center transform transition-all duration-300 hover:shadow-lg hover:scale-[1.01]">
             <div className="bg-slate-50 w-24 h-24 rounded-full flex items-center justify-center mx-auto mb-8 transform transition-all duration-300 hover:scale-110 hover:bg-slate-100">
@@ -2741,8 +2688,10 @@ ${clientAddress ? `<div class="flex"><span class="text-subtle-light dark:text-su
             
             return (
               <div className="bg-white border border-slate-200 rounded-2xl shadow-sm overflow-hidden animate-in fade-in slide-in-from-bottom-4 duration-500">
-                <div className="px-4 pb-6 sm:px-6">
-                  <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+                <div className="p-4 sm:p-6">
+                  {viewMode === 'grid' ? (
+                  <div className="rounded-2xl border border-slate-200 bg-slate-50 p-1.5 sm:p-2">
+                    <div className="grid grid-cols-1 xs:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-1.5 sm:gap-2">
                     {[...activeAgreements]
                       .sort((a, b) => {
                         const getNextDueTimestamp = (agreementId: string) => {
@@ -2750,8 +2699,8 @@ ${clientAddress ? `<div class="flex"><span class="text-subtle-light dark:text-su
                           if (related.length === 0) return Number.POSITIVE_INFINITY;
                           const pending = related.filter(inst => pendingStatuses.includes(inst.status as InstallmentStatus));
                           const reference = pending.length > 0 ? pending : related;
-                          const ordered = [...reference].sort((x, y) => new Date(x.due_date).getTime() - new Date(y.due_date).getTime());
-                          return new Date(ordered[0].due_date).getTime();
+                          const ordered = [...reference].sort((x, y) => (parseLocalDate(x.due_date)?.getTime() ?? Number.POSITIVE_INFINITY) - (parseLocalDate(y.due_date)?.getTime() ?? Number.POSITIVE_INFINITY));
+                          return parseLocalDate(ordered[0]?.due_date)?.getTime() ?? Number.POSITIVE_INFINITY;
                         };
                         return getNextDueTimestamp(a.id) - getNextDueTimestamp(b.id);
                       })
@@ -2764,16 +2713,24 @@ ${clientAddress ? `<div class="flex"><span class="text-subtle-light dark:text-su
                     const progress = agreementInstallments.length ? (paidInstallments.length / agreementInstallments.length) * 100 : 0;
                     const futurePending = pendingInstallments
                       .filter(inst => inst.due_date >= today)
-                      .sort((aInst, bInst) => new Date(aInst.due_date).getTime() - new Date(bInst.due_date).getTime());
+                      .sort((aInst, bInst) => (parseLocalDate(aInst.due_date)?.getTime() ?? 0) - (parseLocalDate(bInst.due_date)?.getTime() ?? 0));
                     const nextDueFallback = [...pendingInstallments, ...agreementInstallments]
-                      .sort((aInst, bInst) => new Date(aInst.due_date).getTime() - new Date(bInst.due_date).getTime());
+                      .sort((aInst, bInst) => (parseLocalDate(aInst.due_date)?.getTime() ?? 0) - (parseLocalDate(bInst.due_date)?.getTime() ?? 0));
                     const nextDue = futurePending[0] ?? nextDueFallback[0];
-                    const nextDueDate = nextDue ? new Date(nextDue.due_date) : null;
+                    const nextDueDate = nextDue ? (parseLocalDate(nextDue.due_date) ?? new Date(nextDue.due_date)) : null;
                     const nextDueLabel = nextDueDate
                       ? nextDueDate.toLocaleDateString('pt-BR', { day: '2-digit', month: 'short' })
                       : 'Sem parcelas';
-                    const diffDays = nextDueDate
-                      ? Math.ceil((nextDueDate.getTime() - new Date().getTime()) / (1000 * 60 * 60 * 24))
+                    const diffDays = nextDue?.due_date
+                      ? (() => {
+                          const raw = String(nextDue.due_date).slice(0, 10);
+                          const parts = raw.split('-').map(Number);
+                          if (parts.length !== 3 || parts.some(n => Number.isNaN(n))) return null;
+                          const dueMidnight = new Date(parts[0], parts[1] - 1, parts[2]);
+                          const now = new Date();
+                          const todayMidnight = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+                          return Math.round((dueMidnight.getTime() - todayMidnight.getTime()) / (1000 * 60 * 60 * 24));
+                        })()
                       : null;
                     const relativeDueLabel = diffDays !== null
                       ? diffDays === 0
@@ -2786,143 +2743,302 @@ ${clientAddress ? `<div class="flex"><span class="text-subtle-light dark:text-su
                     return (
                       <div
                         key={agreement.id}
-                        className="group relative flex cursor-pointer flex-col gap-5 rounded-2xl border border-slate-100 bg-gradient-to-br from-white via-slate-50 to-slate-100/60 p-6 shadow-[0_15px_40px_rgba(15,23,42,0.05)] backdrop-blur-sm transition-all duration-500 hover:-translate-y-1 hover:border-emerald-200 hover:shadow-[0_20px_45px_rgba(16,185,129,0.15)]"
-                        style={{ animationDelay: `${index * 45}ms` }}
+                        className="group relative cursor-pointer bg-white aspect-auto sm:aspect-square flex flex-col rounded-xl sm:rounded-2xl border border-slate-200 shadow-sm hover:shadow-md transition-all duration-200"
                         onClick={() => handleOpenDetails(agreement)}
                       >
-                        <div className="flex items-start justify-between gap-3">
-                          <div className="space-y-1">
-                            <div className="flex items-center gap-2">
-                              <span className="inline-flex items-center gap-1 rounded-full bg-white/60 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-wide text-slate-400">
-                                <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
-                                Ativo
-                              </span>
-                              <span className="text-[11px] font-semibold uppercase tracking-wide text-slate-300">• #{agreement.id.slice(0, 6)}</span>
-                            </div>
-                            <h3 className="text-lg font-semibold text-slate-900" title={agreement.title}>
-                              {agreement.title}
-                            </h3>
-                            <p className="text-sm text-slate-500 flex items-center gap-1.5">
-                              <User className="h-3.5 w-3.5 text-slate-400" />
-                              {getClientName(agreement.client_id)}
-                            </p>
-                          </div>
-                          <div className="text-right">
-                            {isFullyPaid ? (
-                              <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-3 py-1 text-[11px] font-semibold text-emerald-700 uppercase">
-                                ✓ Pago
-                              </span>
-                            ) : overdueInstallments.length > 0 ? (
-                              <span className="inline-flex items-center gap-1 rounded-full bg-red-50 px-3 py-1 text-[11px] font-semibold text-red-700 uppercase">
-                                ⚠ {overdueInstallments.length} atraso{overdueInstallments.length > 1 ? 's' : ''}
-                              </span>
-                            ) : (
-                              <span className="inline-flex items-center gap-1 rounded-full bg-amber-500 px-3 py-1 text-[11px] font-semibold text-white uppercase shadow-sm">
-                                {pendingInstallments.length} pendente{pendingInstallments.length !== 1 ? 's' : ''}
-                              </span>
-                            )}
-                            <p className="mt-2 text-xs font-semibold uppercase tracking-wide text-slate-400">
-                              {agreement.payment_type === 'upfront' ? 'À vista' : `${agreement.installments_count} parcelas`}
-                            </p>
-                          </div>
-                        </div>
+                        {/* Indicador de status no canto */}
+                        <div
+                          className={`absolute top-2 sm:top-3 right-2 sm:right-3 h-2 w-2 sm:h-2.5 sm:w-2.5 rounded-full ${
+                            isFullyPaid
+                              ? 'bg-emerald-500'
+                              : overdueInstallments.length > 0
+                                ? 'bg-red-500'
+                                : 'bg-amber-500'
+                          }`}
+                        />
 
-                        <div className="grid gap-4 rounded-2xl border border-white/70 bg-white/60 p-4 text-sm text-slate-600 shadow-inner">
-                          <div className="flex items-center justify-between rounded-xl border border-slate-100 bg-white/80 px-3 py-2">
-                            <div>
-                              <p className="text-[11px] uppercase tracking-wide text-slate-400">Próximo vencimento</p>
-                              <p className="text-sm font-semibold text-slate-900">{nextDueLabel}</p>
+                        {/* Conteúdo principal */}
+                        <div className="flex-1 p-3 sm:p-4 flex flex-col">
+                          {/* Topo: contexto + status */}
+                          <div className="flex items-start justify-between gap-2 sm:gap-3">
+                            <div className="min-w-0">
+                              <p className="text-[9px] sm:text-[10px] font-mono text-slate-400">#{agreement.id.slice(0, 7)}</p>
+                              <h3 className="mt-0.5 sm:mt-1 text-xs sm:text-sm font-semibold text-slate-900 line-clamp-2 leading-snug">
+                                {agreement.title}
+                              </h3>
+                              <p className="mt-0.5 sm:mt-1 text-[10px] sm:text-xs text-slate-500 truncate">
+                                {getClientName(agreement.client_id)}
+                              </p>
                             </div>
-                            {relativeDueLabel && (
-                              <span className={`text-xs font-semibold ${diffDays !== null && diffDays < 0 ? 'text-red-500' : 'text-emerald-600'}`}>
-                                {relativeDueLabel}
-                              </span>
-                            )}
-                          </div>
-                          <div className="grid grid-cols-2 gap-4">
-                            <div>
-                              <p className="text-[11px] uppercase tracking-wide text-slate-400">Valor total</p>
-                              <p className="text-lg font-semibold text-slate-900">{formatCurrency(agreement.total_value)}</p>
-                            </div>
-                            <div>
-                              <p className="text-[11px] uppercase tracking-wide text-slate-400">Honorários</p>
-                              <p className="text-lg font-semibold text-emerald-600">{formatCurrency(agreement.fee_value)}</p>
-                            </div>
-                          </div>
-                          <div className="grid grid-cols-3 gap-3 text-xs font-semibold text-slate-500">
-                            <div className="flex flex-col gap-0.5">
-                              <span className="text-[10px] uppercase tracking-wide text-slate-400">Pagas</span>
-                              <span className="text-sm text-slate-800">{paidInstallments.length}</span>
-                            </div>
-                            <div className="flex flex-col gap-0.5">
-                              <span className="text-[10px] uppercase tracking-wide text-slate-400">Pendentes</span>
-                              <span className="text-sm text-amber-600">{pendingInstallments.length}</span>
-                            </div>
-                            <div className="flex flex-col gap-0.5">
-                              <span className="text-[10px] uppercase tracking-wide text-slate-400">Atraso</span>
-                              <span className="text-sm text-red-500">{overdueInstallments.length}</span>
-                            </div>
-                          </div>
-                        </div>
-
-                        <div className="space-y-2">
-                          <div className="flex items-center justify-between text-xs font-semibold text-slate-500">
-                            <span>Progresso</span>
-                            <span className="text-slate-700">{paidInstallments.length}/{agreementInstallments.length}</span>
-                          </div>
-                          <div className="relative h-2 w-full overflow-hidden rounded-full bg-slate-100">
-                            <div
-                              className={`h-full rounded-full transition-all duration-500 ${
+                            <span
+                              className={`flex-shrink-0 px-1.5 sm:px-2 py-0.5 sm:py-1 rounded-md sm:rounded-lg text-[9px] sm:text-[10px] font-bold ${
                                 isFullyPaid
-                                  ? 'bg-gradient-to-r from-emerald-300 via-emerald-500 to-emerald-600'
+                                  ? 'bg-emerald-100 text-emerald-700'
                                   : overdueInstallments.length > 0
-                                  ? 'bg-gradient-to-r from-red-300 via-red-500 to-red-600'
-                                  : 'bg-gradient-to-r from-blue-300 via-blue-500 to-indigo-600'
+                                    ? 'bg-red-100 text-red-700'
+                                    : 'bg-amber-100 text-amber-700'
                               }`}
-                              style={{ width: `${progress}%` }}
-                            />
-                            <span className="absolute inset-0 rounded-full border border-white/20" />
+                            >
+                              {isFullyPaid
+                                ? 'QUITADO'
+                                : overdueInstallments.length > 0
+                                  ? `${overdueInstallments.length} ATR.`
+                                  : `${pendingInstallments.length} PEND.`}
+                            </span>
                           </div>
-                        </div>
 
-                        <div className="flex items-end justify-between gap-4 border-t border-white/60 pt-4">
-                          <div className="text-xs text-slate-500">
-                            <p className="font-semibold text-slate-400">Próximo passo</p>
-                            {overdueInstallments.length > 0 ? (
-                              <p className="text-red-600">Regularizar parcelas em atraso</p>
-                            ) : pendingInstallments.length > 0 ? (
-                              <p className="text-slate-700">Monitorar parcelas pendentes</p>
-                            ) : (
-                              <p className="text-emerald-600">Todo o acordo pago</p>
-                            )}
+                          {/* KPI central */}
+                          <div className="mt-3 sm:mt-5">
+                            <p className="text-[9px] sm:text-[10px] font-semibold uppercase tracking-wide text-slate-400">Honorários</p>
+                            <p
+                              className={`mt-0.5 sm:mt-1 text-lg sm:text-2xl font-bold tracking-tight ${
+                                isFullyPaid
+                                  ? 'text-emerald-600'
+                                  : overdueInstallments.length > 0
+                                    ? 'text-red-600'
+                                    : 'text-amber-600'
+                              }`}
+                            >
+                              {formatCurrency(agreement.fee_value)}
+                            </p>
                           </div>
-                          <div className="flex gap-2 opacity-0 transition-opacity duration-200 group-hover:opacity-100">
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                handleOpenEditModal(agreement);
-                              }}
-                              className="rounded-xl border border-slate-200/70 bg-white/80 p-2 text-slate-500 transition hover:border-blue-200 hover:bg-blue-50/70 hover:text-blue-600"
-                              title="Editar acordo"
-                            >
-                              <Edit className="h-4 w-4" />
-                            </button>
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                handleDeleteAgreement(agreement);
-                              }}
-                              className="rounded-xl border border-slate-200/70 bg-white/80 p-2 text-slate-500 transition hover:border-red-200 hover:bg-red-50/70 hover:text-red-600"
-                              title="Excluir acordo"
-                            >
-                              <Trash2 className="h-4 w-4" />
-                            </button>
+
+                          {/* Secundário */}
+                          <div className="mt-2 sm:mt-3 text-[10px] sm:text-xs text-slate-600">
+                            <span className="text-slate-400">Valor: </span>
+                            <span className="font-semibold text-slate-700">{formatCurrency(agreement.total_value)}</span>
+                          </div>
+
+                          {/* Rodapé técnico */}
+                          <div className="mt-auto pt-3 sm:pt-4">
+                            <div className="flex items-center justify-between text-[10px] sm:text-xs">
+                              <div className="flex items-center gap-1 sm:gap-2 text-slate-500 min-w-0">
+                                <Calendar className="w-3 h-3 sm:w-3.5 sm:h-3.5 text-slate-400" />
+                                <span className="truncate">{nextDueLabel}</span>
+                                {relativeDueLabel && (
+                                  <span
+                                    className={`hidden xs:inline text-[9px] sm:text-[10px] font-bold px-1.5 sm:px-2 py-0.5 rounded-full ${
+                                      diffDays !== null && diffDays < 0
+                                        ? 'bg-red-100 text-red-600'
+                                        : 'bg-slate-100 text-slate-600'
+                                    }`}
+                                  >
+                                    {relativeDueLabel}
+                                  </span>
+                                )}
+                              </div>
+                              <span className="text-[9px] sm:text-[10px] font-bold px-1.5 sm:px-2 py-0.5 sm:py-1 rounded-md sm:rounded-lg bg-slate-100 text-slate-700">
+                                {agreement.payment_type === 'upfront' ? 'À vista' : `${agreement.installments_count}x`}
+                              </span>
+                            </div>
+
+                            <div className="mt-2 sm:mt-3">
+                              <div className="flex items-center justify-between text-[10px] sm:text-[11px]">
+                                <span className="text-slate-400">Progresso</span>
+                                <span className="font-semibold text-slate-700">{paidInstallments.length}/{agreementInstallments.length}</span>
+                              </div>
+                              <div className="mt-1.5 sm:mt-2 h-1 sm:h-1.5 w-full bg-slate-100 rounded-full overflow-hidden">
+                                <div
+                                  className={`h-full rounded-full transition-all duration-500 ${
+                                    isFullyPaid
+                                      ? 'bg-emerald-500'
+                                      : overdueInstallments.length > 0
+                                        ? 'bg-red-500'
+                                        : 'bg-amber-500'
+                                  }`}
+                                  style={{ width: `${progress}%` }}
+                                />
+                              </div>
+                            </div>
+
+                            <div className="mt-2 sm:mt-3 flex items-center justify-between">
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleOpenEditModal(agreement);
+                                }}
+                                className="text-[10px] sm:text-xs font-semibold text-slate-500 hover:text-blue-600 transition"
+                                title="Editar"
+                              >
+                                Editar
+                              </button>
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleDeleteAgreement(agreement);
+                                }}
+                                className="text-[10px] sm:text-xs font-semibold text-slate-500 hover:text-red-600 transition"
+                                title="Excluir"
+                              >
+                                Excluir
+                              </button>
+                            </div>
                           </div>
                         </div>
                       </div>
                     );
                   })}
+                    </div>
                   </div>
+                  ) : (
+                  /* Modo Lista */
+                  <div className="rounded-2xl border border-slate-200 overflow-hidden bg-white">
+                    {(() => {
+                      const sortedAgreements = [...activeAgreements].sort((a, b) => {
+                        const getNextDueTimestamp = (agreementId: string) => {
+                          const related = allInstallments.filter(inst => inst.agreement_id === agreementId);
+                          if (related.length === 0) return Number.POSITIVE_INFINITY;
+                          const pending = related.filter(inst => pendingStatuses.includes(inst.status as InstallmentStatus));
+                          const reference = pending.length > 0 ? pending : related;
+                          const ordered = [...reference].sort((x, y) => (parseLocalDate(x.due_date)?.getTime() ?? Number.POSITIVE_INFINITY) - (parseLocalDate(y.due_date)?.getTime() ?? Number.POSITIVE_INFINITY));
+                          return parseLocalDate(ordered[0]?.due_date)?.getTime() ?? Number.POSITIVE_INFINITY;
+                        };
+                        return getNextDueTimestamp(a.id) - getNextDueTimestamp(b.id);
+                      });
+
+                      return (
+                        <>
+                          <div className="sm:hidden divide-y divide-slate-100">
+                            {sortedAgreements.map((agreement) => {
+                              const agreementInstallments = allInstallments.filter(inst => inst.agreement_id === agreement.id);
+                              const paidInstallments = agreementInstallments.filter(inst => inst.status === 'pago');
+                              const pendingInstallments = agreementInstallments.filter(inst => pendingStatuses.includes(inst.status as InstallmentStatus));
+                              const overdueInstallments = pendingInstallments.filter(inst => inst.due_date < today);
+                              const isFullyPaid = agreementInstallments.length > 0 && pendingInstallments.length === 0;
+                              const futurePending = pendingInstallments
+                                .filter(inst => inst.due_date >= today)
+                                .sort((aInst, bInst) => (parseLocalDate(aInst.due_date)?.getTime() ?? Number.POSITIVE_INFINITY) - (parseLocalDate(bInst.due_date)?.getTime() ?? Number.POSITIVE_INFINITY));
+                              const nextDueFallback = [...pendingInstallments, ...agreementInstallments]
+                                .sort((aInst, bInst) => (parseLocalDate(aInst.due_date)?.getTime() ?? Number.POSITIVE_INFINITY) - (parseLocalDate(bInst.due_date)?.getTime() ?? Number.POSITIVE_INFINITY));
+                              const nextDue = futurePending[0] ?? nextDueFallback[0];
+                              const nextDueDate = nextDue ? (parseLocalDate(nextDue.due_date) ?? new Date(nextDue.due_date)) : null;
+                              const nextDueLabel = nextDueDate
+                                ? nextDueDate.toLocaleDateString('pt-BR', { day: '2-digit', month: 'short' })
+                                : '—';
+
+                              return (
+                                <button
+                                  key={agreement.id}
+                                  type="button"
+                                  onClick={() => handleOpenDetails(agreement)}
+                                  className="w-full text-left px-3 py-3 hover:bg-slate-50 transition"
+                                >
+                                  <div className="flex items-start justify-between gap-3">
+                                    <div className="min-w-0">
+                                      <p className="text-sm font-semibold text-slate-900 truncate">{agreement.title}</p>
+                                      <p className="mt-0.5 text-xs text-slate-500 truncate">{getClientName(agreement.client_id)}</p>
+                                      <p className="mt-1 text-[11px] text-slate-500">
+                                        Venc.: <span className="font-semibold text-slate-700">{nextDueLabel}</span>
+                                      </p>
+                                    </div>
+                                    <div className="text-right flex-shrink-0">
+                                      <p className="text-sm font-bold text-slate-900">{formatCurrency(agreement.total_value)}</p>
+                                      <p className={`mt-0.5 text-[11px] font-bold ${isFullyPaid ? 'text-emerald-600' : overdueInstallments.length > 0 ? 'text-red-600' : 'text-amber-600'}`}>
+                                        Hon: {formatCurrency(agreement.fee_value)}
+                                      </p>
+                                      <span
+                                        className={`mt-2 inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                                          isFullyPaid
+                                            ? 'bg-emerald-100 text-emerald-700'
+                                            : overdueInstallments.length > 0
+                                              ? 'bg-red-100 text-red-700'
+                                              : 'bg-amber-100 text-amber-700'
+                                        }`}
+                                      >
+                                        {isFullyPaid ? 'QUITADO' : overdueInstallments.length > 0 ? `${overdueInstallments.length} ATR.` : `${pendingInstallments.length} PEND.`}
+                                      </span>
+                                    </div>
+                                  </div>
+                                </button>
+                              );
+                            })}
+                          </div>
+
+                          <div className="hidden sm:block overflow-x-auto">
+                            <table className="w-full text-sm min-w-[680px]">
+                              <thead className="bg-slate-50 border-b border-slate-200">
+                                <tr>
+                                  <th className="text-left px-4 py-3 font-semibold text-slate-600">Acordo</th>
+                                  <th className="text-right px-4 py-3 font-semibold text-slate-600">Valor</th>
+                                  <th className="text-right px-4 py-3 font-semibold text-slate-600">Honorários</th>
+                                  <th className="text-center px-4 py-3 font-semibold text-slate-600 hidden md:table-cell">Vencimento</th>
+                                  <th className="text-center px-4 py-3 font-semibold text-slate-600 hidden lg:table-cell">Progresso</th>
+                                  <th className="text-center px-4 py-3 font-semibold text-slate-600">Status</th>
+                                </tr>
+                              </thead>
+                              <tbody className="divide-y divide-slate-100">
+                                {sortedAgreements.map((agreement) => {
+                                  const agreementInstallments = allInstallments.filter(inst => inst.agreement_id === agreement.id);
+                                  const paidInstallments = agreementInstallments.filter(inst => inst.status === 'pago');
+                                  const pendingInstallments = agreementInstallments.filter(inst => pendingStatuses.includes(inst.status as InstallmentStatus));
+                                  const overdueInstallments = pendingInstallments.filter(inst => inst.due_date < today);
+                                  const isFullyPaid = agreementInstallments.length > 0 && pendingInstallments.length === 0;
+                                  const progress = agreementInstallments.length ? (paidInstallments.length / agreementInstallments.length) * 100 : 0;
+                                  const futurePending = pendingInstallments
+                                    .filter(inst => inst.due_date >= today)
+                                    .sort((aInst, bInst) => (parseLocalDate(aInst.due_date)?.getTime() ?? Number.POSITIVE_INFINITY) - (parseLocalDate(bInst.due_date)?.getTime() ?? Number.POSITIVE_INFINITY));
+                                  const nextDueFallback = [...pendingInstallments, ...agreementInstallments]
+                                    .sort((aInst, bInst) => (parseLocalDate(aInst.due_date)?.getTime() ?? Number.POSITIVE_INFINITY) - (parseLocalDate(bInst.due_date)?.getTime() ?? Number.POSITIVE_INFINITY));
+                                  const nextDue = futurePending[0] ?? nextDueFallback[0];
+                                  const nextDueDate = nextDue ? (parseLocalDate(nextDue.due_date) ?? new Date(nextDue.due_date)) : null;
+                                  const nextDueLabel = nextDueDate
+                                    ? nextDueDate.toLocaleDateString('pt-BR', { day: '2-digit', month: 'short' })
+                                    : '—';
+
+                                  return (
+                                    <tr
+                                      key={agreement.id}
+                                      className="hover:bg-slate-50 cursor-pointer transition"
+                                      onClick={() => handleOpenDetails(agreement)}
+                                    >
+                                      <td className="px-4 py-3">
+                                        <p className="font-semibold text-slate-900 truncate max-w-[260px]">{agreement.title}</p>
+                                        <p className="text-xs text-slate-400">{getClientName(agreement.client_id)}</p>
+                                      </td>
+                                      <td className="px-4 py-3 text-right">
+                                        <p className="font-semibold text-slate-900">{formatCurrency(agreement.total_value)}</p>
+                                      </td>
+                                      <td className="px-4 py-3 text-right">
+                                        <p className={`font-bold ${isFullyPaid ? 'text-emerald-600' : overdueInstallments.length > 0 ? 'text-red-600' : 'text-amber-600'}`}>
+                                          {formatCurrency(agreement.fee_value)}
+                                        </p>
+                                      </td>
+                                      <td className="px-4 py-3 text-center hidden md:table-cell">
+                                        <p className="text-slate-600">{nextDueLabel}</p>
+                                      </td>
+                                      <td className="px-4 py-3 hidden lg:table-cell">
+                                        <div className="flex items-center gap-2">
+                                          <div className="flex-1 h-1.5 bg-slate-100 rounded-full overflow-hidden">
+                                            <div
+                                              className={`h-full rounded-full ${isFullyPaid ? 'bg-emerald-500' : overdueInstallments.length > 0 ? 'bg-red-500' : 'bg-amber-500'}`}
+                                              style={{ width: `${progress}%` }}
+                                            />
+                                          </div>
+                                          <span className="text-xs text-slate-500 w-10 text-right">{paidInstallments.length}/{agreementInstallments.length}</span>
+                                        </div>
+                                      </td>
+                                      <td className="px-4 py-3 text-center">
+                                        <span className={`inline-flex items-center px-2 py-1 rounded-lg text-[10px] font-bold ${
+                                          isFullyPaid
+                                            ? 'bg-emerald-100 text-emerald-700'
+                                            : overdueInstallments.length > 0
+                                              ? 'bg-red-100 text-red-700'
+                                              : 'bg-amber-100 text-amber-700'
+                                        }`}>
+                                          {isFullyPaid ? 'QUITADO' : overdueInstallments.length > 0 ? `${overdueInstallments.length} ATR.` : `${pendingInstallments.length} PEND.`}
+                                        </span>
+                                      </td>
+                                    </tr>
+                                  );
+                                })}
+                              </tbody>
+                            </table>
+                          </div>
+                        </>
+                      );
+                    })()}
+                  </div>
+                  )}
                 </div>
               </div>
             );
@@ -2966,73 +3082,166 @@ ${clientAddress ? `<div class="flex"><span class="text-subtle-light dark:text-su
                     </div>
                   </div>
                 </div>
-                <div className="divide-y divide-slate-100">
-                  {displayedAgreements.map((agreement, index) => {
-                    const agreementInstallments = allInstallments.filter(inst => inst.agreement_id === agreement.id);
-                    const paidInstallments = agreementInstallments.filter(inst => inst.status === 'pago');
-                    const isFullyPaid = agreementInstallments.length > 0 && paidInstallments.length === agreementInstallments.length;
+                {viewMode === 'list' ? (
+                  <div className="p-2 sm:p-6">
+                    <div className="rounded-2xl border border-slate-200 overflow-hidden bg-white">
+                      <div className="sm:hidden divide-y divide-slate-100">
+                        {displayedAgreements.map((agreement) => {
+                          const agreementInstallments = allInstallments.filter(inst => inst.agreement_id === agreement.id);
+                          const paidInstallments = agreementInstallments.filter(inst => inst.status === 'pago');
+                          const isFullyPaid = agreementInstallments.length > 0 && paidInstallments.length === agreementInstallments.length;
+                          const closedLabel = new Date(agreement.updated_at).toLocaleDateString('pt-BR');
 
-                    return (
-                      <div
-                        key={agreement.id}
-                        className="group px-4 py-3 hover:bg-blue-50/60 transition-all duration-200 cursor-pointer"
-                        onClick={() => handleOpenDetails(agreement)}
-                        style={{ animationDelay: `${index * 50}ms` }}
-                      >
-                        <div className="flex flex-col gap-1.5 lg:flex-row lg:items-center lg:justify-between">
-                          <div className="flex items-center gap-2 text-[10px] font-semibold uppercase tracking-wide text-blue-500">
-                            <CheckCircle className="w-3.5 h-3.5" />
-                            Concluído
-                            <span className="text-slate-300">•</span>
-                            <span className="text-slate-400">#{agreement.id.slice(0, 6)}</span>
-                          </div>
-                          <div className="flex items-center gap-2 text-[11px] text-slate-500">
-                            <span className="text-emerald-600 font-semibold">{isFullyPaid ? 'Pago integralmente' : 'Recebido parcialmente'}</span>
-                            <span className="hidden sm:inline text-slate-300">•</span>
-                            <span className="font-medium text-slate-400">{new Date(agreement.updated_at).toLocaleDateString('pt-BR')}</span>
-                          </div>
-                        </div>
-                        <div className="mt-1.5 flex flex-col gap-1 lg:flex-row lg:items-center lg:justify-between">
-                          <div className="flex-1 min-w-0">
-                            <h3 className="text-sm font-semibold text-blue-950 truncate" title={agreement.title}>{agreement.title}</h3>
-                            <div className="flex flex-wrap items-center gap-1.5 text-[12px] text-slate-500">
-                              <span className="inline-flex items-center gap-1.5">
-                                <User className="h-3.5 w-3.5 text-slate-400" />
-                                {getClientName(agreement.client_id)}
-                              </span>
+                          return (
+                            <button
+                              key={agreement.id}
+                              type="button"
+                              onClick={() => handleOpenDetails(agreement)}
+                              className="w-full text-left px-3 py-3 hover:bg-slate-50 transition"
+                            >
+                              <div className="flex items-start justify-between gap-3">
+                                <div className="min-w-0">
+                                  <p className="text-sm font-semibold text-slate-900 truncate">{agreement.title}</p>
+                                  <p className="mt-0.5 text-xs text-slate-500 truncate">{getClientName(agreement.client_id)}</p>
+                                  <p className="mt-1 text-[11px] text-slate-500">Encerrado: <span className="font-semibold text-slate-700">{closedLabel}</span></p>
+                                </div>
+                                <div className="text-right flex-shrink-0">
+                                  <p className="text-sm font-bold text-slate-900">{formatCurrency(agreement.total_value)}</p>
+                                  <p className="mt-0.5 text-[11px] font-bold text-blue-700">Hon: {formatCurrency(agreement.fee_value)}</p>
+                                  <span
+                                    className={`mt-2 inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                                      isFullyPaid ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'
+                                    }`}
+                                  >
+                                    {isFullyPaid ? 'PAGO' : 'PARCIAL'}
+                                  </span>
+                                </div>
+                              </div>
+                            </button>
+                          );
+                        })}
+                      </div>
+
+                      <div className="hidden sm:block overflow-x-auto">
+                        <table className="w-full text-sm min-w-[640px]">
+                          <thead className="bg-slate-50 border-b border-slate-200">
+                            <tr>
+                              <th className="text-left px-4 py-3 font-semibold text-slate-600">Acordo</th>
+                              <th className="text-right px-4 py-3 font-semibold text-slate-600">Valor</th>
+                              <th className="text-right px-4 py-3 font-semibold text-slate-600">Honorários</th>
+                              <th className="text-center px-4 py-3 font-semibold text-slate-600 hidden md:table-cell">Encerrado em</th>
+                              <th className="text-center px-4 py-3 font-semibold text-slate-600">Pagamento</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-slate-100">
+                            {displayedAgreements.map((agreement) => {
+                              const agreementInstallments = allInstallments.filter(inst => inst.agreement_id === agreement.id);
+                              const paidInstallments = agreementInstallments.filter(inst => inst.status === 'pago');
+                              const isFullyPaid = agreementInstallments.length > 0 && paidInstallments.length === agreementInstallments.length;
+
+                              return (
+                                <tr
+                                  key={agreement.id}
+                                  className="hover:bg-slate-50 cursor-pointer transition"
+                                  onClick={() => handleOpenDetails(agreement)}
+                                >
+                                  <td className="px-4 py-3">
+                                    <p className="font-semibold text-slate-900 truncate max-w-[280px]">{agreement.title}</p>
+                                    <p className="text-xs text-slate-400">{getClientName(agreement.client_id)}</p>
+                                  </td>
+                                  <td className="px-4 py-3 text-right">
+                                    <p className="font-semibold text-slate-900">{formatCurrency(agreement.total_value)}</p>
+                                  </td>
+                                  <td className="px-4 py-3 text-right">
+                                    <p className="font-bold text-blue-700">{formatCurrency(agreement.fee_value)}</p>
+                                  </td>
+                                  <td className="px-4 py-3 text-center hidden md:table-cell">
+                                    <p className="text-slate-600">{new Date(agreement.updated_at).toLocaleDateString('pt-BR')}</p>
+                                  </td>
+                                  <td className="px-4 py-3 text-center">
+                                    <span className={`inline-flex items-center px-2 py-1 rounded-lg text-[10px] font-bold ${
+                                      isFullyPaid ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'
+                                    }`}>
+                                      {isFullyPaid ? 'PAGO INTEGRAL' : 'PARCIAL'}
+                                    </span>
+                                  </td>
+                                </tr>
+                              );
+                            })}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="divide-y divide-slate-100">
+                    {displayedAgreements.map((agreement, index) => {
+                      const agreementInstallments = allInstallments.filter(inst => inst.agreement_id === agreement.id);
+                      const paidInstallments = agreementInstallments.filter(inst => inst.status === 'pago');
+                      const isFullyPaid = agreementInstallments.length > 0 && paidInstallments.length === agreementInstallments.length;
+
+                      return (
+                        <div
+                          key={agreement.id}
+                          className="group px-4 py-3 hover:bg-blue-50/60 transition-all duration-200 cursor-pointer"
+                          onClick={() => handleOpenDetails(agreement)}
+                          style={{ animationDelay: `${index * 50}ms` }}
+                        >
+                          <div className="flex flex-col gap-1.5 lg:flex-row lg:items-center lg:justify-between">
+                            <div className="flex items-center gap-2 text-[10px] font-semibold uppercase tracking-wide text-blue-500">
+                              <CheckCircle className="w-3.5 h-3.5" />
+                              Concluído
                               <span className="text-slate-300">•</span>
-                              <span>{agreement.payment_type === 'upfront' ? 'À vista' : `${agreement.installments_count} parcelas`}</span>
+                              <span className="text-slate-400">#{agreement.id.slice(0, 6)}</span>
+                            </div>
+                            <div className="flex items-center gap-2 text-[11px] text-slate-500">
+                              <span className="text-emerald-600 font-semibold">{isFullyPaid ? 'Pago integralmente' : 'Recebido parcialmente'}</span>
+                              <span className="hidden sm:inline text-slate-300">•</span>
+                              <span className="font-medium text-slate-400">{new Date(agreement.updated_at).toLocaleDateString('pt-BR')}</span>
                             </div>
                           </div>
-                          <div className="text-right">
-                            <p className="text-base font-semibold text-slate-900">{formatCurrency(agreement.total_value)}</p>
-                            <p className="text-[11px] text-blue-600 font-semibold">Honorários: {formatCurrency(agreement.fee_value)}</p>
+                          <div className="mt-1.5 flex flex-col gap-1 lg:flex-row lg:items-center lg:justify-between">
+                            <div className="flex-1 min-w-0">
+                              <h3 className="text-sm font-semibold text-blue-950 truncate" title={agreement.title}>{agreement.title}</h3>
+                              <div className="flex flex-wrap items-center gap-1.5 text-[12px] text-slate-500">
+                                <span className="inline-flex items-center gap-1.5">
+                                  <User className="h-3.5 w-3.5 text-slate-400" />
+                                  {getClientName(agreement.client_id)}
+                                </span>
+                                <span className="text-slate-300">•</span>
+                                <span>{agreement.payment_type === 'upfront' ? 'À vista' : `${agreement.installments_count} parcelas`}</span>
+                              </div>
+                            </div>
+                            <div className="text-right">
+                              <p className="text-base font-semibold text-slate-900">{formatCurrency(agreement.total_value)}</p>
+                              <p className="text-[11px] text-blue-600 font-semibold">Honorários: {formatCurrency(agreement.fee_value)}</p>
+                            </div>
+                          </div>
+                          <div className="mt-1.5 flex items-center gap-1.5 opacity-0 transition-opacity group-hover:opacity-100 text-[11px]">
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleOpenEditModal(agreement);
+                              }}
+                              className="rounded-lg border border-blue-100 px-2.5 py-1 font-semibold text-blue-700 hover:border-blue-200 hover:bg-blue-50"
+                            >
+                              Editar
+                            </button>
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleDeleteAgreement(agreement);
+                              }}
+                              className="rounded-lg border border-red-100 px-2.5 py-1 font-semibold text-red-600 hover:border-red-200 hover:bg-red-50"
+                            >
+                              Excluir
+                            </button>
                           </div>
                         </div>
-                        <div className="mt-1.5 flex items-center gap-1.5 opacity-0 transition-opacity group-hover:opacity-100 text-[11px]">
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              handleOpenEditModal(agreement);
-                            }}
-                            className="rounded-lg border border-blue-100 px-2.5 py-1 font-semibold text-blue-700 hover:border-blue-200 hover:bg-blue-50"
-                          >
-                            Editar
-                          </button>
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              handleDeleteAgreement(agreement);
-                            }}
-                            className="rounded-lg border border-red-100 px-2.5 py-1 font-semibold text-red-600 hover:border-red-200 hover:bg-red-50"
-                          >
-                            Excluir
-                          </button>
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
+                      );
+                    })}
+                  </div>
+                )}
                 <div className="flex items-center justify-between border-t border-blue-100 px-6 py-3 text-xs text-slate-500">
                   <span>
                     {showAllCompleted
@@ -3147,25 +3356,26 @@ ${clientAddress ? `<div class="flex"><span class="text-subtle-light dark:text-su
 
       {/* Modal de novo acordo */}
       {isModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-          <div className="absolute inset-0 bg-gray-900/40 dark:bg-black/60" onClick={handleCloseModal} />
-          <div className="relative w-full max-w-4xl rounded-xl bg-white dark:bg-zinc-900 shadow-lg max-h-[90vh] flex flex-col">
-            <form onSubmit={handleSubmit} className="flex flex-col flex-1 min-h-0">
-              <div className="flex flex-col p-6 gap-4 flex-1 overflow-y-auto">
-                {/* Header */}
-                <div className="flex flex-wrap justify-between gap-3">
-                  <div className="flex flex-col gap-1">
-                    <h1 className="text-zinc-900 dark:text-white text-2xl font-bold leading-tight">Novo Acordo</h1>
-                    <p className="text-zinc-500 dark:text-zinc-400 text-sm font-normal">Preencha os dados financeiros abaixo</p>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={handleCloseModal}
-                    className="flex items-center justify-center h-10 w-10 text-zinc-500 dark:text-zinc-400"
-                  >
-                    <X className="w-5 h-5" />
-                  </button>
-                </div>
+        <div className="fixed inset-0 z-[70] flex items-center justify-center px-3 sm:px-6 py-4">
+          <div className="absolute inset-0 bg-slate-900/70 backdrop-blur-sm" onClick={handleCloseModal} aria-hidden="true" />
+          <div className="relative w-full max-w-4xl max-h-[92vh] bg-white dark:bg-zinc-900 rounded-2xl shadow-2xl ring-1 ring-black/5 flex flex-col overflow-hidden">
+            <div className="h-2 w-full bg-orange-500" />
+            <div className="px-5 sm:px-8 py-5 border-b border-slate-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 flex items-start justify-between gap-4">
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400 dark:text-slate-500">Financeiro</p>
+                <h2 className="text-xl font-semibold text-slate-900 dark:text-white">Novo Acordo</h2>
+              </div>
+              <button
+                type="button"
+                onClick={handleCloseModal}
+                className="p-2 text-slate-400 hover:text-slate-600 dark:text-slate-300 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-white/10 rounded-xl transition"
+                aria-label="Fechar modal"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <form id="new-agreement-form" onSubmit={handleSubmit} className="flex flex-col flex-1 min-h-0">
+              <div className="flex flex-col p-6 gap-4 flex-1 overflow-y-auto bg-white dark:bg-zinc-900">
 
                 {formError && (
                   <div className="bg-red-50 border border-red-200 text-red-600 px-4 py-3 rounded-lg text-sm">
@@ -3383,9 +3593,9 @@ ${clientAddress ? `<div class="flex"><span class="text-subtle-light dark:text-su
                                 ? []
                                 : Array.from({ length: Number(prev.installmentsCount || '0') }, (_, index) => ({
                                     dueDate: index === 0 ? prev.firstDueDate : '',
-                                    value: prev.totalValue && prev.installmentsCount ? (
-                                      Number(prev.totalValue) / Number(prev.installmentsCount)
-                                    ).toFixed(2) : '',
+                                    value: prev.totalValue && prev.installmentsCount 
+                                      ? (Number(prev.totalValue) / Number(prev.installmentsCount)).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+                                      : '',
                                   })),
                             }))
                           }
@@ -3467,9 +3677,7 @@ ${clientAddress ? `<div class="flex"><span class="text-subtle-light dark:text-su
                                     : prev.customInstallments[index - 1]?.dueDate || prev.firstDueDate,
                                 value:
                                   prev.totalValue && prev.installmentsCount
-                                    ? (
-                                        Number(prev.totalValue) / Number(prev.installmentsCount)
-                                      ).toFixed(2)
+                                    ? (Number(prev.totalValue) / Number(prev.installmentsCount)).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
                                     : item.value,
                               })),
                             }))
@@ -3492,58 +3700,60 @@ ${clientAddress ? `<div class="flex"><span class="text-subtle-light dark:text-su
                   </div>
                 </div>
               </div>
-
-              {/* Footer */}
-              <div className="border-t border-zinc-200 dark:border-zinc-700 px-6 py-4 flex-shrink-0">
-                <div className="flex justify-end gap-3">
-                  <button
-                    type="button"
-                    onClick={handleCloseModal}
-                    disabled={formLoading}
-                    className="flex min-w-[84px] cursor-pointer items-center justify-center rounded-lg h-10 px-4 bg-zinc-100 dark:bg-zinc-700 text-zinc-900 dark:text-white text-sm font-bold hover:bg-zinc-200 dark:hover:bg-zinc-600"
-                  >
-                    Cancelar
-                  </button>
-                  <button
-                    type="submit"
-                    disabled={formLoading}
-                    className="flex min-w-[84px] cursor-pointer items-center justify-center rounded-lg h-10 px-4 bg-blue-500 text-white text-sm font-bold hover:bg-blue-600 disabled:opacity-60"
-                  >
-                    {formLoading ? (
-                      <>
-                        <Loader2 className="w-4 h-4 animate-spin mr-2" /> Salvando...
-                      </>
-                    ) : (
-                      'Criar Acordo'
-                    )}
-                  </button>
-                </div>
-              </div>
             </form>
+            {/* Footer */}
+            <div className="border-t border-slate-200 dark:border-zinc-800 bg-slate-50 dark:bg-zinc-900 px-5 sm:px-8 py-4">
+              <div className="flex justify-end gap-3">
+                <button
+                  type="button"
+                  onClick={handleCloseModal}
+                  disabled={formLoading}
+                  className="px-4 py-2 text-sm text-slate-600 dark:text-zinc-400 hover:text-slate-900 dark:hover:text-white transition"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  form="new-agreement-form"
+                  disabled={formLoading}
+                  className="px-4 py-2 bg-amber-500 hover:bg-amber-600 text-white text-sm font-medium rounded-lg flex items-center gap-2 transition disabled:opacity-50"
+                >
+                  {formLoading ? (
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin" /> Salvando...
+                    </>
+                  ) : (
+                    'Criar Acordo'
+                  )}
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       )}
 
       {/* Modal de Detalhes do Acordo */}
       {isDetailsModalOpen && selectedAgreement && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-          <div className="absolute inset-0 bg-gray-900/40 dark:bg-black/60" onClick={handleCloseDetails} />
-          <div className="relative w-full max-w-5xl rounded-xl bg-white dark:bg-zinc-900 shadow-lg max-h-[90vh] flex flex-col">
-            <div className="flex flex-col p-6 gap-6 flex-1 min-h-0">
-              {/* Header */}
-              <div className="flex justify-between items-start gap-4">
-                <div className="flex flex-col gap-1">
-                  <h1 className="text-2xl font-bold text-zinc-900 dark:text-white">{selectedAgreement.title}</h1>
-                  <p className="text-sm text-gray-500 dark:text-gray-400">{getClientName(selectedAgreement.client_id)}</p>
-                </div>
-                <button
-                  onClick={handleCloseDetails}
-                  className="flex items-center justify-center h-10 w-10 rounded-full text-gray-700 hover:text-black dark:text-white"
-                  aria-label="Fechar"
-                >
-                  <X className="w-5 h-5" />
-                </button>
+        <div className="fixed inset-0 z-[70] flex items-center justify-center px-3 sm:px-6 py-4">
+          <div className="absolute inset-0 bg-slate-900/70 backdrop-blur-sm" onClick={handleCloseDetails} aria-hidden="true" />
+          <div className="relative w-full max-w-5xl max-h-[92vh] bg-white dark:bg-zinc-900 rounded-2xl shadow-2xl ring-1 ring-black/5 flex flex-col overflow-hidden">
+            <div className="h-2 w-full bg-orange-500" />
+            <div className="px-5 sm:px-8 py-5 border-b border-slate-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 flex items-start justify-between gap-4">
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400 dark:text-slate-500">Detalhes</p>
+                <h2 className="text-xl font-semibold text-slate-900 dark:text-white">{selectedAgreement.title}</h2>
+                <p className="text-sm text-slate-500 dark:text-slate-400 mt-0.5">{getClientName(selectedAgreement.client_id)}</p>
               </div>
+              <button
+                type="button"
+                onClick={handleCloseDetails}
+                className="p-2 text-slate-400 hover:text-slate-600 dark:text-slate-300 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-white/10 rounded-xl transition"
+                aria-label="Fechar modal"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <div className="flex flex-col p-6 gap-6 flex-1 min-h-0 overflow-y-auto bg-white dark:bg-zinc-900">
 
               {/* Grid de 3 colunas */}
               <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 flex-1 min-h-0">
@@ -3678,7 +3888,12 @@ ${clientAddress ? `<div class="flex"><span class="text-subtle-light dark:text-su
                         {installments.map((installment, index) => {
                           const isOverdue = pendingStatuses.includes(installment.status as InstallmentStatus) && installment.due_date < today;
                           const isPaid = installment.status === 'pago';
-                          const daysOverdue = isOverdue ? Math.floor((new Date().getTime() - new Date(installment.due_date).getTime()) / (1000 * 60 * 60 * 24)) : 0;
+                          const dueMidnight = parseLocalDate(installment.due_date);
+                          const now = new Date();
+                          const todayMidnight = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+                          const daysOverdue = isOverdue && dueMidnight
+                            ? Math.floor((todayMidnight.getTime() - dueMidnight.getTime()) / (1000 * 60 * 60 * 24))
+                            : 0;
                           const paymentMethodLabels: Record<string, string> = {
                             dinheiro: 'Dinheiro',
                             pix: 'PIX',
@@ -3738,9 +3953,16 @@ ${clientAddress ? `<div class="flex"><span class="text-subtle-light dark:text-su
                                     </div>
                                     <div className="flex flex-col rounded-md border border-gray-200 dark:border-zinc-700 bg-gray-50 dark:bg-zinc-700/60 px-3 py-2">
                                       <span className="text-gray-500 dark:text-gray-400">Vencimento</span>
-                                      <span className={`font-medium ${new Date(installment.payment_date!) > new Date(installment.due_date) ? 'text-orange-600 dark:text-orange-300' : 'text-green-600 dark:text-green-300'}`}>
-                                        {new Date(installment.payment_date!) > new Date(installment.due_date) ? 'Pago com atraso' : 'Pago em dia'}
-                                      </span>
+                                      {(() => {
+                                        const pay = installment.payment_date ? (parseLocalDate(installment.payment_date) ?? new Date(installment.payment_date)) : null;
+                                        const due = parseLocalDate(installment.due_date) ?? new Date(installment.due_date);
+                                        const late = pay ? pay.getTime() > due.getTime() : false;
+                                        return (
+                                          <span className={`font-medium ${late ? 'text-orange-600 dark:text-orange-300' : 'text-green-600 dark:text-green-300'}`}>
+                                            {late ? 'Pago com atraso' : 'Pago em dia'}
+                                          </span>
+                                        );
+                                      })()}
                                     </div>
                                     <div className="flex flex-col rounded-md border border-gray-200 dark:border-zinc-700 bg-gray-50 dark:bg-zinc-700/60 px-3 py-2">
                                       <span className="text-gray-500 dark:text-gray-400">Honorários</span>
@@ -3751,11 +3973,11 @@ ${clientAddress ? `<div class="flex"><span class="text-subtle-light dark:text-su
                                   <>
                                     <div className="flex flex-col rounded-md border border-gray-200 dark:border-zinc-700 bg-gray-50 dark:bg-zinc-700/60 px-3 py-2">
                                       <span className="text-gray-500 dark:text-gray-400">Vencimento</span>
-                                      <span className="font-medium text-gray-800 dark:text-gray-100">{new Date(installment.due_date).toLocaleDateString('pt-BR')}</span>
+                                      <span className="font-medium text-gray-800 dark:text-gray-100">{(parseLocalDate(installment.due_date) ?? new Date(installment.due_date)).toLocaleDateString('pt-BR')}</span>
                                     </div>
                                     <div className="flex flex-col rounded-md border border-gray-200 dark:border-zinc-700 bg-gray-50 dark:bg-zinc-700/60 px-3 py-2">
                                       <span className="text-gray-500 dark:text-gray-400">Valor</span>
-                                      <span className="font-medium text-gray-800 dark:text-gray-100">{formatCurrency(installment.value)}</span>
+                                      <span className="font-medium text-gray-800 dark:text-gray-100">{formatCurrency(selectedAgreement.total_value / selectedAgreement.installments_count)}</span>
                                     </div>
                                     <div className="flex flex-col rounded-md border border-gray-200 dark:border-zinc-700 bg-gray-50 dark:bg-zinc-700/60 px-3 py-2">
                                       <span className="text-gray-500 dark:text-gray-400">Honorários</span>
@@ -3798,13 +4020,13 @@ ${clientAddress ? `<div class="flex"><span class="text-subtle-light dark:text-su
             </div>
 
             {/* Footer */}
-            <div className="flex justify-between items-center border-t border-gray-200 dark:border-zinc-700 px-6 py-4 flex-shrink-0">
-              <span className="text-xs text-gray-400 dark:text-gray-500">
+            <div className="flex justify-between items-center border-t border-slate-200 dark:border-zinc-800 bg-slate-50 dark:bg-zinc-900 px-5 sm:px-8 py-4">
+              <span className="text-xs text-slate-500 dark:text-slate-400">
                 Criado em {new Date(selectedAgreement.created_at).toLocaleDateString('pt-BR')} às {new Date(selectedAgreement.created_at).toLocaleTimeString('pt-BR')}
               </span>
               <button
                 onClick={handleCloseDetails}
-                className="flex min-w-[84px] cursor-pointer items-center justify-center rounded-lg h-10 px-4 bg-zinc-100 dark:bg-zinc-700 text-zinc-900 dark:text-white text-sm font-bold hover:bg-zinc-200 dark:hover:bg-zinc-600"
+                className="px-4 py-2 bg-slate-100 dark:bg-zinc-800 hover:bg-slate-200 dark:hover:bg-zinc-700 text-slate-700 dark:text-white text-sm font-medium rounded-lg transition"
               >
                 Fechar
               </button>
@@ -3815,27 +4037,29 @@ ${clientAddress ? `<div class="flex"><span class="text-subtle-light dark:text-su
 
       {/* Modal de Baixa de Pagamento */}
       {isPaymentModalOpen && selectedInstallment && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-          <div className="absolute inset-0 bg-gray-900/40 dark:bg-black/60" onClick={handleClosePaymentModal} />
-          <div className="relative w-full max-w-3xl rounded-xl bg-white dark:bg-slate-900 shadow-lg max-h-[80vh] flex flex-col">
-            {/* Conteúdo rolável */}
-            <div className="flex-1 overflow-y-auto p-6">
-              {/* Header */}
-              <div className="flex justify-between items-start gap-4 mb-5">
-                <div className="flex flex-col gap-1">
-                  <h1 className="text-lg font-bold text-gray-800 dark:text-white">Registrar Pagamento de Parcela</h1>
-                  <p className="text-xs text-gray-500 dark:text-gray-400">
-                    Parcela {selectedInstallment.installment_number}/{selectedAgreement?.installments_count} - Vencimento {new Date(selectedInstallment.due_date).toLocaleDateString('pt-BR')}
-                  </p>
-                </div>
-                <button 
-                  onClick={handleClosePaymentModal}
-                  className="flex items-center justify-center h-8 w-8 text-gray-500 dark:text-gray-400"
-                  aria-label="Fechar"
-                >
-                  <X className="w-5 h-5" />
-                </button>
+        <div className="fixed inset-0 z-[70] flex items-center justify-center px-3 sm:px-6 py-4">
+          <div className="absolute inset-0 bg-slate-900/70 backdrop-blur-sm" onClick={handleClosePaymentModal} aria-hidden="true" />
+          <div className="relative w-full max-w-3xl max-h-[85vh] bg-white dark:bg-zinc-900 rounded-2xl shadow-2xl ring-1 ring-black/5 flex flex-col overflow-hidden">
+            <div className="h-2 w-full bg-orange-500" />
+            <div className="px-5 sm:px-8 py-5 border-b border-slate-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 flex items-start justify-between gap-4">
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400 dark:text-slate-500">Pagamento</p>
+                <h2 className="text-xl font-semibold text-slate-900 dark:text-white">Registrar Pagamento</h2>
+                <p className="text-sm text-slate-500 dark:text-slate-400 mt-0.5">
+                  Parcela {selectedInstallment.installment_number}/{selectedAgreement?.installments_count} - Vencimento {(parseLocalDate(selectedInstallment.due_date) ?? new Date(selectedInstallment.due_date)).toLocaleDateString('pt-BR')}
+                </p>
               </div>
+              <button
+                type="button"
+                onClick={handleClosePaymentModal}
+                className="p-2 text-slate-400 hover:text-slate-600 dark:text-slate-300 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-white/10 rounded-xl transition"
+                aria-label="Fechar modal"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            {/* Conteúdo rolável */}
+            <div className="flex-1 overflow-y-auto p-6 bg-white dark:bg-zinc-900">
 
               <div className="space-y-5">
                 {/* Valor da Parcela */}
@@ -3924,20 +4148,24 @@ ${clientAddress ? `<div class="flex"><span class="text-subtle-light dark:text-su
             </div>
 
             {/* Footer fixo */}
-            <div className="flex-shrink-0 flex items-center justify-end gap-3 border-t border-gray-200 px-6 py-4 bg-white dark:bg-slate-900 dark:border-slate-700/50">
-              <button
-                onClick={handleClosePaymentModal}
-                className="flex cursor-pointer items-center justify-center rounded-lg h-10 px-5 bg-gray-100 text-gray-700 text-sm font-bold hover:bg-gray-200 dark:bg-slate-700 dark:text-slate-200 dark:hover:bg-slate-600"
-              >
-                Cancelar
-              </button>
-              <button
-                onClick={handleConfirmPayment}
-                disabled={!paymentData.paymentDate || !paymentData.paymentMethod || !paymentData.paidValue || parsePaidValue(paymentData.paidValue) <= 0}
-                className="flex cursor-pointer items-center justify-center rounded-lg h-10 px-5 bg-blue-500 text-white text-sm font-bold hover:bg-blue-600 disabled:bg-gray-300 disabled:cursor-not-allowed"
-              >
-                Confirmar Pagamento
-              </button>
+            <div className="border-t border-slate-200 dark:border-zinc-800 bg-slate-50 dark:bg-zinc-900 px-5 sm:px-8 py-4">
+              <div className="flex justify-end gap-3">
+                <button
+                  type="button"
+                  onClick={handleClosePaymentModal}
+                  className="px-4 py-2 text-sm text-slate-600 dark:text-zinc-400 hover:text-slate-900 dark:hover:text-white transition"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="button"
+                  onClick={handleConfirmPayment}
+                  disabled={!paymentData.paymentDate || !paymentData.paymentMethod || !paymentData.paidValue || parsePaidValue(paymentData.paidValue) <= 0}
+                  className="px-4 py-2 bg-amber-500 hover:bg-amber-600 text-white text-sm font-medium rounded-lg transition disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  Confirmar Pagamento
+                </button>
+              </div>
             </div>
           </div>
         </div>
@@ -3945,14 +4173,22 @@ ${clientAddress ? `<div class="flex"><span class="text-subtle-light dark:text-su
 
       {/* Modal de Relatório Mensal para IR */}
       {isReportModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4">
-          <div className="w-full max-w-4xl rounded-2xl bg-white shadow-2xl border border-slate-200/80 max-h-[90vh] flex flex-col overflow-hidden">
-            <div className="flex items-center justify-between px-6 py-4 border-b border-slate-200 bg-gradient-to-r from-blue-50 to-indigo-50 sticky top-0">
+        <div className="fixed inset-0 z-[70] flex items-center justify-center px-3 sm:px-6 py-4">
+          <div className="absolute inset-0 bg-slate-900/70 backdrop-blur-sm" onClick={() => setIsReportModalOpen(false)} aria-hidden="true" />
+          <div className="relative w-full max-w-4xl max-h-[92vh] bg-white dark:bg-zinc-900 rounded-2xl shadow-2xl ring-1 ring-black/5 flex flex-col overflow-hidden">
+            <div className="h-2 w-full bg-orange-500" />
+            <div className="px-5 sm:px-8 py-5 border-b border-slate-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 flex items-start justify-between gap-4">
               <div>
-                <h3 className="text-xl font-bold text-slate-900">📊 Relatório Mensal para Imposto de Renda</h3>
-                <p className="text-sm text-slate-600 mt-1">Receitas de honorários advocatícios</p>
+                <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400 dark:text-slate-500">Relatório</p>
+                <h2 className="text-xl font-semibold text-slate-900 dark:text-white">Relatório Mensal para IR</h2>
+                <p className="text-sm text-slate-500 dark:text-slate-400 mt-0.5">Receitas de honorários advocatícios</p>
               </div>
-              <button onClick={() => setIsReportModalOpen(false)} className="text-slate-400 hover:text-slate-600 transition">
+              <button
+                type="button"
+                onClick={() => setIsReportModalOpen(false)}
+                className="p-2 text-slate-400 hover:text-slate-600 dark:text-slate-300 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-white/10 rounded-xl transition"
+                aria-label="Fechar modal"
+              >
                 <X className="w-5 h-5" />
               </button>
             </div>
@@ -4050,14 +4286,16 @@ ${clientAddress ? `<div class="flex"><span class="text-subtle-light dark:text-su
 
             <div className="flex items-center justify-end gap-3 px-6 py-4 border-t border-slate-200 bg-slate-50 sticky bottom-0">
               <button
+                type="button"
                 onClick={() => setIsReportModalOpen(false)}
-                className="px-6 py-2.5 text-sm font-semibold text-slate-600 hover:text-slate-800 transition"
+                className="px-4 py-2 text-sm text-slate-600 dark:text-zinc-400 hover:text-slate-900 dark:hover:text-white transition"
               >
                 Fechar
               </button>
               <button
+                type="button"
                 onClick={handleExportMonthlyReport}
-                className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-2.5 rounded-lg text-sm font-semibold transition flex items-center gap-2"
+                className="px-4 py-2 bg-amber-500 hover:bg-amber-600 text-white text-sm font-medium rounded-lg flex items-center gap-2 transition"
               >
                 <Download className="w-4 h-4" />
                 Exportar PDF
@@ -4069,33 +4307,41 @@ ${clientAddress ? `<div class="flex"><span class="text-subtle-light dark:text-su
 
       {/* Modal de Seleção de Ano para Relatório IR */}
       {isIRModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4">
-          <div className="w-full max-w-md rounded-2xl bg-white shadow-2xl border border-slate-200/80">
-            <div className="flex items-center justify-between px-6 py-4 border-b border-slate-200 bg-gradient-to-r from-red-50 to-orange-50">
+        <div className="fixed inset-0 z-[70] flex items-center justify-center px-3 sm:px-6 py-4">
+          <div className="absolute inset-0 bg-slate-900/70 backdrop-blur-sm" onClick={() => setIsIRModalOpen(false)} aria-hidden="true" />
+          <div className="relative w-full max-w-md bg-white dark:bg-zinc-900 rounded-2xl shadow-2xl ring-1 ring-black/5 flex flex-col overflow-hidden">
+            <div className="h-2 w-full bg-orange-500" />
+            <div className="px-5 sm:px-8 py-5 border-b border-slate-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 flex items-start justify-between gap-4">
               <div>
-                <h3 className="text-xl font-bold text-slate-900 flex items-center gap-2">
-                  <FileSpreadsheet className="w-6 h-6 text-red-600" />
-                  Relatório de Imposto de Renda
-                </h3>
-                <p className="text-sm text-slate-600 mt-1">Selecione o ano para gerar o relatório</p>
+                <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400 dark:text-slate-500">Relatório</p>
+                <h2 className="text-xl font-semibold text-slate-900 dark:text-white flex items-center gap-2">
+                  <FileSpreadsheet className="w-5 h-5 text-orange-500" />
+                  Imposto de Renda
+                </h2>
+                <p className="text-sm text-slate-500 dark:text-slate-400 mt-0.5">Selecione o ano para gerar o relatório</p>
               </div>
-              <button onClick={() => setIsIRModalOpen(false)} className="text-slate-400 hover:text-slate-600 transition">
+              <button
+                type="button"
+                onClick={() => setIsIRModalOpen(false)}
+                className="p-2 text-slate-400 hover:text-slate-600 dark:text-slate-300 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-white/10 rounded-xl transition"
+                aria-label="Fechar modal"
+              >
                 <X className="w-5 h-5" />
               </button>
             </div>
 
-            <div className="px-6 py-6">
+            <div className="px-6 py-6 bg-white dark:bg-zinc-900">
               {availableYears.length === 0 ? (
                 <div className="text-center py-8">
-                  <FileSpreadsheet className="w-16 h-16 text-slate-300 mx-auto mb-4" />
-                  <p className="text-slate-600 font-medium mb-2">Nenhum pagamento registrado</p>
-                  <p className="text-sm text-slate-500">
+                  <FileSpreadsheet className="w-16 h-16 text-slate-300 dark:text-slate-600 mx-auto mb-4" />
+                  <p className="text-slate-600 dark:text-slate-300 font-medium mb-2">Nenhum pagamento registrado</p>
+                  <p className="text-sm text-slate-500 dark:text-slate-400">
                     Registre pagamentos de honorários para gerar relatórios de IR
                   </p>
                 </div>
               ) : (
                 <div className="space-y-3">
-                  <p className="text-sm text-slate-600 mb-4">
+                  <p className="text-sm text-slate-600 dark:text-slate-300 mb-4">
                     📊 Anos disponíveis com pagamentos registrados:
                   </p>
                   {availableYears.map((year) => {
@@ -4116,7 +4362,7 @@ ${clientAddress ? `<div class="flex"><span class="text-subtle-light dark:text-su
                           handleGenerateIRReport(year);
                           setIsIRModalOpen(false);
                         }}
-                        className="w-full border-2 border-slate-200 hover:border-red-500 hover:bg-red-50 rounded-xl p-4 transition text-left group"
+                        className="w-full border-2 border-slate-200 dark:border-zinc-700 hover:border-orange-500 dark:hover:border-orange-500 hover:bg-orange-50 dark:hover:bg-orange-900/20 rounded-xl p-4 transition text-left group"
                       >
                         <div className="flex items-center justify-between">
                           <div className="flex items-center gap-3">
@@ -4124,15 +4370,15 @@ ${clientAddress ? `<div class="flex"><span class="text-subtle-light dark:text-su
                               {year}
                             </div>
                             <div>
-                              <p className="font-semibold text-slate-900 group-hover:text-red-900">Ano {year}</p>
-                              <p className="text-sm text-slate-600">
+                              <p className="font-semibold text-slate-900 dark:text-white group-hover:text-orange-700 dark:group-hover:text-orange-400">Ano {year}</p>
+                              <p className="text-sm text-slate-600 dark:text-slate-400">
                                 {yearPayments.length} pagamento{yearPayments.length > 1 ? 's' : ''} registrado{yearPayments.length > 1 ? 's' : ''}
                               </p>
                             </div>
                           </div>
                           <div className="text-right">
-                            <p className="text-lg font-bold text-emerald-700">{formatCurrency(yearTotal)}</p>
-                            <p className="text-xs text-slate-500">Total recebido</p>
+                            <p className="text-lg font-bold text-orange-600 dark:text-orange-400">{formatCurrency(yearTotal)}</p>
+                            <p className="text-xs text-slate-500 dark:text-slate-400">Total recebido</p>
                           </div>
                         </div>
                       </button>
@@ -4142,8 +4388,8 @@ ${clientAddress ? `<div class="flex"><span class="text-subtle-light dark:text-su
               )}
             </div>
 
-            <div className="px-6 py-4 border-t border-slate-200 bg-slate-50">
-              <p className="text-xs text-slate-500 text-center">
+            <div className="px-6 py-4 border-t border-slate-200 dark:border-zinc-800 bg-slate-50 dark:bg-zinc-900">
+              <p className="text-xs text-slate-500 dark:text-slate-400 text-center">
                 💡 O relatório incluirá todos os honorários recebidos no ano selecionado
               </p>
             </div>
@@ -4153,17 +4399,19 @@ ${clientAddress ? `<div class="flex"><span class="text-subtle-light dark:text-su
 
       {/* Modal de Auditoria de Pagamentos */}
       {isAuditModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4">
-          <div className="w-full max-w-5xl rounded-2xl bg-white dark:bg-zinc-900 shadow-2xl border border-slate-200/80 dark:border-zinc-700 max-h-[90vh] flex flex-col overflow-hidden">
+        <div className="fixed inset-0 z-[70] flex items-center justify-center px-3 sm:px-6 py-4">
+          <div className="absolute inset-0 bg-slate-900/70 backdrop-blur-sm" onClick={handleCloseAuditModal} aria-hidden="true" />
+          <div className="relative w-full max-w-5xl max-h-[92vh] bg-white dark:bg-zinc-900 rounded-2xl shadow-2xl ring-1 ring-black/5 flex flex-col overflow-hidden">
+            <div className="h-2 w-full bg-orange-500" />
             {/* Header */}
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 px-6 py-4 border-b border-slate-200 dark:border-zinc-700 bg-gradient-to-r from-purple-50 via-indigo-50 to-sky-50 dark:from-purple-900/40 dark:via-indigo-900/40 dark:to-sky-900/30 sticky top-0">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 px-5 sm:px-8 py-5 border-b border-slate-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 sticky top-0">
               <div className="flex items-center gap-3">
-                <div className="flex items-center justify-center rounded-xl p-2.5 bg-purple-100 text-purple-700 border border-purple-200 shadow-sm">
+                <div className="flex items-center justify-center rounded-xl p-2.5 bg-orange-100 dark:bg-orange-900/30 text-orange-600 dark:text-orange-400">
                   <ClipboardList className="w-5 h-5" />
                 </div>
                 <div>
-                  <h3 className="text-xs font-semibold tracking-[0.2em] text-purple-700 dark:text-purple-200 uppercase">Histórico de Baixas</h3>
-                  <p className="text-sm text-slate-700 dark:text-slate-200 font-medium leading-tight">Registro de pagamentos recebidos</p>
+                  <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400 dark:text-slate-500">Auditoria</p>
+                  <h2 className="text-xl font-semibold text-slate-900 dark:text-white">Histórico de Baixas</h2>
                 </div>
               </div>
               <div className="flex items-center gap-3">
@@ -4177,12 +4425,14 @@ ${clientAddress ? `<div class="flex"><span class="text-subtle-light dark:text-su
                       setAuditFilterMonth(e.target.value);
                       loadAuditByMonth(e.target.value);
                     }}
-                    className="border border-slate-200 dark:border-zinc-600 rounded-lg px-3 py-1.5 text-sm bg-white dark:bg-zinc-800 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-purple-500"
+                    className="border border-slate-200 dark:border-zinc-700 rounded-lg px-3 py-1.5 text-sm bg-white dark:bg-zinc-800 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-orange-500"
                   />
                 </div>
                 <button 
+                  type="button"
                   onClick={handleCloseAuditModal} 
-                  className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 transition p-2 hover:bg-white/50 dark:hover:bg-zinc-800 rounded-lg"
+                  className="p-2 text-slate-400 hover:text-slate-600 dark:text-slate-300 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-white/10 rounded-xl transition"
+                  aria-label="Fechar modal"
                 >
                   <X className="w-5 h-5" />
                 </button>
@@ -4214,7 +4464,7 @@ ${clientAddress ? `<div class="flex"><span class="text-subtle-light dark:text-su
             </div>
 
             {/* Conteúdo - Lista de Baixas */}
-            <div className="flex-1 overflow-y-auto px-6 py-4">
+            <div className="flex-1 overflow-y-auto px-6 py-4 bg-white dark:bg-zinc-900">
               {loadingAudit ? (
                 <div className="flex items-center justify-center py-12">
                   <Loader2 className="w-8 h-8 text-purple-500 animate-spin" />
@@ -4280,7 +4530,7 @@ ${clientAddress ? `<div class="flex"><span class="text-subtle-light dark:text-su
                           return (
                             <tr 
                               key={log.id} 
-                              className={`border-b border-slate-100 dark:border-zinc-800 hover:bg-slate-50 dark:hover:bg-zinc-800/50 transition ${actionInfo.bgColor}`}
+                              className="border-b border-slate-100 dark:border-zinc-800 hover:bg-slate-50 dark:hover:bg-zinc-800/50 transition"
                             >
                               <td className="py-3 px-3">
                                 <div className="flex items-center gap-2">

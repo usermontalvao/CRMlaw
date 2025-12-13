@@ -72,16 +72,18 @@ export function exportToExcel(
       <meta charset="UTF-8">
       <style>
         table { border-collapse: collapse; width: 100%; }
-        th { background-color: #4F46E5; color: white; padding: 12px; text-align: left; font-weight: bold; }
-        td { border: 1px solid #ddd; padding: 8px; }
-        tr:nth-child(even) { background-color: #f2f2f2; }
-        .urgencia-alta { background-color: #FEE2E2; color: #991B1B; font-weight: bold; }
-        .urgencia-media { background-color: #FEF3C7; color: #92400E; font-weight: bold; }
-        .urgencia-baixa { background-color: #D1FAE5; color: #065F46; font-weight: bold; }
+        th { background-color: #f97316; color: white; padding: 12px; text-align: left; font-weight: bold; }
+        td { border: 1px solid #e2e8f0; padding: 10px; }
+        tr:nth-child(even) { background-color: #fff7ed; }
+        .urgencia-alta { background-color: #fef2f2; color: #dc2626; font-weight: bold; }
+        .urgencia-media { background-color: #fffbeb; color: #d97706; font-weight: bold; }
+        .urgencia-baixa { background-color: #ecfdf5; color: #059669; font-weight: bold; }
+        h1 { color: #0f172a; font-size: 20px; }
+        p { color: #64748b; font-size: 13px; }
       </style>
     </head>
     <body>
-      <h1>jurius.com.br - Relatório de Intimações DJEN</h1>
+      <h1>Relatório de Intimações DJEN</h1>
       <p>Gerado em: ${new Date().toLocaleString('pt-BR')}</p>
       <p>Total de intimações: ${intimations.length}</p>
       <br>
@@ -155,88 +157,112 @@ export function exportToPDF(
         @media print {
           body { margin: 0; padding: 20px; }
           .no-print { display: none; }
+          .header-bar { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
         }
-        body { font-family: Arial, sans-serif; }
-        h1 { color: #1F2937; margin-bottom: 10px; }
-        .header { margin-bottom: 30px; }
-        .stats { display: flex; gap: 20px; margin-bottom: 30px; }
-        .stat-card { padding: 15px; border-radius: 8px; flex: 1; }
-        .stat-card.alta { background-color: #FEE2E2; border-left: 4px solid #DC2626; }
-        .stat-card.media { background-color: #FEF3C7; border-left: 4px solid #F59E0B; }
-        .stat-card.baixa { background-color: #D1FAE5; border-left: 4px solid #10B981; }
-        .stat-number { font-size: 32px; font-weight: bold; }
-        .stat-label { font-size: 14px; color: #6B7280; }
-        table { width: 100%; border-collapse: collapse; margin-top: 20px; }
-        th { background-color: #4F46E5; color: white; padding: 12px; text-align: left; }
-        td { border: 1px solid #E5E7EB; padding: 10px; font-size: 12px; }
-        tr:nth-child(even) { background-color: #F9FAFB; }
-        .urgencia { padding: 4px 8px; border-radius: 4px; font-weight: bold; font-size: 11px; }
-        .urgencia.alta { background-color: #FEE2E2; color: #991B1B; }
-        .urgencia.media { background-color: #FEF3C7; color: #92400E; }
-        .urgencia.baixa { background-color: #D1FAE5; color: #065F46; }
+        * { box-sizing: border-box; }
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; margin: 0; padding: 0; background: #f8fafc; }
+        .header-bar { height: 8px; background: linear-gradient(90deg, #f97316, #fb923c); }
+        .container { max-width: 1200px; margin: 0 auto; padding: 24px; background: white; min-height: 100vh; }
+        .header { margin-bottom: 32px; padding-bottom: 20px; border-bottom: 1px solid #e2e8f0; }
+        .header-label { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.2em; color: #94a3b8; margin-bottom: 4px; }
+        h1 { color: #0f172a; margin: 0 0 12px 0; font-size: 24px; font-weight: 600; }
+        .header-info { font-size: 14px; color: #64748b; }
+        .stats { display: flex; gap: 16px; margin-bottom: 32px; }
+        .stat-card { padding: 20px; border-radius: 12px; flex: 1; }
+        .stat-card.alta { background: linear-gradient(135deg, #dc2626, #ef4444); color: white; }
+        .stat-card.media { background: linear-gradient(135deg, #f59e0b, #fbbf24); color: white; }
+        .stat-card.baixa { background: linear-gradient(135deg, #10b981, #34d399); color: white; }
+        .stat-card.total { background: linear-gradient(135deg, #3b82f6, #60a5fa); color: white; }
+        .stat-number { font-size: 36px; font-weight: 700; }
+        .stat-label { font-size: 13px; opacity: 0.9; margin-top: 4px; }
+        table { width: 100%; border-collapse: collapse; margin-top: 20px; border-radius: 12px; overflow: hidden; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
+        th { background-color: #f97316; color: white; padding: 14px 12px; text-align: left; font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; }
+        td { border-bottom: 1px solid #e2e8f0; padding: 12px; font-size: 13px; color: #334155; }
+        tr:nth-child(even) { background-color: #f8fafc; }
+        tr:hover { background-color: #fff7ed; }
+        .urgencia { padding: 4px 10px; border-radius: 6px; font-weight: 600; font-size: 11px; text-transform: uppercase; }
+        .urgencia.alta { background-color: #fef2f2; color: #dc2626; }
+        .urgencia.media { background-color: #fffbeb; color: #d97706; }
+        .urgencia.baixa { background-color: #ecfdf5; color: #059669; }
+        .footer { margin-top: 32px; padding-top: 20px; border-top: 1px solid #e2e8f0; text-align: center; }
+        .btn { padding: 12px 24px; border: none; border-radius: 8px; font-size: 14px; font-weight: 500; cursor: pointer; transition: all 0.2s; }
+        .btn-primary { background: #f97316; color: white; }
+        .btn-primary:hover { background: #ea580c; }
+        .btn-secondary { background: #f1f5f9; color: #475569; margin-left: 12px; }
+        .btn-secondary:hover { background: #e2e8f0; }
       </style>
     </head>
     <body>
-      <div class="header">
-        <h1>📋 jurius.com.br - Relatório de Intimações DJEN</h1>
-        <p><strong>Gerado em:</strong> ${new Date().toLocaleString('pt-BR')}</p>
-        <p><strong>Total de intimações:</strong> ${intimations.length}</p>
-      </div>
-
-      <div class="stats">
-        <div class="stat-card alta">
-          <div class="stat-number">${Array.from(analyses.values()).filter((a) => a.urgency === 'alta').length}</div>
-          <div class="stat-label">Urgência Alta</div>
+      <div class="header-bar"></div>
+      <div class="container">
+        <div class="header">
+          <div class="header-label">Relatório</div>
+          <h1>Relatório de Intimações DJEN</h1>
+          <div class="header-info">
+            <strong>Gerado em:</strong> ${new Date().toLocaleString('pt-BR')} &nbsp;|&nbsp;
+            <strong>Total:</strong> ${intimations.length} intimações
+          </div>
         </div>
-        <div class="stat-card media">
-          <div class="stat-number">${Array.from(analyses.values()).filter((a) => a.urgency === 'media').length}</div>
-          <div class="stat-label">Urgência Média</div>
-        </div>
-        <div class="stat-card baixa">
-          <div class="stat-number">${Array.from(analyses.values()).filter((a) => a.urgency === 'baixa').length}</div>
-          <div class="stat-label">Urgência Baixa</div>
-        </div>
-      </div>
 
-      <table>
-        <thead>
-          <tr>
-            <th>Data</th>
-            <th>Tribunal</th>
-            <th>Processo</th>
-            <th>Tipo</th>
-            <th>Status</th>
-            <th>Urgência</th>
-            <th>Prazo</th>
-          </tr>
-        </thead>
-        <tbody>
-          ${intimations
-            .map((int) => {
-              const analysis = analyses.get(int.id);
-              return `
-              <tr>
-                <td>${new Date(int.data_disponibilizacao).toLocaleDateString('pt-BR')}</td>
-                <td>${int.sigla_tribunal}</td>
-                <td>${int.numero_processo_mascara || int.numero_processo}</td>
-                <td>${int.tipo_comunicacao || 'N/A'}</td>
-                <td>${int.lida ? 'Lida' : '<strong>Não Lida</strong>'}</td>
-                <td>${analysis?.urgency ? `<span class="urgencia ${analysis.urgency}">${analysis.urgency.toUpperCase()}</span>` : 'N/A'}</td>
-                <td>${analysis?.deadline?.days ? `${analysis.deadline.days} dias` : 'N/A'}</td>
-              </tr>
-            `;
-            })
-            .join('')}
-        </tbody>
-      </table>
+        <div class="stats">
+          <div class="stat-card total">
+            <div class="stat-number">${intimations.length}</div>
+            <div class="stat-label">Total de Intimações</div>
+          </div>
+          <div class="stat-card alta">
+            <div class="stat-number">${Array.from(analyses.values()).filter((a) => a.urgency === 'alta').length}</div>
+            <div class="stat-label">Urgência Alta</div>
+          </div>
+          <div class="stat-card media">
+            <div class="stat-number">${Array.from(analyses.values()).filter((a) => a.urgency === 'media').length}</div>
+            <div class="stat-label">Urgência Média</div>
+          </div>
+          <div class="stat-card baixa">
+            <div class="stat-number">${Array.from(analyses.values()).filter((a) => a.urgency === 'baixa').length}</div>
+            <div class="stat-label">Urgência Baixa</div>
+          </div>
+        </div>
 
-      <div class="no-print" style="margin-top: 30px; text-align: center;">
-        <button onclick="window.print()" style="padding: 12px 24px; background-color: #4F46E5; color: white; border: none; border-radius: 8px; font-size: 16px; cursor: pointer;">
-          🖨️ Imprimir / Salvar como PDF
-        </button>
-        <button onclick="window.close()" style="padding: 12px 24px; background-color: #6B7280; color: white; border: none; border-radius: 8px; font-size: 16px; cursor: pointer; margin-left: 10px;">
-          Fechar
-        </button>
+        <table>
+          <thead>
+            <tr>
+              <th>Data</th>
+              <th>Tribunal</th>
+              <th>Processo</th>
+              <th>Tipo</th>
+              <th>Status</th>
+              <th>Urgência</th>
+              <th>Prazo</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${intimations
+              .map((int) => {
+                const analysis = analyses.get(int.id);
+                return `
+                <tr>
+                  <td>${new Date(int.data_disponibilizacao).toLocaleDateString('pt-BR')}</td>
+                  <td>${int.sigla_tribunal}</td>
+                  <td>${int.numero_processo_mascara || int.numero_processo}</td>
+                  <td>${int.tipo_comunicacao || 'N/A'}</td>
+                  <td>${int.lida ? 'Lida' : '<strong style="color:#f97316">Não Lida</strong>'}</td>
+                  <td>${analysis?.urgency ? `<span class="urgencia ${analysis.urgency}">${analysis.urgency.toUpperCase()}</span>` : 'N/A'}</td>
+                  <td>${analysis?.deadline?.days ? `${analysis.deadline.days} dias` : 'N/A'}</td>
+                </tr>
+              `;
+              })
+              .join('')}
+          </tbody>
+        </table>
+
+        <div class="footer no-print">
+          <button onclick="window.print()" class="btn btn-primary">
+            🖨️ Imprimir / Salvar como PDF
+          </button>
+          <button onclick="window.close()" class="btn btn-secondary">
+            Fechar
+          </button>
+        </div>
       </div>
     </body>
     </html>

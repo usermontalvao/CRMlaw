@@ -1,13 +1,16 @@
 import { djenService } from './djen.service';
+import { processService } from './process.service';
 import type { DjenComunicacao } from '../types/djen.types';
+import type { ProcessStatus } from '../types/process.types';
 
 export interface TimelineEvent {
   id: string;
   date: string;
-  type: 'intimacao' | 'citacao' | 'despacho' | 'sentenca' | 'decisao' | 'outro';
+  type: 'intimacao' | 'citacao' | 'despacho' | 'sentenca' | 'decisao' | 'recurso' | 'outro';
   title: string;
   description: string;
   orgao: string;
+  grauRecursal?: string;
   hash?: string;
   rawData?: DjenComunicacao;
   aiAnalysis?: {
@@ -15,14 +18,81 @@ export interface TimelineEvent {
     urgency: 'baixa' | 'media' | 'alta' | 'critica';
     actionRequired: boolean;
     keyPoints: string[];
+    tipoMovimentacao?: string;
   };
+}
+
+interface TimelineCache {
+  events: TimelineEvent[];
+  lastEventHash: string;
+  timestamp: number;
 }
 
 class ProcessTimelineService {
   private groqApiKey: string | null = null;
+  private cache: Map<string, TimelineCache> = new Map();
+  private readonly CACHE_DURATION = 10 * 60 * 1000; // 10 minutos
 
   constructor() {
     this.groqApiKey = import.meta.env.VITE_GROQ_API_KEY;
+    this.loadCacheFromStorage();
+  }
+
+  private loadCacheFromStorage() {
+    try {
+      const stored = localStorage.getItem('timeline-analysis-cache');
+      if (stored) {
+        const parsed = JSON.parse(stored);
+        Object.entries(parsed).forEach(([key, value]) => {
+          this.cache.set(key, value as TimelineCache);
+        });
+      }
+    } catch (e) {
+      console.warn('Erro ao carregar cache de timeline:', e);
+    }
+  }
+
+  private saveCacheToStorage() {
+    try {
+      const obj: Record<string, TimelineCache> = {};
+      this.cache.forEach((value, key) => {
+        obj[key] = value;
+      });
+      localStorage.setItem('timeline-analysis-cache', JSON.stringify(obj));
+    } catch (e) {
+      console.warn('Erro ao salvar cache de timeline:', e);
+    }
+  }
+
+  private getCachedAnalysis(processCode: string, currentEvents: TimelineEvent[]): TimelineEvent[] | null {
+    const cached = this.cache.get(processCode);
+    if (!cached) return null;
+
+    // Verificar se o cache ainda é válido (10 minutos)
+    if (Date.now() - cached.timestamp > this.CACHE_DURATION) {
+      return null;
+    }
+
+    // Verificar se há novos eventos (comparar hash do primeiro evento)
+    const currentFirstHash = currentEvents[0]?.hash || '';
+    if (cached.lastEventHash !== currentFirstHash) {
+      console.log('📝 Novos eventos detectados, re-analisando...');
+      return null;
+    }
+
+    console.log('📦 Usando análise em cache');
+    return cached.events;
+  }
+
+  private setCachedAnalysis(processCode: string, events: TimelineEvent[]) {
+    const firstHash = events[0]?.hash || '';
+    this.cache.set(processCode, {
+      events,
+      lastEventHash: firstHash,
+      timestamp: Date.now(),
+    });
+    this.saveCacheToStorage();
+    console.log('💾 Análise salva em cache');
   }
 
   /**
@@ -59,10 +129,11 @@ class ProcessTimelineService {
       const events: TimelineEvent[] = response.items.map((item, index) => ({
         id: item.hash || `event-${index}`,
         date: item.datadisponibilizacao || '',
-        type: this.mapTipoDocumento(item.tipoDocumento),
+        type: this.mapTipoDocumento(item.tipoDocumento, item.texto),
         title: this.extractTitle(item),
         description: item.texto || '',
         orgao: item.nomeOrgao || '',
+        grauRecursal: this.detectGrauRecursal(item.nomeOrgao, item.texto),
         hash: item.hash,
         rawData: item,
       }));
@@ -153,14 +224,46 @@ Regras:
 
   /**
    * Busca timeline e analisa todos os eventos com IA
+   * Usa cache para evitar re-análise desnecessária
    */
   async fetchAndAnalyzeTimeline(
     processCode: string, 
-    onProgress?: (current: number, total: number) => void
+    onProgress?: (current: number, total: number) => void,
+    forceRefresh: boolean = false
   ): Promise<TimelineEvent[]> {
     const events = await this.fetchProcessTimeline(processCode);
     
-    if (!this.groqApiKey || events.length === 0) {
+    if (events.length === 0) {
+      return events;
+    }
+
+    // Verificar cache (se não forçar refresh)
+    if (!forceRefresh) {
+      const cached = this.getCachedAnalysis(processCode, events);
+      if (cached) {
+        // Retornar eventos do cache com análise já feita
+        // Mesclar com eventos novos que não estão no cache
+        const cachedHashes = new Set(cached.map(e => e.hash));
+        const newEvents = events.filter(e => !cachedHashes.has(e.hash));
+        
+        if (newEvents.length === 0) {
+          // Nenhum evento novo, usar cache completo
+          if (onProgress) onProgress(1, 1);
+          return cached;
+        }
+        
+        // Há eventos novos, analisar apenas os novos
+        console.log(`📝 ${newEvents.length} novos eventos para analisar`);
+        const analyzedNew = await this.analyzeNewEvents(newEvents, onProgress);
+        const result = [...analyzedNew, ...cached];
+        result.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+        this.setCachedAnalysis(processCode, result);
+        return result;
+      }
+    }
+
+    // Sem cache ou forçando refresh - analisar tudo
+    if (!this.groqApiKey) {
       return events;
     }
 
@@ -184,24 +287,142 @@ Regras:
     }
 
     // Mesclar eventos analisados com o resto
-    return [...eventsToAnalyze, ...events.slice(10)];
+    const result = [...eventsToAnalyze, ...events.slice(10)];
+    
+    // Salvar no cache
+    this.setCachedAnalysis(processCode, result);
+    
+    return result;
+  }
+
+  /**
+   * Analisa apenas eventos novos
+   */
+  private async analyzeNewEvents(
+    events: TimelineEvent[],
+    onProgress?: (current: number, total: number) => void
+  ): Promise<TimelineEvent[]> {
+    if (!this.groqApiKey || events.length === 0) {
+      return events;
+    }
+
+    const toAnalyze = events.slice(0, 5); // Máximo 5 novos eventos
+    
+    for (let i = 0; i < toAnalyze.length; i++) {
+      if (onProgress) {
+        onProgress(i + 1, toAnalyze.length);
+      }
+      
+      const analysis = await this.analyzeTimelineEvent(toAnalyze[i]);
+      if (analysis) {
+        toAnalyze[i].aiAnalysis = analysis;
+      }
+      
+      if (i < toAnalyze.length - 1) {
+        await new Promise(resolve => setTimeout(resolve, 500));
+      }
+    }
+
+    return [...toAnalyze, ...events.slice(5)];
   }
 
   /**
    * Mapeia tipo de documento do DJEN para tipo de evento
+   * Analisa o conteúdo do texto para classificação mais precisa
    */
-  private mapTipoDocumento(tipo?: string): TimelineEvent['type'] {
-    if (!tipo) return 'outro';
+  private mapTipoDocumento(tipo?: string, texto?: string): TimelineEvent['type'] {
+    const tipoLower = (tipo || '').toLowerCase().trim();
+    const textoLower = (texto || '').toLowerCase();
     
-    const tipoLower = tipo.toLowerCase();
+    // Analisar o texto completo para palavras-chave específicas
+    // Usar primeiros 1500 chars para análise mais completa
+    const textoAnalise = textoLower.substring(0, 1500);
     
-    if (tipoLower.includes('intimação') || tipoLower.includes('intimacao')) return 'intimacao';
-    if (tipoLower.includes('citação') || tipoLower.includes('citacao')) return 'citacao';
-    if (tipoLower.includes('despacho')) return 'despacho';
-    if (tipoLower.includes('sentença') || tipoLower.includes('sentenca')) return 'sentenca';
-    if (tipoLower.includes('decisão') || tipoLower.includes('decisao')) return 'decisao';
+    // SENTENÇA - Verificar primeiro pois é mais específico
+    if (textoAnalise.includes('sentença') || 
+        textoAnalise.includes('julgo procedente') || 
+        textoAnalise.includes('julgo improcedente') ||
+        textoAnalise.includes('julgo parcialmente procedente') ||
+        textoAnalise.includes('extingo o processo') ||
+        tipoLower.includes('sentença') || tipoLower.includes('sentenca')) {
+      return 'sentenca';
+    }
     
+    // DECISÃO - Tutelas, liminares, decisões interlocutórias
+    if (textoAnalise.includes('decisão') ||
+        textoAnalise.includes('tutela de urgência') ||
+        textoAnalise.includes('tutela antecipada') ||
+        textoAnalise.includes('liminar') ||
+        textoAnalise.includes('defiro o pedido') ||
+        textoAnalise.includes('indefiro o pedido') ||
+        textoAnalise.includes('passo a decidir') ||
+        tipoLower.includes('decisão') || tipoLower.includes('decisao')) {
+      return 'decisao';
+    }
+    
+    // CITAÇÃO
+    if (textoAnalise.includes('citação') ||
+        textoAnalise.includes('cite-se') ||
+        textoAnalise.includes('fica citado') ||
+        textoAnalise.includes('citando') ||
+        tipoLower.includes('citação') || tipoLower.includes('citacao')) {
+      return 'citacao';
+    }
+    
+    // DESPACHO
+    if (textoAnalise.includes('despacho') ||
+        textoAnalise.includes('vistos etc') ||
+        textoAnalise.includes('conclusos') ||
+        textoAnalise.includes('determino') ||
+        textoAnalise.includes('dê-se vista') ||
+        tipoLower.includes('despacho')) {
+      return 'despacho';
+    }
+    
+    // RECURSO - Apenas termos específicos de recursos processuais
+    if (textoAnalise.includes('apelação') ||
+        textoAnalise.includes('agravo de instrumento') ||
+        textoAnalise.includes('agravo interno') ||
+        textoAnalise.includes('embargos de declaração') ||
+        textoAnalise.includes('recurso especial') ||
+        textoAnalise.includes('recurso extraordinário') ||
+        textoAnalise.includes('recurso ordinário') ||
+        tipoLower.includes('acórdão') || tipoLower.includes('acordao')) {
+      return 'recurso';
+    }
+    
+    // INTIMAÇÃO - Verificar por último pois é o mais genérico
+    // Muitas publicações são intimações
+    if (textoAnalise.includes('intimação') ||
+        textoAnalise.includes('intime-se') ||
+        textoAnalise.includes('fica intimado') ||
+        textoAnalise.includes('intimando') ||
+        textoAnalise.includes('comparecer') ||
+        textoAnalise.includes('audiência') ||
+        textoAnalise.includes('prazo de') ||
+        tipoLower.includes('intimação') || tipoLower.includes('intimacao')) {
+      return 'intimacao';
+    }
+    
+    // Se não identificou, retorna 'outro'
     return 'outro';
+  }
+
+  /**
+   * Detecta o grau recursal baseado no órgão ou conteúdo
+   */
+  private detectGrauRecursal(orgao?: string, texto?: string): string | undefined {
+    const combined = ((orgao || '') + ' ' + (texto || '')).toLowerCase();
+    
+    if (combined.includes('stf') || combined.includes('supremo tribunal federal')) return 'STF';
+    if (combined.includes('stj') || combined.includes('superior tribunal de justiça')) return 'STJ';
+    if (combined.includes('tst') || combined.includes('tribunal superior do trabalho')) return 'TST';
+    if (combined.includes('trt') || combined.includes('tribunal regional do trabalho')) return 'TRT';
+    if (combined.includes('tj') || combined.includes('tribunal de justiça') || combined.includes('2º grau') || combined.includes('segundo grau')) return '2º Grau';
+    if (combined.includes('turma recursal')) return 'Turma Recursal';
+    if (combined.includes('1º grau') || combined.includes('primeiro grau') || combined.includes('vara')) return '1º Grau';
+    
+    return undefined;
   }
 
   /**
@@ -228,6 +449,97 @@ Regras:
     }
     
     return 'Publicação no Diário';
+  }
+
+  /**
+   * Detecta o status sugerido do processo baseado nos eventos da timeline
+   */
+  detectSuggestedStatus(events: TimelineEvent[]): ProcessStatus | null {
+    if (events.length === 0) return null;
+
+    // Analisar todos os eventos para detectar o estágio
+    const allText = events.map(e => 
+      (e.title + ' ' + e.description + ' ' + (e.aiAnalysis?.summary || '')).toLowerCase()
+    ).join(' ');
+
+    // Verificar do mais avançado para o menos avançado
+    
+    // Arquivado
+    if (allText.includes('arquivamento') || allText.includes('arquivado') ||
+        allText.includes('baixa definitiva') || allText.includes('autos arquivados')) {
+      return 'arquivado';
+    }
+
+    // Cumprimento de sentença / Execução
+    if (allText.includes('cumprimento de sentença') || allText.includes('execução') ||
+        allText.includes('fase de cumprimento') || allText.includes('liquidação')) {
+      return 'cumprimento';
+    }
+
+    // Sentença proferida
+    if (allText.includes('sentença') || allText.includes('sentenca') ||
+        allText.includes('julgo procedente') || allText.includes('julgo improcedente') ||
+        allText.includes('julgamento') || events.some(e => e.type === 'sentenca')) {
+      return 'sentenca';
+    }
+
+    // Em andamento (citação, contestação, instrução, audiência)
+    if (allText.includes('citação') || allText.includes('citacao') ||
+        allText.includes('contestação') || allText.includes('contestacao') ||
+        allText.includes('audiência') || allText.includes('audiencia') ||
+        allText.includes('instrução') || allText.includes('instrucao') ||
+        allText.includes('intimação') || allText.includes('intimacao') ||
+        allText.includes('prazo') || allText.includes('manifestação')) {
+      return 'andamento';
+    }
+
+    // Distribuído (tem eventos mas nenhum dos acima)
+    if (events.length > 0) {
+      return 'distribuido';
+    }
+
+    return null;
+  }
+
+  /**
+   * Atualiza o status do processo automaticamente baseado na timeline
+   */
+  async autoUpdateProcessStatus(processId: string, events: TimelineEvent[]): Promise<ProcessStatus | null> {
+    const suggestedStatus = this.detectSuggestedStatus(events);
+    
+    if (!suggestedStatus) return null;
+
+    try {
+      // Buscar processo atual
+      const currentProcess = await processService.getProcessById(processId);
+      if (!currentProcess) return null;
+
+      // Definir hierarquia de status (do menos avançado para o mais avançado)
+      const statusHierarchy: ProcessStatus[] = [
+        'nao_protocolado',
+        'aguardando_confeccao', 
+        'distribuido',
+        'andamento',
+        'sentenca',
+        'cumprimento',
+        'arquivado'
+      ];
+
+      const currentIndex = statusHierarchy.indexOf(currentProcess.status);
+      const suggestedIndex = statusHierarchy.indexOf(suggestedStatus);
+
+      // Só atualiza se o status sugerido for mais avançado que o atual
+      if (suggestedIndex > currentIndex) {
+        await processService.updateStatus(processId, suggestedStatus);
+        console.log(`✅ Status do processo atualizado automaticamente: ${currentProcess.status} → ${suggestedStatus}`);
+        return suggestedStatus;
+      }
+
+      return null;
+    } catch (error) {
+      console.error('Erro ao atualizar status do processo:', error);
+      return null;
+    }
   }
 }
 

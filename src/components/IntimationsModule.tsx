@@ -1709,15 +1709,15 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
         ) : groupByProcess && groupedByProcess ? (
           // Visualização agrupada por processo
           Array.from(groupedByProcess.entries()).map(([processNum, group]) => (
-            <div key={processNum} className="bg-white border border-gray-200 rounded-xl p-5 space-y-3">
-              <div className="flex items-center justify-between pb-3 border-b border-gray-200">
-                <div>
-                  <h4 className="text-lg font-bold text-slate-900">Processo: {processNum}</h4>
-                  <p className="text-sm text-slate-600">
+            <div key={processNum} className="bg-white border border-gray-200 rounded-xl p-3 sm:p-5 space-y-2 sm:space-y-3">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-2 sm:pb-3 border-b border-gray-200">
+                <div className="min-w-0">
+                  <h4 className="text-sm sm:text-lg font-bold text-slate-900 truncate">Processo: {processNum}</h4>
+                  <p className="text-xs sm:text-sm text-slate-600">
                     {group.length} intimação(ões) • {group.filter((i) => !i.lida).length} não lida(s)
                   </p>
                   {group[0].client_id && (
-                    <p className="text-sm text-blue-600 mt-1">
+                    <p className="text-xs sm:text-sm text-blue-600 mt-1 truncate">
                       <strong>Cliente:</strong> {getClientName(group[0].client_id)}
                     </p>
                   )}
@@ -1729,10 +1729,11 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
                         await handleMarkAsRead(intimation.id);
                       }
                     }}
-                    className="inline-flex items-center gap-2 px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-medium rounded-lg transition text-sm"
+                    className="inline-flex items-center justify-center gap-1.5 sm:gap-2 px-3 sm:px-4 py-1.5 sm:py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-medium rounded-lg transition text-xs sm:text-sm w-full sm:w-auto"
                   >
-                    <CheckCircle className="w-4 h-4" />
-                    Marcar Todas como Lidas
+                    <CheckCircle className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+                    <span className="hidden xs:inline">Marcar Todas</span>
+                    <span className="xs:hidden">Marcar Lidas</span>
                   </button>
                 )}
               </div>
@@ -1750,7 +1751,7 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
                   >
                     {/* Header clicável para expandir */}
                     <div
-                      className="p-4 cursor-pointer"
+                      className="p-2.5 sm:p-4 cursor-pointer"
                       onClick={() => {
                         const newExpanded = new Set(expandedIntimationIds);
                         if (isExpanded) {
@@ -1761,34 +1762,37 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
                         setExpandedIntimationIds(newExpanded);
                       }}
                     >
-                      <div className="flex items-start justify-between gap-3">
-                        <div className="flex items-center gap-2">
+                      <div className="flex items-start gap-2 sm:gap-3">
+                        <div className="flex items-center">
                           {isExpanded ? <ChevronDown className="w-4 h-4 text-slate-600 flex-shrink-0" /> : <ChevronRight className="w-4 h-4 text-slate-600 flex-shrink-0" />}
                         </div>
-                        <div className="flex-1">
-                          <div className="flex items-center gap-2 mb-2 flex-wrap">
-                            <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
+                        <div className="flex-1 min-w-0">
+                          {/* Mobile: Layout compacto */}
+                          <div className="flex items-center gap-1.5 sm:gap-2 mb-1.5 sm:mb-2 flex-wrap">
+                            <span className="inline-flex items-center px-1.5 sm:px-2 py-0.5 rounded-full text-[10px] sm:text-xs font-medium bg-blue-100 text-blue-800">
                               {intimation.sigla_tribunal}
                             </span>
-                            {intimation.tipo_comunicacao && (
-                              <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-purple-100 text-purple-800">
-                                {intimation.tipo_comunicacao}
-                              </span>
-                            )}
-                            <span className="text-xs text-slate-500">
+                            <span className="text-[10px] sm:text-xs text-slate-500">
                               {formatDate(intimation.data_disponibilizacao)}
                             </span>
                             {!intimation.lida && (
-                              <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold bg-amber-100 text-amber-700">
+                              <span className="inline-flex items-center px-1.5 sm:px-2 py-0.5 rounded-full text-[10px] sm:text-xs font-semibold bg-amber-100 text-amber-700">
                                 NÃO LIDA
                               </span>
                             )}
+                            {intimation.tipo_comunicacao && (
+                              <span className="hidden sm:inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-purple-100 text-purple-800">
+                                {intimation.tipo_comunicacao}
+                              </span>
+                            )}
                           </div>
-                          <p className={`text-sm text-slate-700 ${!isExpanded ? 'line-clamp-2' : ''}`}>
+                          {/* Texto da intimação - compacto em mobile */}
+                          <p className={`text-xs sm:text-sm text-slate-700 ${!isExpanded ? 'line-clamp-1 sm:line-clamp-2' : ''}`}>
                             {intimation.texto}
                           </p>
                         </div>
-                        <div className="flex items-center gap-2 flex-shrink-0">
+                        {/* Botões de ação - ocultos em mobile quando não expandido */}
+                        <div className={`flex items-center gap-1.5 sm:gap-2 flex-shrink-0 ${!isExpanded ? 'hidden sm:flex' : 'flex'}`}>
                           {aiEnabled && !aiAnalysis.has(intimation.id) && (
                             <button
                               onClick={(e) => {
@@ -1882,6 +1886,69 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
                             })()}
                           </div>
                         )}
+                        
+                        {/* Botões de Ação - Visualização Agrupada */}
+                        <div className="mt-3 flex flex-wrap gap-2">
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setCurrentIntimationForAction(intimation);
+                              setDeadlineModalOpen(true);
+                            }}
+                            className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-amber-700 bg-amber-50 hover:bg-amber-100 border border-amber-200 rounded-full transition"
+                          >
+                            <Clock className="w-3.5 h-3.5" />
+                            Novo Prazo
+                          </button>
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setCurrentIntimationForAction(intimation);
+                              setAppointmentModalOpen(true);
+                            }}
+                            className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-slate-700 bg-slate-50 hover:bg-slate-100 border border-slate-200 rounded-full transition"
+                          >
+                            <CalendarIcon className="w-3.5 h-3.5" />
+                            Compromisso
+                          </button>
+                          {!intimation.lida && (
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleMarkAsRead(intimation.id);
+                              }}
+                              className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-emerald-700 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 rounded-full transition"
+                            >
+                              <CheckCircle className="w-3.5 h-3.5" />
+                              Marcar Lida
+                            </button>
+                          )}
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setLinkingIntimation(intimation);
+                              setSelectedClientId(intimation.client_id || '');
+                              setSelectedProcessId(intimation.process_id || '');
+                              setLinkModalOpen(true);
+                            }}
+                            className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-blue-700 bg-blue-50 hover:bg-blue-100 border border-blue-200 rounded-full transition"
+                          >
+                            <Link2 className="w-3.5 h-3.5" />
+                            Vincular
+                          </button>
+                          {intimation.link && (
+                            <a
+                              href={intimation.link}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              onClick={(e) => e.stopPropagation()}
+                              className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-purple-700 bg-purple-50 hover:bg-purple-100 border border-purple-200 rounded-full transition"
+                            >
+                              <ExternalLink className="w-3.5 h-3.5" />
+                              Ver Diário
+                            </a>
+                          )}
+                        </div>
                       </div>
                     )}
                   </div>
@@ -1891,80 +1958,81 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
             </div>
           ))
         ) : (
-          // Visualização normal (lista)
+          // Visualização normal (lista) - Compacta em mobile
           filteredIntimations.map((intimation) => {
             const isExpanded = expandedIntimationIds.has(intimation.id);
             return (
             <div
               key={intimation.id}
-              className={`bg-white border rounded-xl p-5 transition ${
+              className={`bg-white border rounded-xl p-3 sm:p-5 transition ${
                 intimation.lida
                   ? 'border-slate-200 hover:border-slate-300'
                   : 'border-amber-200 hover:border-amber-300 bg-amber-50/30'
               } ${selectionMode && selectedIds.has(intimation.id) ? 'ring-2 ring-purple-500' : ''}`}
             >
-              <div className="flex items-start gap-4">
+              <div className="flex items-start gap-2 sm:gap-4">
                 {selectionMode && (
                   <input
                     type="checkbox"
                     checked={selectedIds.has(intimation.id)}
                     onChange={() => toggleSelection(intimation.id)}
                     onClick={(e) => e.stopPropagation()}
-                    className="mt-1 w-5 h-5 text-purple-600 border-slate-300 rounded focus:ring-purple-500"
+                    className="mt-1 w-4 h-4 sm:w-5 sm:h-5 text-purple-600 border-slate-300 rounded focus:ring-purple-500"
                   />
                 )}
 
                 <button
                   onClick={() => toggleExpanded(intimation.id)}
-                  className="flex-shrink-0 mt-1 p-1 hover:bg-slate-100 rounded transition"
+                  className="flex-shrink-0 mt-0.5 sm:mt-1 p-0.5 sm:p-1 hover:bg-slate-100 rounded transition"
                 >
                   {isExpanded ? (
-                    <ChevronDown className="w-5 h-5 text-slate-600" />
+                    <ChevronDown className="w-4 h-4 sm:w-5 sm:h-5 text-slate-600" />
                   ) : (
-                    <ChevronRight className="w-5 h-5 text-slate-600" />
+                    <ChevronRight className="w-4 h-4 sm:w-5 sm:h-5 text-slate-600" />
                   )}
                 </button>
 
                 <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2 mb-3 flex-wrap">
-                    <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
+                  {/* Mobile: Layout compacto | Desktop: Layout completo */}
+                  <div className="flex items-center gap-1.5 sm:gap-2 mb-1.5 sm:mb-3 flex-wrap">
+                    <span className="inline-flex items-center px-1.5 sm:px-2.5 py-0.5 rounded-full text-[10px] sm:text-xs font-medium bg-blue-100 text-blue-800">
                       {intimation.sigla_tribunal}
                     </span>
-                    {intimation.tipo_comunicacao && (
-                      <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-purple-100 text-purple-800">
-                        {intimation.tipo_comunicacao}
-                      </span>
-                    )}
-                    <span className="text-xs text-slate-500">
+                    <span className="text-[10px] sm:text-xs text-slate-500">
                       {formatDate(intimation.data_disponibilizacao)}
                     </span>
                     {!intimation.lida && (
-                      <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold bg-amber-100 text-amber-700">
+                      <span className="inline-flex items-center px-1.5 sm:px-2 py-0.5 rounded-full text-[10px] sm:text-xs font-semibold bg-amber-100 text-amber-700">
                         NÃO LIDA
                       </span>
                     )}
+                    {intimation.tipo_comunicacao && (
+                      <span className="hidden sm:inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-purple-100 text-purple-800">
+                        {intimation.tipo_comunicacao}
+                      </span>
+                    )}
                     {aiAnalysis.has(intimation.id) && (
-                      <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-gradient-to-r from-violet-100 to-purple-100 text-violet-700 border border-violet-200">
+                      <span className="hidden sm:inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-gradient-to-r from-violet-100 to-purple-100 text-violet-700 border border-violet-200">
                         <Sparkles className="w-3 h-3" />
-                        Analisado por IA
+                        Analisado
                       </span>
                     )}
                   </div>
 
-                  <h4 className="font-semibold text-slate-900 mb-2">
+                  <h4 className="text-sm sm:text-base font-semibold text-slate-900 mb-1 sm:mb-2 truncate sm:whitespace-normal">
                     Processo: {intimation.numero_processo_mascara || intimation.numero_processo}
                   </h4>
 
-                  {/* Polos das Partes */}
-                  <div className="mb-3 space-y-1">
+                  {/* Polos das Partes - Ocultos em mobile quando não expandido */}
+                  <div className={`mb-2 sm:mb-3 space-y-1 ${!isExpanded ? 'hidden sm:block' : ''}`}>
                     {intimation.polo_ativo && (
-                      <p className="text-sm">
+                      <p className="text-xs sm:text-sm truncate sm:whitespace-normal">
                         <span className="font-semibold text-emerald-700">Polo Ativo:</span>{' '}
                         <span className="text-slate-700">{intimation.polo_ativo}</span>
                       </p>
                     )}
                     {intimation.polo_passivo && (
-                      <p className="text-sm">
+                      <p className="text-xs sm:text-sm truncate sm:whitespace-normal">
                         <span className="font-semibold text-red-700">Polo Passivo:</span>{' '}
                         <span className="text-slate-700">{intimation.polo_passivo}</span>
                       </p>
@@ -1972,19 +2040,19 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
                   </div>
 
                   {intimation.client_id && (
-                    <p className="text-sm text-slate-600 mb-1">
+                    <p className={`text-xs sm:text-sm text-slate-600 mb-1 truncate sm:whitespace-normal ${!isExpanded ? 'hidden sm:block' : ''}`}>
                       <strong>Cliente:</strong> {getClientName(intimation.client_id)}
                     </p>
                   )}
 
                   {intimation.process_id && (
-                    <p className="text-sm text-slate-600 mb-2">
+                    <p className={`text-xs sm:text-sm text-slate-600 mb-2 truncate sm:whitespace-normal ${!isExpanded ? 'hidden sm:block' : ''}`}>
                       <strong>Processo:</strong> {getProcessCode(intimation.process_id)}
                     </p>
                   )}
 
                   {!isExpanded && (
-                    <p className="text-sm text-slate-700 line-clamp-2">{intimation.texto}</p>
+                    <p className="text-xs sm:text-sm text-slate-700 line-clamp-1 sm:line-clamp-2">{intimation.texto}</p>
                   )}
 
                   {/* Conteúdo Expandido */}
@@ -2172,8 +2240,9 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
                   )}
                 </div>
 
+                {/* Botões de ação - Ocultos em mobile quando não expandido */}
                 {!selectionMode && (
-                  <div className="flex flex-col gap-2">
+                  <div className={`flex flex-col gap-1.5 sm:gap-2 ${!isExpanded ? 'hidden sm:flex' : 'flex'}`}>
                     {aiEnabled && !aiAnalysis.has(intimation.id) && (
                       <button
                         onClick={(e) => {
@@ -2181,17 +2250,14 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
                           handleAnalyzeWithAI(intimation);
                         }}
                         disabled={analyzingIds.has(intimation.id)}
-                        className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-purple-600 hover:text-purple-700 border border-purple-200 rounded-lg hover:bg-purple-50 transition disabled:opacity-50 disabled:cursor-not-allowed"
+                        className="inline-flex items-center justify-center gap-1 sm:gap-1.5 px-2 sm:px-3 py-1 sm:py-1.5 text-[10px] sm:text-xs font-medium text-purple-600 hover:text-purple-700 border border-purple-200 rounded-lg hover:bg-purple-50 transition disabled:opacity-50 disabled:cursor-not-allowed"
                       >
                         {analyzingIds.has(intimation.id) ? (
-                          <>
-                            <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                            Analisando...
-                          </>
+                          <Loader2 className="w-3 h-3 sm:w-3.5 sm:h-3.5 animate-spin" />
                         ) : (
                           <>
-                            <Sparkles className="w-3.5 h-3.5" />
-                            Analisar IA
+                            <Sparkles className="w-3 h-3 sm:w-3.5 sm:h-3.5" />
+                            <span className="hidden sm:inline">Analisar IA</span>
                           </>
                         )}
                       </button>
@@ -2201,20 +2267,20 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
                         e.stopPropagation();
                         handleCreateDeadline(intimation);
                       }}
-                      className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-amber-600 hover:text-amber-700 border border-amber-200 rounded-lg hover:bg-amber-50 transition"
+                      className="inline-flex items-center justify-center gap-1 sm:gap-1.5 px-2 sm:px-3 py-1 sm:py-1.5 text-[10px] sm:text-xs font-medium text-amber-600 hover:text-amber-700 border border-amber-200 rounded-lg hover:bg-amber-50 transition"
                     >
-                      <Clock className="w-3.5 h-3.5" />
-                      Novo Prazo
+                      <Clock className="w-3 h-3 sm:w-3.5 sm:h-3.5" />
+                      <span className="hidden sm:inline">Prazo</span>
                     </button>
                     <button
                       onClick={(e) => {
                         e.stopPropagation();
                         handleCreateAppointment(intimation);
                       }}
-                      className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-indigo-600 hover:text-indigo-700 border border-indigo-200 rounded-lg hover:bg-indigo-50 transition"
+                      className="inline-flex items-center justify-center gap-1 sm:gap-1.5 px-2 sm:px-3 py-1 sm:py-1.5 text-[10px] sm:text-xs font-medium text-indigo-600 hover:text-indigo-700 border border-indigo-200 rounded-lg hover:bg-indigo-50 transition"
                     >
-                      <CalendarIcon className="w-3.5 h-3.5" />
-                      Compromisso
+                      <CalendarIcon className="w-3 h-3 sm:w-3.5 sm:h-3.5" />
+                      <span className="hidden sm:inline">Agenda</span>
                     </button>
                     {!intimation.lida && (
                       <button
@@ -2222,10 +2288,10 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
                           e.stopPropagation();
                           handleMarkAsRead(intimation.id);
                         }}
-                        className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-emerald-600 hover:text-emerald-700 border border-emerald-200 rounded-lg hover:bg-emerald-50 transition"
+                        className="inline-flex items-center justify-center gap-1 sm:gap-1.5 px-2 sm:px-3 py-1 sm:py-1.5 text-[10px] sm:text-xs font-medium text-emerald-600 hover:text-emerald-700 border border-emerald-200 rounded-lg hover:bg-emerald-50 transition"
                       >
-                        <CheckCircle className="w-3.5 h-3.5" />
-                        Marcar Lida
+                        <CheckCircle className="w-3 h-3 sm:w-3.5 sm:h-3.5" />
+                        <span className="hidden sm:inline">Lida</span>
                       </button>
                     )}
                     <button
@@ -2233,10 +2299,10 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
                         e.stopPropagation();
                         handleOpenLinkModal(intimation);
                       }}
-                      className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-purple-600 hover:text-purple-700 border border-purple-200 rounded-lg hover:bg-purple-50 transition"
+                      className="inline-flex items-center justify-center gap-1 sm:gap-1.5 px-2 sm:px-3 py-1 sm:py-1.5 text-[10px] sm:text-xs font-medium text-purple-600 hover:text-purple-700 border border-purple-200 rounded-lg hover:bg-purple-50 transition"
                     >
-                      <Link2 className="w-3.5 h-3.5" />
-                      Vincular
+                      <Link2 className="w-3 h-3 sm:w-3.5 sm:h-3.5" />
+                      <span className="hidden sm:inline">Vincular</span>
                     </button>
                     {intimation.link && (
                       <a
@@ -2244,10 +2310,10 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
                         target="_blank"
                         rel="noopener noreferrer"
                         onClick={(e) => e.stopPropagation()}
-                        className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-blue-600 hover:text-blue-700 border border-blue-200 rounded-lg hover:bg-blue-50 transition"
+                        className="inline-flex items-center justify-center gap-1 sm:gap-1.5 px-2 sm:px-3 py-1 sm:py-1.5 text-[10px] sm:text-xs font-medium text-blue-600 hover:text-blue-700 border border-blue-200 rounded-lg hover:bg-blue-50 transition"
                       >
-                        <ExternalLink className="w-3.5 h-3.5" />
-                        Ver Diário
+                        <ExternalLink className="w-3 h-3 sm:w-3.5 sm:h-3.5" />
+                        <span className="hidden sm:inline">Diário</span>
                       </a>
                     )}
                   </div>
@@ -2261,25 +2327,36 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
 
       {/* Modal de Vínculo */}
       {linkModalOpen && linkingIntimation && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-xl max-w-2xl w-full p-6">
-            <div className="flex items-center justify-between mb-6">
-              <h3 className="text-xl font-bold text-slate-900">Vincular Intimação</h3>
+        <div className="fixed inset-0 z-[70] flex items-center justify-center px-3 sm:px-6 py-4">
+          <div
+            className="absolute inset-0 bg-slate-900/70 backdrop-blur-sm"
+            onClick={() => setLinkModalOpen(false)}
+            aria-hidden="true"
+          />
+          <div className="relative w-full max-w-2xl max-h-[92vh] bg-white dark:bg-zinc-900 rounded-2xl shadow-2xl ring-1 ring-black/5 flex flex-col overflow-hidden">
+            <div className="h-2 w-full bg-orange-500" />
+            <div className="px-5 sm:px-8 py-5 border-b border-slate-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 flex items-start justify-between gap-4">
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400 dark:text-slate-500">Vínculo</p>
+                <h2 className="text-xl font-semibold text-slate-900 dark:text-white">Vincular Intimação</h2>
+              </div>
               <button
+                type="button"
                 onClick={() => setLinkModalOpen(false)}
-                className="text-slate-400 hover:text-slate-600 transition"
+                className="p-2 text-slate-400 hover:text-slate-600 dark:text-slate-300 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-white/10 rounded-xl transition"
+                aria-label="Fechar modal"
               >
-                <X className="w-6 h-6" />
+                <X className="w-5 h-5" />
               </button>
             </div>
 
-            <div className="space-y-4">
+            <div className="flex-1 overflow-y-auto bg-white dark:bg-zinc-900 p-6 space-y-4">
               <div>
-                <label className="block text-sm font-medium text-slate-700 mb-2">Cliente</label>
+                <label className="block text-sm text-zinc-600 dark:text-zinc-300 mb-1">Cliente</label>
                 <select
                   value={selectedClientId}
                   onChange={(e) => setSelectedClientId(e.target.value)}
-                  className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500"
+                  className="w-full h-11 px-3 py-2 rounded-lg text-sm leading-normal bg-white dark:bg-zinc-800 border border-zinc-300 dark:border-zinc-600 text-zinc-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-amber-500 focus:border-amber-500 transition-colors"
                 >
                   <option value="">Nenhum cliente</option>
                   {clients.map((client) => (
@@ -2291,11 +2368,11 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-slate-700 mb-2">Processo</label>
+                <label className="block text-sm text-zinc-600 dark:text-zinc-300 mb-1">Processo</label>
                 <select
                   value={selectedProcessId}
                   onChange={(e) => setSelectedProcessId(e.target.value)}
-                  className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500"
+                  className="w-full h-11 px-3 py-2 rounded-lg text-sm leading-normal bg-white dark:bg-zinc-800 border border-zinc-300 dark:border-zinc-600 text-zinc-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-amber-500 focus:border-amber-500 transition-colors"
                 >
                   <option value="">Nenhum processo</option>
                   {processes.map((process) => (
@@ -2305,19 +2382,23 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
                   ))}
                 </select>
               </div>
+            </div>
 
-              <div className="flex gap-3 pt-4">
+            <div className="border-t border-slate-200 dark:border-zinc-800 bg-slate-50 dark:bg-zinc-900 px-5 sm:px-8 py-4">
+              <div className="flex justify-end gap-3">
                 <button
-                  onClick={handleSaveLinks}
-                  className="flex-1 bg-purple-600 hover:bg-purple-700 text-white font-medium px-5 py-2.5 rounded-lg transition"
-                >
-                  Salvar Vínculos
-                </button>
-                <button
+                  type="button"
                   onClick={() => setLinkModalOpen(false)}
-                  className="flex-1 border border-gray-300 text-slate-700 hover:bg-slate-50 font-medium px-5 py-2.5 rounded-lg transition"
+                  className="px-4 py-2 text-sm text-slate-600 dark:text-zinc-400 hover:text-slate-900 dark:hover:text-white transition"
                 >
                   Cancelar
+                </button>
+                <button
+                  type="button"
+                  onClick={handleSaveLinks}
+                  className="px-4 py-2 bg-amber-500 hover:bg-amber-600 text-white text-sm font-medium rounded-lg flex items-center gap-2 transition"
+                >
+                  Salvar Vínculos
                 </button>
               </div>
             </div>
@@ -2479,29 +2560,36 @@ const DeadlineCreationModal: React.FC<DeadlineCreationModalProps> = ({
     }
   };
 
+  const inputStyle = 'w-full h-11 px-3 py-2 rounded-lg text-sm leading-normal bg-white dark:bg-zinc-800 border border-zinc-300 dark:border-zinc-600 text-zinc-900 dark:text-white placeholder:text-zinc-400 focus:outline-none focus:ring-1 focus:ring-amber-500 focus:border-amber-500 transition-colors';
+  const labelStyle = 'block text-sm text-zinc-600 dark:text-zinc-300 mb-1';
+
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-xl max-w-2xl w-full p-6 max-h-[90vh] overflow-y-auto">
-        <div className="flex items-center justify-between mb-6">
-          <div className="flex items-center gap-3">
-            <div className="p-2 bg-amber-100 rounded-lg">
-              <Clock className="w-6 h-6 text-amber-600" />
-            </div>
-            <div>
-              <h3 className="text-xl font-bold text-slate-900">Criar Novo Prazo</h3>
-              <p className="text-sm text-slate-600">A partir da intimação selecionada</p>
-            </div>
+    <div className="fixed inset-0 z-[70] flex items-center justify-center px-3 sm:px-6 py-4">
+      <div
+        className="absolute inset-0 bg-slate-900/70 backdrop-blur-sm"
+        onClick={onClose}
+        aria-hidden="true"
+      />
+      <div className="relative w-full max-w-2xl max-h-[92vh] bg-white dark:bg-zinc-900 rounded-2xl shadow-2xl ring-1 ring-black/5 flex flex-col overflow-hidden">
+        <div className="h-2 w-full bg-orange-500" />
+        <div className="px-5 sm:px-8 py-5 border-b border-slate-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 flex items-start justify-between gap-4">
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400 dark:text-slate-500">Novo Prazo</p>
+            <h2 className="text-xl font-semibold text-slate-900 dark:text-white">Criar Prazo</h2>
           </div>
           <button
+            type="button"
             onClick={onClose}
-            className="p-2 hover:bg-slate-100 rounded-lg transition"
+            className="p-2 text-slate-400 hover:text-slate-600 dark:text-slate-300 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-white/10 rounded-xl transition"
+            aria-label="Fechar modal"
           >
-            <X className="w-5 h-5 text-slate-600" />
+            <X className="w-5 h-5" />
           </button>
         </div>
 
+        <div className="flex-1 overflow-y-auto bg-white dark:bg-zinc-900 p-6">
         {/* Informações da Intimação */}
-        <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-6">
+        <div className="bg-orange-50 dark:bg-orange-900/20 border border-orange-200 dark:border-orange-800 rounded-lg p-4 mb-6">
           <h4 className="text-sm font-semibold text-blue-900 mb-2">Intimação Vinculada</h4>
           <p className="text-sm text-blue-800">
             <strong>Processo:</strong> {intimation.numero_processo_mascara || intimation.numero_processo}
@@ -2516,10 +2604,10 @@ const DeadlineCreationModal: React.FC<DeadlineCreationModalProps> = ({
           </p>
         </div>
 
-        <form onSubmit={handleSubmit} className="space-y-4">
+        <form id="deadline-form" onSubmit={handleSubmit} className="space-y-4">
           {/* Título */}
           <div>
-            <label className="block text-sm font-semibold text-slate-900 mb-2">
+            <label className={labelStyle}>
               Título do Prazo *
             </label>
             <input
@@ -2674,35 +2762,29 @@ const DeadlineCreationModal: React.FC<DeadlineCreationModalProps> = ({
               <p className="text-sm text-red-800">{error}</p>
             </div>
           )}
+        </form>
+        </div>
 
-          {/* Botões */}
-          <div className="flex gap-3 pt-4">
-            <button
-              type="submit"
-              disabled={saving}
-              className="flex-1 bg-amber-600 hover:bg-amber-700 disabled:bg-gray-400 text-white font-medium px-5 py-2.5 rounded-lg transition inline-flex items-center justify-center gap-2"
-            >
-              {saving ? (
-                <>
-                  <Loader2 className="w-4 h-4 animate-spin" />
-                  Criando...
-                </>
-              ) : (
-                <>
-                  <Clock className="w-4 h-4" />
-                  Criar Prazo
-                </>
-              )}
-            </button>
+        <div className="border-t border-slate-200 dark:border-zinc-800 bg-slate-50 dark:bg-zinc-900 px-5 sm:px-8 py-4">
+          <div className="flex justify-end gap-3">
             <button
               type="button"
               onClick={onClose}
-              className="flex-1 border border-gray-300 text-slate-700 hover:bg-slate-50 font-medium px-5 py-2.5 rounded-lg transition"
+              className="px-4 py-2 text-sm text-slate-600 dark:text-zinc-400 hover:text-slate-900 dark:hover:text-white transition"
             >
               Cancelar
             </button>
+            <button
+              type="submit"
+              form="deadline-form"
+              disabled={saving}
+              className="px-4 py-2 bg-amber-500 hover:bg-amber-600 text-white text-sm font-medium rounded-lg flex items-center gap-2 transition disabled:opacity-50"
+            >
+              {saving && <Loader2 className="w-4 h-4 animate-spin" />}
+              Criar Prazo
+            </button>
           </div>
-        </form>
+        </div>
       </div>
     </div>
   );
@@ -2820,29 +2902,36 @@ const AppointmentCreationModal: React.FC<AppointmentCreationModalProps> = ({
     }
   };
 
+  const inputStyle = 'w-full h-11 px-3 py-2 rounded-lg text-sm leading-normal bg-white dark:bg-zinc-800 border border-zinc-300 dark:border-zinc-600 text-zinc-900 dark:text-white placeholder:text-zinc-400 focus:outline-none focus:ring-1 focus:ring-amber-500 focus:border-amber-500 transition-colors';
+  const labelStyle = 'block text-sm text-zinc-600 dark:text-zinc-300 mb-1';
+
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-xl max-w-2xl w-full p-6 max-h-[90vh] overflow-y-auto">
-        <div className="flex items-center justify-between mb-6">
-          <div className="flex items-center gap-3">
-            <div className="p-2 bg-indigo-100 rounded-lg">
-              <CalendarIcon className="w-6 h-6 text-indigo-600" />
-            </div>
-            <div>
-              <h3 className="text-xl font-bold text-slate-900">Adicionar Compromisso</h3>
-              <p className="text-sm text-slate-600">A partir da intimação selecionada</p>
-            </div>
+    <div className="fixed inset-0 z-[70] flex items-center justify-center px-3 sm:px-6 py-4">
+      <div
+        className="absolute inset-0 bg-slate-900/70 backdrop-blur-sm"
+        onClick={onClose}
+        aria-hidden="true"
+      />
+      <div className="relative w-full max-w-2xl max-h-[92vh] bg-white dark:bg-zinc-900 rounded-2xl shadow-2xl ring-1 ring-black/5 flex flex-col overflow-hidden">
+        <div className="h-2 w-full bg-orange-500" />
+        <div className="px-5 sm:px-8 py-5 border-b border-slate-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 flex items-start justify-between gap-4">
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400 dark:text-slate-500">Novo Compromisso</p>
+            <h2 className="text-xl font-semibold text-slate-900 dark:text-white">Adicionar Compromisso</h2>
           </div>
           <button
+            type="button"
             onClick={onClose}
-            className="p-2 hover:bg-slate-100 rounded-lg transition"
+            className="p-2 text-slate-400 hover:text-slate-600 dark:text-slate-300 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-white/10 rounded-xl transition"
+            aria-label="Fechar modal"
           >
-            <X className="w-5 h-5 text-slate-600" />
+            <X className="w-5 h-5" />
           </button>
         </div>
 
+        <div className="flex-1 overflow-y-auto bg-white dark:bg-zinc-900 p-6">
         {/* Informações da Intimação */}
-        <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-6">
+        <div className="bg-orange-50 dark:bg-orange-900/20 border border-orange-200 dark:border-orange-800 rounded-lg p-4 mb-6">
           <h4 className="text-sm font-semibold text-blue-900 mb-2">Intimação Vinculada</h4>
           <p className="text-sm text-blue-800">
             <strong>Processo:</strong> {intimation.numero_processo_mascara || intimation.numero_processo}
@@ -2857,17 +2946,17 @@ const AppointmentCreationModal: React.FC<AppointmentCreationModalProps> = ({
           </p>
         </div>
 
-        <form onSubmit={handleSubmit} className="space-y-4">
+        <form id="appointment-form" onSubmit={handleSubmit} className="space-y-4">
           {/* Título */}
           <div>
-            <label className="block text-sm font-semibold text-slate-900 mb-2">
+            <label className={labelStyle}>
               Título do Compromisso *
             </label>
             <input
               type="text"
               value={formData.title}
               onChange={(e) => setFormData({ ...formData, title: e.target.value })}
-              className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+              className={inputStyle}
               required
             />
           </div>
@@ -3010,35 +3099,29 @@ const AppointmentCreationModal: React.FC<AppointmentCreationModalProps> = ({
               <p className="text-sm text-red-800">{error}</p>
             </div>
           )}
+        </form>
+        </div>
 
-          {/* Botões */}
-          <div className="flex gap-3 pt-4">
-            <button
-              type="submit"
-              disabled={saving}
-              className="flex-1 bg-indigo-600 hover:bg-indigo-700 disabled:bg-gray-400 text-white font-medium px-5 py-2.5 rounded-lg transition inline-flex items-center justify-center gap-2"
-            >
-              {saving ? (
-                <>
-                  <Loader2 className="w-4 h-4 animate-spin" />
-                  Criando...
-                </>
-              ) : (
-                <>
-                  <CalendarIcon className="w-4 h-4" />
-                  Criar Compromisso
-                </>
-              )}
-            </button>
+        <div className="border-t border-slate-200 dark:border-zinc-800 bg-slate-50 dark:bg-zinc-900 px-5 sm:px-8 py-4">
+          <div className="flex justify-end gap-3">
             <button
               type="button"
               onClick={onClose}
-              className="flex-1 border border-gray-300 text-slate-700 hover:bg-slate-50 font-medium px-5 py-2.5 rounded-lg transition"
+              className="px-4 py-2 text-sm text-slate-600 dark:text-zinc-400 hover:text-slate-900 dark:hover:text-white transition"
             >
               Cancelar
             </button>
+            <button
+              type="submit"
+              form="appointment-form"
+              disabled={saving}
+              className="px-4 py-2 bg-amber-500 hover:bg-amber-600 text-white text-sm font-medium rounded-lg flex items-center gap-2 transition disabled:opacity-50"
+            >
+              {saving && <Loader2 className="w-4 h-4 animate-spin" />}
+              Criar Compromisso
+            </button>
           </div>
-        </form>
+        </div>
       </div>
     </div>
   );
