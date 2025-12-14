@@ -2009,6 +2009,11 @@ ${clientAddress ? `<div class="flex"><span class="text-subtle-light dark:text-su
     toast.success('Exportação', 'Dados exportados com sucesso');
   };
 
+  const handleAddDeadline = (agreement: Agreement) => {
+    const clientName = getClientName(agreement.client_id);
+    toast.info('Prazo', `Funcionalidade de prazo para "${agreement.title}" será implementada em breve`);
+  };
+
   const deleteCalendarEventsForAgreement = async (agreementId: string) => {
     try {
       const events = await calendarService.listEvents(['payment', 'deadline']);

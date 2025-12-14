@@ -28,6 +28,7 @@ import {
   Sun,
   UploadCloud,
   User,
+  PenTool,
 } from 'lucide-react';
 import Login from './components/Login';
 import OfflinePage from './components/OfflinePage';
@@ -51,8 +52,11 @@ const CalendarModule = lazy(() => import('./components/CalendarModule'));
 const TasksModule = lazy(() => import('./components/TasksModule'));
 const NotificationsModuleNew = lazy(() => import('./components/NotificationsModuleNew'));
 const FinancialModule = lazy(() => import('./components/FinancialModule'));
+const SignatureModule = lazy(() => import('./components/SignatureModule'));
 const SettingsModule = lazy(() => import('./components/SettingsModule'));
 const CronEndpoint = lazy(() => import('./components/CronEndpoint'));
+const PublicSigningPage = lazy(() => import('./components/PublicSigningPage'));
+const PublicVerificationPage = lazy(() => import('./components/PublicVerificationPage'));
 import { useNotifications } from './hooks/useNotifications';
 import { usePresence } from './hooks/usePresence';
 import { pushNotifications } from './utils/pushNotifications';
@@ -799,6 +803,17 @@ const MainApp: React.FC = () => {
             <span className="text-[9px] mt-1">Agenda</span>
           </button>
 
+          <button
+            onClick={() => { setClientPrefill(null); setIsMobileNavOpen(false); navigateTo('assinaturas'); }}
+            className={`relative flex flex-col items-center py-2.5 px-1 rounded-lg transition-colors ${
+              activeModule === 'assinaturas' ? 'text-amber-500' : 'text-slate-400 hover:text-white hover:bg-slate-800/50'
+            }`}
+          >
+            {activeModule === 'assinaturas' && <div className="absolute left-0 top-1/2 -translate-y-1/2 w-0.5 h-6 bg-amber-500 rounded-r" />}
+            <PenTool className="w-5 h-5" />
+            <span className="text-[9px] mt-1">Assinaturas</span>
+          </button>
+
           <div className="my-2 mx-2 h-px bg-slate-800" />
 
           <button
@@ -838,6 +853,7 @@ const MainApp: React.FC = () => {
                     {activeModule === 'agenda' && 'Agenda'}
                     {activeModule === 'tarefas' && 'Tarefas'}
                     {activeModule === 'documentos' && 'Documentos'}
+                    {activeModule === 'assinaturas' && 'Assinatura Digital'}
                     {activeModule === 'configuracoes' && 'Configurações'}
                   </h2>
                   <p className="hidden md:block text-xs sm:text-sm text-slate-600 mt-1 truncate">
@@ -852,6 +868,7 @@ const MainApp: React.FC = () => {
                     {activeModule === 'agenda' && 'Organize compromissos e prazos'}
                     {activeModule === 'tarefas' && 'Gerencie suas tarefas e lembretes'}
                     {activeModule === 'documentos' && 'Crie modelos e gere documentos personalizados'}
+                    {activeModule === 'assinaturas' && 'Assine documentos com biometria facial e assinatura digital'}
                     {activeModule === 'configuracoes' && 'Gerencie usuários, permissões e preferências do sistema'}
                   </p>
                 </div>
@@ -1128,6 +1145,7 @@ const MainApp: React.FC = () => {
             )}
             {activeModule === 'notificacoes' && <NotificationsModuleNew onNavigateToModule={handleNavigateToModule} />}
             {activeModule === 'financeiro' && <FinancialModule />}
+            {activeModule === 'assinaturas' && <SignatureModule />}
             {activeModule === 'configuracoes' && <SettingsModule />}
             {activeModule === 'cron' && <CronEndpoint />}
           </Suspense>
@@ -1163,6 +1181,8 @@ const App: React.FC = () => {
   const isTermsRoute = hashRoute?.includes('/terms');
   const isPrivacyRoute = hashRoute?.includes('/privacidade') || hashRoute?.includes('/privacy');
   const isCronRoute = hashRoute?.includes('/cron/djen');
+  const isSigningRoute = hashRoute?.includes('/assinar/');
+  const isVerificationRoute = hashRoute?.includes('/verificar');
 
   if (isTermsRoute) {
     return <TermsPrivacyPage type="terms" />;
@@ -1179,6 +1199,25 @@ const App: React.FC = () => {
           <CronEndpoint />
         </Suspense>
       </div>
+    );
+  }
+
+  if (isSigningRoute) {
+    const token = hashRoute.split('/assinar/')[1]?.split('?')[0]?.split('#')[0];
+    if (token) {
+      return (
+        <Suspense fallback={<div className="min-h-screen bg-slate-100 flex items-center justify-center"><Loader2 className="w-8 h-8 animate-spin text-blue-600" /></div>}>
+          <PublicSigningPage token={token} />
+        </Suspense>
+      );
+    }
+  }
+
+  if (isVerificationRoute) {
+    return (
+      <Suspense fallback={<div className="min-h-screen bg-slate-100 flex items-center justify-center"><Loader2 className="w-8 h-8 animate-spin text-emerald-600" /></div>}>
+        <PublicVerificationPage />
+      </Suspense>
     );
   }
 

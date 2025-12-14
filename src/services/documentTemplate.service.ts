@@ -287,6 +287,22 @@ class DocumentTemplateService {
 
     return data;
   }
+
+  async getGeneratedDocumentSignedUrl(record: GeneratedDocument, expiresInSeconds = 60 * 10) {
+    if (!record.file_path) {
+      throw new Error('Documento do histórico não possui arquivo armazenado.');
+    }
+
+    const { data, error } = await supabase.storage
+      .from(GENERATED_STORAGE_BUCKET)
+      .createSignedUrl(record.file_path, expiresInSeconds);
+
+    if (error || !data?.signedUrl) {
+      throw new Error(error?.message ?? 'Não foi possível gerar link temporário do documento.');
+    }
+
+    return data.signedUrl;
+  }
 }
 
 export const documentTemplateService = new DocumentTemplateService();

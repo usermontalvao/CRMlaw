@@ -1,0 +1,806 @@
+import { supabase } from '../config/supabase';
+import type {
+  SignatureRequest,
+  SignatureRequestWithSigners,
+  Signer,
+  CreateSignatureRequestDTO,
+  CreateSignerDTO,
+  UpdateSignerDTO,
+  SignDocumentDTO,
+  SignatureStats,
+  SignatureAuditLog,
+} from '../types/signature.types';
+
+const STORAGE_BUCKET = 'signatures';
+
+class SignatureService {
+  private requestsTable = 'signature_requests';
+  private signersTable = 'signature_signers';
+  private auditTable = 'signature_audit_log';
+
+  private async ensureBucket(): Promise<boolean> {
+    // Não tenta criar bucket - deve ser criado manualmente no Supabase Dashboard
+    // Bucket: signatures (público, com policies de INSERT e SELECT)
+    return true;
+  }
+
+  // ==================== SIGNATURE REQUESTS ====================
+
+  async listRequests(filters?: {
+    status?: string;
+    client_id?: string;
+    search?: string;
+  }): Promise<SignatureRequest[]> {
+    let query = supabase
+      .from(this.requestsTable)
+      .select('*')
+      .order('created_at', { ascending: false });
+
+    if (filters?.status) {
+      query = query.eq('status', filters.status);
+    }
+    if (filters?.client_id) {
+      query = query.eq('client_id', filters.client_id);
+    }
+    if (filters?.search) {
+      query = query.or(
+        `document_name.ilike.%${filters.search}%,client_name.ilike.%${filters.search}%`
+      );
+    }
+
+    const { data, error } = await query;
+    if (error) throw new Error(error.message);
+    return data ?? [];
+  }
+
+  async listRequestsWithDerivedStatus(filters?: {
+    status?: string;
+    client_id?: string;
+    search?: string;
+  }): Promise<SignatureRequest[]> {
+    const requests = await this.listRequests(filters);
+    if (requests.length === 0) return requests;
+
+    const requestIds = requests.map((r) => r.id);
+    const { data: signers, error } = await supabase
+      .from(this.signersTable)
+      .select('signature_request_id,status')
+      .in('signature_request_id', requestIds);
+
+    if (error) throw new Error(error.message);
+
+    const byRequest = new Map<string, { total: number; signed: number }>();
+    for (const s of signers ?? []) {
+      const key = (s as any).signature_request_id as string;
+      const status = (s as any).status as string;
+      const curr = byRequest.get(key) ?? { total: 0, signed: 0 };
+      curr.total += 1;
+      if (status === 'signed') curr.signed += 1;
+      byRequest.set(key, curr);
+    }
+
+    return requests.map((r) => {
+      const agg = byRequest.get(r.id);
+      if (agg && agg.total > 0 && agg.signed === agg.total) {
+        return { ...r, status: 'signed', signed_at: r.signed_at ?? new Date().toISOString() };
+      }
+      return r;
+    });
+  }
+
+  async listRequestsWithSigners(filters?: {
+    status?: string;
+    client_id?: string;
+    search?: string;
+  }): Promise<SignatureRequestWithSigners[]> {
+    const requests = await this.listRequests(filters);
+    if (requests.length === 0) return [];
+
+    const requestIds = requests.map((r) => r.id);
+    const { data: allSigners, error } = await supabase
+      .from(this.signersTable)
+      .select('*')
+      .in('signature_request_id', requestIds)
+      .order('order', { ascending: true });
+
+    if (error) throw new Error(error.message);
+
+    const signersByRequest = new Map<string, Signer[]>();
+    for (const s of allSigners ?? []) {
+      const key = s.signature_request_id as string;
+      const arr = signersByRequest.get(key) ?? [];
+      arr.push(s as Signer);
+      signersByRequest.set(key, arr);
+    }
+
+    return requests.map((r) => {
+      const signers = signersByRequest.get(r.id) ?? [];
+      const allSigned = signers.length > 0 && signers.every((s) => s.status === 'signed');
+      return {
+        ...r,
+        status: allSigned ? 'signed' : r.status,
+        signed_at: allSigned ? (r.signed_at ?? new Date().toISOString()) : r.signed_at,
+        signers,
+      } as SignatureRequestWithSigners;
+    });
+  }
+
+  async getRequest(id: string): Promise<SignatureRequest | null> {
+    const { data, error } = await supabase
+      .from(this.requestsTable)
+      .select('*')
+      .eq('id', id)
+      .single();
+
+    if (error) {
+      if (error.code === 'PGRST116') return null;
+      throw new Error(error.message);
+    }
+    return data;
+  }
+
+  async getRequestWithSigners(id: string): Promise<SignatureRequestWithSigners | null> {
+    const { data: request, error: reqError } = await supabase
+      .from(this.requestsTable)
+      .select('*')
+      .eq('id', id)
+      .single();
+
+    if (reqError) {
+      if (reqError.code === 'PGRST116') return null;
+      throw new Error(reqError.message);
+    }
+
+    const { data: signers, error: signersError } = await supabase
+      .from(this.signersTable)
+      .select('*')
+      .eq('signature_request_id', id)
+      .order('order', { ascending: true });
+
+    if (signersError) throw new Error(signersError.message);
+
+    return {
+      ...request,
+      signers: signers ?? [],
+    };
+  }
+
+  async getSignerById(id: string): Promise<Signer | null> {
+    const { data, error } = await supabase
+      .from(this.signersTable)
+      .select('*')
+      .eq('id', id)
+      .single();
+
+    if (error) {
+      if (error.code === 'PGRST116') return null;
+      throw new Error(error.message);
+    }
+
+    return data;
+  }
+
+  async getRequestByToken(token: string): Promise<SignatureRequestWithSigners | null> {
+    const { data: request, error: reqError } = await supabase
+      .from(this.requestsTable)
+      .select('*')
+      .eq('public_token', token)
+      .single();
+
+    if (reqError) {
+      if (reqError.code === 'PGRST116') return null;
+      throw new Error(reqError.message);
+    }
+
+    const { data: signers, error: signersError } = await supabase
+      .from(this.signersTable)
+      .select('*')
+      .eq('signature_request_id', request.id)
+      .order('order', { ascending: true });
+
+    if (signersError) throw new Error(signersError.message);
+
+    return {
+      ...request,
+      signers: signers ?? [],
+    };
+  }
+
+  async createRequest(payload: CreateSignatureRequestDTO): Promise<SignatureRequestWithSigners> {
+    const { data: userData } = await supabase.auth.getUser();
+    if (!userData.user) throw new Error('Usuário não autenticado');
+
+    const { signers, ...requestData } = payload;
+
+    // Criar a solicitação
+    const { data: request, error: reqError } = await supabase
+      .from(this.requestsTable)
+      .insert({
+        ...requestData,
+        created_by: userData.user.id,
+      })
+      .select()
+      .single();
+
+    if (reqError) throw new Error(reqError.message);
+
+    // Criar os signatários
+    const signersToInsert = signers.map((signer, index) => ({
+      signature_request_id: request.id,
+      name: signer.name,
+      email: signer.email,
+      cpf: signer.cpf,
+      phone: signer.phone,
+      role: signer.role,
+      order: signer.order ?? index + 1,
+      auth_method: signer.auth_method ?? payload.auth_method,
+    }));
+
+    const { data: createdSigners, error: signersError } = await supabase
+      .from(this.signersTable)
+      .insert(signersToInsert)
+      .select();
+
+    if (signersError) {
+      // Rollback: deletar a solicitação
+      await supabase.from(this.requestsTable).delete().eq('id', request.id);
+      throw new Error(signersError.message);
+    }
+
+    // Registrar no audit log
+    await this.addAuditLog(request.id, null, 'created', 'Solicitação de assinatura criada');
+
+    return {
+      ...request,
+      signers: createdSigners ?? [],
+    };
+  }
+
+  async updateRequest(
+    id: string,
+    payload: Partial<SignatureRequest>
+  ): Promise<SignatureRequest> {
+    const { data, error } = await supabase
+      .from(this.requestsTable)
+      .update(payload)
+      .eq('id', id)
+      .select()
+      .single();
+
+    if (error) throw new Error(error.message);
+    return data;
+  }
+
+  async cancelRequest(id: string): Promise<void> {
+    const { error } = await supabase
+      .from(this.requestsTable)
+      .update({ status: 'cancelled' })
+      .eq('id', id);
+
+    if (error) throw new Error(error.message);
+
+    // Cancelar todos os signatários pendentes
+    await supabase
+      .from(this.signersTable)
+      .update({ status: 'cancelled' })
+      .eq('signature_request_id', id)
+      .eq('status', 'pending');
+
+    await this.addAuditLog(id, null, 'cancelled', 'Solicitação de assinatura cancelada');
+  }
+
+  async deleteRequest(id: string): Promise<void> {
+    // Buscar imagens para deletar do storage
+    const request = await this.getRequestWithSigners(id);
+    if (!request) return;
+
+    const pathsToDelete: string[] = [];
+    if (request.signature_image_path) pathsToDelete.push(request.signature_image_path);
+    if (request.facial_image_path) pathsToDelete.push(request.facial_image_path);
+    if (request.document_image_path) pathsToDelete.push(request.document_image_path);
+
+    request.signers.forEach((signer) => {
+      if (signer.signature_image_path) pathsToDelete.push(signer.signature_image_path);
+      if (signer.facial_image_path) pathsToDelete.push(signer.facial_image_path);
+      if (signer.document_image_path) pathsToDelete.push(signer.document_image_path);
+    });
+
+    // Deletar do banco (cascade deleta signers e audit_log)
+    const { error } = await supabase
+      .from(this.requestsTable)
+      .delete()
+      .eq('id', id);
+
+    if (error) throw new Error(error.message);
+
+    // Deletar imagens do storage
+    if (pathsToDelete.length > 0) {
+      await supabase.storage.from(STORAGE_BUCKET).remove(pathsToDelete);
+    }
+  }
+
+  // ==================== SIGNERS ====================
+
+  async getSigner(id: string): Promise<Signer | null> {
+    const { data, error } = await supabase
+      .from(this.signersTable)
+      .select('*')
+      .eq('id', id)
+      .single();
+
+    if (error) {
+      if (error.code === 'PGRST116') return null;
+      throw new Error(error.message);
+    }
+    return data;
+  }
+
+  async getSignerByToken(token: string): Promise<Signer | null> {
+    const { data, error } = await supabase
+      .from(this.signersTable)
+      .select('*')
+      .eq('public_token', token)
+      .single();
+
+    if (error) {
+      if (error.code === 'PGRST116') return null;
+      throw new Error(error.message);
+    }
+    return data;
+  }
+
+  async getSignerWithRequestByToken(token: string): Promise<{ signer: Signer; request: SignatureRequest; creator?: { name: string; email: string } } | null> {
+    const { data: signers, error } = await supabase
+      .from(this.signersTable)
+      .select('*')
+      .eq('public_token', token)
+      .limit(1);
+
+    if (error) {
+      console.error('Erro ao buscar signatário por token:', error);
+      return null;
+    }
+
+    if (!signers || signers.length === 0) {
+      return null;
+    }
+
+    const signer = signers[0];
+    const request = await this.getRequest(signer.signature_request_id);
+    if (!request) return null;
+
+    // Buscar dados do criador na tabela profiles
+    let creator: { name: string; email: string } | undefined;
+    if (request.created_by) {
+      const { data: userData } = await supabase
+        .from('profiles')
+        .select('name, email')
+        .eq('user_id', request.created_by)
+        .single();
+      if (userData) {
+        creator = { name: userData.name || 'Usuário', email: userData.email || '' };
+      }
+    }
+
+    return { signer, request, creator };
+  }
+
+  async markSignerAsViewed(signerId: string): Promise<void> {
+    const { error } = await supabase
+      .from(this.signersTable)
+      .update({ viewed_at: new Date().toISOString() })
+      .eq('id', signerId)
+      .is('viewed_at', null); // Só atualiza se ainda não foi visualizado
+
+    if (error) {
+      console.error('Erro ao marcar visualização:', error);
+    }
+
+    // Registrar no audit log (ignorar erros de permissão em acesso público)
+    const signer = await this.getSigner(signerId);
+    if (signer) {
+      try {
+        await supabase.from('signature_audit_log').insert({
+          signature_request_id: signer.signature_request_id,
+          signer_id: signerId,
+          action: 'viewed',
+          description: `${signer.name} visualizou o documento`,
+        });
+      } catch (e) {
+        console.warn('Não foi possível registrar audit log (acesso público):', e);
+      }
+    }
+  }
+
+  async addSigner(requestId: string, signer: CreateSignerDTO): Promise<Signer> {
+    const { data, error } = await supabase
+      .from(this.signersTable)
+      .insert({
+        signature_request_id: requestId,
+        ...signer,
+      })
+      .select()
+      .single();
+
+    if (error) throw new Error(error.message);
+    return data;
+  }
+
+  async updateSigner(id: string, payload: UpdateSignerDTO): Promise<Signer> {
+    const { data, error } = await supabase
+      .from(this.signersTable)
+      .update(payload)
+      .eq('id', id)
+      .select()
+      .single();
+
+    if (error) throw new Error(error.message);
+    return data;
+  }
+
+  async updateSignerSignedDocumentPath(signerId: string, signedDocumentPath: string): Promise<void> {
+    const { error } = await supabase
+      .from(this.signersTable)
+      .update({ signed_document_path: signedDocumentPath })
+      .eq('id', signerId);
+
+    if (error) throw new Error(error.message);
+  }
+
+  async deleteSigner(id: string): Promise<void> {
+    const signer = await this.getSigner(id);
+    if (!signer) return;
+
+    const pathsToDelete: string[] = [];
+    if (signer.signature_image_path) pathsToDelete.push(signer.signature_image_path);
+    if (signer.facial_image_path) pathsToDelete.push(signer.facial_image_path);
+    if (signer.document_image_path) pathsToDelete.push(signer.document_image_path);
+
+    const { error } = await supabase
+      .from(this.signersTable)
+      .delete()
+      .eq('id', id);
+
+    if (error) throw new Error(error.message);
+
+    if (pathsToDelete.length > 0) {
+      await supabase.storage.from(STORAGE_BUCKET).remove(pathsToDelete);
+    }
+  }
+
+  // ==================== SIGNING ====================
+
+  async signDocument(
+    signerId: string,
+    payload: SignDocumentDTO,
+    ipAddress?: string,
+    userAgent?: string
+  ): Promise<Signer> {
+    await this.ensureBucket();
+
+    const signer = await this.getSigner(signerId);
+    if (!signer) throw new Error('Signatário não encontrado');
+    if (signer.status !== 'pending') throw new Error('Este documento já foi assinado ou cancelado');
+
+    const updates: Partial<Signer> = {
+      status: 'signed',
+      signed_at: new Date().toISOString(),
+      signer_ip: ipAddress,
+      signer_user_agent: userAgent,
+      signer_geolocation: payload.geolocation,
+      verification_hash: this.generateVerificationHash(),
+      // Dados de autenticação
+      auth_provider: payload.auth_provider || null,
+      auth_email: payload.auth_email || null,
+      auth_google_sub: payload.auth_google_sub || null,
+      auth_google_picture: payload.auth_google_picture || null,
+    };
+
+    // Upload da assinatura
+    if (payload.signature_image) {
+      const signaturePath = await this.uploadBase64Image(
+        payload.signature_image,
+        `signature_${signerId}`
+      );
+      updates.signature_image_path = signaturePath;
+    }
+
+    // Upload da foto facial
+    if (payload.facial_image) {
+      const facialPath = await this.uploadBase64Image(
+        payload.facial_image,
+        `facial_${signerId}`
+      );
+      updates.facial_image_path = facialPath;
+    }
+
+    // Upload da foto do documento
+    if (payload.document_image) {
+      const documentPath = await this.uploadBase64Image(
+        payload.document_image,
+        `document_${signerId}`
+      );
+      updates.document_image_path = documentPath;
+    }
+
+    const { data, error } = await supabase
+      .from(this.signersTable)
+      .update(updates)
+      .eq('id', signerId)
+      .select()
+      .single();
+
+    if (error) throw new Error(error.message);
+
+    // Registrar no audit log
+    await this.addAuditLog(
+      signer.signature_request_id,
+      signerId,
+      'signed',
+      `Documento assinado por ${signer.name}`,
+      ipAddress,
+      userAgent
+    );
+
+    // Verificar se todos os signatários assinaram
+    await this.checkAndUpdateRequestStatus(signer.signature_request_id);
+
+    return data;
+  }
+
+  private async uploadBase64Image(base64: string, prefix: string): Promise<string> {
+    // Remover prefixo data:image/...;base64, se existir
+    const base64Data = base64.replace(/^data:image\/\w+;base64,/, '');
+    const buffer = Uint8Array.from(atob(base64Data), (c) => c.charCodeAt(0));
+
+    // Detectar tipo de imagem
+    let extension = 'png';
+    if (base64.includes('data:image/jpeg')) extension = 'jpg';
+    else if (base64.includes('data:image/webp')) extension = 'webp';
+
+    const filePath = `${prefix}_${Date.now()}.${extension}`;
+    const contentType = `image/${extension === 'jpg' ? 'jpeg' : extension}`;
+
+    console.log('[UPLOAD] Tentando upload:', filePath, 'tamanho:', buffer.length, 'bytes');
+
+    const { data, error } = await supabase.storage
+      .from(STORAGE_BUCKET)
+      .upload(filePath, buffer, {
+        contentType,
+        upsert: true, // Mudado para true para sobrescrever se existir
+      });
+
+    if (error) {
+      console.error('[UPLOAD] Erro no upload:', error);
+      throw new Error(`Erro ao fazer upload: ${error.message}`);
+    }
+
+    console.log('[UPLOAD] Upload bem sucedido:', data);
+    return filePath;
+  }
+
+  private async checkAndUpdateRequestStatus(requestId: string): Promise<void> {
+    const { data: signers } = await supabase
+      .from(this.signersTable)
+      .select('status')
+      .eq('signature_request_id', requestId);
+
+    if (!signers || signers.length === 0) return;
+
+    const allSigned = signers.every((s) => s.status === 'signed');
+    if (allSigned) {
+      const { error } = await supabase
+        .from(this.requestsTable)
+        .update({
+          status: 'signed',
+          signed_at: new Date().toISOString(),
+        })
+        .eq('id', requestId);
+
+      if (error) throw new Error(error.message);
+    }
+  }
+
+  // ==================== AUDIT LOG ====================
+
+  async addAuditLog(
+    requestId: string,
+    signerId: string | null,
+    action: SignatureAuditLog['action'],
+    description: string,
+    ipAddress?: string,
+    userAgent?: string
+  ): Promise<void> {
+    await supabase.from(this.auditTable).insert({
+      signature_request_id: requestId,
+      signer_id: signerId,
+      action,
+      description,
+      ip_address: ipAddress,
+      user_agent: userAgent,
+    });
+  }
+
+  async getAuditLog(requestId: string): Promise<SignatureAuditLog[]> {
+    const { data, error } = await supabase
+      .from(this.auditTable)
+      .select('*')
+      .eq('signature_request_id', requestId)
+      .order('created_at', { ascending: true });
+
+    if (error) throw new Error(error.message);
+    return data ?? [];
+  }
+
+  // ==================== STATS ====================
+
+  async getStats(): Promise<SignatureStats> {
+    const { data, error } = await supabase
+      .from(this.requestsTable)
+      .select('status');
+
+    if (error) throw new Error(error.message);
+
+    const stats: SignatureStats = {
+      total: data?.length ?? 0,
+      pending: 0,
+      signed: 0,
+      expired: 0,
+      cancelled: 0,
+    };
+
+    data?.forEach((item) => {
+      if (item.status === 'pending') stats.pending++;
+      else if (item.status === 'signed') stats.signed++;
+      else if (item.status === 'expired') stats.expired++;
+      else if (item.status === 'cancelled') stats.cancelled++;
+    });
+
+    return stats;
+  }
+
+  // ==================== UTILS ====================
+
+  async getSignedImageUrl(path: string, expiresIn = 3600): Promise<string> {
+    const { data, error } = await supabase.storage
+      .from(STORAGE_BUCKET)
+      .createSignedUrl(path, expiresIn);
+
+    if (error || !data?.signedUrl) {
+      throw new Error(error?.message ?? 'Não foi possível gerar URL da imagem');
+    }
+
+    return data.signedUrl;
+  }
+
+  async uploadSignatureDocumentPdf(file: File, documentId: string): Promise<string> {
+    if (!file) throw new Error('Arquivo não informado');
+    if (!(file.type || '').includes('pdf') && !file.name.toLowerCase().endsWith('.pdf')) {
+      throw new Error('Selecione um arquivo PDF');
+    }
+
+    // Muitos buckets têm limite (ex: 10MB). Evita 400 genérico do Storage.
+    const maxBytes = 10 * 1024 * 1024;
+    if (file.size > maxBytes) {
+      throw new Error('O PDF excede 10MB. Reduza o tamanho do arquivo e tente novamente.');
+    }
+
+    const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_');
+    const filePath = `signature-requests/${documentId}/${Date.now()}_${safeName}`;
+
+    // Enviar como Blob para evitar inconsistências de Content-Type que podem gerar 400
+    const blob = new Blob([file], { type: 'application/pdf' });
+
+    const { error } = await supabase.storage
+      .from('generated-documents')
+      .upload(filePath, blob, {
+        upsert: false,
+      });
+
+    if (error) {
+      const details = JSON.stringify(error, Object.getOwnPropertyNames(error));
+      console.error('Erro uploadSignatureDocumentPdf:', error);
+      throw new Error(`Erro ao fazer upload do PDF: ${error.message}${details ? ` | detalhes: ${details}` : ''}`);
+    }
+
+    return filePath;
+  }
+
+  async getDocumentPreviewUrl(documentPath: string): Promise<string | null> {
+    // Tentar buscar do bucket generated-documents
+    const { data, error } = await supabase.storage
+      .from('generated-documents')
+      .createSignedUrl(documentPath, 3600);
+
+    if (error || !data?.signedUrl) {
+      // Tentar do bucket document-templates
+      const { data: data2, error: error2 } = await supabase.storage
+        .from('document-templates')
+        .createSignedUrl(documentPath, 3600);
+
+      if (error2 || !data2?.signedUrl) {
+        console.warn('Não foi possível gerar URL do documento:', error?.message || error2?.message);
+        return null;
+      }
+      return data2.signedUrl;
+    }
+
+    return data.signedUrl;
+  }
+
+  generatePublicSigningUrl(token: string): string {
+    // URL base do app - usando hash routing
+    const baseUrl = window.location.origin;
+    return `${baseUrl}/#/assinar/${token}`;
+  }
+
+  generateVerificationUrl(hash: string): string {
+    const baseUrl = window.location.origin;
+    return `${baseUrl}/#/verificar/${hash}`;
+  }
+
+  async verifySignatureByHash(hash: string): Promise<{ signer: Signer; request: SignatureRequest } | null> {
+    // Buscar signatário pelo hash de verificação
+    const { data: signer, error } = await supabase
+      .from(this.signersTable)
+      .select('*')
+      .eq('verification_hash', hash)
+      .single();
+
+    if (error || !signer) {
+      // Tentar buscar na tabela de requests (assinatura única)
+      const { data: request, error: reqError } = await supabase
+        .from(this.requestsTable)
+        .select('*')
+        .eq('verification_hash', hash)
+        .single();
+
+      if (reqError || !request) {
+        return null;
+      }
+
+      // Retornar request como signer simulado
+      return {
+        signer: {
+          id: request.id,
+          signature_request_id: request.id,
+          name: request.client_name || 'Signatário',
+          email: '',
+          cpf: null,
+          phone: null,
+          role: null,
+          order: 1,
+          status: request.status,
+          auth_method: request.auth_method,
+          signed_at: request.signed_at,
+          signature_image_path: request.signature_image_path,
+          facial_image_path: request.facial_image_path,
+          document_image_path: request.document_image_path,
+          signer_ip: request.signer_ip,
+          signer_user_agent: request.signer_user_agent,
+          signer_geolocation: request.signer_geolocation,
+          public_token: request.public_token,
+          verification_hash: request.verification_hash,
+          created_at: request.created_at,
+          updated_at: request.updated_at,
+        } as Signer,
+        request,
+      };
+    }
+
+    // Buscar request associado
+    const request = await this.getRequest(signer.signature_request_id);
+    if (!request) return null;
+
+    return { signer, request };
+  }
+
+  generateVerificationHash(): string {
+    // Gerar hash único de 16 caracteres hexadecimais
+    const array = new Uint8Array(8);
+    crypto.getRandomValues(array);
+    return Array.from(array, (b) => b.toString(16).padStart(2, '0')).join('').toUpperCase();
+  }
+}
+
+export const signatureService = new SignatureService();

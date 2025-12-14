@@ -11,6 +11,7 @@ export type ModuleName =
   | 'intimacoes'
   | 'financeiro'
   | 'agenda'
+  | 'assinaturas'
   | 'tarefas'
   | 'notificacoes'
   | 'monitor'

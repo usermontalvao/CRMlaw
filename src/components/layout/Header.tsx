@@ -28,6 +28,7 @@ const moduleLabels: Record<ModuleName, { title: string; description: string }> =
   intimacoes: { title: 'Diário de Justiça Eletrônico', description: 'Consulte comunicações processuais do DJEN' },
   financeiro: { title: 'Gestão Financeira', description: 'Acompanhe acordos, parcelas e honorários do escritório' },
   agenda: { title: 'Agenda', description: 'Organize compromissos e prazos' },
+  assinaturas: { title: 'Assinatura Digital', description: 'Assine documentos com biometria facial e assinatura digital' },
   tarefas: { title: 'Tarefas', description: 'Gerencie suas tarefas e lembretes' },
   notificacoes: { title: 'Notificações', description: 'Veja todas as suas notificações' },
   monitor: { title: 'Monitor de Processos', description: 'Acompanhe processos em tempo real com análise inteligente' },
