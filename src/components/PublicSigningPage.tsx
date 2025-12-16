@@ -336,19 +336,37 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
     if (isSignModalOpen && modalStep === 'google_auth' && !googleUser) {
       googleAuthInitTokenRef.current += 1;
       const token = googleAuthInitTokenRef.current;
-      // Aguardar o elemento ser renderizado no DOM
-      const timer = setTimeout(() => {
-        if (googleButtonRef.current) {
-          initGoogleAuth(token);
+
+      let cancelled = false;
+      let tries = 0;
+
+      const tick = () => {
+        if (cancelled) return;
+        if (!isSignModalOpen || modalStep !== 'google_auth' || googleUser) return;
+
+        const el = googleButtonRef.current;
+        if (el) {
+          void initGoogleAuth(token, el);
+          return;
         }
-      }, 100);
-      return () => clearTimeout(timer);
+
+        tries += 1;
+        if (tries <= 30) {
+          window.setTimeout(tick, 50);
+        }
+      };
+
+      const timer = window.setTimeout(tick, 0);
+      return () => {
+        cancelled = true;
+        window.clearTimeout(timer);
+      };
     }
   }, [isSignModalOpen, modalStep, googleUser]);
 
   
-  const initGoogleAuth = async (initToken: number) => {
-    if (!googleButtonRef.current) return;
+  const initGoogleAuth = async (initToken: number, buttonEl: HTMLDivElement) => {
+    if (!buttonEl?.isConnected) return;
 
     if (googleAuthInitInFlightRef.current) return;
     googleAuthInitInFlightRef.current = true;
@@ -359,7 +377,9 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
       await googleAuthService.initialize();
 
       if (initToken !== googleAuthInitTokenRef.current) return;
-      googleButtonRef.current.innerHTML = '';
+      if (!buttonEl?.isConnected) return;
+
+      buttonEl.innerHTML = '';
       
       // @ts-ignore - Google Identity Services global
       if (typeof google !== 'undefined' && google.accounts?.id) {
@@ -372,7 +392,7 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
         });
         
         // @ts-ignore
-        google.accounts.id.renderButton(googleButtonRef.current, {
+        google.accounts.id.renderButton(buttonEl, {
           type: 'standard',
           theme: 'outline',
           size: 'large',
