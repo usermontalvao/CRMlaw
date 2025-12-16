@@ -31,6 +31,8 @@ export interface SignatureRequest {
   signer_geolocation?: string | null;
   // Link público para assinatura externa
   public_token?: string | null;
+  // Arquivamento (removido do painel)
+  archived_at?: string | null;
 }
 
 export interface Signer {

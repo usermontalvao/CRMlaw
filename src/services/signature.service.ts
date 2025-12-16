@@ -35,6 +35,7 @@ class SignatureService {
     let query = supabase
       .from(this.requestsTable)
       .select('*')
+      .is('archived_at', null)
       .order('created_at', { ascending: false });
 
     if (filters?.status) {
@@ -288,6 +289,27 @@ class SignatureService {
       .eq('status', 'pending');
 
     await this.addAuditLog(id, null, 'cancelled', 'Solicitação de assinatura cancelada');
+  }
+
+  async archiveRequest(id: string): Promise<void> {
+    // Arquiva (some do painel), invalida link público /#/assinar e mantém verificação por hash.
+    const now = new Date().toISOString();
+
+    const { error: reqError } = await supabase
+      .from(this.requestsTable)
+      .update({ archived_at: now, public_token: null })
+      .eq('id', id);
+
+    if (reqError) throw new Error(reqError.message);
+
+    const { error: signersError } = await supabase
+      .from(this.signersTable)
+      .update({ public_token: null })
+      .eq('signature_request_id', id);
+
+    if (signersError) throw new Error(signersError.message);
+
+    await this.addAuditLog(id, null, 'cancelled', 'Solicitação arquivada (removida do painel)');
   }
 
   async deleteRequest(id: string, deleteFilesFromServer: boolean = false): Promise<void> {

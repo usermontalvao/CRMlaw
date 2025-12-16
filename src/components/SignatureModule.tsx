@@ -1034,14 +1034,12 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, onParamC
     setDeleteModalOpen(true);
   };
 
-  const confirmDelete = async (deleteFilesFromServer: boolean) => {
+  const confirmDelete = async () => {
     if (!deleteRequestId) return;
     try {
       setDeleteLoading(true);
-      await signatureService.deleteRequest(deleteRequestId, deleteFilesFromServer);
-      toast.success(deleteFilesFromServer 
-        ? 'Documento excluído permanentemente do sistema e servidor!' 
-        : 'Documento removido do painel (arquivos mantidos no servidor)');
+      await signatureService.archiveRequest(deleteRequestId);
+      toast.success('Documento removido do painel. Consulta disponível apenas pelo código de autenticidade.');
       setDetailsRequest(null);
       setDeleteModalOpen(false);
       setDeleteRequestId(null);
@@ -2965,7 +2963,7 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, onParamC
                 </div>
                 <div>
                   <h2 className="text-lg font-bold text-slate-800">Excluir Documento</h2>
-                  <p className="text-sm text-slate-500">Escolha como deseja excluir</p>
+                  <p className="text-sm text-slate-500">Remover do painel (sem apagar o documento assinado)</p>
                 </div>
               </div>
             </div>
@@ -2973,13 +2971,13 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, onParamC
             <div className="p-6 space-y-4">
               <div className="bg-amber-50 border border-amber-200 rounded-xl p-4">
                 <p className="text-sm text-amber-800">
-                  <strong>Atenção:</strong> Esta ação não pode ser desfeita. O documento será removido do painel administrativo.
+                  <strong>Atenção:</strong> Esta ação remove do painel e invalida o link público de assinatura. O documento assinado permanece preservado para consulta por autenticidade.
                 </p>
               </div>
               
               <div className="space-y-3">
                 <button
-                  onClick={() => confirmDelete(false)}
+                  onClick={() => confirmDelete()}
                   disabled={deleteLoading}
                   className="w-full flex items-center gap-4 p-4 border-2 border-slate-200 rounded-xl hover:border-blue-400 hover:bg-blue-50 transition-all group disabled:opacity-50"
                 >
@@ -2988,21 +2986,7 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, onParamC
                   </div>
                   <div className="flex-1 text-left">
                     <p className="font-semibold text-slate-800">Remover apenas do painel</p>
-                    <p className="text-xs text-slate-500">Os arquivos permanecerão disponíveis no servidor</p>
-                  </div>
-                </button>
-                
-                <button
-                  onClick={() => confirmDelete(true)}
-                  disabled={deleteLoading}
-                  className="w-full flex items-center gap-4 p-4 border-2 border-red-200 rounded-xl hover:border-red-400 hover:bg-red-50 transition-all group disabled:opacity-50"
-                >
-                  <div className="w-10 h-10 bg-red-100 rounded-lg flex items-center justify-center group-hover:bg-red-200 transition-colors">
-                    <Trash2 className="w-5 h-5 text-red-600" />
-                  </div>
-                  <div className="flex-1 text-left">
-                    <p className="font-semibold text-red-700">Excluir permanentemente</p>
-                    <p className="text-xs text-red-500">Remove do painel E apaga todos os arquivos do servidor</p>
+                    <p className="text-xs text-slate-500">Consulta futura apenas pelo código de autenticidade</p>
                   </div>
                 </button>
               </div>
