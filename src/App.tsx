@@ -738,6 +738,17 @@ const MainApp: React.FC = () => {
           </button>
 
           <button
+            onClick={() => { setClientPrefill(null); setIsMobileNavOpen(false); navigateTo('assinaturas'); }}
+            className={`relative flex flex-col items-center py-2.5 px-1 rounded-lg transition-colors ${
+              activeModule === 'assinaturas' ? 'text-amber-500' : 'text-slate-400 hover:text-white hover:bg-slate-800/50'
+            }`}
+          >
+            {activeModule === 'assinaturas' && <div className="absolute left-0 top-1/2 -translate-y-1/2 w-0.5 h-6 bg-amber-500 rounded-r" />}
+            <PenTool className="w-5 h-5" />
+            <span className="text-[9px] mt-1">Assinaturas</span>
+          </button>
+
+          <button
             onClick={() => { setClientPrefill(null); setIsMobileNavOpen(false); navigateTo('processos'); }}
             className={`relative flex flex-col items-center py-2.5 px-1 rounded-lg transition-colors ${
               activeModule === 'processos' ? 'text-amber-500' : 'text-slate-400 hover:text-white hover:bg-slate-800/50'
@@ -803,16 +814,6 @@ const MainApp: React.FC = () => {
             <span className="text-[9px] mt-1">Agenda</span>
           </button>
 
-          <button
-            onClick={() => { setClientPrefill(null); setIsMobileNavOpen(false); navigateTo('assinaturas'); }}
-            className={`relative flex flex-col items-center py-2.5 px-1 rounded-lg transition-colors ${
-              activeModule === 'assinaturas' ? 'text-amber-500' : 'text-slate-400 hover:text-white hover:bg-slate-800/50'
-            }`}
-          >
-            {activeModule === 'assinaturas' && <div className="absolute left-0 top-1/2 -translate-y-1/2 w-0.5 h-6 bg-amber-500 rounded-r" />}
-            <PenTool className="w-5 h-5" />
-            <span className="text-[9px] mt-1">Assinaturas</span>
-          </button>
 
           <div className="my-2 mx-2 h-px bg-slate-800" />
 
@@ -1089,7 +1090,13 @@ const MainApp: React.FC = () => {
                 }}
               />
             )}
-            {activeModule === 'documentos' && <DocumentsModule />}
+            {activeModule === 'documentos' && (
+              <DocumentsModule 
+                onNavigateToModule={(moduleKey, params) => {
+                  navigateTo(moduleKey as any, params);
+                }}
+              />
+            )}
             {activeModule === 'processos' && (
               <ProcessesModule 
                 forceCreate={moduleParams['processos'] ? JSON.parse(moduleParams['processos']).mode === 'create' : false}
@@ -1145,7 +1152,12 @@ const MainApp: React.FC = () => {
             )}
             {activeModule === 'notificacoes' && <NotificationsModuleNew onNavigateToModule={handleNavigateToModule} />}
             {activeModule === 'financeiro' && <FinancialModule />}
-            {activeModule === 'assinaturas' && <SignatureModule />}
+            {activeModule === 'assinaturas' && (
+              <SignatureModule 
+                prefillData={moduleParams['assinaturas'] ? JSON.parse(moduleParams['assinaturas']).prefill : undefined}
+                onParamConsumed={() => clearModuleParams('assinaturas')}
+              />
+            )}
             {activeModule === 'configuracoes' && <SettingsModule />}
             {activeModule === 'cron' && <CronEndpoint />}
           </Suspense>
@@ -1178,11 +1190,14 @@ const App: React.FC = () => {
     return () => window.removeEventListener('hashchange', handleHashChange);
   }, []);
 
-  const isTermsRoute = hashRoute?.includes('/terms');
-  const isPrivacyRoute = hashRoute?.includes('/privacidade') || hashRoute?.includes('/privacy');
-  const isCronRoute = hashRoute?.includes('/cron/djen');
-  const isSigningRoute = hashRoute?.includes('/assinar/');
-  const isVerificationRoute = hashRoute?.includes('/verificar');
+  // Verificar rotas tanto no hash quanto no pathname (para links sem #)
+  const pathname = typeof window !== 'undefined' ? window.location.pathname : '';
+  
+  const isTermsRoute = hashRoute?.includes('/terms') || pathname?.includes('/terms');
+  const isPrivacyRoute = hashRoute?.includes('/privacidade') || hashRoute?.includes('/privacy') || pathname?.includes('/privacidade') || pathname?.includes('/privacy');
+  const isCronRoute = hashRoute?.includes('/cron/djen') || pathname?.includes('/cron/djen');
+  const isSigningRoute = hashRoute?.includes('/assinar/') || pathname?.includes('/assinar/');
+  const isVerificationRoute = hashRoute?.includes('/verificar') || pathname?.includes('/verificar');
 
   if (isTermsRoute) {
     return <TermsPrivacyPage type="terms" />;
@@ -1203,7 +1218,11 @@ const App: React.FC = () => {
   }
 
   if (isSigningRoute) {
-    const token = hashRoute.split('/assinar/')[1]?.split('?')[0]?.split('#')[0];
+    // Extrair token do hash ou do pathname
+    let token = hashRoute.split('/assinar/')[1]?.split('?')[0]?.split('#')[0];
+    if (!token && pathname.includes('/assinar/')) {
+      token = pathname.split('/assinar/')[1]?.split('?')[0]?.split('#')[0];
+    }
     if (token) {
       return (
         <Suspense fallback={<div className="min-h-screen bg-slate-100 flex items-center justify-center"><Loader2 className="w-8 h-8 animate-spin text-blue-600" /></div>}>

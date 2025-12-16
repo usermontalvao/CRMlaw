@@ -13,20 +13,30 @@ import {
   Sparkles,
   ArrowRight,
   CheckCircle2,
+  Link2,
+  Copy,
   Search,
   Settings,
   Eye,
   Pencil,
   Upload as UploadIcon,
+  PenTool,
 } from 'lucide-react';
 import PizZip from 'pizzip';
 import Docxtemplater from 'docxtemplater';
 import { saveAs } from 'file-saver';
 import { Document as DocxDocument, Packer, Paragraph, TextRun } from 'docx';
+import { renderAsync } from 'docx-preview';
+import html2canvas from 'html2canvas';
+import { jsPDF } from 'jspdf';
 import { documentTemplateService } from '../services/documentTemplate.service';
 import { clientService } from '../services/client.service';
 import { processService } from '../services/process.service';
+import { signatureService } from '../services/signature.service';
 import { ClientSearchSelect } from './ClientSearchSelect';
+import SignaturePositionDesigner from './SignaturePositionDesigner';
+import TemplateFilesManager from './TemplateFilesManager';
+import CustomFieldsManager from './CustomFieldsManager';
 import type { DocumentTemplate, CreateDocumentTemplateDTO } from '../types/document.types';
 import type { Client } from '../types/client.types';
 import type { Process } from '../types/process.types';
@@ -100,7 +110,11 @@ const extractTextFromDocxZip = (zip: PizZip) => {
   }
 };
 
-const DocumentsModule: React.FC = () => {
+interface DocumentsModuleProps {
+  onNavigateToModule?: (moduleKey: string, params?: Record<string, any>) => void;
+}
+
+const DocumentsModule: React.FC<DocumentsModuleProps> = ({ onNavigateToModule }) => {
   const [templates, setTemplates] = useState<DocumentTemplate[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -155,6 +169,28 @@ const DocumentsModule: React.FC = () => {
   const [editSaving, setEditSaving] = useState(false);
   const [editError, setEditError] = useState<string | null>(null);
   const jsPdfLoaderRef = useRef<Promise<any> | null>(null);
+
+  // Estados para designer de posição de assinatura
+  const [signatureDesignerOpen, setSignatureDesignerOpen] = useState(false);
+  const [signatureDesignerTemplate, setSignatureDesignerTemplate] = useState<DocumentTemplate | null>(null);
+
+  // Estados para gerenciador de múltiplos arquivos
+  const [filesManagerOpen, setFilesManagerOpen] = useState(false);
+  const [filesManagerTemplate, setFilesManagerTemplate] = useState<DocumentTemplate | null>(null);
+
+  // Estados para gerenciador de campos personalizados (global)
+  const [customFieldsManagerOpen, setCustomFieldsManagerOpen] = useState(false);
+
+  // Estados para modal de opções de documento gerado
+  const [showDocOptionsModal, setShowDocOptionsModal] = useState(false);
+  const [generatedDocBlob, setGeneratedDocBlob] = useState<Blob | null>(null);
+  const [generatedDocName, setGeneratedDocName] = useState('');
+
+  // Estados para modal de link de assinatura
+  const [showSignatureLinkModal, setShowSignatureLinkModal] = useState(false);
+  const [signatureLink, setSignatureLink] = useState('');
+  const [linkCopied, setLinkCopied] = useState(false);
+  const [preparingSignature, setPreparingSignature] = useState(false);
 
   const currentDate = useMemo(() => new Date(), []);
 
@@ -575,6 +611,11 @@ const DocumentsModule: React.FC = () => {
           paragraphLoop: true,
           linebreaks: true,
           delimiters: { start: '[[', end: ']]' },
+          nullGetter: (part: any) => {
+            const key = typeof part?.value === 'string' ? part.value.trim() : '';
+            if (/^ASSINATURA(_\d+)?$/i.test(key)) return `[[${key}]]`;
+            return '';
+          },
         });
 
         doc.render(placeholders);
@@ -639,17 +680,291 @@ const DocumentsModule: React.FC = () => {
       const result = await handleGenerateDocument();
       if (!result) return;
 
-      const fileName = `${selectedTemplate.name.replace(/\s+/g, '-')}-${removeDiacritics(selectedClient.full_name).replace(/\s+/g, '-')}.docx`;
+      const fileName = `${selectedTemplate.name.replace(/\s+/g, '-')}-${removeDiacritics(selectedClient.full_name).replace(/\s+/g, '-')}`;
 
-      saveAs(result.blob, fileName);
-
-      setGenerationSuccess('Documento Word gerado com sucesso.');
+      // Salvar blob e mostrar modal de opções
+      setGeneratedDocBlob(result.blob);
+      setGeneratedDocName(fileName);
+      setShowDocOptionsModal(true);
+      setGenerationSuccess('Documento gerado! Escolha uma opção.');
     } catch (err: any) {
       console.error(err);
       setGenerationError(err.message || 'Erro ao gerar documento.');
     } finally {
       setGeneratingDocx(false);
     }
+  };
+
+  // Baixar como Word
+  const handleDownloadWord = () => {
+    if (generatedDocBlob) {
+      saveAs(generatedDocBlob, `${generatedDocName}.docx`);
+    }
+  };
+
+  // Converter DOCX para PDF usando docx-preview + html2canvas + jsPDF
+  const convertDocxToPdf = async (docxBlob: Blob): Promise<Blob> => {
+    return new Promise(async (resolve, reject) => {
+      try {
+        // Criar container temporário
+        const container = document.createElement('div');
+        container.style.cssText = `
+          position: fixed;
+          left: -9999px;
+          top: 0;
+          width: 794px;
+          background: white;
+          font-family: 'Times New Roman', Times, serif;
+        `;
+        document.body.appendChild(container);
+
+        // Renderizar DOCX
+        await renderAsync(docxBlob, container, undefined, {
+          className: 'docx-wrapper',
+          inWrapper: true,
+          ignoreWidth: false,
+          ignoreHeight: false,
+        });
+
+        // Aguardar renderização
+        await new Promise(r => setTimeout(r, 300));
+
+        // Capturar como canvas (escala reduzida para diminuir tamanho)
+        const canvas = await html2canvas(container, {
+          scale: 1.5, // Reduzido de 2 para 1.5
+          useCORS: true,
+          allowTaint: true,
+          backgroundColor: '#ffffff',
+          logging: false,
+          width: 794,
+          windowWidth: 794,
+        });
+
+        // Criar PDF com JPEG (menor que PNG)
+        const pageWidth = 210;
+        const pageHeight = 297;
+        const imgData = canvas.toDataURL('image/jpeg', 0.85); // JPEG com 85% qualidade
+        const imgWidth = pageWidth;
+        const imgHeight = (canvas.height * pageWidth) / canvas.width;
+
+        const pdf = new jsPDF({
+          orientation: 'portrait',
+          unit: 'mm',
+          format: 'a4',
+          compress: true, // Habilitar compressão
+        });
+
+        // Dividir em páginas se necessário
+        const totalPages = Math.ceil(imgHeight / pageHeight);
+        
+        for (let page = 0; page < totalPages; page++) {
+          if (page > 0) pdf.addPage();
+          const yOffset = -(page * pageHeight);
+          pdf.addImage(imgData, 'JPEG', 0, yOffset, imgWidth, imgHeight, undefined, 'FAST');
+        }
+
+        document.body.removeChild(container);
+        resolve(pdf.output('blob'));
+      } catch (error) {
+        reject(error);
+      }
+    });
+  };
+
+  // Converter múltiplos DOCXs e juntar em um único PDF
+  const convertAndMergeDocxToPdf = async (mainDocx: Blob, attachmentBlobs: Blob[]): Promise<Blob> => {
+    // Converter documento principal
+    console.log('📄 Convertendo documento principal para PDF...');
+    const mainPdf = await convertDocxToPdf(mainDocx);
+    
+    if (attachmentBlobs.length === 0) {
+      return mainPdf;
+    }
+
+    // Converter anexos e mesclar usando jsPDF
+    const { PDFDocument } = await import('pdf-lib');
+    const mergedPdf = await PDFDocument.create();
+    
+    // Adicionar documento principal
+    const mainPdfDoc = await PDFDocument.load(await mainPdf.arrayBuffer());
+    const mainPages = await mergedPdf.copyPages(mainPdfDoc, mainPdfDoc.getPageIndices());
+    mainPages.forEach(page => mergedPdf.addPage(page));
+    
+    // Converter e adicionar cada anexo
+    for (let i = 0; i < attachmentBlobs.length; i++) {
+      console.log(`📄 Convertendo anexo ${i + 1}/${attachmentBlobs.length} para PDF...`);
+      try {
+        const attachPdf = await convertDocxToPdf(attachmentBlobs[i]);
+        const attachPdfDoc = await PDFDocument.load(await attachPdf.arrayBuffer());
+        const attachPages = await mergedPdf.copyPages(attachPdfDoc, attachPdfDoc.getPageIndices());
+        attachPages.forEach(page => mergedPdf.addPage(page));
+      } catch (err) {
+        console.warn(`Erro ao converter anexo ${i + 1}:`, err);
+      }
+    }
+    
+    const mergedBytes = await mergedPdf.save();
+    return new Blob([new Uint8Array(mergedBytes)], { type: 'application/pdf' });
+  };
+
+  // Baixar como PDF
+  const handleDownloadPdf = async () => {
+    if (!generatedDocBlob) return;
+    
+    try {
+      const pdfBlob = await convertDocxToPdf(generatedDocBlob);
+      saveAs(pdfBlob, `${generatedDocName}.pdf`);
+    } catch (err) {
+      console.error('Erro ao gerar PDF:', err);
+      saveAs(generatedDocBlob, `${generatedDocName}.docx`);
+      alert('Erro ao converter para PDF. Arquivo salvo como Word.');
+    }
+  };
+
+  // Enviar para assinatura - Envia DOCXs separados (documento principal + anexos)
+  const handleSendForSignature = async () => {
+    if (!selectedTemplate || !selectedClient || !generatedDocBlob) return;
+    
+    try {
+      setPreparingSignature(true);
+      setShowDocOptionsModal(false);
+      
+      // 1. Fazer upload do documento principal gerado (DOCX)
+      const fileName = `${generatedDocName}.docx`;
+      const file = new File([generatedDocBlob], fileName, { type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' });
+      const documentPath = await signatureService.uploadDocument(file);
+      
+      // 2. Carregar, processar variáveis e fazer upload dos documentos anexos do template
+      const templateFiles = await documentTemplateService.listTemplateFiles(selectedTemplate.id);
+      const attachmentPaths: string[] = [];
+      const placeholders = buildPlaceholderMap(selectedClient);
+      
+      for (const templateFile of templateFiles) {
+        try {
+          const fileBlob = await documentTemplateService.downloadTemplateFileById(templateFile.id);
+          
+          const isDocx = templateFile.file_name.toLowerCase().endsWith('.docx') || 
+                         templateFile.mime_type === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+          
+          let processedBlob: Blob;
+          
+          if (isDocx) {
+            const arrayBuffer = await fileBlob.arrayBuffer();
+            const zip = new PizZip(arrayBuffer);
+            const doc = new Docxtemplater(zip, {
+              paragraphLoop: true,
+              linebreaks: true,
+              delimiters: { start: '[[', end: ']]' },
+              nullGetter: (part: any) => {
+                const key = typeof part?.value === 'string' ? part.value.trim() : '';
+                if (/^ASSINATURA(_\d+)?$/i.test(key)) return `[[${key}]]`;
+                return '';
+              },
+            });
+            
+            doc.render(placeholders);
+            
+            processedBlob = doc.getZip().generate({
+              type: 'blob',
+              mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+            });
+          } else {
+            processedBlob = fileBlob;
+          }
+          
+          const attachmentFile = new File([processedBlob], templateFile.file_name, { type: templateFile.mime_type });
+          const attachmentPath = await signatureService.uploadDocument(attachmentFile);
+          attachmentPaths.push(attachmentPath);
+          console.log(`📎 Anexo enviado: ${templateFile.file_name}`);
+        } catch (err) {
+          console.warn(`Erro ao processar anexo ${templateFile.file_name}:`, err);
+        }
+      }
+      
+      console.log('✅ Documento e anexos enviados:', documentPath, attachmentPaths);
+      
+      // 3. Navegar para o módulo de assinatura com os dados do documento
+      if (onNavigateToModule) {
+        onNavigateToModule('assinaturas', {
+          mode: 'create',
+          prefill: {
+            documentPath,
+            documentName: `${selectedTemplate.name} - ${selectedClient.full_name}`,
+            attachmentPaths: attachmentPaths.length > 0 ? attachmentPaths : null,
+            clientId: selectedClient.id,
+            clientName: selectedClient.full_name,
+            clientEmail: selectedClient.email || '',
+            clientCpf: selectedClient.cpf_cnpj || '',
+            clientPhone: selectedClient.phone || '',
+            templateId: selectedTemplate.id,
+          },
+        });
+        
+        // Limpar estados
+        setPreparingSignature(false);
+        setGeneratedDocBlob(null);
+        setGeneratedDocName('');
+        return;
+      }
+      
+      // Fallback: criar solicitação diretamente se não houver navegação
+      const documentId = crypto.randomUUID();
+      
+      const signatureRequest = await signatureService.createRequest({
+        document_id: documentId,
+        document_name: `${selectedTemplate.name} - ${selectedClient.full_name}`,
+        document_path: documentPath,
+        attachment_paths: attachmentPaths.length > 0 ? attachmentPaths : null,
+        client_id: selectedClient.id,
+        client_name: selectedClient.full_name,
+        auth_method: 'signature_only',
+        signers: [{
+          name: selectedClient.full_name,
+          email: selectedClient.email || '',
+          cpf: selectedClient.cpf_cnpj || '',
+          phone: selectedClient.phone || '',
+          role: 'Signatário',
+          order: 1,
+        }],
+      });
+      
+      const signerToken = signatureRequest.signers[0]?.public_token;
+      
+      if (!signerToken) {
+        throw new Error('Erro ao gerar link de assinatura');
+      }
+      
+      const link = `${window.location.origin}/#/assinar/${signerToken}`;
+      
+      // Mostrar modal com o link
+      setSignatureLink(link);
+      setLinkCopied(false);
+      setShowSignatureLinkModal(true);
+      
+    } catch (err: any) {
+      console.error('Erro ao criar solicitação de assinatura:', err);
+      alert('Erro ao criar solicitação de assinatura: ' + (err.message || 'Erro desconhecido'));
+    } finally {
+      setPreparingSignature(false);
+    }
+  };
+
+  // Copiar link para clipboard
+  const handleCopyLink = () => {
+    navigator.clipboard.writeText(signatureLink).then(() => {
+      setLinkCopied(true);
+      setTimeout(() => setLinkCopied(false), 3000);
+    }).catch(() => {
+      // Fallback para navegadores antigos
+      const input = document.createElement('input');
+      input.value = signatureLink;
+      document.body.appendChild(input);
+      input.select();
+      document.execCommand('copy');
+      document.body.removeChild(input);
+      setLinkCopied(true);
+      setTimeout(() => setLinkCopied(false), 3000);
+    });
   };
 
   const generateCaptchaNumbers = () => {
@@ -842,13 +1157,22 @@ const DocumentsModule: React.FC = () => {
               <h4 className="text-base font-semibold text-slate-900">Templates cadastrados</h4>
               <p className="text-sm text-slate-500">Visualize, edite, baixe ou remova templates existentes.</p>
             </div>
-            <button
-              onClick={handleOpenModal}
-              className="inline-flex items-center justify-center gap-2 rounded-lg bg-slate-900 px-4 py-2 text-sm font-semibold text-white transition hover:bg-slate-800"
-            >
-              <Plus className="h-4 w-4" />
-              Novo template
-            </button>
+            <div className="flex flex-col sm:flex-row gap-2">
+              <button
+                onClick={() => setCustomFieldsManagerOpen(true)}
+                className="inline-flex items-center justify-center gap-2 rounded-lg border border-purple-200 bg-white px-4 py-2 text-sm font-semibold text-purple-600 transition hover:bg-purple-50 hover:border-purple-300"
+              >
+                <Settings className="h-4 w-4" />
+                Campos Personalizados
+              </button>
+              <button
+                onClick={handleOpenModal}
+                className="inline-flex items-center justify-center gap-2 rounded-lg bg-slate-900 px-4 py-2 text-sm font-semibold text-white transition hover:bg-slate-800"
+              >
+                <Plus className="h-4 w-4" />
+                Novo template
+              </button>
+            </div>
           </div>
           {loading ? (
             <div className="flex items-center justify-center py-8">
@@ -891,6 +1215,26 @@ const DocumentsModule: React.FC = () => {
                       Baixar
                     </button>
                     <button
+                      onClick={() => {
+                        setFilesManagerTemplate(template);
+                        setFilesManagerOpen(true);
+                      }}
+                      className="inline-flex items-center gap-1.5 rounded-lg border border-blue-200 bg-white px-3 py-1.5 text-xs font-medium text-blue-600 transition hover:border-blue-300 hover:bg-blue-50"
+                    >
+                      <FileText className="h-3.5 w-3.5" />
+                      Documentos
+                    </button>
+                    <button
+                      onClick={() => {
+                        setSignatureDesignerTemplate(template);
+                        setSignatureDesignerOpen(true);
+                      }}
+                      className="inline-flex items-center gap-1.5 rounded-lg border border-emerald-200 bg-white px-3 py-1.5 text-xs font-medium text-emerald-600 transition hover:border-emerald-300 hover:bg-emerald-50"
+                    >
+                      <PenTool className="h-3.5 w-3.5" />
+                      Posicionar Assinatura
+                    </button>
+                    <button
                       onClick={() => openDeleteModal(template)}
                       className="inline-flex items-center gap-1.5 rounded-lg border border-red-200 bg-white px-3 py-1.5 text-xs font-medium text-red-600 transition hover:border-red-300 hover:bg-red-50"
                     >
@@ -914,30 +1258,30 @@ const DocumentsModule: React.FC = () => {
       {isModalOpen && createPortal(
         <div className="fixed inset-0 z-[70] flex items-center justify-center px-3 sm:px-6 py-4">
           <div
-            className="absolute inset-0 bg-slate-900/70 backdrop-blur-sm"
+            className="absolute inset-0 bg-slate-200/80 backdrop-blur-sm"
             onClick={handleCloseModal}
             aria-hidden="true"
           />
-          <div className="relative w-full max-w-xl max-h-[92vh] bg-white dark:bg-zinc-900 rounded-2xl shadow-2xl ring-1 ring-black/5 flex flex-col overflow-hidden">
+          <div className="relative w-full max-w-xl max-h-[92vh] bg-white  rounded-2xl shadow-2xl ring-1 ring-black/5 flex flex-col overflow-hidden">
             <div className="h-2 w-full bg-orange-500" />
-            <div className="px-5 sm:px-8 py-5 border-b border-slate-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 flex items-start justify-between gap-4">
+            <div className="px-5 sm:px-8 py-5 border-b border-slate-200  bg-white  flex items-start justify-between gap-4">
               <div>
-                <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400 dark:text-slate-500">
+                <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400 ">
                   Formulário
                 </p>
-                <h2 className="text-xl font-semibold text-slate-900 dark:text-white">Adicionar Template</h2>
+                <h2 className="text-xl font-semibold text-slate-900 ">Adicionar Template</h2>
               </div>
               <button
                 type="button"
                 onClick={handleCloseModal}
-                className="p-2 text-slate-400 hover:text-slate-600 dark:text-slate-300 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-white/10 rounded-xl transition"
+                className="p-2 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-xl transition"
                 aria-label="Fechar modal"
               >
                 <X className="w-5 h-5" />
               </button>
             </div>
 
-            <div className="flex-1 overflow-y-auto bg-white dark:bg-zinc-900">
+            <div className="flex-1 overflow-y-auto bg-white ">
               <form id="template-form" onSubmit={handleUploadTemplate} className="flex flex-col p-6 md:p-8 gap-6">
                 {/* Form Fields */}
                 <div className="space-y-5">
@@ -1005,7 +1349,7 @@ const DocumentsModule: React.FC = () => {
               </form>
             </div>
 
-            <div className="border-t border-slate-200 dark:border-zinc-800 bg-slate-50 dark:bg-zinc-900 px-4 sm:px-6 py-3">
+            <div className="border-t border-slate-200  bg-slate-50  px-4 sm:px-6 py-3">
               <div className="flex justify-end gap-3">
                 <button
                   type="button"
@@ -1033,30 +1377,30 @@ const DocumentsModule: React.FC = () => {
     {isPreviewModalOpen && createPortal(
       <div className="fixed inset-0 z-[70] flex items-center justify-center px-3 sm:px-6 py-4">
         <div
-          className="absolute inset-0 bg-slate-900/70 backdrop-blur-sm"
+          className="absolute inset-0 bg-slate-200/80 backdrop-blur-sm"
           onClick={handleClosePreviewModal}
           aria-hidden="true"
         />
-        <div className="relative w-full max-w-4xl max-h-[92vh] bg-white dark:bg-zinc-900 rounded-2xl shadow-2xl ring-1 ring-black/5 flex flex-col overflow-hidden">
+        <div className="relative w-full max-w-4xl max-h-[92vh] bg-white  rounded-2xl shadow-2xl ring-1 ring-black/5 flex flex-col overflow-hidden">
           <div className="h-2 w-full bg-orange-500" />
-          <div className="px-5 sm:px-8 py-5 border-b border-slate-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 flex items-start justify-between gap-4">
+          <div className="px-5 sm:px-8 py-5 border-b border-slate-200  bg-white  flex items-start justify-between gap-4">
             <div>
-              <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400 dark:text-slate-500">
+              <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400 ">
                 Visualizar Template
               </p>
-              <h2 className="text-xl font-semibold text-slate-900 dark:text-white">{previewTemplate?.name}</h2>
+              <h2 className="text-xl font-semibold text-slate-900 ">{previewTemplate?.name}</h2>
             </div>
             <button
               type="button"
               onClick={handleClosePreviewModal}
-              className="p-2 text-slate-400 hover:text-slate-600 dark:text-slate-300 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-white/10 rounded-xl transition"
+              className="p-2 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-xl transition"
               aria-label="Fechar modal"
             >
               <X className="w-5 h-5" />
             </button>
           </div>
 
-          <div className="flex-1 overflow-y-auto bg-white dark:bg-zinc-900 p-6">
+          <div className="flex-1 overflow-y-auto bg-white  p-6">
             {previewLoading ? (
               <div className="flex h-full items-center justify-center">
                 <Loader2 className="h-6 w-6 animate-spin text-gray-400" />
@@ -1161,34 +1505,67 @@ const DocumentsModule: React.FC = () => {
       document.body
     )}
 
-    {/* Edit Modal */}
-    {isEditModalOpen && editingTemplate && createPortal(
-      <div className="fixed inset-0 z-[70] flex items-center justify-center px-3 sm:px-6 py-4">
+    {/* Modal Preparando Assinatura */}
+    {preparingSignature && createPortal(
+      <div className="fixed inset-0 z-[90] flex items-center justify-center px-3 sm:px-6 py-4">
         <div
           className="absolute inset-0 bg-slate-900/70 backdrop-blur-sm"
-          onClick={handleCloseEditModal}
           aria-hidden="true"
         />
-        <div className="relative w-full max-w-2xl max-h-[92vh] bg-white dark:bg-zinc-900 rounded-2xl shadow-2xl ring-1 ring-black/5 flex flex-col overflow-hidden">
+        <div className="relative w-full max-w-md max-h-[92vh] bg-white dark:bg-zinc-900 rounded-2xl shadow-2xl ring-1 ring-black/5 flex flex-col overflow-hidden">
           <div className="h-2 w-full bg-orange-500" />
           <div className="px-5 sm:px-8 py-5 border-b border-slate-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 flex items-start justify-between gap-4">
             <div>
               <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400 dark:text-slate-500">
+                Aguarde
+              </p>
+              <h2 className="text-xl font-semibold text-slate-900 dark:text-white">Preparando documentos...</h2>
+            </div>
+          </div>
+
+          <div className="flex-1 overflow-y-auto bg-white dark:bg-zinc-900 p-6">
+            <div className="flex items-center gap-4">
+              <div className="w-12 h-12 rounded-xl bg-blue-100 dark:bg-blue-900/30 flex items-center justify-center flex-shrink-0">
+                <Loader2 className="w-6 h-6 text-blue-600 dark:text-blue-400 animate-spin" />
+              </div>
+              <div className="min-w-0">
+                <p className="text-sm text-slate-500 dark:text-slate-400">Enviando documento e anexos para assinatura digital</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>,
+      document.body
+    )}
+
+    {/* Edit Modal */}
+    {isEditModalOpen && editingTemplate && createPortal(
+      <div className="fixed inset-0 z-[70] flex items-center justify-center px-3 sm:px-6 py-4">
+        <div
+          className="absolute inset-0 bg-slate-200/80 backdrop-blur-sm"
+          onClick={handleCloseEditModal}
+          aria-hidden="true"
+        />
+        <div className="relative w-full max-w-2xl max-h-[92vh] bg-white  rounded-2xl shadow-2xl ring-1 ring-black/5 flex flex-col overflow-hidden">
+          <div className="h-2 w-full bg-orange-500" />
+          <div className="px-5 sm:px-8 py-5 border-b border-slate-200  bg-white  flex items-start justify-between gap-4">
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400 ">
                 Editar Template
               </p>
-              <h2 className="text-xl font-semibold text-slate-900 dark:text-white">{editingTemplate.name}</h2>
+              <h2 className="text-xl font-semibold text-slate-900 ">{editingTemplate.name}</h2>
             </div>
             <button
               type="button"
               onClick={handleCloseEditModal}
-              className="p-2 text-slate-400 hover:text-slate-600 dark:text-slate-300 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-white/10 rounded-xl transition"
+              className="p-2 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-xl transition"
               aria-label="Fechar modal"
             >
               <X className="w-5 h-5" />
             </button>
           </div>
 
-          <div className="flex-1 overflow-y-auto bg-white dark:bg-zinc-900">
+          <div className="flex-1 overflow-y-auto bg-white ">
             <form id="edit-form" onSubmit={handleSaveTemplateEdits} className="p-6 space-y-4">
               <div className="space-y-2">
                 <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Nome</label>
@@ -1221,7 +1598,7 @@ const DocumentsModule: React.FC = () => {
             </form>
           </div>
 
-          <div className="border-t border-slate-200 dark:border-zinc-800 bg-slate-50 dark:bg-zinc-900 px-4 sm:px-6 py-3">
+          <div className="border-t border-slate-200  bg-slate-50  px-4 sm:px-6 py-3">
             <div className="flex gap-3">
               <button
                 type="button"
@@ -1249,30 +1626,30 @@ const DocumentsModule: React.FC = () => {
     {deleteTemplateTarget && deleteCaptchaNumbers && createPortal(
       <div className="fixed inset-0 z-[70] flex items-center justify-center px-3 sm:px-6 py-4">
         <div
-          className="absolute inset-0 bg-slate-900/70 backdrop-blur-sm"
+          className="absolute inset-0 bg-slate-200/80 backdrop-blur-sm"
           onClick={handleCloseDeleteModal}
           aria-hidden="true"
         />
-        <div className="relative w-full max-w-md max-h-[92vh] bg-white dark:bg-zinc-900 rounded-2xl shadow-2xl ring-1 ring-black/5 flex flex-col overflow-hidden">
+        <div className="relative w-full max-w-md max-h-[92vh] bg-white  rounded-2xl shadow-2xl ring-1 ring-black/5 flex flex-col overflow-hidden">
           <div className="h-2 w-full bg-orange-500" />
-          <div className="px-5 sm:px-8 py-5 border-b border-slate-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 flex items-start justify-between gap-4">
+          <div className="px-5 sm:px-8 py-5 border-b border-slate-200  bg-white  flex items-start justify-between gap-4">
             <div>
-              <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400 dark:text-slate-500">
+              <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400 ">
                 Confirmar Exclusão
               </p>
-              <h2 className="text-xl font-semibold text-slate-900 dark:text-white">Excluir Template</h2>
+              <h2 className="text-xl font-semibold text-slate-900 ">Excluir Template</h2>
             </div>
             <button
               type="button"
               onClick={handleCloseDeleteModal}
-              className="p-2 text-slate-400 hover:text-slate-600 dark:text-slate-300 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-white/10 rounded-xl transition"
+              className="p-2 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-xl transition"
               aria-label="Fechar modal"
             >
               <X className="w-5 h-5" />
             </button>
           </div>
 
-          <div className="flex-1 overflow-y-auto bg-white dark:bg-zinc-900 p-6">
+          <div className="flex-1 overflow-y-auto bg-white  p-6">
             <p className="text-sm text-gray-700 mb-4">
               Tem certeza que deseja excluir o template <strong>{deleteTemplateTarget.name}</strong>?
             </p>
@@ -1299,7 +1676,7 @@ const DocumentsModule: React.FC = () => {
             )}
           </div>
 
-          <div className="border-t border-slate-200 dark:border-zinc-800 bg-slate-50 dark:bg-zinc-900 px-4 sm:px-6 py-3">
+          <div className="border-t border-slate-200  bg-slate-50  px-4 sm:px-6 py-3">
             <div className="flex gap-3">
               <button
                 type="button"
@@ -1317,6 +1694,228 @@ const DocumentsModule: React.FC = () => {
                 {deleteLoading ? 'Excluindo...' : 'Excluir Template'}
               </button>
             </div>
+          </div>
+        </div>
+      </div>,
+      document.body
+    )}
+
+    {/* Designer de posição de assinatura */}
+    {signatureDesignerTemplate && (
+      <SignaturePositionDesigner
+        isOpen={signatureDesignerOpen}
+        onClose={() => {
+          setSignatureDesignerOpen(false);
+          setSignatureDesignerTemplate(null);
+        }}
+        template={signatureDesignerTemplate}
+        onSave={(config) => {
+          // Atualizar template na lista local
+          setTemplates(prev => prev.map(t => 
+            t.id === signatureDesignerTemplate.id 
+              ? { ...t, signature_field_config: config }
+              : t
+          ));
+        }}
+      />
+    )}
+
+    {/* Gerenciador de múltiplos arquivos por template */}
+    {filesManagerTemplate && (
+      <TemplateFilesManager
+        isOpen={filesManagerOpen}
+        onClose={() => {
+          setFilesManagerOpen(false);
+          setFilesManagerTemplate(null);
+        }}
+        template={filesManagerTemplate}
+        onUpdate={async () => {
+          // Recarregar templates
+          const data = await documentTemplateService.listTemplates();
+          setTemplates(data);
+        }}
+      />
+    )}
+
+    {/* Gerenciador de campos personalizados (global) */}
+    <CustomFieldsManager
+      isOpen={customFieldsManagerOpen}
+      onClose={() => setCustomFieldsManagerOpen(false)}
+    />
+
+    {/* Modal de opções do documento gerado */}
+    {showDocOptionsModal && createPortal(
+      <div className="fixed inset-0 z-[70] flex items-center justify-center px-3 sm:px-6 py-4">
+        <div
+          className="absolute inset-0 bg-slate-900/70 backdrop-blur-sm"
+          onClick={() => setShowDocOptionsModal(false)}
+          aria-hidden="true"
+        />
+        <div className="relative w-full max-w-md bg-white dark:bg-zinc-900 rounded-2xl shadow-2xl ring-1 ring-black/5 flex flex-col overflow-hidden">
+          <div className="h-2 w-full bg-emerald-500" />
+          <div className="px-5 sm:px-6 py-5 border-b border-slate-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 flex items-start justify-between gap-4">
+            <div className="flex items-center gap-4">
+              <div className="w-12 h-12 bg-emerald-100 dark:bg-emerald-900/30 rounded-xl flex items-center justify-center">
+                <CheckCircle2 className="w-6 h-6 text-emerald-600 dark:text-emerald-400" />
+              </div>
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400 dark:text-slate-500">
+                  Sucesso
+                </p>
+                <h2 className="text-xl font-semibold text-slate-900 dark:text-white">Documento Gerado!</h2>
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={() => setShowDocOptionsModal(false)}
+              className="p-2 text-slate-400 hover:text-slate-600 dark:text-slate-300 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-white/10 rounded-xl transition"
+              aria-label="Fechar modal"
+            >
+              <X className="w-5 h-5" />
+            </button>
+          </div>
+
+          <div className="flex-1 overflow-y-auto bg-white dark:bg-zinc-900 p-5 sm:p-6">
+            <p className="text-sm text-slate-500 dark:text-slate-400 mb-4 break-all">{generatedDocName}</p>
+            
+            <div className="space-y-3">
+              <button
+                onClick={handleDownloadWord}
+                className="w-full flex items-center gap-3 px-4 py-3 bg-blue-50 dark:bg-blue-900/20 hover:bg-blue-100 dark:hover:bg-blue-900/30 rounded-xl transition border border-blue-100 dark:border-blue-800"
+              >
+                <div className="w-10 h-10 bg-blue-600 rounded-lg flex items-center justify-center">
+                  <FileText className="w-5 h-5 text-white" />
+                </div>
+                <div className="text-left">
+                  <p className="font-medium text-slate-800 dark:text-white">Baixar Word</p>
+                  <p className="text-xs text-slate-500 dark:text-slate-400">Arquivo .docx editável</p>
+                </div>
+              </button>
+
+              <button
+                onClick={handleDownloadPdf}
+                className="w-full flex items-center gap-3 px-4 py-3 bg-rose-50 dark:bg-rose-900/20 hover:bg-rose-100 dark:hover:bg-rose-900/30 rounded-xl transition border border-rose-100 dark:border-rose-800"
+              >
+                <div className="w-10 h-10 bg-rose-600 rounded-lg flex items-center justify-center">
+                  <FileDown className="w-5 h-5 text-white" />
+                </div>
+                <div className="text-left">
+                  <p className="font-medium text-slate-800 dark:text-white">Baixar PDF</p>
+                  <p className="text-xs text-slate-500 dark:text-slate-400">Documento para impressão</p>
+                </div>
+              </button>
+
+              <button
+                onClick={handleSendForSignature}
+                className="w-full flex items-center gap-3 px-4 py-3 bg-emerald-50 dark:bg-emerald-900/20 hover:bg-emerald-100 dark:hover:bg-emerald-900/30 rounded-xl transition border border-emerald-100 dark:border-emerald-800"
+              >
+                <div className="w-10 h-10 bg-emerald-600 rounded-lg flex items-center justify-center">
+                  <PenTool className="w-5 h-5 text-white" />
+                </div>
+                <div className="text-left">
+                  <p className="font-medium text-slate-800 dark:text-white">Enviar para Assinatura</p>
+                  <p className="text-xs text-slate-500 dark:text-slate-400">Gerar link para cliente assinar</p>
+                </div>
+              </button>
+            </div>
+          </div>
+
+          <div className="border-t border-slate-200 dark:border-zinc-800 bg-slate-50 dark:bg-zinc-900 px-4 sm:px-6 py-3">
+            <button
+              onClick={() => setShowDocOptionsModal(false)}
+              className="w-full px-4 py-2.5 text-sm font-medium text-slate-600 dark:text-slate-300 hover:text-slate-800 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-white/10 rounded-xl transition"
+            >
+              Fechar
+            </button>
+          </div>
+        </div>
+      </div>,
+      document.body
+    )}
+
+    {/* Modal de Link de Assinatura */}
+    {showSignatureLinkModal && createPortal(
+      <div className="fixed inset-0 z-[80] flex items-center justify-center px-3 sm:px-6 py-4">
+        <div
+          className="absolute inset-0 bg-slate-900/70 backdrop-blur-sm"
+          onClick={() => setShowSignatureLinkModal(false)}
+          aria-hidden="true"
+        />
+        <div className="relative w-full max-w-lg bg-white dark:bg-zinc-900 rounded-2xl shadow-2xl ring-1 ring-black/5 flex flex-col overflow-hidden">
+          <div className="h-2 w-full bg-emerald-500" />
+          <div className="px-5 sm:px-6 py-5 border-b border-slate-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 flex items-start justify-between gap-4">
+            <div className="flex items-center gap-4">
+              <div className="w-12 h-12 bg-emerald-100 dark:bg-emerald-900/30 rounded-xl flex items-center justify-center">
+                <Link2 className="w-6 h-6 text-emerald-600 dark:text-emerald-400" />
+              </div>
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400 dark:text-slate-500">
+                  Pronto para enviar
+                </p>
+                <h2 className="text-xl font-semibold text-slate-900 dark:text-white">Link de Assinatura</h2>
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={() => setShowSignatureLinkModal(false)}
+              className="p-2 text-slate-400 hover:text-slate-600 dark:text-slate-300 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-white/10 rounded-xl transition"
+              aria-label="Fechar modal"
+            >
+              <X className="w-5 h-5" />
+            </button>
+          </div>
+
+          <div className="flex-1 overflow-y-auto bg-white dark:bg-zinc-900 p-5 sm:p-6">
+            <p className="text-sm text-slate-500 dark:text-slate-400 mb-4">
+              Envie este link para o cliente assinar o documento
+            </p>
+            
+            <div className="bg-slate-50 dark:bg-zinc-800 rounded-xl p-4 mb-4 border border-slate-200 dark:border-zinc-700">
+              <p className="text-xs text-slate-500 dark:text-slate-400 uppercase tracking-wide font-semibold mb-2">Link para assinatura:</p>
+              <div className="flex items-center gap-2 flex-col sm:flex-row">
+                <input
+                  type="text"
+                  readOnly
+                  value={signatureLink}
+                  className="flex-1 w-full bg-white dark:bg-zinc-900 border border-slate-200 dark:border-zinc-700 rounded-lg px-3 py-2 text-sm text-slate-800 dark:text-white font-mono"
+                />
+                <button
+                  onClick={handleCopyLink}
+                  className={`px-4 py-2 rounded-lg text-sm font-semibold transition flex items-center justify-center gap-2 w-full sm:w-auto ${
+                    linkCopied 
+                      ? 'bg-emerald-600 text-white' 
+                      : 'bg-blue-600 hover:bg-blue-700 text-white'
+                  }`}
+                >
+                  {linkCopied ? (
+                    <>
+                      <CheckCircle2 className="w-4 h-4" />
+                      Copiado!
+                    </>
+                  ) : (
+                    <>
+                      <Copy className="w-4 h-4" />
+                      Copiar
+                    </>
+                  )}
+                </button>
+              </div>
+            </div>
+
+            <div className="bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-xl p-3">
+              <p className="text-xs text-amber-700 dark:text-amber-300">
+                <strong>Dica:</strong> Envie este link por WhatsApp, e-mail ou SMS para o cliente. Ele poderá assinar o documento diretamente pelo celular ou computador.
+              </p>
+            </div>
+          </div>
+
+          <div className="border-t border-slate-200 dark:border-zinc-800 bg-slate-50 dark:bg-zinc-900 px-4 sm:px-6 py-3">
+            <button
+              onClick={() => setShowSignatureLinkModal(false)}
+              className="w-full px-4 py-2.5 bg-slate-900 dark:bg-white text-white dark:text-slate-900 rounded-xl font-semibold transition hover:bg-slate-800 dark:hover:bg-slate-100"
+            >
+              Fechar
+            </button>
           </div>
         </div>
       </div>,

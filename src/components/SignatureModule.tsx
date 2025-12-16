@@ -1,6 +1,7 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Document, Page, pdfjs } from 'react-pdf';
+import { renderAsync } from 'docx-preview';
 import {
   FileText, Upload, Plus, Trash2, X, Check, Clock, CheckCircle, Send, Copy,
   User, Mail, Loader2, ChevronLeft, Eye, Filter, Search, MousePointer2,
@@ -23,64 +24,6 @@ import type { GeneratedDocument } from '../types/document.types';
 
 pdfjs.GlobalWorkerOptions.workerSrc = `//unpkg.com/pdfjs-dist@${pdfjs.version}/build/pdf.worker.min.mjs`;
 
-interface PdfViewerProps {
-  file: string;
-  scale: number;
-  numPages: number;
-  onLoadSuccess: (data: { numPages: number }) => void;
-  onLoadError: (err: any) => void;
-  onPageClick: (pageNum: number, xPercent: number, yPercent: number) => void;
-  pageRefs: React.MutableRefObject<Map<number, HTMLDivElement>>;
-}
-
-const PdfViewer = React.memo(({ file, scale, numPages, onLoadSuccess, onLoadError, onPageClick, pageRefs }: PdfViewerProps) => {
-  const onPageClickRef = useRef(onPageClick);
-  const onLoadSuccessRef = useRef(onLoadSuccess);
-  const onLoadErrorRef = useRef(onLoadError);
-
-  useEffect(() => { onPageClickRef.current = onPageClick; }, [onPageClick]);
-  useEffect(() => { onLoadSuccessRef.current = onLoadSuccess; }, [onLoadSuccess]);
-  useEffect(() => { onLoadErrorRef.current = onLoadError; }, [onLoadError]);
-
-  return (
-    <Document
-      file={file}
-      onLoadSuccess={onLoadSuccessRef.current}
-      onLoadError={onLoadErrorRef.current}
-      loading={null}
-      className="flex flex-col items-center gap-3"
-    >
-      {Array.from({ length: numPages }, (_, i) => i + 1).map((pageNum) => (
-        <div
-          key={pageNum}
-          ref={(el) => { if (el) pageRefs.current.set(pageNum, el); }}
-          data-page={pageNum}
-          className="relative bg-white shadow-xl"
-          style={{ width: 'fit-content' }}
-          onClick={(e) => {
-            e.preventDefault();
-            e.stopPropagation();
-            const rect = e.currentTarget.getBoundingClientRect();
-            const x = ((e.clientX - rect.left) / rect.width) * 100;
-            const y = ((e.clientY - rect.top) / rect.height) * 100;
-            onPageClickRef.current(pageNum, x, y);
-          }}
-        >
-          <Page
-            pageNumber={pageNum}
-            scale={scale}
-            renderAnnotationLayer={false}
-            renderTextLayer={false}
-          />
-        </div>
-      ))}
-    </Document>
-  );
-}, (prev, next) => prev.file === next.file && prev.scale === next.scale && prev.numPages === next.numPages);
-
-const MemoPdfDocument = React.memo((props: any) => <Document {...props} />);
-const MemoPdfPage = React.memo((props: any) => <Page {...props} />);
-
 type WizardStep = 'list' | 'upload' | 'signers' | 'position' | 'settings' | 'success';
 
 interface DraftSigner {
@@ -90,6 +33,7 @@ interface DraftSigner {
 interface DraftField {
   localId: string; signerId: string; fieldType: SignatureFieldType;
   pageNumber: number; xPercent: number; yPercent: number; wPercent: number; hPercent: number;
+  documentId: string; // ID do documento no viewer (main ou attachment-X)
 }
 
 interface SignatureSettings {
@@ -98,14 +42,31 @@ interface SignatureSettings {
 }
 
 const FIELD_PRESETS: Record<SignatureFieldType, { w: number; h: number; label: string; icon: React.ElementType }> = {
-  signature: { w: 25, h: 8, label: 'Assinatura', icon: PenTool },
-  initials: { w: 12, h: 6, label: 'Rubrica', icon: PenTool },
-  name: { w: 20, h: 5, label: 'Nome', icon: Type },
-  cpf: { w: 16, h: 5, label: 'CPF', icon: Hash },
-  date: { w: 14, h: 5, label: 'Data', icon: Calendar },
+  signature: { w: 10, h: 1.8, label: 'Assinatura', icon: PenTool },
+  initials: { w: 8, h: 3, label: 'Rubrica', icon: PenTool },
+  name: { w: 12, h: 2.5, label: 'Nome', icon: Type },
+  cpf: { w: 10, h: 2.5, label: 'CPF', icon: Hash },
+  date: { w: 10, h: 2.5, label: 'Data', icon: Calendar },
 };
 
-const SignatureModule: React.FC = () => {
+interface SignatureModulePrefillData {
+  documentPath: string;
+  documentName: string;
+  attachmentPaths?: string[] | null;
+  clientId: string;
+  clientName: string;
+  clientEmail?: string;
+  clientCpf?: string;
+  clientPhone?: string;
+  templateId?: string;
+}
+
+interface SignatureModuleProps {
+  prefillData?: SignatureModulePrefillData;
+  onParamConsumed?: () => void;
+}
+
+const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, onParamConsumed }) => {
   const toast = useToastContext();
   const { user } = useAuth();
 
@@ -121,9 +82,27 @@ const SignatureModule: React.FC = () => {
   const [selectedDocumentId, setSelectedDocumentId] = useState('');
   const [selectedDocumentName, setSelectedDocumentName] = useState('');
   const [selectedDocumentPath, setSelectedDocumentPath] = useState('');
+  const [selectedAttachmentPaths, setSelectedAttachmentPaths] = useState<string[] | null>(null);
+  
+  // Estado para múltiplos documentos no visualizador
+  interface ViewerDocument {
+    id: string;
+    name: string;
+    path: string;
+    type: 'main' | 'attachment';
+    blob?: Blob | null;
+    previewUrl?: string | null;
+    docxHtml?: string;
+    pageCount?: number;
+  }
+  const [viewerDocuments, setViewerDocuments] = useState<ViewerDocument[]>([]);
+  const [currentViewerDocIndex, setCurrentViewerDocIndex] = useState(0);
+  const [loadingViewerDoc, setLoadingViewerDoc] = useState(false);
+
   const [selectedClientId, setSelectedClientId] = useState<string | null>(null);
   const [selectedClientName, setSelectedClientName] = useState<string | null>(null);
   const [uploadedFile, setUploadedFile] = useState<File | null>(null);
+  const [uploadedFiles, setUploadedFiles] = useState<File[]>([]); // Múltiplos arquivos (envelope)
   const [dragOver, setDragOver] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -133,22 +112,28 @@ const SignatureModule: React.FC = () => {
   const [signerOrder, setSignerOrder] = useState<'none' | 'sequential'>('none');
 
   const [pdfPreviewUrl, setPdfPreviewUrl] = useState<string | null>(null);
+  const [isDocxFile, setIsDocxFile] = useState(false);
+  const [docxBlob, setDocxBlob] = useState<Blob | null>(null);
   const [fields, setFields] = useState<DraftField[]>([]);
-  const [selectedSignerForField, setSelectedSignerForField] = useState<string>('');
-  const [selectedFieldType, setSelectedFieldType] = useState<SignatureFieldType>('signature');
-  const [placingMode, setPlacingMode] = useState(false);
-  const [draggingField, setDraggingField] = useState<{ localId: string; pageNumber: number; startX: number; startY: number; originX: number; originY: number } | null>(null);
-  const positionContainerRef = useRef<HTMLDivElement>(null);
-  const pageRefsMap = useRef<Map<number, HTMLDivElement>>(new Map());
-  const placingModeRef = useRef<boolean>(false);
-  const selectedFieldTypeRef = useRef<SignatureFieldType>('signature');
-  const selectedSignerForFieldRef = useRef<string>('');
-  const signersRef = useRef<DraftSigner[]>([]);
+  const [draggingField, setDraggingField] = useState<{
+    localId: string;
+    pageNumber: number;
+    startX: number;
+    startY: number;
+    originX: number;
+    originY: number;
+    rect: { width: number; height: number };
+  } | null>(null);
+  const pdfContainerRef = useRef<HTMLDivElement>(null);
+  const docxContainerRef = useRef<HTMLDivElement>(null);
+  const viewerScrollRef = useRef<HTMLDivElement>(null);
 
-  const [pdfNumPages, setPdfNumPages] = useState<number>(0);
-  const [pdfCurrentPage, setPdfCurrentPage] = useState<number>(1);
-  const [pdfScale, setPdfScale] = useState<number>(1.3);
-  const [pdfLoading, setPdfLoading] = useState<boolean>(false);
+  const [pdfNumPages, setPdfNumPages] = useState(0);
+  const [pdfCurrentPage, setPdfCurrentPage] = useState(1);
+  const [pdfScale, setPdfScale] = useState(1);
+  const [pdfLoading, setPdfLoading] = useState(false);
+  const [pdfPreviewUrls, setPdfPreviewUrls] = useState<string[]>([]); // URLs para múltiplos PDFs
+  const [pdfNumPagesByDoc, setPdfNumPagesByDoc] = useState<Record<number, number>>({}); // Páginas por documento
 
   const [settings, setSettings] = useState<SignatureSettings>({
     requireCpf: false, requireBirthdate: false, allowRefusal: true,
@@ -167,6 +152,10 @@ const SignatureModule: React.FC = () => {
   const [auditLog, setAuditLog] = useState<SignatureAuditLog[]>([]);
   const [auditLogLoading, setAuditLogLoading] = useState(false);
   const [viewDocLoading, setViewDocLoading] = useState(false);
+  const [signerImages, setSignerImages] = useState<Record<string, { facial?: string; signature?: string }>>({});
+  const [deleteModalOpen, setDeleteModalOpen] = useState(false);
+  const [deleteRequestId, setDeleteRequestId] = useState<string | null>(null);
+  const [deleteLoading, setDeleteLoading] = useState(false);
 
   const loadData = useCallback(async () => {
     try {
@@ -186,6 +175,349 @@ const SignatureModule: React.FC = () => {
 
   useEffect(() => { loadData(); }, [loadData]);
 
+  const loadDocumentPreview = async (doc: ViewerDocument) => {
+    try {
+      setPdfLoading(true);
+      setLoadingViewerDoc(true);
+
+      currentViewerDocIdRef.current = doc.id;
+      
+      // Verificar tipo de arquivo
+      const isDocx = doc.path.toLowerCase().endsWith('.docx');
+      setIsDocxFile(isDocx);
+
+      if (isDocx && doc.docxHtml && docxContainerRef.current) {
+        docxRenderedRef.current = true;
+        docxHtmlContentRef.current = doc.docxHtml;
+        docxContainerRef.current.innerHTML = doc.docxHtml;
+        setPdfNumPages(doc.pageCount || 1);
+        setPdfCurrentPage(1);
+        setDocxBlob(null);
+        setPdfPreviewUrl(doc.previewUrl || null);
+        return;
+      }
+
+      if (doc.previewUrl) {
+        setPdfPreviewUrl(doc.previewUrl);
+      }
+      
+      // Obter URL assinada
+      const url = doc.previewUrl || (await signatureService.getDocumentPreviewUrl(doc.path));
+      if (url) {
+        setPdfPreviewUrl(url);
+
+        if (!doc.previewUrl) {
+          setViewerDocuments((prev) => prev.map((d) => (d.id === doc.id ? { ...d, previewUrl: url } : d)));
+        }
+        
+        // Se for DOCX, baixar o blob para renderizar
+        if (isDocx) {
+          // Resetar estados de renderização do DOCX apenas quando for renderizar de fato
+          docxRenderedRef.current = false;
+          docxHtmlContentRef.current = '';
+          if (docxContainerRef.current) {
+            docxContainerRef.current.innerHTML = '';
+          }
+
+          // Se já tivermos o blob em cache, usar ele
+          if (doc.blob) {
+            setDocxBlob(doc.blob);
+          } else {
+            const response = await fetch(url);
+            const blob = await response.blob();
+            setDocxBlob(blob);
+            
+            // Salvar blob em cache para evitar download repetido
+            setViewerDocuments(prev => prev.map(d => 
+              d.id === doc.id ? { ...d, blob } : d
+            ));
+          }
+        } else {
+          setDocxBlob(null);
+        }
+      }
+    } catch (err) {
+      console.error('Erro ao carregar preview:', err);
+      toast.error('Erro ao carregar documento');
+    } finally {
+      setPdfLoading(false);
+      setLoadingViewerDoc(false);
+    }
+  };
+
+  // Ref para evitar processamento duplicado do prefill
+  const prefillProcessedRef = useRef(false);
+  
+  // Processar dados prefill vindos do DocumentsModule
+  useEffect(() => {
+    if (prefillData && !prefillProcessedRef.current) {
+      prefillProcessedRef.current = true;
+      console.log('📄 Recebendo documento do módulo de documentos:', prefillData);
+      
+      // Configurar documento principal e anexos
+      setSelectedDocumentPath(prefillData.documentPath);
+      setSelectedDocumentName(prefillData.documentName);
+      setSelectedAttachmentPaths(prefillData.attachmentPaths || null);
+      
+      // Preparar lista de documentos para o visualizador
+      const docs: ViewerDocument[] = [
+        {
+          id: 'main',
+          name: prefillData.documentName,
+          path: prefillData.documentPath,
+          type: 'main'
+        }
+      ];
+      
+      if (prefillData.attachmentPaths && prefillData.attachmentPaths.length > 0) {
+        prefillData.attachmentPaths.forEach((path, index) => {
+          const name = path.split('/').pop() || `Anexo ${index + 1}`;
+          docs.push({
+            id: `attachment-${index}`,
+            name: name,
+            path: path,
+            type: 'attachment'
+          });
+        });
+      }
+      setViewerDocuments(docs);
+      setCurrentViewerDocIndex(0);
+
+      setSelectedClientId(prefillData.clientId);
+      setSelectedClientName(prefillData.clientName);
+      
+      console.log('📎 Anexos salvos no estado:', prefillData.attachmentPaths);
+      
+      // Detectar se é DOCX (baseado no documento atual)
+      const currentDocPath = docs[0].path;
+      const isDocx = currentDocPath.toLowerCase().endsWith('.docx');
+      setIsDocxFile(isDocx);
+      
+      // Configurar signatário com dados do cliente
+      setSigners([{
+        id: crypto.randomUUID(),
+        name: prefillData.clientName,
+        email: prefillData.clientEmail || '',
+        cpf: prefillData.clientCpf || '',
+        role: 'Signatário',
+        order: 1,
+        deliveryMethod: 'email',
+      }]);
+      
+      // Ir direto para a etapa de posicionamento
+      setWizardStep('position');
+      
+      // Carregar preview do primeiro documento
+      loadDocumentPreview(docs[0]);
+      
+      // Consumir parâmetros após um pequeno delay para garantir que os estados foram atualizados
+      setTimeout(() => {
+        if (onParamConsumed) {
+          onParamConsumed();
+        }
+      }, 100);
+    }
+  }, [prefillData, onParamConsumed, toast]);
+  
+  // Ref para controlar se o DOCX já foi renderizado e armazenar o HTML
+  const docxRenderedRef = useRef(false);
+  const docxHtmlContentRef = useRef<string>('');
+  const currentViewerDocIdRef = useRef<string>('main');
+  const docxRenderTokenRef = useRef(0);
+  
+  // Renderizar DOCX quando o blob estiver disponível
+  useEffect(() => {
+    if (isDocxFile && docxBlob && docxContainerRef.current && !docxRenderedRef.current) {
+      docxRenderedRef.current = true;
+      const renderToken = ++docxRenderTokenRef.current;
+      const renderDocId = currentViewerDocIdRef.current;
+      
+      // Adicionar estilos para separador de páginas
+      const styleId = 'docx-page-break-styles';
+      if (!document.getElementById(styleId)) {
+        const style = document.createElement('style');
+        style.id = styleId;
+        style.textContent = `
+          .docx-wrapper {
+            background: #e2e8f0 !important;
+            padding: 24px !important;
+          }
+          /* Estilo para sections (páginas) - FORÇAR A4 FIXO */
+          .docx-wrapper > section,
+          .docx-wrapper article,
+          .docx-wrapper .docx {
+            width: 794px !important; /* A4 width at 96 DPI */
+            min-width: 794px !important;
+            max-width: 794px !important;
+            background: white !important;
+            box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1) !important;
+            margin-bottom: 30px !important;
+            border-radius: 4px !important;
+            position: relative !important;
+            padding: 40px !important;
+            /* margin: 0 auto !important; Centralizar */
+          }
+          /* Centralizar o wrapper */
+          .docx-wrapper {
+             display: flex !important;
+             flex-direction: column !important;
+             align-items: center !important;
+          }
+          /* Separador visual entre páginas */
+          .docx-wrapper > section::after,
+          .docx-wrapper article::after {
+            content: '— Fim da Página —' !important;
+            display: block !important;
+            text-align: center !important;
+            padding: 16px !important;
+            margin-top: 20px !important;
+            color: #64748b !important;
+            font-size: 12px !important;
+            font-weight: 500 !important;
+            border-top: 2px dashed #cbd5e1 !important;
+          }
+          .docx-wrapper > section:last-child::after,
+          .docx-wrapper article:last-child::after {
+            content: '— Última Página —' !important;
+            border-top-color: #3b82f6 !important;
+            color: #3b82f6 !important;
+          }
+          /* Forçar quebra de página visual em elementos de quebra */
+          .docx-wrapper [style*="page-break"],
+          .docx-wrapper [style*="break-after"],
+          .docx-wrapper [style*="break-before"] {
+            margin-top: 40px !important;
+            padding-top: 40px !important;
+            border-top: 3px dashed #94a3b8 !important;
+          }
+          .docx-wrapper [style*="page-break"]::before,
+          .docx-wrapper [style*="break-after"]::before,
+          .docx-wrapper [style*="break-before"]::before {
+            content: '📄 Nova Página' !important;
+            display: block !important;
+            text-align: center !important;
+            color: #64748b !important;
+            font-size: 11px !important;
+            margin-bottom: 20px !important;
+            margin-top: -30px !important;
+            background: #e2e8f0 !important;
+            padding: 4px 12px !important;
+            width: fit-content !important;
+            margin-left: auto !important;
+            margin-right: auto !important;
+            border-radius: 4px !important;
+          }
+        `;
+        document.head.appendChild(style);
+      }
+      
+      renderAsync(docxBlob, docxContainerRef.current, undefined, {
+        className: 'docx-wrapper',
+        inWrapper: true,
+        ignoreWidth: false,
+        ignoreHeight: false,
+        breakPages: true,
+        renderHeaders: true,
+        renderFooters: true,
+        renderFootnotes: true,
+      })
+        .then(() => {
+          // Se o usuário trocou de documento no meio do render, ignorar o resultado
+          if (renderToken !== docxRenderTokenRef.current || renderDocId !== currentViewerDocIdRef.current) {
+            return;
+          }
+
+          console.log('✅ DOCX renderizado com sucesso');
+
+          const container = docxContainerRef.current;
+          if (!container) {
+            setPdfNumPages(1);
+            return;
+          }
+
+          const wrapper = container.querySelector('.docx-wrapper');
+          const sectionsEls = container.querySelectorAll('section');
+          const articlesEls = container.querySelectorAll('article');
+          const docxEls = container.querySelectorAll('.docx');
+          const pageBreaksEls = container.querySelectorAll('[style*="page-break"], [style*="break-"]');
+
+          console.log('📊 Estrutura do DOCX:', {
+            hasWrapper: !!wrapper,
+            sections: sectionsEls.length,
+            articles: articlesEls.length,
+            docx: docxEls.length,
+            pageBreaks: pageBreaksEls.length,
+            firstChildTag: container.firstElementChild?.tagName,
+          });
+
+          // Salvar o HTML renderizado para restaurar se necessário
+          docxHtmlContentRef.current = container.innerHTML;
+
+          // Contar páginas renderizadas.
+          // Preferência: section/article/.docx. Fallback: estimar por altura (A4) quando vier uma única página “alta”.
+          const explicitPages = (sectionsEls.length || articlesEls.length || docxEls.length);
+          let pageCount = explicitPages || 1;
+          if (pageCount <= 1 && wrapper) {
+            const wrapperEl = wrapper as HTMLElement;
+            const a4Height = 1123;
+            const estimated = Math.max(1, Math.ceil(wrapperEl.scrollHeight / a4Height));
+            if (estimated > pageCount) pageCount = estimated;
+          }
+          console.log(`📄 ${pageCount} página(s) detectada(s)`);
+          setPdfNumPages(pageCount);
+
+          // Cache do HTML renderizado por documento (para trocar anexos sem recarregar)
+          const html = container.innerHTML || '';
+          setViewerDocuments((prev) =>
+            prev.map((d) => (d.id === renderDocId ? { ...d, docxHtml: html, pageCount } : d))
+          );
+        })
+        .catch((err: any) => {
+          // Evitar que um erro antigo “trave” novos renders
+          if (renderToken !== docxRenderTokenRef.current || renderDocId !== currentViewerDocIdRef.current) {
+            return;
+          }
+          console.error('Erro ao renderizar DOCX:', err);
+        });
+    }
+  }, [isDocxFile, docxBlob]);
+  
+  // Restaurar conteúdo do DOCX se foi perdido durante re-renderização
+  // (React pode limpar DOM injetado por bibliotecas externas ao re-renderizar)
+  useLayoutEffect(() => {
+    if (wizardStep !== 'position') return;
+    if (!isDocxFile) return;
+    if (!docxRenderedRef.current) return;
+    if (!docxContainerRef.current) return;
+    if (!docxHtmlContentRef.current) return;
+
+    // Verificar se o container está vazio mas deveria ter conteúdo
+    if (docxContainerRef.current.innerHTML === '' || !docxContainerRef.current.querySelector('.docx-wrapper')) {
+      console.log('🔄 Restaurando conteúdo do DOCX...');
+      const prevScrollTop = viewerScrollRef.current?.scrollTop ?? 0;
+      docxContainerRef.current.innerHTML = docxHtmlContentRef.current;
+
+      // Evitar "pular" para o topo quando o DOM é restaurado
+      requestAnimationFrame(() => {
+        if (viewerScrollRef.current) viewerScrollRef.current.scrollTop = prevScrollTop;
+      });
+    }
+  });
+
+  useEffect(() => {
+    if (wizardStep !== 'position') return;
+    setFields((prev) => {
+      let changed = false;
+      const next = prev.map((f) => {
+        if (f.fieldType !== 'signature') return f;
+        if (f.hPercent <= FIELD_PRESETS.signature.h) return f;
+        changed = true;
+        return { ...f, hPercent: FIELD_PRESETS.signature.h };
+      });
+      return changed ? next : prev;
+    });
+  }, [wizardStep]);
+
   const filteredRequests = useMemo(() => {
     return requests.filter((req) => {
       const matchesSearch = !searchTerm || req.document_name.toLowerCase().includes(searchTerm.toLowerCase()) || req.client_name?.toLowerCase().includes(searchTerm.toLowerCase());
@@ -197,10 +529,19 @@ const SignatureModule: React.FC = () => {
   const resetWizard = () => {
     setWizardStep('list');
     setSelectedDocumentId(''); setSelectedDocumentName(''); setSelectedDocumentPath('');
+    setSelectedAttachmentPaths(null);
     setSelectedClientId(null); setSelectedClientName(null);
     setUploadedFile(null);
+    setUploadedFiles([]);
     setSigners([{ id: crypto.randomUUID(), name: '', email: '', cpf: '', role: 'Assinar', order: 1, deliveryMethod: 'email' }]);
     setFields([]); setPdfPreviewUrl(null); setCreatedRequest(null);
+    setPdfPreviewUrls([]); setPdfNumPagesByDoc({});
+    setIsDocxFile(false); setDocxBlob(null);
+    setViewerDocuments([]); // Limpar documentos do viewer
+    setCurrentViewerDocIndex(0); // Resetar índice
+    docxRenderedRef.current = false; // Resetar flag de renderização do DOCX
+    docxHtmlContentRef.current = ''; // Resetar HTML do DOCX
+    prefillProcessedRef.current = false; // Resetar flag de prefill
     setSettings({ requireCpf: false, requireBirthdate: false, allowRefusal: true, blockAfterDeadline: false, expiresAt: '', signatureAppearance: 'signature_only' });
   };
 
@@ -210,6 +551,42 @@ const SignatureModule: React.FC = () => {
     setSelectedDocumentPath('');
     setSelectedClientId(null);
     setSelectedClientName(null);
+    setUploadedFiles([file]);
+  };
+
+  // Múltiplos arquivos (envelope)
+  const handleFilesSelect = (fileList: FileList) => {
+    const files = Array.from(fileList).filter((f) => f.type.includes('pdf'));
+    if (files.length === 0) { toast.error('Selecione arquivos PDF'); return; }
+    setUploadedFiles(files);
+    setUploadedFile(files[0]);
+    setSelectedDocumentName(files[0].name);
+    setSelectedDocumentId('');
+    setSelectedDocumentPath('');
+    setSelectedClientId(null);
+    setSelectedClientName(null);
+  };
+
+  const clearUploadedFiles = () => {
+    setUploadedFiles([]);
+    setUploadedFile(null);
+    setSelectedDocumentName('');
+    setSelectedDocumentId('');
+    setSelectedDocumentPath('');
+  };
+
+  const removeUploadedFileAt = (index: number) => {
+    setUploadedFiles((prev) => {
+      const next = prev.filter((_, i) => i !== index);
+      if (next.length === 0) {
+        setUploadedFile(null);
+        setSelectedDocumentName('');
+      } else if (index === 0) {
+        setUploadedFile(next[0]);
+        setSelectedDocumentName(next[0].name);
+      }
+      return next;
+    });
   };
 
   const handleSelectGeneratedDoc = async (doc: GeneratedDocument) => {
@@ -221,6 +598,39 @@ const SignatureModule: React.FC = () => {
     setUploadedFile(null);
     if (doc.file_path) {
       try { const url = await documentTemplateService.getGeneratedDocumentSignedUrl(doc); setPdfPreviewUrl(url); } catch {}
+    }
+    
+    // Carregar campos de assinatura do template original
+    if (doc.template_id) {
+      try {
+        const template = await documentTemplateService.getTemplate(doc.template_id);
+        if (template?.signature_field_config) {
+          const config = template.signature_field_config;
+          const configArray = Array.isArray(config) ? config : [config];
+          
+          // Converter configuração do template para DraftField
+          const loadedFields: DraftField[] = configArray
+            .filter(c => c !== null)
+            .map((c, idx) => ({
+              localId: crypto.randomUUID(),
+              signerId: signers[0]?.id || '', // Associar ao primeiro signatário por padrão
+              fieldType: 'signature' as SignatureFieldType,
+              pageNumber: c.page || 1,
+              xPercent: c.x_percent || 0,
+              yPercent: c.y_percent || 0,
+              wPercent: c.width_percent || FIELD_PRESETS.signature.w,
+              hPercent: c.height_percent || FIELD_PRESETS.signature.h,
+              documentId: 'main', // Padrão: documento principal
+            }));
+          
+          if (loadedFields.length > 0) {
+            setFields(loadedFields);
+            toast.success(`${loadedFields.length} campo(s) de assinatura carregado(s) do template`);
+          }
+        }
+      } catch (e) {
+        console.warn('Erro ao carregar campos do template:', e);
+      }
     }
   };
 
@@ -240,13 +650,29 @@ const SignatureModule: React.FC = () => {
     }
   }, [wizardStep, pdfPreviewUrl, uploadedFile]);
 
+  // Gerar URLs para múltiplos PDFs quando entrar no passo position
+  useEffect(() => {
+    if (wizardStep === 'position' && uploadedFiles.length > 0 && pdfPreviewUrls.length === 0) {
+      const urls = uploadedFiles.map((f) => URL.createObjectURL(f));
+      setPdfPreviewUrls(urls);
+      setPdfNumPagesByDoc({});
+    }
+  }, [wizardStep, uploadedFiles, pdfPreviewUrls.length]);
+
   useEffect(() => {
     if (!pdfPreviewUrl) return;
     setPdfLoading(true);
     setPdfNumPages(0);
     setPdfCurrentPage(1);
-    setPdfScale(1.3);
+    setPdfScale(1);
   }, [pdfPreviewUrl]);
+
+  // Entrar no passo de posicionamento com "Adicionar campo" ativo por padrão
+  useEffect(() => {
+    if (wizardStep !== 'position') return;
+    setPositionMode('place');
+    setIsPlacingField(true);
+  }, [wizardStep]);
 
   const handlePdfLoadSuccess = useCallback(({ numPages }: { numPages: number }) => {
     setPdfNumPages(numPages);
@@ -259,52 +685,234 @@ const SignatureModule: React.FC = () => {
     toast.error('Erro ao carregar o PDF');
   }, [toast]);
 
-  useEffect(() => { if (signers.length > 0 && !selectedSignerForField) setSelectedSignerForField(signers[0].id); }, [signers, selectedSignerForField]);
+  const pdfPageNode = useMemo(() => {
+    if (isDocxFile || !pdfPreviewUrl) return null;
 
-  useEffect(() => { placingModeRef.current = placingMode; }, [placingMode]);
-  useEffect(() => { selectedFieldTypeRef.current = selectedFieldType; }, [selectedFieldType]);
-  useEffect(() => { selectedSignerForFieldRef.current = selectedSignerForField; }, [selectedSignerForField]);
-  useEffect(() => { signersRef.current = signers; }, [signers]);
+    return (
+      <Document
+        file={pdfPreviewUrl}
+        onLoadSuccess={handlePdfLoadSuccess}
+        onLoadError={handlePdfLoadError}
+        loading={null}
+      >
+        <Page
+          pageNumber={pdfCurrentPage}
+          scale={pdfScale}
+          renderTextLayer={false}
+          renderAnnotationLayer={false}
+        />
+      </Document>
+    );
+  }, [handlePdfLoadError, handlePdfLoadSuccess, isDocxFile, pdfCurrentPage, pdfPreviewUrl, pdfScale]);
 
-  const handlePageClick = useCallback((pageNum: number, xPercent: number, yPercent: number) => {
-    if (!placingModeRef.current) return;
-    const preset = FIELD_PRESETS[selectedFieldTypeRef.current];
-    const currentSigners = signersRef.current;
-    const signerId = selectedSignerForFieldRef.current || currentSigners[0]?.id;
+  // Estado simplificado para posicionamento
+  const [positionMode, setPositionMode] = useState<'select' | 'place'>('select');
+  const [currentSignerIndex, setCurrentSignerIndex] = useState(0);
+  const [currentFieldType, setCurrentFieldType] = useState<SignatureFieldType>('signature');
+  const [isPlacingField, setIsPlacingField] = useState(false);
+
+  // Forçar apenas campo de assinatura (UI e lógica)
+  useEffect(() => {
+    if (wizardStep !== 'position') return;
+    if (currentFieldType !== 'signature') setCurrentFieldType('signature');
+  }, [wizardStep, currentFieldType]);
+
+  // Função auxiliar para obter coordenadas relativas ao PDF/DOCX
+  const getPdfCoordinates = (e: React.MouseEvent) => {
+    // Para DOCX, usar o elemento da página (section/article) específico
+    if (isDocxFile && docxContainerRef.current) {
+      const target = e.target as HTMLElement;
+
+      const wrapper = docxContainerRef.current.querySelector('.docx-wrapper') || docxContainerRef.current;
+      const explicitPages = Array.from(wrapper.querySelectorAll('section, article')) as HTMLElement[];
+      const hasMultipleExplicitPages = explicitPages.length > 1;
+
+      if (hasMultipleExplicitPages) {
+        const pageEl = (target.closest('section') || target.closest('article')) as HTMLElement | null;
+        if (!pageEl) {
+          console.warn('Clique fora da área da página');
+          return null;
+        }
+
+        const rect = pageEl.getBoundingClientRect();
+        const x = ((e.clientX - rect.left) / rect.width) * 100;
+        const y = ((e.clientY - rect.top) / rect.height) * 100;
+
+        const pageIndex = explicitPages.indexOf(pageEl);
+        const pageNumber = pageIndex >= 0 ? pageIndex + 1 : 1;
+        return { x, y, rect, pageNumber };
+      }
+
+      // Fallback robusto: tratar como páginas virtuais A4 dentro do conteúdo.
+      // Preferir .docx (conteúdo) ao wrapper (que pode ter padding/fundo).
+      const baseEl = (wrapper.querySelector('.docx') as HTMLElement | null) || (wrapper as HTMLElement);
+      const rect = baseEl.getBoundingClientRect();
+
+      const a4Ratio = 1123 / 794;
+      const pageHeightPx = rect.width * a4Ratio;
+
+      const relX = e.clientX - rect.left;
+      const relY = e.clientY - rect.top;
+
+      const pageNumber = Math.max(1, Math.floor(relY / pageHeightPx) + 1);
+      const yInPage = relY - (pageNumber - 1) * pageHeightPx;
+
+      const x = (relX / rect.width) * 100;
+      const y = (yInPage / pageHeightPx) * 100;
+
+      return { x, y, rect, pageNumber };
+    }
+    
+    // Para PDF, usar o container do react-pdf
+    if (!pdfContainerRef.current) return null;
+    const pdfElement = pdfContainerRef.current.querySelector('.react-pdf__Page') as HTMLElement;
+    if (!pdfElement) return null;
+    
+    const rect = pdfElement.getBoundingClientRect();
+    const x = ((e.clientX - rect.left) / rect.width) * 100;
+    const y = ((e.clientY - rect.top) / rect.height) * 100;
+    
+    return { x, y, rect, pageNumber: pdfCurrentPage };
+  };
+
+  // Adicionar campo na posição clicada
+  const addFieldAtPosition = (e: React.MouseEvent) => {
+    console.log('🖱️ addFieldAtPosition chamado', { isPlacingField, positionMode, isDocxFile });
+    
+    if (!isPlacingField || positionMode !== 'place') {
+      console.log('❌ Não está em modo de posicionamento');
+      return;
+    }
+    
+    const coords = getPdfCoordinates(e);
+    console.log('📍 Coordenadas:', coords);
+    if (!coords) {
+      console.log('❌ Não foi possível obter coordenadas');
+      return;
+    }
+    
+    const currentSigner = signers[currentSignerIndex];
+    if (!currentSigner) {
+      console.log('❌ Signatário não encontrado');
+      return;
+    }
+    
+    const preset = FIELD_PRESETS.signature;
+    
+    // Identificar o documento atual
+    const currentDoc = viewerDocuments[currentViewerDocIndex];
+    const docId = currentDoc ? currentDoc.id : 'main';
+
+    const prevScrollTop = viewerScrollRef.current?.scrollTop ?? 0;
+
     const newField: DraftField = {
       localId: crypto.randomUUID(),
-      signerId,
-      fieldType: selectedFieldTypeRef.current,
-      pageNumber: pageNum,
-      xPercent: Math.max(0, Math.min(100 - preset.w, xPercent)),
-      yPercent: Math.max(0, Math.min(100 - preset.h, yPercent)),
+      signerId: currentSigner.id,
+      fieldType: 'signature',
+      pageNumber: coords.pageNumber,
+      xPercent: Math.max(0, Math.min(100 - preset.w, coords.x)),
+      yPercent: Math.max(0, Math.min(100 - preset.h, coords.y)),
       wPercent: preset.w,
       hPercent: preset.h,
+      documentId: docId,
     };
+    
+    setFields(prev => [...prev, newField]);
+    toast.success(`Campo ${preset.label} adicionado para ${currentSigner.name || currentSigner.email}`);
 
-    setFields((prev) => [...prev, newField]);
-    placingModeRef.current = false; // Update ref immediately
-    setPlacingMode(false);
-    toast.success(`Campo ${preset.label} adicionado na página ${pageNum}`);
-  }, [toast]); // `toast` is the only dependency as it's an external utility
+    // Evitar voltar ao topo do container após setState
+    requestAnimationFrame(() => {
+      if (viewerScrollRef.current) viewerScrollRef.current.scrollTop = prevScrollTop;
+    });
+    
+    // Manter modo de posicionamento ativo para adicionar vários campos em sequência
+    setPositionMode('place');
+    setIsPlacingField(true);
+  };
 
+  // Remover campo
+  const removeField = (fieldId: string) => {
+    setFields(prev => prev.filter(f => f.localId !== fieldId));
+    toast.success('Campo removido');
+  };
+
+  // Iniciar drag de campo
+  const startDragging = (e: React.MouseEvent, field: DraftField) => {
+    e.preventDefault();
+    e.stopPropagation();
+
+    // No DOCX, ao clicar no overlay do campo, o e.target pode não estar dentro de section/article
+    // (logo getPdfCoordinates pode falhar). Então derivamos o rect da página pelo pageNumber.
+    let rect: DOMRect | null = null;
+    if (isDocxFile && docxContainerRef.current) {
+      const wrapper = docxContainerRef.current.querySelector('.docx-wrapper') || docxContainerRef.current;
+      const explicitPages = Array.from(wrapper.querySelectorAll('section, article')) as HTMLElement[];
+
+      if (explicitPages.length > 1) {
+        const pageEl = explicitPages[field.pageNumber - 1] || explicitPages[0] || (wrapper as HTMLElement);
+        rect = pageEl.getBoundingClientRect();
+      } else {
+        const baseEl = (wrapper.querySelector('.docx') as HTMLElement | null) || (wrapper as HTMLElement);
+        const baseRect = baseEl.getBoundingClientRect();
+        const a4Ratio = 1123 / 794;
+        const pageHeightPx = baseRect.width * a4Ratio;
+        rect = new DOMRect(baseRect.x, baseRect.y, baseRect.width, pageHeightPx);
+      }
+    } else {
+      const coords = getPdfCoordinates(e);
+      if (!coords) return;
+      rect = coords.rect;
+    }
+
+    if (!rect) return;
+    
+    setDraggingField({
+      localId: field.localId,
+      pageNumber: field.pageNumber,
+      startX: e.clientX,
+      startY: e.clientY,
+      originX: field.xPercent,
+      originY: field.yPercent,
+      rect: { width: rect.width, height: rect.height },
+    });
+  };
+
+  // Handler para clique no PDF
+  const handlePdfClick = (e: React.MouseEvent) => {
+    if (positionMode === 'place') {
+      addFieldAtPosition(e);
+    }
+  };
+
+  // Atualizar mouse move handler
   useEffect(() => {
     if (!draggingField) return;
-    const handleMove = (e: MouseEvent) => {
-      const pageEl = pageRefsMap.current.get(draggingField.pageNumber);
-      if (!pageEl) return;
-      const rect = pageEl.getBoundingClientRect();
-      const dx = ((e.clientX - draggingField.startX) / rect.width) * 100;
-      const dy = ((e.clientY - draggingField.startY) / rect.height) * 100;
-      setFields((prev) => prev.map((f) => f.localId !== draggingField.localId ? f : {
-        ...f, xPercent: Math.max(0, Math.min(100 - f.wPercent, draggingField.originX + dx)),
-        yPercent: Math.max(0, Math.min(100 - f.hPercent, draggingField.originY + dy)),
+    
+    const handleMouseMove = (e: MouseEvent) => {
+      const dx = ((e.clientX - draggingField.startX) / draggingField.rect.width) * 100;
+      const dy = ((e.clientY - draggingField.startY) / draggingField.rect.height) * 100;
+      
+      setFields(prev => prev.map(f => {
+        if (f.localId !== draggingField.localId) return f;
+        
+        const newX = Math.max(0, Math.min(100 - f.wPercent, draggingField.originX + dx));
+        const newY = Math.max(0, Math.min(100 - f.hPercent, draggingField.originY + dy));
+        
+        return { ...f, xPercent: newX, yPercent: newY };
       }));
     };
-    const handleUp = () => setDraggingField(null);
-    window.addEventListener('mousemove', handleMove);
-    window.addEventListener('mouseup', handleUp);
-    return () => { window.removeEventListener('mousemove', handleMove); window.removeEventListener('mouseup', handleUp); };
+    
+    const handleMouseUp = () => {
+      setDraggingField(null);
+    };
+    
+    document.addEventListener('mousemove', handleMouseMove);
+    document.addEventListener('mouseup', handleMouseUp);
+    
+    return () => {
+      document.removeEventListener('mousemove', handleMouseMove);
+      document.removeEventListener('mouseup', handleMouseUp);
+    };
   }, [draggingField]);
 
   const handleSubmit = async () => {
@@ -320,18 +928,37 @@ const SignatureModule: React.FC = () => {
       const payload: CreateSignatureRequestDTO = {
         document_id: docId,
         document_name: selectedDocumentName, document_path: docPath,
+        attachment_paths: selectedAttachmentPaths,
         client_id: selectedClientId, client_name: selectedClientName, auth_method: 'signature_only' as SignerAuthMethod,
         expires_at: settings.expiresAt || null,
         signers: signers.map((s, i) => ({ name: s.name, email: s.email, cpf: s.cpf || null, phone: null, role: s.role || null, order: i + 1 })),
       };
+      
+      console.log('📎 Criando solicitação com anexos:', selectedAttachmentPaths);
+      console.log('📦 Payload completo:', JSON.stringify(payload, null, 2));
       const created = await signatureService.createRequest(payload);
+      console.log('✅ Solicitação criada:', created.id, 'attachment_paths no response:', (created as any).attachment_paths);
+      console.log('📍 Campos de assinatura no estado:', fields.length, fields.map(f => ({ doc: f.documentId, page: f.pageNumber, type: f.fieldType })));
       if (fields.length > 0) {
-        const fieldsPayload = fields.map((f) => {
+        const fieldsPayload = fields.filter((f) => f.fieldType === 'signature').map((f) => {
           const signer = signers.find((s) => s.id === f.signerId);
           const createdSigner = created.signers.find((cs) => cs.email === signer?.email);
-          return { signer_id: createdSigner?.id ?? null, field_type: f.fieldType, page_number: f.pageNumber, x_percent: f.xPercent, y_percent: f.yPercent, w_percent: f.wPercent, h_percent: f.hPercent };
+          return {
+            document_id: f.documentId,
+            signer_id: createdSigner?.id ?? null,
+            field_type: f.fieldType,
+            page_number: f.pageNumber,
+            x_percent: f.xPercent,
+            y_percent: f.yPercent,
+            w_percent: f.wPercent,
+            h_percent: f.hPercent,
+          };
         });
-        await signatureFieldsService.upsertFields(created.id, fieldsPayload);
+        console.log('📍 Salvando campos no banco:', fieldsPayload.length, fieldsPayload);
+        const savedFields = await signatureFieldsService.upsertFields(created.id, fieldsPayload);
+        console.log('📍 Campos salvos:', savedFields);
+      } else {
+        console.warn('⚠️ NENHUM campo de assinatura para salvar!');
       }
       setCreatedRequest(created); setWizardStep('success'); toast.success('Documento enviado!'); loadData();
     } catch (error: any) { toast.error(error.message || 'Erro'); } finally { setWizardLoading(false); }
@@ -341,6 +968,51 @@ const SignatureModule: React.FC = () => {
     try { 
       const data = await signatureService.getRequestWithSigners(req.id); 
       setDetailsRequest(data);
+      
+      // Carregar imagens dos signatários usando URLs assinadas (tentar múltiplos buckets)
+      const bucketsToTry = ['document-templates', 'generated-documents', 'signatures'];
+      
+      const tryGetSignedUrl = async (path: string): Promise<string | null> => {
+        for (const bucket of bucketsToTry) {
+          try {
+            const { data: signedData, error } = await supabase.storage
+              .from(bucket)
+              .createSignedUrl(path, 3600);
+            if (!error && signedData?.signedUrl) {
+              console.log(`[IMG] Encontrado em ${bucket}:`, path);
+              return signedData.signedUrl;
+            }
+          } catch (e) {
+            // Continuar tentando outros buckets
+          }
+        }
+        console.warn('[IMG] Não encontrado em nenhum bucket:', path);
+        return null;
+      };
+      
+      if (data?.signers) {
+        const imagePromises = data.signers.map(async (signer) => {
+          const images: { facial?: string; signature?: string } = {};
+          
+          if (signer.facial_image_path) {
+            images.facial = await tryGetSignedUrl(signer.facial_image_path) || undefined;
+          }
+          
+          if (signer.signature_image_path) {
+            images.signature = await tryGetSignedUrl(signer.signature_image_path) || undefined;
+          }
+          
+          return { signerId: signer.id, images };
+        });
+        
+        const imageResults = await Promise.all(imagePromises);
+        const imagesMap: Record<string, { facial?: string; signature?: string }> = {};
+        imageResults.forEach(({ signerId, images }) => {
+          imagesMap[signerId] = images;
+        });
+        setSignerImages(imagesMap);
+      }
+      
       // Carregar audit log
       setAuditLogLoading(true);
       try {
@@ -357,15 +1029,27 @@ const SignatureModule: React.FC = () => {
 
   const copyLink = (token: string) => { navigator.clipboard.writeText(signatureService.generatePublicSigningUrl(token)); toast.success('Link copiado!'); };
 
-  const handleDeleteRequest = async (requestId: string) => {
-    if (!confirm('Tem certeza que deseja excluir este documento? Esta ação não pode ser desfeita.')) return;
+  const handleDeleteRequest = (requestId: string) => {
+    setDeleteRequestId(requestId);
+    setDeleteModalOpen(true);
+  };
+
+  const confirmDelete = async (deleteFilesFromServer: boolean) => {
+    if (!deleteRequestId) return;
     try {
-      await signatureService.deleteRequest(requestId);
-      toast.success('Documento excluído!');
+      setDeleteLoading(true);
+      await signatureService.deleteRequest(deleteRequestId, deleteFilesFromServer);
+      toast.success(deleteFilesFromServer 
+        ? 'Documento excluído permanentemente do sistema e servidor!' 
+        : 'Documento removido do painel (arquivos mantidos no servidor)');
       setDetailsRequest(null);
+      setDeleteModalOpen(false);
+      setDeleteRequestId(null);
       loadData();
     } catch (error: any) {
       toast.error(error.message || 'Erro ao excluir');
+    } finally {
+      setDeleteLoading(false);
     }
   };
 
@@ -376,12 +1060,6 @@ const SignatureModule: React.FC = () => {
     }
     try {
       toast.info('Preparando download...');
-      const url = await signatureService.getDocumentPreviewUrl(request.document_path);
-      if (!url) {
-        toast.error('Erro ao obter URL do documento');
-        return;
-      }
-      console.log('[DOWNLOAD] URL do documento:', url);
       
       // Buscar dados atualizados do request com signers do banco
       const freshRequest = await signatureService.getRequestWithSigners(request.id);
@@ -390,34 +1068,224 @@ const SignatureModule: React.FC = () => {
         return;
       }
       
-      // Se tem signatário que assinou, gerar PDF com assinatura visual
+      // Se tem signatário que assinou, verificar se já existe PDF assinado salvo
       const signedSigner = freshRequest.signers.find(s => s.status === 'signed');
       console.log('[DOWNLOAD] signedSigner:', signedSigner?.name, signedSigner?.status);
       
       if (signedSigner) {
+        // Verificar se já existe PDF assinado salvo no bucket 'assinados'
+        if (signedSigner.signed_document_path) {
+          const signedUrl = await pdfSignatureService.getSignedPdfUrl(signedSigner.signed_document_path);
+          if (signedUrl) {
+            console.log('[DOWNLOAD] Usando PDF já salvo:', signedSigner.signed_document_path);
+            await downloadOriginalPdf(signedUrl, `${request.document_name}_assinado.pdf`);
+            return;
+          }
+        }
+        
+        // Se não existe, verificar se é DOCX ou PDF
+        const docPath = request.document_path?.toLowerCase() || '';
+        const isDocxFile = docPath.endsWith('.docx') || docPath.endsWith('.doc');
+        
+        if (isDocxFile) {
+          // DOCX: se não houver PDF completo salvo, gerar agora (offscreen) e salvar no signer.
+          toast.info('Documento DOCX - gerando PDF completo...');
+
+          const freshSigner = await signatureService.getSignerById(signedSigner.id);
+          if (!freshSigner) {
+            toast.error('Erro ao carregar dados do signatário');
+            return;
+          }
+
+          const ensureOffscreenDocxStyle = () => {
+            const styleId = 'docx-offscreen-style';
+            if (document.getElementById(styleId)) return;
+            const style = document.createElement('style');
+            style.id = styleId;
+            style.textContent = `
+              .docx-wrapper {
+                background: #ffffff !important;
+                padding: 0 !important;
+              }
+              .docx-wrapper > section,
+              .docx-wrapper article,
+              .docx-wrapper .docx {
+                width: 794px !important;
+                min-width: 794px !important;
+                max-width: 794px !important;
+                background: #ffffff !important;
+              }
+            `;
+            document.head.appendChild(style);
+          };
+
+          const renderDocxOffscreen = async (docxUrl: string) => {
+            ensureOffscreenDocxStyle();
+            const res = await fetch(docxUrl);
+            if (!res.ok) throw new Error(`Falha ao baixar DOCX: HTTP ${res.status}`);
+            const blob = await res.blob();
+
+            const host = document.createElement('div');
+            host.style.position = 'fixed';
+            host.style.left = '-100000px';
+            host.style.top = '0';
+            host.style.width = '794px';
+            host.style.background = '#ffffff';
+            host.style.zIndex = '-1';
+            host.style.pointerEvents = 'none';
+            document.body.appendChild(host);
+
+            await renderAsync(blob, host, undefined, {
+              className: 'docx-wrapper',
+              inWrapper: true,
+              ignoreWidth: false,
+              ignoreHeight: false,
+              breakPages: true,
+              renderHeaders: true,
+              renderFooters: true,
+              renderFootnotes: true,
+            });
+
+            return host;
+          };
+
+          const attachmentPaths = (freshRequest as any).attachment_paths as string[] | null | undefined;
+
+          const cleanupHosts: HTMLElement[] = [];
+          try {
+            const mainDocUrl = await signatureService.getDocumentPreviewUrl(request.document_path);
+            if (!mainDocUrl) {
+              toast.error('Erro ao obter URL do documento');
+              return;
+            }
+
+            const mainHost = await renderDocxOffscreen(mainDocUrl);
+            cleanupHosts.push(mainHost);
+
+            const attachmentDocxItems: { documentId: string; container: HTMLElement }[] = [];
+            const attachmentPdfItems: { documentId: string; url: string }[] = [];
+
+            for (let i = 0; i < (attachmentPaths ?? []).length; i++) {
+              const p = attachmentPaths?.[i];
+              if (!p) continue;
+              const lower = p.toLowerCase();
+
+              if (lower.endsWith('.pdf')) {
+                const u = await signatureService.getDocumentPreviewUrl(p);
+                if (u) attachmentPdfItems.push({ documentId: `attachment-${i}`, url: u });
+                continue;
+              }
+
+              if (lower.endsWith('.docx') || lower.endsWith('.doc')) {
+                const u = await signatureService.getDocumentPreviewUrl(p);
+                if (!u) continue;
+                const host = await renderDocxOffscreen(u);
+                cleanupHosts.push(host);
+                attachmentDocxItems.push({ documentId: `attachment-${i}`, container: host });
+              }
+            }
+
+            const fieldsOverride = await signatureFieldsService.listByRequest(freshRequest.id);
+
+            const signedPdfPath = await pdfSignatureService.saveSignedDocxAsPdf({
+              request: freshRequest,
+              signer: freshSigner,
+              creator: null,
+              docxContainer: mainHost,
+              attachmentDocxItems,
+              attachmentPdfItems,
+              fieldsOverride,
+            });
+
+            await signatureService.updateSignerSignedDocumentPath(freshSigner.id, signedPdfPath);
+
+            const signedUrl = await pdfSignatureService.getSignedPdfUrl(signedPdfPath);
+            if (signedUrl) {
+              await downloadOriginalPdf(signedUrl, `${request.document_name}_assinado.pdf`);
+            } else {
+              toast.error('Erro ao obter URL do PDF assinado');
+            }
+          } catch (e) {
+            console.error('[DOWNLOAD] Erro ao gerar PDF completo do DOCX:', e);
+            toast.error('Erro ao gerar PDF completo. Baixando relatório...');
+
+            // Fallback: relatório
+            try {
+              const reportPath = await pdfSignatureService.saveSignatureReportToStorage({
+                request: freshRequest,
+                signer: freshSigner,
+                creator: null,
+              });
+              await signatureService.updateSignerSignedDocumentPath(freshSigner.id, reportPath);
+              const signedUrl = await pdfSignatureService.getSignedPdfUrl(reportPath);
+              if (signedUrl) await downloadOriginalPdf(signedUrl, `${request.document_name}_relatorio.pdf`);
+            } catch (e2) {
+              console.error('[DOWNLOAD] Erro ao gerar relatório:', e2);
+              toast.error('Erro ao gerar relatório de assinatura');
+            }
+          } finally {
+            for (const el of cleanupHosts) {
+              try { el.remove(); } catch { /* noop */ }
+            }
+          }
+
+          return;
+        }
+        
+        // Para PDF, gerar documento completo
+        const url = await signatureService.getDocumentPreviewUrl(request.document_path);
+        if (!url) {
+          toast.error('Erro ao obter URL do documento');
+          return;
+        }
+        
         const freshSigner = await signatureService.getSignerById(signedSigner.id);
         if (!freshSigner) {
           toast.error('Erro ao carregar dados do signatário');
           return;
         }
-        console.log('[DOWNLOAD] Gerando PDF assinado...');
+        
+        console.log('[DOWNLOAD] Gerando e salvando PDF assinado...');
         try {
-          await pdfSignatureService.downloadSignedPdf({
+          const attachmentPaths = (freshRequest as any).attachment_paths as string[] | null | undefined;
+          const attachmentPdfItems: { documentId: string; url: string }[] = [];
+          for (let i = 0; i < (attachmentPaths ?? []).length; i++) {
+            const p = attachmentPaths?.[i];
+            if (!p || !p.toLowerCase().endsWith('.pdf')) continue;
+            const u = await signatureService.getDocumentPreviewUrl(p);
+            if (u) attachmentPdfItems.push({ documentId: `attachment-${i}`, url: u });
+          }
+
+          // Gerar e salvar PDF no bucket 'assinados'
+          const signedPdfPath = await pdfSignatureService.saveSignedPdfToStorage({
             request: freshRequest,
             signer: freshSigner,
             originalPdfUrl: url,
             creator: null,
+            attachmentPdfItems,
           });
-          toast.success('PDF assinado gerado com sucesso!');
+          
+          // Atualizar o signer com o path do PDF assinado
+          await signatureService.updateSignerSignedDocumentPath(freshSigner.id, signedPdfPath);
+          
+          // Baixar o PDF salvo
+          const signedUrl = await pdfSignatureService.getSignedPdfUrl(signedPdfPath);
+          if (signedUrl) {
+            await downloadOriginalPdf(signedUrl, `${request.document_name}_assinado.pdf`);
+          } else {
+            toast.error('Erro ao obter URL do PDF assinado');
+          }
         } catch (pdfError: any) {
           console.error('[DOWNLOAD] Erro ao gerar PDF assinado:', pdfError);
           toast.error('Erro ao gerar PDF assinado. Baixando original...');
-          // Fallback: baixar original
-          await downloadOriginalPdf(url, request.document_name);
+          const url = await signatureService.getDocumentPreviewUrl(request.document_path);
+          if (url) await downloadOriginalPdf(url, request.document_name);
         }
       } else {
         // Documento sem assinatura - baixar original
-        await downloadOriginalPdf(url, request.document_name);
+        const url = await signatureService.getDocumentPreviewUrl(request.document_path);
+        if (url) await downloadOriginalPdf(url, request.document_name);
+        else toast.error('Erro ao obter URL do documento');
       }
     } catch (error: any) {
       console.error('[DOWNLOAD] Erro geral:', error);
@@ -514,93 +1382,76 @@ const SignatureModule: React.FC = () => {
         {/* Header com gradiente laranja */}
         <div className="bg-gradient-to-r from-orange-500 to-orange-600 sticky top-0 z-20 shadow-lg">
           <div className="max-w-7xl mx-auto px-6 py-4">
-            <div className="flex items-center justify-between">
-              <button 
-                onClick={() => { 
-                  if (wizardStep === 'upload') resetWizard(); 
-                  else if (wizardStep === 'signers') setWizardStep('upload'); 
-                  else if (wizardStep === 'position') setWizardStep('signers'); 
-                  else if (wizardStep === 'settings') setWizardStep('position'); 
-                }} 
-                className="flex items-center gap-2 text-white/80 hover:text-white transition-colors"
-              >
-                <ChevronLeft className="w-5 h-5" />
-                <span className="font-medium">Voltar</span>
-              </button>
-              
-              {/* Stepper */}
-              <div className="flex-1 flex items-center justify-center px-2">
-                <div className="flex items-center gap-1 overflow-x-auto max-w-full whitespace-nowrap">
-                {steps.map((step, i) => {
-                  const StepIcon = step.icon;
-                  const isActive = wizardStep === step.key;
-                  const isCompleted = i < currentStepIndex;
-                  
-                  return (
-                    <React.Fragment key={step.key}>
-                      <div className={`flex items-center gap-2 px-3 py-1.5 rounded-xl transition-all ${
-                        isActive 
-                          ? 'bg-white text-orange-600 shadow-lg' 
-                          : isCompleted 
-                            ? 'bg-white/20 text-white' 
-                            : 'bg-white/10 text-white/60'
-                      }`}>
-                        <div className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold ${
-                          isActive ? 'bg-orange-500 text-white' : isCompleted ? 'bg-white/30' : 'bg-white/20'
-                        }`}>
-                          {isCompleted ? <Check className="w-3.5 h-3.5" /> : i + 1}
-                        </div>
-                        <span className="text-xs sm:text-sm font-medium">{step.label}</span>
-                      </div>
-                      {i < steps.length - 1 && (
-                        <div className={`w-6 h-0.5 ${i < currentStepIndex ? 'bg-white/40' : 'bg-white/20'}`} />
-                      )}
-                    </React.Fragment>
-                  );
-                })}
-                </div>
+            {wizardStep === 'position' ? (
+              <div className="flex items-center justify-center">
+                <div className="text-white font-semibold">Posicionar</div>
               </div>
-              
-              {/* Controles de zoom - só aparece no passo position */}
-              {wizardStep === 'position' && (
-                <div className="flex items-center gap-2 bg-white/20 rounded-lg px-2 py-1">
-                  <button
-                    type="button"
-                    onClick={() => setPdfScale((s) => Math.max(0.5, Number((s - 0.1).toFixed(2))))}
-                    className="p-1.5 text-white/80 hover:text-white hover:bg-white/10 rounded"
-                  >
-                    <ZoomOut className="w-4 h-4" />
-                  </button>
-                  <span className="text-sm text-white min-w-[50px] text-center font-medium">{Math.round(pdfScale * 100)}%</span>
-                  <button
-                    type="button"
-                    onClick={() => setPdfScale((s) => Math.min(2, Number((s + 0.1).toFixed(2))))}
-                    className="p-1.5 text-white/80 hover:text-white hover:bg-white/10 rounded"
-                  >
-                    <ZoomIn className="w-4 h-4" />
-                  </button>
+            ) : (
+              <div className="flex items-center justify-between">
+                <button 
+                  onClick={() => { 
+                    if (wizardStep === 'upload') resetWizard(); 
+                    else if (wizardStep === 'signers') setWizardStep('upload'); 
+                    else if (wizardStep === 'settings') setWizardStep('position'); 
+                  }} 
+                  className="flex items-center gap-2 text-white/80 hover:text-white transition-colors"
+                >
+                  <ChevronLeft className="w-5 h-5" />
+                  <span className="font-medium">Voltar</span>
+                </button>
+                
+                {/* Stepper */}
+                <div className="flex-1 flex items-center justify-center px-2">
+                  <div className="flex items-center gap-1 overflow-x-auto max-w-full whitespace-nowrap">
+                  {steps.map((step, i) => {
+                    const StepIcon = step.icon;
+                    const isActive = wizardStep === step.key;
+                    const isCompleted = i < currentStepIndex;
+                    
+                    return (
+                      <React.Fragment key={step.key}>
+                        <div className={`flex items-center gap-2 px-3 py-1.5 rounded-xl transition-all ${
+                          isActive 
+                            ? 'bg-white text-orange-600 shadow-lg' 
+                            : isCompleted 
+                              ? 'bg-white/20 text-white' 
+                              : 'bg-white/10 text-white/60'
+                        }`}>
+                          <div className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold ${
+                            isActive ? 'bg-orange-500 text-white' : isCompleted ? 'bg-white/30' : 'bg-white/20'
+                          }`}>
+                            {isCompleted ? <Check className="w-3.5 h-3.5" /> : i + 1}
+                          </div>
+                          <span className="text-xs sm:text-sm font-medium">{step.label}</span>
+                        </div>
+                        {i < steps.length - 1 && (
+                          <div className={`w-6 h-0.5 ${i < currentStepIndex ? 'bg-white/40' : 'bg-white/20'}`} />
+                        )}
+                      </React.Fragment>
+                    );
+                  })}
+                  </div>
                 </div>
-              )}
-              
-              <button 
-                onClick={() => { 
-                  if (wizardStep === 'upload' && canProceedUpload) setWizardStep('signers'); 
-                  else if (wizardStep === 'signers' && canProceedSigners) setWizardStep('position'); 
-                  else if (wizardStep === 'position') setWizardStep('settings'); 
-                  else if (wizardStep === 'settings') handleSubmit(); 
-                }} 
-                disabled={(wizardStep === 'upload' && !canProceedUpload) || (wizardStep === 'signers' && !canProceedSigners) || wizardLoading} 
-                className="flex items-center gap-2 px-6 py-2.5 bg-white text-orange-600 rounded-xl font-semibold hover:bg-orange-50 disabled:opacity-50 disabled:cursor-not-allowed shadow-lg transition-all"
-              >
-                {wizardLoading ? (
-                  <Loader2 className="w-4 h-4 animate-spin" />
-                ) : wizardStep === 'settings' ? (
-                  <><Send className="w-4 h-4" />Enviar para assinatura</>
-                ) : (
-                  <>Avançar<ChevronLeft className="w-4 h-4 rotate-180" /></>
-                )}
-              </button>
-            </div>
+                
+                <button 
+                  onClick={() => { 
+                    if (wizardStep === 'upload' && canProceedUpload) setWizardStep('signers'); 
+                    else if (wizardStep === 'signers' && canProceedSigners) setWizardStep('position'); 
+                    else if (wizardStep === 'settings') handleSubmit(); 
+                  }} 
+                  disabled={(wizardStep === 'upload' && !canProceedUpload) || (wizardStep === 'signers' && !canProceedSigners) || wizardLoading} 
+                  className="flex items-center gap-2 px-6 py-2.5 bg-white text-orange-600 rounded-xl font-semibold hover:bg-orange-50 disabled:opacity-50 disabled:cursor-not-allowed shadow-lg transition-all"
+                >
+                  {wizardLoading ? (
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                  ) : wizardStep === 'settings' ? (
+                    <><Send className="w-4 h-4" />Enviar para assinatura</>
+                  ) : (
+                    <>Avançar<ChevronLeft className="w-4 h-4 rotate-180" /></>
+                  )}
+                </button>
+              </div>
+            )}
           </div>
         </div>
 
@@ -631,9 +1482,9 @@ const SignatureModule: React.FC = () => {
                     }`} 
                     onDragOver={(e) => { e.preventDefault(); setDragOver(true); }} 
                     onDragLeave={() => setDragOver(false)} 
-                    onDrop={(e) => { e.preventDefault(); setDragOver(false); if (e.dataTransfer.files[0]) handleFileSelect(e.dataTransfer.files[0]); }}
+                    onDrop={(e) => { e.preventDefault(); setDragOver(false); if (e.dataTransfer.files?.length) handleFilesSelect(e.dataTransfer.files); }}
                   >
-                    <input ref={fileInputRef} type="file" accept=".pdf" onChange={(e) => e.target.files?.[0] && handleFileSelect(e.target.files[0])} className="hidden" />
+                    <input ref={fileInputRef} type="file" accept=".pdf" multiple onChange={(e) => e.target.files?.length && handleFilesSelect(e.target.files)} className="hidden" />
                     {selectedDocumentName ? (
                       <div className="flex flex-col items-center gap-4">
                         <div className="w-16 h-16 bg-emerald-100 rounded-2xl flex items-center justify-center">
@@ -641,13 +1492,30 @@ const SignatureModule: React.FC = () => {
                         </div>
                         <div>
                           <p className="font-semibold text-slate-800">{selectedDocumentName}</p>
-                          <p className="text-sm text-emerald-600 mt-1">Documento selecionado</p>
+                          <p className="text-sm text-emerald-600 mt-1">
+                            {uploadedFiles.length > 1 ? `Envelope: ${uploadedFiles.length} documentos` : 'Documento selecionado'}
+                          </p>
                         </div>
+                        {uploadedFiles.length > 1 && (
+                          <div className="w-full max-w-xs text-left bg-white rounded-lg border border-slate-200 p-3 mt-2">
+                            <p className="text-xs font-medium text-slate-600 mb-2">Arquivos ({uploadedFiles.length}):</p>
+                            <div className="space-y-1 max-h-24 overflow-y-auto">
+                              {uploadedFiles.map((f, i) => (
+                                <div key={`${f.name}-${i}`} className="flex items-center justify-between text-xs">
+                                  <span className="truncate text-slate-700">{i === 0 ? '📄 ' : '📎 '}{f.name}</span>
+                                  <button type="button" onClick={() => removeUploadedFileAt(i)} className="text-red-500 hover:text-red-600 ml-2">
+                                    <X className="w-3 h-3" />
+                                  </button>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
                         <button 
-                          onClick={() => { setUploadedFile(null); setSelectedDocumentName(''); }} 
+                          onClick={clearUploadedFiles} 
                           className="text-sm text-red-500 hover:text-red-600 font-medium"
                         >
-                          Remover
+                          Remover {uploadedFiles.length > 1 ? 'todos' : ''}
                         </button>
                       </div>
                     ) : (
@@ -655,13 +1523,14 @@ const SignatureModule: React.FC = () => {
                         <div className="w-16 h-16 bg-slate-100 rounded-2xl flex items-center justify-center mx-auto mb-4">
                           <Upload className="w-8 h-8 text-slate-400" />
                         </div>
-                        <p className="text-slate-600 mb-4">Arraste o PDF aqui ou</p>
+                        <p className="text-slate-600 mb-4">Arraste PDFs aqui ou</p>
                         <button 
                           onClick={() => fileInputRef.current?.click()} 
                           className="px-6 py-3 bg-orange-500 text-white rounded-xl font-semibold hover:bg-orange-600 transition-all shadow-lg shadow-orange-500/25"
                         >
-                          Selecionar arquivo
+                          Selecionar arquivo(s)
                         </button>
+                        <p className="text-xs text-slate-400 mt-3">Selecione múltiplos PDFs para criar um envelope</p>
                       </>
                     )}
                   </div>
@@ -792,91 +1661,519 @@ const SignatureModule: React.FC = () => {
         {wizardStep === 'signers' && <div className="max-w-4xl mx-auto p-6"><div className="bg-white rounded-xl border border-slate-200 p-6"><h3 className="text-lg font-semibold mb-6">Confirme os signatários</h3><div className="space-y-4">{signers.map((s, i) => <div key={s.id} className="flex items-center gap-4 p-4 bg-slate-50 rounded-lg"><div className="w-8 h-8 bg-blue-100 rounded-full flex items-center justify-center text-blue-600 font-medium">{i + 1}</div><div className="flex-1"><p className="font-medium">{s.name || 'Sem nome'}</p><p className="text-sm text-slate-500">{s.email}</p></div><span className="px-2 py-1 bg-slate-200 text-slate-600 rounded text-xs">{s.role}</span></div>)}</div></div></div>}
 
         {wizardStep === 'position' && (
-          <div className="flex h-[calc(100vh-64px)] overflow-hidden">
-            <aside className="w-80 bg-white border-r border-slate-200 p-4 overflow-y-auto">
-              <h3 className="font-semibold mb-4">Posicionar assinaturas</h3>
-              <div className="mb-4"><label className="block text-xs text-slate-500 mb-2">Signatário</label><select value={selectedSignerForField} onChange={(e) => setSelectedSignerForField(e.target.value)} className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm">{signers.map((s) => <option key={s.id} value={s.id}>{s.name || s.email}</option>)}</select></div>
-              <div className="mb-4"><label className="block text-xs text-slate-500 mb-2">Campo</label><div className="flex flex-wrap gap-2">{(Object.keys(FIELD_PRESETS) as SignatureFieldType[]).map((type) => { const p = FIELD_PRESETS[type]; return <button type="button" key={type} onClick={() => setSelectedFieldType(type)} className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border ${selectedFieldType === type ? 'border-blue-500 bg-blue-50 text-blue-700' : 'border-slate-200 text-slate-600'}`}><p.icon className="w-3.5 h-3.5" />{p.label}</button>; })}</div></div>
-              <button type="button" onClick={(e) => { e.preventDefault(); placingModeRef.current = true; setPlacingMode(true); }} disabled={placingMode} className="w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-blue-600 text-white rounded-lg font-medium disabled:opacity-60"><MousePointer2 className="w-4 h-4" />{placingMode ? 'Clique no doc...' : 'Inserir'}</button>
-              <div className="mt-6"><p className="text-xs text-slate-500 mb-2">Campos ({fields.length})</p><div className="space-y-2">{fields.map((f) => { const p = FIELD_PRESETS[f.fieldType]; const s = signers.find((x) => x.id === f.signerId); return <div key={f.localId} className="flex items-center justify-between p-2 bg-slate-50 rounded-lg"><div className="flex items-center gap-2"><p.icon className="w-4 h-4 text-slate-500" /><div><p className="text-xs font-medium">{p.label}</p><p className="text-[10px] text-slate-500">{s?.name || s?.email}</p></div></div><button type="button" onClick={(e) => { e.preventDefault(); setFields((prev) => prev.filter((x) => x.localId !== f.localId)); }} className="p-1 text-slate-400 hover:text-red-500"><X className="w-3.5 h-3.5" /></button></div>; })}</div></div>
-            </aside>
-            <div className="flex-1 bg-slate-200 overflow-auto">
-              <div className={`p-2 sm:p-3 md:p-4 ${placingMode ? 'cursor-crosshair' : ''}`}>
-                {pdfPreviewUrl ? (
-                  <>
-                    {pdfLoading && (
-                      <div className="absolute inset-0 flex items-center justify-center bg-white/70 z-50">
-                        <Loader2 className="h-8 w-8 animate-spin text-blue-600" />
-                      </div>
-                    )}
+          <div className="flex h-[calc(100vh-200px)] overflow-hidden">
+            {/* Sidebar Moderno */}
+            <aside className="w-80 bg-white border-r border-slate-200 p-6 overflow-y-auto flex-shrink-0">
+              <div className="mb-6 bg-slate-50 border border-slate-200 rounded-xl p-4">
+                <button
+                  type="button"
+                  onClick={() => setWizardStep('signers')}
+                  className="w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-white border border-slate-200 rounded-lg text-sm font-medium text-slate-700 hover:bg-slate-50"
+                >
+                  <ChevronLeft className="w-4 h-4" />
+                  Voltar
+                </button>
 
-                    <PdfViewer
-                      file={pdfPreviewUrl}
-                      scale={pdfScale}
-                      numPages={pdfNumPages}
-                      onLoadSuccess={handlePdfLoadSuccess}
-                      onLoadError={handlePdfLoadError}
-                      onPageClick={handlePageClick}
-                      pageRefs={pageRefsMap}
-                    />
-
-                    {/* Overlays dos campos (portal para dentro da página) */}
-                    {pdfNumPages > 0 && fields.map((f) => {
-                      const pageEl = pageRefsMap.current.get(f.pageNumber);
-                      if (!pageEl) return null;
-
-                      const p = FIELD_PRESETS[f.fieldType];
-                      const signerName = signers.find((x) => x.id === f.signerId)?.name || '';
-
-                      return createPortal(
+                <div className="mt-4 space-y-2">
+                  {steps.map((step, i) => {
+                    const isActive = wizardStep === step.key;
+                    const isCompleted = i < currentStepIndex;
+                    return (
+                      <div
+                        key={step.key}
+                        className={`flex items-center gap-3 px-3 py-2 rounded-lg border ${
+                          isActive
+                            ? 'bg-white border-orange-300'
+                            : isCompleted
+                              ? 'bg-white/60 border-slate-200'
+                              : 'bg-transparent border-slate-200'
+                        }`}
+                      >
                         <div
-                          key={f.localId}
-                          className="absolute border-2 border-blue-500 bg-blue-50/80 rounded flex items-center justify-center cursor-move select-none z-30 pointer-events-auto"
-                          style={{
-                            left: `${f.xPercent}%`,
-                            top: `${f.yPercent}%`,
-                            width: `${f.wPercent}%`,
-                            height: `${f.hPercent}%`,
-                          }}
-                          onMouseDown={(e) => {
-                            e.preventDefault();
-                            e.stopPropagation();
-                            setDraggingField({ localId: f.localId, pageNumber: f.pageNumber, startX: e.clientX, startY: e.clientY, originX: f.xPercent, originY: f.yPercent });
-                          }}
+                          className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold ${
+                            isActive
+                              ? 'bg-orange-500 text-white'
+                              : isCompleted
+                                ? 'bg-emerald-500 text-white'
+                                : 'bg-slate-200 text-slate-700'
+                          }`}
                         >
-                          <div className="flex flex-col items-center justify-center px-1 text-center">
-                            <div className="flex items-center gap-1 text-blue-700 text-[10px] font-medium">
-                              <p.icon className="w-3 h-3" />
-                              <span className="truncate">{p.label}</span>
-                            </div>
-                            {signerName && (
-                              <div className="text-[10px] text-blue-700/80 font-medium truncate max-w-[110px]">
-                                {signerName}
-                              </div>
-                            )}
-                          </div>
-                          <button
-                            type="button"
-                            onClick={(e) => {
-                              e.preventDefault();
-                              e.stopPropagation();
-                              setFields((prev) => prev.filter((x) => x.localId !== f.localId));
-                            }}
-                            className="absolute -top-2 -right-2 w-4 h-4 bg-red-500 text-white rounded-full flex items-center justify-center hover:bg-red-600"
-                          >
-                            <X className="w-2.5 h-2.5" />
-                          </button>
-                        </div>,
-                        pageEl
+                          {isCompleted ? <Check className="w-4 h-4" /> : i + 1}
+                        </div>
+                        <div className={`text-sm font-medium ${isActive ? 'text-orange-700' : 'text-slate-700'}`}>{step.label}</div>
+                      </div>
+                    );
+                  })}
+                </div>
+
+                <div className="mt-4 flex items-center justify-between bg-white border border-slate-200 rounded-lg px-3 py-2">
+                  <button
+                    type="button"
+                    onClick={() => setPdfScale((s) => Math.max(0.5, Number((s - 0.1).toFixed(2))))}
+                    className="p-1.5 text-slate-600 hover:bg-slate-100 rounded"
+                  >
+                    <ZoomOut className="w-4 h-4" />
+                  </button>
+                  <div className="text-sm font-semibold text-slate-700">{Math.round(pdfScale * 100)}%</div>
+                  <button
+                    type="button"
+                    onClick={() => setPdfScale((s) => Math.min(2, Number((s + 0.1).toFixed(2))))}
+                    className="p-1.5 text-slate-600 hover:bg-slate-100 rounded"
+                  >
+                    <ZoomIn className="w-4 h-4" />
+                  </button>
+                </div>
+
+                <div className="mt-3 flex items-center justify-between bg-white border border-slate-200 rounded-lg px-3 py-2">
+                  <button
+                    type="button"
+                    onClick={() => setPdfCurrentPage((p) => Math.max(1, p - 1))}
+                    disabled={pdfCurrentPage <= 1}
+                    className="p-1.5 text-slate-600 hover:bg-slate-100 rounded disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    <ChevronLeft className="w-4 h-4" />
+                  </button>
+                  <div className="text-sm font-semibold text-slate-700">
+                    {pdfCurrentPage} / {pdfNumPages || 1}
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setPdfCurrentPage((p) => Math.min(pdfNumPages || 1, p + 1))}
+                    disabled={pdfCurrentPage >= (pdfNumPages || 1)}
+                    className="p-1.5 text-slate-600 hover:bg-slate-100 rounded disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    <ChevronRight className="w-4 h-4" />
+                  </button>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (fields.length === 0) {
+                      toast.warning(
+                        'Nenhum campo posicionado. Se o template tiver [[assinatura_X]], a assinatura será posicionada automaticamente. Caso contrário, será usada a posição padrão.'
                       );
-                    })}
-                  </>
-                ) : (
-                  <div className="flex items-center justify-center py-20 text-slate-400">
-                    <FileText className="w-16 h-16" />
+                    }
+                    setWizardStep('settings');
+                  }}
+                  className="mt-4 w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-orange-600 text-white rounded-lg text-sm font-semibold hover:bg-orange-700"
+                >
+                  Avançar
+                  <ChevronLeft className="w-4 h-4 rotate-180" />
+                </button>
+              </div>
+
+              <div className="mb-6">
+                <h2 className="text-xl font-bold text-slate-800 mb-2">Posicionar Assinaturas</h2>
+                <p className="text-sm text-slate-600">Clique no documento para adicionar campos de assinatura</p>
+                {fields.length === 0 && (
+                  <div className="mt-3 p-3 bg-amber-50 border border-amber-200 rounded-lg">
+                    <p className="text-sm text-amber-700 font-medium">⚠️ Nenhum campo posicionado</p>
+                    <p className="text-xs text-amber-600 mt-1">Se você já colocou [[assinatura_X]] no template, pode avançar sem posicionar manualmente.</p>
+                  </div>
+                )}
+                {fields.length > 0 && (
+                  <div className="mt-3 p-3 bg-emerald-50 border border-emerald-200 rounded-lg">
+                    <p className="text-sm text-emerald-700 font-medium">✓ {fields.length} campo(s) posicionado(s)</p>
                   </div>
                 )}
               </div>
+
+              {/* Seletor de Signatário */}
+              <div className="mb-6">
+                <label className="block text-sm font-medium text-slate-700 mb-3">Signatário</label>
+                <div className="space-y-2">
+                  {signers.map((signer, index) => (
+                    <button
+                      key={signer.id}
+                      onClick={() => setCurrentSignerIndex(index)}
+                      className={`w-full flex items-center gap-3 p-3 rounded-lg border text-left transition-all ${
+                        currentSignerIndex === index
+                          ? 'border-blue-500 bg-blue-50 text-blue-700'
+                          : 'border-slate-200 hover:border-slate-300 text-slate-700'
+                      }`}
+                    >
+                      <div className="w-8 h-8 rounded-full bg-blue-100 text-blue-600 flex items-center justify-center font-semibold text-sm">
+                        {index + 1}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="font-medium truncate">{signer.name || 'Sem nome'}</p>
+                        <p className="text-sm opacity-75 truncate">{signer.email}</p>
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Campo (somente assinatura) */}
+              <div className="mb-6">
+                <label className="block text-sm font-medium text-slate-700 mb-3">Campo</label>
+                <div className="flex items-center gap-3 p-3 rounded-lg border border-blue-200 bg-blue-50 text-blue-700">
+                  <PenTool className="w-5 h-5" />
+                  <div className="flex-1">
+                    <p className="text-sm font-semibold">Assinatura</p>
+                    <p className="text-xs opacity-80">Somente este tipo estÃ¡ habilitado</p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Botão de Ação */}
+              <div className="mb-6">
+                <button
+                  onClick={() => {
+                    setPositionMode('place');
+                    setIsPlacingField(true);
+                  }}
+                  disabled={isPlacingField}
+                  className={`w-full flex items-center justify-center gap-2 px-4 py-3 rounded-lg font-medium transition-all ${
+                    isPlacingField
+                      ? 'bg-green-500 text-white cursor-wait'
+                      : 'bg-blue-500 text-white hover:bg-blue-600'
+                  }`}
+                >
+                  {isPlacingField ? (
+                    <>
+                      <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                      Clique no PDF para posicionar
+                    </>
+                  ) : (
+                    <>
+                      <Plus className="w-4 h-4" />
+                      Adicionar Campo
+                    </>
+                  )}
+                </button>
+                {isPlacingField && (
+                  <button
+                    onClick={() => {
+                      setPositionMode('select');
+                      setIsPlacingField(false);
+                    }}
+                    className="w-full mt-2 px-4 py-2 border border-slate-300 text-slate-600 rounded-lg hover:bg-slate-50 transition-all"
+                  >
+                    Cancelar
+                  </button>
+                )}
+              </div>
+
+              {/* Lista de Campos */}
+              <div>
+                <div className="flex items-center justify-between mb-3">
+                  <h3 className="text-sm font-medium text-slate-700">Campos Adicionados</h3>
+                  {fields.length > 0 && (
+                    <button
+                      onClick={() => setFields([])}
+                      className="text-xs text-red-500 hover:text-red-600"
+                    >
+                      Limpar todos
+                    </button>
+                  )}
+                </div>
+                <div className="space-y-2 max-h-64 overflow-y-auto">
+                  {fields.length === 0 ? (
+                    <p className="text-sm text-slate-400 text-center py-4">Nenhum campo adicionado</p>
+                  ) : (
+                    fields.map((field) => {
+                      const preset = FIELD_PRESETS[field.fieldType];
+                      const signer = signers.find(s => s.id === field.signerId);
+                      const signerIndex = signers.findIndex(s => s.id === field.signerId);
+                      const signerColor = ['#3B82F6', '#EF4444', '#10B981', '#8B5CF6', '#F59E0B'][signerIndex % 5];
+                      
+                      return (
+                        <div
+                          key={field.localId}
+                          className="flex items-center gap-3 p-3 bg-slate-50 rounded-lg border border-slate-200"
+                        >
+                          <div className="w-8 h-8 rounded-full flex items-center justify-center text-white text-xs font-bold" style={{ backgroundColor: signerColor }}>
+                            {signerIndex + 1}
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <p className="text-sm font-medium text-slate-700">{preset.label}</p>
+                            <p className="text-xs text-slate-500">
+                              {signer?.name || signer?.email} • Página {field.pageNumber}
+                            </p>
+                          </div>
+                          <button
+                            onClick={() => removeField(field.localId)}
+                            className="p-1 text-slate-400 hover:text-red-500 transition-colors"
+                          >
+                            <X className="w-4 h-4" />
+                          </button>
+                        </div>
+                      );
+                    })
+                  )}
+                </div>
+              </div>
+            </aside>
+
+            {/* Área do PDF */}
+            <div className="flex-1 flex flex-col bg-slate-100">
+              {/* Toolbar Simplificada */}
+              <div className="bg-white border-b border-slate-200 px-6 py-3 flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <div className={`px-3 py-1 rounded-full text-xs font-medium ${
+                    isPlacingField 
+                      ? 'bg-green-100 text-green-700' 
+                      : 'bg-blue-100 text-blue-700'
+                  }`}>
+                    {isPlacingField ? 'Modo de Posicionamento' : 'Modo de Visualização'}
+                  </div>
+                  {isPlacingField && (
+                    <span className="text-sm text-slate-600">Clique no documento para posicionar o campo</span>
+                  )}
+                </div>
+                <div className="text-sm font-medium text-slate-700 truncate max-w-[45%] text-right">
+                  {viewerDocuments[currentViewerDocIndex]?.name || ''}
+                </div>
+              </div>
+
+              {/* Container do PDF/DOCX */}
+              <div ref={viewerScrollRef} className="flex-1 overflow-auto p-3">
+                {(pdfPreviewUrl || isDocxFile) ? (
+                  <div className="flex justify-start">
+                    {/* Container para DOCX */}
+                    {isDocxFile && (
+                      <div className="relative" style={{ width: `${794 * pdfScale}px`, minHeight: `${1123 * pdfScale}px` }}>
+                        <div
+                          className="relative"
+                          style={{
+                            width: '794px',
+                            minHeight: '1123px',
+                            transform: `scale(${pdfScale})`,
+                            transformOrigin: 'top left',
+                          }}
+                        >
+                        {/* Container do conteúdo DOCX - NÃO re-renderiza */}
+                        <div
+                          ref={docxContainerRef}
+                          className={`bg-white shadow-lg rounded-lg overflow-hidden ${
+                            isPlacingField ? 'cursor-crosshair' : 'cursor-default'
+                          }`}
+                          onClick={handlePdfClick}
+                          style={{ 
+                            width: '100%', 
+                            minHeight: '1123px',
+                          }}
+                        />
+                        
+                        {pdfLoading && (
+                          <div className="absolute inset-0 flex items-center justify-center bg-white/80 z-10">
+                            <Loader2 className="w-8 h-8 text-blue-500 animate-spin" />
+                          </div>
+                        )}
+                        
+                        {/* Overlay para campos de assinatura - DOCX */}
+                        <div 
+                          className="absolute inset-0 pointer-events-none"
+                          style={{ width: '100%', height: '100%' }}
+                        >
+                          {fields.filter(f => 
+                            f.fieldType === 'signature' &&
+                            f.pageNumber === pdfCurrentPage && 
+                            (f.documentId === (viewerDocuments[currentViewerDocIndex]?.id || 'main'))
+                          ).map((field) => {
+                            const preset = FIELD_PRESETS[field.fieldType];
+                            const signer = signers.find(s => s.id === field.signerId);
+                            const signerIndex = signers.findIndex(s => s.id === field.signerId);
+                            const signerColor = ['#3B82F6', '#EF4444', '#10B981', '#8B5CF6', '#F59E0B'][signerIndex % 5];
+                            const isSignature = field.fieldType === 'signature';
+                            
+                            return (
+                              <div
+                                key={field.localId}
+                                className="absolute cursor-move border-2 rounded-md flex items-center justify-center transition-shadow hover:shadow-lg pointer-events-auto"
+                                style={{
+                                  left: `${field.xPercent}%`,
+                                  top: `${field.yPercent}%`,
+                                  width: `${field.wPercent}%`,
+                                  height: `${field.hPercent}%`,
+                                  borderColor: signerColor,
+                                  backgroundColor: isSignature ? `${signerColor}08` : `${signerColor}20`,
+                                  borderStyle: isSignature ? 'dashed' : 'solid',
+                                  zIndex: 50,
+                                }}
+                                onMouseDown={(e) => startDragging(e, field)}
+                              >
+                                <div className="flex flex-col items-center justify-center w-full h-full">
+                                  <div className="absolute top-1 right-1 w-5 h-5 rounded-full flex items-center justify-center text-white text-xs font-bold" style={{ backgroundColor: signerColor }}>
+                                    {signerIndex + 1}
+                                  </div>
+                                  {!isSignature && (
+                                    <>
+                                      <preset.icon className="w-4 h-4" style={{ color: signerColor }} />
+                                      <span className="text-xs font-medium" style={{ color: signerColor }}>{preset.label}</span>
+                                    </>
+                                  )}
+                                  {isSignature && (
+                                    <span
+                                      className="absolute bottom-1 right-1 text-[10px] font-semibold px-1.5 py-0.5 rounded"
+                                      style={{ backgroundColor: `${signerColor}18`, color: signerColor }}
+                                    >
+                                      Assinatura
+                                    </span>
+                                  )}
+                                </div>
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    removeField(field.localId);
+                                  }}
+                                  className={
+                                    isSignature
+                                      ? 'absolute top-1 left-1 w-4 h-4 bg-red-500 text-white rounded-full flex items-center justify-center hover:bg-red-600 transition-colors'
+                                      : 'absolute -top-2 -right-2 w-5 h-5 bg-red-500 text-white rounded-full flex items-center justify-center hover:bg-red-600 transition-colors'
+                                  }
+                                >
+                                  <X className="w-3 h-3" />
+                                </button>
+                              </div>
+                            );
+                          })}
+                        </div>
+                        </div>
+                      </div>
+                    )}
+                    
+                    {/* Container para PDF */}
+                    {!isDocxFile && pdfPreviewUrl && (
+                      <div
+                        ref={pdfContainerRef}
+                        className={`relative bg-white shadow-lg rounded-lg overflow-hidden ${
+                          isPlacingField ? 'cursor-crosshair' : 'cursor-default'
+                        }`}
+                        onClick={handlePdfClick}
+                      >
+                        {pdfLoading && (
+                          <div className="absolute inset-0 flex items-center justify-center bg-white/80 z-10">
+                            <Loader2 className="w-8 h-8 text-blue-500 animate-spin" />
+                          </div>
+                        )}
+                        
+                        {pdfPageNode}
+
+                        {/* Campos da Página Atual - PDF */}
+                        {fields.filter(f => 
+                          f.fieldType === 'signature' &&
+                          f.pageNumber === pdfCurrentPage && 
+                          (f.documentId === (viewerDocuments[currentViewerDocIndex]?.id || 'main'))
+                        ).map((field) => {
+                          const preset = FIELD_PRESETS[field.fieldType];
+                          const signer = signers.find(s => s.id === field.signerId);
+                          const signerIndex = signers.findIndex(s => s.id === field.signerId);
+                          const signerColor = ['#3B82F6', '#EF4444', '#10B981', '#8B5CF6', '#F59E0B'][signerIndex % 5];
+                          const isSignature = field.fieldType === 'signature';
+                          
+                          return (
+                            <div
+                              key={field.localId}
+                              className="absolute cursor-move border-2 rounded-md flex items-center justify-center transition-shadow hover:shadow-lg"
+                              style={{
+                                left: `${field.xPercent}%`,
+                                top: `${field.yPercent}%`,
+                                width: `${field.wPercent}%`,
+                                height: `${field.hPercent}%`,
+                                borderColor: signerColor,
+                                backgroundColor: isSignature ? `${signerColor}08` : `${signerColor}20`,
+                                borderStyle: isSignature ? 'dashed' : 'solid',
+                              }}
+                              onMouseDown={(e) => startDragging(e, field)}
+                            >
+                              <div className="flex flex-col items-center justify-center w-full h-full">
+                                <div className="absolute top-1 right-1 w-5 h-5 rounded-full flex items-center justify-center text-white text-xs font-bold" style={{ backgroundColor: signerColor }}>
+                                  {signerIndex + 1}
+                                </div>
+                                {!isSignature && (
+                                  <>
+                                    <preset.icon className="w-4 h-4" style={{ color: signerColor }} />
+                                    <span className="text-xs font-medium" style={{ color: signerColor }}>{preset.label}</span>
+                                  </>
+                                )}
+                                {isSignature && (
+                                  <span
+                                    className="absolute bottom-1 right-1 text-[10px] font-semibold px-1.5 py-0.5 rounded"
+                                    style={{ backgroundColor: `${signerColor}18`, color: signerColor }}
+                                  >
+                                    Assinatura
+                                  </span>
+                                )}
+                              </div>
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  removeField(field.localId);
+                                }}
+                                className={
+                                  isSignature
+                                    ? 'absolute top-1 left-1 w-4 h-4 bg-red-500 text-white rounded-full flex items-center justify-center hover:bg-red-600 transition-colors'
+                                    : 'absolute -top-2 -right-2 w-5 h-5 bg-red-500 text-white rounded-full flex items-center justify-center hover:bg-red-600 transition-colors'
+                                }
+                              >
+                                <X className="w-3 h-3" />
+                              </button>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  <div className="flex items-center justify-center h-full">
+                    <div className="text-center">
+                      <FileText className="w-16 h-16 text-slate-300 mx-auto mb-4" />
+                      <p className="text-slate-500">Carregue um documento para posicionar as assinaturas</p>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {viewerDocuments.length > 1 && (
+                <div className="bg-white border-t border-slate-200 px-6 py-3">
+                  <div className="flex items-center justify-between mb-2">
+                    <div className="text-sm font-medium text-slate-700">Documentos</div>
+                    <div className="text-xs text-slate-500">Clique para trocar</div>
+                  </div>
+                  <div className="flex gap-2 overflow-x-auto pb-2">
+                    {viewerDocuments.map((doc, idx) => {
+                      const isActive = idx === currentViewerDocIndex;
+                      return (
+                        <button
+                          key={doc.id}
+                          type="button"
+                          onClick={() => {
+                            setCurrentViewerDocIndex(idx);
+                            loadDocumentPreview(viewerDocuments[idx]);
+                          }}
+                          className={`flex-shrink-0 text-left px-3 py-2 rounded-lg border transition-all min-w-[220px] ${
+                            isActive
+                              ? 'border-blue-500 bg-blue-50'
+                              : 'border-slate-200 bg-white hover:bg-slate-50'
+                          }`}
+                        >
+                          <div className="flex items-center gap-2">
+                            <div className="text-sm">
+                              {doc.type === 'main' ? '📄' : '📎'}
+                            </div>
+                            <div className="min-w-0 flex-1">
+                              <div className={`text-sm font-medium truncate ${isActive ? 'text-blue-700' : 'text-slate-800'}`}>
+                                {doc.name}
+                              </div>
+                              <div className="text-xs text-slate-500 truncate">
+                                {doc.type === 'main' ? 'Documento principal' : 'Anexo'}
+                              </div>
+                            </div>
+                            {isActive && (
+                              <div className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-blue-600 text-white">
+                                Ativo
+                              </div>
+                            )}
+                          </div>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
             </div>
           </div>
         )}
@@ -1138,19 +2435,92 @@ const SignatureModule: React.FC = () => {
                     onClick={async () => {
                       try {
                         setViewDocLoading(true);
-                        const signedSigner = detailsRequest.signers.find(s => s.status === 'signed');
                         
-                        // Se tem signatário assinado, ABRIR APENAS o PDF assinado salvo
+                        // Buscar dados atualizados do banco
+                        const freshRequest = await signatureService.getRequestWithSigners(detailsRequest.id);
+                        if (!freshRequest) {
+                          toast.error('Erro ao carregar dados do documento');
+                          return;
+                        }
+                        
+                        const signedSigner = freshRequest.signers.find(s => s.status === 'signed');
+                        const docPathLower = (freshRequest.document_path || '').toLowerCase();
+                        const isDocxFile = docPathLower.endsWith('.docx') || docPathLower.endsWith('.doc');
+                        
+                        // Se tem signatário assinado
                         if (signedSigner) {
+                          // Verificar se já existe PDF assinado salvo no bucket 'assinados'
                           if (signedSigner.signed_document_path) {
-                            const url = await pdfSignatureService.getSignedPdfUrl(signedSigner.signed_document_path);
-                            if (url) {
-                              window.open(url, '_blank');
+                            const signedUrl = await pdfSignatureService.getSignedPdfUrl(signedSigner.signed_document_path);
+                            if (signedUrl) {
+                              console.log('[VIEW] Usando PDF já salvo:', signedSigner.signed_document_path);
+                              window.open(signedUrl, '_blank');
                               return;
                             }
                           }
+                          
+                          // Se não existe, gerar, salvar e abrir
+                          // Importante: se for DOCX, nÃ£o tentar parsear DOCX como PDF (pdf-lib quebra com "No PDF header found").
+                          if (isDocxFile) {
+                            toast.info('Documento DOCX - gerando relatÃ³rio de assinatura (fallback)');
+                            const freshSigner = await signatureService.getSignerById(signedSigner.id);
+                            if (!freshSigner) {
+                              toast.error('Erro ao carregar dados do signatÃ¡rio');
+                              return;
+                            }
+                            const signedPdfPath = await pdfSignatureService.saveSignatureReportToStorage({
+                              request: freshRequest,
+                              signer: freshSigner,
+                              creator: null,
+                            });
+                            await signatureService.updateSignerSignedDocumentPath(freshSigner.id, signedPdfPath);
+                            const signedUrl = await pdfSignatureService.getSignedPdfUrl(signedPdfPath);
+                            if (signedUrl) window.open(signedUrl, '_blank');
+                            else toast.error('Erro ao abrir relatÃ³rio');
+                            return;
+                          }
 
-                          toast.error('Documento assinado não encontrado no storage (signed_document_path vazio).');
+                          toast.info('Gerando documento assinado...');
+                          const originalUrl = await signatureService.getDocumentPreviewUrl(freshRequest.document_path!);
+                          if (!originalUrl) {
+                            toast.error('Erro ao obter documento original');
+                            return;
+                          }
+                          
+                          const freshSigner = await signatureService.getSignerById(signedSigner.id);
+                          if (!freshSigner) {
+                            toast.error('Erro ao carregar dados do signatÃ¡rio');
+                            return;
+                          }
+                          
+                          // Gerar e salvar PDF no bucket 'assinados'
+                          const attachmentPaths = (freshRequest as any).attachment_paths as string[] | null | undefined;
+                          const attachmentPdfItems: { documentId: string; url: string }[] = [];
+                          for (let i = 0; i < (attachmentPaths ?? []).length; i++) {
+                            const p = attachmentPaths?.[i];
+                            if (!p || !p.toLowerCase().endsWith('.pdf')) continue;
+                            const u = await signatureService.getDocumentPreviewUrl(p);
+                            if (u) attachmentPdfItems.push({ documentId: `attachment-${i}`, url: u });
+                          }
+
+                          const signedPdfPath = await pdfSignatureService.saveSignedPdfToStorage({
+                            request: freshRequest,
+                            signer: freshSigner,
+                            originalPdfUrl: originalUrl,
+                            creator: null,
+                            attachmentPdfItems,
+                          });
+                          
+                          // Atualizar o signer com o path do PDF assinado
+                          await signatureService.updateSignerSignedDocumentPath(freshSigner.id, signedPdfPath);
+                          
+                          // Abrir o PDF salvo
+                          const signedUrl = await pdfSignatureService.getSignedPdfUrl(signedPdfPath);
+                          if (signedUrl) {
+                            window.open(signedUrl, '_blank');
+                          } else {
+                            toast.error('Erro ao abrir documento assinado');
+                          }
                           return;
                         }
                         
@@ -1204,8 +2574,8 @@ const SignatureModule: React.FC = () => {
                 </h3>
                 <div className="space-y-3">
                   {detailsRequest.signers.map((signer) => {
-                    const facialUrl = signer.facial_image_path ? supabase.storage.from('signatures').getPublicUrl(signer.facial_image_path).data.publicUrl : null;
-                    const signatureUrl = signer.signature_image_path ? supabase.storage.from('signatures').getPublicUrl(signer.signature_image_path).data.publicUrl : null;
+                    const facialUrl = signerImages[signer.id]?.facial || null;
+                    const signatureUrl = signerImages[signer.id]?.signature || null;
                     const geoLocation = signer.geolocation || signer.signer_geolocation;
                     
                     return (
@@ -1581,6 +2951,82 @@ const SignatureModule: React.FC = () => {
               style={{ transform: zoomImageUrl.includes('facial') ? 'scaleX(-1)' : 'none' }}
               onClick={(e) => e.stopPropagation()}
             />
+          </div>
+        </div>
+      )}
+      {/* Modal de confirmação de exclusão */}
+      {deleteModalOpen && (
+        <div className="fixed inset-0 z-[80] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden">
+            <div className="px-6 py-5 border-b border-slate-200 bg-red-50">
+              <div className="flex items-center gap-3">
+                <div className="w-12 h-12 bg-red-100 rounded-full flex items-center justify-center">
+                  <Trash2 className="w-6 h-6 text-red-600" />
+                </div>
+                <div>
+                  <h2 className="text-lg font-bold text-slate-800">Excluir Documento</h2>
+                  <p className="text-sm text-slate-500">Escolha como deseja excluir</p>
+                </div>
+              </div>
+            </div>
+            
+            <div className="p-6 space-y-4">
+              <div className="bg-amber-50 border border-amber-200 rounded-xl p-4">
+                <p className="text-sm text-amber-800">
+                  <strong>Atenção:</strong> Esta ação não pode ser desfeita. O documento será removido do painel administrativo.
+                </p>
+              </div>
+              
+              <div className="space-y-3">
+                <button
+                  onClick={() => confirmDelete(false)}
+                  disabled={deleteLoading}
+                  className="w-full flex items-center gap-4 p-4 border-2 border-slate-200 rounded-xl hover:border-blue-400 hover:bg-blue-50 transition-all group disabled:opacity-50"
+                >
+                  <div className="w-10 h-10 bg-blue-100 rounded-lg flex items-center justify-center group-hover:bg-blue-200 transition-colors">
+                    <Eye className="w-5 h-5 text-blue-600" />
+                  </div>
+                  <div className="flex-1 text-left">
+                    <p className="font-semibold text-slate-800">Remover apenas do painel</p>
+                    <p className="text-xs text-slate-500">Os arquivos permanecerão disponíveis no servidor</p>
+                  </div>
+                </button>
+                
+                <button
+                  onClick={() => confirmDelete(true)}
+                  disabled={deleteLoading}
+                  className="w-full flex items-center gap-4 p-4 border-2 border-red-200 rounded-xl hover:border-red-400 hover:bg-red-50 transition-all group disabled:opacity-50"
+                >
+                  <div className="w-10 h-10 bg-red-100 rounded-lg flex items-center justify-center group-hover:bg-red-200 transition-colors">
+                    <Trash2 className="w-5 h-5 text-red-600" />
+                  </div>
+                  <div className="flex-1 text-left">
+                    <p className="font-semibold text-red-700">Excluir permanentemente</p>
+                    <p className="text-xs text-red-500">Remove do painel E apaga todos os arquivos do servidor</p>
+                  </div>
+                </button>
+              </div>
+              
+              {deleteLoading && (
+                <div className="flex items-center justify-center gap-2 text-slate-500">
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  <span className="text-sm">Excluindo...</span>
+                </div>
+              )}
+            </div>
+            
+            <div className="px-6 py-4 border-t border-slate-200 bg-slate-50">
+              <button
+                onClick={() => {
+                  setDeleteModalOpen(false);
+                  setDeleteRequestId(null);
+                }}
+                disabled={deleteLoading}
+                className="w-full px-4 py-2.5 text-sm font-medium text-slate-600 hover:text-slate-800 hover:bg-slate-100 rounded-lg transition disabled:opacity-50"
+              >
+                Cancelar
+              </button>
+            </div>
           </div>
         </div>
       )}

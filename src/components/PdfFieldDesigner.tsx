@@ -253,7 +253,7 @@ const PdfFieldDesigner: React.FC<PdfFieldDesignerProps> = ({
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-[80] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
+    <div className="fixed inset-0 z-[80] flex items-center justify-center p-4 bg-slate-100/80 backdrop-blur-sm">
       <div className="bg-white rounded-2xl shadow-2xl w-full max-w-6xl max-h-[92vh] overflow-hidden flex flex-col">
         {/* Header com etapas do processo */}
         <div className="flex items-center justify-between px-6 py-3 border-b border-slate-200 bg-white">

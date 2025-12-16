@@ -3,15 +3,16 @@ import type {
   SignatureRequest,
   SignatureRequestWithSigners,
   Signer,
+  SignatureField,
   CreateSignatureRequestDTO,
   CreateSignerDTO,
-  UpdateSignerDTO,
   SignDocumentDTO,
-  SignatureStats,
+  UpdateSignerDTO,
   SignatureAuditLog,
+  SignatureStats,
 } from '../types/signature.types';
 
-const STORAGE_BUCKET = 'signatures';
+const STORAGE_BUCKET = 'document-templates';
 
 class SignatureService {
   private requestsTable = 'signature_requests';
@@ -289,21 +290,37 @@ class SignatureService {
     await this.addAuditLog(id, null, 'cancelled', 'Solicitação de assinatura cancelada');
   }
 
-  async deleteRequest(id: string): Promise<void> {
-    // Buscar imagens para deletar do storage
+  async deleteRequest(id: string, deleteFilesFromServer: boolean = false): Promise<void> {
+    // Buscar dados para possível exclusão do storage
     const request = await this.getRequestWithSigners(id);
     if (!request) return;
 
     const pathsToDelete: string[] = [];
-    if (request.signature_image_path) pathsToDelete.push(request.signature_image_path);
-    if (request.facial_image_path) pathsToDelete.push(request.facial_image_path);
-    if (request.document_image_path) pathsToDelete.push(request.document_image_path);
+    
+    // Se deleteFilesFromServer = true, apaga TUDO (imagens, documentos, PDFs assinados)
+    // Se deleteFilesFromServer = false, apenas remove do banco (mantém arquivos no servidor)
+    if (deleteFilesFromServer) {
+      // Documento original
+      if (request.document_path) pathsToDelete.push(request.document_path);
+      
+      // Anexos
+      if (request.attachment_paths && request.attachment_paths.length > 0) {
+        pathsToDelete.push(...request.attachment_paths);
+      }
+      
+      // Imagens do request
+      if (request.signature_image_path) pathsToDelete.push(request.signature_image_path);
+      if (request.facial_image_path) pathsToDelete.push(request.facial_image_path);
+      if (request.document_image_path) pathsToDelete.push(request.document_image_path);
 
-    request.signers.forEach((signer) => {
-      if (signer.signature_image_path) pathsToDelete.push(signer.signature_image_path);
-      if (signer.facial_image_path) pathsToDelete.push(signer.facial_image_path);
-      if (signer.document_image_path) pathsToDelete.push(signer.document_image_path);
-    });
+      // Imagens e PDFs assinados dos signatários
+      request.signers.forEach((signer) => {
+        if (signer.signature_image_path) pathsToDelete.push(signer.signature_image_path);
+        if (signer.facial_image_path) pathsToDelete.push(signer.facial_image_path);
+        if (signer.document_image_path) pathsToDelete.push(signer.document_image_path);
+        if (signer.signed_document_path) pathsToDelete.push(signer.signed_document_path);
+      });
+    }
 
     // Deletar do banco (cascade deleta signers e audit_log)
     const { error } = await supabase
@@ -313,9 +330,18 @@ class SignatureService {
 
     if (error) throw new Error(error.message);
 
-    // Deletar imagens do storage
-    if (pathsToDelete.length > 0) {
-      await supabase.storage.from(STORAGE_BUCKET).remove(pathsToDelete);
+    // Deletar arquivos do storage apenas se solicitado
+    if (deleteFilesFromServer && pathsToDelete.length > 0) {
+      console.log('[DELETE] Removendo arquivos do storage:', pathsToDelete);
+      // Tentar remover de múltiplos buckets
+      const buckets = ['document-templates', 'generated-documents', 'signatures', 'assinados'];
+      for (const bucket of buckets) {
+        try {
+          await supabase.storage.from(bucket).remove(pathsToDelete);
+        } catch (e) {
+          console.warn(`[DELETE] Erro ao remover do bucket ${bucket}:`, e);
+        }
+      }
     }
   }
 
@@ -385,7 +411,39 @@ class SignatureService {
     return { signer, request, creator };
   }
 
-  async markSignerAsViewed(signerId: string): Promise<void> {
+  async getPublicSigningBundle(token: string): Promise<{
+    signer: Signer;
+    request: SignatureRequest;
+    creator?: { name: string; email: string };
+    fields: SignatureField[];
+  } | null> {
+    const { data, error } = await supabase.rpc('get_public_signing_bundle', {
+      p_token: token,
+    });
+
+    if (error) {
+      console.error('Erro ao buscar bundle público:', error);
+      return null;
+    }
+
+    if (!data) return null;
+
+    const creator = data.creator?.email
+      ? {
+          name: data.creator?.name || 'Usuário',
+          email: data.creator?.email || '',
+        }
+      : undefined;
+
+    return {
+      signer: data.signer as Signer,
+      request: data.request as SignatureRequest,
+      creator,
+      fields: (data.fields ?? []) as SignatureField[],
+    };
+  }
+
+  async markSignerAsViewed(signerId: string, ipAddress?: string, userAgent?: string): Promise<void> {
     const { error } = await supabase
       .from(this.signersTable)
       .update({ viewed_at: new Date().toISOString() })
@@ -405,6 +463,8 @@ class SignatureService {
           signer_id: signerId,
           action: 'viewed',
           description: `${signer.name} visualizou o documento`,
+          ip_address: ipAddress,
+          user_agent: userAgent,
         });
       } catch (e) {
         console.warn('Não foi possível registrar audit log (acesso público):', e);
@@ -489,6 +549,10 @@ class SignatureService {
       signer_user_agent: userAgent,
       signer_geolocation: payload.geolocation,
       verification_hash: this.generateVerificationHash(),
+      // Dados informados no momento da assinatura (não usar cadastro antigo)
+      name: payload.signer_name ?? signer.name,
+      cpf: payload.signer_cpf ?? signer.cpf,
+      phone: payload.signer_phone ?? signer.phone,
       // Dados de autenticação
       auth_provider: payload.auth_provider || null,
       auth_email: payload.auth_email || null,
@@ -561,21 +625,27 @@ class SignatureService {
     const filePath = `${prefix}_${Date.now()}.${extension}`;
     const contentType = `image/${extension === 'jpg' ? 'jpeg' : extension}`;
 
-    console.log('[UPLOAD] Tentando upload:', filePath, 'tamanho:', buffer.length, 'bytes');
+    console.log('[UPLOAD] Tentando upload:', filePath, 'tamanho:', buffer.length, 'bytes', 'bucket:', STORAGE_BUCKET);
 
     const { data, error } = await supabase.storage
       .from(STORAGE_BUCKET)
       .upload(filePath, buffer, {
         contentType,
-        upsert: true, // Mudado para true para sobrescrever se existir
+        upsert: true,
       });
 
     if (error) {
       console.error('[UPLOAD] Erro no upload:', error);
+      console.error('[UPLOAD] Bucket:', STORAGE_BUCKET, 'Path:', filePath);
       throw new Error(`Erro ao fazer upload: ${error.message}`);
     }
 
-    console.log('[UPLOAD] Upload bem sucedido:', data);
+    console.log('[UPLOAD] Upload bem sucedido:', data, 'bucket:', STORAGE_BUCKET, 'path:', filePath);
+    
+    // Verificar se o arquivo foi realmente salvo
+    const { data: checkData } = await supabase.storage.from(STORAGE_BUCKET).list('', { search: filePath.split('/').pop() });
+    console.log('[UPLOAD] Verificação do arquivo:', checkData);
+    
     return filePath;
   }
 
@@ -707,25 +777,26 @@ class SignatureService {
   }
 
   async getDocumentPreviewUrl(documentPath: string): Promise<string | null> {
-    // Tentar buscar do bucket generated-documents
+    // Ir direto para URL assinada (mais rápido, evita verificação HEAD)
     const { data, error } = await supabase.storage
+      .from(STORAGE_BUCKET)
+      .createSignedUrl(documentPath, 3600);
+
+    if (!error && data?.signedUrl) {
+      return data.signedUrl;
+    }
+
+    // Fallback: tentar do bucket generated-documents
+    const { data: data2, error: error2 } = await supabase.storage
       .from('generated-documents')
       .createSignedUrl(documentPath, 3600);
 
-    if (error || !data?.signedUrl) {
-      // Tentar do bucket document-templates
-      const { data: data2, error: error2 } = await supabase.storage
-        .from('document-templates')
-        .createSignedUrl(documentPath, 3600);
-
-      if (error2 || !data2?.signedUrl) {
-        console.warn('Não foi possível gerar URL do documento:', error?.message || error2?.message);
-        return null;
-      }
+    if (!error2 && data2?.signedUrl) {
       return data2.signedUrl;
     }
 
-    return data.signedUrl;
+    console.warn('Não foi possível gerar URL do documento:', error?.message || error2?.message);
+    return null;
   }
 
   generatePublicSigningUrl(token: string): string {
@@ -800,6 +871,24 @@ class SignatureService {
     const array = new Uint8Array(8);
     crypto.getRandomValues(array);
     return Array.from(array, (b) => b.toString(16).padStart(2, '0')).join('').toUpperCase();
+  }
+
+  // Upload de documento para assinatura
+  async uploadDocument(file: File): Promise<string> {
+    const extension = file.name.split('.').pop() ?? 'docx';
+    // Usar mesmo padrão do documentTemplate.service (uuid simples)
+    const filePath = `signatures/${crypto.randomUUID()}.${extension}`;
+    
+    const { error } = await supabase.storage
+      .from(STORAGE_BUCKET)
+      .upload(filePath, file, {
+        contentType: file.type || 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+        upsert: false,
+      });
+    
+    if (error) throw new Error(`Erro ao fazer upload: ${error.message}`);
+    
+    return filePath;
   }
 }
 

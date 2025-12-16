@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { Shield, CheckCircle, XCircle, Loader2, FileText, User, Calendar, Hash, AlertCircle, Download, Eye } from 'lucide-react';
 import { signatureService } from '../services/signature.service';
-import { pdfSignatureService } from '../services/pdfSignature.service';
+import { pdfSignatureService } from '@/services/pdfSignature.service';
 import type { Signer, SignatureRequest } from '../types/signature.types';
 
 interface VerificationResult {

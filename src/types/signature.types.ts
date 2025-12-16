@@ -9,6 +9,7 @@ export interface SignatureRequest {
   document_id: string;
   document_name: string;
   document_path?: string | null;
+  attachment_paths?: string[] | null; // Paths dos documentos anexos
   client_id?: string | null;
   client_name?: string | null;
   process_id?: string | null;
@@ -69,6 +70,7 @@ export interface CreateSignatureRequestDTO {
   document_id: string;
   document_name: string;
   document_path?: string | null;
+  attachment_paths?: string[] | null; // Paths dos documentos anexos
   client_id?: string | null;
   client_name?: string | null;
   process_id?: string | null;
@@ -102,6 +104,10 @@ export interface SignDocumentDTO {
   facial_image?: string | null; // Base64 da foto facial
   document_image?: string | null; // Base64 da foto do documento
   geolocation?: string | null;
+  // Dados informados pelo signatário no momento da assinatura
+  signer_name?: string | null;
+  signer_cpf?: string | null;
+  signer_phone?: string | null;
   // Dados de autenticação
   auth_provider?: 'google' | 'email_link' | 'phone' | null;
   auth_email?: string | null;
@@ -139,6 +145,7 @@ export type SignatureFieldType = 'signature' | 'initials' | 'name' | 'cpf' | 'da
 export interface SignatureField {
   id: string;
   signature_request_id: string;
+  document_id?: string;
   signer_id?: string | null;
   field_type: SignatureFieldType;
   page_number: number;
@@ -153,6 +160,7 @@ export interface SignatureField {
 
 export interface CreateSignatureFieldDTO {
   signature_request_id: string;
+  document_id?: string;
   signer_id?: string | null;
   field_type: SignatureFieldType;
   page_number: number;

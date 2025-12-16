@@ -1,5 +1,5 @@
 import { supabase } from '../config/supabase';
-import type { DocumentTemplate, CreateDocumentTemplateDTO, GeneratedDocument, CreateGeneratedDocumentDTO } from '../types/document.types';
+import type { DocumentTemplate, CreateDocumentTemplateDTO, GeneratedDocument, CreateGeneratedDocumentDTO, SignatureFieldConfigValue, TemplateFile, CustomField, CreateCustomFieldDTO, UpdateCustomFieldDTO } from '../types/document.types';
 
 const STORAGE_BUCKET = 'document-templates';
 const GENERATED_STORAGE_BUCKET = 'generated-documents';
@@ -302,6 +302,283 @@ class DocumentTemplateService {
     }
 
     return data.signedUrl;
+  }
+
+  // Atualizar configuração de campo de assinatura do template
+  async updateSignatureFieldConfig(
+    templateId: string,
+    config: SignatureFieldConfigValue
+  ): Promise<DocumentTemplate> {
+    const { data, error } = await supabase
+      .from(this.tableName)
+      .update({ signature_field_config: config })
+      .eq('id', templateId)
+      .select()
+      .single();
+
+    if (error) throw new Error(error.message);
+    return data;
+  }
+
+  // ========== MÉTODOS PARA MÚLTIPLOS ARQUIVOS POR TEMPLATE ==========
+
+  // Listar arquivos de um template
+  async listTemplateFiles(templateId: string): Promise<TemplateFile[]> {
+    const { data, error } = await supabase
+      .from('template_files')
+      .select('*')
+      .eq('template_id', templateId)
+      .order('order', { ascending: true });
+
+    if (error) throw new Error(error.message);
+    return data ?? [];
+  }
+
+  // Adicionar arquivo a um template
+  async addTemplateFile(templateId: string, file: File, order?: number): Promise<TemplateFile> {
+    await this.ensureBucket();
+
+    const extension = file.name.split('.').pop() ?? 'docx';
+    const filePath = `${templateId}/${crypto.randomUUID()}.${extension}`;
+
+    const { error: uploadError } = await supabase.storage
+      .from(STORAGE_BUCKET)
+      .upload(filePath, file, {
+        contentType: file.type || 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+        upsert: false,
+      });
+
+    if (uploadError) {
+      throw new Error(uploadError.message);
+    }
+
+    // Obter próxima ordem se não especificada
+    let fileOrder = order;
+    if (fileOrder === undefined) {
+      const { data: existingFiles } = await supabase
+        .from('template_files')
+        .select('order')
+        .eq('template_id', templateId)
+        .order('order', { ascending: false })
+        .limit(1);
+      
+      fileOrder = existingFiles && existingFiles.length > 0 ? existingFiles[0].order + 1 : 0;
+    }
+
+    const { data, error } = await supabase
+      .from('template_files')
+      .insert({
+        template_id: templateId,
+        file_path: filePath,
+        file_name: file.name,
+        mime_type: file.type || 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+        file_size: file.size,
+        order: fileOrder,
+      })
+      .select()
+      .single();
+
+    if (error) {
+      // Rollback: remover arquivo se insert falhar
+      await supabase.storage.from(STORAGE_BUCKET).remove([filePath]);
+      throw new Error(error.message);
+    }
+
+    return data;
+  }
+
+  // Remover arquivo de um template
+  async removeTemplateFile(fileId: string): Promise<void> {
+    // Primeiro, obter o arquivo para saber o path
+    const { data: file, error: fetchError } = await supabase
+      .from('template_files')
+      .select('file_path')
+      .eq('id', fileId)
+      .single();
+
+    if (fetchError) throw new Error(fetchError.message);
+
+    // Remover do storage
+    if (file?.file_path) {
+      await supabase.storage.from(STORAGE_BUCKET).remove([file.file_path]);
+    }
+
+    // Remover do banco
+    const { error } = await supabase
+      .from('template_files')
+      .delete()
+      .eq('id', fileId);
+
+    if (error) throw new Error(error.message);
+  }
+
+  // Atualizar ordem dos arquivos
+  async updateTemplateFileOrder(fileId: string, newOrder: number): Promise<void> {
+    const { error } = await supabase
+      .from('template_files')
+      .update({ order: newOrder })
+      .eq('id', fileId);
+
+    if (error) throw new Error(error.message);
+  }
+
+  // Atualizar configuração de assinatura de um arquivo específico
+  async updateTemplateFileSignatureConfig(
+    fileId: string,
+    config: SignatureFieldConfigValue
+  ): Promise<TemplateFile> {
+    const { data, error } = await supabase
+      .from('template_files')
+      .update({ signature_field_config: config })
+      .eq('id', fileId)
+      .select()
+      .single();
+
+    if (error) throw new Error(error.message);
+    return data;
+  }
+
+  // Download de arquivo específico do template
+  async downloadTemplateFileById(fileId: string): Promise<Blob> {
+    const { data: file, error: fetchError } = await supabase
+      .from('template_files')
+      .select('file_path')
+      .eq('id', fileId)
+      .single();
+
+    if (fetchError || !file?.file_path) {
+      throw new Error('Arquivo não encontrado.');
+    }
+
+    const { data, error } = await supabase.storage
+      .from(STORAGE_BUCKET)
+      .download(file.file_path);
+
+    if (error || !data) {
+      throw new Error(error?.message ?? 'Não foi possível baixar o arquivo.');
+    }
+
+    return data;
+  }
+
+  // Obter template com todos os arquivos
+  async getTemplateWithFiles(templateId: string): Promise<DocumentTemplate & { files: TemplateFile[] }> {
+    const template = await this.getTemplate(templateId);
+    if (!template) throw new Error('Template não encontrado.');
+
+    const files = await this.listTemplateFiles(templateId);
+
+    return { ...template, files };
+  }
+
+  // ==================== CAMPOS PERSONALIZADOS GLOBAIS ====================
+
+  // Listar todos os campos personalizados globais
+  async listCustomFields(): Promise<CustomField[]> {
+    const { data, error } = await supabase
+      .from('document_custom_fields')
+      .select('*')
+      .order('order', { ascending: true });
+
+    if (error) throw new Error(error.message);
+    return data ?? [];
+  }
+
+  // Obter um campo personalizado por ID
+  async getCustomField(id: string): Promise<CustomField | null> {
+    const { data, error } = await supabase
+      .from('document_custom_fields')
+      .select('*')
+      .eq('id', id)
+      .single();
+
+    if (error) {
+      if (error.code === 'PGRST116') return null;
+      throw new Error(error.message);
+    }
+
+    return data;
+  }
+
+  // Criar campo personalizado global
+  async createCustomField(dto: CreateCustomFieldDTO): Promise<CustomField> {
+    // Obter a maior ordem atual
+    const { data: existingFields } = await supabase
+      .from('document_custom_fields')
+      .select('order')
+      .order('order', { ascending: false })
+      .limit(1);
+
+    const nextOrder = dto.order ?? ((existingFields?.[0]?.order ?? -1) + 1);
+
+    const { data, error } = await supabase
+      .from('document_custom_fields')
+      .insert({
+        name: dto.name,
+        placeholder: dto.placeholder.toUpperCase().replace(/\s+/g, '_'),
+        field_type: dto.field_type,
+        required: dto.required ?? false,
+        default_value: dto.default_value,
+        options: dto.options,
+        description: dto.description,
+        order: nextOrder,
+      })
+      .select()
+      .single();
+
+    if (error) throw new Error(error.message);
+    return data;
+  }
+
+  // Atualizar campo personalizado
+  async updateCustomField(id: string, dto: UpdateCustomFieldDTO): Promise<CustomField> {
+    const updateData: Record<string, unknown> = {};
+
+    if (dto.name !== undefined) updateData.name = dto.name;
+    if (dto.placeholder !== undefined) updateData.placeholder = dto.placeholder.toUpperCase().replace(/\s+/g, '_');
+    if (dto.field_type !== undefined) updateData.field_type = dto.field_type;
+    if (dto.required !== undefined) updateData.required = dto.required;
+    if (dto.default_value !== undefined) updateData.default_value = dto.default_value;
+    if (dto.options !== undefined) updateData.options = dto.options;
+    if (dto.description !== undefined) updateData.description = dto.description;
+    if (dto.order !== undefined) updateData.order = dto.order;
+
+    const { data, error } = await supabase
+      .from('document_custom_fields')
+      .update(updateData)
+      .eq('id', id)
+      .select()
+      .single();
+
+    if (error) throw new Error(error.message);
+    return data;
+  }
+
+  // Excluir campo personalizado
+  async deleteCustomField(id: string): Promise<void> {
+    const { error } = await supabase
+      .from('document_custom_fields')
+      .delete()
+      .eq('id', id);
+
+    if (error) throw new Error(error.message);
+  }
+
+  // Reordenar campos personalizados
+  async reorderCustomFields(fieldIds: string[]): Promise<void> {
+    const updates = fieldIds.map((id, index) => ({
+      id,
+      order: index,
+    }));
+
+    for (const update of updates) {
+      const { error } = await supabase
+        .from('document_custom_fields')
+        .update({ order: update.order })
+        .eq('id', update.id);
+
+      if (error) throw new Error(error.message);
+    }
   }
 }
 

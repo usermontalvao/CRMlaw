@@ -1861,13 +1861,13 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({
               </div>
             </div>
 
-            <div className="border-t border-slate-200 dark:border-zinc-800 bg-slate-50 dark:bg-zinc-900 px-3 sm:px-6 py-2 sm:py-3">
+            <div className="flex-shrink-0 border-t border-slate-200 dark:border-zinc-800 bg-slate-50 dark:bg-zinc-900 px-3 sm:px-6 py-3 sm:py-4">
               <div className="flex flex-wrap justify-end gap-2 sm:gap-3">
                 {editingEventId && (
                   <button
                     type="button"
                     onClick={handleDeleteEvent}
-                    className="px-3 sm:px-4 py-1.5 sm:py-2 text-xs sm:text-sm font-semibold text-white bg-red-600 hover:bg-red-700 rounded-lg transition disabled:cursor-not-allowed"
+                    className="px-3 sm:px-4 py-2 sm:py-2.5 text-xs sm:text-sm font-semibold text-white bg-red-600 hover:bg-red-700 rounded-lg transition disabled:cursor-not-allowed"
                     disabled={savingEvent}
                   >
                     Excluir
@@ -1876,7 +1876,7 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({
                 <button
                   type="button"
                   onClick={handleCloseCreateModal}
-                  className="px-3 sm:px-4 py-1.5 sm:py-2 text-xs sm:text-sm font-medium text-slate-600 hover:text-slate-800 transition"
+                  className="px-3 sm:px-4 py-2 sm:py-2.5 text-xs sm:text-sm font-medium text-slate-600 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-200 transition"
                   disabled={savingEvent}
                 >
                   Cancelar
@@ -1884,7 +1884,7 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({
                 <button
                   type="button"
                   onClick={handleSubmitEvent}
-                  className="inline-flex items-center gap-1.5 sm:gap-2 px-3 sm:px-4 py-1.5 sm:py-2 text-xs sm:text-sm font-semibold bg-slate-900 hover:bg-slate-800 text-white rounded-lg transition disabled:opacity-60"
+                  className="inline-flex items-center gap-1.5 sm:gap-2 px-4 sm:px-6 py-2 sm:py-2.5 text-xs sm:text-sm font-semibold bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition disabled:opacity-60 shadow-sm"
                   disabled={savingEvent}
                 >
                   {savingEvent && <Loader2 className="w-3.5 h-3.5 sm:w-4 sm:h-4 animate-spin" />}

@@ -70,22 +70,25 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     // Listen for auth changes - com debounce para evitar múltiplas chamadas
     let lastEvent = '';
     let lastEventTime = 0;
+    let lastUserId = '';
     
     const {
       data: { subscription },
     } = supabase.auth.onAuthStateChange((event, session) => {
       const now = Date.now();
+      const currentUserId = session?.user?.id || '';
       
-      // Ignorar eventos duplicados em menos de 1 segundo
-      if (event === lastEvent && now - lastEventTime < 1000) {
+      // Ignorar eventos duplicados em menos de 2 segundos (mesmo evento + mesmo usuário)
+      if (event === lastEvent && currentUserId === lastUserId && now - lastEventTime < 2000) {
         return;
       }
       
       lastEvent = event;
       lastEventTime = now;
+      lastUserId = currentUserId;
       
-      // Log apenas eventos importantes
-      if (event === 'SIGNED_IN' || event === 'SIGNED_OUT') {
+      // Log apenas SIGNED_OUT (SIGNED_IN é muito verboso)
+      if (event === 'SIGNED_OUT') {
         console.log('Auth:', event);
       }
       

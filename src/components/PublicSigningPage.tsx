@@ -1,11 +1,12 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { AlertCircle, Camera, CheckCircle, Download, FileText, Loader2, MapPin, PenTool, RotateCcw, Scale, Share2, User, X, Shield } from 'lucide-react';
 import { signatureService } from '../services/signature.service';
-import { pdfSignatureService } from '../services/pdfSignature.service';
+import { pdfSignatureService } from '@/services/pdfSignature.service';
 import { googleAuthService, type GoogleUser } from '../services/googleAuth.service';
 import { useToastContext } from '../contexts/ToastContext';
-import type { Signer, SignatureRequest } from '../types/signature.types';
+import type { SignatureField, Signer, SignatureRequest } from '../types/signature.types';
 import SignatureReport from './SignatureReport';
+import { renderAsync } from 'docx-preview';
 
 interface PublicSigningPageProps {
   token: string;
@@ -20,17 +21,41 @@ interface SignerData {
   phone: string;
 }
 
+const formatCpf = (value: string): string => {
+  const digits = value.replace(/\D/g, '').slice(0, 11);
+  const part1 = digits.slice(0, 3);
+  const part2 = digits.slice(3, 6);
+  const part3 = digits.slice(6, 9);
+  const part4 = digits.slice(9, 11);
+
+  let formatted = part1;
+  if (part2) formatted += `.${part2}`;
+  if (part3) formatted += `.${part3}`;
+  if (part4) formatted += `-${part4}`;
+  return formatted;
+};
+
 const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
   const toast = useToastContext();
   const [step, setStep] = useState<SigningStep>('loading');
   const [signer, setSigner] = useState<Signer | null>(null);
   const [request, setRequest] = useState<SignatureRequest | null>(null);
+  const [signatureFields, setSignatureFields] = useState<SignatureField[]>([]);
   const [signerData, setSignerData] = useState<SignerData>({ name: '', cpf: '', phone: '' });
   const [signatureData, setSignatureData] = useState<string | null>(null);
   const [facialData, setFacialData] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [pdfUrl, setPdfUrl] = useState<string | null>(null);
+  const [isDocx, setIsDocx] = useState(false);
+  const [docxLoading, setDocxLoading] = useState(false);
+  const docxContainerRef = useRef<HTMLDivElement>(null);
+  
+  // Documentos anexos
+  const [attachments, setAttachments] = useState<{ name: string; url: string; rendered?: boolean; prefetched?: boolean; isDocx?: boolean }[]>([]);
+  const attachmentRefs = useRef<(HTMLDivElement | null)[]>([]);
+  const attachmentBlobRef = useRef<(Blob | null)[]>([]);
+  const attachmentObjectUrlRef = useRef<(string | null)[]>([]);
 
   const [activeTab, setActiveTab] = useState<'signers' | 'history'>('signers');
   const [isSignModalOpen, setIsSignModalOpen] = useState(false);
@@ -58,8 +83,8 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
   const [locationError, setLocationError] = useState<string | null>(null);
 
   // Signed document viewer
-  const [viewingSignedDocument, setViewingSignedDocument] = useState(false);
   const [signedDocumentUrl, setSignedDocumentUrl] = useState<string | null>(null);
+  const [downloadingAlreadySigned, setDownloadingAlreadySigned] = useState(false);
 
   // Google Auth
   const [googleUser, setGoogleUser] = useState<GoogleUser | null>(null);
@@ -71,6 +96,190 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
   useEffect(() => {
     loadSignerData();
   }, [token]);
+
+  useEffect(() => {
+    return () => {
+      // Cleanup de object URLs gerados no prefetch
+      for (const url of attachmentObjectUrlRef.current) {
+        if (url) {
+          try { URL.revokeObjectURL(url); } catch { /* noop */ }
+        }
+      }
+    };
+  }, []);
+
+  // Renderizar DOCX quando a URL estiver disponível
+  useEffect(() => {
+    console.log('🔍 useEffect DOCX disparado - pdfUrl:', !!pdfUrl, 'isDocx:', isDocx, 'step:', step);
+    
+    if (!pdfUrl || !isDocx) {
+      console.log('❌ Aguardando: pdfUrl ou isDocx faltando');
+      return;
+    }
+    
+    if (step !== 'success') {
+      console.log('❌ Step não é success:', step);
+      return;
+    }
+    
+    const renderDocx = async () => {
+      try {
+        setDocxLoading(true);
+        console.log('📥 Baixando DOCX de:', pdfUrl);
+        
+        // Adicionar estilos para formatação A4 consistente (igual ao SignatureModule)
+        const styleId = 'docx-page-break-styles-public';
+        if (!document.getElementById(styleId)) {
+          const style = document.createElement('style');
+          style.id = styleId;
+          style.textContent = `
+            .docx-wrapper {
+              background: #e2e8f0 !important;
+              padding: 24px !important;
+              display: flex !important;
+              flex-direction: column !important;
+              align-items: center !important;
+            }
+            /* Estilo para sections (páginas) - FORÇAR A4 FIXO */
+            .docx-wrapper > section,
+            .docx-wrapper article,
+            .docx-wrapper .docx {
+              width: 794px !important; /* A4 width at 96 DPI */
+              min-width: 794px !important;
+              max-width: 794px !important;
+              background: white !important;
+              box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1) !important;
+              margin-bottom: 30px !important;
+              border-radius: 4px !important;
+              position: relative !important;
+              padding: 40px !important;
+            }
+            /* Separador visual entre páginas */
+            .docx-wrapper > section::after,
+            .docx-wrapper article::after {
+              content: '— Fim da Página —' !important;
+              display: block !important;
+              text-align: center !important;
+              padding: 16px !important;
+              margin-top: 20px !important;
+              color: #64748b !important;
+              font-size: 12px !important;
+              font-weight: 500 !important;
+              border-top: 2px dashed #cbd5e1 !important;
+            }
+            .docx-wrapper > section:last-child::after,
+            .docx-wrapper article:last-child::after {
+              content: '— Última Página —' !important;
+              border-top-color: #3b82f6 !important;
+              color: #3b82f6 !important;
+            }
+          `;
+          document.head.appendChild(style);
+        }
+        
+        const response = await fetch(pdfUrl);
+        console.log('📥 Response status:', response.status, response.ok);
+        
+        if (!response.ok) {
+          console.error('❌ Erro ao baixar DOCX:', response.status, response.statusText);
+          return;
+        }
+        
+        const blob = await response.blob();
+        console.log('📥 Blob size:', blob.size, 'type:', blob.type);
+        
+        // Aguardar o container estar disponível
+        await new Promise(resolve => setTimeout(resolve, 100));
+        
+        if (docxContainerRef.current) {
+          console.log('🎨 Renderizando DOCX no container...');
+          docxContainerRef.current.innerHTML = '';
+          await renderAsync(blob, docxContainerRef.current, undefined, {
+            className: 'docx-wrapper',
+            inWrapper: true,
+            ignoreWidth: false,
+            ignoreHeight: false,
+            breakPages: true, // Habilitar quebra de páginas (igual ao SignatureModule)
+            renderHeaders: true,
+            renderFooters: true,
+            renderFootnotes: true,
+          });
+          console.log('✅ DOCX renderizado com sucesso!');
+        } else {
+          console.error('❌ Container ref não disponível');
+        }
+      } catch (err) {
+        console.error('❌ Erro ao renderizar DOCX:', err);
+      } finally {
+        setDocxLoading(false);
+      }
+    };
+    
+    renderDocx();
+  }, [pdfUrl, isDocx, step]);
+
+  // Renderizar anexos DOCX quando carregados
+  useEffect(() => {
+    if (attachments.length === 0) return;
+    
+    const renderAttachments = async () => {
+      let needsRetry = false;
+      for (let i = 0; i < attachments.length; i++) {
+        const attach = attachments[i];
+        if (attach.rendered) continue;
+        
+        const container = attachmentRefs.current[i];
+        if (!container) {
+          needsRetry = true;
+          continue;
+        }
+        
+        // Verificar se é DOCX
+        const isDocxFile = !!attach.isDocx;
+        if (!isDocxFile) continue;
+        
+        try {
+          console.log(`📎 Renderizando anexo ${i + 1}:`, attach.name);
+          let blob = attachmentBlobRef.current[i];
+          if (!blob) {
+            const response = await fetch(attach.url);
+            if (!response.ok) {
+              console.error(`❌ Erro ao baixar anexo ${i + 1}:`, response.status);
+              continue;
+            }
+            blob = await response.blob();
+            attachmentBlobRef.current[i] = blob;
+          }
+
+          container.innerHTML = '';
+          await renderAsync(blob, container, undefined, {
+            className: 'docx-wrapper',
+            inWrapper: true,
+            ignoreWidth: false,
+            ignoreHeight: false,
+            breakPages: true,
+            renderHeaders: true,
+            renderFooters: true,
+            renderFootnotes: true,
+          });
+          
+          // Marcar como renderizado
+          setAttachments(prev => prev.map((a, idx) => 
+            idx === i ? { ...a, rendered: true } : a
+          ));
+          console.log(`✅ Anexo ${i + 1} renderizado com sucesso!`);
+        } catch (err) {
+          console.error(`❌ Erro ao renderizar anexo ${i + 1}:`, err);
+        }
+      }
+
+      if (needsRetry) {
+        setTimeout(renderAttachments, 100);
+      }
+    };
+    
+    renderAttachments();
+  }, [attachments]);
 
   useEffect(() => {
     if (isSignModalOpen && modalStep === 'signature' && canvasRef.current) {
@@ -155,11 +364,9 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
     setGoogleUser(user);
 
     if (signer?.email && user.email.toLowerCase() !== signer.email.toLowerCase()) {
-      setGoogleAuthError(
-        `O email autenticado (${user.email}) não corresponde ao email do signatário (${signer.email}). Por favor, use a conta correta.`
+      toast.warning(
+        `Atenção: o email autenticado (${user.email}) é diferente do email do signatário (${signer.email}).`
       );
-      setGoogleUser(null);
-      return;
     }
 
     if (user.name) {
@@ -219,7 +426,7 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
   const loadSignerData = async () => {
     try {
       setStep('loading');
-      const data = await signatureService.getSignerWithRequestByToken(token);
+      const data = await signatureService.getPublicSigningBundle(token);
       
       if (!data) {
         setError('Link de assinatura inválido ou expirado.');
@@ -227,26 +434,109 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
         return;
       }
 
+      console.log('[PUBLIC] Bundle carregado:', {
+        requestId: data.request?.id,
+        signerId: data.signer?.id,
+        fields: data.fields?.length ?? 0,
+      });
+
       setSigner(data.signer);
       setRequest(data.request);
-      setSignerData({ name: data.signer.name || '', cpf: data.signer.cpf || '', phone: '' });
+      setSignatureFields(data.fields ?? []);
+      setSignerData({ name: data.signer.name || '', cpf: '', phone: '' });
       if (data.creator) setCreator(data.creator);
 
-      // Tentar carregar preview do documento
+      // Tentar carregar preview do documento principal
       if (data.request.document_path) {
         try {
+          // Verificar se é DOCX
+          const docPath = data.request.document_path.toLowerCase();
+          const isDocxFile = docPath.endsWith('.docx') || docPath.endsWith('.doc');
+          setIsDocx(isDocxFile);
+          
+          console.log('📄 Carregando documento:', data.request.document_path, 'isDocx:', isDocxFile);
+          
           const url = await signatureService.getDocumentPreviewUrl(data.request.document_path);
+          console.log('📄 URL do documento:', url ? 'OK' : 'FALHOU');
+          
           if (url) setPdfUrl(url);
         } catch (e) {
           console.warn('Não foi possível carregar preview do documento:', e);
         }
       }
+      
+      // Carregar documentos anexos
+      if (data.request.attachment_paths && data.request.attachment_paths.length > 0) {
+        console.log('📎 Carregando anexos:', data.request.attachment_paths);
+        const attachPaths = data.request.attachment_paths;
+
+        const results = await Promise.all(
+          attachPaths.map(async (attachPath) => {
+            try {
+              const attachUrl = await signatureService.getDocumentPreviewUrl(attachPath);
+              if (!attachUrl) return null;
+              const fileName = attachPath.split('/').pop() || 'Anexo';
+              const lower = fileName.toLowerCase();
+              const isDocxFile = lower.endsWith('.docx') || lower.endsWith('.doc');
+              return {
+                name: fileName,
+                url: attachUrl,
+                rendered: false,
+                prefetched: false,
+                isDocx: isDocxFile,
+              };
+            } catch (e) {
+              console.warn('Erro ao carregar anexo:', attachPath, e);
+              return null;
+            }
+          })
+        );
+
+        const loadedAttachments = results.filter(Boolean) as { name: string; url: string; rendered?: boolean; prefetched?: boolean; isDocx?: boolean }[];
+        setAttachments(loadedAttachments);
+        console.log('📎 Anexos carregados:', loadedAttachments.length);
+
+        // Prefetch DOCX em paralelo (para renderizar sem esperar fetch sequencial)
+        const prefetchTargets = loadedAttachments
+          .map((a, i) => ({ a, i }))
+          .filter((x) => !!x.a.isDocx);
+
+        const concurrency = 3;
+        let cursor = 0;
+        const workers = new Array(Math.min(concurrency, prefetchTargets.length)).fill(0).map(async () => {
+          while (cursor < prefetchTargets.length) {
+            const current = prefetchTargets[cursor++];
+            try {
+              if (attachmentBlobRef.current[current.i]) continue;
+              const res = await fetch(current.a.url);
+              if (!res.ok) continue;
+              const blob = await res.blob();
+              attachmentBlobRef.current[current.i] = blob;
+              setAttachments((prev) => prev.map((p, idx) => (idx === current.i ? { ...p, prefetched: true } : p)));
+            } catch {
+              // ignore
+            }
+          }
+        });
+
+        await Promise.all(workers);
+      }
 
       if (data.signer.status === 'signed') {
         setStep('already_signed');
       } else {
-        // Registrar visualização
-        await signatureService.markSignerAsViewed(data.signer.id);
+        // Registrar visualização (capturar IP + plataforma)
+        const userAgent = navigator.userAgent;
+        let ipAddress: string | undefined;
+        try {
+          const ipResponse = await fetch('https://api.ipify.org?format=json');
+          const ipData = await ipResponse.json();
+          ipAddress = ipData.ip;
+        } catch (e) {
+          // Não bloquear o fluxo
+        }
+
+        await signatureService.markSignerAsViewed(data.signer.id, ipAddress, userAgent);
         // Atualizar signer local com viewed_at
         setSigner(prev => prev ? { ...prev, viewed_at: new Date().toISOString() } : prev);
         // Página carregada (layout Autentique)
@@ -452,9 +742,12 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
           signature_image: signatureData,
           facial_image: facialData || undefined,
           geolocation: locationData ? `${locationData.lat}, ${locationData.lng}` : undefined,
+          signer_name: signerData.name || undefined,
+          signer_cpf: signerData.cpf || undefined,
+          signer_phone: signerData.phone || undefined,
           // Dados de autenticação
           auth_provider: googleUser ? 'google' : 'email_link',
-          auth_email: googleUser?.email || signer.email || undefined,
+          auth_email: googleUser?.email || undefined,
           auth_google_sub: googleUser?.sub || undefined,
           auth_google_picture: googleUser?.picture || undefined,
         },
@@ -462,18 +755,177 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
         userAgent
       );
       
-      // Gerar e salvar o PDF assinado no storage
-      if (request && pdfUrl) {
+      // Gerar e salvar o PDF COMPILADO no storage
+      // Inclui: documento principal + anexos PDF + relatório com selfie no final
+      if (request) {
         try {
-          const signedPdfPath = await pdfSignatureService.saveSignedPdfToStorage({
-            request,
-            signer: result,
-            originalPdfUrl: pdfUrl,
-            creator,
-          });
+          let signedPdfPath: string;
+          
+          // Coletar URLs dos anexos PDF para compilar
+          const attachmentPdfItems = attachments
+            .map((a, i) => ({ a, i }))
+            .filter((x) => x.a.url && x.a.name.toLowerCase().endsWith('.pdf'))
+            .map((x) => ({ documentId: `attachment-${x.i}`, url: x.a.url }));
+          
+          // Tentar obter URL do documento original se não tiver
+          let originalPdfUrlToUse = pdfUrl;
+          if (!originalPdfUrlToUse && request.document_path) {
+            try {
+              originalPdfUrlToUse = await signatureService.getDocumentPreviewUrl(request.document_path);
+              console.log('[ASSINATURA] URL do documento obtida:', originalPdfUrlToUse ? 'OK' : 'FALHOU');
+            } catch (e) {
+              console.warn('[ASSINATURA] Erro ao obter URL do documento:', e);
+            }
+          }
+          
+          // Verificar se é DOCX pelo path
+          const docPath = request.document_path?.toLowerCase() || '';
+          const isDocxFile = docPath.endsWith('.docx') || docPath.endsWith('.doc');
+          
+          if (originalPdfUrlToUse && !isDocxFile) {
+            // Documento original é PDF - gerar PDF completo (documento + anexos + relatório)
+            signedPdfPath = await pdfSignatureService.saveSignedPdfToStorage({
+              request,
+              signer: result,
+              originalPdfUrl: originalPdfUrlToUse,
+              creator,
+              attachmentPdfItems,
+            });
+          } else if (isDocxFile) {
+            // Documento original é DOCX - renderizar offscreen e converter para PDF
+            console.log('[ASSINATURA] Convertendo DOCX para PDF (offscreen)...');
+
+            const ensureOffscreenDocxStyle = () => {
+              const styleId = 'docx-offscreen-style-public';
+              if (document.getElementById(styleId)) return;
+              const style = document.createElement('style');
+              style.id = styleId;
+              style.textContent = `
+                .docx-wrapper {
+                  background: #ffffff !important;
+                  padding: 0 !important;
+                }
+                .docx-wrapper > section,
+                .docx-wrapper article,
+                .docx-wrapper .docx {
+                  width: 794px !important;
+                  min-width: 794px !important;
+                  max-width: 794px !important;
+                  background: #ffffff !important;
+                }
+              `;
+              document.head.appendChild(style);
+            };
+
+            const renderDocxOffscreen = async (docxUrl: string) => {
+              ensureOffscreenDocxStyle();
+              const res = await fetch(docxUrl);
+              if (!res.ok) throw new Error(`Falha ao baixar DOCX: HTTP ${res.status}`);
+              const blob = await res.blob();
+
+              const host = document.createElement('div');
+              host.style.position = 'fixed';
+              host.style.left = '-100000px';
+              host.style.top = '0';
+              host.style.width = '794px';
+              host.style.background = '#ffffff';
+              host.style.zIndex = '-1';
+              host.style.pointerEvents = 'none';
+              document.body.appendChild(host);
+
+              await renderAsync(blob, host, undefined, {
+                className: 'docx-wrapper',
+                inWrapper: true,
+                ignoreWidth: false,
+                ignoreHeight: false,
+                breakPages: true,
+                renderHeaders: true,
+                renderFooters: true,
+                renderFootnotes: true,
+              });
+
+              // Aguardar renderização completa
+              await new Promise(r => setTimeout(r, 500));
+              console.log('[ASSINATURA] DOCX renderizado, innerHTML length:', host.innerHTML.length);
+
+              return host;
+            };
+
+            const cleanupHosts: HTMLElement[] = [];
+            try {
+              const mainDocUrl = originalPdfUrlToUse || await signatureService.getDocumentPreviewUrl(request.document_path!);
+              if (!mainDocUrl) throw new Error('Erro ao obter URL do documento principal');
+              console.log('[ASSINATURA] URL do documento principal:', mainDocUrl);
+
+              const mainHost = await renderDocxOffscreen(mainDocUrl);
+              cleanupHosts.push(mainHost);
+              console.log('[ASSINATURA] Documento principal renderizado offscreen');
+
+              const attachmentDocxItems: { documentId: string; container: HTMLElement }[] = [];
+              const pdfAttachmentItems: { documentId: string; url: string }[] = [];
+
+              console.log('[ASSINATURA] Total de anexos:', attachments.length);
+              for (let i = 0; i < attachments.length; i++) {
+                const attach = attachments[i];
+                console.log('[ASSINATURA] Anexo', i, ':', attach.name, 'URL:', attach.url ? 'OK' : 'MISSING');
+                if (!attach.url) continue;
+                const lower = attach.name.toLowerCase();
+
+                if (lower.endsWith('.pdf')) {
+                  pdfAttachmentItems.push({ documentId: `attachment-${i}`, url: attach.url });
+                  console.log('[ASSINATURA] Anexo PDF adicionado:', `attachment-${i}`);
+                  continue;
+                }
+
+                if (lower.endsWith('.docx') || lower.endsWith('.doc')) {
+                  console.log('[ASSINATURA] Renderizando anexo DOCX offscreen:', attach.name);
+                  const host = await renderDocxOffscreen(attach.url);
+                  cleanupHosts.push(host);
+                  attachmentDocxItems.push({ documentId: `attachment-${i}`, container: host });
+                  console.log('[ASSINATURA] Anexo DOCX adicionado:', `attachment-${i}`);
+                }
+              }
+
+              console.log('[ASSINATURA] Anexos DOCX:', attachmentDocxItems.length, 'Anexos PDF:', pdfAttachmentItems.length);
+              console.log('[ASSINATURA] Campos de assinatura:', signatureFields.length);
+              console.log('[ASSINATURA] Campos detalhes:', signatureFields.map(f => ({ doc: f.document_id, page: f.page_number, type: f.field_type })));
+
+              signedPdfPath = await pdfSignatureService.saveSignedDocxAsPdf({
+                request,
+                signer: result,
+                creator,
+                docxContainer: mainHost,
+                attachmentDocxItems,
+                attachmentPdfItems: pdfAttachmentItems,
+                fieldsOverride: signatureFields,
+              });
+            } finally {
+              for (const el of cleanupHosts) {
+                try { el.remove(); } catch { /* noop */ }
+              }
+            }
+          } else {
+            // Fallback - gerar apenas relatório de assinatura
+            signedPdfPath = await pdfSignatureService.saveSignatureReportToStorage({
+              request,
+              signer: result,
+              creator,
+            });
+          }
+          
           // Atualizar o signer com o path do PDF assinado
           await signatureService.updateSignerSignedDocumentPath(result.id, signedPdfPath);
           result.signed_document_path = signedPdfPath;
+          console.log('[ASSINATURA] PDF compilado salvo com sucesso:', signedPdfPath);
+
+          try {
+            const signedUrl = await pdfSignatureService.getSignedPdfUrl(signedPdfPath);
+            if (signedUrl) {
+              setSignedDocumentUrl(signedUrl);
+            }
+          } catch {
+            // Não bloquear
+          }
         } catch (pdfErr) {
           console.error('Erro ao salvar PDF assinado:', pdfErr);
           // Não bloquear o fluxo se falhar
@@ -565,21 +1017,24 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
     const handleDownloadAlreadySigned = async () => {
       if (!request || !signer) return;
       try {
-        if (!signer.signed_document_path) {
-          toast.error('Documento assinado indisponível no momento.');
-          return;
+        setDownloadingAlreadySigned(true);
+        
+        // Verificar se já existe PDF assinado salvo no bucket 'assinados'
+        if (signer.signed_document_path) {
+          const signedUrl = await pdfSignatureService.getSignedPdfUrl(signer.signed_document_path);
+          if (signedUrl) {
+            console.log('[DOWNLOAD] Usando PDF já salvo:', signer.signed_document_path);
+            window.open(signedUrl, '_blank');
+            return;
+          }
         }
 
-        const url = await pdfSignatureService.getSignedPdfUrl(signer.signed_document_path);
-        if (!url) {
-          toast.error('Não foi possível abrir o documento assinado.');
-          return;
-        }
-
-        window.open(url, '_blank');
+        toast.error('Documento assinado indisponível no momento. Tente novamente mais tarde.');
       } catch (e) {
         console.error('Erro ao baixar:', e);
         toast.error('Erro ao abrir documento assinado');
+      } finally {
+        setDownloadingAlreadySigned(false);
       }
     };
 
@@ -594,15 +1049,23 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
             Este documento já foi assinado em {signer?.signed_at ? formatDate(signer.signed_at) : ''}.
           </p>
           
-          {signer?.signed_document_path && (
-            <button
-              onClick={handleDownloadAlreadySigned}
-              className="w-full flex items-center justify-center gap-2 px-6 py-3 bg-gradient-to-r from-blue-600 to-blue-700 text-white rounded-xl font-semibold hover:from-blue-700 hover:to-blue-800 transition-all shadow-lg shadow-blue-500/25"
-            >
-              <Download className="w-5 h-5" />
-              Abrir documento assinado
-            </button>
-          )}
+          <button
+            onClick={handleDownloadAlreadySigned}
+            disabled={downloadingAlreadySigned}
+            className="w-full flex items-center justify-center gap-2 px-6 py-3 bg-gradient-to-r from-blue-600 to-blue-700 text-white rounded-xl font-semibold hover:from-blue-700 hover:to-blue-800 transition-all shadow-lg shadow-blue-500/25 disabled:opacity-70 disabled:cursor-wait"
+          >
+            {downloadingAlreadySigned ? (
+              <>
+                <Loader2 className="w-5 h-5 animate-spin" />
+                Preparando...
+              </>
+            ) : (
+              <>
+                <Download className="w-5 h-5" />
+                Baixar documento assinado
+              </>
+            )}
+          </button>
         </div>
       </div>
     );
@@ -622,56 +1085,6 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
       );
     }
     
-    // Mostrar documento assinado completo
-    if (viewingSignedDocument && signedDocumentUrl) {
-      return (
-        <div className="fixed inset-0 z-50 bg-black/80 flex flex-col">
-          <div className="bg-slate-800 text-white p-4 flex items-center justify-between">
-            <h2 className="text-lg font-medium">Documento Assinado</h2>
-            <button 
-              onClick={() => setViewingSignedDocument(false)}
-              className="p-2 hover:bg-slate-700 rounded-lg"
-            >
-              <X className="w-5 h-5" />
-            </button>
-          </div>
-          <div className="flex-1 overflow-hidden">
-            <iframe 
-              src={signedDocumentUrl} 
-              className="w-full h-full" 
-              title="Documento Assinado"
-            />
-          </div>
-        </div>
-      );
-    }
-
-    // Visualizar o documento assinado (apenas o PDF salvo no storage)
-    const handleViewSignedDocument = async () => {
-      if (!request || !signer) return;
-      try {
-        setDownloading(true);
-        if (!signer.signed_document_path) {
-          toast.error('Documento assinado indisponível no momento.');
-          return;
-        }
-
-        const url = await pdfSignatureService.getSignedPdfUrl(signer.signed_document_path);
-        if (!url) {
-          toast.error('Não foi possível abrir o documento assinado.');
-          return;
-        }
-
-        setSignedDocumentUrl(url);
-        setViewingSignedDocument(true);
-      } catch (e) {
-        console.error('Erro ao gerar documento:', e);
-        toast.error('Erro ao abrir documento assinado');
-      } finally {
-        setDownloading(false);
-      }
-    };
-    
     // Abrir/baixar o documento assinado (apenas o PDF salvo no storage)
     const handleDownload = async () => {
       if (!request || !signer) return;
@@ -682,7 +1095,7 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
           return;
         }
 
-        const url = await pdfSignatureService.getSignedPdfUrl(signer.signed_document_path);
+        const url = signedDocumentUrl || (await pdfSignatureService.getSignedPdfUrl(signer.signed_document_path));
         if (!url) {
           toast.error('Não foi possível abrir o documento assinado.');
           return;
@@ -698,16 +1111,33 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
     };
 
     const handleShare = async () => {
-      if (navigator.share && signer?.verification_hash) {
-        try {
-          await navigator.share({
-            title: 'Documento Assinado',
-            text: `Documento "${request?.document_name}" assinado digitalmente.`,
-            url: `${window.location.origin}/#/verificar/${signer.verification_hash}`,
-          });
-        } catch (e) {
-          console.log('Compartilhamento cancelado');
+      if (!request || !signer?.signed_document_path) {
+        toast.error('Documento assinado indisponível para compartilhamento no momento.');
+        return;
+      }
+
+      try {
+        const url = signedDocumentUrl || (await pdfSignatureService.getSignedPdfUrl(signer.signed_document_path));
+        if (!url) {
+          toast.error('Não foi possível obter o link do documento assinado.');
+          return;
         }
+
+        const sharePayload = {
+          title: 'Documento Assinado',
+          text: `Documento assinado: "${request.document_name}"`,
+          url,
+        };
+
+        if (typeof navigator.share === 'function') {
+          await navigator.share(sharePayload);
+          return;
+        }
+
+        await navigator.clipboard.writeText(url);
+        toast.success('Link do documento assinado copiado.');
+      } catch (e) {
+        console.log('Compartilhamento cancelado/erro:', e);
       }
     };
 
@@ -747,7 +1177,7 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
           <div className="space-y-3">
             {signer?.signed_document_path && (
               <button
-                onClick={handleViewSignedDocument}
+                onClick={handleDownload}
                 disabled={downloading}
                 className="w-full flex items-center justify-center gap-2 px-6 py-3.5 bg-gradient-to-r from-blue-600 to-blue-700 text-white rounded-xl font-semibold hover:from-blue-700 hover:to-blue-800 transition-all shadow-lg shadow-blue-500/25 disabled:opacity-70"
               >
@@ -758,21 +1188,10 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
                   </>
                 ) : (
                   <>
-                    <FileText className="w-5 h-5" />
-                    Ver documento assinado
+                    <Download className="w-5 h-5" />
+                    Abrir documento assinado
                   </>
                 )}
-              </button>
-            )}
-            
-            {signer?.signed_document_path && (
-              <button
-                onClick={handleDownload}
-                disabled={downloading}
-                className="w-full flex items-center justify-center gap-2 px-6 py-3 bg-gradient-to-r from-slate-600 to-slate-700 text-white rounded-xl font-semibold hover:from-slate-700 hover:to-slate-800 transition-all shadow-lg shadow-slate-500/25 disabled:opacity-70"
-              >
-                <Download className="w-5 h-5" />
-                Abrir documento assinado
               </button>
             )}
 
@@ -784,13 +1203,13 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
               Ver relatório de assinatura
             </button>
 
-            {typeof navigator.share === 'function' && signer?.verification_hash && (
+            {signer?.signed_document_path && (
               <button
                 onClick={handleShare}
                 className="w-full flex items-center justify-center gap-2 px-6 py-3 border-2 border-slate-200 text-slate-700 rounded-xl font-medium hover:bg-slate-50 transition-all"
               >
                 <Share2 className="w-5 h-5" />
-                Compartilhar comprovante
+                Compartilhar documento assinado
               </button>
             )}
           </div>
@@ -810,30 +1229,133 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
 
   return (
     <div className="min-h-[100dvh] h-[100dvh] bg-slate-900 flex flex-col overflow-hidden overscroll-none">
-      {/* Header minimalista */}
-      <header className="bg-gradient-to-r from-slate-900 to-slate-800 px-4 py-3 flex items-center justify-between border-b border-slate-700/60 shadow-sm shadow-black/20 safe-area-top">
+      {/* Header compacto */}
+      <header className="bg-slate-900 px-3 py-2 flex items-center justify-between border-b border-slate-700/50 safe-area-top">
         <div className="flex items-center gap-2">
-          <div className="w-8 h-8 bg-gradient-to-br from-blue-500 to-blue-700 rounded-lg flex items-center justify-center shadow-lg shadow-blue-500/20">
+          <div className="w-7 h-7 bg-blue-600 rounded-lg flex items-center justify-center">
             <Scale className="w-4 h-4 text-white" />
           </div>
-          <span className="text-white font-semibold text-sm">Assinatura Digital</span>
+          <span className="text-white font-medium text-sm">Assinatura Digital</span>
         </div>
         <div className="text-xs text-slate-400 truncate max-w-[150px]">
           {request?.document_name}
         </div>
       </header>
 
-      {/* PDF Viewer - Ocupa toda a tela */}
+      {/* Document Viewer - Ocupa toda a tela */}
       <main className="flex-1 min-h-0 relative overflow-hidden bg-white">
         {pdfUrl ? (
-          <>
-            <iframe
-              src={`${pdfUrl}#toolbar=0&navpanes=0&scrollbar=0&statusbar=0&view=FitH`}
-              className="w-full h-full border-0 bg-white"
-              title="Documento PDF"
-            />
-            <div className="pointer-events-none absolute right-0 top-0 bottom-0 w-4 bg-white" />
-          </>
+          isDocx ? (
+            // Renderizar DOCX com docx-preview
+            <div className="w-full h-full overflow-auto bg-white pb-24">
+              {docxLoading && (
+                <div className="absolute inset-0 flex items-center justify-center bg-white/80 z-10">
+                  <div className="flex flex-col items-center gap-3">
+                    <Loader2 className="w-8 h-8 animate-spin text-blue-600" />
+                    <p className="text-sm text-slate-600">Carregando documento...</p>
+                  </div>
+                </div>
+              )}
+              {/* Documento Principal */}
+              <div 
+                ref={docxContainerRef} 
+                className="bg-slate-100 docx-responsive flex flex-col items-center"
+                style={{ 
+                  width: '100%',
+                  overflow: 'auto',
+                  minHeight: '400px',
+                  padding: '20px',
+                }}
+              />
+              <style>{`
+                .docx-responsive .docx-wrapper-wrapper {
+                  background: transparent !important;
+                  padding: 0 !important;
+                  display: flex !important;
+                  justify-content: center !important;
+                }
+                .docx-responsive .docx-wrapper {
+                  max-width: none !important;
+                  width: auto !important;
+                  padding: 0 !important;
+                  box-sizing: border-box !important;
+                  box-shadow: none !important;
+                  margin: 0 !important;
+                  background: transparent !important;
+                }
+                /* FORÇAR A4 FIXO para garantir layout idêntico ao da criação */
+                .docx-responsive .docx-wrapper > section,
+                .docx-responsive .docx-wrapper > section > article {
+                  width: 794px !important; /* A4 @ 96dpi */
+                  min-width: 794px !important;
+                  max-width: 794px !important;
+                  background: white !important;
+                  box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1) !important;
+                  margin-bottom: 20px !important;
+                  box-sizing: border-box !important;
+                  padding: 40px !important; /* Mesma padding do SignatureModule */
+                }
+                
+                /* Esconder scrollbar horizontal se possível */
+                .docx-responsive::-webkit-scrollbar {
+                  height: 8px;
+                }
+                .docx-responsive::-webkit-scrollbar-track {
+                  background: #f1f5f9;
+                }
+                .docx-responsive::-webkit-scrollbar-thumb {
+                  background: #cbd5e1;
+                  border-radius: 4px;
+                }
+                
+                @media (max-width: 820px) {
+                   /* Em mobile, precisamos permitir scroll horizontal ou escala */
+                   /* Mas NÃO podemos mudar a largura do section, senão quebra o reflow */
+                   .docx-responsive {
+                     align-items: flex-start !important; /* Alinhar à esquerda para permitir scroll */
+                   }
+                }
+              `}</style>
+              
+              {/* Documentos Anexos - Renderizados inline */}
+              {attachments.length > 0 && (
+                <div className="border-t-4 border-slate-300 mt-4">
+                  <div className="bg-slate-100 px-4 py-2 text-center border-b border-slate-200">
+                    <span className="text-sm font-medium text-slate-600">
+                      Documentos Anexos ({attachments.length})
+                    </span>
+                  </div>
+                  {attachments.map((attach, idx) => (
+                    <div key={`attach-${idx}`} className="border-b border-slate-200">
+                      <div className="bg-slate-50 px-4 py-2 border-b border-slate-100">
+                        <span className="text-xs font-medium text-slate-500">
+                          Anexo {idx + 1}
+                        </span>
+                      </div>
+                      <div 
+                        ref={el => { attachmentRefs.current[idx] = el; }}
+                        className="bg-white docx-responsive"
+                        style={{ 
+                          width: '100%',
+                          overflow: 'hidden',
+                        }}
+                      />
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          ) : (
+            // Renderizar PDF com iframe
+            <>
+              <iframe
+                src={`${pdfUrl}#toolbar=0&navpanes=0&scrollbar=0&statusbar=0&view=FitH`}
+                className="w-full h-full border-0 bg-white"
+                title="Documento PDF"
+              />
+              <div className="pointer-events-none absolute right-0 top-0 bottom-0 w-4 bg-white" />
+            </>
+          )
         ) : (
           <div className="w-full h-full flex flex-col items-center justify-center text-slate-400 bg-slate-800">
             <FileText className="w-16 h-16 mb-4 text-slate-600" />
@@ -842,26 +1364,21 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
         )}
       </main>
 
-      {/* Botão Assinar - Grande, centralizado, com pulse */}
+      {/* Botão Assinar - Flutuante estilizado */}
       {signer?.status !== 'signed' && (
-        <div className="fixed inset-x-0 bottom-0 pb-4 pt-3 bg-gradient-to-t from-slate-900/95 via-slate-900/60 to-transparent pointer-events-none safe-area-bottom">
-          <div className="flex justify-center pointer-events-auto">
-            <button
-              onClick={openSignModal}
-              className="relative flex items-center justify-center gap-3 px-10 py-4 rounded-2xl bg-gradient-to-r from-blue-600 to-blue-700 text-white font-bold text-base shadow-2xl shadow-blue-500/40 hover:from-blue-700 hover:to-blue-800 active:scale-95 transition-all"
-            >
-              {/* Efeito pulse */}
-              <span className="absolute inset-0 rounded-2xl bg-blue-500 animate-ping opacity-20" />
-              <PenTool className="w-5 h-5" />
-              <span>ASSINAR DOCUMENTO</span>
-            </button>
-          </div>
-        </div>
+        <button
+          onClick={openSignModal}
+          className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 flex items-center gap-2 px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white font-bold text-sm rounded-full shadow-[0_8px_30px_rgb(37,99,235,0.4)] active:scale-95 transition-all duration-200 whitespace-nowrap"
+          style={{ WebkitTapHighlightColor: 'transparent' }}
+        >
+          <PenTool className="w-4 h-4" />
+          ASSINAR DOCUMENTO
+        </button>
       )}
 
       {/* Modal - Full screen no mobile */}
       {isSignModalOpen && (
-        <div className="fixed inset-0 z-50 bg-slate-100 md:bg-black/50 md:backdrop-blur-sm flex flex-col md:items-center md:justify-center">
+        <div className="fixed inset-0 z-50 bg-slate-100 md:bg-slate-100/80 md:backdrop-blur-sm flex flex-col md:items-center md:justify-center">
           <div className="bg-white w-full h-full md:h-auto md:max-w-lg md:rounded-2xl md:shadow-2xl overflow-hidden md:max-h-[90vh] flex flex-col">
             {/* Header */}
             <div 
@@ -993,6 +1510,8 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
                       <label className="block text-sm font-medium text-slate-700 mb-1.5">CPF *</label>
                       <input
                         type="text"
+                        inputMode="numeric"
+                        maxLength={14}
                         value={signerData.cpf}
                         onChange={(e) => setSignerData((d) => ({ ...d, cpf: formatCpf(e.target.value) }))}
                         placeholder="000.000.000-00"

@@ -62,14 +62,13 @@ const parseUserAgent = (ua: string): { device: string; browser: string; os: stri
   return { device, browser, os };
 };
 
-// Gerar hash SHA256 do documento (simulado)
-const generateDocumentHash = (docId: string, signerId: string): string => {
-  const input = `${docId}-${signerId}-${Date.now()}`;
-  let hash = '';
-  for (let i = 0; i < 64; i++) {
-    hash += '0123456789abcdef'[Math.floor(Math.random() * 16)];
-  }
-  return hash;
+// Formatar token para exibição (ocultar parte do meio se tiver hífen)
+const formatToken = (token: string | null | undefined): string | null => {
+  if (!token) return null;
+  // Se não tiver hífen, não exibir
+  if (!token.includes('-')) return null;
+  // Exibir apenas início e fim
+  return `${token.slice(0, 8)}****${token.slice(-4)}`;
 };
 
 const SignatureReport: React.FC<SignatureReportProps> = ({ signer, request, creator, onClose }) => {
@@ -85,19 +84,27 @@ const SignatureReport: React.FC<SignatureReportProps> = ({ signer, request, crea
   useEffect(() => {
     const loadData = async () => {
       try {
+        // Função para tentar múltiplos buckets
+        const tryGetSignedUrl = async (path: string): Promise<string | null> => {
+          const buckets = ['document-templates', 'generated-documents', 'signatures'];
+          for (const bucket of buckets) {
+            try {
+              const { data, error } = await supabase.storage.from(bucket).createSignedUrl(path, 3600);
+              if (!error && data?.signedUrl) return data.signedUrl;
+            } catch { /* continuar */ }
+          }
+          return null;
+        };
+        
         // Carregar imagem da assinatura
         if (signer.signature_image_path) {
-          const { data } = await supabase.storage
-            .from('signatures')
-            .createSignedUrl(signer.signature_image_path, 3600);
-          if (data?.signedUrl) setSignatureImageUrl(data.signedUrl);
+          const url = await tryGetSignedUrl(signer.signature_image_path);
+          if (url) setSignatureImageUrl(url);
         }
         // Carregar foto facial
         if (signer.facial_image_path) {
-          const { data } = await supabase.storage
-            .from('signatures')
-            .createSignedUrl(signer.facial_image_path, 3600);
-          if (data?.signedUrl) setFacialImageUrl(data.signedUrl);
+          const url = await tryGetSignedUrl(signer.facial_image_path);
+          if (url) setFacialImageUrl(url);
         }
         // Gerar QR Code
         if (verificationUrl) {
@@ -123,7 +130,7 @@ const SignatureReport: React.FC<SignatureReportProps> = ({ signer, request, crea
   const latitude = geoCoords?.[0] || null;
   const longitude = geoCoords?.[1] || null;
 
-  const documentHash = generateDocumentHash(request.id, signer.id);
+  const formattedToken = formatToken(signer.public_token);
 
   const handlePrint = () => {
     window.print();
@@ -272,24 +279,24 @@ const SignatureReport: React.FC<SignatureReportProps> = ({ signer, request, crea
                       </div>
                     )}
 
-                    {/* Email (Google ou fornecido) */}
-                    {signer.email && (
+                    {/* Email autenticado (quando existir) */}
+                    {signer.auth_email && (
                       <div className="flex items-start gap-3 p-3 bg-white rounded-lg border border-blue-200">
                         <CheckCircle className="w-5 h-5 text-blue-500 flex-shrink-0 mt-0.5" />
                         <div>
                           <p className="font-medium text-gray-800 text-sm">E-mail</p>
-                          <p className="text-xs text-gray-500">Verificado: <span className="font-mono">{signer.email}</span></p>
+                          <p className="text-xs text-gray-500">Autenticado: <span className="font-mono">{signer.auth_email}</span></p>
                         </div>
                       </div>
                     )}
 
                     {/* Telefone */}
-                    {signer.phone && (
+                    {signer.auth_provider === 'phone' && signer.phone && (
                       <div className="flex items-start gap-3 p-3 bg-white rounded-lg border border-purple-200">
                         <CheckCircle className="w-5 h-5 text-purple-500 flex-shrink-0 mt-0.5" />
                         <div>
                           <p className="font-medium text-gray-800 text-sm">Telefone</p>
-                          <p className="text-xs text-gray-500">Informado: <span className="font-mono">{signer.phone}</span></p>
+                          <p className="text-xs text-gray-500">Autenticado: <span className="font-mono">{signer.phone}</span></p>
                         </div>
                       </div>
                     )}
@@ -368,10 +375,16 @@ const SignatureReport: React.FC<SignatureReportProps> = ({ signer, request, crea
                 {/* Contatos */}
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
                   <div>
-                    <span className="text-gray-500">E-mail:</span>{' '}
+                    <span className="text-gray-500">E-mail do signatário:</span>{' '}
                     <span className="text-gray-800">{signer.email}</span>
                   </div>
-                  {signer.phone && (
+                  {signer.auth_email && signer.auth_email !== signer.email && (
+                    <div>
+                      <span className="text-gray-500">E-mail autenticado:</span>{' '}
+                      <span className="text-gray-800">{signer.auth_email}</span>
+                    </div>
+                  )}
+                  {signer.auth_provider === 'phone' && signer.phone && (
                     <div>
                       <span className="text-gray-500">Telefone:</span>{' '}
                       <span className="text-gray-800">{signer.phone}</span>
@@ -383,12 +396,12 @@ const SignatureReport: React.FC<SignatureReportProps> = ({ signer, request, crea
                       <span className="text-gray-800">{signer.cpf}</span>
                     </div>
                   )}
-                  <div>
-                    <span className="text-gray-500">Token:</span>{' '}
-                    <span className="font-mono text-gray-800">
-                      {signer.public_token?.slice(0, 8)}****{signer.public_token?.slice(-4)}
-                    </span>
-                  </div>
+                  {formattedToken && (
+                    <div>
+                      <span className="text-gray-500">Token:</span>{' '}
+                      <span className="font-mono text-gray-800">{formattedToken}</span>
+                    </div>
+                  )}
                 </div>
 
                 {/* Imagem da assinatura */}
@@ -453,19 +466,15 @@ const SignatureReport: React.FC<SignatureReportProps> = ({ signer, request, crea
                   Documento assinado eletronicamente, conforme MP 2.200-2/2001 e Lei 14.063/2020.
                 </p>
 
-                <div>
-                  <p className="text-gray-500 text-xs mb-1">Hash do documento original (SHA256):</p>
-                  <p className="font-mono text-xs text-gray-700 break-all">{documentHash}</p>
-                </div>
-
                 {verificationUrl && (
                   <div>
-                    <p className="text-gray-500 text-xs mb-1">Verificador de Autenticidade:</p>
+                    <p className="text-gray-500 text-xs mb-1">Código de Verificação:</p>
+                    <p className="font-mono text-sm font-bold text-gray-800">{signer.verification_hash}</p>
                     <a 
                       href={verificationUrl} 
                       target="_blank" 
                       rel="noopener noreferrer"
-                      className="text-blue-600 hover:underline text-xs break-all"
+                      className="text-blue-600 hover:underline text-xs break-all mt-1 block"
                     >
                       {verificationUrl}
                     </a>

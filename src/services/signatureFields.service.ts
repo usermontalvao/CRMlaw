@@ -28,6 +28,7 @@ class SignatureFieldsService {
 
     const payload = fields.map((f) => ({
       signature_request_id: signatureRequestId,
+      document_id: f.document_id ?? 'main',
       signer_id: f.signer_id ?? null,
       field_type: f.field_type,
       page_number: f.page_number,

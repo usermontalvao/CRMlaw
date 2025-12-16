@@ -19,15 +19,39 @@ interface GoogleAuthResponse {
 class GoogleAuthService {
   private initialized = false;
   private googleUser: GoogleUser | null = null;
+  private initPromise: Promise<void> | null = null;
 
   async initialize(): Promise<void> {
     if (this.initialized) return;
+    if (this.initPromise) return this.initPromise;
 
-    return new Promise((resolve, reject) => {
-      // Carregar script do Google Identity Services
-      if (document.getElementById('google-identity-script')) {
-        this.initialized = true;
-        resolve();
+    const p: Promise<void> = new Promise<void>((resolve, reject) => {
+      const waitForGoogle = () => {
+        const start = Date.now();
+
+        const tick = () => {
+          // @ts-ignore - Google Identity Services global
+          if (typeof google !== 'undefined' && google.accounts?.id) {
+            this.initialized = true;
+            resolve();
+            return;
+          }
+
+          if (Date.now() - start > 15000) {
+            reject(new Error('Google Identity Services não ficou disponível a tempo'));
+            return;
+          }
+
+          window.setTimeout(tick, 100);
+        };
+
+        tick();
+      };
+
+      const existing = document.getElementById('google-identity-script') as HTMLScriptElement | null;
+      if (existing) {
+        // Script já foi inserido, mas pode ainda estar carregando
+        waitForGoogle();
         return;
       }
 
@@ -37,14 +61,22 @@ class GoogleAuthService {
       script.async = true;
       script.defer = true;
       script.onload = () => {
-        this.initialized = true;
-        resolve();
+        waitForGoogle();
       };
       script.onerror = () => {
         reject(new Error('Falha ao carregar Google Identity Services'));
       };
       document.head.appendChild(script);
-    });
+    })
+      .catch((err) => {
+        // Permitir tentativas futuras se falhar
+        this.initPromise = null;
+        this.initialized = false;
+        throw err;
+      });
+
+    this.initPromise = p;
+    return p;
   }
 
   async signIn(buttonElement: HTMLElement): Promise<GoogleUser> {
