@@ -1,10 +1,10 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { AlertCircle, Camera, CheckCircle, Download, FileText, Loader2, MapPin, PenTool, RotateCcw, Scale, Share2, User, X, Shield } from 'lucide-react';
+import { AlertCircle, Camera, CheckCircle, Clock, Download, FileText, Loader2, MapPin, PenTool, RotateCcw, Scale, Share2, User, X, Shield } from 'lucide-react';
 import { signatureService } from '../services/signature.service';
 import { pdfSignatureService } from '@/services/pdfSignature.service';
 import { googleAuthService, type GoogleUser } from '../services/googleAuth.service';
 import { useToastContext } from '../contexts/ToastContext';
-import type { SignatureField, Signer, SignatureRequest } from '../types/signature.types';
+import type { SignatureAuditLog, SignatureField, Signer, SignatureRequest } from '../types/signature.types';
 import SignatureReport from './SignatureReport';
 import { renderAsync } from 'docx-preview';
 
@@ -58,6 +58,9 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
   const attachmentObjectUrlRef = useRef<(string | null)[]>([]);
 
   const [activeTab, setActiveTab] = useState<'signers' | 'history'>('signers');
+  const [auditLog, setAuditLog] = useState<SignatureAuditLog[]>([]);
+  const [auditLogLoading, setAuditLogLoading] = useState(false);
+  const [auditLogError, setAuditLogError] = useState<string | null>(null);
   const [isSignModalOpen, setIsSignModalOpen] = useState(false);
   const [modalStep, setModalStep] = useState<ModalStep>('google_auth');
   const [creator, setCreator] = useState<{ name: string; email: string } | null>(null);
@@ -92,10 +95,45 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
   const [googleAuthError, setGoogleAuthError] = useState<string | null>(null);
   const googleButtonRef = useRef<HTMLDivElement>(null);
   const googleInitAttemptsRef = useRef(0);
+  const googleAuthInitTokenRef = useRef(0);
+  const googleAuthInitInFlightRef = useRef(false);
 
   useEffect(() => {
     loadSignerData();
   }, [token]);
+
+  useEffect(() => {
+    if (!request?.id) return;
+    let cancelled = false;
+    const run = async () => {
+      try {
+        setAuditLogLoading(true);
+        setAuditLogError(null);
+        const data = await signatureService.getAuditLog(request.id);
+        if (cancelled) return;
+        // Deduplicar itens idênticos no mesmo minuto (evita poluição por logs duplicados)
+        const seen = new Set<string>();
+        const deduped: SignatureAuditLog[] = [];
+        for (const item of data) {
+          const minuteKey = (item.created_at || '').slice(0, 16);
+          const key = `${item.action}|${item.description}|${item.ip_address || ''}|${item.user_agent || ''}|${minuteKey}`;
+          if (seen.has(key)) continue;
+          seen.add(key);
+          deduped.push(item);
+        }
+        setAuditLog(deduped);
+      } catch (e: any) {
+        if (cancelled) return;
+        setAuditLogError(e?.message || 'Não foi possível carregar o histórico.');
+      } finally {
+        if (!cancelled) setAuditLogLoading(false);
+      }
+    };
+    run();
+    return () => {
+      cancelled = true;
+    };
+  }, [request?.id]);
 
   useEffect(() => {
     return () => {
@@ -110,22 +148,17 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
 
   // Renderizar DOCX quando a URL estiver disponível
   useEffect(() => {
-    console.log('🔍 useEffect DOCX disparado - pdfUrl:', !!pdfUrl, 'isDocx:', isDocx, 'step:', step);
-    
     if (!pdfUrl || !isDocx) {
-      console.log('❌ Aguardando: pdfUrl ou isDocx faltando');
       return;
     }
     
     if (step !== 'success') {
-      console.log('❌ Step não é success:', step);
       return;
     }
     
     const renderDocx = async () => {
       try {
         setDocxLoading(true);
-        console.log('📥 Baixando DOCX de:', pdfUrl);
         
         // Adicionar estilos para formatação A4 consistente (igual ao SignatureModule)
         const styleId = 'docx-page-break-styles-public';
@@ -178,7 +211,6 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
         }
         
         const response = await fetch(pdfUrl);
-        console.log('📥 Response status:', response.status, response.ok);
         
         if (!response.ok) {
           console.error('❌ Erro ao baixar DOCX:', response.status, response.statusText);
@@ -186,13 +218,11 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
         }
         
         const blob = await response.blob();
-        console.log('📥 Blob size:', blob.size, 'type:', blob.type);
         
         // Aguardar o container estar disponível
         await new Promise(resolve => setTimeout(resolve, 100));
         
         if (docxContainerRef.current) {
-          console.log('🎨 Renderizando DOCX no container...');
           docxContainerRef.current.innerHTML = '';
           await renderAsync(blob, docxContainerRef.current, undefined, {
             className: 'docx-wrapper',
@@ -204,7 +234,6 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
             renderFooters: true,
             renderFootnotes: true,
           });
-          console.log('✅ DOCX renderizado com sucesso!');
         } else {
           console.error('❌ Container ref não disponível');
         }
@@ -305,10 +334,12 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
   // Inicializar Google Auth quando modal abre na etapa de autenticação
   useEffect(() => {
     if (isSignModalOpen && modalStep === 'google_auth' && !googleUser) {
+      googleAuthInitTokenRef.current += 1;
+      const token = googleAuthInitTokenRef.current;
       // Aguardar o elemento ser renderizado no DOM
       const timer = setTimeout(() => {
         if (googleButtonRef.current) {
-          initGoogleAuth();
+          initGoogleAuth(token);
         }
       }, 100);
       return () => clearTimeout(timer);
@@ -316,12 +347,18 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
   }, [isSignModalOpen, modalStep, googleUser]);
 
   
-  const initGoogleAuth = async () => {
+  const initGoogleAuth = async (initToken: number) => {
     if (!googleButtonRef.current) return;
+
+    if (googleAuthInitInFlightRef.current) return;
+    googleAuthInitInFlightRef.current = true;
+
     try {
       setGoogleAuthLoading(true);
       setGoogleAuthError(null);
       await googleAuthService.initialize();
+
+      if (initToken !== googleAuthInitTokenRef.current) return;
       googleButtonRef.current.innerHTML = '';
       
       // @ts-ignore - Google Identity Services global
@@ -345,17 +382,15 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
           width: 300,
         });
       } else {
-        googleInitAttemptsRef.current += 1;
-        if (googleInitAttemptsRef.current <= 8) {
-          window.setTimeout(() => initGoogleAuth(), 250);
-        } else {
-          setGoogleAuthError('Não foi possível carregar o botão do Google. Use o login alternativo.');
-        }
+        setGoogleAuthError('Não foi possível carregar o botão do Google. Use o login alternativo.');
       }
     } catch (err: any) {
       console.error('Erro ao inicializar Google Auth:', err);
+      if (initToken !== googleAuthInitTokenRef.current) return;
       setGoogleAuthError('Erro ao carregar autenticação Google');
     } finally {
+      googleAuthInitInFlightRef.current = false;
+      if (initToken !== googleAuthInitTokenRef.current) return;
       setGoogleAuthLoading(false);
     }
   };
@@ -434,12 +469,6 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
         return;
       }
 
-      console.log('[PUBLIC] Bundle carregado:', {
-        requestId: data.request?.id,
-        signerId: data.signer?.id,
-        fields: data.fields?.length ?? 0,
-      });
-
       setSigner(data.signer);
       setRequest(data.request);
       setSignatureFields(data.fields ?? []);
@@ -453,12 +482,9 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
           const docPath = data.request.document_path.toLowerCase();
           const isDocxFile = docPath.endsWith('.docx') || docPath.endsWith('.doc');
           setIsDocx(isDocxFile);
-          
-          console.log('📄 Carregando documento:', data.request.document_path, 'isDocx:', isDocxFile);
-          
+
           const url = await signatureService.getDocumentPreviewUrl(data.request.document_path);
-          console.log('📄 URL do documento:', url ? 'OK' : 'FALHOU');
-          
+
           if (url) setPdfUrl(url);
         } catch (e) {
           console.warn('Não foi possível carregar preview do documento:', e);
@@ -467,7 +493,6 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
       
       // Carregar documentos anexos
       if (data.request.attachment_paths && data.request.attachment_paths.length > 0) {
-        console.log('📎 Carregando anexos:', data.request.attachment_paths);
         const attachPaths = data.request.attachment_paths;
 
         const results = await Promise.all(
@@ -494,7 +519,6 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
 
         const loadedAttachments = results.filter(Boolean) as { name: string; url: string; rendered?: boolean; prefetched?: boolean; isDocx?: boolean }[];
         setAttachments(loadedAttachments);
-        console.log('📎 Anexos carregados:', loadedAttachments.length);
 
         // Prefetch DOCX em paralelo (para renderizar sem esperar fetch sequencial)
         const prefetchTargets = loadedAttachments
@@ -526,6 +550,9 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
         setStep('already_signed');
       } else {
         // Registrar visualização (capturar IP + plataforma)
+        const viewedKey = `public_signing_viewed_${data.signer.id}`;
+        const alreadyLogged = typeof window !== 'undefined' ? window.sessionStorage.getItem(viewedKey) : null;
+        if (!alreadyLogged) {
         const userAgent = navigator.userAgent;
         let ipAddress: string | undefined;
         try {
@@ -536,7 +563,9 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
           // Não bloquear o fluxo
         }
 
-        await signatureService.markSignerAsViewed(data.signer.id, ipAddress, userAgent);
+          await signatureService.markSignerAsViewed(data.signer.id, ipAddress, userAgent);
+          try { window.sessionStorage.setItem(viewedKey, String(Date.now())); } catch { /* noop */ }
+        }
         // Atualizar signer local com viewed_at
         setSigner(prev => prev ? { ...prev, viewed_at: new Date().toISOString() } : prev);
         // Página carregada (layout Autentique)
@@ -760,6 +789,7 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
       if (request) {
         try {
           let signedPdfPath: string;
+          let signedPdfSha256: string | null = null;
           
           // Coletar URLs dos anexos PDF para compilar
           const attachmentPdfItems = attachments
@@ -784,13 +814,15 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
           
           if (originalPdfUrlToUse && !isDocxFile) {
             // Documento original é PDF - gerar PDF completo (documento + anexos + relatório)
-            signedPdfPath = await pdfSignatureService.saveSignedPdfToStorage({
+            const { filePath, sha256 } = await pdfSignatureService.saveSignedPdfToStorage({
               request,
               signer: result,
               originalPdfUrl: originalPdfUrlToUse,
               creator,
               attachmentPdfItems,
             });
+            signedPdfPath = filePath;
+            signedPdfSha256 = sha256;
           } else if (isDocxFile) {
             // Documento original é DOCX - renderizar offscreen e converter para PDF
             console.log('[ASSINATURA] Convertendo DOCX para PDF (offscreen)...');
@@ -890,7 +922,7 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
               console.log('[ASSINATURA] Campos de assinatura:', signatureFields.length);
               console.log('[ASSINATURA] Campos detalhes:', signatureFields.map(f => ({ doc: f.document_id, page: f.page_number, type: f.field_type })));
 
-              signedPdfPath = await pdfSignatureService.saveSignedDocxAsPdf({
+              const { filePath, sha256 } = await pdfSignatureService.saveSignedDocxAsPdf({
                 request,
                 signer: result,
                 creator,
@@ -899,6 +931,8 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
                 attachmentPdfItems: pdfAttachmentItems,
                 fieldsOverride: signatureFields,
               });
+              signedPdfPath = filePath;
+              signedPdfSha256 = sha256;
             } finally {
               for (const el of cleanupHosts) {
                 try { el.remove(); } catch { /* noop */ }
@@ -906,16 +940,19 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
             }
           } else {
             // Fallback - gerar apenas relatório de assinatura
-            signedPdfPath = await pdfSignatureService.saveSignatureReportToStorage({
+            const { filePath, sha256 } = await pdfSignatureService.saveSignatureReportToStorage({
               request,
               signer: result,
               creator,
             });
+            signedPdfPath = filePath;
+            signedPdfSha256 = sha256;
           }
           
           // Atualizar o signer com o path do PDF assinado
-          await signatureService.updateSignerSignedDocumentPath(result.id, signedPdfPath);
+          await signatureService.updateSignerSignedDocumentMeta(result.id, { signed_document_path: signedPdfPath, signed_pdf_sha256: signedPdfSha256 });
           result.signed_document_path = signedPdfPath;
+          (result as any).signed_pdf_sha256 = signedPdfSha256;
           console.log('[ASSINATURA] PDF compilado salvo com sucesso:', signedPdfPath);
 
           try {
@@ -1142,85 +1179,92 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
     };
 
     return (
-      <div className="min-h-screen bg-gradient-to-br from-emerald-50 to-slate-100 flex items-center justify-center p-4">
-        <div className="bg-white rounded-3xl shadow-2xl p-8 max-w-lg w-full">
-          {/* Animação de sucesso */}
-          <div className="relative w-24 h-24 mx-auto mb-6">
-            <div className="absolute inset-0 bg-emerald-100 rounded-full animate-ping opacity-25" />
-            <div className="relative w-24 h-24 bg-gradient-to-br from-emerald-400 to-emerald-600 rounded-full flex items-center justify-center shadow-lg shadow-emerald-500/30">
-              <CheckCircle className="w-12 h-12 text-white" />
-            </div>
-          </div>
-
-          <h1 className="text-2xl font-bold text-slate-800 mb-2 text-center">Documento assinado com sucesso!</h1>
-          <p className="text-slate-500 text-center mb-8">
-            Sua assinatura digital foi registrada e validada.
-          </p>
-
-          {/* Card do documento */}
-          <div className="bg-gradient-to-br from-slate-50 to-slate-100 rounded-2xl p-5 mb-6 border border-slate-200">
-            <div className="flex items-start gap-4">
-              <div className="w-12 h-12 bg-blue-100 rounded-xl flex items-center justify-center flex-shrink-0">
-                <FileText className="w-6 h-6 text-blue-600" />
+      <div className="min-h-screen bg-gray-100 flex items-center justify-center p-4">
+        <div className="w-full max-w-lg">
+          <div className="bg-white rounded-2xl border border-gray-200 shadow-[0_10px_30px_-15px_rgba(0,0,0,0.25)] overflow-hidden">
+            {/* Animação de sucesso */}
+            <div className="px-6 pt-8 pb-6">
+              <div className="w-16 h-16 rounded-2xl bg-emerald-50 border border-emerald-100 flex items-center justify-center mx-auto">
+                <CheckCircle className="w-9 h-9 text-[#00C48C]" />
               </div>
-              <div className="flex-1 min-w-0">
-                <p className="font-semibold text-slate-800 truncate">{request?.document_name}</p>
-                <p className="text-sm text-slate-500 mt-1">Assinado em {signer?.signed_at ? formatDate(signer.signed_at) : ''}</p>
+
+              <h1 className="mt-5 text-xl font-semibold text-gray-900 text-center">Documento assinado com sucesso!</h1>
+              <p className="mt-1 text-sm text-gray-500 text-center">Sua assinatura digital foi registrada e validada.</p>
+            </div>
+
+            {/* Card do documento */}
+            <div className="px-6 pb-6">
+              <div className="rounded-xl border border-gray-200 bg-white shadow-sm p-4">
+                <div className="flex items-start gap-3">
+                  <div className="w-10 h-10 rounded-lg bg-emerald-50 flex items-center justify-center flex-shrink-0">
+                    <FileText className="w-5 h-5 text-[#00C48C]" />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="font-semibold text-gray-900 truncate">{request?.document_name}</div>
+                    <div className="text-sm text-gray-500 mt-0.5">Assinado em {signer?.signed_at ? formatDate(signer.signed_at) : ''}</div>
+                    {signer?.verification_hash && (
+                      <div className="mt-3">
+                        <div className="text-xs text-gray-500 font-medium">Código de autenticação</div>
+                        <div className="mt-1 font-mono text-xs tracking-wide break-all bg-gray-50 border border-gray-200 rounded-lg p-2">
+                          {signer.verification_hash}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Botões de ação */}
+            <div className="px-6 pb-8 space-y-3">
+              {signer?.signed_document_path && (
+                <button
+                  onClick={handleDownload}
+                  disabled={downloading}
+                  className="w-full flex items-center justify-center gap-2 px-5 py-3 bg-[#00C48C] text-white rounded-xl font-medium hover:bg-emerald-600 transition shadow-lg shadow-emerald-500/20 disabled:opacity-70"
+                >
+                  {downloading ? (
+                    <>
+                      <Loader2 className="w-5 h-5 animate-spin" />
+                      Abrindo documento...
+                    </>
+                  ) : (
+                    <>
+                      <Download className="w-5 h-5" />
+                      Abrir documento assinado
+                    </>
+                  )}
+                </button>
+              )}
+
+              <button
+                onClick={() => setShowReport(true)}
+                className="w-full flex items-center justify-center gap-2 px-5 py-3 bg-white border border-gray-200 text-gray-800 rounded-xl font-medium hover:bg-gray-50 transition"
+              >
+                <FileText className="w-5 h-5 text-gray-700" />
+                Ver relatório de assinatura
+              </button>
+
+              {signer?.signed_document_path && (
+                <button
+                  onClick={handleShare}
+                  className="w-full flex items-center justify-center gap-2 px-5 py-3 bg-white border border-gray-200 text-gray-800 rounded-xl font-medium hover:bg-gray-50 transition"
+                >
+                  <Share2 className="w-5 h-5 text-gray-700" />
+                  Compartilhar documento assinado
+                </button>
+              )}
+            </div>
+
+            {/* Informação adicional */}
+            <div className="px-6 pb-6 border-t border-gray-100">
+              <p className="pt-4 text-xs text-gray-500 text-center">
+                Uma cópia do documento assinado será enviada para seu e-mail.
                 {signer?.verification_hash && (
-                  <p className="text-xs text-slate-400 mt-2 font-mono truncate">Hash: {signer.verification_hash.slice(0, 16)}...</p>
+                  <> Você pode verificar a autenticidade a qualquer momento na página de verificação.</>
                 )}
-              </div>
+              </p>
             </div>
-          </div>
-
-          {/* Botões de ação */}
-          <div className="space-y-3">
-            {signer?.signed_document_path && (
-              <button
-                onClick={handleDownload}
-                disabled={downloading}
-                className="w-full flex items-center justify-center gap-2 px-6 py-3.5 bg-gradient-to-r from-blue-600 to-blue-700 text-white rounded-xl font-semibold hover:from-blue-700 hover:to-blue-800 transition-all shadow-lg shadow-blue-500/25 disabled:opacity-70"
-              >
-                {downloading ? (
-                  <>
-                    <Loader2 className="w-5 h-5 animate-spin" />
-                    Abrindo documento...
-                  </>
-                ) : (
-                  <>
-                    <Download className="w-5 h-5" />
-                    Abrir documento assinado
-                  </>
-                )}
-              </button>
-            )}
-
-            <button
-              onClick={() => setShowReport(true)}
-              className="w-full flex items-center justify-center gap-2 px-6 py-3 bg-gradient-to-r from-emerald-600 to-emerald-700 text-white rounded-xl font-semibold hover:from-emerald-700 hover:to-emerald-800 transition-all shadow-lg shadow-emerald-500/25"
-            >
-              <FileText className="w-5 h-5" />
-              Ver relatório de assinatura
-            </button>
-
-            {signer?.signed_document_path && (
-              <button
-                onClick={handleShare}
-                className="w-full flex items-center justify-center gap-2 px-6 py-3 border-2 border-slate-200 text-slate-700 rounded-xl font-medium hover:bg-slate-50 transition-all"
-              >
-                <Share2 className="w-5 h-5" />
-                Compartilhar documento assinado
-              </button>
-            )}
-          </div>
-
-          {/* Informação adicional */}
-          <div className="mt-6 pt-6 border-t border-slate-100">
-            <p className="text-xs text-slate-400 text-center">
-              Uma cópia do documento assinado será enviada para seu e-mail.
-              {signer?.verification_hash && (
-                <> Você pode verificar a autenticidade em qualquer momento usando o hash de verificação.</>              )}
-            </p>
           </div>
         </div>
       </div>
@@ -1237,8 +1281,19 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
           </div>
           <span className="text-white font-medium text-sm">Assinatura Digital</span>
         </div>
-        <div className="text-xs text-slate-400 truncate max-w-[150px]">
-          {request?.document_name}
+        <div className="flex items-center gap-2 min-w-0">
+          <div className="text-xs text-slate-400 truncate max-w-[160px]">
+            {request?.document_name}
+          </div>
+          <button
+            type="button"
+            onClick={() => setActiveTab('history')}
+            className="flex items-center gap-1.5 px-2 py-1 rounded-md bg-slate-800/60 hover:bg-slate-800 text-slate-200 text-xs font-medium transition"
+            title="Histórico"
+          >
+            <Clock className="w-3.5 h-3.5" />
+            Histórico
+          </button>
         </div>
       </header>
 
@@ -1766,6 +1821,86 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
                       </button>
                     </div>
                   )}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Histórico (overlay) */}
+      {activeTab === 'history' && (
+        <div className="fixed inset-0 z-[60] bg-black/50 flex items-end md:items-center md:justify-center p-0 md:p-6">
+          <div className="w-full md:max-w-2xl bg-white rounded-t-2xl md:rounded-2xl shadow-2xl overflow-hidden">
+            <div className="px-5 py-4 border-b border-slate-200 flex items-center justify-between">
+              <div>
+                <div className="text-sm font-semibold text-slate-900">Histórico da assinatura</div>
+                <div className="text-xs text-slate-500 truncate max-w-[70vw] md:max-w-[520px]">{request?.document_name}</div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setActiveTab('signers')}
+                className="p-2 rounded-lg hover:bg-slate-100 text-slate-500 hover:text-slate-700 transition"
+                title="Fechar"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="max-h-[70vh] overflow-auto p-5">
+              {auditLogLoading ? (
+                <div className="flex items-center gap-2 text-sm text-slate-600">
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  Carregando histórico...
+                </div>
+              ) : auditLogError ? (
+                <div className="text-sm text-slate-700">
+                  <div className="font-medium">Não foi possível carregar</div>
+                  <div className="text-xs text-slate-500 mt-1">{auditLogError}</div>
+                </div>
+              ) : auditLog.length === 0 ? (
+                <div className="text-sm text-slate-600">Nenhum evento registrado.</div>
+              ) : (
+                <div className="space-y-4">
+                  {auditLog.map((item, idx) => {
+                    const actionLabel =
+                      item.action === 'created' ? 'Solicitação criada' :
+                      item.action === 'sent' ? 'Convite enviado' :
+                      item.action === 'viewed' ? 'Documento visualizado' :
+                      item.action === 'signed' ? 'Documento assinado' :
+                      item.action === 'cancelled' ? 'Cancelado' :
+                      item.action === 'expired' ? 'Expirado' :
+                      item.action === 'reminder_sent' ? 'Lembrete enviado' :
+                      'Evento';
+
+                    const dotColor =
+                      item.action === 'signed' ? 'bg-emerald-600' :
+                      item.action === 'viewed' ? 'bg-blue-600' :
+                      item.action === 'cancelled' || item.action === 'expired' ? 'bg-red-600' :
+                      'bg-slate-400';
+
+                    return (
+                      <div key={item.id} className="flex gap-3">
+                        <div className="flex flex-col items-center">
+                          <div className={`w-2.5 h-2.5 rounded-full ${dotColor}`} />
+                          {idx < auditLog.length - 1 && <div className="w-px flex-1 bg-slate-200 mt-2" />}
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center justify-between gap-3">
+                            <div className="text-sm font-medium text-slate-900">{actionLabel}</div>
+                            <div className="text-xs text-slate-500 whitespace-nowrap">{formatDate(item.created_at)}</div>
+                          </div>
+                          <div className="text-xs text-slate-600 mt-0.5">{item.description}</div>
+                          {(item.ip_address || item.user_agent) && (
+                            <div className="mt-2 text-[11px] text-slate-500">
+                              {item.ip_address && <div>IP: {item.ip_address}</div>}
+                              {item.user_agent && <div className="break-words">Dispositivo: {item.user_agent}</div>}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
                 </div>
               )}
             </div>

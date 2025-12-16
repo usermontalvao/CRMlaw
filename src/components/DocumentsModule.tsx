@@ -882,32 +882,8 @@ const DocumentsModule: React.FC<DocumentsModuleProps> = ({ onNavigateToModule })
       }
       
       console.log('✅ Documento e anexos enviados:', documentPath, attachmentPaths);
-      
-      // 3. Navegar para o módulo de assinatura com os dados do documento
-      if (onNavigateToModule) {
-        onNavigateToModule('assinaturas', {
-          mode: 'create',
-          prefill: {
-            documentPath,
-            documentName: `${selectedTemplate.name} - ${selectedClient.full_name}`,
-            attachmentPaths: attachmentPaths.length > 0 ? attachmentPaths : null,
-            clientId: selectedClient.id,
-            clientName: selectedClient.full_name,
-            clientEmail: selectedClient.email || '',
-            clientCpf: selectedClient.cpf_cnpj || '',
-            clientPhone: selectedClient.phone || '',
-            templateId: selectedTemplate.id,
-          },
-        });
-        
-        // Limpar estados
-        setPreparingSignature(false);
-        setGeneratedDocBlob(null);
-        setGeneratedDocName('');
-        return;
-      }
-      
-      // Fallback: criar solicitação diretamente se não houver navegação
+
+      // Criar solicitação e já gerar o link público (documento já possui [[ASSINATURA]])
       const documentId = crypto.randomUUID();
       
       const signatureRequest = await signatureService.createRequest({
@@ -940,6 +916,10 @@ const DocumentsModule: React.FC<DocumentsModuleProps> = ({ onNavigateToModule })
       setSignatureLink(link);
       setLinkCopied(false);
       setShowSignatureLinkModal(true);
+
+      // Limpar estados
+      setGeneratedDocBlob(null);
+      setGeneratedDocName('');
       
     } catch (err: any) {
       console.error('Erro ao criar solicitação de assinatura:', err);

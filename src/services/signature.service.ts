@@ -25,6 +25,23 @@ class SignatureService {
     return true;
   }
 
+  async verifySignedPdfBySha256(sha256: string): Promise<{ signer: Signer; request: SignatureRequest } | null> {
+    const codeToUse = (sha256 || '').trim();
+    if (!codeToUse) return null;
+
+    const { data, error } = await supabase
+      .rpc('public_verify_signed_pdf_by_sha256', { p_sha256: codeToUse });
+
+    if (error) throw new Error(error.message);
+    if (!data) return null;
+
+    const signer = (data as any).signer as Signer | undefined;
+    const request = (data as any).request as SignatureRequest | undefined;
+    if (!signer || !request) return null;
+
+    return { signer, request };
+  }
+
   // ==================== SIGNATURE REQUESTS ====================
 
   async listRequests(filters?: {
@@ -476,21 +493,15 @@ class SignatureService {
       console.error('Erro ao marcar visualização:', error);
     }
 
-    // Registrar no audit log (ignorar erros de permissão em acesso público)
-    const signer = await this.getSigner(signerId);
-    if (signer) {
-      try {
-        await supabase.from('signature_audit_log').insert({
-          signature_request_id: signer.signature_request_id,
-          signer_id: signerId,
-          action: 'viewed',
-          description: `${signer.name} visualizou o documento`,
-          ip_address: ipAddress,
-          user_agent: userAgent,
-        });
-      } catch (e) {
-        console.warn('Não foi possível registrar audit log (acesso público):', e);
-      }
+    // Registrar no audit log com dedupe (evitar múltiplos "viewed" idênticos em curto intervalo)
+    try {
+      await supabase.rpc('public_log_viewed_event', {
+        p_signer_id: signerId,
+        p_ip_address: ipAddress ?? null,
+        p_user_agent: userAgent ?? null,
+      });
+    } catch (e) {
+      console.warn('Não foi possível registrar audit log (acesso público):', e);
     }
   }
 
@@ -524,6 +535,16 @@ class SignatureService {
     const { error } = await supabase
       .from(this.signersTable)
       .update({ signed_document_path: signedDocumentPath })
+      .eq('id', signerId);
+
+    if (error) throw new Error(error.message);
+  }
+
+  async updateSignerSignedDocumentMeta(signerId: string, params: { signed_document_path: string; signed_pdf_sha256?: string | null }): Promise<void> {
+    const { signed_document_path, signed_pdf_sha256 } = params;
+    const { error } = await supabase
+      .from(this.signersTable)
+      .update({ signed_document_path, signed_pdf_sha256: signed_pdf_sha256 ?? null })
       .eq('id', signerId);
 
     if (error) throw new Error(error.message);

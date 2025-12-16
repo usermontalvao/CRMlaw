@@ -5,7 +5,7 @@ import { renderAsync } from 'docx-preview';
 import {
   FileText, Upload, Plus, Trash2, X, Check, Clock, CheckCircle, Send, Copy,
   User, Mail, Loader2, ChevronLeft, Eye, Filter, Search, MousePointer2,
-  Type, Hash, Calendar, PenTool, Users, Download, AlertTriangle, ExternalLink, ChevronRight, ZoomIn, ZoomOut, Shield,
+  Type, Hash, Calendar, PenTool, Users, Download, AlertTriangle, ExternalLink, ChevronRight, ZoomIn, ZoomOut, Shield, Lightbulb, Pencil, Maximize2, Minimize2,
 } from 'lucide-react';
 import { useToastContext } from '../contexts/ToastContext';
 import { useAuth } from '../contexts/AuthContext';
@@ -131,6 +131,9 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, onParamC
   const [pdfNumPages, setPdfNumPages] = useState(0);
   const [pdfCurrentPage, setPdfCurrentPage] = useState(1);
   const [pdfScale, setPdfScale] = useState(1);
+  const [pdfAutoFitEnabled, setPdfAutoFitEnabled] = useState(true);
+  const [pdfViewMode, setPdfViewMode] = useState<'fit' | 'expanded' | 'manual'>('fit');
+  const [viewerResizeTick, setViewerResizeTick] = useState(0);
   const [pdfLoading, setPdfLoading] = useState(false);
   const [pdfPreviewUrls, setPdfPreviewUrls] = useState<string[]>([]); // URLs para múltiplos PDFs
   const [pdfNumPagesByDoc, setPdfNumPagesByDoc] = useState<Record<number, number>>({}); // Páginas por documento
@@ -526,7 +529,38 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, onParamC
     });
   }, [requests, searchTerm, filterStatus]);
 
+  const revokeIfBlobUrl = (url?: string | null) => {
+    if (!url) return;
+    if (!url.startsWith('blob:')) return;
+    try {
+      URL.revokeObjectURL(url);
+    } catch {
+      // noop
+    }
+  };
+
+  const cleanupLocalViewerUrls = (docs: ViewerDocument[], extraUrls: string[]) => {
+    for (const d of docs) revokeIfBlobUrl(d.previewUrl);
+    for (const u of extraUrls) revokeIfBlobUrl(u);
+  };
+
+  const buildViewerDocumentsFromUploads = (files: File[]): ViewerDocument[] => {
+    return files.map((f, idx) => {
+      const isMain = idx === 0;
+      const attachmentIndex = Math.max(0, idx - 1);
+      return {
+        id: isMain ? 'main' : `attachment-${attachmentIndex}`,
+        name: f.name,
+        path: f.name,
+        type: isMain ? 'main' : 'attachment',
+        blob: f,
+        previewUrl: URL.createObjectURL(f),
+      };
+    });
+  };
+
   const resetWizard = () => {
+    cleanupLocalViewerUrls(viewerDocuments, pdfPreviewUrls);
     setWizardStep('list');
     setSelectedDocumentId(''); setSelectedDocumentName(''); setSelectedDocumentPath('');
     setSelectedAttachmentPaths(null);
@@ -558,6 +592,9 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, onParamC
   const handleFilesSelect = (fileList: FileList) => {
     const files = Array.from(fileList).filter((f) => f.type.includes('pdf'));
     if (files.length === 0) { toast.error('Selecione arquivos PDF'); return; }
+
+    cleanupLocalViewerUrls(viewerDocuments, pdfPreviewUrls);
+
     setUploadedFiles(files);
     setUploadedFile(files[0]);
     setSelectedDocumentName(files[0].name);
@@ -565,25 +602,60 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, onParamC
     setSelectedDocumentPath('');
     setSelectedClientId(null);
     setSelectedClientName(null);
+
+    const docs = buildViewerDocumentsFromUploads(files);
+    setViewerDocuments(docs);
+    setCurrentViewerDocIndex(0);
+    setPdfPreviewUrl(docs[0]?.previewUrl || null);
+    setPdfPreviewUrls([]);
+    setPdfNumPagesByDoc({});
   };
 
   const clearUploadedFiles = () => {
+    cleanupLocalViewerUrls(viewerDocuments, pdfPreviewUrls);
     setUploadedFiles([]);
     setUploadedFile(null);
     setSelectedDocumentName('');
     setSelectedDocumentId('');
     setSelectedDocumentPath('');
+    setViewerDocuments([]);
+    setCurrentViewerDocIndex(0);
+    setPdfPreviewUrl(null);
+    setPdfPreviewUrls([]);
+    setPdfNumPagesByDoc({});
   };
 
   const removeUploadedFileAt = (index: number) => {
     setUploadedFiles((prev) => {
       const next = prev.filter((_, i) => i !== index);
       if (next.length === 0) {
+        cleanupLocalViewerUrls(viewerDocuments, pdfPreviewUrls);
         setUploadedFile(null);
         setSelectedDocumentName('');
+        setViewerDocuments([]);
+        setCurrentViewerDocIndex(0);
+        setPdfPreviewUrl(null);
+        setPdfPreviewUrls([]);
+        setPdfNumPagesByDoc({});
       } else if (index === 0) {
         setUploadedFile(next[0]);
         setSelectedDocumentName(next[0].name);
+
+        cleanupLocalViewerUrls(viewerDocuments, pdfPreviewUrls);
+        const docs = buildViewerDocumentsFromUploads(next);
+        setViewerDocuments(docs);
+        setCurrentViewerDocIndex(0);
+        setPdfPreviewUrl(docs[0]?.previewUrl || null);
+        setPdfPreviewUrls([]);
+        setPdfNumPagesByDoc({});
+      } else {
+        cleanupLocalViewerUrls(viewerDocuments, pdfPreviewUrls);
+        const docs = buildViewerDocumentsFromUploads(next);
+        setViewerDocuments(docs);
+        setCurrentViewerDocIndex(0);
+        setPdfPreviewUrl(docs[0]?.previewUrl || null);
+        setPdfPreviewUrls([]);
+        setPdfNumPagesByDoc({});
       }
       return next;
     });
@@ -660,12 +732,79 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, onParamC
   }, [wizardStep, uploadedFiles, pdfPreviewUrls.length]);
 
   useEffect(() => {
+    if (wizardStep !== 'position') return;
+    if (selectedDocumentId || selectedDocumentPath) return;
+    if (uploadedFiles.length === 0) return;
+
+    if (viewerDocuments.length === 0) {
+      const docs = buildViewerDocumentsFromUploads(uploadedFiles);
+      setViewerDocuments(docs);
+      setCurrentViewerDocIndex(0);
+      loadDocumentPreview(docs[0]);
+      return;
+    }
+
+    const currentDoc = viewerDocuments[currentViewerDocIndex];
+    if (currentDoc?.previewUrl && currentDoc.previewUrl !== pdfPreviewUrl) {
+      setPdfPreviewUrl(currentDoc.previewUrl);
+    }
+  }, [currentViewerDocIndex, loadDocumentPreview, pdfPreviewUrl, selectedDocumentId, selectedDocumentPath, uploadedFiles, viewerDocuments, wizardStep]);
+
+  useEffect(() => {
     if (!pdfPreviewUrl) return;
     setPdfLoading(true);
     setPdfNumPages(0);
     setPdfCurrentPage(1);
     setPdfScale(1);
+    setPdfAutoFitEnabled(true);
+    setPdfViewMode('fit');
   }, [pdfPreviewUrl]);
+
+  const applyPdfAutoFit = useCallback(() => {
+    if (wizardStep !== 'position') return;
+    if (!viewerScrollRef.current) return;
+    if (!pdfPreviewUrl && !isDocxFile) return;
+
+    const el = viewerScrollRef.current;
+    const styles = window.getComputedStyle(el);
+    const padX = (parseFloat(styles.paddingLeft || '0') || 0) + (parseFloat(styles.paddingRight || '0') || 0);
+    const padY = (parseFloat(styles.paddingTop || '0') || 0) + (parseFloat(styles.paddingBottom || '0') || 0);
+
+    const availableW = Math.max(0, el.clientWidth - padX);
+    const availableH = Math.max(0, el.clientHeight - padY);
+
+    // A4 aproximado (react-pdf em scale=1 tende a ficar ~595x842)
+    const baseW = isDocxFile ? 794 : 595;
+    const baseH = isDocxFile ? 1123 : 842;
+
+    if (!availableW || !availableH) return;
+
+    const fitScale = Math.min(availableW / baseW, availableH / baseH);
+    const clamped = Math.max(0.5, Math.min(1.4, fitScale));
+    setPdfScale(clamped);
+    setPdfViewMode('fit');
+  }, [isDocxFile, pdfPreviewUrl, wizardStep]);
+
+  useLayoutEffect(() => {
+    if (wizardStep !== 'position') return;
+    if (!pdfAutoFitEnabled) return;
+    applyPdfAutoFit();
+  }, [applyPdfAutoFit, pdfAutoFitEnabled, viewerResizeTick, wizardStep]);
+
+  useEffect(() => {
+    if (wizardStep !== 'position') return;
+    const el = viewerScrollRef.current;
+    if (!el) return;
+    if (typeof ResizeObserver === 'undefined') return;
+
+    const ro = new ResizeObserver(() => {
+      setViewerResizeTick((t) => t + 1);
+    });
+    ro.observe(el);
+    return () => {
+      ro.disconnect();
+    };
+  }, [wizardStep]);
 
   // Entrar no passo de posicionamento com "Adicionar campo" ativo por padrão
   useEffect(() => {
@@ -1185,7 +1324,7 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, onParamC
 
             const fieldsOverride = await signatureFieldsService.listByRequest(freshRequest.id);
 
-            const signedPdfPath = await pdfSignatureService.saveSignedDocxAsPdf({
+            const { filePath: signedPdfPath, sha256 } = await pdfSignatureService.saveSignedDocxAsPdf({
               request: freshRequest,
               signer: freshSigner,
               creator: null,
@@ -1195,7 +1334,7 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, onParamC
               fieldsOverride,
             });
 
-            await signatureService.updateSignerSignedDocumentPath(freshSigner.id, signedPdfPath);
+            await signatureService.updateSignerSignedDocumentMeta(freshSigner.id, { signed_document_path: signedPdfPath, signed_pdf_sha256: sha256 });
 
             const signedUrl = await pdfSignatureService.getSignedPdfUrl(signedPdfPath);
             if (signedUrl) {
@@ -1209,12 +1348,12 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, onParamC
 
             // Fallback: relatório
             try {
-              const reportPath = await pdfSignatureService.saveSignatureReportToStorage({
+              const { filePath: reportPath, sha256 } = await pdfSignatureService.saveSignatureReportToStorage({
                 request: freshRequest,
                 signer: freshSigner,
                 creator: null,
               });
-              await signatureService.updateSignerSignedDocumentPath(freshSigner.id, reportPath);
+              await signatureService.updateSignerSignedDocumentMeta(freshSigner.id, { signed_document_path: reportPath, signed_pdf_sha256: sha256 });
               const signedUrl = await pdfSignatureService.getSignedPdfUrl(reportPath);
               if (signedUrl) await downloadOriginalPdf(signedUrl, `${request.document_name}_relatorio.pdf`);
             } catch (e2) {
@@ -1255,7 +1394,7 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, onParamC
           }
 
           // Gerar e salvar PDF no bucket 'assinados'
-          const signedPdfPath = await pdfSignatureService.saveSignedPdfToStorage({
+          const { filePath: signedPdfPath, sha256 } = await pdfSignatureService.saveSignedPdfToStorage({
             request: freshRequest,
             signer: freshSigner,
             originalPdfUrl: url,
@@ -1264,7 +1403,7 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, onParamC
           });
           
           // Atualizar o signer com o path do PDF assinado
-          await signatureService.updateSignerSignedDocumentPath(freshSigner.id, signedPdfPath);
+          await signatureService.updateSignerSignedDocumentMeta(freshSigner.id, { signed_document_path: signedPdfPath, signed_pdf_sha256: sha256 });
           
           // Baixar o PDF salvo
           const signedUrl = await pdfSignatureService.getSignedPdfUrl(signedPdfPath);
@@ -1376,560 +1515,426 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, onParamC
     const currentStepIndex = steps.findIndex(s => s.key === wizardStep);
     
     return (
-      <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100">
-        {/* Header com gradiente laranja */}
-        <div className="bg-gradient-to-r from-orange-500 to-orange-600 sticky top-0 z-20 shadow-lg">
-          <div className="max-w-7xl mx-auto px-6 py-4">
-            {wizardStep === 'position' ? (
-              <div className="flex items-center justify-center">
-                <div className="text-white font-semibold">Posicionar</div>
+      <div className="bg-slate-50">
+        {/* Header simples */}
+        {wizardStep !== 'position' && (
+          <div className="bg-white border-b border-slate-200 sticky top-0 z-20">
+            <div className="h-1 bg-gradient-to-r from-orange-500 to-orange-600" />
+            <div className="max-w-5xl mx-auto px-6 py-4 flex items-center justify-between">
+              <button 
+                onClick={() => { 
+                  if (wizardStep === 'upload') resetWizard(); 
+                  else if (wizardStep === 'signers') setWizardStep('upload'); 
+                  else if (wizardStep === 'settings') setWizardStep('position'); 
+                }} 
+                className="flex items-center gap-1 text-sm text-slate-500 hover:text-slate-700"
+              >
+                <ChevronLeft className="w-4 h-4" />
+                Voltar
+              </button>
+              
+              {/* Steps simples */}
+              <div className="flex items-center gap-6">
+                {steps.map((step, i) => {
+                  const isActive = wizardStep === step.key;
+                  const isCompleted = i < currentStepIndex;
+                  return (
+                    <div key={step.key} className="flex items-center gap-2">
+                      <span className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold ${
+                        isActive ? 'bg-slate-900 text-white' : isCompleted ? 'bg-emerald-500 text-white' : 'bg-slate-200 text-slate-500'
+                      }`}>
+                        {isCompleted ? <Check className="w-3.5 h-3.5" /> : i + 1}
+                      </span>
+                      <span className={`text-sm font-medium hidden sm:block ${isActive ? 'text-slate-900' : 'text-slate-400'}`}>{step.label}</span>
+                    </div>
+                  );
+                })}
               </div>
-            ) : (
-              <div className="flex items-center justify-between">
-                <button 
-                  onClick={() => { 
-                    if (wizardStep === 'upload') resetWizard(); 
-                    else if (wizardStep === 'signers') setWizardStep('upload'); 
-                    else if (wizardStep === 'settings') setWizardStep('position'); 
-                  }} 
-                  className="flex items-center gap-2 text-white/80 hover:text-white transition-colors"
-                >
-                  <ChevronLeft className="w-5 h-5" />
-                  <span className="font-medium">Voltar</span>
-                </button>
-                
-                {/* Stepper */}
-                <div className="flex-1 flex items-center justify-center px-2">
-                  <div className="flex items-center gap-1 overflow-x-auto max-w-full whitespace-nowrap">
-                  {steps.map((step, i) => {
-                    const StepIcon = step.icon;
-                    const isActive = wizardStep === step.key;
-                    const isCompleted = i < currentStepIndex;
-                    
-                    return (
-                      <React.Fragment key={step.key}>
-                        <div className={`flex items-center gap-2 px-3 py-1.5 rounded-xl transition-all ${
-                          isActive 
-                            ? 'bg-white text-orange-600 shadow-lg' 
-                            : isCompleted 
-                              ? 'bg-white/20 text-white' 
-                              : 'bg-white/10 text-white/60'
-                        }`}>
-                          <div className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold ${
-                            isActive ? 'bg-orange-500 text-white' : isCompleted ? 'bg-white/30' : 'bg-white/20'
-                          }`}>
-                            {isCompleted ? <Check className="w-3.5 h-3.5" /> : i + 1}
-                          </div>
-                          <span className="text-xs sm:text-sm font-medium">{step.label}</span>
-                        </div>
-                        {i < steps.length - 1 && (
-                          <div className={`w-6 h-0.5 ${i < currentStepIndex ? 'bg-white/40' : 'bg-white/20'}`} />
-                        )}
-                      </React.Fragment>
-                    );
-                  })}
-                  </div>
-                </div>
-                
-                <button 
-                  onClick={() => { 
-                    if (wizardStep === 'upload' && canProceedUpload) setWizardStep('signers'); 
-                    else if (wizardStep === 'signers' && canProceedSigners) setWizardStep('position'); 
-                    else if (wizardStep === 'settings') handleSubmit(); 
-                  }} 
-                  disabled={(wizardStep === 'upload' && !canProceedUpload) || (wizardStep === 'signers' && !canProceedSigners) || wizardLoading} 
-                  className="flex items-center gap-2 px-6 py-2.5 bg-white text-orange-600 rounded-xl font-semibold hover:bg-orange-50 disabled:opacity-50 disabled:cursor-not-allowed shadow-lg transition-all"
-                >
-                  {wizardLoading ? (
-                    <Loader2 className="w-4 h-4 animate-spin" />
-                  ) : wizardStep === 'settings' ? (
-                    <><Send className="w-4 h-4" />Enviar para assinatura</>
-                  ) : (
-                    <>Avançar<ChevronLeft className="w-4 h-4 rotate-180" /></>
-                  )}
-                </button>
-              </div>
-            )}
+              
+              <button 
+                onClick={() => { 
+                  if (wizardStep === 'upload' && canProceedUpload) setWizardStep('signers'); 
+                  else if (wizardStep === 'signers' && canProceedSigners) setWizardStep('position'); 
+                  else if (wizardStep === 'settings') handleSubmit(); 
+                }} 
+                disabled={(wizardStep === 'upload' && !canProceedUpload) || (wizardStep === 'signers' && !canProceedSigners) || wizardLoading} 
+                className="flex items-center gap-2 px-4 py-2 bg-slate-900 text-white rounded text-sm font-medium hover:bg-slate-800 disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                {wizardLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : wizardStep === 'settings' ? <><Send className="w-4 h-4" />Enviar</> : <>Avançar<ChevronRight className="w-4 h-4" /></>}
+              </button>
+            </div>
           </div>
-        </div>
+        )}
 
         {wizardStep === 'upload' && (
-          <div className="max-w-6xl mx-auto p-8">
-            <div className="text-center mb-8">
-              <h2 className="text-2xl font-bold text-slate-800">Novo Documento para Assinatura</h2>
-              <p className="text-slate-500 mt-2">Selecione o documento e informe os signatários</p>
+          <div className="max-w-6xl mx-auto p-6">
+            <div className="mb-6">
+              <h1 className="text-xl font-semibold text-slate-900">Nova solicitação de assinatura</h1>
+              <p className="text-sm text-slate-500 mt-1">Selecione o documento e adicione os signatários</p>
             </div>
             
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-              {/* Upload do documento */}
-              <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
-                <div className="bg-gradient-to-r from-orange-50 to-amber-50 px-6 py-4 border-b border-slate-100">
-                  <h3 className="text-lg font-semibold text-slate-800 flex items-center gap-2">
-                    <FileText className="w-5 h-5 text-orange-500" />
-                    Documento
-                  </h3>
-                </div>
-                <div className="p-6">
-                  <div 
-                    className={`border-2 border-dashed rounded-2xl p-10 text-center transition-all ${
-                      dragOver 
-                        ? 'border-orange-500 bg-orange-50' 
-                        : selectedDocumentName 
-                          ? 'border-emerald-300 bg-emerald-50' 
-                          : 'border-slate-200 hover:border-orange-300 hover:bg-orange-50/50'
-                    }`} 
-                    onDragOver={(e) => { e.preventDefault(); setDragOver(true); }} 
-                    onDragLeave={() => setDragOver(false)} 
-                    onDrop={(e) => { e.preventDefault(); setDragOver(false); if (e.dataTransfer.files?.length) handleFilesSelect(e.dataTransfer.files); }}
-                  >
-                    <input ref={fileInputRef} type="file" accept=".pdf" multiple onChange={(e) => e.target.files?.length && handleFilesSelect(e.target.files)} className="hidden" />
-                    {selectedDocumentName ? (
-                      <div className="flex flex-col items-center gap-4">
-                        <div className="w-16 h-16 bg-emerald-100 rounded-2xl flex items-center justify-center">
-                          <CheckCircle className="w-8 h-8 text-emerald-600" />
-                        </div>
-                        <div>
-                          <p className="font-semibold text-slate-800">{selectedDocumentName}</p>
-                          <p className="text-sm text-emerald-600 mt-1">
-                            {uploadedFiles.length > 1 ? `Envelope: ${uploadedFiles.length} documentos` : 'Documento selecionado'}
-                          </p>
-                        </div>
-                        {uploadedFiles.length > 1 && (
-                          <div className="w-full max-w-xs text-left bg-white rounded-lg border border-slate-200 p-3 mt-2">
-                            <p className="text-xs font-medium text-slate-600 mb-2">Arquivos ({uploadedFiles.length}):</p>
-                            <div className="space-y-1 max-h-24 overflow-y-auto">
-                              {uploadedFiles.map((f, i) => (
-                                <div key={`${f.name}-${i}`} className="flex items-center justify-between text-xs">
-                                  <span className="truncate text-slate-700">{i === 0 ? '📄 ' : '📎 '}{f.name}</span>
-                                  <button type="button" onClick={() => removeUploadedFileAt(i)} className="text-red-500 hover:text-red-600 ml-2">
-                                    <X className="w-3 h-3" />
-                                  </button>
-                                </div>
-                              ))}
-                            </div>
-                          </div>
-                        )}
-                        <button 
-                          onClick={clearUploadedFiles} 
-                          className="text-sm text-red-500 hover:text-red-600 font-medium"
-                        >
-                          Remover {uploadedFiles.length > 1 ? 'todos' : ''}
-                        </button>
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-start">
+              {/* Upload */}
+              <div className="bg-white rounded-lg border border-slate-200 p-6">
+                <h2 className="text-sm font-medium text-slate-700 mb-4">Documento</h2>
+                <div 
+                  className={`border-2 border-dashed rounded-lg p-8 text-center transition-all ${
+                    dragOver ? 'border-slate-400 bg-slate-50' : selectedDocumentName ? 'border-emerald-300 bg-emerald-50' : 'border-slate-200 hover:border-slate-300'
+                  }`} 
+                  onDragOver={(e) => { e.preventDefault(); setDragOver(true); }} 
+                  onDragLeave={() => setDragOver(false)} 
+                  onDrop={(e) => { e.preventDefault(); setDragOver(false); if (e.dataTransfer.files?.length) handleFilesSelect(e.dataTransfer.files); }}
+                >
+                  <input ref={fileInputRef} type="file" accept=".pdf" multiple onChange={(e) => e.target.files?.length && handleFilesSelect(e.target.files)} className="hidden" />
+                  {selectedDocumentName ? (
+                    <div className="flex flex-col items-center gap-3">
+                      <CheckCircle className="w-10 h-10 text-emerald-500" />
+                      <div>
+                        <p className="font-medium text-slate-800">{selectedDocumentName}</p>
+                        {uploadedFiles.length > 1 && <p className="text-xs text-slate-500 mt-1">{uploadedFiles.length} arquivos selecionados</p>}
                       </div>
-                    ) : (
-                      <>
-                        <div className="w-16 h-16 bg-slate-100 rounded-2xl flex items-center justify-center mx-auto mb-4">
-                          <Upload className="w-8 h-8 text-slate-400" />
+                      {uploadedFiles.length > 1 && (
+                        <div className="w-full max-w-sm text-left bg-white rounded border border-slate-200 p-3 mt-2 max-h-32 overflow-y-auto">
+                          {uploadedFiles.map((f, i) => (
+                            <div key={`${f.name}-${i}`} className="flex items-center justify-between text-xs py-1">
+                              <span className="truncate text-slate-600">{f.name}</span>
+                              <button onClick={() => removeUploadedFileAt(i)} className="text-red-500 hover:text-red-600 ml-2"><X className="w-3 h-3" /></button>
+                            </div>
+                          ))}
                         </div>
-                        <p className="text-slate-600 mb-4">Arraste PDFs aqui ou</p>
-                        <button 
-                          onClick={() => fileInputRef.current?.click()} 
-                          className="px-6 py-3 bg-orange-500 text-white rounded-xl font-semibold hover:bg-orange-600 transition-all shadow-lg shadow-orange-500/25"
-                        >
-                          Selecionar arquivo(s)
-                        </button>
-                        <p className="text-xs text-slate-400 mt-3">Selecione múltiplos PDFs para criar um envelope</p>
-                      </>
-                    )}
-                  </div>
-                  
-                  {generatedDocuments.length > 0 && (
-                    <div className="mt-6">
-                      <p className="text-sm font-medium text-slate-700 mb-3">Ou selecione um documento gerado:</p>
-                      <div className="max-h-48 overflow-y-auto space-y-2">
-                        {generatedDocuments.slice(0, 5).map((doc) => (
-                          <button 
-                            key={doc.id} 
-                            onClick={() => handleSelectGeneratedDoc(doc)} 
-                            className={`w-full flex items-center gap-3 p-4 rounded-xl border text-left transition-all ${
-                              selectedDocumentId === doc.id 
-                                ? 'border-orange-500 bg-orange-50' 
-                                : 'border-slate-200 hover:border-orange-300 hover:bg-slate-50'
-                            }`}
-                          >
-                            <div className={`w-10 h-10 rounded-lg flex items-center justify-center ${
-                              selectedDocumentId === doc.id ? 'bg-orange-100' : 'bg-slate-100'
-                            }`}>
-                              <FileText className={`w-5 h-5 ${selectedDocumentId === doc.id ? 'text-orange-600' : 'text-slate-400'}`} />
-                            </div>
-                            <div className="flex-1 min-w-0">
-                              <p className="text-sm font-medium truncate">{doc.file_name || doc.template_name}</p>
-                              <p className="text-xs text-slate-500">{doc.client_name}</p>
-                            </div>
-                            {selectedDocumentId === doc.id && (
-                              <CheckCircle className="w-5 h-5 text-orange-500" />
-                            )}
-                          </button>
-                        ))}
-                      </div>
+                      )}
+                      <button onClick={clearUploadedFiles} className="text-xs text-red-500 hover:text-red-600">Remover</button>
                     </div>
+                  ) : (
+                    <>
+                      <Upload className="w-10 h-10 text-slate-300 mx-auto mb-3" />
+                      <p className="text-sm text-slate-500 mb-3">Arraste arquivos ou</p>
+                      <button onClick={() => fileInputRef.current?.click()} className="px-4 py-2 bg-slate-900 text-white rounded text-sm font-medium hover:bg-slate-800">Selecionar arquivos</button>
+                    </>
                   )}
                 </div>
+                
+                {generatedDocuments.length > 0 && (
+                  <div className="mt-4 pt-4 border-t border-slate-100">
+                    <p className="text-xs font-medium text-slate-500 uppercase tracking-wide mb-3">Documentos gerados</p>
+                    <div className="space-y-2 max-h-40 overflow-y-auto">
+                      {generatedDocuments.slice(0, 5).map((doc) => (
+                        <button 
+                          key={doc.id} 
+                          onClick={() => handleSelectGeneratedDoc(doc)} 
+                          className={`w-full flex items-center gap-3 p-3 rounded border text-left text-sm transition ${
+                            selectedDocumentId === doc.id ? 'border-slate-900 bg-slate-50' : 'border-slate-200 hover:border-slate-300'
+                          }`}
+                        >
+                          <FileText className="w-4 h-4 text-slate-400" />
+                          <div className="flex-1 min-w-0">
+                            <p className="font-medium truncate text-slate-700">{doc.file_name || doc.template_name}</p>
+                            <p className="text-xs text-slate-400">{doc.client_name}</p>
+                          </div>
+                          {selectedDocumentId === doc.id && <Check className="w-4 h-4 text-slate-900" />}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
               </div>
               
               {/* Signatários */}
-              <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
-                <div className="bg-gradient-to-r from-orange-50 to-amber-50 px-6 py-4 border-b border-slate-100 flex items-center justify-between">
-                  <h3 className="text-lg font-semibold text-slate-800 flex items-center gap-2">
-                    <Users className="w-5 h-5 text-orange-500" />
-                    Signatários
-                  </h3>
+              <div className="bg-white rounded-lg border border-slate-200 p-6">
+                <div className="flex items-center justify-between mb-4">
+                  <h2 className="text-sm font-medium text-slate-700">Signatários</h2>
                   <div className="flex gap-1">
-                    <button 
-                      onClick={() => setSignerOrder('none')} 
-                      className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${
-                        signerOrder === 'none' 
-                          ? 'bg-orange-500 text-white' 
-                          : 'bg-white text-slate-600 border border-slate-200'
-                      }`}
-                    >
-                      Sem ordem
-                    </button>
-                    <button 
-                      onClick={() => setSignerOrder('sequential')} 
-                      className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${
-                        signerOrder === 'sequential' 
-                          ? 'bg-orange-500 text-white' 
-                          : 'bg-white text-slate-600 border border-slate-200'
-                      }`}
-                    >
-                      Com ordem
-                    </button>
+                    <button onClick={() => setSignerOrder('none')} className={`px-2 py-1 rounded text-xs font-medium ${signerOrder === 'none' ? 'bg-slate-900 text-white' : 'bg-slate-100 text-slate-600'}`}>Sem ordem</button>
+                    <button onClick={() => setSignerOrder('sequential')} className={`px-2 py-1 rounded text-xs font-medium ${signerOrder === 'sequential' ? 'bg-slate-900 text-white' : 'bg-slate-100 text-slate-600'}`}>Com ordem</button>
                   </div>
                 </div>
-                <div className="p-6">
-                  <div className="space-y-4">
-                    {signers.map((signer, index) => (
-                      <div 
-                        key={signer.id} 
-                        className="bg-slate-50 rounded-xl p-4 border border-slate-100"
-                      >
-                        <div className="flex items-center gap-3 mb-3">
-                          <div className="w-8 h-8 bg-orange-100 rounded-full flex items-center justify-center text-orange-600 font-bold text-sm">
-                            {index + 1}
-                          </div>
-                          <input 
-                            type="text" 
-                            value={signer.name} 
-                            onChange={(e) => updateSigner(signer.id, 'name', e.target.value)} 
-                            placeholder="Nome do signatário" 
-                            className="flex-1 px-4 py-2.5 border border-slate-200 rounded-xl text-sm focus:ring-2 focus:ring-orange-500 focus:border-orange-500" 
-                          />
-                          <button 
-                            onClick={() => removeSigner(signer.id)} 
-                            disabled={signers.length <= 1} 
-                            className="p-2 text-slate-400 hover:text-red-500 disabled:opacity-30 transition-colors"
-                          >
-                            <Trash2 className="w-4 h-4" />
-                          </button>
-                        </div>
-                        <div className="flex gap-3 pl-11">
-                          <input 
-                            type="email" 
-                            value={signer.email} 
-                            onChange={(e) => updateSigner(signer.id, 'email', e.target.value)} 
-                            placeholder="Email" 
-                            className="flex-1 px-4 py-2.5 border border-slate-200 rounded-xl text-sm focus:ring-2 focus:ring-orange-500 focus:border-orange-500" 
-                          />
-                          <select 
-                            value={signer.role} 
-                            onChange={(e) => updateSigner(signer.id, 'role', e.target.value)} 
-                            className="px-4 py-2.5 border border-slate-200 rounded-xl text-sm bg-white focus:ring-2 focus:ring-orange-500 focus:border-orange-500"
-                          >
+                <div className="space-y-3 max-h-64 overflow-y-auto">
+                  {signers.map((signer, index) => (
+                    <div key={signer.id} className="flex items-start gap-3 p-3 bg-slate-50 rounded">
+                      <span className="w-6 h-6 bg-slate-900 text-white rounded-full flex items-center justify-center text-xs font-bold flex-shrink-0 mt-1">{index + 1}</span>
+                      <div className="flex-1 space-y-2">
+                        <input type="text" value={signer.name} onChange={(e) => updateSigner(signer.id, 'name', e.target.value)} placeholder="Nome" className="w-full px-3 py-2 border border-slate-200 rounded text-sm focus:outline-none focus:ring-1 focus:ring-slate-400" />
+                        <div className="flex gap-2">
+                          <input type="email" value={signer.email} onChange={(e) => updateSigner(signer.id, 'email', e.target.value)} placeholder="Email" className="flex-1 px-3 py-2 border border-slate-200 rounded text-sm focus:outline-none focus:ring-1 focus:ring-slate-400" />
+                          <select value={signer.role} onChange={(e) => updateSigner(signer.id, 'role', e.target.value)} className="px-3 py-2 border border-slate-200 rounded text-sm bg-white">
                             <option>Assinar</option>
                             <option>Testemunha</option>
                           </select>
                         </div>
                       </div>
-                    ))}
-                  </div>
-                  <button 
-                    onClick={addSigner} 
-                    className="mt-4 w-full flex items-center justify-center gap-2 px-4 py-3 border-2 border-dashed border-slate-200 rounded-xl text-sm text-slate-600 font-medium hover:border-orange-300 hover:text-orange-600 hover:bg-orange-50/50 transition-all"
-                  >
-                    <Plus className="w-4 h-4" />
-                    Adicionar signatário
-                  </button>
+                      <button onClick={() => removeSigner(signer.id)} disabled={signers.length <= 1} className="p-1 text-slate-400 hover:text-red-500 disabled:opacity-30"><Trash2 className="w-4 h-4" /></button>
+                    </div>
+                  ))}
                 </div>
+                <button onClick={addSigner} className="mt-3 w-full flex items-center justify-center gap-2 px-3 py-2 border border-dashed border-slate-300 rounded text-sm text-slate-500 hover:border-slate-400 hover:text-slate-600">
+                  <Plus className="w-4 h-4" /> Adicionar signatário
+                </button>
               </div>
             </div>
           </div>
         )}
 
-        {wizardStep === 'signers' && <div className="max-w-4xl mx-auto p-6"><div className="bg-white rounded-xl border border-slate-200 p-6"><h3 className="text-lg font-semibold mb-6">Confirme os signatários</h3><div className="space-y-4">{signers.map((s, i) => <div key={s.id} className="flex items-center gap-4 p-4 bg-slate-50 rounded-lg"><div className="w-8 h-8 bg-blue-100 rounded-full flex items-center justify-center text-blue-600 font-medium">{i + 1}</div><div className="flex-1"><p className="font-medium">{s.name || 'Sem nome'}</p><p className="text-sm text-slate-500">{s.email}</p></div><span className="px-2 py-1 bg-slate-200 text-slate-600 rounded text-xs">{s.role}</span></div>)}</div></div></div>}
+        {wizardStep === 'signers' && (
+          <div className="max-w-3xl mx-auto p-6">
+            <div className="mb-6">
+              <h1 className="text-xl font-semibold text-slate-900">Confirmar signatários</h1>
+              <p className="text-sm text-slate-500 mt-1">Revise os dados antes de continuar</p>
+            </div>
+            <div className="bg-white rounded-lg border border-slate-200 divide-y divide-slate-100">
+              {signers.map((s, i) => (
+                <div key={s.id} className="flex items-center gap-4 p-4">
+                  <span className="w-8 h-8 bg-slate-100 rounded-full flex items-center justify-center text-sm font-medium text-slate-600">{i + 1}</span>
+                  <div className="flex-1">
+                    <p className="font-medium text-slate-800">{s.name || 'Sem nome'}</p>
+                    <p className="text-sm text-slate-500">{s.email || 'Sem email'}</p>
+                  </div>
+                  <span className="px-2 py-1 bg-slate-100 text-slate-600 rounded text-xs">{s.role}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
 
         {wizardStep === 'position' && (
-          <div className="flex h-[calc(100vh-200px)] overflow-hidden">
-            {/* Sidebar Moderno */}
-            <aside className="w-80 bg-white border-r border-slate-200 p-6 overflow-y-auto flex-shrink-0">
-              <div className="mb-6 bg-slate-50 border border-slate-200 rounded-xl p-4">
+          <div className="h-[calc(100vh-140px)] flex flex-col bg-gray-100">
+            {/* Header do step position */}
+            <div className="bg-white border-b border-gray-200 px-6 py-3 flex items-center justify-between">
+              <div className="flex items-center gap-2">
                 <button
-                  type="button"
                   onClick={() => setWizardStep('signers')}
-                  className="w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-white border border-slate-200 rounded-lg text-sm font-medium text-slate-700 hover:bg-slate-50"
+                  className="flex items-center gap-1 text-sm font-medium text-gray-500 hover:text-gray-900 transition"
                 >
                   <ChevronLeft className="w-4 h-4" />
                   Voltar
                 </button>
-
-                <div className="mt-4 space-y-2">
-                  {steps.map((step, i) => {
-                    const isActive = wizardStep === step.key;
-                    const isCompleted = i < currentStepIndex;
-                    return (
-                      <div
-                        key={step.key}
-                        className={`flex items-center gap-3 px-3 py-2 rounded-lg border ${
-                          isActive
-                            ? 'bg-white border-orange-300'
-                            : isCompleted
-                              ? 'bg-white/60 border-slate-200'
-                              : 'bg-transparent border-slate-200'
-                        }`}
-                      >
-                        <div
-                          className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold ${
-                            isActive
-                              ? 'bg-orange-500 text-white'
-                              : isCompleted
-                                ? 'bg-emerald-500 text-white'
-                                : 'bg-slate-200 text-slate-700'
-                          }`}
-                        >
-                          {isCompleted ? <Check className="w-4 h-4" /> : i + 1}
-                        </div>
-                        <div className={`text-sm font-medium ${isActive ? 'text-orange-700' : 'text-slate-700'}`}>{step.label}</div>
-                      </div>
-                    );
-                  })}
-                </div>
-
-                <div className="mt-4 flex items-center justify-between bg-white border border-slate-200 rounded-lg px-3 py-2">
-                  <button
-                    type="button"
-                    onClick={() => setPdfScale((s) => Math.max(0.5, Number((s - 0.1).toFixed(2))))}
-                    className="p-1.5 text-slate-600 hover:bg-slate-100 rounded"
-                  >
-                    <ZoomOut className="w-4 h-4" />
-                  </button>
-                  <div className="text-sm font-semibold text-slate-700">{Math.round(pdfScale * 100)}%</div>
-                  <button
-                    type="button"
-                    onClick={() => setPdfScale((s) => Math.min(2, Number((s + 0.1).toFixed(2))))}
-                    className="p-1.5 text-slate-600 hover:bg-slate-100 rounded"
-                  >
-                    <ZoomIn className="w-4 h-4" />
-                  </button>
-                </div>
-
-                <div className="mt-3 flex items-center justify-between bg-white border border-slate-200 rounded-lg px-3 py-2">
-                  <button
-                    type="button"
-                    onClick={() => setPdfCurrentPage((p) => Math.max(1, p - 1))}
-                    disabled={pdfCurrentPage <= 1}
-                    className="p-1.5 text-slate-600 hover:bg-slate-100 rounded disabled:opacity-50 disabled:cursor-not-allowed"
-                  >
-                    <ChevronLeft className="w-4 h-4" />
-                  </button>
-                  <div className="text-sm font-semibold text-slate-700">
-                    {pdfCurrentPage} / {pdfNumPages || 1}
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => setPdfCurrentPage((p) => Math.min(pdfNumPages || 1, p + 1))}
-                    disabled={pdfCurrentPage >= (pdfNumPages || 1)}
-                    className="p-1.5 text-slate-600 hover:bg-slate-100 rounded disabled:opacity-50 disabled:cursor-not-allowed"
-                  >
-                    <ChevronRight className="w-4 h-4" />
-                  </button>
-                </div>
-
+                <span className="text-gray-300">|</span>
+                <span className="text-sm font-semibold text-gray-900 truncate max-w-xs">
+                  {viewerDocuments[currentViewerDocIndex]?.name || selectedDocumentName || 'Documento'}
+                </span>
+              </div>
+              <div className="flex items-center gap-3">
                 <button
-                  type="button"
-                  onClick={() => {
-                    if (fields.length === 0) {
-                      toast.warning(
-                        'Nenhum campo posicionado. Se o template tiver [[assinatura_X]], a assinatura será posicionada automaticamente. Caso contrário, será usada a posição padrão.'
-                      );
-                    }
-                    setWizardStep('settings');
-                  }}
-                  className="mt-4 w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-orange-600 text-white rounded-lg text-sm font-semibold hover:bg-orange-700"
+                  onClick={resetWizard}
+                  className="px-4 py-2 bg-white border border-gray-200 text-gray-700 rounded-lg hover:bg-gray-50 transition shadow-sm font-medium text-sm"
+                >
+                  Cancelar
+                </button>
+                <button
+                  onClick={() => setWizardStep('settings')}
+                  className="px-5 py-2 bg-[#00C48C] text-white rounded-lg hover:bg-emerald-600 transition shadow-lg flex items-center gap-2 font-medium text-sm"
                 >
                   Avançar
-                  <ChevronLeft className="w-4 h-4 rotate-180" />
+                  <ChevronRight className="w-4 h-4" />
                 </button>
               </div>
+            </div>
 
-              <div className="mb-6">
-                <h2 className="text-xl font-bold text-slate-800 mb-2">Posicionar Assinaturas</h2>
-                <p className="text-sm text-slate-600">Clique no documento para adicionar campos de assinatura</p>
-                {fields.length === 0 && (
-                  <div className="mt-3 p-3 bg-amber-50 border border-amber-200 rounded-lg">
-                    <p className="text-sm text-amber-700 font-medium">⚠️ Nenhum campo posicionado</p>
-                    <p className="text-xs text-amber-600 mt-1">Se você já colocou [[assinatura_X]] no template, pode avançar sem posicionar manualmente.</p>
-                  </div>
-                )}
-                {fields.length > 0 && (
-                  <div className="mt-3 p-3 bg-emerald-50 border border-emerald-200 rounded-lg">
-                    <p className="text-sm text-emerald-700 font-medium">✓ {fields.length} campo(s) posicionado(s)</p>
-                  </div>
-                )}
-              </div>
+            {/* Main content */}
+            <main className="flex-1 p-6 flex gap-6 min-h-0 overflow-hidden bg-gray-100">
+              {/* Sidebar (Ferramentas) */}
+              <aside className="w-80 flex-shrink-0 bg-white rounded-xl border border-gray-200 shadow-[0_4px_6px_-1px_rgba(0,0,0,0.05),0_2px_4px_-1px_rgba(0,0,0,0.03)] flex flex-col overflow-hidden">
+                {/* Header da sidebar */}
+                <div className="p-4 border-b border-gray-200">
+                  <h2 className="text-sm font-bold text-gray-900 uppercase tracking-wider mb-4">Ferramentas</h2>
+                  <button
+                    type="button"
+                    onClick={() => { setPositionMode('place'); setIsPlacingField(true); }}
+                    disabled={isPlacingField}
+                    className={`w-full text-white py-3 px-4 rounded-lg font-medium shadow-md transition flex items-center justify-center gap-2 group ${
+                      isPlacingField ? 'bg-emerald-600' : 'bg-[#00C48C] hover:bg-emerald-600'
+                    }`}
+                  >
+                    {isPlacingField ? (
+                      <><MousePointer2 className="w-4 h-4 animate-pulse" /> Clique no documento</>
+                    ) : (
+                      <><MousePointer2 className="w-4 h-4" /> Posicionar Assinatura</>
+                    )}
+                  </button>
+                  <p className="text-xs text-gray-500 mt-2 text-center">Clique no botão e depois no local do documento.</p>
+                </div>
 
-              {/* Seletor de Signatário */}
-              <div className="mb-6">
-                <label className="block text-sm font-medium text-slate-700 mb-3">Signatário</label>
-                <div className="space-y-2">
+
+              {/* Conteúdo scrollável */}
+              <div className="flex-1 overflow-y-auto p-4 space-y-6 custom-scrollbar">
+                {/* Seletor de documento (quando houver múltiplos) */}
+                <div>
+                  <div className="flex items-center justify-between mb-3">
+                    <h3 className="text-xs font-semibold text-gray-500 uppercase">Documentos</h3>
+                    <span className="bg-gray-100 text-gray-600 text-[10px] px-2 py-0.5 rounded-full">{viewerDocuments.length}</span>
+                  </div>
+                  <div className="space-y-2">
+                    {viewerDocuments.map((doc, idx) => (
+                      <button
+                        key={doc.id}
+                        onClick={() => { setCurrentViewerDocIndex(idx); loadDocumentPreview(doc); }}
+                        className={`group w-full flex items-center gap-3 p-3 rounded-lg text-left text-sm transition cursor-pointer ${
+                          currentViewerDocIndex === idx
+                            ? 'bg-emerald-50 border border-emerald-200'
+                            : 'hover:bg-gray-50 border border-transparent'
+                        }`}
+                      >
+                        <FileText className={`w-5 h-5 flex-shrink-0 ${currentViewerDocIndex === idx ? 'text-[#00C48C]' : 'text-gray-400'}`} />
+                        <div className="flex-1 min-w-0">
+                          <p className={`truncate text-sm font-medium ${currentViewerDocIndex === idx ? 'text-gray-900' : 'text-gray-700'}`}>{doc.name}</p>
+                          <p className={`text-xs ${currentViewerDocIndex === idx ? 'text-emerald-600' : 'text-gray-400'}`}>
+                            {currentViewerDocIndex === idx ? 'Em edição' : (doc.type === 'main' ? 'Principal' : 'Anexo')}
+                          </p>
+                        </div>
+                        {currentViewerDocIndex === idx && (
+                          <Pencil className="w-3.5 h-3.5 text-emerald-500" />
+                        )}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Signatário ativo */}
+                <div>
+                  <h3 className="text-xs font-semibold text-gray-500 uppercase mb-3">Signatários</h3>
                   {signers.map((signer, index) => (
                     <button
                       key={signer.id}
                       onClick={() => setCurrentSignerIndex(index)}
-                      className={`w-full flex items-center gap-3 p-3 rounded-lg border text-left transition-all ${
+                      className={`w-full rounded-lg p-3 mb-2 transition ${
                         currentSignerIndex === index
-                          ? 'border-blue-500 bg-blue-50 text-blue-700'
-                          : 'border-slate-200 hover:border-slate-300 text-slate-700'
+                          ? 'bg-blue-50 border border-blue-100'
+                          : 'hover:bg-gray-50 border border-transparent'
                       }`}
                     >
-                      <div className="w-8 h-8 rounded-full bg-blue-100 text-blue-600 flex items-center justify-center font-semibold text-sm">
-                        {index + 1}
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <p className="font-medium truncate">{signer.name || 'Sem nome'}</p>
-                        <p className="text-sm opacity-75 truncate">{signer.email}</p>
+                      <div className="flex items-center gap-3">
+                        <div className={`h-8 w-8 rounded-full flex items-center justify-center font-bold text-xs text-white ${
+                          currentSignerIndex === index ? 'bg-blue-500' : 'bg-gray-400'
+                        }`}>
+                          {(signer.name || 'S').substring(0, 2).toUpperCase()}
+                        </div>
+                        <div className="text-left">
+                          <p className={`text-sm font-medium ${currentSignerIndex === index ? 'text-gray-900' : 'text-gray-700'}`}>
+                            {signer.name || 'Signatário'}
+                          </p>
+                          <p className={`text-xs ${currentSignerIndex === index ? 'text-blue-600' : 'text-gray-400'}`}>
+                            {signer.email || `Signatário ${index + 1}`}
+                          </p>
+                        </div>
                       </div>
                     </button>
                   ))}
-                </div>
-              </div>
-
-              {/* Campo (somente assinatura) */}
-              <div className="mb-6">
-                <label className="block text-sm font-medium text-slate-700 mb-3">Campo</label>
-                <div className="flex items-center gap-3 p-3 rounded-lg border border-blue-200 bg-blue-50 text-blue-700">
-                  <PenTool className="w-5 h-5" />
-                  <div className="flex-1">
-                    <p className="text-sm font-semibold">Assinatura</p>
-                    <p className="text-xs opacity-80">Somente este tipo estÃ¡ habilitado</p>
-                  </div>
-                </div>
-              </div>
-
-              {/* Botão de Ação */}
-              <div className="mb-6">
-                <button
-                  onClick={() => {
-                    setPositionMode('place');
-                    setIsPlacingField(true);
-                  }}
-                  disabled={isPlacingField}
-                  className={`w-full flex items-center justify-center gap-2 px-4 py-3 rounded-lg font-medium transition-all ${
-                    isPlacingField
-                      ? 'bg-green-500 text-white cursor-wait'
-                      : 'bg-blue-500 text-white hover:bg-blue-600'
-                  }`}
-                >
-                  {isPlacingField ? (
-                    <>
-                      <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                      Clique no PDF para posicionar
-                    </>
-                  ) : (
-                    <>
-                      <Plus className="w-4 h-4" />
-                      Adicionar Campo
-                    </>
-                  )}
-                </button>
-                {isPlacingField && (
-                  <button
-                    onClick={() => {
-                      setPositionMode('select');
-                      setIsPlacingField(false);
-                    }}
-                    className="w-full mt-2 px-4 py-2 border border-slate-300 text-slate-600 rounded-lg hover:bg-slate-50 transition-all"
-                  >
-                    Cancelar
+                  <button className="mt-1 w-full py-2 border border-dashed border-gray-300 rounded-lg text-sm text-gray-500 hover:text-[#00C48C] hover:border-[#00C48C] hover:bg-emerald-50/50 transition flex items-center justify-center gap-1">
+                    <Plus className="w-4 h-4" /> Adicionar Signatário
                   </button>
-                )}
-              </div>
-
-              {/* Lista de Campos */}
-              <div>
-                <div className="flex items-center justify-between mb-3">
-                  <h3 className="text-sm font-medium text-slate-700">Campos Adicionados</h3>
-                  {fields.length > 0 && (
-                    <button
-                      onClick={() => setFields([])}
-                      className="text-xs text-red-500 hover:text-red-600"
-                    >
-                      Limpar todos
-                    </button>
-                  )}
                 </div>
-                <div className="space-y-2 max-h-64 overflow-y-auto">
-                  {fields.length === 0 ? (
-                    <p className="text-sm text-slate-400 text-center py-4">Nenhum campo adicionado</p>
-                  ) : (
-                    fields.map((field) => {
-                      const preset = FIELD_PRESETS[field.fieldType];
-                      const signer = signers.find(s => s.id === field.signerId);
-                      const signerIndex = signers.findIndex(s => s.id === field.signerId);
-                      const signerColor = ['#3B82F6', '#EF4444', '#10B981', '#8B5CF6', '#F59E0B'][signerIndex % 5];
-                      
-                      return (
-                        <div
-                          key={field.localId}
-                          className="flex items-center gap-3 p-3 bg-slate-50 rounded-lg border border-slate-200"
-                        >
-                          <div className="w-8 h-8 rounded-full flex items-center justify-center text-white text-xs font-bold" style={{ backgroundColor: signerColor }}>
-                            {signerIndex + 1}
+
+
+                {/* Campos adicionados */}
+                {fields.length > 0 && (
+                  <div className="bg-gray-50 rounded-lg p-4 border border-gray-100">
+                    <div className="flex items-center justify-between mb-3">
+                      <h3 className="text-xs font-semibold text-gray-500 uppercase">Campos Adicionados</h3>
+                      <button onClick={() => setFields([])} className="text-xs text-red-500 hover:text-red-600 font-medium">Limpar</button>
+                    </div>
+                    <div className="space-y-2">
+                      {fields.map((field) => {
+                        const signer = signers.find(s => s.id === field.signerId);
+                        const signerIndex = signers.findIndex(s => s.id === field.signerId);
+                        return (
+                          <div key={field.localId} className="flex items-center justify-between text-sm bg-white rounded-lg p-2 border border-gray-100">
+                            <div className="flex items-center gap-2">
+                              <span className="w-6 h-6 rounded-full bg-[#00C48C] text-white flex items-center justify-center text-xs font-bold">{signerIndex + 1}</span>
+                              <span className="text-gray-600">{signer?.name || 'Signatário'}</span>
+                            </div>
+                            <div className="flex items-center gap-2">
+                              <span className="text-xs text-gray-400">Pág. {field.pageNumber}</span>
+                              <button onClick={() => removeField(field.localId)} className="text-gray-400 hover:text-red-500 transition">
+                                <X className="w-4 h-4" />
+                              </button>
+                            </div>
                           </div>
-                          <div className="flex-1 min-w-0">
-                            <p className="text-sm font-medium text-slate-700">{preset.label}</p>
-                            <p className="text-xs text-slate-500">
-                              {signer?.name || signer?.email} • Página {field.pageNumber}
-                            </p>
-                          </div>
-                          <button
-                            onClick={() => removeField(field.localId)}
-                            className="p-1 text-slate-400 hover:text-red-500 transition-colors"
-                          >
-                            <X className="w-4 h-4" />
-                          </button>
-                        </div>
-                      );
-                    })
-                  )}
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+
+                {/* Dica Pro */}
+                <div className="bg-amber-50 border border-amber-200 rounded-lg p-4">
+                  <div className="flex items-start gap-3">
+                    <Lightbulb className="w-5 h-5 text-amber-500 mt-0.5 flex-shrink-0" />
+                    <div>
+                      <h4 className="text-sm font-semibold text-amber-800">Dica Pro</h4>
+                      <p className="text-xs text-amber-700 mt-1 leading-relaxed">
+                        Se o template já possui <code className="bg-white/50 px-1 py-0.5 rounded text-amber-900 font-mono text-[10px]">[[assinatura_X]]</code>, o sistema posicionará automaticamente.
+                      </p>
+                    </div>
+                  </div>
                 </div>
               </div>
             </aside>
 
             {/* Área do PDF */}
-            <div className="flex-1 flex flex-col bg-slate-100">
-              {/* Toolbar Simplificada */}
-              <div className="bg-white border-b border-slate-200 px-6 py-3 flex items-center justify-between">
-                <div className="flex items-center gap-3">
-                  <div className={`px-3 py-1 rounded-full text-xs font-medium ${
-                    isPlacingField 
-                      ? 'bg-green-100 text-green-700' 
-                      : 'bg-blue-100 text-blue-700'
-                  }`}>
-                    {isPlacingField ? 'Modo de Posicionamento' : 'Modo de Visualização'}
-                  </div>
-                  {isPlacingField && (
-                    <span className="text-sm text-slate-600">Clique no documento para posicionar o campo</span>
-                  )}
+            <section className="flex-1 bg-gray-100 rounded-xl border border-gray-200 flex flex-col relative overflow-hidden">
+              {/* Toolbar flutuante centralizada */}
+              <div className="absolute top-4 left-1/2 transform -translate-x-1/2 bg-white shadow-lg rounded-full px-4 py-2 flex items-center gap-4 z-10 border border-gray-200">
+                <div className="flex items-center gap-2">
+                  <button 
+                    onClick={() => { setPdfAutoFitEnabled(false); setPdfViewMode('manual'); setPdfScale((s) => Math.max(0.5, s - 0.1)); }} 
+                    className="p-1.5 hover:bg-gray-100 rounded-full text-gray-600 transition" 
+                    title="Zoom Out"
+                  >
+                    <ZoomOut className="w-4 h-4" />
+                  </button>
+                  <span className="text-xs font-medium w-12 text-center text-gray-900">{Math.round(pdfScale * 100)}%</span>
+                  <button 
+                    onClick={() => { setPdfAutoFitEnabled(false); setPdfViewMode('manual'); setPdfScale((s) => Math.min(2, s + 0.1)); }} 
+                    className="p-1.5 hover:bg-gray-100 rounded-full text-gray-600 transition" 
+                    title="Zoom In"
+                  >
+                    <ZoomIn className="w-4 h-4" />
+                  </button>
+                  <button
+                    onClick={() => {
+                      viewerScrollRef.current?.scrollTo({ top: 0, left: 0, behavior: 'auto' });
+
+                      if (pdfViewMode === 'expanded') {
+                        setPdfAutoFitEnabled(true);
+                        setPdfViewMode('fit');
+                        applyPdfAutoFit();
+                        return;
+                      }
+
+                      // Expandir para 100%
+                      setPdfAutoFitEnabled(false);
+                      setPdfViewMode('expanded');
+                      setPdfScale(1);
+                    }}
+                    className={`p-1.5 hover:bg-gray-100 rounded-full transition ${pdfViewMode === 'expanded' ? 'text-[#00C48C]' : 'text-gray-500'}`}
+                    title={pdfViewMode === 'expanded' ? 'Recolher' : 'Expandir'}
+                  >
+                    {pdfViewMode === 'expanded' ? <Minimize2 className="w-4 h-4" /> : <Maximize2 className="w-4 h-4" />}
+                  </button>
                 </div>
-                <div className="text-sm font-medium text-slate-700 truncate max-w-[45%] text-right">
-                  {viewerDocuments[currentViewerDocIndex]?.name || ''}
+                <div className="w-px h-4 bg-gray-300"></div>
+                <div className="flex items-center gap-2">
+                  <button 
+                    onClick={() => setPdfCurrentPage((p) => Math.max(1, p - 1))} 
+                    disabled={pdfCurrentPage <= 1} 
+                    className="p-1.5 hover:bg-gray-100 rounded-full text-gray-400 transition disabled:opacity-30"
+                  >
+                    <ChevronLeft className="w-4 h-4" />
+                  </button>
+                  <span className="text-xs font-medium text-gray-900">{pdfCurrentPage} / {pdfNumPages || 1}</span>
+                  <button 
+                    onClick={() => setPdfCurrentPage((p) => Math.min(pdfNumPages || 1, p + 1))} 
+                    disabled={pdfCurrentPage >= (pdfNumPages || 1)} 
+                    className="p-1.5 hover:bg-gray-100 rounded-full text-gray-600 transition disabled:opacity-30"
+                  >
+                    <ChevronRight className="w-4 h-4" />
+                  </button>
                 </div>
               </div>
 
               {/* Container do PDF/DOCX */}
-              <div ref={viewerScrollRef} className="flex-1 overflow-auto p-3">
+              <div ref={viewerScrollRef} className="flex-1 overflow-auto pt-16 pb-6 px-6 flex justify-center items-start bg-gray-200/50 min-h-0">
                 {(pdfPreviewUrl || isDocxFile) ? (
-                  <div className="flex justify-start">
+                  <div className="w-full flex justify-center items-start min-w-0">
                     {/* Container para DOCX */}
                     {isDocxFile && (
                       <div className="relative" style={{ width: `${794 * pdfScale}px`, minHeight: `${1123 * pdfScale}px` }}>
@@ -2037,7 +2042,7 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, onParamC
                     {!isDocxFile && pdfPreviewUrl && (
                       <div
                         ref={pdfContainerRef}
-                        className={`relative bg-white shadow-lg rounded-lg overflow-hidden ${
+                        className={`relative bg-white shadow-xl rounded-lg overflow-hidden self-start flex-none inline-block ${
                           isPlacingField ? 'cursor-crosshair' : 'cursor-default'
                         }`}
                         onClick={handlePdfClick}
@@ -2124,55 +2129,8 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, onParamC
                   </div>
                 )}
               </div>
-
-              {viewerDocuments.length > 1 && (
-                <div className="bg-white border-t border-slate-200 px-6 py-3">
-                  <div className="flex items-center justify-between mb-2">
-                    <div className="text-sm font-medium text-slate-700">Documentos</div>
-                    <div className="text-xs text-slate-500">Clique para trocar</div>
-                  </div>
-                  <div className="flex gap-2 overflow-x-auto pb-2">
-                    {viewerDocuments.map((doc, idx) => {
-                      const isActive = idx === currentViewerDocIndex;
-                      return (
-                        <button
-                          key={doc.id}
-                          type="button"
-                          onClick={() => {
-                            setCurrentViewerDocIndex(idx);
-                            loadDocumentPreview(viewerDocuments[idx]);
-                          }}
-                          className={`flex-shrink-0 text-left px-3 py-2 rounded-lg border transition-all min-w-[220px] ${
-                            isActive
-                              ? 'border-blue-500 bg-blue-50'
-                              : 'border-slate-200 bg-white hover:bg-slate-50'
-                          }`}
-                        >
-                          <div className="flex items-center gap-2">
-                            <div className="text-sm">
-                              {doc.type === 'main' ? '📄' : '📎'}
-                            </div>
-                            <div className="min-w-0 flex-1">
-                              <div className={`text-sm font-medium truncate ${isActive ? 'text-blue-700' : 'text-slate-800'}`}>
-                                {doc.name}
-                              </div>
-                              <div className="text-xs text-slate-500 truncate">
-                                {doc.type === 'main' ? 'Documento principal' : 'Anexo'}
-                              </div>
-                            </div>
-                            {isActive && (
-                              <div className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-blue-600 text-white">
-                                Ativo
-                              </div>
-                            )}
-                          </div>
-                        </button>
-                      );
-                    })}
-                  </div>
-                </div>
-              )}
-            </div>
+            </section>
+            </main>
           </div>
         )}
 
@@ -2191,237 +2149,190 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, onParamC
 
   // LIST
   return (
-    <div className="space-y-6">
-      {/* Header com gradiente */}
-      <div className="bg-gradient-to-r from-orange-500 to-orange-600 rounded-2xl p-6 text-white">
-        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+    <div className="min-h-screen bg-gray-100">
+      {/* Nav do módulo */}
+      <nav className="sticky top-0 z-50 bg-white border-b border-gray-200 px-6 py-3 shadow-sm flex items-center justify-between">
+        <div className="flex items-center gap-4">
           <div>
-            <h1 className="text-2xl font-bold">Assinaturas Digitais</h1>
-            <p className="text-orange-100 text-sm mt-1">Gerencie seus documentos e assinaturas</p>
+            <h1 className="text-xl font-bold text-gray-900 flex items-center gap-2">
+              <PenTool className="w-5 h-5 text-[#00C48C]" />
+              Assinatura Digital
+            </h1>
+            <p className="text-xs text-gray-500">Gerencie seus documentos com segurança</p>
           </div>
-          <button 
-            onClick={() => { resetWizard(); setWizardStep('upload'); }} 
-            className="flex items-center gap-2 px-5 py-2.5 bg-white text-orange-600 rounded-xl font-semibold hover:bg-orange-50 shadow-lg shadow-orange-600/20 transition-all"
+        </div>
+        <div className="flex items-center gap-6">
+          <div className="relative hidden md:block w-80">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+            <input
+              type="text"
+              placeholder="Buscar documentos..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              className="block w-full pl-10 pr-3 py-2 border border-gray-200 rounded-lg leading-5 bg-gray-50 text-gray-900 placeholder-gray-500 focus:outline-none focus:ring-1 focus:ring-[#00C48C] focus:border-[#00C48C] text-sm transition"
+            />
+          </div>
+          <button
+            onClick={() => { resetWizard(); setWizardStep('upload'); }}
+            className="px-5 py-2 bg-[#00C48C] text-white rounded-lg hover:bg-emerald-600 transition shadow-lg shadow-emerald-500/20 flex items-center gap-2 font-medium text-sm"
           >
-            <Plus className="w-5 h-5" />
+            <Plus className="w-4 h-4" />
             Novo documento
           </button>
         </div>
-        
-        {/* Estatísticas rápidas */}
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mt-6">
-          <div className="bg-white/10 backdrop-blur rounded-xl p-4 text-center hover:bg-white/20 transition-all cursor-pointer" onClick={() => setFilterStatus('all')}>
-            <p className="text-3xl font-bold">{requests.length}</p>
-            <p className="text-xs text-orange-100 mt-1">Total de Documentos</p>
-          </div>
-          <div className="bg-white/10 backdrop-blur rounded-xl p-4 text-center hover:bg-white/20 transition-all cursor-pointer" onClick={() => setFilterStatus('pending')}>
-            <p className="text-3xl font-bold text-amber-300">{requests.filter(r => r.status === 'pending').length}</p>
-            <p className="text-xs text-orange-100 mt-1">Aguardando Assinatura</p>
-          </div>
-          <div className="bg-white/10 backdrop-blur rounded-xl p-4 text-center hover:bg-white/20 transition-all cursor-pointer" onClick={() => setFilterStatus('signed')}>
-            <p className="text-3xl font-bold text-emerald-300">{requests.filter(r => r.status === 'signed').length}</p>
-            <p className="text-xs text-orange-100 mt-1">Concluídos</p>
-          </div>
-          <div className="bg-white/10 backdrop-blur rounded-xl p-4 text-center">
-            <p className="text-3xl font-bold text-blue-300">{requests.reduce((acc, r) => acc + (r.signers?.length || 0), 0)}</p>
-            <p className="text-xs text-orange-100 mt-1">Total de Signatários</p>
-          </div>
+      </nav>
+
+      <main className="max-w-7xl mx-auto p-6 space-y-6">
+
+      {/* Estatísticas compactas */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+        <button 
+          onClick={() => setFilterStatus('all')} 
+          className={`p-5 rounded-xl border text-left transition shadow-[0_4px_6px_-1px_rgba(0,0,0,0.05),0_2px_4px_-1px_rgba(0,0,0,0.03)] ${
+            filterStatus === 'all' 
+              ? 'border-[#00C48C] bg-emerald-50 ring-1 ring-[#00C48C]' 
+              : 'border-gray-200 bg-white hover:border-gray-300'
+          }`}
+        >
+          <p className="text-3xl font-bold text-gray-900">{requests.length}</p>
+          <p className="text-sm text-gray-500 mt-1">Total de documentos</p>
+        </button>
+        <button 
+          onClick={() => setFilterStatus('pending')} 
+          className={`p-5 rounded-xl border text-left transition shadow-[0_4px_6px_-1px_rgba(0,0,0,0.05),0_2px_4px_-1px_rgba(0,0,0,0.03)] ${
+            filterStatus === 'pending' 
+              ? 'border-amber-500 bg-amber-50 ring-1 ring-amber-500' 
+              : 'border-gray-200 bg-white hover:border-gray-300'
+          }`}
+        >
+          <p className="text-3xl font-bold text-amber-600">{requests.filter(r => r.status === 'pending').length}</p>
+          <p className="text-sm text-gray-500 mt-1">Pendentes</p>
+        </button>
+        <button 
+          onClick={() => setFilterStatus('signed')} 
+          className={`p-5 rounded-xl border text-left transition shadow-[0_4px_6px_-1px_rgba(0,0,0,0.05),0_2px_4px_-1px_rgba(0,0,0,0.03)] ${
+            filterStatus === 'signed' 
+              ? 'border-emerald-500 bg-emerald-50 ring-1 ring-emerald-500' 
+              : 'border-gray-200 bg-white hover:border-gray-300'
+          }`}
+        >
+          <p className="text-3xl font-bold text-emerald-600">{requests.filter(r => r.status === 'signed').length}</p>
+          <p className="text-sm text-gray-500 mt-1">Concluídos</p>
+        </button>
+        <div className="p-5 rounded-xl border border-gray-200 bg-white shadow-[0_4px_6px_-1px_rgba(0,0,0,0.05),0_2px_4px_-1px_rgba(0,0,0,0.03)]">
+          <p className="text-3xl font-bold text-gray-600">{requests.reduce((acc, r) => acc + (r.signers?.length || 0), 0)}</p>
+          <p className="text-sm text-gray-500 mt-1">Signatários</p>
         </div>
       </div>
-      
-      {/* Filtros */}
-      <div className="flex flex-col sm:flex-row gap-3">
-        <div className="flex-1 relative">
-          <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-400" />
-          <input 
-            type="text" 
-            placeholder="Buscar por nome do documento ou cliente..." 
-            value={searchTerm} 
-            onChange={(e) => setSearchTerm(e.target.value)} 
-            className="w-full pl-12 pr-4 py-3 border border-slate-200 rounded-xl text-sm bg-white shadow-sm focus:ring-2 focus:ring-orange-500 focus:border-orange-500 transition-all" 
-          />
-        </div>
-        <div className="flex gap-2">
-          {['all', 'pending', 'signed'].map((status) => (
-            <button
-              key={status}
-              onClick={() => setFilterStatus(status as any)}
-              className={`px-4 py-3 rounded-xl text-sm font-medium transition-all ${
-                filterStatus === status
-                  ? 'bg-orange-500 text-white shadow-lg shadow-orange-500/25'
-                  : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-50'
-              }`}
-            >
-              {status === 'all' ? 'Todos' : status === 'pending' ? 'Pendentes' : 'Assinados'}
-            </button>
-          ))}
-        </div>
+
+      {/* Busca mobile */}
+      <div className="relative md:hidden">
+        <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+        <input
+          type="text"
+          placeholder="Buscar documentos..."
+          value={searchTerm}
+          onChange={(e) => setSearchTerm(e.target.value)}
+          className="block w-full pl-10 pr-3 py-2.5 border border-gray-200 rounded-lg bg-white text-gray-900 placeholder-gray-500 focus:outline-none focus:ring-1 focus:ring-[#00C48C] focus:border-[#00C48C] text-sm"
+        />
       </div>
       
       {/* Lista de documentos */}
       {filteredRequests.length === 0 ? (
-        <div className="bg-white rounded-2xl border border-slate-200 p-16 text-center">
-          <div className="w-20 h-20 bg-slate-100 rounded-full flex items-center justify-center mx-auto mb-4">
-            <FileText className="w-10 h-10 text-slate-300" />
-          </div>
-          <h3 className="text-lg font-semibold text-slate-700 mb-2">Nenhum documento encontrado</h3>
-          <p className="text-slate-500 mb-6">Comece criando seu primeiro documento para assinatura</p>
-          <button 
+        <div className="bg-white rounded-xl border border-gray-200 p-16 text-center shadow-[0_4px_6px_-1px_rgba(0,0,0,0.05),0_2px_4px_-1px_rgba(0,0,0,0.03)]">
+          <FileText className="w-16 h-16 text-gray-300 mx-auto mb-4" />
+          <h3 className="text-lg font-semibold text-gray-900 mb-2">Nenhum documento encontrado</h3>
+          <p className="text-sm text-gray-500 mb-6">Crie seu primeiro documento para assinatura digital</p>
+          <button
             onClick={() => { resetWizard(); setWizardStep('upload'); }}
-            className="inline-flex items-center gap-2 px-6 py-3 bg-orange-500 text-white rounded-xl font-medium hover:bg-orange-600 transition-all"
+            className="inline-flex items-center gap-2 px-5 py-2.5 bg-[#00C48C] text-white rounded-lg font-medium hover:bg-emerald-600 transition shadow-lg shadow-emerald-500/20"
           >
-            <Plus className="w-5 h-5" />
+            <Plus className="w-4 h-4" />
             Criar documento
           </button>
         </div>
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+        <div className="bg-white rounded-xl border border-gray-200 divide-y divide-gray-100 shadow-[0_4px_6px_-1px_rgba(0,0,0,0.05),0_2px_4px_-1px_rgba(0,0,0,0.03)] overflow-hidden">
           {filteredRequests.map((req) => {
             const allSigned = req.signers?.length > 0 && req.signers.every((s: Signer) => s.status === 'signed');
             const signedCount = req.signers?.filter((s: Signer) => s.status === 'signed').length || 0;
             const totalSigners = req.signers?.length || 0;
-            const lastSignedAt = req.signers?.find((s: Signer) => s.signed_at)?.signed_at;
             const clientLabel = req.client_name || req.signers?.[0]?.name || 'Cliente não informado';
-            
+
             return (
-              <div 
-                key={req.id} 
-                className="bg-white rounded-2xl border border-slate-200 overflow-hidden hover:shadow-xl hover:border-orange-200 cursor-pointer transition-all group"
+              <div
+                key={req.id}
+                className="flex items-center gap-4 p-5 hover:bg-gray-50 cursor-pointer transition group"
                 onClick={() => openDetails(req)}
               >
-                {/* Barra de status no topo */}
-                <div className={`h-1.5 ${allSigned ? 'bg-emerald-500' : 'bg-amber-400'}`} />
-                
-                <div className="p-5">
-                  {/* Header do card */}
-                  <div className="flex items-start justify-between mb-4">
-                    <div className="flex items-center gap-3">
-                      <div className={`w-12 h-12 rounded-xl flex items-center justify-center ${allSigned ? 'bg-emerald-100' : 'bg-orange-100'}`}>
-                        <FileText className={`w-6 h-6 ${allSigned ? 'text-emerald-600' : 'text-orange-600'}`} />
-                      </div>
-                      <div>
-                        <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium ${
-                          allSigned 
-                            ? 'bg-emerald-100 text-emerald-700' 
-                            : 'bg-amber-100 text-amber-700'
-                        }`}>
-                          {allSigned ? (
-                            <><CheckCircle className="w-3 h-3" /> Assinado</>
-                          ) : (
-                            <><Clock className="w-3 h-3" /> Pendente</>
-                          )}
-                        </span>
-                      </div>
-                    </div>
-                    <button className="p-2 text-slate-400 hover:text-orange-500 opacity-0 group-hover:opacity-100 transition-all">
-                      <Eye className="w-4 h-4" />
-                    </button>
-                  </div>
-                  
-                  {/* Nome do documento */}
-                  <h3 className="font-semibold text-slate-800 text-base mb-2 line-clamp-2 group-hover:text-orange-600 transition-colors">
-                    {req.document_name}
-                  </h3>
-                  
-                  {/* Cliente */}
-                  <div className="flex items-center gap-2 mb-3">
-                    <User className="w-4 h-4 text-slate-400" />
-                    <span className="text-sm text-slate-600 truncate">{clientLabel}</span>
-                  </div>
-                  
-                  {/* Datas */}
-                  <div className="space-y-1.5 mb-4">
-                    <div className="flex items-center gap-2 text-xs text-slate-500">
-                      <Calendar className="w-3.5 h-3.5" />
-                      <span>Criado em {formatDate(req.created_at)}</span>
-                    </div>
-                    {allSigned && lastSignedAt && (
-                      <div className="flex items-center gap-2 text-xs text-emerald-600">
-                        <CheckCircle className="w-3.5 h-3.5" />
-                        <span>Assinado em {formatDate(lastSignedAt)}</span>
-                      </div>
-                    )}
-                  </div>
-                  
-                  {/* Progresso de assinaturas */}
-                  <div className="pt-3 border-t border-slate-100">
-                    <div className="flex items-center justify-between mb-2">
-                      <span className="text-xs text-slate-500">Assinaturas</span>
-                      <span className="text-xs font-medium text-slate-700">
-                        {totalSigners > 0 ? `${signedCount}/${totalSigners}` : '—'}
-                      </span>
-                    </div>
-                    <div className="h-1.5 bg-slate-100 rounded-full overflow-hidden">
-                      <div 
-                        className={`h-full rounded-full transition-all ${allSigned ? 'bg-emerald-500' : 'bg-orange-500'}`}
-                        style={{ width: `${totalSigners > 0 ? (signedCount / totalSigners) * 100 : 0}%` }}
-                      />
-                    </div>
-                    {totalSigners === 0 && (
-                      <div className="mt-2 text-[11px] text-slate-500">
-                        Nenhum signatário cadastrado
-                      </div>
-                    )}
-                  </div>
+                {/* Ícone com status */}
+                <div className={`w-12 h-12 rounded-xl flex items-center justify-center flex-shrink-0 ${
+                  allSigned ? 'bg-emerald-100' : 'bg-amber-100'
+                }`}>
+                  <FileText className={`w-6 h-6 ${allSigned ? 'text-emerald-600' : 'text-amber-600'}`} />
                 </div>
+
+                {/* Info */}
+                <div className="flex-1 min-w-0">
+                  <p className="font-semibold text-gray-900 truncate group-hover:text-[#00C48C] transition">{req.document_name}</p>
+                  <p className="text-sm text-gray-500 mt-0.5 flex items-center gap-2">
+                    <span>{clientLabel}</span>
+                    <span className="text-gray-300">•</span>
+                    <span>{formatDate(req.created_at)}</span>
+                  </p>
+                </div>
+
+                {/* Status badge */}
+                <div className={`px-3 py-1.5 rounded-full text-xs font-semibold flex items-center gap-1.5 ${
+                  allSigned
+                    ? 'bg-emerald-100 text-emerald-700'
+                    : 'bg-amber-100 text-amber-700'
+                }`}>
+                  {allSigned ? (
+                    <><CheckCircle className="w-3.5 h-3.5" /> Concluído</>
+                  ) : (
+                    <><Clock className="w-3.5 h-3.5" /> {signedCount}/{totalSigners}</>
+                  )}
+                </div>
+
+                {/* Arrow */}
+                <ChevronRight className="w-5 h-5 text-gray-300 group-hover:text-[#00C48C] transition flex-shrink-0" />
               </div>
             );
           })}
         </div>
       )}
+      </main>
       {detailsRequest && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
-          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-4xl max-h-[90vh] overflow-hidden flex flex-col">
-            {/* Header com faixa laranja */}
-            <div 
-              className="flex items-center justify-between px-6 py-5 flex-shrink-0 rounded-t-2xl"
-              style={{ background: 'linear-gradient(to right, #f97316, #ea580c)' }}
-            >
-              <div className="flex items-center gap-3 min-w-0 flex-1">
-                <div className="w-12 h-12 bg-white/20 rounded-xl flex items-center justify-center flex-shrink-0">
-                  <FileText className="w-6 h-6 text-white" />
-                </div>
-                <div className="min-w-0">
-                  <h2 className="font-semibold text-white truncate text-lg">{detailsRequest.document_name}</h2>
-                  <p className="text-sm text-orange-100">Criado em {formatDate(detailsRequest.created_at)}</p>
-                </div>
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40">
+          <div className="bg-white rounded-lg shadow-xl w-full max-w-3xl max-h-[85vh] overflow-hidden flex flex-col">
+            {/* Header simples */}
+            <div className="flex items-center justify-between px-5 py-4 border-b border-slate-200">
+              <div className="min-w-0">
+                <h2 className="font-semibold text-slate-900 truncate">{detailsRequest.document_name}</h2>
+                <p className="text-xs text-slate-500">Criado em {formatDate(detailsRequest.created_at)}</p>
               </div>
-              <button 
-                onClick={() => setDetailsRequest(null)} 
-                className="p-2 text-white hover:bg-white/20 rounded-lg flex-shrink-0 ml-4 transition-colors"
-              >
-                <X className="w-6 h-6" />
+              <button onClick={() => setDetailsRequest(null)} className="p-1.5 text-slate-400 hover:text-slate-600 rounded">
+                <X className="w-5 h-5" />
               </button>
             </div>
 
-            <div className="flex-1 overflow-y-auto p-6 space-y-6">
-              {/* Informações do documento */}
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div className="bg-slxate-50 rounded-xl p-4">
-                  <p className="text-xs font-medium text-slate-500 mb-1">ID do Documento</p>
-                  <p className="text-sm font-mono text-slate-700 truncate">{detailsRequest.id}</p>
-                </div>
+            <div className="flex-1 overflow-y-auto p-5 space-y-5">
+              {/* Info compacta */}
+              <div className="flex flex-wrap gap-4 text-sm">
                 {detailsRequest.client_name && (
-                  <div className="bg-slate-50 rounded-xl p-4">
-                    <p className="text-xs font-medium text-slate-500 mb-1">Cliente</p>
-                    <p className="text-sm font-medium text-slate-700">{detailsRequest.client_name}</p>
-                  </div>
+                  <div><span className="text-slate-500">Cliente:</span> <span className="font-medium text-slate-700">{detailsRequest.client_name}</span></div>
                 )}
                 {detailsRequest.process_number && (
-                  <div className="bg-slate-50 rounded-xl p-4">
-                    <p className="text-xs font-medium text-slate-500 mb-1">Processo</p>
-                    <p className="text-sm font-medium text-slate-700">{detailsRequest.process_number}</p>
-                  </div>
+                  <div><span className="text-slate-500">Processo:</span> <span className="font-medium text-slate-700">{detailsRequest.process_number}</span></div>
                 )}
-                <div className="bg-slate-50 rounded-xl p-4">
-                  <p className="text-xs font-medium text-slate-500 mb-1">Status Geral</p>
-                  <p className="text-sm font-medium">
-                    {detailsRequest.signers.every(s => s.status === 'signed') ? (
-                      <span className="text-emerald-600">✓ Todos assinaram</span>
-                    ) : (
-                      <span className="text-amber-600">⏳ {detailsRequest.signers.filter(s => s.status === 'pending').length} pendente(s)</span>
-                    )}
-                  </p>
+                <div>
+                  <span className="text-slate-500">Status:</span>{' '}
+                  {detailsRequest.signers.every(s => s.status === 'signed') ? (
+                    <span className="text-emerald-600 font-medium">Todos assinaram</span>
+                  ) : (
+                    <span className="text-amber-600 font-medium">{detailsRequest.signers.filter(s => s.status === 'pending').length} pendente(s)</span>
+                  )}
                 </div>
               </div>
 
@@ -2466,12 +2377,12 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, onParamC
                               toast.error('Erro ao carregar dados do signatÃ¡rio');
                               return;
                             }
-                            const signedPdfPath = await pdfSignatureService.saveSignatureReportToStorage({
+                            const { filePath: signedPdfPath, sha256 } = await pdfSignatureService.saveSignatureReportToStorage({
                               request: freshRequest,
                               signer: freshSigner,
                               creator: null,
                             });
-                            await signatureService.updateSignerSignedDocumentPath(freshSigner.id, signedPdfPath);
+                            await signatureService.updateSignerSignedDocumentMeta(freshSigner.id, { signed_document_path: signedPdfPath, signed_pdf_sha256: sha256 });
                             const signedUrl = await pdfSignatureService.getSignedPdfUrl(signedPdfPath);
                             if (signedUrl) window.open(signedUrl, '_blank');
                             else toast.error('Erro ao abrir relatÃ³rio');
@@ -2501,7 +2412,7 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, onParamC
                             if (u) attachmentPdfItems.push({ documentId: `attachment-${i}`, url: u });
                           }
 
-                          const signedPdfPath = await pdfSignatureService.saveSignedPdfToStorage({
+                          const { filePath: signedPdfPath, sha256 } = await pdfSignatureService.saveSignedPdfToStorage({
                             request: freshRequest,
                             signer: freshSigner,
                             originalPdfUrl: originalUrl,
@@ -2510,7 +2421,7 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, onParamC
                           });
                           
                           // Atualizar o signer com o path do PDF assinado
-                          await signatureService.updateSignerSignedDocumentPath(freshSigner.id, signedPdfPath);
+                          await signatureService.updateSignerSignedDocumentMeta(freshSigner.id, { signed_document_path: signedPdfPath, signed_pdf_sha256: sha256 });
                           
                           // Abrir o PDF salvo
                           const signedUrl = await pdfSignatureService.getSignedPdfUrl(signedPdfPath);
@@ -2911,20 +2822,20 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, onParamC
         </div>
       )}
       {signModalOpen && signingSigner && (
-        <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
-          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-xl max-h-[90vh] overflow-hidden flex flex-col">
-            <div className="flex items-center justify-between px-6 py-4 border-b border-slate-200 bg-blue-600">
-              <div><h2 className="font-semibold text-white">Assinar Documento</h2><p className="text-xs text-white/70">{signingSigner.name}</p></div>
-              <button onClick={() => setSignModalOpen(false)} className="p-2 text-white/70 hover:text-white rounded-lg"><X className="w-5 h-5" /></button>
+        <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/40">
+          <div className="bg-white rounded-lg shadow-xl w-full max-w-lg max-h-[85vh] overflow-hidden flex flex-col">
+            <div className="flex items-center justify-between px-5 py-3 border-b border-slate-200">
+              <div><h2 className="font-semibold text-slate-900">Assinar Documento</h2><p className="text-xs text-slate-500">{signingSigner.name}</p></div>
+              <button onClick={() => setSignModalOpen(false)} className="p-1.5 text-slate-400 hover:text-slate-600 rounded"><X className="w-5 h-5" /></button>
             </div>
-            <div className="flex-1 overflow-y-auto p-6">
-              {signStep === 'signature' && <div><h3 className="text-lg font-semibold mb-4">Sua Assinatura</h3><SignatureCanvas onSignatureChange={setSignatureData} width={450} height={180} /></div>}
-              {signStep === 'facial' && <div><h3 className="text-lg font-semibold mb-4">Foto Facial</h3><FacialCapture onCapture={setFacialData} width={320} height={240} /></div>}
-              {signStep === 'confirm' && <div><h3 className="text-lg font-semibold mb-4">Confirmar</h3>{signatureData && <div className="p-4 bg-slate-50 rounded-xl mb-4"><p className="text-xs font-medium text-slate-500 mb-2">Assinatura</p><img src={signatureData} alt="Assinatura" className="max-h-24 border border-slate-200 rounded-lg bg-white" /></div>}{facialData && <div className="p-4 bg-slate-50 rounded-xl"><p className="text-xs font-medium text-slate-500 mb-2">Foto</p><img src={facialData} alt="Foto" className="w-24 h-24 object-cover rounded-lg border" style={{ transform: 'scaleX(-1)' }} /></div>}</div>}
+            <div className="flex-1 overflow-y-auto p-5">
+              {signStep === 'signature' && <div><p className="text-sm font-medium text-slate-700 mb-3">Sua Assinatura</p><SignatureCanvas onSignatureChange={setSignatureData} width={420} height={160} /></div>}
+              {signStep === 'facial' && <div><p className="text-sm font-medium text-slate-700 mb-3">Foto Facial</p><FacialCapture onCapture={setFacialData} width={300} height={220} /></div>}
+              {signStep === 'confirm' && <div><p className="text-sm font-medium text-slate-700 mb-3">Confirmar dados</p>{signatureData && <div className="p-3 bg-slate-50 rounded mb-3"><p className="text-xs text-slate-500 mb-1">Assinatura</p><img src={signatureData} alt="Assinatura" className="max-h-20 border border-slate-200 rounded bg-white" /></div>}{facialData && <div className="p-3 bg-slate-50 rounded"><p className="text-xs text-slate-500 mb-1">Foto</p><img src={facialData} alt="Foto" className="w-20 h-20 object-cover rounded border" style={{ transform: 'scaleX(-1)' }} /></div>}</div>}
             </div>
-            <div className="flex items-center justify-between gap-3 px-6 py-4 border-t border-slate-200 bg-slate-50">
-              <button onClick={() => { if (signStep === 'signature') setSignModalOpen(false); else if (signStep === 'facial') setSignStep('signature'); else setSignStep('facial'); }} className="px-4 py-2 text-sm font-medium text-slate-600">{signStep === 'signature' ? 'Cancelar' : 'Voltar'}</button>
-              {signStep === 'confirm' ? <button onClick={handleSign} disabled={signLoading} className="flex items-center gap-2 px-5 py-2.5 bg-blue-600 text-white rounded-xl font-medium disabled:opacity-50">{signLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle className="w-4 h-4" />}Confirmar</button> : <button onClick={() => { if (signStep === 'signature' && signatureData) setSignStep('facial'); else if (signStep === 'facial') setSignStep('confirm'); }} disabled={(signStep === 'signature' && !signatureData)} className="px-5 py-2.5 bg-blue-600 text-white rounded-xl font-medium disabled:opacity-50">Próximo</button>}
+            <div className="flex items-center justify-between gap-3 px-5 py-3 border-t border-slate-200">
+              <button onClick={() => { if (signStep === 'signature') setSignModalOpen(false); else if (signStep === 'facial') setSignStep('signature'); else setSignStep('facial'); }} className="px-3 py-2 text-sm text-slate-600 hover:text-slate-800">{signStep === 'signature' ? 'Cancelar' : 'Voltar'}</button>
+              {signStep === 'confirm' ? <button onClick={handleSign} disabled={signLoading} className="flex items-center gap-2 px-4 py-2 bg-slate-900 text-white rounded text-sm font-medium disabled:opacity-50">{signLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Confirmar'}</button> : <button onClick={() => { if (signStep === 'signature' && signatureData) setSignStep('facial'); else if (signStep === 'facial') setSignStep('confirm'); }} disabled={(signStep === 'signature' && !signatureData)} className="px-4 py-2 bg-slate-900 text-white rounded text-sm font-medium disabled:opacity-50">Próximo</button>}
             </div>
           </div>
         </div>
@@ -2954,62 +2865,34 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, onParamC
       )}
       {/* Modal de confirmação de exclusão */}
       {deleteModalOpen && (
-        <div className="fixed inset-0 z-[80] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
-          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden">
-            <div className="px-6 py-5 border-b border-slate-200 bg-red-50">
-              <div className="flex items-center gap-3">
-                <div className="w-12 h-12 bg-red-100 rounded-full flex items-center justify-center">
-                  <Trash2 className="w-6 h-6 text-red-600" />
-                </div>
-                <div>
-                  <h2 className="text-lg font-bold text-slate-800">Excluir Documento</h2>
-                  <p className="text-sm text-slate-500">Remover do painel (sem apagar o documento assinado)</p>
-                </div>
-              </div>
+        <div className="fixed inset-0 z-[80] flex items-center justify-center p-4 bg-black/40">
+          <div className="bg-white rounded-lg shadow-xl w-full max-w-sm overflow-hidden">
+            <div className="px-5 py-4 border-b border-slate-200">
+              <h2 className="font-semibold text-slate-900">Excluir documento</h2>
+              <p className="text-xs text-slate-500 mt-0.5">Remover do painel</p>
             </div>
             
-            <div className="p-6 space-y-4">
-              <div className="bg-amber-50 border border-amber-200 rounded-xl p-4">
-                <p className="text-sm text-amber-800">
-                  <strong>Atenção:</strong> Esta ação remove do painel e invalida o link público de assinatura. O documento assinado permanece preservado para consulta por autenticidade.
-                </p>
-              </div>
+            <div className="p-5">
+              <p className="text-sm text-slate-600 mb-4">
+                Esta ação remove o documento do painel e invalida o link de assinatura. O documento assinado permanece preservado.
+              </p>
               
-              <div className="space-y-3">
+              <div className="flex gap-3">
+                <button
+                  onClick={() => { setDeleteModalOpen(false); setDeleteRequestId(null); }}
+                  disabled={deleteLoading}
+                  className="flex-1 px-3 py-2 text-sm text-slate-600 border border-slate-200 rounded hover:bg-slate-50 disabled:opacity-50"
+                >
+                  Cancelar
+                </button>
                 <button
                   onClick={() => confirmDelete()}
                   disabled={deleteLoading}
-                  className="w-full flex items-center gap-4 p-4 border-2 border-slate-200 rounded-xl hover:border-blue-400 hover:bg-blue-50 transition-all group disabled:opacity-50"
+                  className="flex-1 px-3 py-2 text-sm text-white bg-red-600 rounded hover:bg-red-700 disabled:opacity-50 flex items-center justify-center gap-2"
                 >
-                  <div className="w-10 h-10 bg-blue-100 rounded-lg flex items-center justify-center group-hover:bg-blue-200 transition-colors">
-                    <Eye className="w-5 h-5 text-blue-600" />
-                  </div>
-                  <div className="flex-1 text-left">
-                    <p className="font-semibold text-slate-800">Remover apenas do painel</p>
-                    <p className="text-xs text-slate-500">Consulta futura apenas pelo código de autenticidade</p>
-                  </div>
+                  {deleteLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Excluir'}
                 </button>
               </div>
-              
-              {deleteLoading && (
-                <div className="flex items-center justify-center gap-2 text-slate-500">
-                  <Loader2 className="w-4 h-4 animate-spin" />
-                  <span className="text-sm">Excluindo...</span>
-                </div>
-              )}
-            </div>
-            
-            <div className="px-6 py-4 border-t border-slate-200 bg-slate-50">
-              <button
-                onClick={() => {
-                  setDeleteModalOpen(false);
-                  setDeleteRequestId(null);
-                }}
-                disabled={deleteLoading}
-                className="w-full px-4 py-2.5 text-sm font-medium text-slate-600 hover:text-slate-800 hover:bg-slate-100 rounded-lg transition disabled:opacity-50"
-              >
-                Cancelar
-              </button>
             </div>
           </div>
         </div>

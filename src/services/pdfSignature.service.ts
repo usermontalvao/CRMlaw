@@ -21,6 +21,57 @@ interface GeoInfo {
 }
 
 class PdfSignatureService {
+  private async sha256Hex(bytes: Uint8Array): Promise<string> {
+    const ab = bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer;
+    const hashBuffer = await crypto.subtle.digest('SHA-256', ab);
+    const hashArray = Array.from(new Uint8Array(hashBuffer));
+    return hashArray.map((b) => b.toString(16).padStart(2, '0')).join('').toUpperCase();
+  }
+
+  private concatBytes(chunks: Uint8Array[]): Uint8Array {
+    const total = chunks.reduce((acc, c) => acc + c.byteLength, 0);
+    const out = new Uint8Array(total);
+    let offset = 0;
+    for (const c of chunks) {
+      out.set(c, offset);
+      offset += c.byteLength;
+    }
+    return out;
+  }
+
+  private async fetchBytesFromPathOrUrl(pathOrUrl: string): Promise<Uint8Array | null> {
+    if (!pathOrUrl) return null;
+
+    // URL direto
+    if (/^https?:\/\//i.test(pathOrUrl)) {
+      const res = await fetch(pathOrUrl);
+      if (!res.ok) return null;
+      return new Uint8Array(await res.arrayBuffer());
+    }
+
+    // Path do storage (tentar buckets conhecidos)
+    const bucketsToTry = ['document-templates', 'generated-documents', 'assinados'];
+    for (const bucket of bucketsToTry) {
+      try {
+        const { data, error } = await supabase.storage.from(bucket).createSignedUrl(pathOrUrl, 3600);
+        if (error || !data?.signedUrl) continue;
+        const res = await fetch(data.signedUrl);
+        if (!res.ok) continue;
+        return new Uint8Array(await res.arrayBuffer());
+      } catch {
+        // ignore
+      }
+    }
+    return null;
+  }
+
+  private formatIntegrityHash(hash: string | null | undefined): string {
+    const h = (hash || '').trim();
+    if (!h) return 'N/A';
+    if (h.length <= 18) return h;
+    return `${h.slice(0, 10)}…${h.slice(-8)}`;
+  }
+
   private parseGeolocation(value: string | null | undefined): GeoInfo {
     if (!value) return {};
     const [coords, addr] = value.split('|');
@@ -232,78 +283,97 @@ class PdfSignatureService {
   private drawFooterStamp(params: {
     page: any;
     pageWidth: number;
+    pageHeight: number;
     signer: Signer;
     verificationUrl?: string | null;
     qrImage?: EmbeddedImage | null;
     helvetica: any;
     helveticaBold: any;
     docHash: string;
+    integritySha256?: string | null;
+    variant?: 'card' | 'strip';
   }) {
-    const { page, pageWidth, signer, verificationUrl, qrImage, helvetica, helveticaBold, docHash } = params;
+    const { page, pageWidth, pageHeight, signer, verificationUrl, qrImage, helvetica, helveticaBold, docHash, integritySha256, variant } = params;
 
-    // Usar largura total da pÃ¡gina com margens mÃ­nimas
-    const boxH = 82;
-    const boxX = 5; // Reduzido de 18 para 5
-    const boxY = 10;
-    const boxW = pageWidth - 10; // Reduzido de 36 para 10
+    void pageHeight;
+    void docHash;
 
-    // Banner azul no topo
-    page.drawRectangle({
-      x: boxX,
-      y: boxY + boxH - 18,
-      width: boxW,
-      height: 18,
-      color: rgb(0.15, 0.4, 0.85),
-    });
-    
-    // Fundo principal
+    const mode: 'card' | 'strip' = variant ?? 'strip';
+    const integrityShort = this.formatIntegrityHash(integritySha256);
+
+    if (mode === 'strip') {
+      const h = 18;
+      const x = 10;
+      const y = 6;
+      const w = pageWidth - 20;
+
+      page.drawRectangle({ x, y, width: w, height: h, color: rgb(0.98, 0.99, 1), borderColor: rgb(0.85, 0.88, 0.95), borderWidth: 1 });
+      const label = `Hash SHA-256 do arquivo original: ${integrityShort}`;
+      page.drawText(label, { x: x + 8, y: y + 6, size: 6, font: helvetica, color: rgb(0.35, 0.35, 0.35) });
+      if (signer.verification_hash) {
+        page.drawText(`Código: ${(signer.verification_hash || '').toUpperCase()}`, { x: x + 8, y: y + 1.8, size: 6, font: helveticaBold, color: rgb(0.15, 0.25, 0.25) });
+      }
+      return;
+    }
+
+    const boxH = 70;
+    const boxX = 18;
+    const boxY = 12;
+    const boxW = pageWidth - 36;
+
+    // Card
     page.drawRectangle({
       x: boxX,
       y: boxY,
       width: boxW,
-      height: boxH - 3,
-      color: rgb(0.98, 0.98, 1),
-      borderColor: rgb(0.15, 0.4, 0.85),
+      height: boxH,
+      color: rgb(0.98, 0.99, 1),
+      borderColor: rgb(0.2, 0.45, 0.9),
       borderWidth: 1,
     });
 
-    // Banner com texto centralizado
-    page.drawText('DOCUMENTO ASSINADO DIGITALMENTE - Valido conforme MP 2.200-2/2001 e Lei 14.063/2020', {
-      x: boxX + (boxW/2) - 160, // Centralizado
-      y: boxY + boxH - 14,
-      size: 8,
+    // Accent line
+    page.drawRectangle({
+      x: boxX,
+      y: boxY + boxH - 3,
+      width: boxW,
+      height: 3,
+      color: rgb(0.2, 0.45, 0.9),
+    });
+
+    // Left logo (J)
+    const logoCx = boxX + 28;
+    const logoCy = boxY + boxH / 2;
+    page.drawCircle({ x: logoCx, y: logoCy, size: 18, color: rgb(0.2, 0.45, 0.9) });
+    page.drawText('J', {
+      x: logoCx - 5.5,
+      y: logoCy - 7.5,
+      size: 16,
       font: helveticaBold,
-      color: rgb(1, 1, 1), // Na verdade, rgb(1,1,1) Ã© branco
+      color: rgb(1, 1, 1),
     });
 
-    const signedAt = signer.signed_at ? new Date(signer.signed_at) : new Date();
-    const dateStr = signedAt.toLocaleString('pt-BR', {
-      timeZone: 'America/Manaus',
-      day: '2-digit',
-      month: '2-digit',
-      year: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit',
-    });
-
-    page.drawText(`Assinante: ${signer.name}`, { x: boxX + 10, y: boxY + boxH - 28, size: 7, font: helveticaBold, color: rgb(0.12, 0.12, 0.12) });
-    page.drawText(`E-mail confirmado: ${signer.email || 'N/A'}`, { x: boxX + 10, y: boxY + boxH - 40, size: 6, font: helvetica, color: rgb(0.35, 0.35, 0.35) });
-    page.drawText(`Data/hora: ${dateStr}`, { x: boxX + 10, y: boxY + boxH - 51, size: 6, font: helvetica, color: rgb(0.35, 0.35, 0.35) });
-
-    if (signer.signer_ip) {
-      page.drawText(`IP: ${signer.signer_ip}`, { x: boxX + 200, y: boxY + boxH - 40, size: 6, font: helvetica, color: rgb(0.35, 0.35, 0.35) });
+    const qrSize = 44;
+    const qrX = boxX + boxW - qrSize - 12;
+    const qrY = boxY + (boxH - qrSize) / 2;
+    if (qrImage) {
+      page.drawImage(qrImage, { x: qrX, y: qrY, width: qrSize, height: qrSize });
     }
 
-    // Hash de verificaÃ§Ã£o em TODAS as pÃ¡ginas
-    page.drawText(`Hash SHA256: ${docHash.slice(0, 32)}...`, { x: boxX + 10, y: boxY + boxH - 62, size: 5, font: helvetica, color: rgb(0.4, 0.4, 0.4) });
+    const textX = boxX + 56;
+    const title = 'Escaneie o QR Code para verificar a autenticidade do documento';
+    page.drawText(title, { x: textX, y: boxY + boxH - 16, size: 8, font: helveticaBold, color: rgb(0.12, 0.12, 0.12) });
+
+    const codeLabel = 'Código de autenticação:';
+    const code = (signer.verification_hash || '').toUpperCase() || 'N/A';
+    page.drawText(codeLabel, { x: textX, y: boxY + boxH - 30, size: 7, font: helvetica, color: rgb(0.35, 0.35, 0.35) });
+    page.drawText(code, { x: textX + 98, y: boxY + boxH - 30, size: 7.2, font: helveticaBold, color: rgb(0.15, 0.25, 0.25) });
+
+    page.drawText(`Hash SHA-256 do arquivo original: ${integrityShort}`, { x: textX, y: boxY + boxH - 42, size: 6.5, font: helvetica, color: rgb(0.35, 0.35, 0.35) });
 
     if (verificationUrl) {
-      page.drawText(`Verificar: ${verificationUrl}`, { x: boxX + 10, y: boxY + 6, size: 5, font: helvetica, color: rgb(0.2, 0.35, 0.7) });
-    }
-
-    if (qrImage) {
-      const s = 52;
-      page.drawImage(qrImage, { x: boxX + boxW - s - 8, y: boxY + 10, width: s, height: s });
+      const urlToDraw = verificationUrl.length > 70 ? `${verificationUrl.slice(0, 67)}...` : verificationUrl;
+      page.drawText(urlToDraw, { x: textX, y: boxY + 10, size: 6.5, font: helvetica, color: rgb(0.12, 0.35, 0.7) });
     }
   }
 
@@ -328,7 +398,7 @@ class PdfSignatureService {
     const signedAtStr = signedAt.toLocaleString('pt-BR', {
       timeZone: 'America/Manaus',
       day: '2-digit',
-      month: 'long',
+      month: '2-digit',
       year: 'numeric',
       hour: '2-digit',
       minute: '2-digit',
@@ -338,13 +408,13 @@ class PdfSignatureService {
     const nowStr = now.toLocaleString('pt-BR', {
       timeZone: 'America/Manaus',
       day: '2-digit',
-      month: 'long',
+      month: '2-digit',
       year: 'numeric',
       hour: '2-digit',
       minute: '2-digit',
     });
 
-    // ==================== PÃGINA 1 - RelatÃ³rio de Assinaturas ====================
+    // ==================== PÁGINA 1 - Relatório de Assinaturas ====================
     const page1 = pdfDoc.addPage([595.28, 841.89]);
     const { width, height } = page1.getSize();
     const lm = 50;
@@ -372,13 +442,13 @@ class PdfSignatureService {
     // Linha separadora
     page1.drawLine({ start: { x: lm, y: height - 145 }, end: { x: width - lm, y: height - 145 }, thickness: 1, color: rgb(0.85, 0.85, 0.85) });
 
-    // SeÃ§Ã£o Assinaturas
+    // Seção Assinaturas
     page1.drawText('Assinaturas', { x: lm, y: height - 175, size: 16, font: helveticaBold, color: rgb(0.1, 0.1, 0.1) });
 
-    // Card do signatÃ¡rio com Ã­cone verde
+    // Card do signatário com ícone verde
     let cardY = height - 210;
     
-    // Ãcone de check verde (cÃ­rculo)
+    // Ícone de check verde (círculo)
     page1.drawCircle({ x: lm + 12, y: cardY + 5, size: 10, color: rgb(0.2, 0.7, 0.3) });
     page1.drawText('v', { x: lm + 8, y: cardY + 1, size: 10, font: helveticaBold, color: rgb(1, 1, 1) });
     
@@ -386,34 +456,37 @@ class PdfSignatureService {
     page1.drawText(signer.name.toUpperCase(), { x: lm + 30, y: cardY + 8, size: 11, font: helveticaBold, color: rgb(0.2, 0.7, 0.3) });
     page1.drawText('Assinou', { x: lm + 30, y: cardY - 6, size: 9, font: helvetica, color: rgb(0.2, 0.7, 0.3) });
 
-    // Coluna esquerda - InformaÃ§Ãµes
+    // Coluna esquerda - Informações
     let infoY = cardY - 35;
     const infoX = lm;
     
-    // Pontos de autenticaÃ§Ã£o
-    page1.drawText('Pontos de autenticacao:', { x: infoX, y: infoY, size: 8, font: helveticaBold, color: rgb(0.2, 0.2, 0.2) });
+    // Pontos de autenticação
+    page1.drawText('Pontos de autenticação:', { x: infoX, y: infoY, size: 8, font: helveticaBold, color: rgb(0.2, 0.2, 0.2) });
     infoY -= 14;
     
-    // Lista de pontos de autenticaÃ§Ã£o com bullets
+    // Lista de pontos de autenticação com bullets
     const authPoints: string[] = ['Assinatura manuscrita digital'];
     
-    // MÃ©todo de autenticaÃ§Ã£o
+    // Método de autenticação
     if (signer.auth_provider === 'google') {
-      authPoints.push(`Autenticacao via Google (${signer.auth_email || 'nao informado'})`);
+      authPoints.push(`Autenticação via Google (${signer.auth_email || 'não informado'})`);
       if (signer.auth_google_sub) authPoints.push(`Google ID: ${signer.auth_google_sub.slice(0, 8)}...`);
     } else if (signer.auth_provider === 'email_link') {
-      authPoints.push(`Autenticacao via Link por E-mail (${signer.auth_email || 'nao informado'})`);
+      authPoints.push(`Autenticação via Link por E-mail (${signer.auth_email || 'não informado'})`);
     } else if (signer.auth_provider === 'phone') {
-      authPoints.push(`Autenticacao via Telefone (${signer.phone || 'verificado'})`);
+      authPoints.push(`Autenticação via Telefone (${signer.phone || 'verificado'})`);
     }
     
-    if (signer.signer_ip) authPoints.push(`Endereco IP: ${signer.signer_ip}`);
-    if (geo.coordinates) authPoints.push(`Geolocalizacao: ${geo.coordinates}`);
-    if (signer.facial_image_path) authPoints.push('Verificacao facial (selfie)');
+    if (signer.signer_ip) authPoints.push(`Endereço IP: ${signer.signer_ip}`);
+    if (geo.coordinates) authPoints.push(`Geolocalização: ${geo.coordinates}`);
+    if (signer.facial_image_path) authPoints.push('Verificação facial (selfie)');
     if (ua.device) authPoints.push(`Dispositivo: ${ua.device} - ${ua.browser || 'Navegador'} - ${ua.os || 'Sistema'}`);
     
     for (const point of authPoints) {
-      page1.drawText(`â€¢ ${point}`, { x: infoX + 5, y: infoY, size: 7, font: helvetica, color: rgb(0.3, 0.3, 0.3) });
+      // Evitar caractere bullet ("•") por incompatibilidade de encoding/fonte (pode virar "â€¢" no PDF).
+      // Desenhar bullet como um pequeno círculo.
+      page1.drawCircle({ x: infoX + 7, y: infoY + 2.5, size: 1.2, color: rgb(0.35, 0.35, 0.35) });
+      page1.drawText(point, { x: infoX + 12, y: infoY, size: 7, font: helvetica, color: rgb(0.3, 0.3, 0.3) });
       infoY -= 10;
     }
     
@@ -466,10 +539,10 @@ class PdfSignatureService {
     // Label da assinatura
     page1.drawText(`Assinatura de ${signer.name.toUpperCase()}`, { x: sigX, y: sigY - 115, size: 7, font: helvetica, color: rgb(0.5, 0.5, 0.5) });
 
-    // ==================== PÃGINA 2 - Foto Selfie Grande ====================
+    // ==================== PÁGINA 2 - Foto Selfie Grande ====================
     const page2 = pdfDoc.addPage([595.28, 841.89]);
 
-    // TÃ­tulo da foto
+    // Título da foto
     page2.drawText(`Foto do rosto (selfie) de ${signer.name.toUpperCase()}:`, { x: lm, y: height - 50, size: 10, font: helvetica, color: rgb(0.3, 0.3, 0.3) });
 
     // Foto GRANDE com borda tracejada
@@ -491,7 +564,7 @@ class PdfSignatureService {
     if (facialImage) {
       page2.drawImage(facialImage, { x: photoX + 5, y: photoY + 5, width: photoW - 10, height: photoH - 10 });
       
-      // Marca d'Ã¡gua CONFIDENTIAL com data (cinza e mais transparente)
+      // Marca d'água CONFIDENTIAL com data (cinza e mais transparente)
       const wmY = photoY + photoH / 2;
       page2.drawText('- - - - - - - - - - - - - - - - - - - - - - - -', { x: photoX + 40, y: wmY + 30, size: 10, font: helvetica, color: rgb(0.45, 0.45, 0.45), opacity: 0.22 });
       page2.drawText('C O N F I D E N T I A L', { x: photoX + 80, y: wmY + 10, size: 14, font: helveticaBold, color: rgb(0.45, 0.45, 0.45), opacity: 0.22 });
@@ -499,39 +572,48 @@ class PdfSignatureService {
       page2.drawText(dateWm, { x: photoX + 110, y: wmY - 10, size: 10, font: helvetica, color: rgb(0.45, 0.45, 0.45), opacity: 0.22 });
       page2.drawText('- - - - - - - - - - - - - - - - - - - - - - - -', { x: photoX + 40, y: wmY - 30, size: 10, font: helvetica, color: rgb(0.45, 0.45, 0.45), opacity: 0.22 });
     } else {
-      page2.drawText('Selfie nao coletada', { x: photoX + 100, y: photoY + photoH / 2, size: 14, font: helveticaBold, color: rgb(0.6, 0.6, 0.6) });
+      page2.drawText('Selfie não coletada', { x: photoX + 100, y: photoY + photoH / 2, size: 14, font: helveticaBold, color: rgb(0.6, 0.6, 0.6) });
     }
 
-    // SeÃ§Ã£o FundamentaÃ§Ã£o Legal e Validade
+    // Seção Fundamentação Legal e Validade
     let legalY = photoY - 30;
     
-    // TÃ­tulo da seÃ§Ã£o
-    page2.drawText('FUNDAMENTACAO LEGAL E VALIDADE', { x: lm, y: legalY, size: 11, font: helveticaBold, color: rgb(0.15, 0.4, 0.85) });
-    legalY -= 20;
-    
-    // Texto legal
-    page2.drawText('Este documento foi assinado eletronicamente e possui validade juridica conforme:', { x: lm, y: legalY, size: 8, font: helvetica, color: rgb(0.3, 0.3, 0.3) });
+    // Título da seção
+    page2.drawText('VALIDADE JURIDICA (MP 2.200-2/2001)', { x: lm, y: legalY, size: 11, font: helveticaBold, color: rgb(0.15, 0.4, 0.85) });
+    legalY -= 18;
+
+    page2.drawText('A Medida Provisoria 2.200-2, de 27 de Julho de 2001, trata da validade juridica', { x: lm, y: legalY, size: 7.5, font: helvetica, color: rgb(0.3, 0.3, 0.3) });
+    legalY -= 11;
+    page2.drawText('da Assinatura Eletronica no Brasil e reconhece a utilizacao de outros meios de', { x: lm, y: legalY, size: 7.5, font: helvetica, color: rgb(0.3, 0.3, 0.3) });
+    legalY -= 11;
+    page2.drawText('comprovacao de autoria e integridade, desde que admitidos pelas partes como validos.', { x: lm, y: legalY, size: 7.5, font: helvetica, color: rgb(0.3, 0.3, 0.3) });
     legalY -= 14;
-    page2.drawText('- Medida Provisoria 2.200-2/2001 - Institui a Infraestrutura de Chaves Publicas Brasileira', { x: lm, y: legalY, size: 7, font: helvetica, color: rgb(0.3, 0.3, 0.3) });
+
+    page2.drawText('Trecho (MP 2.200-2/2001, Art. 2):', { x: lm, y: legalY, size: 8, font: helveticaBold, color: rgb(0.2, 0.2, 0.2) });
+    legalY -= 12;
+    page2.drawText('"Art. 2 O disposto nesta Medida Provisoria nao obsta a utilizacao de outro meio', { x: lm, y: legalY, size: 6.6, font: helvetica, color: rgb(0.35, 0.35, 0.35) });
+    legalY -= 10;
+    page2.drawText('de comprovacao da autoria e integridade de documentos em forma eletronica, inclusive', { x: lm, y: legalY, size: 6.6, font: helvetica, color: rgb(0.35, 0.35, 0.35) });
+    legalY -= 10;
+    page2.drawText('os que utilizem certificados nao emitidos pela ICP-Brasil, desde que admitido pelas', { x: lm, y: legalY, size: 6.6, font: helvetica, color: rgb(0.35, 0.35, 0.35) });
+    legalY -= 10;
+    page2.drawText('partes como valido ou aceito pela pessoa a quem for oposto o documento"', { x: lm, y: legalY, size: 6.6, font: helvetica, color: rgb(0.35, 0.35, 0.35) });
+    legalY -= 14;
+
+    page2.drawText('Em sintese: a assinatura digital/eletronica possui validade juridica equivalente a', { x: lm, y: legalY, size: 7.5, font: helvetica, color: rgb(0.3, 0.3, 0.3) });
     legalY -= 11;
-    page2.drawText('- Lei 14.063/2020 - Dispoe sobre o uso de assinaturas eletronicas em interacoes com entes publicos', { x: lm, y: legalY, size: 7, font: helvetica, color: rgb(0.3, 0.3, 0.3) });
-    legalY -= 11;
-    page2.drawText('- Codigo Civil Brasileiro, Art. 219 - As declaracoes constantes de documentos assinados presumem-se verdadeiras', { x: lm, y: legalY, size: 7, font: helvetica, color: rgb(0.3, 0.3, 0.3) });
-    legalY -= 11;
-    page2.drawText('- Codigo de Processo Civil, Art. 411 - Considera-se autentico o documento quando a autoria estiver identificada', { x: lm, y: legalY, size: 7, font: helvetica, color: rgb(0.3, 0.3, 0.3) });
-    
+    page2.drawText('um documento assinado em papel, desde que as partes admitam sua validade ao assinar.', { x: lm, y: legalY, size: 7.5, font: helvetica, color: rgb(0.3, 0.3, 0.3) });
+
     legalY -= 25;
     page2.drawLine({ start: { x: lm, y: legalY }, end: { x: width - lm, y: legalY }, thickness: 0.5, color: rgb(0.85, 0.85, 0.85) });
     legalY -= 20;
     
-    // Hash de verificaÃ§Ã£o
-    page2.drawText('HASH DE VERIFICACAO (SHA256):', { x: lm, y: legalY, size: 9, font: helveticaBold, color: rgb(0.2, 0.2, 0.2) });
+    page2.drawText('CÓDIGO DE AUTENTICAÇÃO:', { x: lm, y: legalY, size: 9, font: helveticaBold, color: rgb(0.2, 0.2, 0.2) });
     legalY -= 14;
-    const docHash = this.generateHash(request.id, signer.id);
-    page2.drawText(docHash, { x: lm, y: legalY, size: 7, font: helvetica, color: rgb(0.3, 0.3, 0.3) });
-    
-    legalY -= 25;
-    page2.drawText('VERIFICADOR DE AUTENTICIDADE:', { x: lm, y: legalY, size: 9, font: helveticaBold, color: rgb(0.2, 0.2, 0.2) });
+    page2.drawText(signer.verification_hash || 'N/A', { x: lm, y: legalY, size: 12, font: helveticaBold, color: rgb(0.15, 0.2, 0.2) });
+
+    legalY -= 22;
+    page2.drawText('VERIFICAR AUTENTICIDADE:', { x: lm, y: legalY, size: 9, font: helveticaBold, color: rgb(0.2, 0.2, 0.2) });
     legalY -= 14;
     if (verificationUrl) {
       page2.drawText(verificationUrl, { x: lm, y: legalY, size: 8, font: helvetica, color: rgb(0.2, 0.4, 0.7) });
@@ -576,6 +658,55 @@ class PdfSignatureService {
       font: helveticaBold, 
       color: rgb(1, 1, 1) 
     });
+
+    // ==================== PÁGINA 3 - Histórico ====================
+    const page3 = pdfDoc.addPage([595.28, 841.89]);
+    const { width: w3, height: h3 } = page3.getSize();
+
+    page3.drawText('HISTÓRICO', { x: lm, y: h3 - 60, size: 14, font: helveticaBold, color: rgb(0.1, 0.1, 0.1) });
+    page3.drawLine({ start: { x: lm, y: h3 - 74 }, end: { x: w3 - lm, y: h3 - 74 }, thickness: 1, color: rgb(0.85, 0.85, 0.85) });
+
+    const geo2 = geo;
+    const createdAtStr = request.created_at ? new Date(request.created_at).toLocaleString('pt-BR', { timeZone: 'America/Manaus' }) : nowStr;
+    const viewedAtStr = signer.viewed_at ? new Date(signer.viewed_at).toLocaleString('pt-BR', { timeZone: 'America/Manaus' }) : null;
+    const signedAtStr2 = signer.signed_at ? new Date(signer.signed_at).toLocaleString('pt-BR', { timeZone: 'America/Manaus' }) : signedAtStr;
+
+    type HistoryItem = { label: string; when: string; detail: string };
+    const history: HistoryItem[] = [];
+
+    const creatorName = creator?.name || 'Sistema';
+    const creatorEmail = creator?.email ? ` (Email: ${creator.email})` : '';
+    history.push({ label: 'Criado', when: createdAtStr, detail: `${creatorName} criou este documento.${creatorEmail}` });
+
+    const signerEmail = signer.email ? ` (Email: ${signer.email})` : '';
+    const signerCpf = (signer as any).cpf ? `, CPF: ${(signer as any).cpf}` : '';
+    const locationInfo = geo2.coordinates ? ` localizado em ${geo2.coordinates}${geo2.address ? ` - ${geo2.address}` : ''}` : '';
+    if (viewedAtStr) {
+      history.push({
+        label: 'Visualizado',
+        when: viewedAtStr,
+        detail: `${signer.name}${signerEmail}${signerCpf} visualizou este documento${signer.signer_ip ? ` por meio do IP ${signer.signer_ip}` : ''}${locationInfo}`,
+      });
+    }
+
+    history.push({
+      label: 'Assinado',
+      when: signedAtStr2,
+      detail: `${signer.name}${signerEmail}${signerCpf} assinou este documento${signer.signer_ip ? ` por meio do IP ${signer.signer_ip}` : ''}${locationInfo}`,
+    });
+
+    let y = h3 - 105;
+    const colDateW = 110;
+    const lineGap = 14;
+    for (const item of history) {
+      page3.drawText(item.when, { x: lm, y, size: 8, font: helveticaBold, color: rgb(0.2, 0.2, 0.2) });
+      page3.drawText(item.label, { x: lm, y: y - 10, size: 7, font: helvetica, color: rgb(0.4, 0.4, 0.4) });
+      page3.drawText(item.detail, { x: lm + colDateW, y: y - 2, size: 8, font: helvetica, color: rgb(0.2, 0.2, 0.2), maxWidth: w3 - lm - (lm + colDateW) });
+      y -= 40;
+      if (y < 80) break;
+      page3.drawLine({ start: { x: lm, y }, end: { x: w3 - lm, y }, thickness: 0.5, color: rgb(0.9, 0.9, 0.9) });
+      y -= lineGap;
+    }
   }
 
   async generateSignedPdf(options: SignedPdfOptions): Promise<Uint8Array> {
@@ -587,6 +718,7 @@ class PdfSignatureService {
     console.log('[PDF] Anexos para compilar:', attachmentPdfItems?.length || 0);
 
     const originalPdfBytes = await fetch(originalPdfUrl).then((res) => res.arrayBuffer());
+    const integrityChunks: Uint8Array[] = [new Uint8Array(originalPdfBytes)];
     const pdfDoc = await PDFDocument.load(originalPdfBytes);
 
     const documentOffsets: Record<string, number> = { main: 0 };
@@ -600,6 +732,7 @@ class PdfSignatureService {
           const attachRes = await fetch(attachUrl);
           if (!attachRes.ok) continue;
           const attachBytes = new Uint8Array(await attachRes.arrayBuffer());
+          integrityChunks.push(attachBytes);
           const attachDoc = await PDFDocument.load(attachBytes);
           documentOffsets[item.documentId] = nextOffset;
           const attachPages = await pdfDoc.copyPages(attachDoc, attachDoc.getPageIndices());
@@ -627,6 +760,9 @@ class PdfSignatureService {
       : null;
 
     const qrImage = verificationUrl ? await this.buildQrPng(pdfDoc, verificationUrl) : null;
+
+    // Hash de integridade (do(s) arquivo(s) original(is), antes de assinar)
+    const integritySha256 = await this.sha256Hex(this.concatBytes(integrityChunks));
 
     // Load fields and place signature on marked location(s)
     let fields: SignatureField[] = [];
@@ -699,6 +835,25 @@ class PdfSignatureService {
       qrImage,
       verificationUrl,
     });
+
+    // Rodapé com hash de integridade em TODAS as páginas (documento + anexos + relatório)
+    const allPages = pdfDoc.getPages();
+    for (const p of allPages) {
+      const { width: w, height: h } = p.getSize();
+      this.drawFooterStamp({
+        page: p,
+        pageWidth: w,
+        pageHeight: h,
+        signer,
+        verificationUrl,
+        qrImage,
+        helvetica,
+        helveticaBold,
+        docHash: '',
+        integritySha256,
+        variant: 'strip',
+      });
+    }
 
     return await pdfDoc.save();
   }
@@ -786,8 +941,9 @@ class PdfSignatureService {
   /**
    * Gera e salva o PDF assinado no bucket 'assinados', retornando o path
    */
-  async saveSignedPdfToStorage(options: SignedPdfOptions): Promise<string> {
+  async saveSignedPdfToStorage(options: SignedPdfOptions): Promise<{ filePath: string; sha256: string }> {
     const pdfBytes = await this.generateSignedPdf(options);
+    const sha256 = await this.sha256Hex(pdfBytes);
     
     // @ts-ignore - Uint8Array Ã© aceito em runtime
     const blob = new Blob([pdfBytes], { type: 'application/pdf' });
@@ -807,7 +963,7 @@ class PdfSignatureService {
     }
     
     console.log('[PDF] PDF assinado salvo no bucket assinados:', filePath);
-    return filePath;
+    return { filePath, sha256 };
   }
   /**
    * Gera e salva PDF completo para documentos DOCX
@@ -821,7 +977,7 @@ class PdfSignatureService {
     attachmentDocxItems?: { documentId: string; container: HTMLElement }[];
     attachmentPdfItems?: { documentId: string; url: string }[];
     fieldsOverride?: SignatureField[];
-  }): Promise<string> {
+  }): Promise<{ filePath: string; sha256: string }> {
     const { request, signer, creator, docxContainer, attachmentDocxItems, attachmentPdfItems, fieldsOverride } = options;
     
     console.log('[PDF] Convertendo DOCX para PDF...');
@@ -868,13 +1024,45 @@ class PdfSignatureService {
 
     const helvetica = await pdfDoc.embedFont(StandardFonts.Helvetica);
     const helveticaBold = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
-    const docHash = this.generateHash(request.id, signer.id);
+
+    const integrityChunks: Uint8Array[] = [];
+    const mainBytes = request.document_path ? await this.fetchBytesFromPathOrUrl(request.document_path) : null;
+    if (mainBytes) integrityChunks.push(mainBytes);
+    if (Array.isArray((request as any).attachment_paths)) {
+      const paths = ((request as any).attachment_paths as string[]).filter(Boolean);
+      for (const p of paths) {
+        const b = await this.fetchBytesFromPathOrUrl(p);
+        if (b) integrityChunks.push(b);
+      }
+    }
+    if (attachmentPdfItems && attachmentPdfItems.length > 0) {
+      for (const a of attachmentPdfItems) {
+        try {
+          const res = await fetch(a.url);
+          if (!res.ok) continue;
+          integrityChunks.push(new Uint8Array(await res.arrayBuffer()));
+        } catch {
+          // ignore
+        }
+      }
+    }
+    if (integrityChunks.length === 0) {
+      integrityChunks.push(new TextEncoder().encode(`${request.id}:${signer.id}:${request.document_name || ''}`));
+    }
+    const integritySha256 = await this.sha256Hex(this.concatBytes(integrityChunks));
     
-    const verificationUrl = `${window.location.origin}/#/verificar/${signer.verification_hash || signer.id}`;
+    const verificationUrl = signer.verification_hash
+      ? `${window.location.origin}/#/verificar/${signer.verification_hash}`
+      : null;
+
     let qrImageForFooter: EmbeddedImage | null = null;
-    try {
-      qrImageForFooter = await this.buildQrPng(pdfDoc, verificationUrl);
-    } catch (e) { console.warn('Erro QR footer', e); }
+    if (verificationUrl) {
+      try {
+        qrImageForFooter = await this.buildQrPng(pdfDoc, verificationUrl);
+      } catch (e) {
+        console.warn('Erro QR footer', e);
+      }
+    }
 
     const drawSignature2x = (params: {
       pdfPage: any;
@@ -1103,12 +1291,15 @@ class PdfSignatureService {
             this.drawFooterStamp({
               page: pdfPage,
               pageWidth: pdfPageWidth,
+              pageHeight: pdfPageHeight,
               signer,
               verificationUrl,
               qrImage: qrImageForFooter,
               helvetica,
               helveticaBold,
-              docHash,
+              docHash: '',
+              integritySha256,
+              variant: 'card',
             });
 
             if (!signatureImage) return;
@@ -1371,14 +1562,14 @@ class PdfSignatureService {
     
     // Gerar QR code para relatÃ³rio (pode ser o mesmo do footer)
     let qrImage: EmbeddedImage | null = qrImageForFooter;
-    if (!qrImage) {
-        try {
-          const qrDataUrl = await QRCode.toDataURL(verificationUrl, { width: 150, margin: 1 });
-          const qrBytes = Uint8Array.from(atob(qrDataUrl.split(',')[1]), c => c.charCodeAt(0));
-          qrImage = await pdfDoc.embedPng(qrBytes);
-        } catch (e) {
-          console.warn('[PDF] Erro ao gerar QR code:', e);
-        }
+    if (!qrImage && typeof verificationUrl === 'string') {
+      try {
+        const qrDataUrl = await QRCode.toDataURL(verificationUrl, { width: 150, margin: 1 });
+        const qrBytes = Uint8Array.from(atob(qrDataUrl.split(',')[1]), (c) => c.charCodeAt(0));
+        qrImage = await pdfDoc.embedPng(qrBytes);
+      } catch (e) {
+        console.warn('[PDF] Erro ao gerar QR code:', e);
+      }
     }
     
     // Adicionar pÃ¡ginas do relatÃ³rio
@@ -1392,8 +1583,27 @@ class PdfSignatureService {
       qrImage,
       verificationUrl,
     });
-    
+
+    const allPages = pdfDoc.getPages();
+    for (const p of allPages) {
+      const { width: w, height: h } = p.getSize();
+      this.drawFooterStamp({
+        page: p,
+        pageWidth: w,
+        pageHeight: h,
+        signer,
+        verificationUrl,
+        qrImage: qrImageForFooter,
+        helvetica,
+        helveticaBold,
+        docHash: '',
+        integritySha256,
+        variant: 'strip',
+      });
+    }
+
     const pdfBytes = await pdfDoc.save();
+    const sha256 = await this.sha256Hex(pdfBytes);
     
     // @ts-ignore - Uint8Array Ã© aceito em runtime
     const blob = new Blob([pdfBytes], { type: 'application/pdf' });
@@ -1413,7 +1623,7 @@ class PdfSignatureService {
     }
     
     console.log('[PDF] PDF do DOCX salvo no bucket assinados:', filePath);
-    return filePath;
+    return { filePath, sha256 };
   }
 
   /**
@@ -1423,7 +1633,7 @@ class PdfSignatureService {
     request: SignatureRequest;
     signer: Signer;
     creator?: { name: string; email: string } | null;
-  }): Promise<string> {
+  }): Promise<{ filePath: string; sha256: string }> {
     const { request, signer, creator } = options;
     
     // Criar PDF apenas com o relatÃ³rio de assinatura
@@ -1441,14 +1651,20 @@ class PdfSignatureService {
     }
     
     // Gerar QR code
-    const verificationUrl = `${window.location.origin}/#/verificar/${signer.verification_hash || signer.id}`;
+    const verificationUrl = signer.verification_hash
+      ? `${window.location.origin}/#/verificar/${signer.verification_hash}`
+      : null;
+
     let qrImage: EmbeddedImage | null = null;
-    try {
-      const qrDataUrl = await QRCode.toDataURL(verificationUrl, { width: 150, margin: 1 });
-      const qrBytes = Uint8Array.from(atob(qrDataUrl.split(',')[1]), c => c.charCodeAt(0));
-      qrImage = await pdfDoc.embedPng(qrBytes);
-    } catch (e) {
-      console.warn('[PDF] Erro ao gerar QR code:', e);
+    if (verificationUrl) {
+      try {
+        const qrDataUrl = await QRCode.toDataURL(verificationUrl, { width: 150, margin: 1 });
+        const base64 = qrDataUrl.split(',')[1];
+        const bytes = Uint8Array.from(atob(base64), (c) => c.charCodeAt(0));
+        qrImage = await pdfDoc.embedPng(bytes);
+      } catch (e) {
+        console.warn('[PDF] Erro ao gerar QR code:', e);
+      }
     }
     
     // Adicionar pÃ¡ginas do relatÃ³rio
@@ -1464,6 +1680,7 @@ class PdfSignatureService {
     });
     
     const pdfBytes = await pdfDoc.save();
+    const sha256 = await this.sha256Hex(pdfBytes);
     
     // @ts-ignore - Uint8Array Ã© aceito em runtime
     const blob = new Blob([pdfBytes], { type: 'application/pdf' });
@@ -1483,7 +1700,7 @@ class PdfSignatureService {
     }
     
     console.log('[PDF] RelatÃ³rio de assinatura salvo no bucket assinados:', filePath);
-    return filePath;
+    return { filePath, sha256 };
   }
 
   /**

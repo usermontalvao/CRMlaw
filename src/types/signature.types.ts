@@ -59,6 +59,7 @@ export interface Signer {
   public_token?: string | null;
   verification_hash?: string | null; // Hash para verificação pública
   signed_document_path?: string | null; // Path do PDF assinado no storage
+  signed_pdf_sha256?: string | null; // SHA-256 do PDF assinado para verificação por upload
   // Método de autenticação
   auth_provider?: 'google' | 'email_link' | 'phone' | null; // Como o usuário se autenticou
   auth_email?: string | null; // E-mail usado na autenticação
