@@ -37,6 +37,108 @@ const formatCpf = (value: string): string => {
 
 const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
   const toast = useToastContext();
+
+  const LoadingScreen = (props: { title: string; subtitle?: string }) => (
+    <div className="min-h-[100dvh] bg-gradient-to-b from-slate-50 to-white flex items-center justify-center p-5">
+      <div className="w-full max-w-sm relative">
+        <div className="pointer-events-none absolute -inset-10 overflow-hidden" aria-hidden>
+          <div className="absolute -top-10 -left-10 w-56 h-56 rounded-full bg-blue-200/35 blur-3xl animate-[drift1_12s_ease-in-out_infinite]" />
+          <div className="absolute -bottom-14 -right-10 w-64 h-64 rounded-full bg-indigo-200/30 blur-3xl animate-[drift2_14s_ease-in-out_infinite]" />
+          <div className="absolute top-1/3 -right-14 w-48 h-48 rounded-full bg-emerald-200/20 blur-3xl animate-[drift3_16s_ease-in-out_infinite]" />
+        </div>
+
+        <div className="relative rounded-3xl bg-white/80 backdrop-blur shadow-xl ring-1 ring-slate-200/60 px-6 pt-7 pb-6">
+          <div className="flex items-center justify-center">
+            <div className="w-14 h-14 rounded-2xl bg-white shadow ring-1 ring-slate-200 flex items-center justify-center">
+              <div className="text-3xl animate-[pen_3.2s_cubic-bezier(0.4,0,0.2,1)_infinite]">✍️</div>
+            </div>
+          </div>
+
+          <div className="mt-6 text-center">
+            <h1 className="text-slate-800 text-lg font-semibold tracking-tight">{props.title}</h1>
+            <p className="mt-2 text-slate-500 text-sm leading-relaxed">
+              {props.subtitle ?? 'Estamos carregando os seus documentos…'}
+            </p>
+          </div>
+
+          <div className="mt-6 rounded-2xl bg-white ring-1 ring-slate-200/70 p-4">
+            <div className="space-y-3">
+              <div className="h-3 w-40 rounded-full bg-slate-100 relative overflow-hidden">
+                <div className="absolute inset-0 -translate-x-full bg-gradient-to-r from-transparent via-white/80 to-transparent animate-[shimmer_1.7s_ease-in-out_infinite]" />
+              </div>
+              <div className="h-2.5 w-full rounded-full bg-slate-100 relative overflow-hidden">
+                <div className="absolute inset-0 -translate-x-full bg-gradient-to-r from-transparent via-white/80 to-transparent animate-[shimmer_1.7s_ease-in-out_infinite]" />
+              </div>
+              <div className="h-2.5 w-11/12 rounded-full bg-slate-100 relative overflow-hidden">
+                <div className="absolute inset-0 -translate-x-full bg-gradient-to-r from-transparent via-white/80 to-transparent animate-[shimmer_1.7s_ease-in-out_infinite]" />
+              </div>
+              <div className="h-2.5 w-9/12 rounded-full bg-slate-100 relative overflow-hidden">
+                <div className="absolute inset-0 -translate-x-full bg-gradient-to-r from-transparent via-white/80 to-transparent animate-[shimmer_1.7s_ease-in-out_infinite]" />
+              </div>
+            </div>
+
+            <div className="mt-5 flex items-center justify-center">
+              <svg width="240" height="34" viewBox="0 0 240 34" fill="none" xmlns="http://www.w3.org/2000/svg" className="opacity-90">
+                <path
+                  d="M8 24 C 28 10, 44 30, 66 16 C 82 6, 92 34, 114 18 C 132 6, 148 30, 168 14 C 184 6, 200 30, 232 10"
+                  stroke="#2563eb"
+                  strokeWidth="3"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeDasharray="220"
+                  strokeDashoffset="220"
+                  style={{ animation: 'write 2.6s ease-in-out infinite' }}
+                />
+              </svg>
+            </div>
+          </div>
+
+          <div className="mt-6">
+            <div className="h-1.5 rounded-full bg-slate-100 overflow-hidden">
+              <div className="h-full w-full rounded-full bg-gradient-to-r from-blue-400 via-blue-500 to-indigo-500 animate-[bar_1.9s_ease-in-out_infinite]" />
+            </div>
+            <p className="mt-3 text-xs text-slate-400 text-center">Aguarde enquanto preparamos tudo para você.</p>
+          </div>
+
+          <style>{`
+            @keyframes pen {
+              0%, 100% { transform: translateY(0) rotate(-2deg); }
+              50% { transform: translateY(-3px) rotate(2deg); }
+            }
+            @keyframes shimmer {
+              0% { transform: translateX(-120%); opacity: 0.65; }
+              50% { transform: translateX(0%); opacity: 1; }
+              100% { transform: translateX(120%); opacity: 0.65; }
+            }
+            @keyframes write {
+              0% { stroke-dashoffset: 220; opacity: 0.55; }
+              45% { stroke-dashoffset: 0; opacity: 1; }
+              75% { stroke-dashoffset: 0; opacity: 1; }
+              100% { stroke-dashoffset: -220; opacity: 0.55; }
+            }
+            @keyframes bar {
+              0% { transform: translateX(-55%); opacity: 0.6; }
+              50% { transform: translateX(0%); opacity: 1; }
+              100% { transform: translateX(55%); opacity: 0.6; }
+            }
+            @keyframes drift1 {
+              0%, 100% { transform: translate3d(0, 0, 0); }
+              50% { transform: translate3d(18px, 10px, 0); }
+            }
+            @keyframes drift2 {
+              0%, 100% { transform: translate3d(0, 0, 0); }
+              50% { transform: translate3d(-16px, -12px, 0); }
+            }
+            @keyframes drift3 {
+              0%, 100% { transform: translate3d(0, 0, 0); }
+              50% { transform: translate3d(-10px, 16px, 0); }
+            }
+          `}</style>
+        </div>
+      </div>
+    </div>
+  );
+
   const [step, setStep] = useState<SigningStep>('loading');
   const [signer, setSigner] = useState<Signer | null>(null);
   const [request, setRequest] = useState<SignatureRequest | null>(null);
@@ -49,13 +151,18 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
   const [pdfUrl, setPdfUrl] = useState<string | null>(null);
   const [isDocx, setIsDocx] = useState(false);
   const [docxLoading, setDocxLoading] = useState(false);
+  const [pdfFrameLoaded, setPdfFrameLoaded] = useState(false);
+  const [docxRendered, setDocxRendered] = useState(false);
   const docxContainerRef = useRef<HTMLDivElement>(null);
+  const [queuedOpenSignModal, setQueuedOpenSignModal] = useState(false);
   
   // Documentos anexos
   const [attachments, setAttachments] = useState<{ name: string; url: string; rendered?: boolean; prefetched?: boolean; isDocx?: boolean }[]>([]);
   const attachmentRefs = useRef<(HTMLDivElement | null)[]>([]);
   const attachmentBlobRef = useRef<(Blob | null)[]>([]);
   const attachmentObjectUrlRef = useRef<(string | null)[]>([]);
+  const attachmentRenderTokenRef = useRef(0);
+  const attachmentRenderInProgressRef = useRef<Set<number>>(new Set());
 
   const [activeTab, setActiveTab] = useState<'signers' | 'history'>('signers');
   const [auditLog, setAuditLog] = useState<SignatureAuditLog[]>([]);
@@ -68,6 +175,13 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
   const [totalPages] = useState(1); // TODO: detectar páginas do PDF
   const [zoom, setZoom] = useState(100);
   const [showReport, setShowReport] = useState(false);
+
+  // Página 100% carregada: step success + documento carregado + anexos DOCX todos renderizados
+  const allAttachmentsRendered = attachments.length === 0 || attachments.every(a => !a.isDocx || a.rendered);
+  const mainDocLoaded = isDocx ? (!docxLoading && docxRendered) : (!!pdfUrl && pdfFrameLoaded);
+  const isFullyLoaded = step === 'success' && !!signer && !!request && mainDocLoaded && allAttachmentsRendered;
+
+  const canOpenSignModal = isFullyLoaded;
 
   // Canvas refs
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -159,6 +273,7 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
     const renderDocx = async () => {
       try {
         setDocxLoading(true);
+        setDocxRendered(false);
         
         // Adicionar estilos para formatação A4 consistente (igual ao SignatureModule)
         const styleId = 'docx-page-break-styles-public';
@@ -175,8 +290,7 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
             }
             /* Estilo para sections (páginas) - FORÇAR A4 FIXO */
             .docx-wrapper > section,
-            .docx-wrapper article,
-            .docx-wrapper .docx {
+            .docx-wrapper article {
               width: 794px !important; /* A4 width at 96 DPI */
               min-width: 794px !important;
               max-width: 794px !important;
@@ -186,6 +300,16 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
               border-radius: 4px !important;
               position: relative !important;
               padding: 40px !important;
+            }
+
+            @media (max-width: 820px) {
+              .docx-wrapper > section,
+              .docx-wrapper article {
+                width: calc(100vw - 32px) !important;
+                min-width: 0 !important;
+                max-width: calc(100vw - 32px) !important;
+                padding: 20px !important;
+              }
             }
             /* Separador visual entre páginas */
             .docx-wrapper > section::after,
@@ -234,6 +358,7 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
             renderFooters: true,
             renderFootnotes: true,
           });
+          setDocxRendered(true);
         } else {
           console.error('❌ Container ref não disponível');
         }
@@ -247,26 +372,52 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
     renderDocx();
   }, [pdfUrl, isDocx, step]);
 
+  useEffect(() => {
+    setPdfFrameLoaded(false);
+    if (!isDocx) {
+      setDocxRendered(false);
+    }
+  }, [pdfUrl, isDocx]);
+
   // Renderizar anexos DOCX quando carregados
   useEffect(() => {
     if (attachments.length === 0) return;
-    
+
+    attachmentRenderTokenRef.current += 1;
+    const token = attachmentRenderTokenRef.current;
+    let cancelled = false;
+    let retryTimer: number | null = null;
+
     const renderAttachments = async () => {
+      if (cancelled) return;
+      if (token !== attachmentRenderTokenRef.current) return;
+
       let needsRetry = false;
+      const renderedIdx = new Set<number>();
+
       for (let i = 0; i < attachments.length; i++) {
+        if (cancelled) return;
+        if (token !== attachmentRenderTokenRef.current) return;
+
         const attach = attachments[i];
         if (attach.rendered) continue;
-        
+
+        // Verificar se é DOCX
+        const isDocxFile = !!attach.isDocx;
+        if (!isDocxFile) continue;
+
         const container = attachmentRefs.current[i];
         if (!container) {
           needsRetry = true;
           continue;
         }
-        
-        // Verificar se é DOCX
-        const isDocxFile = !!attach.isDocx;
-        if (!isDocxFile) continue;
-        
+
+        if (attachmentRenderInProgressRef.current.has(i)) {
+          needsRetry = true;
+          continue;
+        }
+        attachmentRenderInProgressRef.current.add(i);
+
         try {
           console.log(`📎 Renderizando anexo ${i + 1}:`, attach.name);
           let blob = attachmentBlobRef.current[i];
@@ -291,24 +442,42 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
             renderFooters: true,
             renderFootnotes: true,
           });
-          
-          // Marcar como renderizado
-          setAttachments(prev => prev.map((a, idx) => 
-            idx === i ? { ...a, rendered: true } : a
-          ));
+
+          renderedIdx.add(i);
           console.log(`✅ Anexo ${i + 1} renderizado com sucesso!`);
         } catch (err) {
           console.error(`❌ Erro ao renderizar anexo ${i + 1}:`, err);
+        } finally {
+          attachmentRenderInProgressRef.current.delete(i);
         }
       }
 
+      if (renderedIdx.size > 0) {
+        setAttachments((prev) => {
+          if (token !== attachmentRenderTokenRef.current) return prev;
+          return prev.map((a, idx) => (renderedIdx.has(idx) ? { ...a, rendered: true } : a));
+        });
+      }
+
       if (needsRetry) {
-        setTimeout(renderAttachments, 100);
+        retryTimer = window.setTimeout(renderAttachments, 120);
       }
     };
-    
-    renderAttachments();
+
+    void renderAttachments();
+
+    return () => {
+      cancelled = true;
+      if (retryTimer) window.clearTimeout(retryTimer);
+    };
   }, [attachments]);
+
+  useEffect(() => {
+    if (!queuedOpenSignModal) return;
+    if (!canOpenSignModal) return;
+    setQueuedOpenSignModal(false);
+    openSignModal();
+  }, [queuedOpenSignModal, canOpenSignModal]);
 
   useEffect(() => {
     if (isSignModalOpen && modalStep === 'signature' && canvasRef.current) {
@@ -1024,6 +1193,11 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
   const canProceedFromData = signerData.name.trim().length >= 3 && signerData.cpf.replace(/\D/g, '').length === 11;
 
   const openSignModal = () => {
+    if (!canOpenSignModal) {
+      setQueuedOpenSignModal(true);
+      toast.info('Carregando documento… Abriremos a assinatura assim que estiver pronto.');
+      return;
+    }
     setModalStep('google_auth');
     setSignatureData(null);
     setFacialData(null);
@@ -1044,14 +1218,7 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
 
   // Loading
   if (step === 'loading') {
-    return (
-      <div className="min-h-screen bg-slate-100 flex items-center justify-center">
-        <div className="text-center">
-          <Loader2 className="w-12 h-12 animate-spin text-blue-600 mx-auto mb-4" />
-          <p className="text-slate-600">Carregando documento...</p>
-        </div>
-      </div>
-    );
+    return <LoadingScreen title="Carregando documento" subtitle="Estamos carregando os seus documentos…" />;
   }
 
   // Error
@@ -1387,7 +1554,17 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
                    /* Em mobile, precisamos permitir scroll horizontal ou escala */
                    /* Mas NÃO podemos mudar a largura do section, senão quebra o reflow */
                    .docx-responsive {
-                     align-items: flex-start !important; /* Alinhar à esquerda para permitir scroll */
+                     overflow-x: hidden !important;
+                     padding: 12px !important;
+                     align-items: center !important;
+                   }
+
+                   .docx-responsive .docx-wrapper > section,
+                   .docx-responsive .docx-wrapper > section > article {
+                     width: 100% !important;
+                     min-width: 0 !important;
+                     max-width: 100% !important;
+                     padding: 20px !important;
                    }
                 }
               `}</style>
@@ -1412,7 +1589,7 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
                         className="bg-white docx-responsive"
                         style={{ 
                           width: '100%',
-                          overflow: 'hidden',
+                          overflow: 'auto',
                         }}
                       />
                     </div>
@@ -1427,27 +1604,41 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
                 src={`${pdfUrl}#toolbar=0&navpanes=0&scrollbar=0&statusbar=0&view=FitH`}
                 className="w-full h-full border-0 bg-white"
                 title="Documento PDF"
+                onLoad={() => setPdfFrameLoaded(true)}
               />
               <div className="pointer-events-none absolute right-0 top-0 bottom-0 w-4 bg-white" />
             </>
           )
         ) : (
-          <div className="w-full h-full flex flex-col items-center justify-center text-slate-400 bg-slate-800">
-            <FileText className="w-16 h-16 mb-4 text-slate-600" />
-            <p className="text-base font-medium text-slate-400">Carregando documento...</p>
-          </div>
+          <div className="w-full h-full bg-white" />
         )}
       </main>
+
+      {step === 'success' && !isFullyLoaded && (
+        <div className="fixed inset-0 z-50">
+          <LoadingScreen title="Carregando documento" subtitle="Estamos preparando tudo…" />
+        </div>
+      )}
 
       {/* Botão Assinar - Flutuante estilizado */}
       {signer?.status !== 'signed' && (
         <button
           onClick={openSignModal}
-          className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 flex items-center gap-2 px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white font-bold text-sm rounded-full shadow-[0_8px_30px_rgb(37,99,235,0.4)] active:scale-95 transition-all duration-200 whitespace-nowrap"
+          disabled={!canOpenSignModal && !queuedOpenSignModal}
+          className={`fixed bottom-6 left-1/2 -translate-x-1/2 z-50 flex items-center gap-2 px-6 py-3 text-white font-bold text-sm rounded-full shadow-[0_8px_30px_rgb(37,99,235,0.4)] transition-all duration-200 whitespace-nowrap ${(!canOpenSignModal && !queuedOpenSignModal) ? 'bg-slate-400 cursor-not-allowed' : 'bg-blue-600 hover:bg-blue-700 active:scale-95'}`}
           style={{ WebkitTapHighlightColor: 'transparent' }}
         >
-          <PenTool className="w-4 h-4" />
-          ASSINAR DOCUMENTO
+          {(!canOpenSignModal && !queuedOpenSignModal) ? (
+            <>
+              <Loader2 className="w-4 h-4 animate-spin" />
+              CARREGANDO…
+            </>
+          ) : (
+            <>
+              <PenTool className="w-4 h-4" />
+              ASSINAR DOCUMENTO
+            </>
+          )}
         </button>
       )}
 
