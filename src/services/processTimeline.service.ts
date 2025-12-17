@@ -26,12 +26,20 @@ interface TimelineCache {
   events: TimelineEvent[];
   lastEventHash: string;
   timestamp: number;
+  analyzedHashes: Set<string>; // Hashes de eventos já analisados
+}
+
+interface StoredTimelineCache {
+  events: TimelineEvent[];
+  lastEventHash: string;
+  timestamp: number;
+  analyzedHashes: string[]; // Array para serialização
 }
 
 class ProcessTimelineService {
   private groqApiKey: string | null = null;
   private cache: Map<string, TimelineCache> = new Map();
-  private readonly CACHE_DURATION = 10 * 60 * 1000; // 10 minutos
+  private readonly CACHE_DURATION = 60 * 60 * 1000; // 1 hora - só atualiza quando há nova publicação
 
   constructor() {
     this.groqApiKey = import.meta.env.VITE_GROQ_API_KEY;
@@ -44,7 +52,11 @@ class ProcessTimelineService {
       if (stored) {
         const parsed = JSON.parse(stored);
         Object.entries(parsed).forEach(([key, value]) => {
-          this.cache.set(key, value as TimelineCache);
+          const storedCache = value as StoredTimelineCache;
+          this.cache.set(key, {
+            ...storedCache,
+            analyzedHashes: new Set(storedCache.analyzedHashes || []),
+          });
         });
       }
     } catch (e) {
@@ -54,9 +66,14 @@ class ProcessTimelineService {
 
   private saveCacheToStorage() {
     try {
-      const obj: Record<string, TimelineCache> = {};
+      const obj: Record<string, StoredTimelineCache> = {};
       this.cache.forEach((value, key) => {
-        obj[key] = value;
+        obj[key] = {
+          events: value.events,
+          lastEventHash: value.lastEventHash,
+          timestamp: value.timestamp,
+          analyzedHashes: Array.from(value.analyzedHashes || []),
+        };
       });
       localStorage.setItem('timeline-analysis-cache', JSON.stringify(obj));
     } catch (e) {
@@ -86,13 +103,83 @@ class ProcessTimelineService {
 
   private setCachedAnalysis(processCode: string, events: TimelineEvent[]) {
     const firstHash = events[0]?.hash || '';
+    const existingCache = this.cache.get(processCode);
+    
+    // Preservar hashes já analisados e adicionar novos
+    const analyzedHashes = new Set(existingCache?.analyzedHashes || []);
+    events.forEach(e => {
+      if (e.aiAnalysis && e.hash) {
+        analyzedHashes.add(e.hash);
+      }
+    });
+    
     this.cache.set(processCode, {
       events,
       lastEventHash: firstHash,
       timestamp: Date.now(),
+      analyzedHashes,
     });
     this.saveCacheToStorage();
-    console.log('💾 Análise salva em cache');
+    console.log(`💾 Análise salva em cache (${analyzedHashes.size} eventos analisados)`);
+  }
+
+  /**
+   * Retorna eventos do cache se existirem (sem chamar API)
+   * Útil para exibir dados instantaneamente enquanto verifica atualizações
+   */
+  getCachedTimeline(processCode: string): TimelineEvent[] | null {
+    const cached = this.cache.get(processCode);
+    if (!cached) return null;
+    
+    // Retorna cache mesmo se expirado (para exibição imediata)
+    console.log('📦 Timeline do cache local');
+    return cached.events;
+  }
+
+  /**
+   * Verifica se há novas publicações comparando hash do último evento
+   * Retorna true se precisa atualizar
+   */
+  async checkForUpdates(processCode: string): Promise<boolean> {
+    const cached = this.cache.get(processCode);
+    if (!cached) return true; // Sem cache, precisa buscar
+    
+    try {
+      const processNumber = processCode.replace(/\D/g, '');
+      if (processNumber.length !== 20) return false;
+
+      const yearMatch = processCode.match(/\d{7}-\d{2}\.(\d{4})\./);
+      const year = yearMatch ? yearMatch[1] : null;
+
+      const searchParams: any = {
+        numeroProcesso: processNumber,
+        itensPorPagina: 1, // Só precisa do primeiro para comparar hash
+      };
+
+      if (year) {
+        searchParams.dataDisponibilizacaoInicio = `${year}-01-01`;
+      }
+
+      const response = await djenService.consultarComunicacoes(searchParams);
+      
+      if (!response.items || response.items.length === 0) {
+        return false; // Sem novos dados
+      }
+
+      const latestHash = response.items[0]?.hash || '';
+      const hasNewData = latestHash !== cached.lastEventHash;
+      
+      if (hasNewData) {
+        console.log('🆕 Nova publicação detectada!');
+      } else {
+        console.log('✅ Timeline atualizada, sem novidades');
+      }
+      
+      return hasNewData;
+    } catch (error) {
+      console.warn('Erro ao verificar atualizações:', error);
+      return false;
+    }
   }
 
   /**
@@ -225,6 +312,7 @@ Regras:
   /**
    * Busca timeline e analisa todos os eventos com IA
    * Usa cache para evitar re-análise desnecessária
+   * OTIMIZADO: Só analisa eventos que ainda não foram analisados
    */
   async fetchAndAnalyzeTimeline(
     processCode: string, 
@@ -237,62 +325,78 @@ Regras:
       return events;
     }
 
-    // Verificar cache (se não forçar refresh)
-    if (!forceRefresh) {
-      const cached = this.getCachedAnalysis(processCode, events);
-      if (cached) {
-        // Retornar eventos do cache com análise já feita
-        // Mesclar com eventos novos que não estão no cache
-        const cachedHashes = new Set(cached.map(e => e.hash));
-        const newEvents = events.filter(e => !cachedHashes.has(e.hash));
-        
-        if (newEvents.length === 0) {
-          // Nenhum evento novo, usar cache completo
-          if (onProgress) onProgress(1, 1);
-          return cached;
-        }
-        
-        // Há eventos novos, analisar apenas os novos
-        console.log(`📝 ${newEvents.length} novos eventos para analisar`);
-        const analyzedNew = await this.analyzeNewEvents(newEvents, onProgress);
-        const result = [...analyzedNew, ...cached];
-        result.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
-        this.setCachedAnalysis(processCode, result);
-        return result;
+    // Buscar cache existente
+    const existingCache = this.cache.get(processCode);
+    const analyzedHashes = existingCache?.analyzedHashes || new Set<string>();
+    const cachedEvents = existingCache?.events || [];
+    
+    // Criar mapa de análises existentes por hash
+    const existingAnalyses = new Map<string, TimelineEvent['aiAnalysis']>();
+    cachedEvents.forEach(e => {
+      if (e.hash && e.aiAnalysis) {
+        existingAnalyses.set(e.hash, e.aiAnalysis);
       }
+    });
+
+    // Restaurar análises existentes nos eventos atuais
+    events.forEach(e => {
+      if (e.hash && existingAnalyses.has(e.hash)) {
+        e.aiAnalysis = existingAnalyses.get(e.hash);
+      }
+    });
+
+    // Identificar eventos que precisam de análise (não analisados ainda)
+    const eventsNeedingAnalysis = events.filter(e => 
+      e.hash && !analyzedHashes.has(e.hash) && !e.aiAnalysis
+    );
+
+    // Se não há eventos novos para analisar, retornar com análises restauradas
+    if (eventsNeedingAnalysis.length === 0 && !forceRefresh) {
+      console.log(`📦 Usando cache completo (${analyzedHashes.size} eventos já analisados)`);
+      if (onProgress) onProgress(1, 1);
+      this.setCachedAnalysis(processCode, events);
+      return events;
     }
 
-    // Sem cache ou forçando refresh - analisar tudo
+    // Se forçando refresh, limpar análises
+    if (forceRefresh) {
+      events.forEach(e => { e.aiAnalysis = undefined; });
+    }
+
+    // Sem API key, retornar eventos sem análise
     if (!this.groqApiKey) {
       return events;
     }
 
-    // Analisar apenas os 10 eventos mais recentes para não sobrecarregar
-    const eventsToAnalyze = events.slice(0, 10);
+    // Analisar apenas eventos que precisam (máximo 10)
+    const toAnalyze = forceRefresh 
+      ? events.slice(0, 10) 
+      : eventsNeedingAnalysis.slice(0, 10);
     
-    for (let i = 0; i < eventsToAnalyze.length; i++) {
+    if (toAnalyze.length > 0) {
+      console.log(`📝 Analisando ${toAnalyze.length} novos eventos (${analyzedHashes.size} já em cache)`);
+    }
+    
+    for (let i = 0; i < toAnalyze.length; i++) {
       if (onProgress) {
-        onProgress(i + 1, eventsToAnalyze.length);
+        onProgress(i + 1, toAnalyze.length);
       }
       
-      const analysis = await this.analyzeTimelineEvent(eventsToAnalyze[i]);
+      const analysis = await this.analyzeTimelineEvent(toAnalyze[i]);
       if (analysis) {
-        eventsToAnalyze[i].aiAnalysis = analysis;
+        toAnalyze[i].aiAnalysis = analysis;
       }
       
-      // Aguardar 500ms entre requisições
-      if (i < eventsToAnalyze.length - 1) {
+      // Aguardar 500ms entre requisições para evitar rate limit
+      if (i < toAnalyze.length - 1) {
         await new Promise(resolve => setTimeout(resolve, 500));
       }
     }
 
-    // Mesclar eventos analisados com o resto
-    const result = [...eventsToAnalyze, ...events.slice(10)];
-    
     // Salvar no cache
-    this.setCachedAnalysis(processCode, result);
+    this.setCachedAnalysis(processCode, events);
     
-    return result;
+    return events;
   }
 
   /**
@@ -329,6 +433,7 @@ Regras:
   /**
    * Mapeia tipo de documento do DJEN para tipo de evento
    * Analisa o conteúdo do texto para classificação mais precisa
+   * IMPORTANTE: Intimação tem prioridade quando há sinais claros (prazo, manifestação, etc.)
    */
   private mapTipoDocumento(tipo?: string, texto?: string): TimelineEvent['type'] {
     const tipoLower = (tipo || '').toLowerCase().trim();
@@ -338,25 +443,53 @@ Regras:
     // Usar primeiros 1500 chars para análise mais completa
     const textoAnalise = textoLower.substring(0, 1500);
     
-    // SENTENÇA - Verificar primeiro pois é mais específico
-    if (textoAnalise.includes('sentença') || 
-        textoAnalise.includes('julgo procedente') || 
-        textoAnalise.includes('julgo improcedente') ||
-        textoAnalise.includes('julgo parcialmente procedente') ||
-        textoAnalise.includes('extingo o processo') ||
-        tipoLower.includes('sentença') || tipoLower.includes('sentenca')) {
+    // INTIMAÇÃO - Verificar PRIMEIRO pois é o tipo mais comum e deve ter prioridade
+    // quando há sinais claros de intimação (prazo, manifestação, etc.)
+    const isIntimacao = 
+        textoAnalise.includes('intimação') ||
+        textoAnalise.includes('intime-se') ||
+        textoAnalise.includes('fica intimado') ||
+        textoAnalise.includes('intimando') ||
+        textoAnalise.includes('prazo de') ||
+        textoAnalise.includes('no prazo') ||
+        textoAnalise.includes('manifestar') ||
+        textoAnalise.includes('manifestação') ||
+        textoAnalise.includes('comparecer') ||
+        textoAnalise.includes('apresentar') ||
+        textoAnalise.includes('cumprimento de sentença') ||
+        textoAnalise.includes('fase de cumprimento') ||
+        textoAnalise.includes('satisfação do crédito') ||
+        textoAnalise.includes('arquivamento') ||
+        tipoLower.includes('intimação') || tipoLower.includes('intimacao');
+    
+    if (isIntimacao) {
+      return 'intimacao';
+    }
+    
+    // SENTENÇA - Apenas quando é realmente a prolação da sentença
+    // Não confundir com intimações sobre cumprimento de sentença
+    const isSentenca = 
+        (textoAnalise.includes('julgo procedente') || 
+         textoAnalise.includes('julgo improcedente') ||
+         textoAnalise.includes('julgo parcialmente procedente') ||
+         textoAnalise.includes('extingo o processo') ||
+         textoAnalise.includes('homologo o acordo') ||
+         textoAnalise.includes('julgo extinto')) &&
+        !textoAnalise.includes('cumprimento de sentença') &&
+        !textoAnalise.includes('fase de cumprimento');
+    
+    if (isSentenca || tipoLower === 'sentença' || tipoLower === 'sentenca') {
       return 'sentenca';
     }
     
     // DECISÃO - Tutelas, liminares, decisões interlocutórias
-    if (textoAnalise.includes('decisão') ||
-        textoAnalise.includes('tutela de urgência') ||
+    if (textoAnalise.includes('tutela de urgência') ||
         textoAnalise.includes('tutela antecipada') ||
         textoAnalise.includes('liminar') ||
         textoAnalise.includes('defiro o pedido') ||
         textoAnalise.includes('indefiro o pedido') ||
         textoAnalise.includes('passo a decidir') ||
-        tipoLower.includes('decisão') || tipoLower.includes('decisao')) {
+        tipoLower === 'decisão' || tipoLower === 'decisao') {
       return 'decisao';
     }
     
@@ -389,19 +522,6 @@ Regras:
         textoAnalise.includes('recurso ordinário') ||
         tipoLower.includes('acórdão') || tipoLower.includes('acordao')) {
       return 'recurso';
-    }
-    
-    // INTIMAÇÃO - Verificar por último pois é o mais genérico
-    // Muitas publicações são intimações
-    if (textoAnalise.includes('intimação') ||
-        textoAnalise.includes('intime-se') ||
-        textoAnalise.includes('fica intimado') ||
-        textoAnalise.includes('intimando') ||
-        textoAnalise.includes('comparecer') ||
-        textoAnalise.includes('audiência') ||
-        textoAnalise.includes('prazo de') ||
-        tipoLower.includes('intimação') || tipoLower.includes('intimacao')) {
-      return 'intimacao';
     }
     
     // Se não identificou, retorna 'outro'

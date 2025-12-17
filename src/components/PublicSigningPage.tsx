@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { AlertCircle, Camera, CheckCircle, Clock, Copy, Download, ExternalLink, FileText, Loader2, MapPin, PenTool, RotateCcw, Scale, Share2, User, X, Shield } from 'lucide-react';
+import { AlertCircle, Camera, CheckCircle, ChevronLeft, Clock, Copy, Download, ExternalLink, FileText, Loader2, Lock, MapPin, PenTool, RotateCcw, Scale, Share2, User, X, Shield } from 'lucide-react';
 import { signatureService } from '../services/signature.service';
 import { pdfSignatureService } from '@/services/pdfSignature.service';
 import { googleAuthService, type GoogleUser } from '../services/googleAuth.service';
@@ -148,12 +148,6 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
   const LoadingScreen = (props: { title: string; subtitle?: string }) => (
     <div className="min-h-[100dvh] bg-gradient-to-b from-slate-50 to-white flex items-center justify-center p-5">
       <div className="w-full max-w-sm relative">
-        <div className="pointer-events-none absolute -inset-10 overflow-hidden" aria-hidden>
-          <div className="absolute -top-10 -left-10 w-56 h-56 rounded-full bg-blue-200/35 blur-3xl animate-[drift1_12s_ease-in-out_infinite]" />
-          <div className="absolute -bottom-14 -right-10 w-64 h-64 rounded-full bg-indigo-200/30 blur-3xl animate-[drift2_14s_ease-in-out_infinite]" />
-          <div className="absolute top-1/3 -right-14 w-48 h-48 rounded-full bg-emerald-200/20 blur-3xl animate-[drift3_16s_ease-in-out_infinite]" />
-        </div>
-
         <div className="relative rounded-3xl bg-white/80 backdrop-blur shadow-xl ring-1 ring-slate-200/60 px-6 pt-7 pb-6">
           <div className="flex items-center justify-center">
             <div className="w-14 h-14 rounded-2xl bg-white shadow ring-1 ring-slate-200 flex items-center justify-center">
@@ -188,7 +182,7 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
               <svg width="240" height="34" viewBox="0 0 240 34" fill="none" xmlns="http://www.w3.org/2000/svg" className="opacity-90">
                 <path
                   d="M8 24 C 28 10, 44 30, 66 16 C 82 6, 92 34, 114 18 C 132 6, 148 30, 168 14 C 184 6, 200 30, 232 10"
-                  stroke="#2563eb"
+                  stroke="#f97316"
                   strokeWidth="3"
                   strokeLinecap="round"
                   strokeLinejoin="round"
@@ -202,7 +196,7 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
 
           <div className="mt-6">
             <div className="h-1.5 rounded-full bg-slate-100 overflow-hidden">
-              <div className="h-full w-full rounded-full bg-gradient-to-r from-blue-400 via-blue-500 to-indigo-500 animate-[bar_1.9s_ease-in-out_infinite]" />
+              <div className="h-full w-full rounded-full bg-gradient-to-r from-orange-400 via-orange-500 to-amber-500 animate-[bar_1.9s_ease-in-out_infinite]" />
             </div>
             <p className="mt-3 text-xs text-slate-400 text-center">Aguarde enquanto preparamos tudo para você.</p>
           </div>
@@ -277,6 +271,7 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
 
   // Webcam refs
   const videoRef = useRef<HTMLVideoElement>(null);
+  const cameraStreamRef = useRef<MediaStream | null>(null);
   const [cameraActive, setCameraActive] = useState(false);
   const [cameraError, setCameraError] = useState<string | null>(null);
   const [downloading, setDownloading] = useState(false);
@@ -423,8 +418,8 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
             .docx-wrapper > section:last-child::after,
             .docx-wrapper article:last-child::after {
               content: '— Última Página —' !important;
-              border-top-color: #3b82f6 !important;
-              color: #3b82f6 !important;
+              border-top-color: #f97316 !important;
+              color: #f97316 !important;
             }
           `;
           document.head.appendChild(style);
@@ -631,13 +626,22 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
       return;
     }
 
-    if (modalStep === 'facial') {
-      startCamera();
-    } else {
+    if (modalStep !== 'facial') {
       stopCamera();
     }
     return () => stopCamera();
   }, [isSignModalOpen, modalStep]);
+
+  useEffect(() => {
+    if (!cameraActive) return;
+    if (modalStep !== 'facial') return;
+    if (!videoRef.current) return;
+    if (!cameraStreamRef.current) return;
+
+    if (videoRef.current.srcObject !== cameraStreamRef.current) {
+      videoRef.current.srcObject = cameraStreamRef.current;
+    }
+  }, [cameraActive, modalStep]);
 
   
   // Inicializar Google Auth quando modal abre na etapa de autenticação
@@ -934,7 +938,7 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
     ctx.scale(2, 2);
 
     // Style
-    ctx.strokeStyle = '#1e40af';
+    ctx.strokeStyle = '#000000';
     ctx.lineWidth = 2.5;
     ctx.lineCap = 'round';
     ctx.lineJoin = 'round';
@@ -1012,23 +1016,29 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
   const startCamera = async () => {
     try {
       setCameraError(null);
+      stopCamera();
       const stream = await navigator.mediaDevices.getUserMedia({
         video: { facingMode: 'user', width: 640, height: 480 },
       });
+      cameraStreamRef.current = stream;
+      setCameraActive(true);
       if (videoRef.current) {
         videoRef.current.srcObject = stream;
-        setCameraActive(true);
       }
     } catch (err: any) {
       console.error('Erro ao acessar câmera:', err);
       setCameraError('Não foi possível acessar a câmera. Verifique as permissões.');
+      cameraStreamRef.current = null;
+      setCameraActive(false);
     }
   };
 
   const stopCamera = () => {
+    if (cameraStreamRef.current) {
+      cameraStreamRef.current.getTracks().forEach((track) => track.stop());
+      cameraStreamRef.current = null;
+    }
     if (videoRef.current?.srcObject) {
-      const stream = videoRef.current.srcObject as MediaStream;
-      stream.getTracks().forEach((track) => track.stop());
       videoRef.current.srcObject = null;
     }
     setCameraActive(false);
@@ -1437,13 +1447,88 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
   // Error
   if (step === 'error') {
     return (
-      <div className="min-h-screen bg-slate-100 flex items-center justify-center p-4">
-        <div className="bg-white rounded-2xl shadow-lg p-8 max-w-md w-full text-center">
-          <div className="w-16 h-16 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-4">
-            <AlertCircle className="w-8 h-8 text-red-600" />
+      <div className="min-h-[100dvh] bg-gradient-to-b from-orange-50 via-white to-amber-50 flex items-center justify-center p-5">
+        <div className="w-full max-w-lg relative">
+          <div className="absolute -top-20 -left-20 h-64 w-64 rounded-full bg-orange-400/10 blur-3xl" />
+          <div className="absolute -bottom-24 -right-24 h-72 w-72 rounded-full bg-amber-400/10 blur-3xl" />
+
+          <div className="relative bg-white/90 backdrop-blur rounded-3xl border border-orange-100 shadow-[0_20px_60px_rgba(15,23,42,0.08)] overflow-hidden">
+            <div className="h-2 w-full bg-gradient-to-r from-orange-500 to-amber-500" />
+
+            <div className="p-6 sm:p-8">
+              <div className="flex items-start gap-4">
+                <div className="w-12 h-12 rounded-2xl bg-red-50 border border-red-100 flex items-center justify-center flex-shrink-0">
+                  <AlertCircle className="w-6 h-6 text-red-600" />
+                </div>
+                <div className="min-w-0 flex-1">
+                  <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-orange-600/80">
+                    Assinatura Digital
+                  </div>
+                  <h1 className="mt-1 text-xl sm:text-2xl font-semibold text-slate-900 tracking-tight">
+                    Link inválido ou expirado
+                  </h1>
+                  <p className="mt-2 text-sm text-slate-600 leading-relaxed">
+                    {error || 'Não foi possível carregar este link de assinatura.'}
+                  </p>
+                  <p className="mt-2 text-xs text-slate-500">
+                    Se você recebeu este link há muito tempo, solicite um novo ao escritório.
+                  </p>
+                </div>
+              </div>
+
+              <div className="mt-6 rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                <div className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">Token</div>
+                <div className="mt-1 font-mono text-xs text-slate-700 break-all">{token}</div>
+              </div>
+
+              <div className="mt-6 grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <button
+                  type="button"
+                  onClick={loadSignerData}
+                  className="inline-flex items-center justify-center gap-2 rounded-xl bg-orange-600 px-4 py-3 text-sm font-semibold text-white shadow-lg shadow-orange-500/20 hover:bg-orange-700 transition"
+                >
+                  <RotateCcw className="w-4 h-4" />
+                  Tentar novamente
+                </button>
+                <button
+                  type="button"
+                  onClick={async () => {
+                    try {
+                      await navigator.clipboard.writeText(token);
+                      toast.success('Token copiado.');
+                    } catch {
+                      toast.error('Não foi possível copiar o token.');
+                    }
+                  }}
+                  className="inline-flex items-center justify-center gap-2 rounded-xl bg-white border border-slate-200 px-4 py-3 text-sm font-semibold text-slate-800 hover:bg-slate-50 transition"
+                >
+                  <Copy className="w-4 h-4" />
+                  Copiar token
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const phone = '5565984046375';
+                    const msg = `Olá! Preciso de um novo link para assinatura. Token: ${token}`;
+                    const url = `https://wa.me/${phone}?text=${encodeURIComponent(msg)}`;
+                    window.open(url, '_blank');
+                  }}
+                  className="inline-flex items-center justify-center gap-2 rounded-xl bg-slate-900 px-4 py-3 text-sm font-semibold text-white hover:bg-slate-800 transition"
+                >
+                  <ExternalLink className="w-4 h-4" />
+                  Pedir ajuda no WhatsApp
+                </button>
+                <button
+                  type="button"
+                  onClick={() => window.location.assign('/')}
+                  className="inline-flex items-center justify-center gap-2 rounded-xl bg-white border border-slate-200 px-4 py-3 text-sm font-semibold text-slate-800 hover:bg-slate-50 transition"
+                >
+                  <ExternalLink className="w-4 h-4" />
+                  Voltar ao início
+                </button>
+              </div>
+            </div>
           </div>
-          <h1 className="text-xl font-bold text-slate-800 mb-2">Erro</h1>
-          <p className="text-slate-600">{error}</p>
         </div>
       </div>
     );
@@ -1533,102 +1618,101 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
     const verificationUrl = signer?.verification_hash ? `${window.location.origin}/#/verificar/${signer.verification_hash}` : null;
 
     return (
-      <div className="min-h-[100dvh] bg-slate-900">
-        <div className="relative overflow-hidden">
-          <div className="absolute inset-0 bg-gradient-to-br from-blue-700/35 via-slate-900 to-indigo-700/25" />
-          <div className="absolute -top-24 -right-24 w-80 h-80 rounded-full bg-blue-600/15 blur-3xl" />
-          <div className="absolute -bottom-24 -left-24 w-80 h-80 rounded-full bg-indigo-600/15 blur-3xl" />
-
-          <div className="relative max-w-3xl mx-auto px-5 pt-10 pb-10">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                <div className="w-12 h-12 rounded-2xl bg-white/10 border border-white/15 flex items-center justify-center">
-                  <Scale className="w-6 h-6 text-white" />
-                </div>
-                <div>
-                  <div className="text-lg font-semibold leading-tight text-white">Juris</div>
-                  <div className="text-sm text-blue-100/90">Assinatura · Documento finalizado</div>
-                </div>
+      <div className="min-h-[100dvh] bg-slate-50">
+        <header className="bg-white border-b border-slate-200">
+          <div className="max-w-3xl mx-auto px-5 py-5 flex items-center justify-between gap-4">
+            <div className="flex items-center gap-3 min-w-0">
+              <div className="w-10 h-10 rounded-xl bg-orange-500 flex items-center justify-center flex-shrink-0">
+                <Scale className="w-5 h-5 text-white" />
               </div>
-              <div className="hidden sm:flex items-center gap-2 text-xs text-blue-100/90">
-                <Clock className="w-4 h-4" />
-                {signer?.signed_at ? formatDate(signer.signed_at) : ''}
+              <div className="min-w-0">
+                <div className="text-sm font-semibold leading-tight text-slate-900">Jurius</div>
+                <div className="text-[11px] text-slate-500 truncate">Assinatura · Documento finalizado</div>
+              </div>
+            </div>
+            <div className="hidden sm:flex items-center gap-2 text-xs text-slate-500 flex-shrink-0">
+              <Clock className="w-4 h-4" />
+              {signer?.signed_at ? formatDate(signer.signed_at) : ''}
+            </div>
+          </div>
+        </header>
+
+        <main className="max-w-3xl mx-auto px-5 py-8">
+          <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+            <div className="h-2 w-full bg-orange-500" />
+
+            <div className="px-6 pt-6 pb-5 border-b border-slate-100">
+              <div className="flex items-start gap-4">
+                <div className="w-12 h-12 rounded-xl bg-emerald-50 border border-emerald-200 flex items-center justify-center flex-shrink-0">
+                  <CheckCircle className="w-7 h-7 text-emerald-600" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <h1 className="text-lg font-semibold text-slate-900">Documento já assinado</h1>
+                    <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold bg-emerald-100 text-emerald-800 border border-emerald-200">
+                      Assinado
+                    </span>
+                  </div>
+                  <p className="mt-1 text-sm text-slate-600">
+                    Uma cópia assinada está disponível para abertura e compartilhamento.
+                  </p>
+                </div>
               </div>
             </div>
 
-            <div className="mt-6 rounded-2xl border border-white/10 bg-white/5 backdrop-blur-xl shadow-[0_12px_40px_-20px_rgba(0,0,0,0.6)] overflow-hidden">
-              <div className="px-6 pt-6 pb-5 border-b border-white/10">
-                <div className="flex items-start gap-4">
-                  <div className="w-12 h-12 rounded-xl bg-emerald-500/15 border border-emerald-400/20 flex items-center justify-center flex-shrink-0">
-                    <CheckCircle className="w-7 h-7 text-emerald-300" />
+            <div className="px-6 py-6 space-y-4">
+              <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+                <div className="flex items-start gap-3">
+                  <div className="w-10 h-10 rounded-lg bg-orange-50 border border-orange-200 flex items-center justify-center flex-shrink-0">
+                    <FileText className="w-5 h-5 text-orange-700" />
                   </div>
                   <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <h1 className="text-lg font-semibold text-white">Documento já assinado</h1>
-                      <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold bg-emerald-500/15 text-emerald-200 border border-emerald-400/20">
-                        Assinado
-                      </span>
-                    </div>
-                    <p className="mt-1 text-sm text-slate-200/80">
-                      Uma cópia assinada está disponível para abertura e compartilhamento.
-                    </p>
+                    <div className="font-semibold text-slate-900 truncate">{request?.document_name}</div>
+                    <div className="text-sm text-slate-500 mt-0.5">Documento nº <span className="font-mono">{request?.id}</span></div>
+                    <div className="text-sm text-slate-500 mt-1">Assinado por <span className="font-medium text-slate-800">{signer?.name || 'Signatário'}</span></div>
                   </div>
                 </div>
               </div>
 
-              <div className="px-6 py-6 space-y-4">
-                <div className="rounded-xl border border-white/10 bg-slate-900/40 p-4">
-                  <div className="flex items-start gap-3">
-                    <div className="w-10 h-10 rounded-lg bg-blue-500/15 border border-blue-400/20 flex items-center justify-center flex-shrink-0">
-                      <FileText className="w-5 h-5 text-blue-200" />
+              {signer?.verification_hash && (
+                <div className="rounded-xl border border-slate-200 bg-white p-4">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <div className="text-xs text-slate-500 font-semibold">CÓDIGO DE AUTENTICAÇÃO</div>
+                      <div className="mt-2 font-mono text-xs tracking-wide break-all text-slate-900">{signer.verification_hash}</div>
                     </div>
-                    <div className="flex-1 min-w-0">
-                      <div className="font-semibold text-white truncate">{request?.document_name}</div>
-                      <div className="text-sm text-slate-300/80 mt-0.5">Documento nº <span className="font-mono">{request?.id}</span></div>
-                      <div className="text-sm text-slate-300/80 mt-1">Assinado por <span className="font-medium text-white/90">{signer?.name || 'Signatário'}</span></div>
-                    </div>
+                    <button
+                      type="button"
+                      onClick={handleCopyVerificationCode}
+                      className="flex items-center gap-2 px-3 py-2 rounded-lg bg-slate-900 text-white hover:bg-slate-800 transition text-sm font-medium"
+                      title="Copiar código"
+                    >
+                      <Copy className="w-4 h-4" />
+                      Copiar
+                    </button>
                   </div>
-                </div>
 
-                {signer?.verification_hash && (
-                  <div className="rounded-xl border border-white/10 bg-slate-900/40 p-4">
-                    <div className="flex items-start justify-between gap-3">
-                      <div className="min-w-0">
-                        <div className="text-xs text-slate-300/80 font-semibold">CÓDIGO DE AUTENTICAÇÃO</div>
-                        <div className="mt-2 font-mono text-xs tracking-wide break-all text-white">{signer.verification_hash}</div>
-                      </div>
+                  {verificationUrl && (
+                    <div className="mt-3">
                       <button
                         type="button"
-                        onClick={handleCopyVerificationCode}
-                        className="flex items-center gap-2 px-3 py-2 rounded-lg bg-white/5 border border-white/10 text-slate-100 hover:bg-white/10 transition text-sm font-medium"
-                        title="Copiar código"
+                        onClick={() => window.open(verificationUrl, '_blank')}
+                        className="inline-flex items-center gap-2 text-sm font-semibold text-orange-600 hover:text-orange-700"
                       >
-                        <Copy className="w-4 h-4" />
-                        Copiar
+                        <ExternalLink className="w-4 h-4" />
+                        Verificar autenticidade
                       </button>
                     </div>
+                  )}
+                </div>
+              )}
+            </div>
 
-                    {verificationUrl && (
-                      <div className="mt-3">
-                        <button
-                          type="button"
-                          onClick={() => window.open(verificationUrl, '_blank')}
-                          className="inline-flex items-center gap-2 text-sm font-semibold text-blue-200 hover:text-blue-100"
-                        >
-                          <ExternalLink className="w-4 h-4" />
-                          Verificar autenticidade
-                        </button>
-                      </div>
-                    )}
-                  </div>
-                )}
-              </div>
-
-              <div className="px-6 pb-8 space-y-3">
+            <div className="px-6 pb-6 space-y-3">
               <button
                 onClick={handleDownloadAlreadySigned}
                 disabled={downloadingAlreadySigned}
-                className="w-full flex items-center justify-center gap-2 px-5 py-3 bg-blue-600 text-white rounded-xl font-semibold hover:bg-blue-700 transition shadow-lg shadow-blue-600/30 disabled:opacity-70 disabled:cursor-wait"
+                className="w-full flex items-center justify-center gap-2 px-5 py-3 bg-orange-600 text-white rounded-xl font-semibold hover:bg-orange-700 transition disabled:opacity-70 disabled:cursor-wait"
               >
                 {downloadingAlreadySigned ? (
                   <>
@@ -1646,9 +1730,9 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
               <button
                 type="button"
                 onClick={() => setShowReport(true)}
-                className="w-full flex items-center justify-center gap-2 px-5 py-3 bg-white/5 border border-white/10 text-slate-100 rounded-xl font-semibold hover:bg-white/10 transition"
+                className="w-full flex items-center justify-center gap-2 px-5 py-3 bg-white border border-slate-200 text-slate-800 rounded-xl font-semibold hover:bg-slate-50 transition"
               >
-                <FileText className="w-5 h-5 text-slate-200" />
+                <FileText className="w-5 h-5 text-slate-700" />
                 Ver relatório de assinatura
               </button>
 
@@ -1657,9 +1741,9 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
                   <button
                     type="button"
                     onClick={handleCopySignedLink}
-                    className="w-full flex items-center justify-center gap-2 px-5 py-3 bg-white/5 border border-white/10 text-slate-100 rounded-xl font-medium hover:bg-white/10 transition"
+                    className="w-full flex items-center justify-center gap-2 px-5 py-3 bg-white border border-slate-200 text-slate-800 rounded-xl font-medium hover:bg-slate-50 transition"
                   >
-                    <Share2 className="w-5 h-5 text-slate-200" />
+                    <Share2 className="w-5 h-5 text-slate-700" />
                     Copiar link
                   </button>
                 )}
@@ -1668,23 +1752,22 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
                   <button
                     type="button"
                     onClick={handleCopySignerToken}
-                    className="w-full flex items-center justify-center gap-2 px-5 py-3 bg-white/5 border border-white/10 text-slate-100 rounded-xl font-medium hover:bg-white/10 transition"
+                    className="w-full flex items-center justify-center gap-2 px-5 py-3 bg-white border border-slate-200 text-slate-800 rounded-xl font-medium hover:bg-slate-50 transition"
                   >
-                    <Shield className="w-5 h-5 text-slate-200" />
+                    <Shield className="w-5 h-5 text-slate-700" />
                     Copiar token
                   </button>
                 )}
               </div>
             </div>
 
-            <div className="px-6 pb-6 border-t border-white/10">
-              <p className="pt-4 text-xs text-slate-300/70 text-center">
+            <div className="px-6 pb-6 border-t border-slate-100">
+              <p className="pt-4 text-xs text-slate-500 text-center">
                 Guarde o código de autenticação para conferência futura.
               </p>
             </div>
           </div>
-        </div>
-      </div>
+        </main>
       </div>
     );
   }
@@ -1760,33 +1843,33 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
     };
 
     return (
-      <div className="min-h-screen bg-gray-100 flex items-center justify-center p-4">
+      <div className="min-h-[100dvh] bg-gradient-to-b from-orange-50 via-white to-amber-50 flex items-center justify-center p-4">
         <div className="w-full max-w-lg">
-          <div className="bg-white rounded-2xl border border-gray-200 shadow-[0_10px_30px_-15px_rgba(0,0,0,0.25)] overflow-hidden">
+          <div className="bg-white rounded-2xl border border-orange-100 shadow-[0_10px_30px_rgba(15,23,42,0.08)] overflow-hidden">
             {/* Animação de sucesso */}
             <div className="px-6 pt-8 pb-6">
-              <div className="w-16 h-16 rounded-2xl bg-emerald-50 border border-emerald-100 flex items-center justify-center mx-auto">
-                <CheckCircle className="w-9 h-9 text-[#00C48C]" />
+              <div className="w-16 h-16 rounded-2xl bg-orange-50 border border-orange-100 flex items-center justify-center mx-auto">
+                <CheckCircle className="w-9 h-9 text-orange-600" />
               </div>
 
-              <h1 className="mt-5 text-xl font-semibold text-gray-900 text-center">Documento assinado com sucesso!</h1>
-              <p className="mt-1 text-sm text-gray-500 text-center">Sua assinatura foi registrada e validada.</p>
+              <h1 className="mt-5 text-xl font-semibold text-slate-900 text-center">Documento assinado com sucesso!</h1>
+              <p className="mt-1 text-sm text-slate-600 text-center">Sua assinatura foi registrada e validada.</p>
             </div>
 
             {/* Card do documento */}
             <div className="px-6 pb-6">
-              <div className="rounded-xl border border-gray-200 bg-white shadow-sm p-4">
+              <div className="rounded-xl border border-slate-200 bg-white shadow-sm p-4">
                 <div className="flex items-start gap-3">
-                  <div className="w-10 h-10 rounded-lg bg-emerald-50 flex items-center justify-center flex-shrink-0">
-                    <FileText className="w-5 h-5 text-[#00C48C]" />
+                  <div className="w-10 h-10 rounded-lg bg-orange-50 flex items-center justify-center flex-shrink-0">
+                    <FileText className="w-5 h-5 text-orange-600" />
                   </div>
                   <div className="flex-1 min-w-0">
-                    <div className="font-semibold text-gray-900 truncate">{request?.document_name}</div>
-                    <div className="text-sm text-gray-500 mt-0.5">Assinado em {signer?.signed_at ? formatDate(signer.signed_at) : ''}</div>
+                    <div className="font-semibold text-slate-900 truncate">{request?.document_name}</div>
+                    <div className="text-sm text-slate-600 mt-0.5">Assinado em {signer?.signed_at ? formatDate(signer.signed_at) : ''}</div>
                     {signer?.verification_hash && (
                       <div className="mt-3">
-                        <div className="text-xs text-gray-500 font-medium">Código de autenticação</div>
-                        <div className="mt-1 font-mono text-xs tracking-wide break-all bg-gray-50 border border-gray-200 rounded-lg p-2">
+                        <div className="text-xs text-slate-600 font-medium">Código de autenticação</div>
+                        <div className="mt-1 font-mono text-xs tracking-wide break-all bg-orange-50/40 border border-orange-100 rounded-lg p-2">
                           {signer.verification_hash}
                         </div>
                       </div>
@@ -1802,7 +1885,7 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
                 <button
                   onClick={handleDownload}
                   disabled={downloading}
-                  className="w-full flex items-center justify-center gap-2 px-5 py-3 bg-[#00C48C] text-white rounded-xl font-medium hover:bg-emerald-600 transition shadow-lg shadow-emerald-500/20 disabled:opacity-70"
+                  className="w-full flex items-center justify-center gap-2 px-5 py-3 bg-orange-600 text-white rounded-xl font-medium hover:bg-orange-700 transition shadow-lg shadow-orange-500/20 disabled:opacity-70"
                 >
                   {downloading ? (
                     <>
@@ -1820,26 +1903,26 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
 
               <button
                 onClick={() => setShowReport(true)}
-                className="w-full flex items-center justify-center gap-2 px-5 py-3 bg-white border border-gray-200 text-gray-800 rounded-xl font-medium hover:bg-gray-50 transition"
+                className="w-full flex items-center justify-center gap-2 px-5 py-3 bg-white border border-slate-200 text-slate-800 rounded-xl font-medium hover:bg-slate-50 transition"
               >
-                <FileText className="w-5 h-5 text-gray-700" />
+                <FileText className="w-5 h-5 text-slate-700" />
                 Ver relatório de assinatura
               </button>
 
               {signer?.signed_document_path && (
                 <button
                   onClick={handleShare}
-                  className="w-full flex items-center justify-center gap-2 px-5 py-3 bg-white border border-gray-200 text-gray-800 rounded-xl font-medium hover:bg-gray-50 transition"
+                  className="w-full flex items-center justify-center gap-2 px-5 py-3 bg-white border border-slate-200 text-slate-800 rounded-xl font-medium hover:bg-slate-50 transition"
                 >
-                  <Share2 className="w-5 h-5 text-gray-700" />
+                  <Share2 className="w-5 h-5 text-slate-700" />
                   Compartilhar documento assinado
                 </button>
               )}
             </div>
 
             {/* Informação adicional */}
-            <div className="px-6 pb-6 border-t border-gray-100">
-              <p className="pt-4 text-xs text-gray-500 text-center">
+            <div className="px-6 pb-6 border-t border-slate-100">
+              <p className="pt-4 text-xs text-slate-500 text-center">
                 Uma cópia do documento assinado ficará disponível para download.
                 {signer?.verification_hash && (
                   <> Você pode verificar a autenticidade a qualquer momento na página de verificação.</>
@@ -1855,24 +1938,24 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
   return (
     <div className="min-h-[100dvh] h-[100dvh] bg-slate-900 flex flex-col overflow-hidden overscroll-none">
       {/* Header compacto */}
-      <header className="bg-slate-900 px-3 py-2 flex items-center justify-between border-b border-slate-700/50 safe-area-top">
+      <header className="bg-gradient-to-r from-orange-700 via-orange-800 to-orange-900 px-3 py-2 flex items-center justify-between border-b border-orange-900/40 safe-area-top">
         <div className="flex items-center gap-2">
-          <div className="w-7 h-7 bg-blue-600 rounded-lg flex items-center justify-center">
+          <div className="w-7 h-7 bg-white/15 rounded-lg flex items-center justify-center ring-1 ring-white/20">
             <Scale className="w-4 h-4 text-white" />
           </div>
           <div className="leading-tight">
-            <div className="text-white font-semibold text-sm">Juris</div>
-            <div className="text-[11px] text-slate-400">Assinatura</div>
+            <div className="text-white font-semibold text-sm">Jurius</div>
+            <div className="text-[11px] text-orange-100/90">Assinatura</div>
           </div>
         </div>
         <div className="flex items-center gap-2 min-w-0">
-          <div className="text-xs text-slate-400 truncate max-w-[160px]">
+          <div className="text-xs text-orange-100/80 truncate max-w-[160px]">
             {request?.document_name}
           </div>
           <button
             type="button"
             onClick={() => setActiveTab('history')}
-            className="flex items-center gap-1.5 px-2 py-1 rounded-md bg-slate-800/60 hover:bg-slate-800 text-slate-200 text-xs font-medium transition"
+            className="flex items-center gap-1.5 px-2 py-1 rounded-md bg-white/10 hover:bg-white/15 text-white text-xs font-medium transition"
             title="Histórico"
           >
             <Clock className="w-3.5 h-3.5" />
@@ -1890,7 +1973,7 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
               {docxLoading && (
                 <div className="absolute inset-0 flex items-center justify-center bg-white/80 z-10">
                   <div className="flex flex-col items-center gap-3">
-                    <Loader2 className="w-8 h-8 animate-spin text-blue-600" />
+                    <Loader2 className="w-8 h-8 animate-spin text-orange-600" />
                     <p className="text-sm text-slate-600">Carregando documento...</p>
                   </div>
                 </div>
@@ -1959,65 +2042,56 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
       )}
 
       {loading && (
-        <div className="fixed inset-0 z-[70] bg-gradient-to-b from-slate-50 to-white flex items-center justify-center p-5">
-          <div className="w-full max-w-sm relative">
-            <div className="pointer-events-none absolute -inset-10 overflow-hidden" aria-hidden>
-              <div className="absolute -top-10 -left-10 w-56 h-56 rounded-full bg-blue-200/30 blur-3xl animate-[drift1_12s_ease-in-out_infinite]" />
-              <div className="absolute -bottom-14 -right-10 w-64 h-64 rounded-full bg-indigo-200/25 blur-3xl animate-[drift2_14s_ease-in-out_infinite]" />
-              <div className="absolute top-1/3 -right-14 w-48 h-48 rounded-full bg-emerald-200/18 blur-3xl animate-[drift3_16s_ease-in-out_infinite]" />
-            </div>
+        <div className="fixed inset-0 z-[70] flex items-center justify-center p-5 bg-slate-50/80 backdrop-blur-md">
+          <div className="absolute inset-0 pointer-events-none" aria-hidden>
+            <div className="absolute -top-24 -left-24 h-72 w-72 rounded-full bg-orange-600/4 blur-3xl" />
+            <div className="absolute -bottom-28 -right-28 h-80 w-80 rounded-full bg-amber-600/4 blur-3xl" />
+          </div>
 
-            <div className="relative rounded-3xl bg-white/80 backdrop-blur shadow-xl ring-1 ring-slate-200/60 px-6 pt-7 pb-6">
-              <div className="flex items-center justify-center">
-                <div className="w-14 h-14 rounded-2xl bg-white shadow ring-1 ring-slate-200 flex items-center justify-center">
-                  <div className="text-3xl animate-[pen_3.2s_cubic-bezier(0.4,0,0.2,1)_infinite]">✍️</div>
-                </div>
-              </div>
-
-              <div className="mt-6 text-center">
-                <h1 className="text-slate-800 text-lg font-semibold tracking-tight">Enviando assinatura</h1>
-                <p className="mt-2 text-slate-500 text-sm leading-relaxed">
-                  {signingStatusMessages[signingStatusIndex]}
-                </p>
-                <p className="mt-1.5 text-xs text-slate-400">
-                  {(request?.document_name || 'Documento').trim()}
-                </p>
-              </div>
-
-              <div className="mt-6 rounded-2xl bg-white ring-1 ring-slate-200/70 p-4">
-                <div className="space-y-3">
-                  <div className="h-3 w-40 rounded-full bg-slate-100 relative overflow-hidden">
-                    <div className="absolute inset-0 -translate-x-full bg-gradient-to-r from-transparent via-white/80 to-transparent animate-[shimmer_1.7s_ease-in-out_infinite]" />
-                  </div>
-                  <div className="h-2.5 w-full rounded-full bg-slate-100 relative overflow-hidden">
-                    <div className="absolute inset-0 -translate-x-full bg-gradient-to-r from-transparent via-white/80 to-transparent animate-[shimmer_1.7s_ease-in-out_infinite]" />
-                  </div>
-                  <div className="h-2.5 w-11/12 rounded-full bg-slate-100 relative overflow-hidden">
-                    <div className="absolute inset-0 -translate-x-full bg-gradient-to-r from-transparent via-white/80 to-transparent animate-[shimmer_1.7s_ease-in-out_infinite]" />
+          <div className="relative w-full max-w-sm">
+            <div className="rounded-2xl bg-white border border-orange-100 shadow-[0_18px_45px_rgba(15,23,42,0.08)] p-6">
+              <div className="flex items-start gap-3">
+                <div className="relative shrink-0">
+                  <div className="h-10 w-10 rounded-2xl bg-gradient-to-br from-orange-600 to-amber-600 shadow-[0_10px_20px_rgba(234,88,12,0.25)]" />
+                  <div className="absolute inset-0 flex items-center justify-center">
+                    <Shield className="h-5 w-5 text-white" />
                   </div>
                 </div>
 
-                <div className="mt-5 flex items-center justify-center">
-                  <svg width="240" height="34" viewBox="0 0 240 34" fill="none" xmlns="http://www.w3.org/2000/svg" className="opacity-90">
-                    <path
-                      d="M8 24 C 28 10, 44 30, 66 16 C 82 6, 92 34, 114 18 C 132 6, 148 30, 168 14 C 184 6, 200 30, 232 10"
-                      stroke="#2563eb"
-                      strokeWidth="3"
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      strokeDasharray="220"
-                      strokeDashoffset="220"
-                      style={{ animation: 'write 2.6s ease-in-out infinite' }}
-                    />
-                  </svg>
+                <div className="min-w-0 flex-1">
+                  <div className="text-slate-900 text-base font-semibold tracking-tight">Enviando assinatura</div>
+                  <div className="mt-0.5 text-sm text-slate-600">{signingStatusMessages[signingStatusIndex]}</div>
+                </div>
+
+                <div className="pt-0.5 text-slate-400">
+                  <Loader2 className="h-4 w-4 animate-spin" />
                 </div>
               </div>
 
-              <div className="mt-6">
-                <div className="h-1.5 rounded-full bg-slate-100 overflow-hidden">
-                  <div className="h-full w-full rounded-full bg-gradient-to-r from-blue-400 via-blue-500 to-indigo-500 animate-[bar_1.9s_ease-in-out_infinite]" />
+              <div className="mt-4 rounded-xl bg-orange-50/50 ring-1 ring-orange-200/60 px-3.5 py-2.5">
+                <div className="text-[10px] uppercase tracking-wide text-slate-500">Documento</div>
+                <div className="mt-0.5 text-sm text-slate-800 font-medium truncate">{(request?.document_name || 'Documento').trim()}</div>
+              </div>
+
+              <div className="mt-5">
+                <div className="h-2 rounded-full bg-slate-100 overflow-hidden relative">
+                  <div className="absolute inset-0 -translate-x-full bg-gradient-to-r from-transparent via-orange-500/35 to-transparent animate-[shimmer_1.4s_ease-in-out_infinite]" />
                 </div>
-                <p className="mt-3 text-xs text-slate-400 text-center">Não feche esta janela. Você será redirecionado automaticamente.</p>
+
+                <div className="mt-3 flex items-center justify-between text-xs text-slate-500">
+                  <div className="flex items-center gap-2">
+                    <Lock className="h-4 w-4" />
+                    <span>Criptografado</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <CheckCircle className="h-4 w-4" />
+                    <span>Verificado</span>
+                  </div>
+                </div>
+              </div>
+
+              <div className="mt-4 text-center text-[11px] text-slate-500">
+                Não feche esta janela. Você será redirecionado automaticamente.
               </div>
             </div>
           </div>
@@ -2029,7 +2103,7 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
         (() => {
           const isWaiting = !canOpenSignModal || queuedOpenSignModal;
           const isButtonDisabled = loading || isSignModalOpen;
-          const buttonClass = `fixed bottom-6 left-1/2 -translate-x-1/2 z-50 flex items-center gap-2 px-6 py-3 text-white font-bold text-sm rounded-full shadow-[0_8px_30px_rgb(37,99,235,0.4)] transition-all duration-200 whitespace-nowrap ${isButtonDisabled ? 'bg-slate-400 cursor-not-allowed opacity-80' : isWaiting ? 'bg-blue-600/70 hover:bg-blue-600/70 cursor-wait' : 'bg-blue-600 hover:bg-blue-700 active:scale-95'}`;
+          const buttonClass = `fixed bottom-6 left-1/2 -translate-x-1/2 z-50 flex items-center gap-2 px-6 py-3 text-white font-bold text-sm rounded-full shadow-[0_8px_30px_rgb(234,88,12,0.4)] transition-all duration-200 whitespace-nowrap ${isButtonDisabled ? 'bg-slate-400 cursor-not-allowed opacity-80' : isWaiting ? 'bg-orange-600/70 hover:bg-orange-600/70 cursor-wait' : 'bg-orange-600 hover:bg-orange-700 active:scale-95'}`;
 
           return (
         <button
@@ -2059,18 +2133,18 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
         <div className="fixed inset-0 z-50 bg-slate-100 md:bg-slate-100/80 md:backdrop-blur-sm flex flex-col md:items-center md:justify-center">
           <div className="bg-white w-full h-full md:h-auto md:max-w-lg md:rounded-2xl md:shadow-2xl overflow-hidden md:max-h-[90vh] flex flex-col">
             {/* Header */}
-            <div 
-              className="flex-shrink-0 px-5 py-4 flex items-center justify-between md:rounded-t-2xl"
-              style={{ background: 'linear-gradient(135deg, #2563eb 0%, #1d4ed8 50%, #4338ca 100%)' }}
-            >
+             <div 
+               className="flex-shrink-0 px-5 py-4 flex items-center justify-between md:rounded-t-2xl"
+               style={{ background: 'linear-gradient(135deg, #f97316 0%, #ea580c 55%, #c2410c 100%)' }}
+             >
               <div className="flex items-center gap-3">
                 <div className="w-10 h-10 rounded-xl flex items-center justify-center" style={{ backgroundColor: 'rgba(255,255,255,0.2)' }}>
                   <PenTool className="w-5 h-5 text-white" />
                 </div>
-                <div>
-                  <div className="text-white font-semibold">Assinar Documento</div>
-                  <div className="text-xs" style={{ color: 'rgba(191,219,254,1)' }}>Etapa {(modalStep === 'google_auth' || modalStep === 'phone_otp') ? '1' : modalStep === 'data' ? '2' : modalStep === 'signature' ? '3' : modalStep === 'facial' ? '4' : '5'} de 5</div>
-                </div>
+                 <div>
+                   <div className="text-white font-semibold">Assinar Documento</div>
+                   <div className="text-xs" style={{ color: 'rgba(255,237,213,1)' }}>Etapa {(modalStep === 'google_auth' || modalStep === 'phone_otp') ? '1' : modalStep === 'data' ? '2' : modalStep === 'signature' ? '3' : modalStep === 'facial' ? '4' : '5'} de 5</div>
+                 </div>
               </div>
               <button onClick={closeSignModal} className="p-2 rounded-lg" style={{ color: 'rgba(255,255,255,0.8)' }}>
                 <X className="w-6 h-6" />
@@ -2080,7 +2154,7 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
             {/* Progress bar */}
             <div className="flex-shrink-0 h-1.5 bg-slate-200">
               <div 
-                className="h-full bg-blue-500 transition-all duration-300"
+                className="h-full bg-orange-500 transition-all duration-300"
                 style={{ width: (modalStep === 'google_auth' || modalStep === 'phone_otp') ? '20%' : modalStep === 'data' ? '40%' : modalStep === 'signature' ? '60%' : modalStep === 'location' ? '80%' : '100%' }}
               />
             </div>
@@ -2116,7 +2190,7 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
                       </div>
                       <button
                         onClick={() => setModalStep('data')}
-                        className="w-full mt-4 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-semibold transition"
+                        className="w-full mt-4 py-3 bg-orange-600 hover:bg-orange-700 text-white rounded-xl font-semibold transition"
                       >
                         Continuar
                       </button>
@@ -2163,7 +2237,7 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
                               const url = `https://wa.me/${phone}?text=${encodeURIComponent(msg)}`;
                               window.open(url, '_blank');
                             }}
-                            className="text-blue-600 hover:text-blue-700 text-sm font-semibold transition-colors"
+                            className="text-orange-600 hover:text-orange-700 text-sm font-semibold transition-colors"
                           >
                             Precisa de ajuda?
                           </button>
@@ -2199,7 +2273,7 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
                         value={signerData.phone}
                         onChange={(e) => setSignerData((d) => ({ ...d, phone: e.target.value }))}
                         placeholder="(11) 98888-7777"
-                        className="w-full px-4 py-3 border border-slate-200 rounded-xl text-base focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
+                        className="w-full px-4 py-3 border border-slate-200 rounded-xl text-base focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500"
                       />
                     </div>
 
@@ -2207,7 +2281,7 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
                       type="button"
                       onClick={handleSendPhoneOtp}
                       disabled={phoneOtpLoading}
-                      className="w-full py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-semibold transition disabled:opacity-50"
+                      className="w-full py-3 bg-orange-600 hover:bg-orange-700 text-white rounded-xl font-semibold transition disabled:opacity-50"
                     >
                       {phoneOtpLoading ? 'Enviando…' : (phoneOtpSent ? 'Reenviar código' : 'Enviar código')}
                     </button>
@@ -2222,7 +2296,7 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
                           value={phoneOtp}
                           onChange={(e) => setPhoneOtp(e.target.value)}
                           placeholder="000000"
-                          className="w-full px-4 py-3 border border-slate-200 rounded-xl text-base focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 tracking-widest text-center"
+                          className="w-full px-4 py-3 border border-slate-200 rounded-xl text-base focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 tracking-widest text-center"
                         />
                         {phoneOtpExpiresAt && (
                           <div className="text-xs text-slate-500 mt-2">
@@ -2276,7 +2350,7 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
                         value={signerData.name}
                         onChange={(e) => setSignerData((d) => ({ ...d, name: e.target.value }))}
                         placeholder="Digite seu nome completo"
-                        className="w-full px-4 py-3 border border-slate-200 rounded-xl text-base focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
+                        className="w-full px-4 py-3 border border-slate-200 rounded-xl text-base focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500"
                       />
                     </div>
 
@@ -2289,7 +2363,7 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
                         value={signerData.cpf}
                         onChange={(e) => setSignerData((d) => ({ ...d, cpf: formatCpf(e.target.value) }))}
                         placeholder="000.000.000-00"
-                        className="w-full px-4 py-3 border border-slate-200 rounded-xl text-base focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
+                        className="w-full px-4 py-3 border border-slate-200 rounded-xl text-base focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500"
                       />
                     </div>
                   </div>
@@ -2297,7 +2371,7 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
                   <button
                     onClick={() => setModalStep('signature')}
                     disabled={!canProceedFromData}
-                    className="w-full py-4 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-bold text-lg shadow-lg shadow-blue-500/30 disabled:opacity-50 transition-colors"
+                    className="w-full py-4 bg-orange-600 hover:bg-orange-700 text-white rounded-xl font-bold text-lg shadow-lg shadow-orange-500/30 disabled:opacity-50 transition-colors"
                   >
                     Continuar
                   </button>
@@ -2313,7 +2387,7 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
                   <div className="w-full space-y-6">
                     {/* Área de assinatura */}
                     <div className="relative group">
-                      <div className="w-full h-56 bg-white rounded-xl shadow-[inset_0_2px_4px_rgba(0,0,0,0.06)] border-2 border-dashed border-gray-300 hover:border-blue-400 transition-colors overflow-hidden relative">
+                      <div className="w-full h-56 bg-white rounded-xl shadow-[inset_0_2px_4px_rgba(0,0,0,0.06)] border-2 border-dashed border-gray-300 hover:border-orange-400 transition-colors overflow-hidden relative">
                         <canvas
                           ref={canvasRef}
                           className="absolute inset-0 w-full h-full touch-none cursor-crosshair"
@@ -2327,7 +2401,7 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
                         />
                         {!hasSignature && (
                           <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-                            <span className="text-blue-500/20 text-6xl transform -rotate-12">✍️</span>
+                            <span className="text-orange-500/20 text-6xl transform -rotate-12">✍️</span>
                           </div>
                         )}
                         <div className="absolute bottom-2 right-3 text-xs text-gray-400 pointer-events-none select-none">
@@ -2350,7 +2424,7 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
                           setModalStep('location');
                         }}
                         disabled={!hasSignature}
-                        className="w-full bg-blue-500 hover:bg-blue-600 text-white font-semibold py-3.5 px-4 rounded-lg shadow-md hover:shadow-lg transition-all duration-200 transform hover:-translate-y-0.5 disabled:opacity-50 disabled:transform-none"
+                        className="w-full bg-orange-500 hover:bg-orange-600 text-white font-semibold py-3.5 px-4 rounded-lg shadow-md hover:shadow-lg transition-all duration-200 transform hover:-translate-y-0.5 disabled:opacity-50 disabled:transform-none"
                       >
                         Continuar
                       </button>
@@ -2364,8 +2438,8 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
                 <div className="flex flex-col items-center text-center">
                   {/* Ícone de localização */}
                   <div className="mb-6 relative group">
-                    <div className="w-24 h-24 bg-blue-50 rounded-full flex items-center justify-center mb-4 ring-4 ring-white shadow-lg">
-                      <MapPin className="w-12 h-12 text-blue-500" />
+                    <div className="w-24 h-24 bg-orange-50 rounded-full flex items-center justify-center mb-4 ring-4 ring-white shadow-lg">
+                      <MapPin className="w-12 h-12 text-orange-500" />
                     </div>
                   </div>
 
@@ -2376,7 +2450,7 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
 
                   {/* Info box */}
                   <div className="w-full bg-slate-50 border border-slate-100 rounded-lg p-4 mb-8 text-left flex items-start">
-                    <AlertCircle className="w-5 h-5 text-blue-500 mr-3 mt-0.5 flex-shrink-0" />
+                    <AlertCircle className="w-5 h-5 text-orange-500 mr-3 mt-0.5 flex-shrink-0" />
                     <div>
                       <p className="text-xs text-slate-800 font-medium">Por que isso é necessário?</p>
                       <p className="text-xs text-slate-500 mt-1">
@@ -2403,7 +2477,7 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
                     <button
                       onClick={requestLocation}
                       disabled={locationLoading || !!locationData}
-                      className="w-full bg-blue-500 hover:bg-blue-600 text-white font-semibold py-3.5 px-4 rounded-lg shadow-md hover:shadow-lg transition-all duration-200 transform hover:-translate-y-0.5 flex items-center justify-center gap-2 disabled:opacity-50 disabled:transform-none"
+                      className="w-full bg-orange-500 hover:bg-orange-600 text-white font-semibold py-3.5 px-4 rounded-lg shadow-md hover:shadow-lg transition-all duration-200 transform hover:-translate-y-0.5 flex items-center justify-center gap-2 disabled:opacity-50 disabled:transform-none"
                     >
                       {locationLoading ? (
                         <>
@@ -2425,7 +2499,7 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
                     {locationData && (
                       <button
                         onClick={() => setModalStep('facial')}
-                        className="w-full bg-blue-500 hover:bg-blue-600 text-white font-semibold py-3.5 px-4 rounded-lg shadow-md transition-all"
+                        className="w-full bg-orange-500 hover:bg-orange-600 text-white font-semibold py-3.5 px-4 rounded-lg shadow-md transition-all"
                       >
                         Continuar
                       </button>
@@ -2494,50 +2568,95 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
                       </button>
                     </div>
                   ) : (
-                    <div className="space-y-3">
-                      <div className="relative rounded-2xl overflow-hidden shadow-xl">
-                        <video ref={videoRef} autoPlay playsInline muted className="w-full h-80 object-cover" style={{ transform: 'scaleX(-1)' }} />
-                        
-                        {/* Overlay escuro nas bordas */}
-                        <div className="absolute inset-0 bg-gradient-to-b from-black/40 via-transparent to-black/40 pointer-events-none" />
-                        
-                        {/* Moldura central animada */}
-                        <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-                          <div className="relative">
-                            {/* Círculo externo com animação de pulso */}
-                            <div className="w-48 h-48 rounded-full border-[3px] border-white/30 animate-pulse" />
-                            
-                            {/* Círculo interno sólido */}
-                            <div className="absolute inset-2 rounded-full border-[3px] border-white shadow-lg" />
-                            
-                            {/* Marcadores de alinhamento */}
-                            <div className="absolute -top-3 left-1/2 -translate-x-1/2 w-6 h-1 bg-white rounded-full" />
-                            <div className="absolute -bottom-3 left-1/2 -translate-x-1/2 w-6 h-1 bg-white rounded-full" />
-                            <div className="absolute top-1/2 -left-3 -translate-y-1/2 w-1 h-6 bg-white rounded-full" />
-                            <div className="absolute top-1/2 -right-3 -translate-y-1/2 w-1 h-6 bg-white rounded-full" />
+                    <div className="space-y-4">
+                      {!cameraActive ? (
+                        <div className="rounded-2xl border border-slate-200 bg-slate-50 p-5">
+                          <div className="flex items-start gap-3">
+                            <div className="w-10 h-10 rounded-xl bg-orange-100 flex items-center justify-center flex-shrink-0">
+                              <Camera className="w-5 h-5 text-orange-600" />
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <div className="text-sm font-semibold text-slate-900">Permitir acesso à câmera</div>
+                              <div className="text-xs text-slate-600 mt-1 leading-relaxed">
+                                Para continuar, precisamos acessar sua câmera para tirar uma selfie.
+                                Ao clicar em <span className="font-semibold">Ativar câmera</span>, o navegador vai pedir sua autorização.
+                              </div>
+
+                              {cameraError && (
+                                <div className="mt-3 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+                                  {cameraError}
+                                </div>
+                              )}
+                            </div>
+                          </div>
+
+                          <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 gap-3">
+                            <button
+                              type="button"
+                              onClick={startCamera}
+                              className="inline-flex items-center justify-center gap-2 rounded-xl bg-orange-600 px-4 py-3 text-sm font-semibold text-white shadow-lg shadow-orange-500/20 hover:bg-orange-700 transition"
+                            >
+                              <Camera className="w-4 h-4" />
+                              Ativar câmera
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setModalStep('signature')}
+                              className="inline-flex items-center justify-center gap-2 rounded-xl bg-white border border-slate-200 px-4 py-3 text-sm font-semibold text-slate-800 hover:bg-slate-50 transition"
+                            >
+                              <ChevronLeft className="w-4 h-4" />
+                              Voltar
+                            </button>
                           </div>
                         </div>
-                        
-                        {/* Texto instrucional no topo */}
-                        <div className="absolute top-4 left-0 right-0 text-center">
-                          <div className="inline-flex items-center gap-2 bg-white/90 backdrop-blur-sm px-4 py-2 rounded-full shadow-lg">
-                            <div className="w-2 h-2 bg-red-500 rounded-full animate-pulse" />
-                            <span className="text-sm font-semibold text-slate-700">Centralize seu rosto</span>
+                      ) : (
+                        <>
+                          <div className="relative rounded-2xl overflow-hidden shadow-xl">
+                            <video ref={videoRef} autoPlay playsInline muted className="w-full h-80 object-cover" style={{ transform: 'scaleX(-1)' }} />
+
+                            {/* Overlay escuro nas bordas */}
+                            <div className="absolute inset-0 bg-gradient-to-b from-black/40 via-transparent to-black/40 pointer-events-none" />
+
+                            {/* Moldura central animada */}
+                            <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                              <div className="relative">
+                                {/* Círculo externo com animação de pulso */}
+                                <div className="w-48 h-48 rounded-full border-[3px] border-white/30 animate-pulse" />
+
+                                {/* Círculo interno sólido */}
+                                <div className="absolute inset-2 rounded-full border-[3px] border-white shadow-lg" />
+
+                                {/* Marcadores de alinhamento */}
+                                <div className="absolute -top-3 left-1/2 -translate-x-1/2 w-6 h-1 bg-white rounded-full" />
+                                <div className="absolute -bottom-3 left-1/2 -translate-x-1/2 w-6 h-1 bg-white rounded-full" />
+                                <div className="absolute top-1/2 -left-3 -translate-y-1/2 w-1 h-6 bg-white rounded-full" />
+                                <div className="absolute top-1/2 -right-3 -translate-y-1/2 w-1 h-6 bg-white rounded-full" />
+                              </div>
+                            </div>
+
+                            {/* Texto instrucional no topo */}
+                            <div className="absolute top-4 left-0 right-0 text-center">
+                              <div className="inline-flex items-center gap-2 bg-white/90 backdrop-blur-sm px-4 py-2 rounded-full shadow-lg">
+                                <div className="w-2 h-2 bg-red-500 rounded-full animate-pulse" />
+                                <span className="text-sm font-semibold text-slate-700">Centralize seu rosto</span>
+                              </div>
+                            </div>
+
+                            {/* Dica no rodapé */}
+                            <div className="absolute bottom-4 left-0 right-0 text-center">
+                              <p className="text-white/80 text-xs">Mantenha o rosto dentro do círculo</p>
+                            </div>
                           </div>
-                        </div>
-                        
-                        {/* Dica no rodapé */}
-                        <div className="absolute bottom-4 left-0 right-0 text-center">
-                          <p className="text-white/80 text-xs">Mantenha o rosto dentro do círculo</p>
-                        </div>
-                      </div>
-                      <button
-                        onClick={capturePhoto}
-                        className="w-full py-4 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-bold text-lg shadow-lg shadow-blue-500/30 transition-all flex items-center justify-center gap-2"
-                      >
-                        <Camera className="w-5 h-5" />
-                        Capturar foto
-                      </button>
+
+                          <button
+                            onClick={capturePhoto}
+                            className="w-full py-4 bg-orange-600 hover:bg-orange-700 text-white rounded-xl font-bold text-lg shadow-lg shadow-orange-500/30 transition-all flex items-center justify-center gap-2"
+                          >
+                            <Camera className="w-5 h-5" />
+                            Capturar foto
+                          </button>
+                        </>
+                      )}
                     </div>
                   )}
                 </div>
@@ -2594,7 +2713,7 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
 
                     const dotColor =
                       item.action === 'signed' ? 'bg-emerald-600' :
-                      item.action === 'viewed' ? 'bg-blue-600' :
+                      item.action === 'viewed' ? 'bg-orange-600' :
                       item.action === 'cancelled' || item.action === 'expired' ? 'bg-red-600' :
                       'bg-slate-400';
 

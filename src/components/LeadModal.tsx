@@ -124,7 +124,7 @@ export const LeadModal: React.FC<LeadModalProps> = ({
               type="submit"
               onClick={onSubmit}
               disabled={saving}
-              className="flex items-center justify-center gap-2 px-6 py-2.5 rounded-lg text-sm font-semibold bg-slate-900 hover:bg-slate-800 text-white border border-slate-700/70 focus:outline-none focus:ring-2 focus:ring-slate-500 focus:ring-offset-1 focus:ring-offset-white dark:focus:ring-offset-slate-900 transition-colors disabled:opacity-60"
+              className="flex items-center justify-center gap-2 px-6 py-2.5 rounded-lg text-sm font-semibold text-white bg-gradient-to-r from-orange-500 to-orange-600 hover:from-orange-600 hover:to-orange-700 border border-orange-600/60 shadow-md shadow-orange-500/25 focus:outline-none focus:ring-2 focus:ring-orange-500/40 focus:ring-offset-1 focus:ring-offset-white dark:focus:ring-offset-slate-900 transition-all disabled:from-orange-300 disabled:to-orange-300 disabled:border-orange-300/60 disabled:shadow-none disabled:cursor-not-allowed"
             >
               {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />}
               {saving ? 'Salvando...' : 'Criar Lead'}

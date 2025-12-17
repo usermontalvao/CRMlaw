@@ -43,6 +43,7 @@ import { clientService } from '../services/client.service';
 import { profileService } from '../services/profile.service';
 import { settingsService } from '../services/settings.service';
 import { ClientSearchSelect } from './ClientSearchSelect';
+import { useDeleteConfirm } from '../contexts/DeleteConfirmContext';
 import type { Deadline, DeadlineStatus, DeadlinePriority, DeadlineType } from '../types/deadline.types';
 import type { Process } from '../types/process.types';
 import type { Requirement } from '../types/requirement.types';
@@ -331,6 +332,8 @@ interface DeadlinesModuleProps {
 }
 
 const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId, onParamConsumed, prefillData }) => {
+  const { confirmDelete } = useDeleteConfirm();
+
   const [deadlines, setDeadlines] = useState<Deadline[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -440,14 +443,21 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
   );
 
   const handleDeleteSavedFilter = useCallback(
-    (id: string) => {
-      if (!confirm('Remover este filtro salvo?')) return;
+    async (id: string) => {
+      const filter = savedFilters.find((f) => f.id === id);
+      const confirmed = await confirmDelete({
+        title: 'Remover filtro salvo',
+        entityName: filter?.name || undefined,
+        message: 'Tem certeza que deseja remover este filtro salvo?',
+        confirmLabel: 'Remover',
+      });
+      if (!confirmed) return;
       setSavedFilters((prev) => prev.filter((f) => f.id !== id));
       if (selectedSavedFilterId === id) {
         setSelectedSavedFilterId('');
       }
     },
-    [selectedSavedFilterId],
+    [selectedSavedFilterId, savedFilters, confirmDelete],
   );
 
   const filteredDeadlines = useMemo(() => {
@@ -1133,7 +1143,14 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
   };
 
   const handleDeleteDeadline = async (id: string) => {
-    if (!confirm('Deseja realmente remover este prazo? Essa ação é irreversível.')) return;
+    const deadline = deadlines.find((d) => d.id === id);
+    const confirmed = await confirmDelete({
+      title: 'Excluir prazo',
+      entityName: deadline?.title || undefined,
+      message: 'Deseja realmente remover este prazo? Essa ação é irreversível.',
+      confirmLabel: 'Excluir',
+    });
+    if (!confirmed) return;
 
     try {
       await deadlineService.deleteDeadline(id);
@@ -1721,6 +1738,11 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
         </div>
 
         <div className="flex-1 overflow-y-auto p-6 space-y-6 bg-white dark:bg-zinc-900">
+          {error && (
+            <div className="rounded-lg border border-red-200 dark:border-red-800 bg-red-50 dark:bg-red-900/20 px-4 py-3 text-sm text-red-700 dark:text-red-300">
+              {error}
+            </div>
+          )}
           {/* Seletor de Período */}
           <div className="bg-slate-50 dark:bg-zinc-800 rounded-xl p-4">
             <label className="text-sm font-semibold text-slate-700 mb-3 block">Período do Relatório</label>
@@ -1991,6 +2013,11 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
         </div>
 
         <div className="flex-1 overflow-y-auto bg-white dark:bg-zinc-900 p-6">
+          {error && (
+            <div className="mb-4 rounded-lg border border-red-200 dark:border-red-800 bg-red-50 dark:bg-red-900/20 px-4 py-3 text-sm text-red-700 dark:text-red-300">
+              {error}
+            </div>
+          )}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             <div className="md:col-span-2">
               <label className="text-xs font-semibold text-slate-500 uppercase">Título</label>
@@ -2130,6 +2157,11 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
 
         <div className="flex-1 overflow-y-auto bg-white dark:bg-zinc-900">
           <form onSubmit={handleSubmit} className="p-4 sm:p-6 space-y-4">
+            {error && (
+              <div className="rounded-lg border border-red-200 dark:border-red-800 bg-red-50 dark:bg-red-900/20 px-4 py-3 text-sm text-red-700 dark:text-red-300">
+                {error}
+              </div>
+            )}
             {/* Título e Tipo */}
             <div className="grid grid-cols-1 sm:grid-cols-4 gap-2">
               <div className="sm:col-span-3">

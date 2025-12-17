@@ -1,4 +1,5 @@
 import React, { useEffect, useState, useCallback } from 'react';
+import { createPortal } from 'react-dom';
 import { CheckCircle, XCircle, AlertCircle, Info, X, Loader2 } from 'lucide-react';
 
 export type ToastType = 'success' | 'error' | 'warning' | 'info' | 'loading';
@@ -122,7 +123,7 @@ interface ToastContainerProps {
 }
 
 export const ToastContainer: React.FC<ToastContainerProps> = ({ toasts, onDismiss }) => {
-  return (
+  const content = (
     <>
       <style>
         {`
@@ -147,7 +148,7 @@ export const ToastContainer: React.FC<ToastContainerProps> = ({ toasts, onDismis
           }
         `}
       </style>
-      <div className="fixed top-4 left-1/2 -translate-x-1/2 z-[9999] pointer-events-none">
+      <div className="fixed top-4 left-1/2 -translate-x-1/2 z-[2147483647] pointer-events-none">
         <div className="pointer-events-auto flex flex-col items-center">
           {toasts.map((toast) => (
             <ToastItem key={toast.id} toast={toast} onDismiss={onDismiss} />
@@ -156,4 +157,10 @@ export const ToastContainer: React.FC<ToastContainerProps> = ({ toasts, onDismis
       </div>
     </>
   );
+
+  if (typeof document === 'undefined') {
+    return content;
+  }
+
+  return createPortal(content, document.body);
 };

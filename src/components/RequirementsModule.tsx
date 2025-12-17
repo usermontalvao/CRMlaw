@@ -17,11 +17,14 @@ import * as XLSX from 'xlsx';
 import { requirementService } from '../services/requirement.service';
 import { clientService } from '../services/client.service';
 import { useAuth } from '../contexts/AuthContext';
+import { useToastContext } from '../contexts/ToastContext';
+import { useDeleteConfirm } from '../contexts/DeleteConfirmContext';
 import { profileService } from '../services/profile.service';
 import { deadlineService } from '../services/deadline.service';
 import type { Requirement, RequirementStatus, BenefitType } from '../types/requirement.types';
 import type { Profile } from '../services/profile.service';
-import type { Client } from '../types/client.types';
+import ClientForm from './ClientForm';
+import type { Client, CreateClientDTO } from '../types/client.types';
 import type { DeadlinePriority } from '../types/deadline.types';
 
 const STATUS_OPTIONS: {
@@ -325,6 +328,8 @@ interface RequirementsModuleProps {
 
 const RequirementsModule: React.FC<RequirementsModuleProps> = ({ forceCreate, entityId, prefillData, onParamConsumed }) => {
   const { user } = useAuth();
+  const toast = useToastContext();
+  const { confirmDelete } = useDeleteConfirm();
   const [requirements, setRequirements] = useState<Requirement[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -354,6 +359,8 @@ const RequirementsModule: React.FC<RequirementsModuleProps> = ({ forceCreate, en
   const [clientsLoading, setClientsLoading] = useState(false);
   const [beneficiarySearchTerm, setBeneficiarySearchTerm] = useState('');
   const [showBeneficiarySuggestions, setShowBeneficiarySuggestions] = useState(false);
+  const [isClientFormModalOpen, setIsClientFormModalOpen] = useState(false);
+  const [clientFormPrefill, setClientFormPrefill] = useState<Partial<CreateClientDTO> | null>(null);
   const [currentPage, setCurrentPage] = useState(1);
   const [schedulePromptId, setSchedulePromptId] = useState<string | null>(null);
   const [exigencyModal, setExigencyModal] = useState<ExigencyModalState | null>(null);
@@ -401,6 +408,10 @@ const RequirementsModule: React.FC<RequirementsModuleProps> = ({ forceCreate, en
     if (!selectedRequirementForView) return [] as RequirementNote[];
     return parseNotes(selectedRequirementForView.notes);
   }, [selectedRequirementForView]);
+
+  const noteThreads = useMemo<RequirementNote[]>(() => {
+    return buildNoteThreads(detailNotes);
+  }, [detailNotes]);
 
   const filteredRequirements = useMemo(() => {
     let filtered = requirements;
@@ -792,21 +803,25 @@ const RequirementsModule: React.FC<RequirementsModuleProps> = ({ forceCreate, en
 
     if (requiresProtocol && !trimmedProtocol) {
       setError('Informe o protocolo do INSS.');
+      toast.error('Informe o protocolo do INSS.');
       return;
     }
 
     if (!formData.beneficiary.trim()) {
       setError('Informe o nome do beneficiário.');
+      toast.error('Informe o nome do beneficiário.');
       return;
     }
 
     if (!formData.cpf.trim()) {
       setError('Informe o CPF do beneficiário.');
+      toast.error('Informe o CPF do beneficiário.');
       return;
     }
 
     if (!formData.benefit_type) {
       setError('Selecione o tipo de benefício.');
+      toast.error('Selecione o tipo de benefício.');
       return;
     }
 
@@ -892,13 +907,21 @@ const RequirementsModule: React.FC<RequirementsModuleProps> = ({ forceCreate, en
       setFormData(emptyForm);
     } catch (err: any) {
       setError(err.message || 'Não foi possível salvar o requerimento.');
+      toast.error(err.message || 'Não foi possível salvar o requerimento.');
     } finally {
       setSaving(false);
     }
   };
 
   const handleDeleteRequirement = async (id: string) => {
-    if (!confirm('Deseja realmente remover este requerimento? Essa ação é irreversível.')) return;
+    const req = requirements.find((r) => r.id === id);
+    const confirmed = await confirmDelete({
+      title: 'Excluir requerimento',
+      entityName: req?.protocol || req?.beneficiary || undefined,
+      message: 'Deseja realmente remover este requerimento? Essa ação é irreversível.',
+      confirmLabel: 'Excluir',
+    });
+    if (!confirmed) return;
 
     try {
       await requirementService.deleteRequirement(id);
@@ -906,6 +929,7 @@ const RequirementsModule: React.FC<RequirementsModuleProps> = ({ forceCreate, en
       setRequirements((prev) => prev.filter((item) => item.id !== id));
     } catch (err: any) {
       setError(err.message || 'Não foi possível remover o requerimento.');
+      toast.error(err.message || 'Não foi possível remover o requerimento.');
     }
   };
 
@@ -1045,7 +1069,12 @@ const RequirementsModule: React.FC<RequirementsModuleProps> = ({ forceCreate, en
 
   const handleDeleteNote = async (noteId: string) => {
     if (!selectedRequirementForView) return;
-    if (!confirm('Tem certeza que deseja excluir esta nota? Esta ação não pode ser desfeita.')) return;
+    const confirmed = await confirmDelete({
+      title: 'Excluir nota',
+      message: 'Tem certeza que deseja excluir esta nota? Esta ação não pode ser desfeita.',
+      confirmLabel: 'Excluir',
+    });
+    if (!confirmed) return;
 
     try {
       const existingNotes = parseNotes(selectedRequirementForView.notes);
@@ -1060,7 +1089,7 @@ const RequirementsModule: React.FC<RequirementsModuleProps> = ({ forceCreate, en
       }
     } catch (err: any) {
       console.error('Erro ao excluir nota:', err);
-      alert('Não foi possível excluir a nota.');
+      toast.error('Não foi possível excluir a nota.');
     }
   };
 
@@ -1323,10 +1352,73 @@ const RequirementsModule: React.FC<RequirementsModuleProps> = ({ forceCreate, en
     );
   };
 
-  const noteThreads = useMemo(() => {
-    if (!selectedRequirementForView) return [];
-    return buildNoteThreads(parseNotes(selectedRequirementForView.notes));
-  }, [selectedRequirementForView]);
+  const openClientModal = (prefill?: Partial<CreateClientDTO> | null) => {
+    setClientFormPrefill(prefill ?? null);
+    setIsClientFormModalOpen(true);
+    setShowBeneficiarySuggestions(false);
+  };
+
+  const createClientModal = isClientFormModalOpen && createPortal(
+    <div className="fixed inset-0 z-[90] flex items-center justify-center p-4">
+      <div
+        className="absolute inset-0 bg-slate-50/80 backdrop-blur-md"
+        onClick={() => {
+          setIsClientFormModalOpen(false);
+          setClientFormPrefill(null);
+        }}
+        aria-hidden="true"
+      />
+      <div className="relative w-full max-w-4xl">
+        <div className="bg-white rounded-2xl shadow-[0_24px_60px_rgba(15,23,42,0.12)] border border-slate-200 overflow-hidden">
+          <div className="h-3 w-full shrink-0 bg-gradient-to-r from-orange-500 to-orange-600" />
+          <div className="px-6 py-5 border-b border-slate-200 bg-white flex items-start justify-between gap-3">
+            <div className="min-w-0">
+              <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">Formulário</div>
+              <h2 className="mt-1 text-lg font-semibold text-slate-900">Novo Cliente</h2>
+            </div>
+            <button
+              type="button"
+              onClick={() => {
+                setIsClientFormModalOpen(false);
+                setClientFormPrefill(null);
+              }}
+              className="p-2 text-slate-400 hover:text-slate-600 rounded-lg"
+              aria-label="Fechar modal"
+            >
+              <X className="w-5 h-5" />
+            </button>
+          </div>
+
+          <div className="bg-white">
+            <ClientForm
+              client={null}
+              prefill={clientFormPrefill}
+              variant="modal"
+              onBack={() => {
+                setIsClientFormModalOpen(false);
+                setClientFormPrefill(null);
+              }}
+              onSave={(savedClient) => {
+                handleFormChange('client_id', savedClient.id);
+                handleFormChange('beneficiary', savedClient.full_name);
+                setBeneficiarySearchTerm(savedClient.full_name);
+                if (savedClient.cpf_cnpj) {
+                  handleFormChange('cpf', formatCPF(savedClient.cpf_cnpj));
+                }
+                const phoneValue = savedClient.mobile || savedClient.phone || '';
+                if (phoneValue) {
+                  handleFormChange('phone', phoneValue);
+                }
+                setIsClientFormModalOpen(false);
+                setClientFormPrefill(null);
+              }}
+            />
+          </div>
+        </div>
+      </div>
+    </div>,
+    document.body,
+  );
 
   const inputClass = "form-input flex w-full min-w-0 flex-1 resize-none overflow-hidden rounded-lg text-gray-900 focus:outline-0 focus:ring-2 focus:ring-[#2b8cee]/50 border border-gray-300 bg-white h-12 placeholder:text-gray-500 px-4 py-3 text-sm font-normal leading-normal";
   const selectClass = "form-select flex w-full min-w-0 flex-1 resize-none overflow-hidden rounded-lg text-gray-900 focus:outline-0 focus:ring-2 focus:ring-[#2b8cee]/50 border border-gray-300 bg-white h-12 px-4 py-3 text-sm font-normal leading-normal";
@@ -1364,6 +1456,11 @@ const RequirementsModule: React.FC<RequirementsModuleProps> = ({ forceCreate, en
         <div className="flex-1 bg-white dark:bg-zinc-900">
           <form onSubmit={handleSubmit} className="flex flex-col h-full">
             <div className="p-4 sm:p-6 md:p-8 space-y-4 sm:space-y-5 flex-1 overflow-y-auto">
+              {error && (
+                <div className="mb-4 rounded-lg border border-red-200 dark:border-red-800 bg-red-50 dark:bg-red-900/20 px-4 py-3 text-sm text-red-700 dark:text-red-300">
+                  {error}
+                </div>
+              )}
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
                 {/* Protocolo */}
                 <label className="flex flex-col w-full">
@@ -1406,7 +1503,21 @@ const RequirementsModule: React.FC<RequirementsModuleProps> = ({ forceCreate, en
                         {clientsLoading ? (
                           <div className="px-4 py-3 text-sm text-gray-500">Buscando clientes...</div>
                         ) : clients.length === 0 ? (
-                          <div className="px-4 py-3 text-sm text-gray-500">Nenhum cliente encontrado.</div>
+                          <div className="px-4 py-3">
+                            <div className="text-sm text-gray-500">Nenhum cliente encontrado.</div>
+                            <button
+                              type="button"
+                              onMouseDown={(event) => event.preventDefault()}
+                              onClick={() => openClientModal({ full_name: beneficiarySearchTerm })}
+                              className="mt-3 w-full text-left px-3 py-2.5 hover:bg-orange-50 transition border border-orange-200 rounded-lg flex items-center gap-2 text-orange-700 font-medium"
+                            >
+                              <Plus className="w-4 h-4" />
+                              <div>
+                                <div className="text-sm font-semibold">Adicionar Novo Cliente</div>
+                                <div className="text-xs text-gray-500">Criar cadastro para "{beneficiarySearchTerm}"</div>
+                              </div>
+                            </button>
+                          </div>
                         ) : (
                           clients.map((client) => (
                             <button
@@ -1733,6 +1844,11 @@ const RequirementsModule: React.FC<RequirementsModuleProps> = ({ forceCreate, en
             </button>
           </div>
           <div className="flex-1 overflow-y-auto bg-white dark:bg-zinc-900 p-6">
+            {error && (
+              <div className="mb-4 rounded-lg border border-red-200 dark:border-red-800 bg-red-50 dark:bg-red-900/20 px-4 py-3 text-sm text-red-700 dark:text-red-300">
+                {error}
+              </div>
+            )}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               <div>
                 <label className="text-xs font-semibold text-slate-500 uppercase">Protocolo</label>
@@ -2239,6 +2355,7 @@ const RequirementsModule: React.FC<RequirementsModuleProps> = ({ forceCreate, en
       {exigencyDeadlineModal}
       {periciaSchedulingModal}
       {detailsModal}
+      {createClientModal}
     </div>
   );
 }

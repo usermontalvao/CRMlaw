@@ -328,22 +328,22 @@ class PdfSignatureService {
 
     if (mode === 'strip') {
       const h = 24;
-      const x = 6;
+      const x = 24;
       const y = 10;
-      const w = pageWidth - 12;
+      const w = pageWidth - 48;
 
       page.drawRectangle({ x, y, width: w, height: h, color: rgb(0.98, 0.99, 1), borderColor: rgb(0.85, 0.88, 0.95), borderWidth: 1 });
-      page.drawText(`Hash SHA-256: ${integrityFull}`, { x: x + 6, y: y + 13, size: 5.5, font: helvetica, color: rgb(0.35, 0.35, 0.35) });
+      page.drawText(`Hash SHA-256: ${integrityFull}`, { x: x + 10, y: y + 13, size: 5.5, font: helvetica, color: rgb(0.35, 0.35, 0.35) });
       if (signer.verification_hash) {
-        page.drawText(`Código: ${(signer.verification_hash || '').toUpperCase()}`, { x: x + 6, y: y + 5, size: 6, font: helveticaBold, color: rgb(0.15, 0.25, 0.25) });
+        page.drawText(`Código: ${(signer.verification_hash || '').toUpperCase()}`, { x: x + 10, y: y + 5, size: 6, font: helveticaBold, color: rgb(0.15, 0.25, 0.25) });
       }
       return;
     }
 
-    const boxH = 72;
-    const boxX = 6;
-    const boxY = 14;
-    const boxW = pageWidth - 12;
+    const boxH = 80;
+    const boxX = 24;
+    const boxY = 10;
+    const boxW = pageWidth - 48;
 
     // Card
     page.drawRectangle({
@@ -365,27 +365,30 @@ class PdfSignatureService {
       color: rgb(0.2, 0.45, 0.9),
     });
 
-    const qrSize = 52;
-    const qrX = boxX + boxW - qrSize - 10;
-    const qrY = boxY + (boxH - qrSize) / 2;
+    const qrSize = 58;
+    const qrX = boxX + boxW - qrSize - 8;
+    const qrY = boxY + (boxH - qrSize) / 2 - 1;
     if (qrImage) {
       page.drawImage(qrImage, { x: qrX, y: qrY, width: qrSize, height: qrSize });
     }
 
-    const textX = boxX + 12;
+    const textX = boxX + 10;
+    const textMaxW = qrX - textX - 8;
+    void textMaxW;
+
     const title = 'Escaneie o QR Code para verificar a autenticidade do documento';
     page.drawText(title, { x: textX, y: boxY + boxH - 14, size: 8, font: helveticaBold, color: rgb(0.12, 0.12, 0.12) });
 
     const codeLabel = 'Código de autenticação:';
     const code = (signer.verification_hash || '').toUpperCase() || 'N/A';
     page.drawText(codeLabel, { x: textX, y: boxY + boxH - 28, size: 7, font: helvetica, color: rgb(0.35, 0.35, 0.35) });
-    page.drawText(code, { x: textX + 90, y: boxY + boxH - 28, size: 7, font: helveticaBold, color: rgb(0.15, 0.25, 0.25) });
+    page.drawText(code, { x: textX + 88, y: boxY + boxH - 28, size: 7, font: helveticaBold, color: rgb(0.15, 0.25, 0.25) });
 
-    page.drawText(`Hash SHA-256: ${integrityFull}`, { x: textX, y: boxY + boxH - 42, size: 5.5, font: helvetica, color: rgb(0.35, 0.35, 0.35) });
+    page.drawText(`Hash SHA-256: ${integrityFull}`, { x: textX, y: boxY + boxH - 42, size: 5.2, font: helvetica, color: rgb(0.35, 0.35, 0.35) });
 
     if (verificationUrl) {
-      const urlToDraw = verificationUrl.length > 90 ? `${verificationUrl.slice(0, 87)}...` : verificationUrl;
-      page.drawText(urlToDraw, { x: textX, y: boxY + 8, size: 6, font: helvetica, color: rgb(0.12, 0.35, 0.7) });
+      const urlToDraw = verificationUrl.length > 85 ? `${verificationUrl.slice(0, 82)}...` : verificationUrl;
+      page.drawText(urlToDraw, { x: textX, y: boxY + 6, size: 5.5, font: helvetica, color: rgb(0.12, 0.35, 0.7) });
     }
   }
 
@@ -1012,8 +1015,8 @@ class PdfSignatureService {
     const pdfPageHeight = 841.89;
     const A4_WIDTH_PX = 794; // A4 @ 96 DPI
     const FOOTER_RESERVED_H = 100; // em pontos (pt) - deve ser >= boxY(10) + boxH(82)
-    const CONTENT_MARGIN_X = 18;
-    const CONTENT_MARGIN_TOP = 16;
+    const CONTENT_MARGIN_X = 32;
+    const CONTENT_MARGIN_TOP = 28;
     const contentTopY = pdfPageHeight - CONTENT_MARGIN_TOP;
     const contentBottomY = FOOTER_RESERVED_H;
     const contentHeightPt = contentTopY - contentBottomY;
@@ -1249,6 +1252,8 @@ class PdfSignatureService {
       return detectedFields;
     };
 
+    const pagesWithFooterCard = new Set<number>();
+
     const convertDocxContainer = async (params: {
       container: HTMLElement;
       documentId: string;
@@ -1323,6 +1328,8 @@ class PdfSignatureService {
             const image = await pdfDoc.embedPng(imgBytes);
             const pdfPage = pdfDoc.addPage([pdfPageWidth, pdfPageHeight]);
             pdfPage.drawImage(image, { x: drawX, y: drawY, width: drawWPt, height: drawHPt });
+
+            pagesWithFooterCard.add(pdfDoc.getPageCount() - 1);
 
             this.drawFooterStamp({
               page: pdfPage,
@@ -1621,7 +1628,9 @@ class PdfSignatureService {
     });
 
     const allPages = pdfDoc.getPages();
-    for (const p of allPages) {
+    for (let i = 0; i < allPages.length; i++) {
+      if (pagesWithFooterCard.has(i)) continue;
+      const p = allPages[i];
       const { width: w, height: h } = p.getSize();
       this.drawFooterStamp({
         page: p,

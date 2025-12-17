@@ -38,6 +38,7 @@ import {
   ClipboardList,
 } from 'lucide-react';
 import { useToastContext } from '../contexts/ToastContext';
+import { useDeleteConfirm } from '../contexts/DeleteConfirmContext';
 import { useAuth } from '../contexts/AuthContext';
 import { financialService } from '../services/financial.service';
 import { clientService } from '../services/client.service';
@@ -56,6 +57,7 @@ import type { Client } from '../types/client.types';
 
 const FinancialModule: React.FC = () => {
   const toast = useToastContext();
+  const { confirmDelete } = useDeleteConfirm();
   const { user } = useAuth();
   const [loading, setLoading] = useState(true);
   const [stats, setStats] = useState<FinancialStats | null>(null);
@@ -2025,7 +2027,12 @@ ${clientAddress ? `<div class="flex"><span class="text-subtle-light dark:text-su
   };
 
   const handleDeleteAgreement = async (agreement: Agreement) => {
-    const confirmed = window.confirm('Tem certeza que deseja excluir este acordo? Esta ação apagará todas as parcelas relacionadas.');
+    const confirmed = await confirmDelete({
+      title: 'Excluir acordo',
+      entityName: agreement.title,
+      message: 'Tem certeza que deseja excluir este acordo? Esta ação apagará todas as parcelas relacionadas.',
+      confirmLabel: 'Excluir acordo',
+    });
     if (!confirmed) return;
 
     try {
@@ -2536,11 +2543,17 @@ ${clientAddress ? `<div class="flex"><span class="text-subtle-light dark:text-su
               <div className="flex justify-between gap-3">
                 <button
                   type="button"
-                  onClick={() => {
-                    if (window.confirm('Tem certeza que deseja excluir este acordo?')) {
-                      handleDeleteAgreement(selectedAgreement);
-                      handleCloseEditModal();
-                    }
+                  onClick={async () => {
+                    if (!selectedAgreement) return;
+                    const confirmed = await confirmDelete({
+                      title: 'Excluir acordo',
+                      entityName: selectedAgreement.title,
+                      message: 'Tem certeza que deseja excluir este acordo? Esta ação apagará todas as parcelas relacionadas.',
+                      confirmLabel: 'Excluir acordo',
+                    });
+                    if (!confirmed) return;
+                    await handleDeleteAgreement(selectedAgreement);
+                    handleCloseEditModal();
                   }}
                   disabled={editLoading}
                   className="px-4 py-2 text-sm text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/30 rounded-lg flex items-center gap-2 transition"

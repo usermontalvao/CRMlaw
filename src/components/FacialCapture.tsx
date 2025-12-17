@@ -16,7 +16,7 @@ const FacialCapture: React.FC<FacialCaptureProps> = ({
   height = 240,
   disabled = false,
   label = 'Captura Facial',
-  description = 'Posicione seu rosto no centro da câmera',
+  description = 'Clique em “Permitir câmera” e aguarde a solicitação do navegador',
 }) => {
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -34,6 +34,16 @@ const FacialCapture: React.FC<FacialCaptureProps> = ({
       setIsLoading(true);
       setError(null);
 
+      if (!navigator.mediaDevices?.getUserMedia) {
+        setError('Seu navegador não suporta acesso à câmera (getUserMedia).');
+        return;
+      }
+
+      if (!window.isSecureContext) {
+        setError('Para usar a câmera, acesse o sistema via HTTPS (ou localhost).');
+        return;
+      }
+
       const stream = await navigator.mediaDevices.getUserMedia({
         video: {
           width: { ideal: width },
@@ -50,12 +60,16 @@ const FacialCapture: React.FC<FacialCaptureProps> = ({
       }
     } catch (err: any) {
       console.error('Erro ao acessar câmera:', err);
-      if (err.name === 'NotAllowedError') {
-        setError('Permissão de câmera negada. Por favor, permita o acesso à câmera.');
+      if (err.name === 'NotAllowedError' || err.name === 'SecurityError') {
+        setError('Permissão de câmera negada/bloqueada. Clique no ícone de câmera do navegador e permita o acesso.');
       } else if (err.name === 'NotFoundError') {
         setError('Nenhuma câmera encontrada no dispositivo.');
+      } else if (err.name === 'NotReadableError') {
+        setError('Não foi possível acessar a câmera. Feche outros apps que estejam usando a câmera e tente novamente.');
+      } else if (err.name === 'OverconstrainedError') {
+        setError('Configuração de câmera não suportada neste dispositivo.');
       } else {
-        setError('Erro ao acessar a câmera. Verifique as permissões.');
+        setError('Erro ao acessar a câmera. Verifique permissões e se o acesso está em HTTPS.');
       }
     } finally {
       setIsLoading(false);
@@ -151,7 +165,8 @@ const FacialCapture: React.FC<FacialCaptureProps> = ({
         {!isStreaming && !capturedImage && !error && (
           <div className="absolute inset-0 flex flex-col items-center justify-center text-slate-400">
             <VideoOff className="w-12 h-12 mb-2" />
-            <span className="text-sm">Câmera desligada</span>
+            <span className="text-sm">Aguardando permissão</span>
+            <span className="mt-1 text-xs text-slate-500">Clique em “Permitir câmera” abaixo</span>
           </div>
         )}
 
@@ -208,7 +223,7 @@ const FacialCapture: React.FC<FacialCaptureProps> = ({
             className="flex items-center gap-1.5 px-4 py-2 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
           >
             <Video className="w-4 h-4" />
-            Ligar Câmera
+            Permitir câmera
           </button>
         )}
 

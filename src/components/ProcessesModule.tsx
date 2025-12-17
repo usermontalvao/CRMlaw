@@ -32,9 +32,12 @@ import { settingsService } from '../services/settings.service';
 import { djenService } from '../services/djen.service';
 import { processDjenSyncService } from '../services/processDjenSync.service';
 import { processTimelineService, type TimelineEvent } from '../services/processTimeline.service';
+import { deadlineService } from '../services/deadline.service';
+import { userNotificationService } from '../services/userNotification.service';
 import { ProcessTimeline } from './ProcessTimeline';
 import { ClientSearchSelect } from './ClientSearchSelect';
 import { useAuth } from '../contexts/AuthContext';
+import { useDeleteConfirm } from '../contexts/DeleteConfirmContext';
 import type { Process, ProcessStatus, ProcessPracticeArea, HearingMode } from '../types/process.types';
 import type { Client } from '../types/client.types';
 import type { Profile } from '../services/profile.service';
@@ -246,6 +249,7 @@ interface ProcessesModuleProps {
 
 const ProcessesModule: React.FC<ProcessesModuleProps> = ({ forceCreate, entityId, prefillData, onParamConsumed }) => {
   const { user } = useAuth();
+  const { confirmDelete } = useDeleteConfirm();
   const [processes, setProcesses] = useState<Process[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -284,7 +288,28 @@ const ProcessesModule: React.FC<ProcessesModuleProps> = ({ forceCreate, entityId
   const [exportingExcel, setExportingExcel] = useState(false);
   const [currentProfile, setCurrentProfile] = useState<Profile | null>(null);
   const [syncingDjen, setSyncingDjen] = useState(false);
-  const [syncResult, setSyncResult] = useState<{ total: number; synced: number; updated: number; errors: number; intimationsFound: number } | null>(null);
+  const [syncResult, setSyncResult] = useState<{
+    total: number;
+    synced: number;
+    updated: number;
+    errors: number;
+    intimationsFound: number;
+    notificationsSent: number;
+    details: Array<{
+      processId: string;
+      processCode: string;
+      success: boolean;
+      updated: boolean;
+      intimationsCount: number;
+      error?: string;
+      message?: string;
+      actionRequired?: boolean;
+      urgency?: string;
+      deadlineFound?: boolean;
+      notified?: boolean;
+    }>;
+  } | null>(null);
+  const [syncDetailsOpen, setSyncDetailsOpen] = useState(false);
 
   // Quick add form for Aguardando Confecção
   const [quickAddClientId, setQuickAddClientId] = useState('');
@@ -878,7 +903,14 @@ const ProcessesModule: React.FC<ProcessesModuleProps> = ({ forceCreate, entityId
   };
 
   const handleDeleteProcess = async (id: string) => {
-    if (!confirm('Deseja realmente remover este processo? Essa ação é irreversível.')) return;
+    const proc = processes.find((p) => p.id === id);
+    const confirmed = await confirmDelete({
+      title: 'Excluir processo',
+      entityName: proc?.process_code || undefined,
+      message: 'Deseja realmente remover este processo? Essa ação é irreversível.',
+      confirmLabel: 'Excluir',
+    });
+    if (!confirmed) return;
 
     try {
       await processService.deleteProcess(id);
@@ -1030,7 +1062,12 @@ const ProcessesModule: React.FC<ProcessesModuleProps> = ({ forceCreate, entityId
 
   const handleDeleteNote = async (noteId: string) => {
     if (!selectedProcessForView) return;
-    if (!confirm('Tem certeza que deseja excluir esta nota? Esta ação não pode ser desfeita.')) return;
+    const confirmed = await confirmDelete({
+      title: 'Excluir nota',
+      message: 'Tem certeza que deseja excluir esta nota? Esta ação não pode ser desfeita.',
+      confirmLabel: 'Excluir',
+    });
+    if (!confirmed) return;
 
     try {
       const existingNotes = parseNotes(selectedProcessForView.notes);
@@ -1061,10 +1098,33 @@ const ProcessesModule: React.FC<ProcessesModuleProps> = ({ forceCreate, entityId
     }
   };
 
-  const loadTimeline = async (processCode: string) => {
+  const loadTimeline = async (processCode: string, forceRefresh: boolean = false) => {
     try {
-      setLoadingTimeline(true);
       setTimelineError(null);
+
+      // 1. Tentar exibir cache imediatamente (sem loading)
+      const cached = processTimelineService.getCachedTimeline(processCode);
+      if (cached && cached.length > 0 && !forceRefresh) {
+        setTimeline(cached);
+        
+        // 2. Verificar em background se há atualizações (sem bloquear UI)
+        processTimelineService.checkForUpdates(processCode).then(async (hasUpdates) => {
+          if (hasUpdates) {
+            console.log('🔄 Atualizando timeline com novos dados...');
+            setLoadingTimeline(true);
+            try {
+              const events = await processTimelineService.fetchProcessTimeline(processCode);
+              setTimeline(events);
+            } finally {
+              setLoadingTimeline(false);
+            }
+          }
+        });
+        return;
+      }
+
+      // 3. Sem cache ou forçando refresh - buscar da API
+      setLoadingTimeline(true);
       setTimeline([]);
 
       const events = await processTimelineService.fetchProcessTimeline(processCode);
@@ -1148,16 +1208,31 @@ const ProcessesModule: React.FC<ProcessesModuleProps> = ({ forceCreate, entityId
   const handleSyncAllDjen = async () => {
     if (syncingDjen) return;
 
+    const classifyActionRequiredFallback = (event: TimelineEvent) => {
+      const text = (event.description || '').toLowerCase();
+      const hasDeadlineSignal =
+        text.includes('prazo') ||
+        text.includes('intime-se') ||
+        text.includes('intima') ||
+        text.includes('manifest') ||
+        text.includes('apresent') ||
+        text.includes('contest') ||
+        text.includes('cumpr') ||
+        text.includes('no prazo');
+      return hasDeadlineSignal;
+    };
+
     try {
       setSyncingDjen(true);
       setSyncResult(null);
+      setSyncDetailsOpen(false);
 
       const pendingProcesses = processes.filter(
         (p) => !p.djen_synced || (p.djen_synced && !p.djen_has_data),
       );
 
       if (pendingProcesses.length === 0) {
-        setSyncResult({ total: 0, synced: 0, updated: 0, errors: 0, intimationsFound: 0 });
+        setSyncResult({ total: 0, synced: 0, updated: 0, errors: 0, intimationsFound: 0, notificationsSent: 0, details: [] });
         return;
       }
 
@@ -1165,10 +1240,52 @@ const ProcessesModule: React.FC<ProcessesModuleProps> = ({ forceCreate, entityId
       let updated = 0;
       let errors = 0;
       let intimationsFound = 0;
+      let notificationsSent = 0;
+      const details: Array<{
+        processId: string;
+        processCode: string;
+        success: boolean;
+        updated: boolean;
+        intimationsCount: number;
+        error?: string;
+        message?: string;
+        actionRequired?: boolean;
+        urgency?: string;
+        deadlineFound?: boolean;
+        notified?: boolean;
+      }> = [];
 
       for (const process of pendingProcesses) {
+        const detail: {
+          processId: string;
+          processCode: string;
+          success: boolean;
+          updated: boolean;
+          intimationsCount: number;
+          error?: string;
+          message?: string;
+          actionRequired?: boolean;
+          urgency?: string;
+          deadlineFound?: boolean;
+          notified?: boolean;
+        } = {
+          processId: process.id,
+          processCode: process.process_code,
+          success: false,
+          updated: false,
+          intimationsCount: 0,
+        };
         try {
           const result = await processDjenSyncService.syncProcessWithDjen(process);
+
+          detail.success = result.success;
+          detail.updated = Boolean(result.updated);
+          detail.intimationsCount = result.intimationsCount ?? 0;
+          if (!result.success) {
+            detail.error = result.error || 'Erro desconhecido';
+          } else if (result.error) {
+            detail.message = result.error;
+          }
 
           if (result.success) {
             synced++;
@@ -1178,13 +1295,69 @@ const ProcessesModule: React.FC<ProcessesModuleProps> = ({ forceCreate, entityId
             if (result.intimationsCount) {
               intimationsFound += result.intimationsCount;
             }
+
+            if (result.intimationsCount && result.intimationsCount > 0) {
+              try {
+                const events = await processTimelineService.fetchProcessTimeline(process.process_code);
+                const lastEvent = events[0];
+                if (lastEvent) {
+                  const analysis = await processTimelineService.analyzeTimelineEvent(lastEvent);
+                  const actionRequired = analysis?.actionRequired ?? classifyActionRequiredFallback(lastEvent);
+                  const urgency = analysis?.urgency ?? (actionRequired ? 'alta' : 'baixa');
+
+                  detail.actionRequired = actionRequired;
+                  detail.urgency = urgency;
+
+                  if (actionRequired && process.responsible_lawyer_id) {
+                    const deadlines = await deadlineService.listDeadlines({ process_id: process.id });
+                    const eventDate = new Date(lastEvent.date || 0);
+
+                    const deadlineFound = deadlines.some((d) => {
+                      const refDate = new Date(d.completed_at || d.created_at || 0);
+                      if (Number.isNaN(refDate.getTime())) return false;
+                      if (Number.isNaN(eventDate.getTime())) return d.status === 'pendente' || d.status === 'cumprido';
+                      return (d.status === 'pendente' || d.status === 'cumprido') && refDate.getTime() >= eventDate.getTime();
+                    });
+                    detail.deadlineFound = deadlineFound;
+
+                    if (!deadlineFound) {
+                      const dedupeKey = `process_action_required_${process.id}_${lastEvent.hash || lastEvent.id}`;
+                      const created = await userNotificationService.createNotificationDeduped({
+                        payload: {
+                          user_id: process.responsible_lawyer_id,
+                          type: 'process_updated',
+                          title: 'Ação necessária no processo',
+                          message: `${process.process_code}: ${analysis?.summary || lastEvent.title}`,
+                          process_id: process.id,
+                          metadata: {
+                            event_hash: lastEvent.hash || null,
+                            urgency,
+                          },
+                        },
+                        dedupeKey,
+                      });
+                      if (created) {
+                        notificationsSent++;
+                        detail.notified = true;
+                      }
+                    }
+                  }
+                }
+              } catch (err: any) {
+                detail.message = detail.message || `Falha na análise: ${err?.message || 'erro'}`;
+              }
+            }
           } else {
             errors++;
           }
 
+          details.push(detail);
+
           await new Promise((resolve) => setTimeout(resolve, 1000));
-        } catch {
+        } catch (err: any) {
           errors++;
+          detail.error = err?.message || 'Erro desconhecido';
+          details.push(detail);
         }
       }
 
@@ -1194,7 +1367,13 @@ const ProcessesModule: React.FC<ProcessesModuleProps> = ({ forceCreate, entityId
         updated,
         errors,
         intimationsFound,
+        notificationsSent,
+        details,
       });
+
+      if (errors > 0 || notificationsSent > 0) {
+        setSyncDetailsOpen(true);
+      }
 
       await handleReload();
     } catch (err: any) {
@@ -2002,6 +2181,39 @@ const ProcessesModule: React.FC<ProcessesModuleProps> = ({ forceCreate, entityId
                 </p>
                 {syncResult.updated > 0 && <p className="text-green-700">✓ {syncResult.updated} processos atualizados</p>}
                 {syncResult.errors > 0 && <p className="text-red-600">⚠ {syncResult.errors} erros</p>}
+                {syncResult.notificationsSent > 0 && <p className="text-blue-700">🔔 {syncResult.notificationsSent} avisos enviados ao responsável</p>}
+                {(syncResult.errors > 0 || syncResult.notificationsSent > 0) && (
+                  <button
+                    type="button"
+                    onClick={() => setSyncDetailsOpen((prev) => !prev)}
+                    className="mt-2 text-xs font-semibold text-slate-700 hover:text-slate-900 underline"
+                  >
+                    {syncDetailsOpen ? 'Ocultar detalhes' : 'Ver detalhes'}
+                  </button>
+                )}
+                {syncDetailsOpen && (syncResult.errors > 0 || syncResult.notificationsSent > 0) && (
+                  <div className="mt-2 space-y-2">
+                    {syncResult.details
+                      .filter((d) => d.error || d.notified)
+                      .slice(0, 10)
+                      .map((d) => (
+                        <div
+                          key={d.processId}
+                          className={`rounded-lg px-3 py-2 border ${d.error ? 'bg-red-50 border-red-200 text-red-700' : 'bg-blue-50 border-blue-200 text-blue-800'}`}
+                        >
+                          <div className="text-xs font-mono font-semibold">{d.processCode}</div>
+                          {d.error ? (
+                            <div className="text-xs mt-0.5">{d.error}</div>
+                          ) : (
+                            <div className="text-xs mt-0.5">Aviso enviado: publicação com ação requerida sem prazo associado</div>
+                          )}
+                        </div>
+                      ))}
+                    {syncResult.details.filter((d) => d.error || d.notified).length > 10 && (
+                      <div className="text-[11px] text-slate-600">Mostrando 10 itens. Refine e rode novamente para ver novos detalhes.</div>
+                    )}
+                  </div>
+                )}
               </div>
             )}
           </div>

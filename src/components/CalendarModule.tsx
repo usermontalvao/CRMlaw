@@ -14,6 +14,8 @@ import { processService } from '../services/process.service';
 import { requirementService } from '../services/requirement.service';
 import { clientService } from '../services/client.service';
 import { calendarService } from '../services/calendar.service';
+import { ClientSearchSelect } from './ClientSearchSelect';
+import { useDeleteConfirm } from '../contexts/DeleteConfirmContext';
 import type { Deadline } from '../types/deadline.types';
 import type { Process } from '../types/process.types';
 import type { Requirement } from '../types/requirement.types';
@@ -80,6 +82,8 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({
   forceCreate,
   onParamConsumed,
 }) => {
+  const { confirmDelete } = useDeleteConfirm();
+
   const calendarRef = useRef<FullCalendar | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -108,8 +112,6 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({
   });
   const [savingEvent, setSavingEvent] = useState(false);
   const [clients, setClients] = useState<Client[]>([]);
-  const [clientSearchTerm, setClientSearchTerm] = useState('');
-  const [showClientSuggestions, setShowClientSuggestions] = useState(false);
   const [editingEventId, setEditingEventId] = useState<string | null>(null);
   const [feedback, setFeedback] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
   const [isExportModalOpen, setIsExportModalOpen] = useState(false);
@@ -225,19 +227,10 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({
       };
 
       setNewEventForm(merged);
-
-      if (merged.client_id) {
-        const client = clientMap.get(merged.client_id);
-        setClientSearchTerm(client?.full_name ?? '');
-      } else {
-        setClientSearchTerm('');
-      }
-
-      setShowClientSuggestions(false);
       setEditingEventId(editingId);
       setIsCreateModalOpen(true);
     },
-    [clientMap],
+    [],
   );
 
   const formatDateInputValue = useCallback((date: Date) => {
@@ -604,7 +597,6 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({
   const handleCloseCreateModal = useCallback(() => {
     setIsCreateModalOpen(false);
     setEditingEventId(null);
-    setShowClientSuggestions(false);
     setSelectedEvent(null);
   }, []);
 
@@ -674,10 +666,13 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({
 
   const handleDeleteEvent = async () => {
     if (!editingEventId) return;
-    const confirmed = window.confirm('Deseja realmente excluir este compromisso?');
-    if (!confirmed) {
-      return;
-    }
+    const confirmed = await confirmDelete({
+      title: 'Excluir compromisso',
+      entityName: newEventForm.title || undefined,
+      message: 'Deseja realmente excluir este compromisso?',
+      confirmLabel: 'Excluir',
+    });
+    if (!confirmed) return;
 
     try {
       setSavingEvent(true);
@@ -1796,46 +1791,14 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({
 
               <div>
                 <label className="text-xs sm:text-sm font-medium text-slate-700 dark:text-slate-300">Cliente (Opcional)</label>
-                <div className="relative">
-                  <input
-                    value={clientSearchTerm}
-                    onChange={(e) => {
-                      setClientSearchTerm(e.target.value);
-                      setShowClientSuggestions(true);
-                    }}
-                    onFocus={() => setShowClientSuggestions(true)}
-                    className="w-full px-3 sm:px-4 py-2 sm:py-2.5 bg-slate-50 border border-slate-200 rounded-lg sm:rounded-xl text-sm sm:text-base text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
-                    placeholder="Buscar cliente..."
-                  />
-                  {showClientSuggestions && clientSearchTerm.length > 0 && (
-                    <div className="absolute z-10 w-full mt-1 bg-white border border-slate-200 rounded-lg shadow-lg max-h-40 sm:max-h-48 overflow-y-auto">
-                      {clients
-                        .filter((c) =>
-                          c.full_name.toLowerCase().includes(clientSearchTerm.toLowerCase()) ||
-                          (c.cpf_cnpj && c.cpf_cnpj.includes(clientSearchTerm))
-                        )
-                        .slice(0, 5)
-                        .map((client) => (
-                          <button
-                            key={client.id}
-                            type="button"
-                            className="w-full text-left px-3 sm:px-4 py-2 text-xs sm:text-sm hover:bg-slate-50 transition"
-                            onClick={() => {
-                              setNewEventForm({ ...newEventForm, client_id: client.id });
-                              setClientSearchTerm(client.full_name);
-                              setShowClientSuggestions(false);
-                            }}
-                          >
-                            <div className="font-semibold text-slate-800">{client.full_name}</div>
-                            <div className="text-[10px] sm:text-xs text-slate-500 flex flex-col">
-                              <span>{client.cpf_cnpj || 'CPF não informado'}</span>
-                              <span>{client.mobile || client.phone || 'Telefone não informado'}</span>
-                            </div>
-                          </button>
-                        ))}
-                    </div>
-                  )}
-                </div>
+                <ClientSearchSelect
+                  value={newEventForm.client_id}
+                  onChange={(clientId) => setNewEventForm((prev) => ({ ...prev, client_id: clientId }))}
+                  label=""
+                  placeholder="Buscar cliente..."
+                  required={false}
+                  allowCreate={true}
+                />
                 {linkedClient && (
                   <div className="mt-2 sm:mt-3 rounded-lg border border-slate-200 bg-slate-50 px-3 sm:px-4 py-2 sm:py-3 text-xs sm:text-sm text-slate-600 flex flex-col gap-0.5 sm:gap-1">
                     <div className="font-semibold text-slate-800">{linkedClient.full_name}</div>

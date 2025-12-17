@@ -7,6 +7,7 @@ import ClientList from './ClientList';
 import ClientForm from './ClientForm';
 import ClientDetails from './ClientDetails';
 import ClientModal from './ClientModal';
+import { useDeleteConfirm } from '../contexts/DeleteConfirmContext';
 import { processService } from '../services/process.service';
 import { requirementService } from '../services/requirement.service';
 import type { Process } from '../types/process.types';
@@ -58,6 +59,7 @@ const ClientsModule: React.FC<ClientsModuleProps> = ({
   onNavigateToModule,
   focusClientId,
 }) => {
+  const { confirmDelete } = useDeleteConfirm();
   const [clients, setClients] = useState<Client[]>([]);
   const [loading, setLoading] = useState(true);
   const [modalState, setModalState] = useState<{ type: 'none' | 'create' | 'edit' | 'details'; client: Client | null }>({
@@ -351,14 +353,21 @@ const ClientsModule: React.FC<ClientsModuleProps> = ({
 
   // Deletar cliente
   const handleDeleteClient = async (id: string) => {
-    if (confirm('Tem certeza que deseja desativar este cliente?')) {
-      try {
-        await clientService.deleteClient(id);
-        loadClients();
-      } catch (error) {
-        console.error('Erro ao deletar cliente:', error);
-        alert('Erro ao deletar cliente');
-      }
+    const client = clients.find((c) => c.id === id);
+    const confirmed = await confirmDelete({
+      title: 'Desativar cliente',
+      entityName: client?.full_name || undefined,
+      message: 'Tem certeza que deseja desativar este cliente? Essa ação pode ser revertida reativando o cadastro.',
+      confirmLabel: 'Desativar',
+    });
+    if (!confirmed) return;
+
+    try {
+      await clientService.deleteClient(id);
+      loadClients();
+    } catch (error) {
+      console.error('Erro ao deletar cliente:', error);
+      alert('Erro ao deletar cliente');
     }
   };
 

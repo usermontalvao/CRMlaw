@@ -34,6 +34,8 @@ import { clientService } from '../services/client.service';
 import { processService } from '../services/process.service';
 import { signatureService } from '../services/signature.service';
 import { ClientSearchSelect } from './ClientSearchSelect';
+import { useToastContext } from '../contexts/ToastContext';
+import { useDeleteConfirm } from '../contexts/DeleteConfirmContext';
 import SignaturePositionDesigner from './SignaturePositionDesigner';
 import TemplateFilesManager from './TemplateFilesManager';
 import CustomFieldsManager from './CustomFieldsManager';
@@ -115,6 +117,9 @@ interface DocumentsModuleProps {
 }
 
 const DocumentsModule: React.FC<DocumentsModuleProps> = ({ onNavigateToModule }) => {
+  const toast = useToastContext();
+  const { confirmDelete } = useDeleteConfirm();
+
   const [templates, setTemplates] = useState<DocumentTemplate[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -154,12 +159,7 @@ const DocumentsModule: React.FC<DocumentsModuleProps> = ({ onNavigateToModule })
   const [isPreviewEditing, setIsPreviewEditing] = useState(false);
   const [previewSaving, setPreviewSaving] = useState(false);
   const [previewEditError, setPreviewEditError] = useState<string | null>(null);
-  const [deleteTemplateTarget, setDeleteTemplateTarget] = useState<DocumentTemplate | null>(null);
-  const [deleteConfirmName, setDeleteConfirmName] = useState('');
-  const [deleteCaptchaInput, setDeleteCaptchaInput] = useState('');
-  const [deleteCaptchaNumbers, setDeleteCaptchaNumbers] = useState<[number, number] | null>(null);
-  const [deleteLoading, setDeleteLoading] = useState(false);
-  const [deleteError, setDeleteError] = useState<string | null>(null);
+  const [deletingTemplateId, setDeletingTemplateId] = useState<string | null>(null);
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [editingTemplate, setEditingTemplate] = useState<DocumentTemplate | null>(null);
   const [editName, setEditName] = useState('');
@@ -947,64 +947,29 @@ const DocumentsModule: React.FC<DocumentsModuleProps> = ({ onNavigateToModule })
     });
   };
 
-  const generateCaptchaNumbers = () => {
-    const a = Math.floor(Math.random() * 8) + 2;
-    const b = Math.floor(Math.random() * 8) + 2;
-    return [a, b] as [number, number];
-  };
+  const handleDeleteTemplate = async (template: DocumentTemplate) => {
+    const confirmed = await confirmDelete({
+      title: 'Excluir Template',
+      entityName: template.name,
+      message: 'Tem certeza que deseja excluir este template?',
+      confirmLabel: 'Excluir Template',
+    });
 
-  const openDeleteModal = (template: DocumentTemplate) => {
-    setDeleteTemplateTarget(template);
-    setDeleteConfirmName('');
-    setDeleteCaptchaInput('');
-    setDeleteCaptchaNumbers(generateCaptchaNumbers());
-    setDeleteError(null);
-  };
-
-  const handleCloseDeleteModal = () => {
-    setDeleteTemplateTarget(null);
-    setDeleteConfirmName('');
-    setDeleteCaptchaInput('');
-    setDeleteCaptchaNumbers(null);
-    setDeleteLoading(false);
-    setDeleteError(null);
-  };
-
-  const handleConfirmDelete = async (event: React.FormEvent) => {
-    event.preventDefault();
-    if (!deleteTemplateTarget || !deleteCaptchaNumbers) return;
-
-    const trimmedName = deleteConfirmName.trim();
-    if (!trimmedName) {
-      setDeleteError('Digite o nome do template para confirmar.');
-      return;
-    }
-
-    if (trimmedName !== deleteTemplateTarget.name) {
-      setDeleteError('Nome não confere. Digite exatamente como aparece.');
-      return;
-    }
-
-    const expectedAnswer = deleteCaptchaNumbers[0] + deleteCaptchaNumbers[1];
-    if (parseInt(deleteCaptchaInput, 10) !== expectedAnswer) {
-      setDeleteError('Resposta do desafio incorreta.');
-      return;
-    }
+    if (!confirmed) return;
 
     try {
-      setDeleteLoading(true);
-      setDeleteError(null);
+      setDeletingTemplateId(template.id);
       setTemplateActionError(null);
-      await documentTemplateService.deleteTemplate(deleteTemplateTarget.id);
+      await documentTemplateService.deleteTemplate(template.id);
       const data = await documentTemplateService.listTemplates();
       setTemplates(data);
-      if (selectedTemplateId === deleteTemplateTarget.id) setSelectedTemplateId('');
-      handleCloseDeleteModal();
+      if (selectedTemplateId === template.id) setSelectedTemplateId('');
+      toast.success('Template excluído', `O template "${template.name}" foi removido.`);
     } catch (err: any) {
       console.error(err);
-      setDeleteError(err.message || 'Não foi possível remover este template.');
+      setTemplateActionError(err.message || 'Não foi possível remover este template.');
     } finally {
-      setDeleteLoading(false);
+      setDeletingTemplateId(null);
     }
   };
 
@@ -1215,10 +1180,15 @@ const DocumentsModule: React.FC<DocumentsModuleProps> = ({ onNavigateToModule })
                       Posicionar Assinatura
                     </button>
                     <button
-                      onClick={() => openDeleteModal(template)}
-                      className="inline-flex items-center gap-1.5 rounded-lg border border-red-200 bg-white px-3 py-1.5 text-xs font-medium text-red-600 transition hover:border-red-300 hover:bg-red-50"
+                      onClick={() => handleDeleteTemplate(template)}
+                      disabled={deletingTemplateId === template.id}
+                      className="inline-flex items-center gap-1.5 rounded-lg border border-red-200 bg-white px-3 py-1.5 text-xs font-medium text-red-600 transition hover:border-red-300 hover:bg-red-50 disabled:opacity-60 disabled:cursor-not-allowed"
                     >
-                      <Trash2 className="h-3.5 w-3.5" />
+                      {deletingTemplateId === template.id ? (
+                        <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                      ) : (
+                        <Trash2 className="h-3.5 w-3.5" />
+                      )}
                       Remover
                     </button>
                   </div>
@@ -1594,84 +1564,6 @@ const DocumentsModule: React.FC<DocumentsModuleProps> = ({ onNavigateToModule })
                 className="px-4 py-2 bg-orange-500 hover:bg-orange-600 text-white rounded-lg text-sm font-medium transition-colors disabled:opacity-50"
               >
                 {previewSaving ? 'Salvando...' : 'Salvar Alterações'}
-              </button>
-            </div>
-          </div>
-        </div>
-      </div>,
-      document.body
-    )}
-
-    {/* Delete confirmation modal */}
-    {deleteTemplateTarget && deleteCaptchaNumbers && createPortal(
-      <div className="fixed inset-0 z-[70] flex items-center justify-center px-3 sm:px-6 py-4">
-        <div
-          className="absolute inset-0 bg-slate-200/80 backdrop-blur-sm"
-          onClick={handleCloseDeleteModal}
-          aria-hidden="true"
-        />
-        <div className="relative w-full max-w-md max-h-[92vh] bg-white  rounded-2xl shadow-2xl ring-1 ring-black/5 flex flex-col overflow-hidden">
-          <div className="h-2 w-full bg-orange-500" />
-          <div className="px-5 sm:px-8 py-5 border-b border-slate-200  bg-white  flex items-start justify-between gap-4">
-            <div>
-              <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400 ">
-                Confirmar Exclusão
-              </p>
-              <h2 className="text-xl font-semibold text-slate-900 ">Excluir Template</h2>
-            </div>
-            <button
-              type="button"
-              onClick={handleCloseDeleteModal}
-              className="p-2 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-xl transition"
-              aria-label="Fechar modal"
-            >
-              <X className="w-5 h-5" />
-            </button>
-          </div>
-
-          <div className="flex-1 overflow-y-auto bg-white  p-6">
-            <p className="text-sm text-gray-700 mb-4">
-              Tem certeza que deseja excluir o template <strong>{deleteTemplateTarget.name}</strong>?
-            </p>
-            <p className="text-sm text-gray-600 mb-4">
-              Esta ação não pode ser desfeita.
-            </p>
-            <div className="space-y-2">
-              <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Confirmação</label>
-              <p className="text-sm text-gray-700 mb-2">
-                Digite <strong>{deleteCaptchaNumbers[0] + deleteCaptchaNumbers[1]}</strong> para confirmar:
-              </p>
-              <input
-                type="text"
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-orange-500 text-sm"
-                value={deleteCaptchaInput}
-                onChange={(e) => setDeleteCaptchaInput(e.target.value)}
-                placeholder="Digite a soma"
-              />
-            </div>
-            {deleteError && (
-              <div className="mt-4 rounded-lg border border-red-100 bg-red-50 px-3 py-2 text-sm text-red-700">
-                {deleteError}
-              </div>
-            )}
-          </div>
-
-          <div className="border-t border-slate-200  bg-slate-50  px-4 sm:px-6 py-3">
-            <div className="flex gap-3">
-              <button
-                type="button"
-                onClick={() => setDeleteTemplateTarget(null)}
-                className="px-4 py-2 border border-gray-300 rounded-lg text-sm font-medium text-gray-600 hover:bg-gray-50"
-              >
-                Cancelar
-              </button>
-              <button
-                type="button"
-                onClick={handleConfirmDelete}
-                disabled={deleteLoading}
-                className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg text-sm font-medium transition-colors disabled:opacity-50"
-              >
-                {deleteLoading ? 'Excluindo...' : 'Excluir Template'}
               </button>
             </div>
           </div>

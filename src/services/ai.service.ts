@@ -8,6 +8,9 @@ class AIService {
   private useEdgeFunction: boolean = false; // TEMPORÁRIO: Desabilitado até implantar Edge Function
   private useGroq: boolean = true; // Usar Groq como provider principal
   private groqApiKey: string | null = null;
+  private openaiApiKey: string | null = null;
+  private lastGroqError: number = 0; // Timestamp do último erro 429
+  private groqCooldownMs: number = 60000; // 1 minuto de cooldown após 429
 
   constructor() {
     this.initialize();
@@ -35,9 +38,20 @@ class AIService {
   }
 
   private initialize() {
-    // Primeiro tenta Groq (mais barato e sem rate limit agressivo)
+    // Carrega ambas as chaves
     this.groqApiKey = import.meta.env.VITE_GROQ_API_KEY;
+    this.openaiApiKey = import.meta.env.VITE_OPENAI_API_KEY;
     
+    // Inicializa OpenAI se disponível (para fallback)
+    if (this.openaiApiKey) {
+      this.openai = new OpenAI({
+        apiKey: this.openaiApiKey,
+        dangerouslyAllowBrowser: true,
+      });
+      console.log('✅ OpenAI configurado como fallback');
+    }
+    
+    // Groq é o provider principal
     if (this.groqApiKey) {
       this.useGroq = true;
       this.enabled = true;
@@ -45,7 +59,15 @@ class AIService {
       return;
     }
     
-    console.warn('⚠️ IA desabilitada: configure VITE_GROQ_API_KEY para ativar o serviço.');
+    // Se não tem Groq mas tem OpenAI, usa OpenAI como principal
+    if (this.openaiApiKey && this.openai) {
+      this.useGroq = false;
+      this.enabled = true;
+      console.log('✅ OpenAI AI Service inicializado (provider principal)');
+      return;
+    }
+    
+    console.warn('⚠️ IA desabilitada: configure VITE_GROQ_API_KEY ou VITE_OPENAI_API_KEY para ativar o serviço.');
     this.enabled = false;
     this.openai = null;
   }
@@ -55,30 +77,89 @@ class AIService {
   }
 
   /**
-   * Chama a API do Groq
+   * Verifica se deve usar fallback OpenAI (Groq em cooldown)
+   */
+  private shouldUseFallback(): boolean {
+    if (!this.openai || !this.openaiApiKey) return false;
+    if (this.lastGroqError === 0) return false;
+    return Date.now() - this.lastGroqError < this.groqCooldownMs;
+  }
+
+  /**
+   * Marca Groq como em cooldown (após erro 429)
+   */
+  private setGroqCooldown() {
+    this.lastGroqError = Date.now();
+    console.warn('⚠️ Groq rate limited, usando OpenAI como fallback por 1 minuto');
+  }
+
+  /**
+   * Chama a API do Groq com fallback para OpenAI
    */
   private async callGroqAPI(messages: any[], maxTokens: number = 1000): Promise<string> {
-    const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${this.groqApiKey}`,
-      },
-      body: JSON.stringify({
-        model: 'llama-3.3-70b-versatile',
-        messages,
-        temperature: 0.3,
-        max_tokens: maxTokens,
-      }),
-    });
-
-    if (!response.ok) {
-      const errorData = await response.json().catch(() => ({}));
-      throw new Error(`Groq API error: ${response.status} - ${errorData.error?.message || response.statusText}`);
+    // Se Groq está em cooldown e temos OpenAI, usa fallback
+    if (this.shouldUseFallback()) {
+      console.log('🔄 Usando OpenAI (fallback) - Groq em cooldown');
+      return this.callOpenAIDirectly(messages, maxTokens);
     }
 
-    const data = await response.json();
-    return data.choices?.[0]?.message?.content || '';
+    try {
+      const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${this.groqApiKey}`,
+        },
+        body: JSON.stringify({
+          model: 'llama-3.3-70b-versatile',
+          messages,
+          temperature: 0.3,
+          max_tokens: maxTokens,
+        }),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        
+        // Se for rate limit (429), tenta fallback OpenAI
+        if (response.status === 429 && this.openai) {
+          this.setGroqCooldown();
+          console.log('🔄 Groq retornou 429, tentando OpenAI...');
+          return this.callOpenAIDirectly(messages, maxTokens);
+        }
+        
+        throw new Error(`Groq API error: ${response.status} - ${errorData.error?.message || response.statusText}`);
+      }
+
+      const data = await response.json();
+      return data.choices?.[0]?.message?.content || '';
+    } catch (error: any) {
+      // Se falhou e temos OpenAI disponível, tenta fallback
+      if (this.openai && error.message?.includes('429')) {
+        this.setGroqCooldown();
+        console.log('🔄 Erro no Groq, tentando OpenAI...');
+        return this.callOpenAIDirectly(messages, maxTokens);
+      }
+      throw error;
+    }
+  }
+
+  /**
+   * Chama a OpenAI API diretamente (fallback)
+   */
+  private async callOpenAIDirectly(messages: any[], maxTokens: number = 1000): Promise<string> {
+    if (!this.openai) {
+      throw new Error('OpenAI não configurado para fallback');
+    }
+
+    const response = await this.openai.chat.completions.create({
+      model: 'gpt-4o-mini',
+      messages,
+      temperature: 0.3,
+      max_tokens: maxTokens,
+    });
+
+    return response.choices[0]?.message?.content || '';
   }
 
   /**

@@ -1,10 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { X, Search, Calendar } from 'lucide-react';
 import { processService } from '../services/process.service';
-import { clientService } from '../services/client.service';
 import type { Process, CreateProcessDTO } from '../types/process.types';
-import type { Client } from '../types/client.types';
 import { useAuth } from '../contexts/AuthContext';
+import { ClientSearchSelect } from './ClientSearchSelect';
 
 interface ProcessFormProps {
   process: Process | null;
@@ -21,9 +20,6 @@ const ProcessForm: React.FC<ProcessFormProps> = ({
 }) => {
   const { user } = useAuth();
   const [loading, setLoading] = useState(false);
-  const [clientSearchTerm, setClientSearchTerm] = useState('');
-  const [clientSuggestions, setClientSuggestions] = useState<Client[]>([]);
-  const [showClientSuggestions, setShowClientSuggestions] = useState(false);
   const [members, setMembers] = useState<any[]>([]);
   
   const [formData, setFormData] = useState<Partial<CreateProcessDTO>>({
@@ -37,7 +33,6 @@ const ProcessForm: React.FC<ProcessFormProps> = ({
     hearing_scheduled: false,
     notes: '',
   });
-  const [clientName, setClientName] = useState('');
 
   // Carregar dados do processo para edição
   useEffect(() => {
@@ -53,15 +48,6 @@ const ProcessForm: React.FC<ProcessFormProps> = ({
         hearing_scheduled: process.hearing_scheduled || false,
         notes: process.notes || '',
       });
-      // Buscar nome do cliente
-      if (process.client_id) {
-        clientService.getClientById(process.client_id).then((client: Client | null) => {
-          if (client) {
-            setClientName(client.full_name);
-            setClientSearchTerm(client.full_name);
-          }
-        }).catch(console.error);
-      }
     }
   }, [process, user?.id]);
 
@@ -72,16 +58,6 @@ const ProcessForm: React.FC<ProcessFormProps> = ({
         ...prev,
         ...prefill
       }));
-      
-      // Buscar nome do cliente se prefill tiver client_id
-      if (prefill.client_id) {
-        clientService.getClientById(prefill.client_id).then((client: Client | null) => {
-          if (client) {
-            setClientName(client.full_name);
-            setClientSearchTerm(client.full_name);
-          }
-        }).catch(console.error);
-      }
     }
   }, [prefill, process]);
 
@@ -101,42 +77,11 @@ const ProcessForm: React.FC<ProcessFormProps> = ({
     loadMembers();
   }, [user]);
 
-  // Buscar clientes ao digitar
-  useEffect(() => {
-    const searchClients = async () => {
-      if (clientSearchTerm.length < 2) {
-        setClientSuggestions([]);
-        return;
-      }
-      
-      try {
-        const clients = await clientService.listClients({ search: clientSearchTerm });
-        setClientSuggestions(clients);
-      } catch (error) {
-        console.error('Erro ao buscar clientes:', error);
-        setClientSuggestions([]);
-      }
-    };
-    
-    const timer = setTimeout(searchClients, 300);
-    return () => clearTimeout(timer);
-  }, [clientSearchTerm]);
-
   const handleChange = (field: keyof CreateProcessDTO, value: any) => {
     setFormData(prev => ({
       ...prev,
       [field]: value
     }));
-  };
-
-  const handleClientSelect = (client: Client) => {
-    setFormData(prev => ({
-      ...prev,
-      client_id: client.id
-    }));
-    setClientName(client.full_name);
-    setClientSearchTerm(client.full_name);
-    setShowClientSuggestions(false);
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -192,37 +137,16 @@ const ProcessForm: React.FC<ProcessFormProps> = ({
               <label className="block text-sm font-medium text-gray-700 dark:text-gray-300" htmlFor="cliente">
                 Cliente <span className="text-red-500">*</span>
               </label>
-              <div className="relative">
-                <input
-                  id="cliente"
-                  className="w-full bg-gray-100 dark:bg-gray-700 border-transparent rounded-lg focus:ring-orange-500 focus:border-orange-500 text-gray-900 dark:text-gray-100 placeholder-gray-500 dark:placeholder-gray-400"
-                  placeholder="Buscar cliente..."
-                  type="text"
-                  value={clientSearchTerm}
-                  onChange={(e) => {
-                    setClientSearchTerm(e.target.value);
-                    setShowClientSuggestions(true);
-                  }}
-                  onFocus={() => setShowClientSuggestions(true)}
-                />
-                
-                {showClientSuggestions && clientSuggestions.length > 0 && (
-                  <div className="absolute z-10 w-full mt-1 bg-white dark:bg-gray-700 rounded-md shadow-lg max-h-60 overflow-auto">
-                    {clientSuggestions.map((client) => (
-                      <div
-                        key={client.id}
-                        className="px-4 py-2 cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-600"
-                        onClick={() => handleClientSelect(client)}
-                      >
-                        <div className="font-medium text-gray-900 dark:text-white">{client.full_name}</div>
-                        <div className="text-sm text-gray-500 dark:text-gray-400">
-                          {client.cpf_cnpj || 'Sem documento'}
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
+              <ClientSearchSelect
+                value={formData.client_id || ''}
+                onChange={(clientId) => {
+                  handleChange('client_id', clientId);
+                }}
+                label=""
+                placeholder="Buscar cliente..."
+                required
+                allowCreate={true}
+              />
             </div>
             
             {/* Número do Processo */}

@@ -1,7 +1,8 @@
 import { useState, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { Plus, X } from 'lucide-react';
 import { clientService } from '../services/client.service';
-// import { ClientFormModal } from './ClientFormModal';
+import ClientForm from './ClientForm';
 import type { CreateClientDTO } from '../types/client.types';
 
 interface ClientSearchSelectProps {
@@ -30,8 +31,8 @@ export const ClientSearchSelect: React.FC<ClientSearchSelectProps> = ({
   const [searchLoading, setSearchLoading] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
   const [selectedClientName, setSelectedClientName] = useState('');
-  // const [isClientFormModalOpen, setIsClientFormModalOpen] = useState(false);
-  // const [clientFormPrefill, setClientFormPrefill] = useState<Partial<CreateClientDTO> | null>(null);
+  const [isClientFormModalOpen, setIsClientFormModalOpen] = useState(false);
+  const [clientFormPrefill, setClientFormPrefill] = useState<Partial<CreateClientDTO> | null>(null);
 
   // Carregar nome do cliente selecionado
   useEffect(() => {
@@ -95,9 +96,9 @@ export const ClientSearchSelect: React.FC<ClientSearchSelectProps> = ({
   };
 
   const handleCreateNew = (_prefill?: Partial<CreateClientDTO>) => {
-    // fluxo de novo cliente agora é pelo módulo Clientes; evitar modal duplicado
+    setClientFormPrefill(_prefill ?? null);
+    setIsClientFormModalOpen(true);
     setSearchOpen(false);
-    setSearchTerm('');
   };
 
   return (
@@ -202,7 +203,62 @@ export const ClientSearchSelect: React.FC<ClientSearchSelectProps> = ({
         )}
       </div>
 
-      {/* ClientFormModal removido para evitar overlay duplicado; usar fluxo do módulo Clientes */}
+      {isClientFormModalOpen &&
+        createPortal(
+          <div className="fixed inset-0 z-[90] flex items-center justify-center p-4">
+            <div
+              className="absolute inset-0 bg-slate-50/80 backdrop-blur-md"
+              onClick={() => {
+                setIsClientFormModalOpen(false);
+                setClientFormPrefill(null);
+              }}
+              aria-hidden="true"
+            />
+            <div className="relative w-full max-w-4xl">
+              <div className="bg-white rounded-2xl shadow-[0_24px_60px_rgba(15,23,42,0.12)] border border-slate-200 overflow-hidden">
+                <div className="h-3 w-full shrink-0 bg-gradient-to-r from-orange-500 to-orange-600" />
+                <div className="px-6 py-5 border-b border-slate-200 bg-white flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">Formulário</div>
+                    <h2 className="mt-1 text-lg font-semibold text-slate-900">Novo Cliente</h2>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsClientFormModalOpen(false);
+                      setClientFormPrefill(null);
+                    }}
+                    className="p-2 text-slate-400 hover:text-slate-600 rounded-lg"
+                    aria-label="Fechar modal"
+                  >
+                    <X className="w-5 h-5" />
+                  </button>
+                </div>
+
+                <div className="bg-white">
+                  <ClientForm
+                    client={null}
+                    prefill={clientFormPrefill}
+                    variant="modal"
+                    onBack={() => {
+                      setIsClientFormModalOpen(false);
+                      setClientFormPrefill(null);
+                    }}
+                    onSave={(savedClient) => {
+                      onChange(savedClient.id, savedClient.full_name);
+                      setSelectedClientName(savedClient.full_name);
+                      setIsClientFormModalOpen(false);
+                      setClientFormPrefill(null);
+                      setSearchTerm('');
+                      setSearchOpen(false);
+                    }}
+                  />
+                </div>
+              </div>
+            </div>
+          </div>,
+          document.body,
+        )}
     </div>
   );
 };

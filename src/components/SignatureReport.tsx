@@ -144,7 +144,7 @@ const SignatureReport: React.FC<SignatureReportProps> = ({ signer, request, crea
   if (loading) {
     return (
       <div className="min-h-screen bg-white flex items-center justify-center">
-        <div className="animate-spin w-8 h-8 border-4 border-blue-600 border-t-transparent rounded-full" />
+        <div className="animate-spin w-8 h-8 border-4 border-orange-600 border-t-transparent rounded-full" />
       </div>
     );
   }
@@ -154,13 +154,13 @@ const SignatureReport: React.FC<SignatureReportProps> = ({ signer, request, crea
       {/* Header com ações (não imprime) */}
       <div className="bg-white border-b border-gray-200 px-6 py-4 flex items-center justify-between print:hidden sticky top-0 z-10">
         <div className="flex items-center gap-3">
-          <Scale className="w-6 h-6 text-blue-600" />
+          <Scale className="w-6 h-6 text-orange-600" />
           <span className="font-bold text-lg text-gray-800">Relatório de Assinatura</span>
         </div>
         <div className="flex items-center gap-3">
           <button
             onClick={handleDownloadPDF}
-            className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition"
+            className="flex items-center gap-2 px-4 py-2 bg-orange-600 text-white rounded-lg hover:bg-orange-700 transition"
           >
             <Download className="w-4 h-4" />
             Baixar PDF
@@ -181,20 +181,20 @@ const SignatureReport: React.FC<SignatureReportProps> = ({ signer, request, crea
         <div className="bg-white shadow-lg print:shadow-none rounded-lg print:rounded-none overflow-hidden">
           
           {/* Cabeçalho do relatório */}
-          <div className="bg-gradient-to-r from-blue-600 to-blue-700 text-white p-6 print:bg-blue-600">
+          <div className="bg-gradient-to-r from-orange-600 to-amber-600 text-white p-6 print:bg-orange-600">
             <div className="flex items-start justify-between">
               <div>
                 <div className="flex items-center gap-3 mb-2">
                   <Scale className="w-8 h-8" />
-                  <span className="text-2xl font-bold">Juris CRM</span>
+                  <span className="text-2xl font-bold">Jurius CRM</span>
                 </div>
                 <h1 className="text-xl font-semibold">Relatório de Assinaturas</h1>
-                <p className="text-blue-100 text-sm mt-1">
+                <p className="text-orange-100 text-sm mt-1">
                   Datas e horários em UTC-0400 (America/Manaus)
                 </p>
               </div>
               <div className="text-right text-sm">
-                <p className="text-blue-100">Última atualização em</p>
+                <p className="text-orange-100">Última atualização em</p>
                 <p className="font-semibold">{formatDateTime(new Date().toISOString())}</p>
               </div>
             </div>
@@ -203,8 +203,8 @@ const SignatureReport: React.FC<SignatureReportProps> = ({ signer, request, crea
           {/* Informações do documento */}
           <div className="p-6 border-b border-gray-200">
             <div className="flex items-start gap-4">
-              <div className="w-12 h-12 bg-blue-100 rounded-xl flex items-center justify-center flex-shrink-0">
-                <FileText className="w-6 h-6 text-blue-600" />
+              <div className="w-12 h-12 bg-orange-100 rounded-xl flex items-center justify-center flex-shrink-0">
+                <FileText className="w-6 h-6 text-orange-700" />
               </div>
               <div className="flex-1">
                 <h2 className="text-xl font-bold text-gray-800">{request.document_name}</h2>
@@ -223,7 +223,7 @@ const SignatureReport: React.FC<SignatureReportProps> = ({ signer, request, crea
           {/* Seção de Assinaturas */}
           <div className="p-6">
             <h3 className="text-lg font-bold text-gray-800 mb-6 flex items-center gap-2">
-              <Shield className="w-5 h-5 text-emerald-600" />
+              <Shield className="w-5 h-5 text-orange-600" />
               Assinaturas
             </h3>
 
@@ -233,15 +233,15 @@ const SignatureReport: React.FC<SignatureReportProps> = ({ signer, request, crea
               <div className="bg-gray-50 px-6 py-4 border-b border-gray-200">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 bg-emerald-100 rounded-full flex items-center justify-center">
-                      <User className="w-5 h-5 text-emerald-600" />
+                    <div className="w-10 h-10 bg-orange-100 rounded-full flex items-center justify-center">
+                      <User className="w-5 h-5 text-orange-700" />
                     </div>
                     <div>
                       <h4 className="font-bold text-gray-800">{signer.name}</h4>
                       {signer.role && <p className="text-sm text-gray-500">{signer.role}</p>}
                     </div>
                   </div>
-                  <div className="flex items-center gap-2 px-3 py-1.5 bg-emerald-100 text-emerald-700 rounded-full text-sm font-medium">
+                  <div className="flex items-center gap-2 px-3 py-1.5 bg-orange-100 text-orange-800 rounded-full text-sm font-medium">
                     <CheckCircle className="w-4 h-4" />
                     Assinou
                   </div>
@@ -253,14 +253,14 @@ const SignatureReport: React.FC<SignatureReportProps> = ({ signer, request, crea
                 {/* Métodos de Autenticação */}
                 <div className="bg-slate-50 rounded-xl p-4 border border-slate-200">
                   <h5 className="text-sm font-bold text-gray-800 mb-4 flex items-center gap-2">
-                    <Shield className="w-4 h-4 text-blue-600" />
+                    <Shield className="w-4 h-4 text-orange-600" />
                     Métodos de Autenticação Utilizados
                   </h5>
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                     {/* Assinatura Manual */}
                     {signer.signature_image_path && (
-                      <div className="flex items-start gap-3 p-3 bg-white rounded-lg border border-emerald-200">
-                        <CheckCircle className="w-5 h-5 text-emerald-500 flex-shrink-0 mt-0.5" />
+                      <div className="flex items-start gap-3 p-3 bg-white rounded-lg border border-orange-200">
+                        <CheckCircle className="w-5 h-5 text-orange-600 flex-shrink-0 mt-0.5" />
                         <div>
                           <p className="font-medium text-gray-800 text-sm">Assinatura Manual</p>
                           <p className="text-xs text-gray-500">Assinatura digital desenhada na tela</p>
@@ -270,8 +270,8 @@ const SignatureReport: React.FC<SignatureReportProps> = ({ signer, request, crea
 
                     {/* Selfie / Verificação Facial */}
                     {signer.facial_image_path && (
-                      <div className="flex items-start gap-3 p-3 bg-white rounded-lg border border-emerald-200">
-                        <CheckCircle className="w-5 h-5 text-emerald-500 flex-shrink-0 mt-0.5" />
+                      <div className="flex items-start gap-3 p-3 bg-white rounded-lg border border-orange-200">
+                        <CheckCircle className="w-5 h-5 text-orange-600 flex-shrink-0 mt-0.5" />
                         <div>
                           <p className="font-medium text-gray-800 text-sm">Selfie</p>
                           <p className="text-xs text-gray-500">Foto do rosto capturada para verificação</p>
@@ -281,8 +281,8 @@ const SignatureReport: React.FC<SignatureReportProps> = ({ signer, request, crea
 
                     {/* Email autenticado (quando existir) */}
                     {signer.auth_email && (
-                      <div className="flex items-start gap-3 p-3 bg-white rounded-lg border border-blue-200">
-                        <CheckCircle className="w-5 h-5 text-blue-500 flex-shrink-0 mt-0.5" />
+                      <div className="flex items-start gap-3 p-3 bg-white rounded-lg border border-orange-200">
+                        <CheckCircle className="w-5 h-5 text-orange-600 flex-shrink-0 mt-0.5" />
                         <div>
                           <p className="font-medium text-gray-800 text-sm">E-mail</p>
                           <p className="text-xs text-gray-500">Autenticado: <span className="font-mono">{signer.auth_email}</span></p>
@@ -292,8 +292,8 @@ const SignatureReport: React.FC<SignatureReportProps> = ({ signer, request, crea
 
                     {/* Telefone */}
                     {signer.auth_provider === 'phone' && signer.phone && (
-                      <div className="flex items-start gap-3 p-3 bg-white rounded-lg border border-purple-200">
-                        <CheckCircle className="w-5 h-5 text-purple-500 flex-shrink-0 mt-0.5" />
+                      <div className="flex items-start gap-3 p-3 bg-white rounded-lg border border-orange-200">
+                        <CheckCircle className="w-5 h-5 text-orange-600 flex-shrink-0 mt-0.5" />
                         <div>
                           <p className="font-medium text-gray-800 text-sm">Telefone</p>
                           <p className="text-xs text-gray-500">Autenticado: <span className="font-mono">{signer.phone}</span></p>
@@ -363,7 +363,7 @@ const SignatureReport: React.FC<SignatureReportProps> = ({ signer, request, crea
                 </div>
 
                 {/* Data e hora */}
-                <div className="bg-blue-50 rounded-lg p-4">
+                <div className="bg-orange-50 rounded-lg p-4">
                   <p className="text-sm">
                     <span className="text-gray-600">Data e hora:</span>{' '}
                     <span className="font-semibold text-gray-800">
@@ -462,7 +462,7 @@ const SignatureReport: React.FC<SignatureReportProps> = ({ signer, request, crea
               {/* Informações de verificação */}
               <div className="flex-1 space-y-3 text-sm">
                 <p className="text-gray-600">
-                  <span className="font-semibold text-gray-800">Juris CRM</span> {request.id}.{' '}
+                  <span className="font-semibold text-gray-800">Jurius CRM</span> {request.id}.{' '}
                   Documento assinado eletronicamente, conforme MP 2.200-2/2001 e Lei 14.063/2020.
                 </p>
 
@@ -474,7 +474,7 @@ const SignatureReport: React.FC<SignatureReportProps> = ({ signer, request, crea
                       href={verificationUrl} 
                       target="_blank" 
                       rel="noopener noreferrer"
-                      className="text-blue-600 hover:underline text-xs break-all mt-1 block"
+                      className="text-orange-700 hover:underline text-xs break-all mt-1 block"
                     >
                       {verificationUrl}
                     </a>
@@ -483,7 +483,7 @@ const SignatureReport: React.FC<SignatureReportProps> = ({ signer, request, crea
 
                 <p className="text-xs text-gray-400 pt-2 border-t border-gray-200">
                   Este Log é exclusivo e parte integrante do documento de identificação {request.id},
-                  conforme os Termos de Uso do Juris CRM.
+                  conforme os Termos de Uso do Jurius CRM.
                 </p>
               </div>
             </div>
@@ -502,7 +502,7 @@ const SignatureReport: React.FC<SignatureReportProps> = ({ signer, request, crea
           .print\\:rounded-none { border-radius: 0 !important; }
           .print\\:p-0 { padding: 0 !important; }
           .print\\:max-w-none { max-width: none !important; }
-          .print\\:bg-blue-600 { background-color: #2563eb !important; }
+          .print\\:bg-orange-600 { background-color: #ea580c !important; }
         }
       `}</style>
     </div>

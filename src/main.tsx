@@ -5,6 +5,7 @@ import { NavigationProvider } from './contexts/NavigationContext';
 import { AuthProvider } from './contexts/AuthContext';
 import { ToastProvider } from './contexts/ToastContext';
 import { ThemeProvider } from './contexts/ThemeContext';
+import { DeleteConfirmProvider } from './contexts/DeleteConfirmContext';
 import './index.css';
 
 // Detectar rotas especiais antes de forçar "/"
@@ -25,7 +26,9 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
       <AuthProvider>
         <ThemeProvider>
           <ToastProvider>
-            <App />
+            <DeleteConfirmProvider>
+              <App />
+            </DeleteConfirmProvider>
           </ToastProvider>
         </ThemeProvider>
       </AuthProvider>

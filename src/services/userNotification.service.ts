@@ -50,6 +50,46 @@ class UserNotificationService {
     return data;
   }
 
+  async createNotificationDeduped(params: {
+    payload: CreateUserNotificationDTO;
+    dedupeKey?: string;
+  }): Promise<UserNotification | null> {
+    try {
+      const { payload, dedupeKey } = params;
+
+      if (dedupeKey && payload.user_id && payload.type) {
+        let query = supabase
+          .from(this.tableName)
+          .select('id')
+          .eq('user_id', payload.user_id)
+          .eq('type', payload.type)
+          .eq('read', false)
+          .limit(1);
+
+        if (payload.process_id) {
+          query = query.eq('process_id', payload.process_id);
+        }
+
+        query = query.filter('metadata->>dedupe_key', 'eq', dedupeKey);
+
+        const { data } = await query;
+        if (data && data.length > 0) {
+          return null;
+        }
+      }
+    } catch {
+      // ignore
+    }
+
+    return this.createNotification({
+      ...params.payload,
+      metadata: {
+        ...(params.payload.metadata || {}),
+        ...(params.dedupeKey ? { dedupe_key: params.dedupeKey } : {}),
+      },
+    });
+  }
+
   /**
    * Marca notificação como lida
    */
