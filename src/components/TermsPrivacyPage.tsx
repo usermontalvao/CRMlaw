@@ -183,7 +183,7 @@ const DocumentCard: React.FC<{
       <div className="grid gap-4 text-[11px] text-slate-500 sm:grid-cols-3">
         <div className="space-y-1">
           <p className="uppercase tracking-[0.3em] text-slate-400 text-[10px]">Versão</p>
-          <p className="text-slate-700 font-semibold">3.2 · 2025</p>
+          <p className="text-slate-700 font-semibold">v{__APP_VERSION__} · {currentYear}</p>
         </div>
         <div className="space-y-1">
           <p className="uppercase tracking-[0.3em] text-slate-400 text-[10px]">Revisão</p>

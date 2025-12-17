@@ -1,13 +1,14 @@
 {
   "name": "crm",
-  "version": "1.0.0",
+  "version": "1.0.10",
   "main": "dist/index.js",
   "scripts": {
     "start": "vite",
     "dev": "vite",
     "build": "tsc && vite build",
     "preview": "vite preview",
-    "test-api": "tsc && node dist/example.js"
+    "test-api": "tsc && node dist/example.js",
+    "prepare": "node scripts/setup-githooks.cjs"
   },
   "keywords": [],
   "author": "",

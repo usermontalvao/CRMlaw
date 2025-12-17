@@ -57,6 +57,7 @@ const SettingsModule = lazy(() => import('./components/SettingsModule'));
 const CronEndpoint = lazy(() => import('./components/CronEndpoint'));
 const PublicSigningPage = lazy(() => import('./components/PublicSigningPage'));
 const PublicVerificationPage = lazy(() => import('./components/PublicVerificationPage'));
+const DocsChangesPage = lazy(() => import('./components/DocsChangesPage'));
 import { useNotifications } from './hooks/useNotifications';
 import { usePresence } from './hooks/usePresence';
 import { pushNotifications } from './utils/pushNotifications';
@@ -1163,6 +1164,18 @@ const MainApp: React.FC = () => {
           </Suspense>
         </main>
 
+        <div className="px-3 sm:px-4 lg:px-6 xl:px-8 py-6">
+          <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 border-t border-slate-200 pt-4 text-xs text-slate-500">
+            <div className="flex items-center gap-2">
+              <span className="font-semibold text-slate-700">Jurius</span>
+              <span>v{__APP_VERSION__}</span>
+            </div>
+            <a href="#/docs" className="font-semibold text-orange-700 hover:text-orange-600 transition">
+              Alterações
+            </a>
+          </div>
+        </div>
+
         {/* Profile Modal */}
         <ProfileModal 
           isOpen={isProfileModalOpen}
@@ -1195,6 +1208,7 @@ const App: React.FC = () => {
   
   const isTermsRoute = hashRoute?.includes('/terms') || pathname?.includes('/terms');
   const isPrivacyRoute = hashRoute?.includes('/privacidade') || hashRoute?.includes('/privacy') || pathname?.includes('/privacidade') || pathname?.includes('/privacy');
+  const isDocsRoute = hashRoute?.includes('/docs') || pathname?.includes('/docs');
   const isCronRoute = hashRoute?.includes('/cron/djen') || pathname?.includes('/cron/djen');
   const isSigningRoute = hashRoute?.includes('/assinar/') || pathname?.includes('/assinar/');
   const isVerificationRoute = hashRoute?.includes('/verificar') || pathname?.includes('/verificar');
@@ -1205,6 +1219,14 @@ const App: React.FC = () => {
 
   if (isPrivacyRoute) {
     return <TermsPrivacyPage type="privacy" />;
+  }
+
+  if (isDocsRoute) {
+    return (
+      <Suspense fallback={<div className="min-h-screen bg-slate-100 flex items-center justify-center"><Loader2 className="w-8 h-8 animate-spin text-amber-600" /></div>}>
+        <DocsChangesPage />
+      </Suspense>
+    );
   }
 
   if (isCronRoute) {

@@ -326,6 +326,8 @@ class PdfSignatureService {
     const mode: 'card' | 'strip' = variant ?? 'strip';
     const integrityFull = this.formatIntegrityHash(integritySha256, false);
 
+    const versionLabel = `Jurius v${__APP_VERSION__}`;
+
     if (mode === 'strip') {
       const h = 24;
       const x = 24;
@@ -337,6 +339,18 @@ class PdfSignatureService {
       if (signer.verification_hash) {
         page.drawText(`Código: ${(signer.verification_hash || '').toUpperCase()}`, { x: x + 10, y: y + 5, size: 6, font: helveticaBold, color: rgb(0.15, 0.25, 0.25) });
       }
+
+      const versionSize = 6;
+      const versionTextWidth = typeof helveticaBold?.widthOfTextAtSize === 'function'
+        ? helveticaBold.widthOfTextAtSize(versionLabel, versionSize)
+        : 70;
+      page.drawText(versionLabel, {
+        x: x + w - versionTextWidth - 10,
+        y: y + 5,
+        size: versionSize,
+        font: helveticaBold,
+        color: rgb(0.15, 0.25, 0.25),
+      });
       return;
     }
 
@@ -378,6 +392,18 @@ class PdfSignatureService {
 
     const title = 'Escaneie o QR Code para verificar a autenticidade do documento';
     page.drawText(title, { x: textX, y: boxY + boxH - 14, size: 8, font: helveticaBold, color: rgb(0.12, 0.12, 0.12) });
+
+    const versionSize = 5.5;
+    const versionTextWidth = typeof helveticaBold?.widthOfTextAtSize === 'function'
+      ? helveticaBold.widthOfTextAtSize(versionLabel, versionSize)
+      : 70;
+    page.drawText(versionLabel, {
+      x: boxX + boxW - versionTextWidth - 10,
+      y: boxY + boxH - 14,
+      size: versionSize,
+      font: helveticaBold,
+      color: rgb(0.12, 0.12, 0.12),
+    });
 
     const codeLabel = 'Código de autenticação:';
     const code = (signer.verification_hash || '').toUpperCase() || 'N/A';

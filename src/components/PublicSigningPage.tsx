@@ -1824,14 +1824,44 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
           return;
         }
 
-        const sharePayload = {
-          title: 'Documento Assinado',
-          text: `Documento assinado: "${request.document_name}"`,
-          url,
-        };
+        const baseName = (request.document_name || 'documento_assinado')
+          .replace(/\.[^/.]+$/, '')
+          .replace(/[<>:"/\\|?*\x00-\x1F]/g, '')
+          .trim()
+          .slice(0, 80);
+        const fileName = `${baseName || 'documento_assinado'}.pdf`;
+
+        const shareText = `Documento assinado: "${request.document_name}"`;
 
         if (typeof navigator.share === 'function') {
-          await navigator.share(sharePayload);
+          try {
+            const response = await fetch(url);
+            if (!response.ok) {
+              throw new Error(`Falha ao baixar PDF: ${response.status}`);
+            }
+            const blob = await response.blob();
+            const file = new File([blob], fileName, { type: blob.type || 'application/pdf' });
+
+            const canShareFiles =
+              typeof (navigator as any).canShare === 'function' && (navigator as any).canShare({ files: [file] });
+
+            if (canShareFiles) {
+              await navigator.share({
+                title: 'Documento Assinado',
+                text: shareText,
+                files: [file],
+              } as any);
+              return;
+            }
+          } catch (e) {
+            console.log('Falha ao compartilhar arquivo, usando link como fallback:', e);
+          }
+
+          await navigator.share({
+            title: 'Documento Assinado',
+            text: shareText,
+            url,
+          });
           return;
         }
 

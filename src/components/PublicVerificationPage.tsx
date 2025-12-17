@@ -292,9 +292,14 @@ const PublicVerificationPage: React.FC = () => {
         )}
 
         {/* Footer discreto */}
-        <p className="mt-8 text-center text-xs text-slate-400">
-          A verificação garante a autenticidade e integridade do documento assinado digitalmente.
-        </p>
+        <div className="mt-8 text-center text-xs text-slate-400 space-y-1">
+          <p>
+            A verificação garante a autenticidade e integridade do documento assinado digitalmente.
+          </p>
+          <p>
+            Jurius · v{__APP_VERSION__}
+          </p>
+        </div>
       </main>
     </div>
   );
