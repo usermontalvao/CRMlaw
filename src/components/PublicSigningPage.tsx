@@ -163,6 +163,7 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
   const attachmentObjectUrlRef = useRef<(string | null)[]>([]);
   const attachmentRenderTokenRef = useRef(0);
   const attachmentRenderInProgressRef = useRef<Set<number>>(new Set());
+  const attachmentRenderedRef = useRef<Set<number>>(new Set());
 
   const [activeTab, setActiveTab] = useState<'signers' | 'history'>('signers');
   const [auditLog, setAuditLog] = useState<SignatureAuditLog[]>([]);
@@ -380,8 +381,13 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
   }, [pdfUrl, isDocx]);
 
   // Renderizar anexos DOCX quando carregados
+  // Usamos attachments.length como dependência para evitar loops infinitos
+  const attachmentsLengthRef = useRef(0);
   useEffect(() => {
     if (attachments.length === 0) return;
+    // Só re-executar se o número de anexos mudou (evita loop ao marcar rendered)
+    if (attachments.length === attachmentsLengthRef.current) return;
+    attachmentsLengthRef.current = attachments.length;
 
     attachmentRenderTokenRef.current += 1;
     const token = attachmentRenderTokenRef.current;
@@ -400,11 +406,19 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
         if (token !== attachmentRenderTokenRef.current) return;
 
         const attach = attachments[i];
-        if (attach.rendered) continue;
+        // Usar ref para checar se já renderizou (evita depender do state)
+        if (attachmentRenderedRef.current.has(i)) continue;
+        if (attach.rendered) {
+          attachmentRenderedRef.current.add(i);
+          continue;
+        }
 
         // Verificar se é DOCX
         const isDocxFile = !!attach.isDocx;
-        if (!isDocxFile) continue;
+        if (!isDocxFile) {
+          attachmentRenderedRef.current.add(i);
+          continue;
+        }
 
         const container = attachmentRefs.current[i];
         if (!container) {
@@ -425,6 +439,7 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
             const response = await fetch(attach.url);
             if (!response.ok) {
               console.error(`❌ Erro ao baixar anexo ${i + 1}:`, response.status);
+              attachmentRenderInProgressRef.current.delete(i);
               continue;
             }
             blob = await response.blob();
@@ -443,6 +458,7 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
             renderFootnotes: true,
           });
 
+          attachmentRenderedRef.current.add(i);
           renderedIdx.add(i);
           console.log(`✅ Anexo ${i + 1} renderizado com sucesso!`);
         } catch (err) {
@@ -470,14 +486,16 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
       cancelled = true;
       if (retryTimer) window.clearTimeout(retryTimer);
     };
-  }, [attachments]);
+  }, [attachments.length]);
 
   useEffect(() => {
     if (!queuedOpenSignModal) return;
     if (!canOpenSignModal) return;
+    if (isSignModalOpen) return;
+    if (loading) return;
     setQueuedOpenSignModal(false);
     openSignModal();
-  }, [queuedOpenSignModal, canOpenSignModal]);
+  }, [queuedOpenSignModal, canOpenSignModal, isSignModalOpen]);
 
   useEffect(() => {
     if (isSignModalOpen && modalStep === 'signature' && canvasRef.current) {
@@ -1193,6 +1211,9 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
   const canProceedFromData = signerData.name.trim().length >= 3 && signerData.cpf.replace(/\D/g, '').length === 11;
 
   const openSignModal = () => {
+    if (loading || isSignModalOpen) {
+      return;
+    }
     if (!canOpenSignModal) {
       setQueuedOpenSignModal(true);
       toast.info('Carregando documento… Abriremos a assinatura assim que estiver pronto.');
@@ -1615,20 +1636,26 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
       </main>
 
       {step === 'success' && !isFullyLoaded && (
-        <div className="fixed inset-0 z-50">
+        <div className="fixed inset-0 z-40">
           <LoadingScreen title="Carregando documento" subtitle="Estamos preparando tudo…" />
         </div>
       )}
 
       {/* Botão Assinar - Flutuante estilizado */}
       {signer?.status !== 'signed' && (
+        (() => {
+          const isWaiting = !canOpenSignModal || queuedOpenSignModal;
+          const isButtonDisabled = loading || isSignModalOpen;
+          const buttonClass = `fixed bottom-6 left-1/2 -translate-x-1/2 z-50 flex items-center gap-2 px-6 py-3 text-white font-bold text-sm rounded-full shadow-[0_8px_30px_rgb(37,99,235,0.4)] transition-all duration-200 whitespace-nowrap ${isButtonDisabled ? 'bg-slate-400 cursor-not-allowed opacity-80' : isWaiting ? 'bg-blue-600/70 hover:bg-blue-600/70 cursor-wait' : 'bg-blue-600 hover:bg-blue-700 active:scale-95'}`;
+
+          return (
         <button
           onClick={openSignModal}
-          disabled={!canOpenSignModal && !queuedOpenSignModal}
-          className={`fixed bottom-6 left-1/2 -translate-x-1/2 z-50 flex items-center gap-2 px-6 py-3 text-white font-bold text-sm rounded-full shadow-[0_8px_30px_rgb(37,99,235,0.4)] transition-all duration-200 whitespace-nowrap ${(!canOpenSignModal && !queuedOpenSignModal) ? 'bg-slate-400 cursor-not-allowed' : 'bg-blue-600 hover:bg-blue-700 active:scale-95'}`}
+          disabled={isButtonDisabled}
+          className={buttonClass}
           style={{ WebkitTapHighlightColor: 'transparent' }}
         >
-          {(!canOpenSignModal && !queuedOpenSignModal) ? (
+          {(!canOpenSignModal || queuedOpenSignModal) ? (
             <>
               <Loader2 className="w-4 h-4 animate-spin" />
               CARREGANDO…
@@ -1640,6 +1667,8 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
             </>
           )}
         </button>
+          );
+        })()
       )}
 
       {/* Modal - Full screen no mobile */}
