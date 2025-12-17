@@ -46,6 +46,9 @@ import {
    ============================================================================ */
 
 const VERSION_CODENAMES: Record<string, { name: string; emoji: string }> = {
+  '1.0.13': { name: 'Café Preto', emoji: '☕' },
+  '1.0.12': { name: 'Carioca', emoji: '☕' },
+  '1.0.11': { name: 'Affogato', emoji: '🍨' },
   '1.0.10': { name: 'Cortado', emoji: '☕' },
   '1.0.9': { name: 'Coado', emoji: '☕' },
   '1.0.8': { name: 'Pingado', emoji: '☕' },
@@ -422,6 +425,57 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
    ============================================================================ */
 
 const releases: ReleaseNote[] = [
+  {
+    version: '1.0.13',
+    date: '17/12/2025',
+    summary: 'Introdução com fundo mais escuro',
+    modules: [
+      {
+        moduleId: 'branding',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Fundo do overlay mais escuro',
+            description: 'Ajustado o overlay de login/logout para um fundo mais escuro com camada de escurecimento sobre os brilhos, melhorando contraste e mantendo o visual premium.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.0.12',
+    date: '17/12/2025',
+    summary: 'Refino final da introdução',
+    modules: [
+      {
+        moduleId: 'branding',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Refinamentos visuais na introdução',
+            description: 'Ajustes sutis na introdução: micro-animação de flutuação no logo, divisor elegante abaixo da marca e barra de carregamento com melhor presença/contraste, mantendo o visual leve e profissional.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.0.11',
+    date: '17/12/2025',
+    summary: 'Introdução premium com animação mais fluida',
+    modules: [
+      {
+        moduleId: 'branding',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Introdução mais profissional (login/logout)',
+            description: 'Overlay de login/logout com card glass refinado, hierarquia visual aprimorada e partículas estáveis (sem variação aleatória a cada render), trazendo sensação premium e consistência na animação.',
+          },
+        ],
+      },
+    ],
+  },
   {
     version: '1.0.10',
     date: '17/12/2025',

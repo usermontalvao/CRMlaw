@@ -541,6 +541,18 @@ const MainApp: React.FC = () => {
   };
 
   const [loggingIn, setLoggingIn] = useState(false);
+  const introParticles = useMemo(
+    () =>
+      Array.from({ length: 18 }).map((_, i) => {
+        const left = (i * 37) % 100;
+        const top = (i * 53) % 100;
+        const delay = (i * 0.37) % 5;
+        const duration = 3.5 + (i % 5) * 0.65;
+        const size = 1 + (i % 2);
+        return { id: i, left, top, delay, duration, size };
+      }),
+    []
+  );
 
   const handleLogin = async (email: string, password: string) => {
     setLoggingIn(true);
@@ -596,67 +608,69 @@ const MainApp: React.FC = () => {
       <div className="min-h-screen bg-gray-100 dark:bg-black transition-colors duration-300">
         {/* Overlay de Login/Logout - Epic Animation */}
         {(loggingIn || loggingOut) && (
-          <div className="fixed inset-0 z-[100] flex items-center justify-center overflow-hidden bg-slate-950">
+          <div className="fixed inset-0 z-[100] flex items-center justify-center overflow-hidden bg-black">
             {/* Animated gradient background */}
             <div className="absolute inset-0">
-              <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_center,rgba(251,146,60,0.15)_0%,transparent_70%)]" />
+              <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_center,rgba(251,146,60,0.12)_0%,transparent_70%)]" />
               <div className="absolute top-0 left-1/4 w-96 h-96 bg-orange-500/20 rounded-full blur-[120px] animate-pulse" />
               <div className="absolute bottom-0 right-1/4 w-80 h-80 bg-amber-500/15 rounded-full blur-[100px] animate-pulse" style={{ animationDelay: '1s' }} />
               <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[600px] bg-orange-600/10 rounded-full blur-[150px] animate-pulse" style={{ animationDelay: '0.5s' }} />
+              <div className="absolute inset-0 bg-black/35" />
             </div>
 
             {/* Floating particles */}
             <div className="absolute inset-0 overflow-hidden">
-              {Array.from({ length: 20 }).map((_, i) => (
+              {introParticles.map((p) => (
                 <div
-                  key={i}
+                  key={p.id}
                   className="absolute w-1 h-1 bg-orange-400/60 rounded-full animate-float-particle"
                   style={{
-                    left: `${Math.random() * 100}%`,
-                    top: `${Math.random() * 100}%`,
-                    animationDelay: `${Math.random() * 5}s`,
-                    animationDuration: `${3 + Math.random() * 4}s`,
+                    left: `${p.left}%`,
+                    top: `${p.top}%`,
+                    width: `${p.size}px`,
+                    height: `${p.size}px`,
+                    animationDelay: `${p.delay}s`,
+                    animationDuration: `${p.duration}s`,
                   }}
                 />
               ))}
             </div>
 
-            {/* Main content */}
+            {/* Main content - clean floating design */}
             <div className="relative z-10 flex flex-col items-center">
-              {/* Glowing logo container */}
-              <div className="relative mb-8">
-                {/* Outer glow rings */}
-                <div className="absolute inset-[-40px] rounded-full border border-orange-500/20 animate-ping-slow" />
-                <div className="absolute inset-[-25px] rounded-full border border-orange-400/30 animate-ping-slower" />
-                <div className="absolute inset-[-60px] rounded-full bg-gradient-to-r from-orange-500/10 via-amber-500/5 to-orange-500/10 blur-2xl animate-pulse" />
-                
-                {/* Logo */}
-                <div className="relative w-20 h-20 rounded-3xl bg-gradient-to-br from-orange-500 via-amber-500 to-orange-600 flex items-center justify-center shadow-2xl shadow-orange-500/50">
-                  <span className="text-white font-black text-4xl tracking-tight">J</span>
-                  <div className="absolute inset-0 rounded-3xl bg-gradient-to-t from-white/0 to-white/20" />
+              {/* Logo with glow */}
+              <div className="relative mb-10 animate-float-slow">
+                <div className="absolute inset-[-50px] rounded-full border border-orange-500/15 animate-ping-slow" />
+                <div className="absolute inset-[-30px] rounded-full border border-orange-400/25 animate-ping-slower" />
+                <div className="absolute inset-[-70px] rounded-full bg-gradient-to-r from-orange-500/20 via-amber-500/10 to-orange-500/20 blur-3xl animate-pulse" />
+
+                <div className="relative w-24 h-24 rounded-[1.75rem] bg-gradient-to-br from-orange-500 via-amber-500 to-orange-600 flex items-center justify-center shadow-2xl shadow-orange-500/40">
+                  <span className="text-white font-black text-5xl tracking-tight select-none">J</span>
+                  <div className="absolute inset-0 rounded-[1.75rem] bg-gradient-to-t from-white/0 to-white/25" />
                 </div>
               </div>
 
-              {/* Brand name with glow */}
-              <div className="text-center mb-8">
-                <h1 className="text-3xl font-bold text-white mb-2 tracking-tight">
+              {/* Brand */}
+              <div className="text-center mb-10">
+                <h1 className="text-4xl sm:text-5xl font-extrabold text-white mb-3 tracking-tight">
                   jurius<span className="text-orange-400">.com.br</span>
                 </h1>
-                <p className="text-sm text-white/50 tracking-[0.3em] uppercase">
+                <p className="text-xs text-white/40 tracking-[0.4em] uppercase font-medium">
                   Gestão Jurídica Inteligente
                 </p>
+                <div className="mt-6 h-px w-64 bg-gradient-to-r from-transparent via-white/20 to-transparent" />
               </div>
 
-              {/* Animated loading bar */}
-              <div className="w-64 mb-6">
-                <div className="h-1 bg-white/10 rounded-full overflow-hidden backdrop-blur-sm">
-                  <div className="h-full bg-gradient-to-r from-orange-500 via-amber-400 to-orange-500 rounded-full animate-loading-bar" />
+              {/* Loading bar */}
+              <div className="w-64 sm:w-80 mb-8">
+                <div className="h-1.5 bg-white/10 rounded-full overflow-hidden backdrop-blur-sm">
+                  <div className="h-full bg-gradient-to-r from-orange-500 via-amber-400 to-orange-500 rounded-full animate-loading-bar shadow-[0_0_24px_rgba(251,146,60,0.25)]" />
                 </div>
               </div>
 
-              {/* Status text */}
+              {/* Status */}
               <div className="text-center">
-                <p className="text-lg font-medium text-white/90 mb-1">
+                <p className="text-lg sm:text-xl font-semibold text-white mb-2">
                   {loggingIn ? 'Preparando seu ambiente' : 'Encerrando sessão'}
                 </p>
                 <p className="text-sm text-white/50 flex items-center gap-2 justify-center">
