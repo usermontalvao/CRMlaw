@@ -482,6 +482,28 @@ class SignatureService {
     };
   }
 
+  async sendPhoneOtp(params: { token: string; phone: string }): Promise<{ expires_at?: string | null }> {
+    const { token, phone } = params;
+    const { data, error } = await supabase.functions.invoke('smsdev-send-otp', {
+      body: { token, phone },
+    });
+
+    if (error) throw new Error(error.message);
+    if (!data?.success) throw new Error(data?.error || 'Não foi possível enviar o código.');
+    return { expires_at: data?.expires_at ?? null };
+  }
+
+  async verifyPhoneOtp(params: { token: string; code: string }): Promise<{ phone?: string | null }> {
+    const { token, code } = params;
+    const { data, error } = await supabase.functions.invoke('smsdev-verify-otp', {
+      body: { token, code },
+    });
+
+    if (error) throw new Error(error.message);
+    if (!data?.success) throw new Error(data?.error || 'Código inválido.');
+    return { phone: data?.phone ?? null };
+  }
+
   async markSignerAsViewed(signerId: string, ipAddress?: string, userAgent?: string): Promise<void> {
     const { error } = await supabase
       .from(this.signersTable)

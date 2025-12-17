@@ -1,10 +1,10 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { AlertCircle, Camera, CheckCircle, Clock, Download, FileText, Loader2, MapPin, PenTool, RotateCcw, Scale, Share2, User, X, Shield } from 'lucide-react';
+import { AlertCircle, Camera, CheckCircle, Clock, Copy, Download, ExternalLink, FileText, Loader2, MapPin, PenTool, RotateCcw, Scale, Share2, User, X, Shield } from 'lucide-react';
 import { signatureService } from '../services/signature.service';
 import { pdfSignatureService } from '@/services/pdfSignature.service';
 import { googleAuthService, type GoogleUser } from '../services/googleAuth.service';
 import { useToastContext } from '../contexts/ToastContext';
-import type { SignatureAuditLog, SignatureField, Signer, SignatureRequest } from '../types/signature.types';
+import type { SignDocumentDTO, SignatureAuditLog, SignatureField, Signer, SignatureRequest } from '../types/signature.types';
 import SignatureReport from './SignatureReport';
 import { renderAsync } from 'docx-preview';
 
@@ -13,7 +13,7 @@ interface PublicSigningPageProps {
 }
 
 type SigningStep = 'loading' | 'success' | 'error' | 'already_signed';
-type ModalStep = 'google_auth' | 'data' | 'signature' | 'location' | 'facial' | 'confirm';
+type ModalStep = 'google_auth' | 'phone_otp' | 'data' | 'signature' | 'location' | 'facial' | 'confirm';
 
 interface SignerData {
   name: string;
@@ -219,6 +219,11 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
   const [signatureData, setSignatureData] = useState<string | null>(null);
   const [facialData, setFacialData] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const signingStatusMessages = useMemo(
+    () => ['Enviando assinatura…', 'Estamos preparando tudo…', 'Mais um instante…', 'Estamos confirmando a autenticidade…', 'Finalizando…'],
+    []
+  );
+  const [signingStatusIndex, setSigningStatusIndex] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [pdfUrl, setPdfUrl] = useState<string | null>(null);
   const [isDocx, setIsDocx] = useState(false);
@@ -256,6 +261,15 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
 
   const canOpenSignModal = isFullyLoaded;
 
+  useEffect(() => {
+    if (!loading) return;
+    setSigningStatusIndex(0);
+    const id = window.setInterval(() => {
+      setSigningStatusIndex((i) => (i + 1) % signingStatusMessages.length);
+    }, 1700);
+    return () => window.clearInterval(id);
+  }, [loading, signingStatusMessages.length]);
+
   // Canvas refs
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [isDrawing, setIsDrawing] = useState(false);
@@ -284,6 +298,15 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
   const googleInitAttemptsRef = useRef(0);
   const googleAuthInitTokenRef = useRef(0);
   const googleAuthInitInFlightRef = useRef(false);
+  const googleAuthPreloadedRef = useRef(false);
+
+  // Phone OTP
+  const [phoneOtp, setPhoneOtp] = useState('');
+  const [phoneOtpSent, setPhoneOtpSent] = useState(false);
+  const [phoneOtpExpiresAt, setPhoneOtpExpiresAt] = useState<string | null>(null);
+  const [phoneOtpVerified, setPhoneOtpVerified] = useState(false);
+  const [phoneOtpLoading, setPhoneOtpLoading] = useState(false);
+  const [phoneOtpError, setPhoneOtpError] = useState<string | null>(null);
 
   useEffect(() => {
     loadSignerData();
@@ -570,6 +593,33 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
   }, [queuedOpenSignModal, canOpenSignModal, isSignModalOpen]);
 
   useEffect(() => {
+    if (!isFullyLoaded) return;
+    if (googleAuthPreloadedRef.current) return;
+    googleAuthPreloadedRef.current = true;
+
+    const preload = () => {
+      googleAuthService.initialize().catch(() => {
+        // ignore
+      });
+    };
+
+    const w = window as any;
+    if (typeof w.requestIdleCallback === 'function') {
+      const id = w.requestIdleCallback(preload, { timeout: 1500 });
+      return () => {
+        try {
+          w.cancelIdleCallback?.(id);
+        } catch {
+          // ignore
+        }
+      };
+    }
+
+    const id = window.setTimeout(preload, 800);
+    return () => window.clearTimeout(id);
+  }, [isFullyLoaded]);
+
+  useEffect(() => {
     if (isSignModalOpen && modalStep === 'signature' && canvasRef.current) {
       initCanvas();
     }
@@ -605,17 +655,19 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
 
         const el = googleButtonRef.current;
         if (el) {
-          void initGoogleAuth(token, el);
+          window.requestAnimationFrame(() => {
+            void initGoogleAuth(token, el);
+          });
           return;
         }
 
         tries += 1;
         if (tries <= 30) {
-          window.setTimeout(tick, 50);
+          window.setTimeout(tick, 60);
         }
       };
 
-      const timer = window.setTimeout(tick, 0);
+      const timer = window.setTimeout(tick, 240);
       return () => {
         cancelled = true;
         window.clearTimeout(timer);
@@ -650,6 +702,13 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
           auto_select: false,
         });
         
+        const containerW = Math.floor(
+          buttonEl.parentElement?.getBoundingClientRect().width ||
+            buttonEl.getBoundingClientRect().width ||
+            320
+        );
+        const width = Math.max(280, Math.min(420, containerW));
+
         // @ts-ignore
         google.accounts.id.renderButton(buttonEl, {
           type: 'standard',
@@ -658,7 +717,7 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
           text: 'signin_with',
           shape: 'rectangular',
           logo_alignment: 'left',
-          width: 300,
+          width,
         });
       } else {
         setGoogleAuthError('Não foi possível carregar o botão do Google. Use o login alternativo.');
@@ -1044,21 +1103,23 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
         console.warn('Não foi possível capturar IP:', e);
       }
 
+      const payload: SignDocumentDTO = {
+        signature_image: signatureData,
+        facial_image: facialData || undefined,
+        geolocation: locationData ? `${locationData.lat}, ${locationData.lng}` : undefined,
+        signer_name: signerData.name || undefined,
+        signer_cpf: signerData.cpf || undefined,
+        signer_phone: signerData.phone || undefined,
+        // Dados de autenticação
+        auth_provider: googleUser ? 'google' : 'phone',
+        auth_email: googleUser?.email || undefined,
+        auth_google_sub: googleUser?.sub || undefined,
+        auth_google_picture: googleUser?.picture || undefined,
+      };
+
       const result = await signatureService.signDocument(
         signer.id, 
-        {
-          signature_image: signatureData,
-          facial_image: facialData || undefined,
-          geolocation: locationData ? `${locationData.lat}, ${locationData.lng}` : undefined,
-          signer_name: signerData.name || undefined,
-          signer_cpf: signerData.cpf || undefined,
-          signer_phone: signerData.phone || undefined,
-          // Dados de autenticação
-          auth_provider: googleUser ? 'google' : 'email_link',
-          auth_email: googleUser?.email || undefined,
-          auth_google_sub: googleUser?.sub || undefined,
-          auth_google_picture: googleUser?.picture || undefined,
-        },
+        payload,
         ipAddress,
         userAgent
       );
@@ -1282,6 +1343,67 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
 
   const canProceedFromData = signerData.name.trim().length >= 3 && signerData.cpf.replace(/\D/g, '').length === 11;
 
+  const closeSignModal = () => {
+    setIsSignModalOpen(false);
+    setModalStep('google_auth');
+    setGoogleUser(null);
+    setGoogleAuthError(null);
+    setGoogleAuthLoading(false);
+
+    setPhoneOtp('');
+    setPhoneOtpSent(false);
+    setPhoneOtpExpiresAt(null);
+    setPhoneOtpVerified(false);
+    setPhoneOtpLoading(false);
+    setPhoneOtpError(null);
+  };
+
+  const handleSendPhoneOtp = async () => {
+    try {
+      setPhoneOtpLoading(true);
+      setPhoneOtpError(null);
+
+      const phoneRaw = signerData.phone || '';
+      const digits = phoneRaw.replace(/\D/g, '');
+      if (digits.length < 10) {
+        throw new Error('Informe um telefone válido');
+      }
+
+      const res = await signatureService.sendPhoneOtp({ token, phone: digits });
+      setPhoneOtpSent(true);
+      setPhoneOtpExpiresAt(res.expires_at ?? null);
+      toast.success('Código enviado por SMS');
+    } catch (e: any) {
+      setPhoneOtpError(e?.message || 'Não foi possível enviar o código');
+    } finally {
+      setPhoneOtpLoading(false);
+    }
+  };
+
+  const handleVerifyPhoneOtp = async () => {
+    try {
+      setPhoneOtpLoading(true);
+      setPhoneOtpError(null);
+
+      const code = phoneOtp.replace(/\D/g, '');
+      if (code.length < 4) {
+        throw new Error('Informe o código recebido');
+      }
+
+      const res = await signatureService.verifyPhoneOtp({ token, code });
+      setPhoneOtpVerified(true);
+      if (res.phone) {
+        setSignerData((prev) => ({ ...prev, phone: res.phone || prev.phone }));
+      }
+      toast.success('Telefone verificado com sucesso!');
+      setModalStep('data');
+    } catch (e: any) {
+      setPhoneOtpError(e?.message || 'Código inválido');
+    } finally {
+      setPhoneOtpLoading(false);
+    }
+  };
+
   const openSignModal = () => {
     if (loading || isSignModalOpen) {
       return;
@@ -1297,19 +1419,17 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
     setHasSignature(false);
     setGoogleUser(null);
     setGoogleAuthError(null);
+
+    setPhoneOtp('');
+    setPhoneOtpSent(false);
+    setPhoneOtpExpiresAt(null);
+    setPhoneOtpVerified(false);
+    setPhoneOtpLoading(false);
+    setPhoneOtpError(null);
+
     setIsSignModalOpen(true);
   };
 
-  const closeSignModal = () => {
-    setIsSignModalOpen(false);
-    setModalStep('google_auth');
-    setGoogleUser(null);
-    setGoogleAuthError(null);
-  };
-
-  // ========== RENDER ==========
-
-  // Loading
   if (step === 'loading') {
     return <LoadingScreen title="Carregando documento" subtitle="Estamos carregando os seus documentos…" />;
   }
@@ -1331,6 +1451,21 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
 
   // Already signed
   if (step === 'already_signed') {
+    if (!request || !signer) {
+      return <LoadingScreen title="Carregando documento" subtitle="Estamos carregando os seus documentos…" />;
+    }
+
+    if (showReport && request && signer) {
+      return (
+        <SignatureReport
+          signer={signer}
+          request={request}
+          creator={creator}
+          onClose={() => setShowReport(false)}
+        />
+      );
+    }
+
     const handleDownloadAlreadySigned = async () => {
       if (!request || !signer) return;
       try {
@@ -1355,35 +1490,201 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
       }
     };
 
+    const handleCopyVerificationCode = async () => {
+      try {
+        const code = (signer?.verification_hash || '').trim();
+        if (!code) return;
+        await navigator.clipboard.writeText(code);
+        toast.success('Código copiado.');
+      } catch {
+        toast.error('Não foi possível copiar o código.');
+      }
+    };
+
+    const handleCopySignedLink = async () => {
+      try {
+        if (!signer?.signed_document_path) {
+          toast.error('Link indisponível no momento.');
+          return;
+        }
+        const url = await pdfSignatureService.getSignedPdfUrl(signer.signed_document_path);
+        if (!url) {
+          toast.error('Link indisponível no momento.');
+          return;
+        }
+        await navigator.clipboard.writeText(url);
+        toast.success('Link do documento copiado.');
+      } catch {
+        toast.error('Não foi possível copiar o link.');
+      }
+    };
+
+    const handleCopySignerToken = async () => {
+      try {
+        const t = (signer?.public_token || '').trim();
+        if (!t) return;
+        await navigator.clipboard.writeText(t);
+        toast.success('Token copiado.');
+      } catch {
+        toast.error('Não foi possível copiar o token.');
+      }
+    };
+
+    const verificationUrl = signer?.verification_hash ? `${window.location.origin}/#/verificar/${signer.verification_hash}` : null;
+
     return (
-      <div className="min-h-screen bg-slate-100 flex items-center justify-center p-4">
-        <div className="bg-white rounded-2xl shadow-lg p-8 max-w-md w-full text-center">
-          <div className="w-16 h-16 bg-emerald-100 rounded-full flex items-center justify-center mx-auto mb-4">
-            <CheckCircle className="w-8 h-8 text-emerald-600" />
+      <div className="min-h-[100dvh] bg-slate-900">
+        <div className="relative overflow-hidden">
+          <div className="absolute inset-0 bg-gradient-to-br from-blue-700/35 via-slate-900 to-indigo-700/25" />
+          <div className="absolute -top-24 -right-24 w-80 h-80 rounded-full bg-blue-600/15 blur-3xl" />
+          <div className="absolute -bottom-24 -left-24 w-80 h-80 rounded-full bg-indigo-600/15 blur-3xl" />
+
+          <div className="relative max-w-3xl mx-auto px-5 pt-10 pb-10">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="w-12 h-12 rounded-2xl bg-white/10 border border-white/15 flex items-center justify-center">
+                  <Scale className="w-6 h-6 text-white" />
+                </div>
+                <div>
+                  <div className="text-lg font-semibold leading-tight text-white">Juris</div>
+                  <div className="text-sm text-blue-100/90">Assinatura · Documento finalizado</div>
+                </div>
+              </div>
+              <div className="hidden sm:flex items-center gap-2 text-xs text-blue-100/90">
+                <Clock className="w-4 h-4" />
+                {signer?.signed_at ? formatDate(signer.signed_at) : ''}
+              </div>
+            </div>
+
+            <div className="mt-6 rounded-2xl border border-white/10 bg-white/5 backdrop-blur-xl shadow-[0_12px_40px_-20px_rgba(0,0,0,0.6)] overflow-hidden">
+              <div className="px-6 pt-6 pb-5 border-b border-white/10">
+                <div className="flex items-start gap-4">
+                  <div className="w-12 h-12 rounded-xl bg-emerald-500/15 border border-emerald-400/20 flex items-center justify-center flex-shrink-0">
+                    <CheckCircle className="w-7 h-7 text-emerald-300" />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <h1 className="text-lg font-semibold text-white">Documento já assinado</h1>
+                      <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold bg-emerald-500/15 text-emerald-200 border border-emerald-400/20">
+                        Assinado
+                      </span>
+                    </div>
+                    <p className="mt-1 text-sm text-slate-200/80">
+                      Uma cópia assinada está disponível para abertura e compartilhamento.
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              <div className="px-6 py-6 space-y-4">
+                <div className="rounded-xl border border-white/10 bg-slate-900/40 p-4">
+                  <div className="flex items-start gap-3">
+                    <div className="w-10 h-10 rounded-lg bg-blue-500/15 border border-blue-400/20 flex items-center justify-center flex-shrink-0">
+                      <FileText className="w-5 h-5 text-blue-200" />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="font-semibold text-white truncate">{request?.document_name}</div>
+                      <div className="text-sm text-slate-300/80 mt-0.5">Documento nº <span className="font-mono">{request?.id}</span></div>
+                      <div className="text-sm text-slate-300/80 mt-1">Assinado por <span className="font-medium text-white/90">{signer?.name || 'Signatário'}</span></div>
+                    </div>
+                  </div>
+                </div>
+
+                {signer?.verification_hash && (
+                  <div className="rounded-xl border border-white/10 bg-slate-900/40 p-4">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <div className="text-xs text-slate-300/80 font-semibold">CÓDIGO DE AUTENTICAÇÃO</div>
+                        <div className="mt-2 font-mono text-xs tracking-wide break-all text-white">{signer.verification_hash}</div>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={handleCopyVerificationCode}
+                        className="flex items-center gap-2 px-3 py-2 rounded-lg bg-white/5 border border-white/10 text-slate-100 hover:bg-white/10 transition text-sm font-medium"
+                        title="Copiar código"
+                      >
+                        <Copy className="w-4 h-4" />
+                        Copiar
+                      </button>
+                    </div>
+
+                    {verificationUrl && (
+                      <div className="mt-3">
+                        <button
+                          type="button"
+                          onClick={() => window.open(verificationUrl, '_blank')}
+                          className="inline-flex items-center gap-2 text-sm font-semibold text-blue-200 hover:text-blue-100"
+                        >
+                          <ExternalLink className="w-4 h-4" />
+                          Verificar autenticidade
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+
+              <div className="px-6 pb-8 space-y-3">
+              <button
+                onClick={handleDownloadAlreadySigned}
+                disabled={downloadingAlreadySigned}
+                className="w-full flex items-center justify-center gap-2 px-5 py-3 bg-blue-600 text-white rounded-xl font-semibold hover:bg-blue-700 transition shadow-lg shadow-blue-600/30 disabled:opacity-70 disabled:cursor-wait"
+              >
+                {downloadingAlreadySigned ? (
+                  <>
+                    <Loader2 className="w-5 h-5 animate-spin" />
+                    Preparando...
+                  </>
+                ) : (
+                  <>
+                    <Download className="w-5 h-5" />
+                    Abrir documento assinado
+                  </>
+                )}
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setShowReport(true)}
+                className="w-full flex items-center justify-center gap-2 px-5 py-3 bg-white/5 border border-white/10 text-slate-100 rounded-xl font-semibold hover:bg-white/10 transition"
+              >
+                <FileText className="w-5 h-5 text-slate-200" />
+                Ver relatório de assinatura
+              </button>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                {signer?.signed_document_path && (
+                  <button
+                    type="button"
+                    onClick={handleCopySignedLink}
+                    className="w-full flex items-center justify-center gap-2 px-5 py-3 bg-white/5 border border-white/10 text-slate-100 rounded-xl font-medium hover:bg-white/10 transition"
+                  >
+                    <Share2 className="w-5 h-5 text-slate-200" />
+                    Copiar link
+                  </button>
+                )}
+
+                {signer?.public_token && (
+                  <button
+                    type="button"
+                    onClick={handleCopySignerToken}
+                    className="w-full flex items-center justify-center gap-2 px-5 py-3 bg-white/5 border border-white/10 text-slate-100 rounded-xl font-medium hover:bg-white/10 transition"
+                  >
+                    <Shield className="w-5 h-5 text-slate-200" />
+                    Copiar token
+                  </button>
+                )}
+              </div>
+            </div>
+
+            <div className="px-6 pb-6 border-t border-white/10">
+              <p className="pt-4 text-xs text-slate-300/70 text-center">
+                Guarde o código de autenticação para conferência futura.
+              </p>
+            </div>
           </div>
-          <h1 className="text-xl font-bold text-slate-800 mb-2">Documento já assinado</h1>
-          <p className="text-slate-600 mb-6">
-            Este documento já foi assinado em {signer?.signed_at ? formatDate(signer.signed_at) : ''}.
-          </p>
-          
-          <button
-            onClick={handleDownloadAlreadySigned}
-            disabled={downloadingAlreadySigned}
-            className="w-full flex items-center justify-center gap-2 px-6 py-3 bg-gradient-to-r from-blue-600 to-blue-700 text-white rounded-xl font-semibold hover:from-blue-700 hover:to-blue-800 transition-all shadow-lg shadow-blue-500/25 disabled:opacity-70 disabled:cursor-wait"
-          >
-            {downloadingAlreadySigned ? (
-              <>
-                <Loader2 className="w-5 h-5 animate-spin" />
-                Preparando...
-              </>
-            ) : (
-              <>
-                <Download className="w-5 h-5" />
-                Baixar documento assinado
-              </>
-            )}
-          </button>
         </div>
+      </div>
       </div>
     );
   }
@@ -1469,7 +1770,7 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
               </div>
 
               <h1 className="mt-5 text-xl font-semibold text-gray-900 text-center">Documento assinado com sucesso!</h1>
-              <p className="mt-1 text-sm text-gray-500 text-center">Sua assinatura digital foi registrada e validada.</p>
+              <p className="mt-1 text-sm text-gray-500 text-center">Sua assinatura foi registrada e validada.</p>
             </div>
 
             {/* Card do documento */}
@@ -1539,7 +1840,7 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
             {/* Informação adicional */}
             <div className="px-6 pb-6 border-t border-gray-100">
               <p className="pt-4 text-xs text-gray-500 text-center">
-                Uma cópia do documento assinado será enviada para seu e-mail.
+                Uma cópia do documento assinado ficará disponível para download.
                 {signer?.verification_hash && (
                   <> Você pode verificar a autenticidade a qualquer momento na página de verificação.</>
                 )}
@@ -1559,7 +1860,10 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
           <div className="w-7 h-7 bg-blue-600 rounded-lg flex items-center justify-center">
             <Scale className="w-4 h-4 text-white" />
           </div>
-          <span className="text-white font-medium text-sm">Assinatura Digital</span>
+          <div className="leading-tight">
+            <div className="text-white font-semibold text-sm">Juris</div>
+            <div className="text-[11px] text-slate-400">Assinatura</div>
+          </div>
         </div>
         <div className="flex items-center gap-2 min-w-0">
           <div className="text-xs text-slate-400 truncate max-w-[160px]">
@@ -1654,6 +1958,72 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
         </div>
       )}
 
+      {loading && (
+        <div className="fixed inset-0 z-[70] bg-gradient-to-b from-slate-50 to-white flex items-center justify-center p-5">
+          <div className="w-full max-w-sm relative">
+            <div className="pointer-events-none absolute -inset-10 overflow-hidden" aria-hidden>
+              <div className="absolute -top-10 -left-10 w-56 h-56 rounded-full bg-blue-200/30 blur-3xl animate-[drift1_12s_ease-in-out_infinite]" />
+              <div className="absolute -bottom-14 -right-10 w-64 h-64 rounded-full bg-indigo-200/25 blur-3xl animate-[drift2_14s_ease-in-out_infinite]" />
+              <div className="absolute top-1/3 -right-14 w-48 h-48 rounded-full bg-emerald-200/18 blur-3xl animate-[drift3_16s_ease-in-out_infinite]" />
+            </div>
+
+            <div className="relative rounded-3xl bg-white/80 backdrop-blur shadow-xl ring-1 ring-slate-200/60 px-6 pt-7 pb-6">
+              <div className="flex items-center justify-center">
+                <div className="w-14 h-14 rounded-2xl bg-white shadow ring-1 ring-slate-200 flex items-center justify-center">
+                  <div className="text-3xl animate-[pen_3.2s_cubic-bezier(0.4,0,0.2,1)_infinite]">✍️</div>
+                </div>
+              </div>
+
+              <div className="mt-6 text-center">
+                <h1 className="text-slate-800 text-lg font-semibold tracking-tight">Enviando assinatura</h1>
+                <p className="mt-2 text-slate-500 text-sm leading-relaxed">
+                  {signingStatusMessages[signingStatusIndex]}
+                </p>
+                <p className="mt-1.5 text-xs text-slate-400">
+                  {(request?.document_name || 'Documento').trim()}
+                </p>
+              </div>
+
+              <div className="mt-6 rounded-2xl bg-white ring-1 ring-slate-200/70 p-4">
+                <div className="space-y-3">
+                  <div className="h-3 w-40 rounded-full bg-slate-100 relative overflow-hidden">
+                    <div className="absolute inset-0 -translate-x-full bg-gradient-to-r from-transparent via-white/80 to-transparent animate-[shimmer_1.7s_ease-in-out_infinite]" />
+                  </div>
+                  <div className="h-2.5 w-full rounded-full bg-slate-100 relative overflow-hidden">
+                    <div className="absolute inset-0 -translate-x-full bg-gradient-to-r from-transparent via-white/80 to-transparent animate-[shimmer_1.7s_ease-in-out_infinite]" />
+                  </div>
+                  <div className="h-2.5 w-11/12 rounded-full bg-slate-100 relative overflow-hidden">
+                    <div className="absolute inset-0 -translate-x-full bg-gradient-to-r from-transparent via-white/80 to-transparent animate-[shimmer_1.7s_ease-in-out_infinite]" />
+                  </div>
+                </div>
+
+                <div className="mt-5 flex items-center justify-center">
+                  <svg width="240" height="34" viewBox="0 0 240 34" fill="none" xmlns="http://www.w3.org/2000/svg" className="opacity-90">
+                    <path
+                      d="M8 24 C 28 10, 44 30, 66 16 C 82 6, 92 34, 114 18 C 132 6, 148 30, 168 14 C 184 6, 200 30, 232 10"
+                      stroke="#2563eb"
+                      strokeWidth="3"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeDasharray="220"
+                      strokeDashoffset="220"
+                      style={{ animation: 'write 2.6s ease-in-out infinite' }}
+                    />
+                  </svg>
+                </div>
+              </div>
+
+              <div className="mt-6">
+                <div className="h-1.5 rounded-full bg-slate-100 overflow-hidden">
+                  <div className="h-full w-full rounded-full bg-gradient-to-r from-blue-400 via-blue-500 to-indigo-500 animate-[bar_1.9s_ease-in-out_infinite]" />
+                </div>
+                <p className="mt-3 text-xs text-slate-400 text-center">Não feche esta janela. Você será redirecionado automaticamente.</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Botão Assinar - Flutuante estilizado */}
       {signer?.status !== 'signed' && (
         (() => {
@@ -1699,7 +2069,7 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
                 </div>
                 <div>
                   <div className="text-white font-semibold">Assinar Documento</div>
-                  <div className="text-xs" style={{ color: 'rgba(191,219,254,1)' }}>Etapa {modalStep === 'google_auth' ? '1' : modalStep === 'data' ? '2' : modalStep === 'signature' ? '3' : modalStep === 'facial' ? '4' : '5'} de 5</div>
+                  <div className="text-xs" style={{ color: 'rgba(191,219,254,1)' }}>Etapa {(modalStep === 'google_auth' || modalStep === 'phone_otp') ? '1' : modalStep === 'data' ? '2' : modalStep === 'signature' ? '3' : modalStep === 'facial' ? '4' : '5'} de 5</div>
                 </div>
               </div>
               <button onClick={closeSignModal} className="p-2 rounded-lg" style={{ color: 'rgba(255,255,255,0.8)' }}>
@@ -1711,7 +2081,7 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
             <div className="flex-shrink-0 h-1.5 bg-slate-200">
               <div 
                 className="h-full bg-blue-500 transition-all duration-300"
-                style={{ width: modalStep === 'google_auth' ? '20%' : modalStep === 'data' ? '40%' : modalStep === 'signature' ? '60%' : modalStep === 'location' ? '80%' : '100%' }}
+                style={{ width: (modalStep === 'google_auth' || modalStep === 'phone_otp') ? '20%' : modalStep === 'data' ? '40%' : modalStep === 'signature' ? '60%' : modalStep === 'location' ? '80%' : '100%' }}
               />
             </div>
 
@@ -1719,10 +2089,12 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
               {/* Etapa 1: Autenticação / Identificação */}
               {modalStep === 'google_auth' && (
                 <div className="text-center">
-                  <h2 className="text-xl font-bold text-slate-800 mb-2">Confirme sua identidade</h2>
-                  <p className="text-slate-400 text-sm mb-6">
-                    Escolha uma das opções para se identificar:
-                  </p>
+                  <div className="mb-8">
+                    <h2 className="text-2xl font-bold text-slate-900 mb-3">Confirme sua identidade</h2>
+                    <p className="text-slate-500 text-sm leading-relaxed max-w-xs mx-auto">
+                      Escolha uma das opções abaixo para se identificar de forma segura.
+                    </p>
+                  </div>
 
                   {googleAuthError && (
                     <div className="mb-5 p-4 bg-red-50 border border-red-200 rounded-xl text-left">
@@ -1738,8 +2110,8 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
                       <div className="flex items-center gap-3 justify-center">
                         <CheckCircle className="w-6 h-6 text-emerald-500" />
                         <div className="text-left">
-                          <p className="font-medium text-emerald-700">{googleUser.name}</p>
-                          <p className="text-sm text-emerald-600">{googleUser.email}</p>
+                          {googleUser?.name && <p className="font-medium text-emerald-700">{googleUser.name}</p>}
+                          <p className="text-sm text-emerald-600">{googleUser?.email}</p>
                         </div>
                       </div>
                       <button
@@ -1756,35 +2128,131 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
                         <span>Carregando...</span>
                       </div>
 
-                      <div className={googleAuthLoading ? 'opacity-70 pointer-events-none' : ''}>
+                      <div className={`space-y-3 ${googleAuthLoading ? 'opacity-70 pointer-events-none' : ''}`}>
+                        {/* Botão Google - renderizado diretamente pelo Google Identity */}
                         <div ref={googleButtonRef} className="flex justify-center" />
 
-                        <div className="relative my-3">
+                        <div className="relative py-2 flex items-center justify-center">
                           <div className="absolute inset-0 flex items-center">
                             <div className="w-full border-t border-slate-200" />
                           </div>
-                          <div className="relative flex justify-center text-xs">
-                            <span className="px-3 bg-white text-slate-400 uppercase">ou</span>
+                          <div className="relative bg-white px-4 text-xs font-semibold text-slate-400 uppercase tracking-wider">
+                            OU
                           </div>
                         </div>
 
                         <button
-                          onClick={() => setModalStep('data')}
-                          className="w-full h-10 px-6 flex items-center justify-center gap-3 rounded-full bg-slate-800 hover:bg-slate-700 font-medium text-sm text-white transition"
+                          type="button"
+                          onClick={() => setModalStep('phone_otp')}
+                          className="w-full bg-slate-800 hover:bg-slate-700 text-white font-semibold py-3.5 px-4 rounded-xl flex items-center justify-center gap-3 shadow-lg shadow-slate-900/20 transition-all duration-200 active:scale-[0.98]"
                         >
-                          <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                          <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
                             <rect x="5" y="2" width="14" height="20" rx="2" stroke="currentColor" strokeWidth="2"/>
                             <line x1="9" y1="18" x2="15" y2="18" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/>
                           </svg>
                           Continuar com Telefone
                         </button>
 
-                        <button className="mt-4 text-sm text-blue-500 hover:text-blue-600 transition">
-                          Precisa de ajuda?
-                        </button>
+                        <div className="pt-4 text-center">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const phone = '5565984046375';
+                              const docName = (request?.document_name || 'documento').trim();
+                              const msg = `Olá! Preciso de ajuda para assinar o documento: ${docName}. Token: ${token}`;
+                              const url = `https://wa.me/${phone}?text=${encodeURIComponent(msg)}`;
+                              window.open(url, '_blank');
+                            }}
+                            className="text-blue-600 hover:text-blue-700 text-sm font-semibold transition-colors"
+                          >
+                            Precisa de ajuda?
+                          </button>
+                        </div>
                       </div>
                     </div>
                   )}
+                </div>
+              )}
+
+              {/* Etapa: Verificação por telefone */}
+              {modalStep === 'phone_otp' && (
+                <div className="space-y-5">
+                  <div className="text-center">
+                    <h2 className="text-xl font-bold text-slate-800">Verifique seu telefone</h2>
+                    <p className="text-slate-500 text-sm mt-2">
+                      Enviaremos um código por SMS para confirmar sua identidade.
+                    </p>
+                  </div>
+
+                  {phoneOtpError && (
+                    <div className="p-3 bg-red-50 border border-red-200 rounded-xl text-left text-sm text-red-700">
+                      {phoneOtpError}
+                    </div>
+                  )}
+
+                  <div className="space-y-3">
+                    <div>
+                      <label className="block text-sm font-medium text-slate-700 mb-1.5">Telefone *</label>
+                      <input
+                        type="tel"
+                        inputMode="tel"
+                        value={signerData.phone}
+                        onChange={(e) => setSignerData((d) => ({ ...d, phone: e.target.value }))}
+                        placeholder="(11) 98888-7777"
+                        className="w-full px-4 py-3 border border-slate-200 rounded-xl text-base focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
+                      />
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={handleSendPhoneOtp}
+                      disabled={phoneOtpLoading}
+                      className="w-full py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-semibold transition disabled:opacity-50"
+                    >
+                      {phoneOtpLoading ? 'Enviando…' : (phoneOtpSent ? 'Reenviar código' : 'Enviar código')}
+                    </button>
+
+                    {phoneOtpSent && (
+                      <div>
+                        <label className="block text-sm font-medium text-slate-700 mb-1.5">Código SMS *</label>
+                        <input
+                          type="text"
+                          inputMode="numeric"
+                          maxLength={6}
+                          value={phoneOtp}
+                          onChange={(e) => setPhoneOtp(e.target.value)}
+                          placeholder="000000"
+                          className="w-full px-4 py-3 border border-slate-200 rounded-xl text-base focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 tracking-widest text-center"
+                        />
+                        {phoneOtpExpiresAt && (
+                          <div className="text-xs text-slate-500 mt-2">
+                            Válido até: {formatDate(phoneOtpExpiresAt)}
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="space-y-3">
+                    {phoneOtpSent && (
+                      <button
+                        type="button"
+                        onClick={handleVerifyPhoneOtp}
+                        disabled={phoneOtpLoading || phoneOtp.length < 4}
+                        className="w-full py-4 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-bold text-lg shadow-lg shadow-emerald-500/30 disabled:opacity-50 transition"
+                      >
+                        {phoneOtpLoading ? 'Validando…' : 'Validar e continuar'}
+                      </button>
+                    )}
+
+                    <button
+                      type="button"
+                      onClick={() => setModalStep('google_auth')}
+                      className="w-full py-3 border border-slate-200 rounded-xl font-semibold text-slate-700 hover:bg-slate-50 transition"
+                    >
+                      Voltar
+                    </button>
+                  </div>
                 </div>
               )}
 

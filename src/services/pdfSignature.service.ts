@@ -21,11 +21,19 @@ interface GeoInfo {
 }
 
 class PdfSignatureService {
+  private readonly storageBucketCache = new Map<string, string>();
+
   private async sha256Hex(bytes: Uint8Array): Promise<string> {
     const ab = bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer;
     const hashBuffer = await crypto.subtle.digest('SHA-256', ab);
     const hashArray = Array.from(new Uint8Array(hashBuffer));
     return hashArray.map((b) => b.toString(16).padStart(2, '0')).join('').toUpperCase();
+  }
+
+  private async canvasToPngBytes(canvas: HTMLCanvasElement): Promise<Uint8Array> {
+    const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob((b) => resolve(b), 'image/png'));
+    if (!blob) throw new Error('Falha ao exportar imagem');
+    return new Uint8Array(await blob.arrayBuffer());
   }
 
   private concatBytes(chunks: Uint8Array[]): Uint8Array {
@@ -50,24 +58,41 @@ class PdfSignatureService {
     }
 
     // Path do storage (tentar buckets conhecidos)
-    const bucketsToTry = ['document-templates', 'generated-documents', 'assinados'];
-    for (const bucket of bucketsToTry) {
-      try {
-        const { data, error } = await supabase.storage.from(bucket).createSignedUrl(pathOrUrl, 3600);
-        if (error || !data?.signedUrl) continue;
-        const res = await fetch(data.signedUrl);
-        if (!res.ok) continue;
-        return new Uint8Array(await res.arrayBuffer());
-      } catch {
-        // ignore
+    const preferredBucket = this.storageBucketCache.get(pathOrUrl);
+    const defaultBuckets = ['document-templates', 'generated-documents', 'assinados'];
+    const bucketsToTry = preferredBucket ? [preferredBucket] : defaultBuckets;
+    const tryBuckets = async (buckets: string[]) => {
+      for (const bucket of buckets) {
+        try {
+          const { data, error } = await supabase.storage.from(bucket).createSignedUrl(pathOrUrl, 3600);
+          if (error || !data?.signedUrl) continue;
+          const res = await fetch(data.signedUrl);
+          if (!res.ok) continue;
+          this.storageBucketCache.set(pathOrUrl, bucket);
+          return new Uint8Array(await res.arrayBuffer());
+        } catch {
+          // ignore
+        }
       }
+      return null;
+    };
+
+    const firstTry = await tryBuckets(bucketsToTry);
+    if (firstTry) return firstTry;
+
+    if (preferredBucket) {
+      const fallbackBuckets = defaultBuckets.filter((b) => b !== preferredBucket);
+      const fallbackTry = await tryBuckets(fallbackBuckets);
+      if (fallbackTry) return fallbackTry;
     }
+
     return null;
   }
 
-  private formatIntegrityHash(hash: string | null | undefined): string {
+  private formatIntegrityHash(hash: string | null | undefined, truncate = false): string {
     const h = (hash || '').trim();
     if (!h) return 'N/A';
+    if (!truncate) return h;
     if (h.length <= 18) return h;
     return `${h.slice(0, 10)}…${h.slice(-8)}`;
   }
@@ -299,27 +324,26 @@ class PdfSignatureService {
     void docHash;
 
     const mode: 'card' | 'strip' = variant ?? 'strip';
-    const integrityShort = this.formatIntegrityHash(integritySha256);
+    const integrityFull = this.formatIntegrityHash(integritySha256, false);
 
     if (mode === 'strip') {
-      const h = 18;
-      const x = 10;
-      const y = 6;
-      const w = pageWidth - 20;
+      const h = 24;
+      const x = 6;
+      const y = 10;
+      const w = pageWidth - 12;
 
       page.drawRectangle({ x, y, width: w, height: h, color: rgb(0.98, 0.99, 1), borderColor: rgb(0.85, 0.88, 0.95), borderWidth: 1 });
-      const label = `Hash SHA-256 do arquivo original: ${integrityShort}`;
-      page.drawText(label, { x: x + 8, y: y + 6, size: 6, font: helvetica, color: rgb(0.35, 0.35, 0.35) });
+      page.drawText(`Hash SHA-256: ${integrityFull}`, { x: x + 6, y: y + 13, size: 5.5, font: helvetica, color: rgb(0.35, 0.35, 0.35) });
       if (signer.verification_hash) {
-        page.drawText(`Código: ${(signer.verification_hash || '').toUpperCase()}`, { x: x + 8, y: y + 1.8, size: 6, font: helveticaBold, color: rgb(0.15, 0.25, 0.25) });
+        page.drawText(`Código: ${(signer.verification_hash || '').toUpperCase()}`, { x: x + 6, y: y + 5, size: 6, font: helveticaBold, color: rgb(0.15, 0.25, 0.25) });
       }
       return;
     }
 
-    const boxH = 70;
-    const boxX = 18;
-    const boxY = 12;
-    const boxW = pageWidth - 36;
+    const boxH = 72;
+    const boxX = 6;
+    const boxY = 14;
+    const boxW = pageWidth - 12;
 
     // Card
     page.drawRectangle({
@@ -341,39 +365,27 @@ class PdfSignatureService {
       color: rgb(0.2, 0.45, 0.9),
     });
 
-    // Left logo (J)
-    const logoCx = boxX + 28;
-    const logoCy = boxY + boxH / 2;
-    page.drawCircle({ x: logoCx, y: logoCy, size: 18, color: rgb(0.2, 0.45, 0.9) });
-    page.drawText('J', {
-      x: logoCx - 5.5,
-      y: logoCy - 7.5,
-      size: 16,
-      font: helveticaBold,
-      color: rgb(1, 1, 1),
-    });
-
-    const qrSize = 44;
-    const qrX = boxX + boxW - qrSize - 12;
+    const qrSize = 52;
+    const qrX = boxX + boxW - qrSize - 10;
     const qrY = boxY + (boxH - qrSize) / 2;
     if (qrImage) {
       page.drawImage(qrImage, { x: qrX, y: qrY, width: qrSize, height: qrSize });
     }
 
-    const textX = boxX + 56;
+    const textX = boxX + 12;
     const title = 'Escaneie o QR Code para verificar a autenticidade do documento';
-    page.drawText(title, { x: textX, y: boxY + boxH - 16, size: 8, font: helveticaBold, color: rgb(0.12, 0.12, 0.12) });
+    page.drawText(title, { x: textX, y: boxY + boxH - 14, size: 8, font: helveticaBold, color: rgb(0.12, 0.12, 0.12) });
 
     const codeLabel = 'Código de autenticação:';
     const code = (signer.verification_hash || '').toUpperCase() || 'N/A';
-    page.drawText(codeLabel, { x: textX, y: boxY + boxH - 30, size: 7, font: helvetica, color: rgb(0.35, 0.35, 0.35) });
-    page.drawText(code, { x: textX + 98, y: boxY + boxH - 30, size: 7.2, font: helveticaBold, color: rgb(0.15, 0.25, 0.25) });
+    page.drawText(codeLabel, { x: textX, y: boxY + boxH - 28, size: 7, font: helvetica, color: rgb(0.35, 0.35, 0.35) });
+    page.drawText(code, { x: textX + 90, y: boxY + boxH - 28, size: 7, font: helveticaBold, color: rgb(0.15, 0.25, 0.25) });
 
-    page.drawText(`Hash SHA-256 do arquivo original: ${integrityShort}`, { x: textX, y: boxY + boxH - 42, size: 6.5, font: helvetica, color: rgb(0.35, 0.35, 0.35) });
+    page.drawText(`Hash SHA-256: ${integrityFull}`, { x: textX, y: boxY + boxH - 42, size: 5.5, font: helvetica, color: rgb(0.35, 0.35, 0.35) });
 
     if (verificationUrl) {
-      const urlToDraw = verificationUrl.length > 70 ? `${verificationUrl.slice(0, 67)}...` : verificationUrl;
-      page.drawText(urlToDraw, { x: textX, y: boxY + 10, size: 6.5, font: helvetica, color: rgb(0.12, 0.35, 0.7) });
+      const urlToDraw = verificationUrl.length > 90 ? `${verificationUrl.slice(0, 87)}...` : verificationUrl;
+      page.drawText(urlToDraw, { x: textX, y: boxY + 8, size: 6, font: helvetica, color: rgb(0.12, 0.35, 0.7) });
     }
   }
 
@@ -470,7 +482,7 @@ class PdfSignatureService {
     // Método de autenticação
     if (signer.auth_provider === 'google') {
       authPoints.push(`Autenticação via Google (${signer.auth_email || 'não informado'})`);
-      if (signer.auth_google_sub) authPoints.push(`Google ID: ${signer.auth_google_sub.slice(0, 8)}...`);
+      if (signer.auth_google_sub) authPoints.push(`Google ID: ${signer.auth_google_sub}`);
     } else if (signer.auth_provider === 'email_link') {
       authPoints.push(`Autenticação via Link por E-mail (${signer.auth_email || 'não informado'})`);
     } else if (signer.auth_provider === 'phone') {
@@ -516,8 +528,7 @@ class PdfSignatureService {
     }
     
     if (signer.public_token) {
-      const maskedToken = `${signer.public_token.slice(0, 8)}****,****,****-${signer.public_token.slice(-12)}`;
-      page1.drawText(`Token: ${maskedToken}`, { x: infoX, y: infoY, size: 8, font: helvetica, color: rgb(0.3, 0.3, 0.3) });
+      page1.drawText(`Token: ${signer.public_token}`, { x: infoX, y: infoY, size: 8, font: helvetica, color: rgb(0.3, 0.3, 0.3) });
       infoY -= 10;
     }
     
@@ -566,11 +577,11 @@ class PdfSignatureService {
       
       // Marca d'água CONFIDENTIAL com data (cinza e mais transparente)
       const wmY = photoY + photoH / 2;
-      page2.drawText('- - - - - - - - - - - - - - - - - - - - - - - -', { x: photoX + 40, y: wmY + 30, size: 10, font: helvetica, color: rgb(0.45, 0.45, 0.45), opacity: 0.22 });
-      page2.drawText('C O N F I D E N T I A L', { x: photoX + 80, y: wmY + 10, size: 14, font: helveticaBold, color: rgb(0.45, 0.45, 0.45), opacity: 0.22 });
-      const dateWm = signedAt.toLocaleString('pt-BR', { timeZone: 'America/Manaus', day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit', second: '2-digit' });
-      page2.drawText(dateWm, { x: photoX + 110, y: wmY - 10, size: 10, font: helvetica, color: rgb(0.45, 0.45, 0.45), opacity: 0.22 });
-      page2.drawText('- - - - - - - - - - - - - - - - - - - - - - - -', { x: photoX + 40, y: wmY - 30, size: 10, font: helvetica, color: rgb(0.45, 0.45, 0.45), opacity: 0.22 });
+      page2.drawText('- - - - - - - - - - - - - - - - - - - - - - - -', { x: photoX + 40, y: wmY + 30, size: 10, font: helvetica, color: rgb(0.25, 0.25, 0.25), opacity: 0.42 });
+      page2.drawText('C O N F I D E N T I A L', { x: photoX + 80, y: wmY + 10, size: 14, font: helveticaBold, color: rgb(0.25, 0.25, 0.25), opacity: 0.42 });
+      page2.drawText(signedAtStr, { x: photoX + 115, y: wmY - 10, size: 9, font: helvetica, color: rgb(0.25, 0.25, 0.25), opacity: 0.42 });
+
+      page2.drawRectangle({ x: photoX, y: photoY, width: photoW, height: photoH, borderColor: rgb(0.6, 0.6, 0.6), borderWidth: 1, borderDashArray: [4, 4] });
     } else {
       page2.drawText('Selfie não coletada', { x: photoX + 100, y: photoY + photoH / 2, size: 14, font: helveticaBold, color: rgb(0.6, 0.6, 0.6) });
     }
@@ -689,10 +700,24 @@ class PdfSignatureService {
       });
     }
 
+    const authSummary = (() => {
+      if (signer.auth_provider === 'phone') {
+        const digits = String((signer as any).phone || '').replace(/\D/g, '');
+        return digits ? `Autenticação via Telefone (${digits})` : 'Autenticação via Telefone';
+      }
+      if (signer.auth_provider === 'email_link') {
+        return signer.auth_email ? `Autenticação via Link por E-mail (${signer.auth_email})` : 'Autenticação via Link por E-mail';
+      }
+      if (signer.auth_provider === 'google') {
+        return signer.auth_email ? `Autenticação via Google (${signer.auth_email})` : 'Autenticação via Google';
+      }
+      return '';
+    })();
+
     history.push({
       label: 'Assinado',
       when: signedAtStr2,
-      detail: `${signer.name}${signerEmail}${signerCpf} assinou este documento${signer.signer_ip ? ` por meio do IP ${signer.signer_ip}` : ''}${locationInfo}`,
+      detail: `${signer.name}${signerEmail}${signerCpf} assinou este documento${signer.signer_ip ? ` por meio do IP ${signer.signer_ip}` : ''}${locationInfo}${authSummary ? `. ${authSummary}` : ''}`,
     });
 
     let y = h3 - 105;
@@ -987,7 +1012,12 @@ class PdfSignatureService {
     const pdfPageHeight = 841.89;
     const A4_WIDTH_PX = 794; // A4 @ 96 DPI
     const FOOTER_RESERVED_H = 100; // em pontos (pt) - deve ser >= boxY(10) + boxH(82)
-    const contentHeightPt = pdfPageHeight - FOOTER_RESERVED_H;
+    const CONTENT_MARGIN_X = 18;
+    const CONTENT_MARGIN_TOP = 16;
+    const contentTopY = pdfPageHeight - CONTENT_MARGIN_TOP;
+    const contentBottomY = FOOTER_RESERVED_H;
+    const contentHeightPt = contentTopY - contentBottomY;
+    const contentWidthPt = pdfPageWidth - (CONTENT_MARGIN_X * 2);
     const PLACEHOLDER_Y_OFFSET_PT = 40;
     const placeholderDetectedByDocument: Record<string, boolean> = {};
     const ENABLE_ATTACHMENT_FALLBACK_SIGNATURE = false;
@@ -1026,25 +1056,32 @@ class PdfSignatureService {
     const helveticaBold = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
 
     const integrityChunks: Uint8Array[] = [];
-    const mainBytes = request.document_path ? await this.fetchBytesFromPathOrUrl(request.document_path) : null;
-    if (mainBytes) integrityChunks.push(mainBytes);
+
+    const integrityPromises: Promise<Uint8Array | null>[] = [];
+    if (request.document_path) integrityPromises.push(this.fetchBytesFromPathOrUrl(request.document_path));
     if (Array.isArray((request as any).attachment_paths)) {
       const paths = ((request as any).attachment_paths as string[]).filter(Boolean);
-      for (const p of paths) {
-        const b = await this.fetchBytesFromPathOrUrl(p);
-        if (b) integrityChunks.push(b);
-      }
+      for (const p of paths) integrityPromises.push(this.fetchBytesFromPathOrUrl(p));
     }
     if (attachmentPdfItems && attachmentPdfItems.length > 0) {
       for (const a of attachmentPdfItems) {
-        try {
-          const res = await fetch(a.url);
-          if (!res.ok) continue;
-          integrityChunks.push(new Uint8Array(await res.arrayBuffer()));
-        } catch {
-          // ignore
-        }
+        integrityPromises.push(
+          (async () => {
+            try {
+              const res = await fetch(a.url);
+              if (!res.ok) return null;
+              return new Uint8Array(await res.arrayBuffer());
+            } catch {
+              return null;
+            }
+          })()
+        );
       }
+    }
+
+    const integrityResults = await Promise.all(integrityPromises);
+    for (const b of integrityResults) {
+      if (b) integrityChunks.push(b);
     }
     if (integrityChunks.length === 0) {
       integrityChunks.push(new TextEncoder().encode(`${request.id}:${signer.id}:${request.document_name || ''}`));
@@ -1236,7 +1273,7 @@ class PdfSignatureService {
         // Evitar reflow: nÃ£o forÃ§ar largura/margens aqui.
         // Apenas remover sombra (visual) para nÃ£o "sujar" o PDF.
         section.style.boxShadow = 'none';
-        await new Promise((r) => setTimeout(r, 50));
+        await new Promise<void>((r) => requestAnimationFrame(() => r()));
 
         try {
           // Detectar placeholders ANTES do html2canvas (e ocultar o texto)
@@ -1260,7 +1297,7 @@ class PdfSignatureService {
           }
 
           const canvas = await html2canvas(section, {
-            scale: 2,
+            scale: 1.5,
             useCORS: true,
             allowTaint: true,
             backgroundColor: '#ffffff',
@@ -1268,22 +1305,21 @@ class PdfSignatureService {
             imageTimeout: 0,
           });
 
-          // Regra: sempre encaixar pela LARGURA.
+          // Regra: sempre encaixar pela LARGURA (com recuo lateral).
           // Se a altura ficar maior que a área de conteúdo, fatiar em múltiplas páginas.
-          const scalePtPerPx = pdfPageWidth / canvas.width;
+          const scalePtPerPx = contentWidthPt / canvas.width;
           const scaledHeightPt = canvas.height * scalePtPerPx;
-          const drawWPt = pdfPageWidth;
+          const drawWPt = contentWidthPt;
 
           const isSingleSection = pages.length === 1;
 
           const drawOnePage = async (sliceCanvas: HTMLCanvasElement, pageNumberForFields: number, sliceStartPt?: number, fullScaledHeightPt?: number) => {
             const sliceHeightPt = sliceCanvas.height * scalePtPerPx;
             const drawHPt = sliceHeightPt;
-            const drawX = 0;
-            const drawY = FOOTER_RESERVED_H + (contentHeightPt - drawHPt);
+            const drawX = CONTENT_MARGIN_X;
+            const drawY = contentBottomY + (contentHeightPt - drawHPt);
 
-            const imgData = sliceCanvas.toDataURL('image/png');
-            const imgBytes = Uint8Array.from(atob(imgData.split(',')[1]), (c) => c.charCodeAt(0));
+            const imgBytes = await this.canvasToPngBytes(sliceCanvas);
             const image = await pdfDoc.embedPng(imgBytes);
             const pdfPage = pdfDoc.addPage([pdfPageWidth, pdfPageHeight]);
             pdfPage.drawImage(image, { x: drawX, y: drawY, width: drawWPt, height: drawHPt });
@@ -1338,8 +1374,8 @@ class PdfSignatureService {
                   y,
                   w: fieldW,
                   h: fieldHFull,
-                  minY: FOOTER_RESERVED_H,
-                  maxY: FOOTER_RESERVED_H + contentHeightPt,
+                  minY: contentBottomY,
+                  maxY: contentTopY,
                   signatureImage,
                 });
               } else {
@@ -1358,8 +1394,8 @@ class PdfSignatureService {
                   y,
                   w: fieldW,
                   h: fieldH,
-                  minY: FOOTER_RESERVED_H,
-                  maxY: FOOTER_RESERVED_H + contentHeightPt,
+                  minY: contentBottomY,
+                  maxY: contentTopY,
                   signatureImage,
                 });
               }
