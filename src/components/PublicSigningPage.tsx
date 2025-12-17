@@ -38,6 +38,113 @@ const formatCpf = (value: string): string => {
 const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
   const toast = useToastContext();
 
+  useEffect(() => {
+    const styleId = 'public-signing-loading-animations';
+    if (document.getElementById(styleId)) return;
+    const style = document.createElement('style');
+    style.id = styleId;
+    style.textContent = `
+      @keyframes pen {
+        0%, 100% { transform: translateY(0) rotate(-2deg); }
+        50% { transform: translateY(-3px) rotate(2deg); }
+      }
+      @keyframes shimmer {
+        0% { transform: translateX(-120%); opacity: 0.65; }
+        50% { transform: translateX(0%); opacity: 1; }
+        100% { transform: translateX(120%); opacity: 0.65; }
+      }
+      @keyframes write {
+        0% { stroke-dashoffset: 220; opacity: 0.55; }
+        45% { stroke-dashoffset: 0; opacity: 1; }
+        75% { stroke-dashoffset: 0; opacity: 1; }
+        100% { stroke-dashoffset: -220; opacity: 0.55; }
+      }
+      @keyframes bar {
+        0% { transform: translateX(-55%); opacity: 0.6; }
+        50% { transform: translateX(0%); opacity: 1; }
+        100% { transform: translateX(55%); opacity: 0.6; }
+      }
+      @keyframes drift1 {
+        0%, 100% { transform: translate3d(0, 0, 0); }
+        50% { transform: translate3d(18px, 10px, 0); }
+      }
+      @keyframes drift2 {
+        0%, 100% { transform: translate3d(0, 0, 0); }
+        50% { transform: translate3d(-16px, -12px, 0); }
+      }
+      @keyframes drift3 {
+        0%, 100% { transform: translate3d(0, 0, 0); }
+        50% { transform: translate3d(-10px, 16px, 0); }
+      }
+    `;
+    document.head.appendChild(style);
+  }, []);
+
+  useEffect(() => {
+    const styleId = 'public-signing-docx-responsive-styles';
+    if (document.getElementById(styleId)) return;
+    const style = document.createElement('style');
+    style.id = styleId;
+    style.textContent = `
+      .docx-responsive .docx-wrapper-wrapper {
+        background: transparent !important;
+        padding: 0 !important;
+        display: flex !important;
+        justify-content: center !important;
+      }
+      .docx-responsive .docx-wrapper {
+        max-width: none !important;
+        width: auto !important;
+        padding: 0 !important;
+        box-sizing: border-box !important;
+        box-shadow: none !important;
+        margin: 0 !important;
+        background: transparent !important;
+      }
+      /* FORÇAR A4 FIXO para garantir layout idêntico ao da criação */
+      .docx-responsive .docx-wrapper > section,
+      .docx-responsive .docx-wrapper > section > article {
+        width: 794px !important; /* A4 @ 96dpi */
+        min-width: 794px !important;
+        max-width: 794px !important;
+        background: white !important;
+        box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1) !important;
+        margin-bottom: 20px !important;
+        box-sizing: border-box !important;
+        padding: 40px !important; /* Mesma padding do SignatureModule */
+      }
+
+      /* Scrollbar */
+      .docx-responsive::-webkit-scrollbar {
+        height: 8px;
+      }
+      .docx-responsive::-webkit-scrollbar-track {
+        background: #f1f5f9;
+      }
+      .docx-responsive::-webkit-scrollbar-thumb {
+        background: #cbd5e1;
+        border-radius: 4px;
+      }
+
+      @media (max-width: 820px) {
+        .docx-responsive {
+          overflow-x: hidden !important;
+          padding: 12px !important;
+          align-items: center !important;
+        }
+
+        .docx-responsive .docx-wrapper > section,
+        .docx-responsive .docx-wrapper > section > article {
+          width: 100% !important;
+          min-width: 0 !important;
+          max-width: 100% !important;
+          padding: 20px !important;
+        }
+      }
+    `;
+    document.head.appendChild(style);
+  }, []);
+
   const LoadingScreen = (props: { title: string; subtitle?: string }) => (
     <div className="min-h-[100dvh] bg-gradient-to-b from-slate-50 to-white flex items-center justify-center p-5">
       <div className="w-full max-w-sm relative">
@@ -99,41 +206,6 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
             </div>
             <p className="mt-3 text-xs text-slate-400 text-center">Aguarde enquanto preparamos tudo para você.</p>
           </div>
-
-          <style>{`
-            @keyframes pen {
-              0%, 100% { transform: translateY(0) rotate(-2deg); }
-              50% { transform: translateY(-3px) rotate(2deg); }
-            }
-            @keyframes shimmer {
-              0% { transform: translateX(-120%); opacity: 0.65; }
-              50% { transform: translateX(0%); opacity: 1; }
-              100% { transform: translateX(120%); opacity: 0.65; }
-            }
-            @keyframes write {
-              0% { stroke-dashoffset: 220; opacity: 0.55; }
-              45% { stroke-dashoffset: 0; opacity: 1; }
-              75% { stroke-dashoffset: 0; opacity: 1; }
-              100% { stroke-dashoffset: -220; opacity: 0.55; }
-            }
-            @keyframes bar {
-              0% { transform: translateX(-55%); opacity: 0.6; }
-              50% { transform: translateX(0%); opacity: 1; }
-              100% { transform: translateX(55%); opacity: 0.6; }
-            }
-            @keyframes drift1 {
-              0%, 100% { transform: translate3d(0, 0, 0); }
-              50% { transform: translate3d(18px, 10px, 0); }
-            }
-            @keyframes drift2 {
-              0%, 100% { transform: translate3d(0, 0, 0); }
-              50% { transform: translate3d(-16px, -12px, 0); }
-            }
-            @keyframes drift3 {
-              0%, 100% { transform: translate3d(0, 0, 0); }
-              50% { transform: translate3d(-10px, 16px, 0); }
-            }
-          `}</style>
         </div>
       </div>
     </div>
@@ -1530,65 +1602,6 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
                   padding: '20px',
                 }}
               />
-              <style>{`
-                .docx-responsive .docx-wrapper-wrapper {
-                  background: transparent !important;
-                  padding: 0 !important;
-                  display: flex !important;
-                  justify-content: center !important;
-                }
-                .docx-responsive .docx-wrapper {
-                  max-width: none !important;
-                  width: auto !important;
-                  padding: 0 !important;
-                  box-sizing: border-box !important;
-                  box-shadow: none !important;
-                  margin: 0 !important;
-                  background: transparent !important;
-                }
-                /* FORÇAR A4 FIXO para garantir layout idêntico ao da criação */
-                .docx-responsive .docx-wrapper > section,
-                .docx-responsive .docx-wrapper > section > article {
-                  width: 794px !important; /* A4 @ 96dpi */
-                  min-width: 794px !important;
-                  max-width: 794px !important;
-                  background: white !important;
-                  box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1) !important;
-                  margin-bottom: 20px !important;
-                  box-sizing: border-box !important;
-                  padding: 40px !important; /* Mesma padding do SignatureModule */
-                }
-                
-                /* Esconder scrollbar horizontal se possível */
-                .docx-responsive::-webkit-scrollbar {
-                  height: 8px;
-                }
-                .docx-responsive::-webkit-scrollbar-track {
-                  background: #f1f5f9;
-                }
-                .docx-responsive::-webkit-scrollbar-thumb {
-                  background: #cbd5e1;
-                  border-radius: 4px;
-                }
-                
-                @media (max-width: 820px) {
-                   /* Em mobile, precisamos permitir scroll horizontal ou escala */
-                   /* Mas NÃO podemos mudar a largura do section, senão quebra o reflow */
-                   .docx-responsive {
-                     overflow-x: hidden !important;
-                     padding: 12px !important;
-                     align-items: center !important;
-                   }
-
-                   .docx-responsive .docx-wrapper > section,
-                   .docx-responsive .docx-wrapper > section > article {
-                     width: 100% !important;
-                     min-width: 0 !important;
-                     max-width: 100% !important;
-                     padding: 20px !important;
-                   }
-                }
-              `}</style>
               
               {/* Documentos Anexos - Renderizados inline */}
               {attachments.length > 0 && (
@@ -1738,40 +1751,38 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
                     </div>
                   ) : (
                     <div className="space-y-3">
-                      {googleAuthLoading ? (
-                        <div className="flex items-center justify-center gap-2 py-4 text-slate-500">
-                          <Loader2 className="w-5 h-5 animate-spin" />
-                          <span>Carregando...</span>
-                        </div>
-                      ) : (
-                        <>
-                          <div ref={googleButtonRef} className="flex justify-center" />
+                      <div className={`flex items-center justify-center gap-2 py-4 text-slate-500 ${googleAuthLoading ? '' : 'hidden'}`}>
+                        <Loader2 className="w-5 h-5 animate-spin" />
+                        <span>Carregando...</span>
+                      </div>
 
-                          <div className="relative my-3">
-                            <div className="absolute inset-0 flex items-center">
-                              <div className="w-full border-t border-slate-200" />
-                            </div>
-                            <div className="relative flex justify-center text-xs">
-                              <span className="px-3 bg-white text-slate-400 uppercase">ou</span>
-                            </div>
+                      <div className={googleAuthLoading ? 'opacity-70 pointer-events-none' : ''}>
+                        <div ref={googleButtonRef} className="flex justify-center" />
+
+                        <div className="relative my-3">
+                          <div className="absolute inset-0 flex items-center">
+                            <div className="w-full border-t border-slate-200" />
                           </div>
+                          <div className="relative flex justify-center text-xs">
+                            <span className="px-3 bg-white text-slate-400 uppercase">ou</span>
+                          </div>
+                        </div>
 
-                          <button
-                            onClick={() => setModalStep('data')}
-                            className="w-full h-10 px-6 flex items-center justify-center gap-3 rounded-full bg-slate-800 hover:bg-slate-700 font-medium text-sm text-white transition"
-                          >
-                            <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                              <rect x="5" y="2" width="14" height="20" rx="2" stroke="currentColor" strokeWidth="2"/>
-                              <line x1="9" y1="18" x2="15" y2="18" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/>
-                            </svg>
-                            Continuar com Telefone
-                          </button>
+                        <button
+                          onClick={() => setModalStep('data')}
+                          className="w-full h-10 px-6 flex items-center justify-center gap-3 rounded-full bg-slate-800 hover:bg-slate-700 font-medium text-sm text-white transition"
+                        >
+                          <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                            <rect x="5" y="2" width="14" height="20" rx="2" stroke="currentColor" strokeWidth="2"/>
+                            <line x1="9" y1="18" x2="15" y2="18" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/>
+                          </svg>
+                          Continuar com Telefone
+                        </button>
 
-                          <button className="mt-4 text-sm text-blue-500 hover:text-blue-600 transition">
-                            Precisa de ajuda?
-                          </button>
-                        </>
-                      )}
+                        <button className="mt-4 text-sm text-blue-500 hover:text-blue-600 transition">
+                          Precisa de ajuda?
+                        </button>
+                      </div>
                     </div>
                   )}
                 </div>
