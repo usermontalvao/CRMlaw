@@ -9,6 +9,7 @@ interface SignatureCanvasProps {
   lineWidth?: number;
   backgroundColor?: string;
   disabled?: boolean;
+  responsive?: boolean;
 }
 
 const SignatureCanvas: React.FC<SignatureCanvasProps> = ({
@@ -19,11 +20,42 @@ const SignatureCanvas: React.FC<SignatureCanvasProps> = ({
   lineWidth = 2,
   backgroundColor = '#ffffff',
   disabled = false,
+  responsive = false,
 }) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
   const [isDrawing, setIsDrawing] = useState(false);
   const [hasSignature, setHasSignature] = useState(false);
   const lastPointRef = useRef<{ x: number; y: number } | null>(null);
+  const [canvasDimensions, setCanvasDimensions] = useState<{ width: number; height: number }>({ width, height });
+
+  const updateResponsiveSize = useCallback(() => {
+    if (!responsive) {
+      setCanvasDimensions({ width, height });
+      return;
+    }
+
+    const containerWidth = containerRef.current?.clientWidth || width;
+    const clampedWidth = Math.max(280, Math.min(640, containerWidth));
+    const aspectRatio = height / width || 0.4;
+    const targetHeight = Math.max(140, Math.round(clampedWidth * aspectRatio));
+    setCanvasDimensions({ width: clampedWidth, height: targetHeight });
+  }, [responsive, width, height]);
+
+  useEffect(() => {
+    updateResponsiveSize();
+    if (!responsive) return;
+
+    if (typeof ResizeObserver !== 'undefined') {
+      const observer = new ResizeObserver(() => updateResponsiveSize());
+      if (containerRef.current) observer.observe(containerRef.current);
+      return () => observer.disconnect();
+    }
+
+    const handleResize = () => updateResponsiveSize();
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, [responsive, updateResponsiveSize]);
 
   const getContext = useCallback(() => {
     const canvas = canvasRef.current;
@@ -49,10 +81,10 @@ const SignatureCanvas: React.FC<SignatureCanvasProps> = ({
 
     // Configurar canvas para alta resolução
     const dpr = window.devicePixelRatio || 1;
-    canvas.width = width * dpr;
-    canvas.height = height * dpr;
-    canvas.style.width = `${width}px`;
-    canvas.style.height = `${height}px`;
+    canvas.width = canvasDimensions.width * dpr;
+    canvas.height = canvasDimensions.height * dpr;
+    canvas.style.width = `${canvasDimensions.width}px`;
+    canvas.style.height = `${canvasDimensions.height}px`;
     ctx.scale(dpr, dpr);
 
     // Configurar estilo de desenho
@@ -62,7 +94,7 @@ const SignatureCanvas: React.FC<SignatureCanvasProps> = ({
     ctx.lineWidth = lineWidth;
 
     // Não preencher fundo - manter transparente para PNG
-  }, [width, height, lineColor, lineWidth, backgroundColor, getContext]);
+  }, [canvasDimensions.width, canvasDimensions.height, lineColor, lineWidth, backgroundColor, getContext]);
 
   const getCoordinates = (
     e: React.MouseEvent<HTMLCanvasElement> | React.TouchEvent<HTMLCanvasElement>
@@ -133,7 +165,7 @@ const SignatureCanvas: React.FC<SignatureCanvasProps> = ({
 
   return (
     <div className="flex flex-col gap-3">
-      <div className="relative">
+      <div className="relative w-full" ref={containerRef}>
         <canvas
           ref={canvasRef}
           className={`border-2 border-dashed rounded-xl cursor-crosshair touch-none ${
@@ -141,7 +173,7 @@ const SignatureCanvas: React.FC<SignatureCanvasProps> = ({
               ? 'border-slate-200 bg-slate-50 cursor-not-allowed'
               : 'border-slate-300 hover:border-slate-400'
           }`}
-          style={{ width, height }}
+          style={{ width: canvasDimensions.width, height: canvasDimensions.height }}
           onMouseDown={startDrawing}
           onMouseMove={draw}
           onMouseUp={stopDrawing}

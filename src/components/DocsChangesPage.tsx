@@ -444,6 +444,92 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
 
 const releases: ReleaseNote[] = [
   {
+    version: '1.0.84',
+    date: '2025-01-18',
+    summary: 'Detalhes de assinatura otimizados para dispositivos móveis',
+    modules: [
+      {
+        moduleId: 'assinatura',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Modal de detalhes adaptado para telas pequenas',
+            description: 'O modal de detalhes da assinatura foi ajustado com espaçamento reduzido, botões em grid e layout empilhado para melhor visualização em dispositivos móveis.',
+          },
+          {
+            type: 'fix',
+            title: 'Cards de signatários responsivos',
+            description: 'Os cards de signatários agora usam layout flex adaptativo, com imagens menores em mobile e informações de autenticação reorganizadas para evitar quebras de layout.',
+          },
+          {
+            type: 'improvement',
+            title: 'Botões de ação em grid responsivo',
+            description: 'Os botões de ação (Ver assinado, Baixar, Excluir) agora usam grid responsivo que se adapta ao tamanho da tela, com texto reduzido em dispositivos móveis.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.0.83',
+    date: '2025-01-18',
+    summary: 'Modais de assinatura totalmente responsivos em dispositivos móveis',
+    modules: [
+      {
+        moduleId: 'assinatura',
+        changes: [
+          {
+            type: 'fix',
+            title: 'Modal de assinatura adaptado para mobile',
+            description: 'O modal de assinatura agora tem layout fluido, com cabeçalho empilhado em telas pequenas e canvas de assinatura responsivo que se adapta ao tamanho da tela.',
+          },
+          {
+            type: 'improvement',
+            title: 'Canvas de assinatura com toque otimizado',
+            description: 'O componente de assinatura agora usa largura responsiva para melhor experiência em dispositivos touch, mantendo a proporção adequada.',
+          },
+          {
+            type: 'fix',
+            title: 'Modal de zoom de imagens responsivo',
+            description: 'O modal para visualizar imagens ampliadas (assinaturas/fotos) foi ajustado com padding e margens adaptativas para melhor visualização em telas pequenas.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.0.82',
+    date: '2025-01-18',
+    summary: 'Assinaturas responsivas no painel e em dispositivos móveis',
+    modules: [
+      {
+        moduleId: 'assinatura',
+        changes: [
+          {
+            type: 'fix',
+            title: 'Layout da lista adaptado ao mobile',
+            description: 'As linhas da listagem de solicitações de assinatura agora empilham informações e mantêm os badges acessíveis em telas pequenas, evitando overflow lateral.',
+          },
+          {
+            type: 'improvement',
+            title: 'Modal de detalhes responsivo',
+            description: 'O modal de detalhes das solicitações ganhou padding fluido, título compactado e altura máxima de 90vh para não estourar em celulares.',
+          },
+          {
+            type: 'improvement',
+            title: 'Canvas de assinatura com largura fluida',
+            description: 'O componente SignatureCanvas passa a ajustar automaticamente a largura/altura conforme o container, facilitando a assinatura com o dedo no celular.',
+          },
+          {
+            type: 'fix',
+            title: 'Toolbar do posicionador sempre visível',
+            description: 'Botões de zoom/paginação do posicionador ficaram centralizados e com estados claros independente da largura da viewport.',
+          },
+        ],
+      },
+    ],
+  },
+  {
     version: '1.0.81',
     date: '2025-01-18',
     summary: 'Assinatura: documento responsivo no celular',
