@@ -127,6 +127,7 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, onParamC
   const [selectedClientName, setSelectedClientName] = useState<string | null>(null);
   const [uploadedFile, setUploadedFile] = useState<File | null>(null);
   const [uploadedFiles, setUploadedFiles] = useState<File[]>([]); // Múltiplos arquivos (envelope)
+  const [selectedUploadFileIndexes, setSelectedUploadFileIndexes] = useState<Set<number>>(new Set());
   const [dragOver, setDragOver] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -658,6 +659,7 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, onParamC
     cleanupLocalViewerUrls(viewerDocuments, pdfPreviewUrls);
 
     setUploadedFiles(files);
+    setSelectedUploadFileIndexes(new Set());
     setUploadedFile(files[0]);
     setSelectedDocumentName(files[0].name);
     setSelectedDocumentId('');
@@ -685,6 +687,57 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, onParamC
     setPdfPreviewUrl(null);
     setPdfPreviewUrls([]);
     setPdfNumPagesByDoc({});
+    setSelectedUploadFileIndexes(new Set());
+  };
+
+  const toggleSelectedUploadIndex = (index: number) => {
+    setSelectedUploadFileIndexes((prev) => {
+      const next = new Set(prev);
+      if (next.has(index)) next.delete(index);
+      else next.add(index);
+      return next;
+    });
+  };
+
+  const selectAllUploadedFiles = () => {
+    setSelectedUploadFileIndexes(new Set(uploadedFiles.map((_, i) => i)));
+  };
+
+  const clearSelectedUploadedFiles = () => {
+    setSelectedUploadFileIndexes(new Set());
+  };
+
+  const removeUploadedFilesByIndexes = (indexes: Set<number>) => {
+    if (indexes.size === 0) return;
+
+    setUploadedFiles((prev) => {
+      const next = prev.filter((_, i) => !indexes.has(i));
+
+      cleanupLocalViewerUrls(viewerDocuments, pdfPreviewUrls);
+
+      if (next.length === 0) {
+        setUploadedFile(null);
+        setSelectedDocumentName('');
+        setViewerDocuments([]);
+        setCurrentViewerDocIndex(0);
+        setPdfPreviewUrl(null);
+        setPdfPreviewUrls([]);
+        setPdfNumPagesByDoc({});
+        setSelectedUploadFileIndexes(new Set());
+        return next;
+      }
+
+      setUploadedFile(next[0]);
+      setSelectedDocumentName(next[0].name);
+      const docs = buildViewerDocumentsFromUploads(next);
+      setViewerDocuments(docs);
+      setCurrentViewerDocIndex(0);
+      setPdfPreviewUrl(docs[0]?.previewUrl || null);
+      setPdfPreviewUrls([]);
+      setPdfNumPagesByDoc({});
+      setSelectedUploadFileIndexes(new Set());
+      return next;
+    });
   };
 
   const removeUploadedFileAt = (index: number) => {
@@ -718,6 +771,16 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, onParamC
         setPdfPreviewUrl(docs[0]?.previewUrl || null);
         setPdfPreviewUrls([]);
         setPdfNumPagesByDoc({});
+      }
+      return next;
+    });
+    setSelectedUploadFileIndexes((prev) => {
+      if (!prev.size) return prev;
+      const next = new Set<number>();
+      for (const i of prev) {
+        if (i === index) continue;
+        if (i > index) next.add(i - 1);
+        else next.add(i);
       }
       return next;
     });
@@ -1684,9 +1747,52 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, onParamC
                       </div>
                       {uploadedFiles.length > 1 && (
                         <div className="w-full max-w-sm text-left bg-white rounded border border-slate-200 p-3 mt-2 max-h-32 overflow-y-auto">
+                          <div className="flex items-center justify-between gap-2 pb-2 mb-2 border-b border-slate-100">
+                            <div className="flex items-center gap-2">
+                              <button
+                                type="button"
+                                onClick={() => selectAllUploadedFiles()}
+                                className="text-[11px] font-semibold text-slate-600 hover:text-slate-800"
+                              >
+                                Selecionar todos
+                              </button>
+                              <span className="text-slate-300">|</span>
+                              <button
+                                type="button"
+                                onClick={() => clearSelectedUploadedFiles()}
+                                className="text-[11px] font-semibold text-slate-600 hover:text-slate-800"
+                              >
+                                Limpar
+                              </button>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={async () => {
+                                if (selectedUploadFileIndexes.size === 0) return;
+                                const confirmed = await confirmDelete({
+                                  title: 'Excluir arquivos selecionados',
+                                  message: `Você tem certeza que deseja excluir ${selectedUploadFileIndexes.size} arquivo(s) do upload?`,
+                                  confirmLabel: 'Excluir',
+                                });
+                                if (!confirmed) return;
+                                removeUploadedFilesByIndexes(new Set(selectedUploadFileIndexes));
+                              }}
+                              disabled={selectedUploadFileIndexes.size === 0}
+                              className="text-[11px] font-semibold text-red-600 hover:text-red-700 disabled:text-slate-300 disabled:cursor-not-allowed"
+                            >
+                              Excluir selecionados
+                            </button>
+                          </div>
                           {uploadedFiles.map((f, i) => (
-                            <div key={`${f.name}-${i}`} className="flex items-center justify-between text-xs py-1">
-                              <span className="truncate text-slate-600">{f.name}</span>
+                            <div key={`${f.name}-${i}`} className="flex items-center justify-between text-xs py-1 gap-2">
+                              <label className="flex items-center gap-2 min-w-0 flex-1">
+                                <input
+                                  type="checkbox"
+                                  checked={selectedUploadFileIndexes.has(i)}
+                                  onChange={() => toggleSelectedUploadIndex(i)}
+                                />
+                                <span className="truncate text-slate-600">{f.name}</span>
+                              </label>
                               <button onClick={() => removeUploadedFileAt(i)} className="text-red-500 hover:text-red-600 ml-2"><X className="w-3 h-3" /></button>
                             </div>
                           ))}

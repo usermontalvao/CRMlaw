@@ -329,15 +329,20 @@ class PdfSignatureService {
     const versionLabel = `Jurius v${__APP_VERSION__}`;
 
     if (mode === 'strip') {
-      const h = 24;
+      const h = 32;
       const x = 24;
       const y = 10;
       const w = pageWidth - 48;
 
       page.drawRectangle({ x, y, width: w, height: h, color: rgb(0.98, 0.99, 1), borderColor: rgb(0.85, 0.88, 0.95), borderWidth: 1 });
-      page.drawText(`Hash SHA-256: ${integrityFull}`, { x: x + 10, y: y + 13, size: 5.5, font: helvetica, color: rgb(0.35, 0.35, 0.35) });
+      page.drawText(`Hash SHA-256: ${integrityFull}`, { x: x + 10, y: y + 21, size: 5.5, font: helvetica, color: rgb(0.35, 0.35, 0.35) });
       if (signer.verification_hash) {
-        page.drawText(`Código: ${(signer.verification_hash || '').toUpperCase()}`, { x: x + 10, y: y + 5, size: 6, font: helveticaBold, color: rgb(0.15, 0.25, 0.25) });
+        page.drawText(`Código: ${(signer.verification_hash || '').toUpperCase()}`, { x: x + 10, y: y + 13, size: 6, font: helveticaBold, color: rgb(0.15, 0.25, 0.25) });
+      }
+
+      if (verificationUrl) {
+        const urlToDraw = verificationUrl.length > 80 ? `${verificationUrl.slice(0, 77)}...` : verificationUrl;
+        page.drawText(`Verificar: ${urlToDraw}`, { x: x + 10, y: y + 5, size: 5.2, font: helvetica, color: rgb(0.12, 0.35, 0.7) });
       }
 
       const versionSize = 6;
@@ -346,7 +351,7 @@ class PdfSignatureService {
         : 70;
       page.drawText(versionLabel, {
         x: x + w - versionTextWidth - 10,
-        y: y + 5,
+        y: y + 13,
         size: versionSize,
         font: helveticaBold,
         color: rgb(0.15, 0.25, 0.25),
@@ -1439,7 +1444,7 @@ class PdfSignatureService {
           if (scaledHeightPt <= contentHeightPt) {
             const fullCanvas = canvas;
             await drawOnePage(fullCanvas, sectionIdx + 1);
-            return;
+            continue;
           }
 
           // Caso contrário: fatiar verticalmente.

@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { createPortal } from 'react-dom';
-import { X, Plus, Trash2, FileText, Loader2, GripVertical, PenTool, Upload, AlertCircle } from 'lucide-react';
+import { X, Plus, Trash2, FileText, Loader2, GripVertical, PenTool, Upload, AlertCircle, FileDown } from 'lucide-react';
+import { saveAs } from 'file-saver';
 import { documentTemplateService } from '../services/documentTemplate.service';
 import type { DocumentTemplate, TemplateFile, SignatureFieldConfigValue } from '../types/document.types';
 
@@ -23,6 +24,7 @@ const TemplateFilesManager: React.FC<TemplateFilesManagerProps> = ({
   const [uploadProgress, setUploadProgress] = useState({ current: 0, total: 0 });
   const [error, setError] = useState<string | null>(null);
   const [draggedFileId, setDraggedFileId] = useState<string | null>(null);
+  const [downloadingFileId, setDownloadingFileId] = useState<string | null>(null);
 
   const loadFiles = useCallback(async () => {
     try {
@@ -51,6 +53,19 @@ const TemplateFilesManager: React.FC<TemplateFilesManagerProps> = ({
     document.addEventListener('keydown', handleEsc);
     return () => document.removeEventListener('keydown', handleEsc);
   }, [isOpen, onClose]);
+
+  const handleDownloadFile = async (file: TemplateFile) => {
+    try {
+      setDownloadingFileId(file.id);
+      setError(null);
+      const blob = await documentTemplateService.downloadTemplateFileById(file.id);
+      saveAs(blob, file.file_name || 'documento.docx');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Erro ao baixar arquivo');
+    } finally {
+      setDownloadingFileId(null);
+    }
+  };
 
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const selectedFiles = e.target.files;
@@ -152,27 +167,27 @@ const TemplateFilesManager: React.FC<TemplateFilesManagerProps> = ({
 
   return createPortal(
     <div className="fixed inset-0 z-[70] flex items-center justify-center bg-slate-100/80 backdrop-blur-sm" onClick={onClose}>
-      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[80vh] flex flex-col" onClick={e => e.stopPropagation()}>
-        <div className="flex items-center justify-between px-6 py-4 border-b border-slate-200 dark:border-zinc-800">
+      <div className="!bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[80vh] flex flex-col" onClick={e => e.stopPropagation()}>
+        <div className="flex items-center justify-between px-6 py-4 border-b border-slate-200">
           <div>
-            <h2 className="text-lg font-semibold text-slate-800 dark:text-white">Gerenciar Documentos</h2>
-            <p className="text-sm text-slate-500 dark:text-slate-400">{template.name}</p>
+            <h2 className="text-lg font-semibold text-slate-900">Gerenciar Documentos</h2>
+            <p className="text-sm text-slate-600">{template.name}</p>
           </div>
-          <button onClick={onClose} className="p-2 hover:bg-slate-100 dark:hover:bg-zinc-800 rounded-lg transition">
+          <button onClick={onClose} className="p-2 hover:bg-slate-100 rounded-lg transition">
             <X className="w-5 h-5 text-slate-500" />
           </button>
         </div>
 
         <div className="flex-1 overflow-y-auto p-6">
           {error && (
-            <div className="mb-4 p-3 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg flex items-center gap-2">
+            <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg flex items-center gap-2">
               <AlertCircle className="w-4 h-4 text-red-600" />
-              <span className="text-sm text-red-700 dark:text-red-300">{error}</span>
+              <span className="text-sm text-red-700">{error}</span>
             </div>
           )}
 
           <div className="mb-6">
-            <label className="flex flex-col items-center justify-center w-full h-32 border-2 border-dashed border-slate-300 dark:border-zinc-700 rounded-xl cursor-pointer hover:border-amber-500 hover:bg-amber-50/50 dark:hover:bg-amber-900/10 transition">
+            <label className="flex flex-col items-center justify-center w-full h-32 border-2 border-dashed border-slate-300 rounded-xl cursor-pointer hover:border-amber-500 hover:bg-amber-50/50 transition">
               <input
                 type="file"
                 accept=".doc,.docx,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
@@ -184,10 +199,10 @@ const TemplateFilesManager: React.FC<TemplateFilesManagerProps> = ({
               {uploading ? (
                 <div className="flex flex-col items-center gap-2">
                   <Loader2 className="w-6 h-6 text-amber-600 animate-spin" />
-                  <span className="text-sm text-slate-600 dark:text-slate-400">
+                  <span className="text-sm text-slate-600">
                     Enviando {uploadProgress.current} de {uploadProgress.total} arquivo(s)...
                   </span>
-                  <div className="w-48 h-2 bg-slate-200 dark:bg-zinc-700 rounded-full overflow-hidden">
+                  <div className="w-48 h-2 bg-slate-200 rounded-full overflow-hidden">
                     <div 
                       className="h-full bg-amber-500 transition-all duration-300"
                       style={{ width: `${(uploadProgress.current / uploadProgress.total) * 100}%` }}
@@ -197,8 +212,8 @@ const TemplateFilesManager: React.FC<TemplateFilesManagerProps> = ({
               ) : (
                 <>
                   <Upload className="w-8 h-8 text-slate-400 mb-2" />
-                  <span className="text-sm text-slate-600 dark:text-slate-400">Clique ou arraste arquivos .docx</span>
-                  <span className="text-xs text-slate-400 mt-1">Você pode selecionar múltiplos arquivos</span>
+                  <span className="text-sm text-slate-700">Clique ou arraste arquivos .docx</span>
+                  <span className="text-xs text-slate-500 mt-1">Você pode selecionar múltiplos arquivos</span>
                 </>
               )}
             </label>
@@ -207,41 +222,49 @@ const TemplateFilesManager: React.FC<TemplateFilesManagerProps> = ({
           {loading ? (
             <div className="flex items-center justify-center py-10">
               <Loader2 className="w-6 h-6 text-amber-600 animate-spin" />
-              <span className="ml-2 text-slate-600 dark:text-slate-400">Carregando...</span>
+              <span className="ml-2 text-slate-600">Carregando...</span>
             </div>
           ) : files.length === 0 ? (
             <div className="text-center py-10">
-              <FileText className="w-12 h-12 text-slate-300 dark:text-zinc-600 mx-auto mb-3" />
-              <p className="text-slate-500 dark:text-slate-400">Nenhum documento adicionado</p>
-              <p className="text-sm text-slate-400 dark:text-slate-500 mt-1">
+              <FileText className="w-12 h-12 text-slate-300 mx-auto mb-3" />
+              <p className="text-slate-600">Nenhum documento adicionado</p>
+              <p className="text-sm text-slate-500 mt-1">
                 Adicione documentos que fazem parte deste template
               </p>
             </div>
           ) : (
             <div className="space-y-2">
-              <p className="text-sm text-slate-500 dark:text-slate-400 mb-3">
+              <p className="text-sm text-slate-600 mb-3">
                 {files.length} documento(s) - Arraste para reordenar
               </p>
               {files.map((file, index) => (
+                (() => {
+                  const isMain = index === 0;
+                  const label = isMain ? 'Principal' : 'Anexo';
+                  const badgeClass = isMain
+                    ? 'bg-indigo-50 text-indigo-700 border-indigo-200'
+                    : 'bg-slate-50 text-slate-600 border-slate-200';
+
+                  return (
                 <div
                   key={file.id}
                   draggable
                   onDragStart={() => handleDragStart(file.id)}
                   onDragOver={(e) => handleDragOver(e, file.id)}
                   onDragEnd={handleDragEnd}
-                  className={`flex items-center gap-3 p-3 bg-slate-50 dark:bg-zinc-800 rounded-lg border border-slate-200 dark:border-zinc-700 ${
+                  className={`flex items-center gap-3 p-3 bg-slate-50 rounded-lg border border-slate-200 ${
                     draggedFileId === file.id ? 'opacity-50' : ''
-                  } hover:border-amber-300 dark:hover:border-amber-700 transition cursor-move`}
+                  } hover:border-amber-300 transition cursor-move`}
                 >
                   <GripVertical className="w-4 h-4 text-slate-400 flex-shrink-0" />
-                  <div className="flex-shrink-0 w-10 h-10 bg-blue-100 dark:bg-blue-900/30 rounded-lg flex items-center justify-center">
+                  <div className="flex-shrink-0 w-10 h-10 bg-blue-100 rounded-lg flex items-center justify-center">
                     <FileText className="w-5 h-5 text-blue-600" />
                   </div>
                   <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium text-slate-700 dark:text-slate-200 truncate">
+                    <p className="text-sm font-medium text-slate-700 truncate">
                       {index + 1}. {file.file_name}
                     </p>
-                    <p className="text-xs text-slate-500 dark:text-slate-400">
+                    <p className="text-xs text-slate-500">
                       {formatFileSize(file.file_size)}
                       {file.signature_field_config && (
                         <span className="ml-2 text-emerald-600">
@@ -250,35 +273,52 @@ const TemplateFilesManager: React.FC<TemplateFilesManagerProps> = ({
                       )}
                     </p>
                   </div>
+                  <span className={`px-2 py-1 text-[11px] font-semibold rounded-full border ${badgeClass} whitespace-nowrap`}>
+                    {label}
+                  </span>
                   <div className="flex items-center gap-1">
                     <button
+                      onClick={() => handleDownloadFile(file)}
+                      disabled={downloadingFileId === file.id}
+                      className="p-2 hover:bg-slate-200 rounded-lg transition disabled:opacity-50"
+                      title="Baixar arquivo"
+                    >
+                      {downloadingFileId === file.id ? (
+                        <Loader2 className="w-4 h-4 text-slate-600 animate-spin" />
+                      ) : (
+                        <FileDown className="w-4 h-4 text-slate-600" />
+                      )}
+                    </button>
+                    <button
                       onClick={() => {/* TODO: Abrir designer de assinatura */}}
-                      className="p-2 hover:bg-emerald-100 dark:hover:bg-emerald-900/30 rounded-lg transition"
+                      className="p-2 hover:bg-emerald-100 rounded-lg transition"
                       title="Configurar posição da assinatura"
                     >
                       <PenTool className="w-4 h-4 text-emerald-600" />
                     </button>
                     <button
                       onClick={() => handleRemoveFile(file.id)}
-                      className="p-2 hover:bg-red-100 dark:hover:bg-red-900/30 rounded-lg transition"
+                      className="p-2 hover:bg-red-100 rounded-lg transition"
                       title="Remover arquivo"
                     >
                       <Trash2 className="w-4 h-4 text-red-600" />
                     </button>
                   </div>
                 </div>
+                  );
+                })()
               ))}
             </div>
           )}
         </div>
 
-        <div className="px-6 py-4 border-t border-slate-200 dark:border-zinc-800 flex justify-between items-center">
-          <p className="text-xs text-slate-500 dark:text-slate-400">
+        <div className="px-6 py-4 border-t border-slate-200 flex justify-between items-center">
+          <p className="text-xs text-slate-500">
             Todos os documentos terão assinatura e página de autenticidade
           </p>
           <button
             onClick={onClose}
-            className="px-4 py-2 bg-slate-100 dark:bg-zinc-800 hover:bg-slate-200 dark:hover:bg-zinc-700 text-slate-700 dark:text-slate-300 rounded-lg transition"
+            className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg transition"
           >
             Fechar
           </button>

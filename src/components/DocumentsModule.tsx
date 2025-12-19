@@ -21,6 +21,9 @@ import {
   Pencil,
   Upload as UploadIcon,
   PenTool,
+  GripVertical,
+  AlertTriangle,
+  Check,
 } from 'lucide-react';
 import PizZip from 'pizzip';
 import Docxtemplater from 'docxtemplater';
@@ -33,13 +36,14 @@ import { documentTemplateService } from '../services/documentTemplate.service';
 import { clientService } from '../services/client.service';
 import { processService } from '../services/process.service';
 import { signatureService } from '../services/signature.service';
+import { supabase } from '../config/supabase';
 import { ClientSearchSelect } from './ClientSearchSelect';
 import { useToastContext } from '../contexts/ToastContext';
 import { useDeleteConfirm } from '../contexts/DeleteConfirmContext';
 import SignaturePositionDesigner from './SignaturePositionDesigner';
 import TemplateFilesManager from './TemplateFilesManager';
 import CustomFieldsManager from './CustomFieldsManager';
-import type { DocumentTemplate, CreateDocumentTemplateDTO } from '../types/document.types';
+import type { DocumentTemplate, CreateDocumentTemplateDTO, TemplateCustomField, UpsertTemplateCustomFieldDTO, CustomField } from '../types/document.types';
 import type { Client } from '../types/client.types';
 import type { Process } from '../types/process.types';
 
@@ -58,11 +62,54 @@ const removeDiacritics = (value: string) =>
 
 const escapeRegExp = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
+const normalizeKey = (value: string) => removeDiacritics((value || '').trim()).toUpperCase();
+
 const formatDate = (value?: string | null) => {
   if (!value) return '';
   const parsed = new Date(value);
   if (Number.isNaN(parsed.getTime())) return value;
   return parsed.toLocaleDateString('pt-BR');
+};
+
+const extractPlaceholdersFromDocxZip = (zip: PizZip): string[] => {
+  try {
+    const xmlFiles = zip.file(/^word\/(document|header\d+|footer\d+)\.xml$/);
+    const sources = (Array.isArray(xmlFiles) && xmlFiles.length > 0)
+      ? xmlFiles
+      : (() => {
+          const doc = zip.file('word/document.xml');
+          return doc ? [doc] : [];
+        })();
+
+    if (sources.length === 0) return [];
+
+    const found = new Set<string>();
+    const re = /\[\[([^\]]+)\]\]/g;
+
+    for (const file of sources) {
+      const xml = file.asText();
+      const text = xml
+        .replace(/<[^>]+>/g, '')
+        .replace(/&amp;/g, '&')
+        .replace(/&lt;/g, '<')
+        .replace(/&gt;/g, '>')
+        .replace(/&quot;/g, '"')
+        .replace(/&#39;/g, "'");
+
+      let m: RegExpExecArray | null;
+      while ((m = re.exec(text))) {
+        const raw = (m[1] || '').trim();
+        if (!raw) continue;
+        if (/^ASSINATURA(_\d+)?$/i.test(raw)) continue;
+        found.add(raw);
+      }
+    }
+
+    return Array.from(found);
+  } catch (error) {
+    console.error('Erro ao extrair placeholders do DOCX:', error);
+    return [];
+  }
 };
 
 const formatMaritalStatus = (status?: string | null) => {
@@ -143,6 +190,7 @@ const DocumentsModule: React.FC<DocumentsModuleProps> = ({ onNavigateToModule })
   const [uploadError, setUploadError] = useState<string | null>(null);
   const [nameInput, setNameInput] = useState('');
   const [descriptionInput, setDescriptionInput] = useState('');
+  const [enableDefendantInput, setEnableDefendantInput] = useState(true);
   const [fileInput, setFileInput] = useState<File | null>(null);
   const [downloadingTemplateId, setDownloadingTemplateId] = useState<string | null>(null);
   const [templateActionError, setTemplateActionError] = useState<string | null>(null);
@@ -165,6 +213,7 @@ const DocumentsModule: React.FC<DocumentsModuleProps> = ({ onNavigateToModule })
   const [editName, setEditName] = useState('');
   const [editDescription, setEditDescription] = useState('');
   const [editContent, setEditContent] = useState('');
+  const [editEnableDefendant, setEditEnableDefendant] = useState(true);
   const [editFile, setEditFile] = useState<File | null>(null);
   const [editSaving, setEditSaving] = useState(false);
   const [editError, setEditError] = useState<string | null>(null);
@@ -192,7 +241,174 @@ const DocumentsModule: React.FC<DocumentsModuleProps> = ({ onNavigateToModule })
   const [linkCopied, setLinkCopied] = useState(false);
   const [preparingSignature, setPreparingSignature] = useState(false);
 
+  const [showTemplateFillLinkModal, setShowTemplateFillLinkModal] = useState(false);
+  const [templateFillLink, setTemplateFillLink] = useState('');
+  const [templateFillLinkCopied, setTemplateFillLinkCopied] = useState(false);
+  const [creatingTemplateFillLinkId, setCreatingTemplateFillLinkId] = useState<string | null>(null);
+
+  const [templateFilesSummary, setTemplateFilesSummary] = useState<Record<string, { count: number; firstFileName?: string }>>({});
+
+  const [showTemplateFormConfigModal, setShowTemplateFormConfigModal] = useState(false);
+  const [templateFormConfigTemplate, setTemplateFormConfigTemplate] = useState<DocumentTemplate | null>(null);
+  const [templateFormConfigLoading, setTemplateFormConfigLoading] = useState(false);
+  const [templateFormConfigSaving, setTemplateFormConfigSaving] = useState(false);
+  const [templateFormConfigError, setTemplateFormConfigError] = useState<string | null>(null);
+  const [templateFormConfigFields, setTemplateFormConfigFields] = useState<UpsertTemplateCustomFieldDTO[]>([]);
+  const templateFormConfigDragIndexRef = useRef<number | null>(null);
+
   const currentDate = useMemo(() => new Date(), []);
+
+  const handleOpenTemplateFormConfig = async (template: DocumentTemplate) => {
+    try {
+      setTemplateFormConfigTemplate(template);
+      setShowTemplateFormConfigModal(true);
+      setTemplateFormConfigLoading(true);
+      setTemplateFormConfigError(null);
+
+      const [existingConfig, globalCustomFields] = await Promise.all([
+        documentTemplateService.listTemplateCustomFields(template.id),
+        documentTemplateService.listCustomFields(),
+      ]);
+
+      const existingByKey = new Map<string, TemplateCustomField>();
+      for (const tcf of existingConfig ?? []) {
+        existingByKey.set(normalizeKey(tcf.placeholder), tcf);
+      }
+
+      const globalByKey = new Map<string, CustomField>();
+      for (const cf of globalCustomFields ?? []) {
+        globalByKey.set(normalizeKey(cf.placeholder), cf);
+      }
+
+      let placeholders: string[] = [];
+      if (template.file_path) {
+        const file = await documentTemplateService.downloadTemplateFile(template);
+        const arrayBuffer = await file.arrayBuffer();
+        const zip = new PizZip(arrayBuffer);
+        placeholders = extractPlaceholdersFromDocxZip(zip);
+      } else {
+        const content = (template.content || template.description || '').toString();
+        const found = new Set<string>();
+        const re = /\[\[([^\]]+)\]\]/g;
+        let m: RegExpExecArray | null;
+        while ((m = re.exec(content))) {
+          const raw = (m[1] || '').trim();
+          if (!raw) continue;
+          if (/^ASSINATURA(_\d+)?$/i.test(raw)) continue;
+          found.add(raw);
+        }
+        placeholders = Array.from(found);
+      }
+
+      const builtInDefaults: Array<{ placeholder: string; label: string }> = [
+        { label: 'Nome completo', placeholder: 'NOME COMPLETO' },
+        { label: 'Nacionalidade', placeholder: 'nacionalidade' },
+        { label: 'Estado civil', placeholder: 'estado civil' },
+        { label: 'Profissão', placeholder: 'profissão' },
+        { label: 'CPF/CNPJ', placeholder: 'CPF' },
+        { label: 'Endereço (rua)', placeholder: 'endereço' },
+        { label: 'Número', placeholder: 'número' },
+        { label: 'Complemento', placeholder: 'complemento' },
+        { label: 'Bairro', placeholder: 'bairro' },
+        { label: 'Cidade', placeholder: 'cidade' },
+        { label: 'Estado', placeholder: 'estado' },
+        { label: 'CEP', placeholder: 'CEP' },
+        { label: 'Telefone', placeholder: 'telefone' },
+        { label: 'Celular/WhatsApp', placeholder: 'celular' },
+        { label: 'Réu/Parte contrária', placeholder: 'réu' },
+      ];
+      const builtInByKey = new Map<string, { placeholder: string; label: string }>();
+      for (const bi of builtInDefaults) builtInByKey.set(normalizeKey(bi.placeholder), bi);
+
+      const fields: UpsertTemplateCustomFieldDTO[] = placeholders
+        .map((ph, idx) => {
+          const k = normalizeKey(ph);
+          const existing = existingByKey.get(k);
+          const bi = builtInByKey.get(k);
+          const g = globalByKey.get(k);
+
+          const inferredType = ((): any => {
+            if (existing?.field_type) return existing.field_type;
+            if (g?.field_type && ['text', 'number', 'date', 'select', 'textarea'].includes(g.field_type)) return g.field_type;
+            if (k === 'DATA' || k.startsWith('DATA ') || k.startsWith('DATA_')) return 'date';
+            if (k === 'NOME COMPLETO' || k === 'NOME') return 'name';
+            if (k === 'CPF') return 'cpf';
+            if (k === 'TELEFONE' || k === 'CELULAR') return 'phone';
+            if (k === 'CEP') return 'cep';
+            return 'text';
+          })();
+
+          return {
+            name: existing?.name ?? g?.name ?? bi?.label ?? ph,
+            placeholder: ph,
+            field_type: inferredType,
+            enabled: existing?.enabled ?? true,
+            required: existing?.required ?? (g ? !!g.required : true),
+            default_value: existing?.default_value ?? (g?.default_value ?? null),
+            options: (existing?.options as any) ?? (g?.options as any) ?? null,
+            description: existing?.description ?? (g?.description ?? null),
+            order: existing?.order ?? idx,
+          };
+        })
+        .sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
+
+      setTemplateFormConfigFields(fields);
+    } catch (err: any) {
+      console.error(err);
+      setTemplateFormConfigError(err?.message || 'Erro ao carregar configuração do formulário.');
+    } finally {
+      setTemplateFormConfigLoading(false);
+    }
+  };
+
+  const handleSaveTemplateFormConfig = async () => {
+    if (!templateFormConfigTemplate) return;
+    try {
+      setTemplateFormConfigSaving(true);
+      setTemplateFormConfigError(null);
+
+      const payload = templateFormConfigFields
+        .map((f, idx) => ({
+          ...f,
+          name: (f.name || '').trim() || f.placeholder,
+          description: (f.description || '').trim() || null,
+          enabled: f.enabled !== false,
+          order: typeof f.order === 'number' ? f.order : idx,
+        }))
+        .sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
+
+      await documentTemplateService.replaceTemplateCustomFields(templateFormConfigTemplate.id, payload);
+      toast.success('Formulário configurado', 'As configurações do link público foram salvas.');
+      setShowTemplateFormConfigModal(false);
+      setTemplateFormConfigTemplate(null);
+      setTemplateFormConfigFields([]);
+    } catch (err: any) {
+      console.error(err);
+      setTemplateFormConfigError(err?.message || 'Erro ao salvar configuração do formulário.');
+    } finally {
+      setTemplateFormConfigSaving(false);
+    }
+  };
+
+  const templateFormConfigRecomputeOrder = (items: UpsertTemplateCustomFieldDTO[]) =>
+    items.map((it, i) => ({ ...it, order: i }));
+
+  const templateFormConfigParseOptions = (raw: string) => {
+    const lines = (raw || '')
+      .split(/\r?\n/)
+      .map((l) => l.trim())
+      .filter(Boolean);
+    if (lines.length === 0) return null;
+    return lines.map((label) => ({ label, value: label }));
+  };
+
+  const templateFormConfigOptionsToText = (options: any) => {
+    const arr = Array.isArray(options) ? options : [];
+    return arr
+      .map((o) => (o?.label || o?.value || '').toString().trim())
+      .filter(Boolean)
+      .join('\n');
+  };
 
   useEffect(() => {
     (async () => {
@@ -207,6 +423,47 @@ const DocumentsModule: React.FC<DocumentsModuleProps> = ({ onNavigateToModule })
       }
     })();
   }, []);
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const ids = (templates ?? []).map((t) => t.id).filter(Boolean);
+        if (ids.length === 0) {
+          setTemplateFilesSummary({});
+          return;
+        }
+
+        const { data, error } = await supabase
+          .from('template_files')
+          .select('template_id, file_name, order')
+          .in('template_id', ids)
+          .order('order', { ascending: true });
+
+        if (error) {
+          console.warn('Erro ao carregar template_files:', error.message);
+          return;
+        }
+
+        const byTemplate: Record<string, { count: number; firstFileName?: string }> = {};
+        for (const row of data ?? []) {
+          const templateId = (row as any).template_id as string;
+          const fileName = (row as any).file_name as string | undefined;
+          if (!templateId) continue;
+          if (!byTemplate[templateId]) {
+            byTemplate[templateId] = { count: 0, firstFileName: fileName };
+          }
+          byTemplate[templateId].count += 1;
+          if (!byTemplate[templateId].firstFileName && fileName) {
+            byTemplate[templateId].firstFileName = fileName;
+          }
+        }
+
+        setTemplateFilesSummary(byTemplate);
+      } catch (e) {
+        console.warn('Falha ao montar resumo de arquivos:', e);
+      }
+    })();
+  }, [templates]);
 
   useEffect(() => {
     let isActive = true;
@@ -287,6 +544,14 @@ const DocumentsModule: React.FC<DocumentsModuleProps> = ({ onNavigateToModule })
     [templates, selectedTemplateId],
   );
 
+  const shouldShowDefendantField = (selectedTemplate?.enable_defendant ?? true) === true;
+
+  useEffect(() => {
+    if (!shouldShowDefendantField) {
+      setDefendantInput('');
+    }
+  }, [shouldShowDefendantField]);
+
   const handleOpenModal = () => {
     setIsModalOpen(true);
     setUploadError(null);
@@ -296,6 +561,7 @@ const DocumentsModule: React.FC<DocumentsModuleProps> = ({ onNavigateToModule })
     setIsModalOpen(false);
     setNameInput('');
     setDescriptionInput('');
+    setEnableDefendantInput(true);
     setFileInput(null);
     setUploadError(null);
   };
@@ -315,6 +581,7 @@ const DocumentsModule: React.FC<DocumentsModuleProps> = ({ onNavigateToModule })
         name: nameInput || fileInput.name.replace(/\.[^.]+$/, ''),
         description: descriptionInput,
         content: defaultTemplateContent,
+        enable_defendant: enableDefendantInput,
       };
 
       await documentTemplateService.createTemplateWithFile(payload, fileInput);
@@ -355,7 +622,7 @@ const DocumentsModule: React.FC<DocumentsModuleProps> = ({ onNavigateToModule })
     const primaryPhone = client.phone || client.mobile || '';
     registerPlaceholder('telefone', primaryPhone);
     registerPlaceholder('celular', primaryPhone);
-    registerPlaceholder('réu', defendantInput);
+    registerPlaceholder('réu', shouldShowDefendantField ? defendantInput : '');
     registerPlaceholder('data', formatDate(currentDate.toISOString()));
 
     return placeholders;
@@ -541,6 +808,7 @@ const DocumentsModule: React.FC<DocumentsModuleProps> = ({ onNavigateToModule })
     setEditName(template.name);
     setEditDescription(template.description || '');
     setEditContent(template.content || '');
+    setEditEnableDefendant((template.enable_defendant ?? true) === true);
     setEditFile(null);
     setEditError(null);
     setIsEditModalOpen(true);
@@ -550,6 +818,7 @@ const DocumentsModule: React.FC<DocumentsModuleProps> = ({ onNavigateToModule })
     setIsEditModalOpen(false);
     setEditingTemplate(null);
     setEditFile(null);
+    setEditEnableDefendant(true);
   };
 
   const handleSaveTemplateEdits = async (event: React.FormEvent) => {
@@ -569,6 +838,7 @@ const DocumentsModule: React.FC<DocumentsModuleProps> = ({ onNavigateToModule })
       const basePayload: Partial<CreateDocumentTemplateDTO> = {
         name: trimmedName,
         description: editDescription,
+        enable_defendant: editEnableDefendant,
       };
 
       if (!editingTemplate.file_path) {
@@ -947,6 +1217,114 @@ const DocumentsModule: React.FC<DocumentsModuleProps> = ({ onNavigateToModule })
     });
   };
 
+  const handleGenerateTemplateFillLink = async (template: DocumentTemplate) => {
+    try {
+      setCreatingTemplateFillLinkId(template.id);
+      setTemplateActionError(null);
+
+      const { data: userData } = await supabase.auth.getUser();
+      if (!userData.user) throw new Error('Usuário não autenticado');
+
+      // Verificar se já existe um permalink para este template
+      const { data: existingPermalink } = await supabase
+        .from('template_fill_permalinks')
+        .select('slug')
+        .eq('template_id', template.id)
+        .eq('is_active', true)
+        .limit(1)
+        .maybeSingle();
+
+      let permalinkSlug = existingPermalink?.slug;
+
+      // Se não existe, criar um permalink automaticamente
+      if (!permalinkSlug) {
+        // Gerar slug a partir do nome do template
+        const baseSlug = (template.name || 'documento')
+          .toLowerCase()
+          .normalize('NFD')
+          .replace(/\p{Diacritic}/gu, '')
+          .replace(/[^a-z0-9]+/g, '-')
+          .replace(/^-+|-+$/g, '')
+          .slice(0, 50);
+        
+        // Adicionar sufixo único para evitar colisão
+        const uniqueSuffix = Date.now().toString(36).slice(-4);
+        permalinkSlug = `${baseSlug}-${uniqueSuffix}`;
+
+        const { error: permalinkError } = await supabase
+          .from('template_fill_permalinks')
+          .insert({
+            template_id: template.id,
+            slug: permalinkSlug,
+            created_by: userData.user.id,
+            is_active: true,
+          });
+
+        if (permalinkError) {
+          console.warn('Não foi possível criar permalink:', permalinkError.message);
+          permalinkSlug = null;
+        }
+      }
+
+      // Link fixo (permalink) - reutilizável
+      const fixedLink = permalinkSlug 
+        ? `${window.location.origin}/#/p/${permalinkSlug}`
+        : null;
+
+      // Mostrar o link fixo no modal (se disponível)
+      if (fixedLink) {
+        setTemplateFillLink(fixedLink);
+        setTemplateFillLinkCopied(false);
+        setShowTemplateFillLinkModal(true);
+        toast.success('Link fixo gerado - pode ser reutilizado!');
+      } else {
+        // Fallback: criar link único (comportamento antigo)
+        const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
+
+        const { data, error } = await supabase
+          .from('template_fill_links')
+          .insert({
+            template_id: template.id,
+            created_by: userData.user.id,
+            expires_at: expiresAt,
+            status: 'pending',
+          })
+          .select('*')
+          .single();
+
+        if (error) throw new Error(error.message);
+        if (!data?.public_token) throw new Error('Erro ao gerar token do link');
+
+        const link = `${window.location.origin}/#/preencher/${data.public_token}`;
+        setTemplateFillLink(link);
+        setTemplateFillLinkCopied(false);
+        setShowTemplateFillLinkModal(true);
+        toast.success('Link de preenchimento gerado');
+      }
+    } catch (err: any) {
+      console.error('Erro ao gerar link de preenchimento:', err);
+      toast.error(err?.message || 'Erro ao gerar link de preenchimento');
+    } finally {
+      setCreatingTemplateFillLinkId(null);
+    }
+  };
+
+  const handleCopyTemplateFillLink = () => {
+    navigator.clipboard.writeText(templateFillLink).then(() => {
+      setTemplateFillLinkCopied(true);
+      setTimeout(() => setTemplateFillLinkCopied(false), 3000);
+    }).catch(() => {
+      const input = document.createElement('input');
+      input.value = templateFillLink;
+      document.body.appendChild(input);
+      input.select();
+      document.execCommand('copy');
+      document.body.removeChild(input);
+      setTemplateFillLinkCopied(true);
+      setTimeout(() => setTemplateFillLinkCopied(false), 3000);
+    });
+  };
+
   const handleDeleteTemplate = async (template: DocumentTemplate) => {
     const confirmed = await confirmDelete({
       title: 'Excluir Template',
@@ -1015,189 +1393,370 @@ const DocumentsModule: React.FC<DocumentsModuleProps> = ({ onNavigateToModule })
 
       {/* Novo documento */}
       {activeView === 'new-doc' && (
-        <div className="rounded-2xl border border-slate-200 bg-white p-4 sm:p-6">
-          <div className="mb-4">
-            <h4 className="text-base font-semibold text-slate-900">Gerar novo documento</h4>
-            <p className="text-sm text-slate-500">Preencha os campos e clique em gerar para baixar o Word.</p>
-          </div>
-          <div className="space-y-4">
+        <div className="grid gap-6 lg:grid-cols-5">
+          {/* Coluna esquerda: Seleção de template */}
+          <div className="lg:col-span-2 space-y-4">
             <div>
-              <label className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-slate-500">Cliente *</label>
-              <ClientSearchSelect
-                value={selectedClientId}
-                onChange={(clientId, clientName) => {
-                  setSelectedClientId(clientId);
-                  setClientSearchTerm(clientName);
-                }}
-                label=""
-                placeholder="Buscar cliente pelo nome"
-                required
-                allowCreate={true}
-              />
+              <h4 className="text-sm font-semibold text-slate-900 mb-1">Escolha o template</h4>
+              <p className="text-xs text-slate-500">Selecione o modelo para gerar o documento</p>
             </div>
-            <div>
-              <label className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-slate-500">Template *</label>
-              <div className="relative">
-                <select
-                  className="w-full rounded-lg border border-slate-200 bg-white px-4 py-2.5 text-sm text-slate-900 transition hover:border-slate-300 focus:border-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-900/10"
-                  value={selectedTemplateId}
-                  onChange={(e) => setSelectedTemplateId(e.target.value)}
-                  disabled={loading}
+
+            {loading ? (
+              <div className="flex items-center justify-center py-8">
+                <Loader2 className="h-5 w-5 animate-spin text-slate-400" />
+              </div>
+            ) : templates.length === 0 ? (
+              <div className="rounded-xl border-2 border-dashed border-slate-200 bg-slate-50 p-6 text-center">
+                <FileText className="mx-auto h-8 w-8 text-slate-300" />
+                <p className="mt-2 text-sm text-slate-500">Nenhum template disponível</p>
+                <button
+                  onClick={() => setActiveView('manage')}
+                  className="mt-3 text-sm font-medium text-indigo-600 hover:text-indigo-700"
                 >
-                  <option value="">Selecione um modelo</option>
-                  {templates.map((template) => (
-                    <option key={template.id} value={template.id}>
-                      {template.name}
-                    </option>
-                  ))}
-                </select>
+                  Criar template →
+                </button>
               </div>
-            </div>
-            <div>
-              <label className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-slate-500">Réu / Parte contrária (opcional)</label>
-              <input
-                type="text"
-                className="w-full rounded-lg border border-slate-200 bg-white px-4 py-2.5 text-sm text-slate-900 transition hover:border-slate-300 focus:border-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-900/10"
-                placeholder="Ex: Empresa XPTO Ltda"
-                value={defendantInput}
-                onChange={(e) => setDefendantInput(e.target.value)}
-              />
-            </div>
-            {generationError && (
-              <div className="rounded-lg border border-red-100 bg-red-50 px-3 py-2 text-sm text-red-700">
-                {generationError}
+            ) : (
+              <div className="space-y-2 max-h-[400px] overflow-y-auto pr-1">
+                {templates.map((template) => {
+                  const isSelected = selectedTemplateId === template.id;
+                  const summary = templateFilesSummary[template.id];
+                  const filesCount = summary?.count ?? 0;
+
+                  return (
+                    <button
+                      key={template.id}
+                      type="button"
+                      onClick={() => setSelectedTemplateId(template.id)}
+                      className={`w-full text-left p-3 rounded-xl border-2 transition ${
+                        isSelected
+                          ? 'border-indigo-500 bg-indigo-50 ring-2 ring-indigo-500/20'
+                          : 'border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50'
+                      }`}
+                    >
+                      <div className="flex items-start gap-3">
+                        <div className={`flex-shrink-0 w-9 h-9 rounded-lg flex items-center justify-center ${
+                          isSelected ? 'bg-indigo-100' : 'bg-slate-100'
+                        }`}>
+                          <FileText className={`h-4 w-4 ${isSelected ? 'text-indigo-600' : 'text-slate-500'}`} />
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <p className={`text-sm font-medium truncate ${isSelected ? 'text-indigo-900' : 'text-slate-900'}`}>
+                            {template.name}
+                          </p>
+                          <p className="text-xs text-slate-500 mt-0.5">
+                            {template.file_path
+                              ? filesCount > 0
+                                ? `1 doc + ${filesCount} anexo(s)`
+                                : '1 documento'
+                              : 'Template em texto'}
+                          </p>
+                        </div>
+                        {isSelected && (
+                          <div className="flex-shrink-0">
+                            <div className="w-5 h-5 rounded-full bg-indigo-500 flex items-center justify-center">
+                              <Check className="h-3 w-3 text-white" />
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    </button>
+                  );
+                })}
               </div>
             )}
-            {generationSuccess && (
-              <div className="rounded-lg border border-emerald-100 bg-emerald-50 px-3 py-2 text-sm text-emerald-700">
-                {generationSuccess}
+          </div>
+
+          {/* Coluna direita: Formulário */}
+          <div className="lg:col-span-3">
+            <div className="rounded-2xl border border-slate-200 bg-white p-5 sm:p-6">
+              <div className="flex items-center gap-3 mb-5">
+                <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-indigo-500 to-indigo-600 flex items-center justify-center">
+                  <FileDown className="h-5 w-5 text-white" />
+                </div>
+                <div>
+                  <h4 className="text-base font-semibold text-slate-900">Gerar Documento</h4>
+                  <p className="text-xs text-slate-500">Preencha os dados e gere o Word</p>
+                </div>
               </div>
-            )}
-            <button
-              onClick={handleGenerateDocx}
-              disabled={generatingDocx || !selectedClientId || !selectedTemplateId}
-              className="w-full rounded-xl bg-blue-600 px-6 py-3 text-sm font-semibold text-white transition hover:bg-blue-700 disabled:bg-slate-300 disabled:text-slate-500"
-            >
-              {generatingDocx ? (
-                <span className="inline-flex items-center gap-2">
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                  Gerando documento...
-                </span>
-              ) : (
-                <span className="inline-flex items-center gap-2">
-                  <FileDown className="h-4 w-4" />
-                  Gerar documento Word
-                </span>
-              )}
-            </button>
+
+              <div className="space-y-4">
+                {/* Cliente */}
+                <div>
+                  <label className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-slate-500">
+                    Cliente *
+                  </label>
+                  <ClientSearchSelect
+                    value={selectedClientId}
+                    onChange={(clientId, clientName) => {
+                      setSelectedClientId(clientId);
+                      setClientSearchTerm(clientName);
+                    }}
+                    label=""
+                    placeholder="Buscar cliente pelo nome..."
+                    required
+                    allowCreate={true}
+                  />
+                </div>
+
+                {/* Template selecionado (resumo) */}
+                {selectedTemplateId && (
+                  <div className="rounded-lg bg-indigo-50 border border-indigo-100 p-3">
+                    <div className="flex items-center gap-2 text-xs text-indigo-700">
+                      <FileText className="h-3.5 w-3.5" />
+                      <span className="font-medium">Template:</span>
+                      <span>{templates.find(t => t.id === selectedTemplateId)?.name}</span>
+                    </div>
+                  </div>
+                )}
+
+                {/* Réu */}
+                {shouldShowDefendantField && (
+                  <div>
+                    <label className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-slate-500">
+                      Réu / Parte contrária <span className="text-slate-400 font-normal">(opcional)</span>
+                    </label>
+                    <input
+                      type="text"
+                      className="w-full rounded-lg border border-slate-200 bg-white px-4 py-2.5 text-sm text-slate-900 transition hover:border-slate-300 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/20"
+                      placeholder="Ex: Empresa XPTO Ltda"
+                      value={defendantInput}
+                      onChange={(e) => setDefendantInput(e.target.value)}
+                    />
+                  </div>
+                )}
+
+                {/* Mensagens de erro/sucesso */}
+                {generationError && (
+                  <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 flex items-start gap-2">
+                    <AlertTriangle className="h-4 w-4 flex-shrink-0 mt-0.5" />
+                    <span>{generationError}</span>
+                  </div>
+                )}
+                {generationSuccess && (
+                  <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700 flex items-start gap-2">
+                    <Check className="h-4 w-4 flex-shrink-0 mt-0.5" />
+                    <span>{generationSuccess}</span>
+                  </div>
+                )}
+
+                {/* Botão gerar */}
+                <button
+                  onClick={handleGenerateDocx}
+                  disabled={generatingDocx || !selectedClientId || !selectedTemplateId}
+                  className="w-full rounded-xl px-6 py-3.5 text-sm font-semibold transition inline-flex items-center justify-center gap-2 shadow-sm hover:shadow-md active:shadow-sm"
+                  style={{
+                    backgroundColor: (generatingDocx || !selectedClientId || !selectedTemplateId) ? '#e2e8f0' : '#4f46e5',
+                    backgroundImage: (generatingDocx || !selectedClientId || !selectedTemplateId)
+                      ? 'none'
+                      : 'linear-gradient(135deg, #4f46e5 0%, #4338ca 55%, #3730a3 100%)',
+                    color: (generatingDocx || !selectedClientId || !selectedTemplateId) ? '#94a3b8' : '#ffffff',
+                    cursor: (generatingDocx || !selectedClientId || !selectedTemplateId) ? 'not-allowed' : 'pointer',
+                  }}
+                >
+                  {generatingDocx ? (
+                    <>
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                      Gerando documento...
+                    </>
+                  ) : (
+                    <>
+                      <FileDown className="h-4 w-4" />
+                      Gerar documentos
+                    </>
+                  )}
+                </button>
+
+                {/* Dica */}
+                {!selectedTemplateId && (
+                  <p className="text-xs text-slate-400 text-center">
+                    ← Selecione um template ao lado para continuar
+                  </p>
+                )}
+              </div>
+            </div>
           </div>
         </div>
       )}
 
       {/* Gerenciar templates */}
       {activeView === 'manage' && (
-        <div className="rounded-2xl border border-slate-200 bg-white p-4 sm:p-6">
-          <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div className="space-y-4">
+          {/* Header com ações globais */}
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <div>
-              <h4 className="text-base font-semibold text-slate-900">Templates cadastrados</h4>
-              <p className="text-sm text-slate-500">Visualize, edite, baixe ou remova templates existentes.</p>
+              <h4 className="text-lg font-semibold text-slate-900">Meus Templates</h4>
+              <p className="text-sm text-slate-500">{templates.length} template(s) cadastrado(s)</p>
             </div>
-            <div className="flex flex-col sm:flex-row gap-2">
+            <div className="flex flex-wrap gap-2">
               <button
                 onClick={() => setCustomFieldsManagerOpen(true)}
-                className="inline-flex items-center justify-center gap-2 rounded-lg border border-purple-200 bg-white px-4 py-2 text-sm font-semibold text-purple-600 transition hover:bg-purple-50 hover:border-purple-300"
+                className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50"
               >
                 <Settings className="h-4 w-4" />
-                Campos Personalizados
+                <span className="hidden sm:inline">Campos Personalizados</span>
+                <span className="sm:hidden">Campos</span>
               </button>
               <button
                 onClick={handleOpenModal}
-                className="inline-flex items-center justify-center gap-2 rounded-lg bg-slate-900 px-4 py-2 text-sm font-semibold text-white transition hover:bg-slate-800"
+                className="inline-flex items-center gap-2 rounded-lg bg-slate-900 px-4 py-2 text-sm font-semibold text-white transition hover:bg-slate-800"
               >
                 <Plus className="h-4 w-4" />
-                Novo template
+                Novo Template
               </button>
             </div>
           </div>
+
+          {/* Lista de templates */}
           {loading ? (
-            <div className="flex items-center justify-center py-8">
+            <div className="flex items-center justify-center py-12">
               <Loader2 className="h-6 w-6 animate-spin text-slate-400" />
             </div>
           ) : templates.length === 0 ? (
-            <p className="py-8 text-center text-sm text-slate-500">Nenhum template cadastrado ainda.</p>
+            <div className="rounded-2xl border-2 border-dashed border-slate-200 bg-slate-50 py-12 text-center">
+              <FileText className="mx-auto h-10 w-10 text-slate-300" />
+              <p className="mt-3 text-sm text-slate-500">Nenhum template cadastrado</p>
+              <button
+                onClick={handleOpenModal}
+                className="mt-4 inline-flex items-center gap-2 rounded-lg bg-slate-900 px-4 py-2 text-sm font-semibold text-white transition hover:bg-slate-800"
+              >
+                <Plus className="h-4 w-4" />
+                Criar primeiro template
+              </button>
+            </div>
           ) : (
-            <div className="space-y-3">
-              {templates.map((template) => (
-                <div
-                  key={template.id}
-                  className="flex flex-col gap-3 rounded-xl border border-slate-200 bg-slate-50 p-4 transition hover:border-slate-300 sm:flex-row sm:items-center sm:justify-between"
-                >
-                  <div className="flex-1">
-                    <h5 className="font-semibold text-slate-900">{template.name}</h5>
-                    {template.description && <p className="text-sm text-slate-600">{template.description}</p>}
-                    <p className="mt-1 text-xs text-slate-500">
-                      {template.file_path ? `Arquivo: ${template.file_name || 'template.docx'}` : 'Template em texto'}
-                    </p>
-                  </div>
-                  <div className="flex flex-wrap gap-2">
-                    <button
-                      onClick={() => handlePreviewTemplate(template)}
-                      className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 transition hover:border-slate-300"
-                    >
-                      <Eye className="h-3.5 w-3.5" />
-                      Visualizar
-                    </button>
-                    <button
-                      onClick={() => handleDownloadTemplate(template)}
-                      disabled={downloadingTemplateId === template.id}
-                      className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 transition hover:border-slate-300 disabled:opacity-50"
-                    >
-                      {downloadingTemplateId === template.id ? (
-                        <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                      ) : (
-                        <FileDown className="h-3.5 w-3.5" />
+            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+              {templates.map((template) => {
+                const summary = templateFilesSummary[template.id];
+                const attachmentsCount = summary?.count ?? 0;
+                const filesLabel = template.file_path
+                  ? attachmentsCount > 0
+                    ? `1 principal + ${attachmentsCount} anexo(s)`
+                    : '1 arquivo'
+                  : attachmentsCount > 0
+                    ? `${attachmentsCount} arquivo(s)`
+                    : 'Sem arquivos';
+
+                return (
+                  <div
+                    key={template.id}
+                    className="group relative rounded-xl border border-slate-200 bg-white p-4 transition hover:border-slate-300 hover:shadow-sm"
+                  >
+                    {/* Cabeçalho do card */}
+                    <div className="mb-3">
+                      <h5 className="font-semibold text-slate-900 truncate" title={template.name}>
+                        {template.name}
+                      </h5>
+                      {template.description && (
+                        <p className="mt-0.5 text-xs text-slate-500 line-clamp-1">{template.description}</p>
                       )}
-                      Baixar
-                    </button>
-                    <button
-                      onClick={() => {
-                        setFilesManagerTemplate(template);
-                        setFilesManagerOpen(true);
-                      }}
-                      className="inline-flex items-center gap-1.5 rounded-lg border border-blue-200 bg-white px-3 py-1.5 text-xs font-medium text-blue-600 transition hover:border-blue-300 hover:bg-blue-50"
-                    >
-                      <FileText className="h-3.5 w-3.5" />
-                      Documentos
-                    </button>
-                    <button
-                      onClick={() => {
-                        setSignatureDesignerTemplate(template);
-                        setSignatureDesignerOpen(true);
-                      }}
-                      className="inline-flex items-center gap-1.5 rounded-lg border border-emerald-200 bg-white px-3 py-1.5 text-xs font-medium text-emerald-600 transition hover:border-emerald-300 hover:bg-emerald-50"
-                    >
-                      <PenTool className="h-3.5 w-3.5" />
-                      Posicionar Assinatura
-                    </button>
-                    <button
-                      onClick={() => handleDeleteTemplate(template)}
-                      disabled={deletingTemplateId === template.id}
-                      className="inline-flex items-center gap-1.5 rounded-lg border border-red-200 bg-white px-3 py-1.5 text-xs font-medium text-red-600 transition hover:border-red-300 hover:bg-red-50 disabled:opacity-60 disabled:cursor-not-allowed"
-                    >
-                      {deletingTemplateId === template.id ? (
-                        <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                      ) : (
-                        <Trash2 className="h-3.5 w-3.5" />
-                      )}
-                      Remover
-                    </button>
+                    </div>
+
+                    {/* Info do arquivo */}
+                    <div className="mb-4 flex items-center gap-2 text-xs text-slate-500">
+                      <FileText className="h-3.5 w-3.5 text-slate-400" />
+                      <span className="truncate">{filesLabel}</span>
+                    </div>
+
+                    {/* Ações principais */}
+                    <div className="flex flex-wrap gap-1.5 mb-3">
+                      <button
+                        onClick={() => handleGenerateTemplateFillLink(template)}
+                        disabled={creatingTemplateFillLinkId === template.id}
+                        className="flex-1 inline-flex items-center justify-center gap-1.5 rounded-lg bg-indigo-50 px-2.5 py-2 text-xs font-medium text-indigo-700 transition hover:bg-indigo-100 disabled:opacity-60"
+                        title="Gerar link público para preenchimento"
+                      >
+                        {creatingTemplateFillLinkId === template.id ? (
+                          <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                        ) : (
+                          <Link2 className="h-3.5 w-3.5" />
+                        )}
+                        Link
+                      </button>
+                      <button
+                        onClick={() => handlePreviewTemplate(template)}
+                        className="flex-1 inline-flex items-center justify-center gap-1.5 rounded-lg bg-slate-100 px-2.5 py-2 text-xs font-medium text-slate-700 transition hover:bg-slate-200"
+                        title="Visualizar template"
+                      >
+                        <Eye className="h-3.5 w-3.5" />
+                        Ver
+                      </button>
+                      <button
+                        onClick={() => handleDownloadTemplate(template)}
+                        disabled={downloadingTemplateId === template.id}
+                        className="flex-1 inline-flex items-center justify-center gap-1.5 rounded-lg bg-slate-100 px-2.5 py-2 text-xs font-medium text-slate-700 transition hover:bg-slate-200 disabled:opacity-50"
+                        title="Baixar arquivo"
+                      >
+                        {downloadingTemplateId === template.id ? (
+                          <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                        ) : (
+                          <FileDown className="h-3.5 w-3.5" />
+                        )}
+                        Baixar
+                      </button>
+                    </div>
+
+                    {/* Ações secundárias */}
+                    <div className="flex flex-wrap gap-1.5 pt-3 border-t border-slate-100">
+                      <button
+                        onClick={() => handleOpenEditModal(template)}
+                        className="inline-flex items-center gap-1 rounded px-2 py-1 text-[11px] font-medium text-slate-600 transition hover:bg-slate-100"
+                        title="Editar template"
+                      >
+                        <Pencil className="h-3 w-3" />
+                        Editar
+                      </button>
+                      <button
+                        onClick={() => handleOpenTemplateFormConfig(template)}
+                        className="inline-flex items-center gap-1 rounded px-2 py-1 text-[11px] font-medium text-slate-600 transition hover:bg-slate-100"
+                        title="Configurar campos do formulário"
+                      >
+                        <Settings className="h-3 w-3" />
+                        Formulário
+                      </button>
+                      <button
+                        onClick={() => {
+                          setFilesManagerTemplate(template);
+                          setFilesManagerOpen(true);
+                        }}
+                        className="inline-flex items-center gap-1 rounded px-2 py-1 text-[11px] font-medium text-slate-600 transition hover:bg-slate-100"
+                        title="Gerenciar documentos anexos"
+                      >
+                        <FileText className="h-3 w-3" />
+                        Anexos
+                      </button>
+                      <button
+                        onClick={() => {
+                          setSignatureDesignerTemplate(template);
+                          setSignatureDesignerOpen(true);
+                        }}
+                        className="inline-flex items-center gap-1 rounded px-2 py-1 text-[11px] font-medium text-emerald-600 transition hover:bg-emerald-50"
+                        title="Posicionar campos de assinatura"
+                      >
+                        <PenTool className="h-3 w-3" />
+                        Assinatura
+                      </button>
+                      <button
+                        onClick={() => handleDeleteTemplate(template)}
+                        disabled={deletingTemplateId === template.id}
+                        className="inline-flex items-center gap-1 rounded px-2 py-1 text-[11px] font-medium text-red-600 transition hover:bg-red-50 disabled:opacity-60 ml-auto"
+                        title="Remover template"
+                      >
+                        {deletingTemplateId === template.id ? (
+                          <Loader2 className="h-3 w-3 animate-spin" />
+                        ) : (
+                          <Trash2 className="h-3 w-3" />
+                        )}
+                      </button>
+                    </div>
                   </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           )}
+
           {templateActionError && (
-            <div className="mt-4 rounded-lg border border-red-100 bg-red-50 px-3 py-2 text-sm text-red-700">
+            <div className="rounded-lg border border-red-100 bg-red-50 px-3 py-2 text-sm text-red-700">
               {templateActionError}
             </div>
           )}
@@ -1257,6 +1816,21 @@ const DocumentsModule: React.FC<DocumentsModuleProps> = ({ onNavigateToModule })
                       onChange={(e) => setDescriptionInput(e.target.value)}
                       placeholder="Digite a descrição do template"
                     />
+                  </div>
+
+                  <div className="flex items-center justify-between rounded-lg border border-slate-200 bg-slate-50 px-4 py-3">
+                    <div>
+                      <p className="text-sm font-semibold text-slate-800">Parte contrária (Réu)</p>
+                      <p className="text-xs text-slate-500">Mostra/oculta o campo na tela de geração de documento.</p>
+                    </div>
+                    <label className="inline-flex items-center gap-2 text-sm text-slate-700">
+                      <input
+                        type="checkbox"
+                        checked={enableDefendantInput}
+                        onChange={(e) => setEnableDefendantInput(e.target.checked)}
+                      />
+                      Habilitar
+                    </label>
                   </div>
 
                   {/* File Upload */}
@@ -1544,6 +2118,21 @@ const DocumentsModule: React.FC<DocumentsModuleProps> = ({ onNavigateToModule })
                   placeholder="Conteúdo do template com variáveis entre colchetes duplos, ex: [[NOME]]"
                 />
               </div>
+
+              <div className="flex items-center justify-between rounded-lg border border-slate-200 bg-slate-50 px-4 py-3">
+                <div>
+                  <p className="text-sm font-semibold text-slate-800">Parte contrária (Réu)</p>
+                  <p className="text-xs text-slate-500">Mostra/oculta o campo na tela de geração de documento.</p>
+                </div>
+                <label className="inline-flex items-center gap-2 text-sm text-slate-700">
+                  <input
+                    type="checkbox"
+                    checked={editEnableDefendant}
+                    onChange={(e) => setEditEnableDefendant(e.target.checked)}
+                  />
+                  Habilitar
+                </label>
+              </div>
               {editError && <p className="text-sm text-red-600">{editError}</p>}
             </form>
           </div>
@@ -1699,6 +2288,396 @@ const DocumentsModule: React.FC<DocumentsModuleProps> = ({ onNavigateToModule })
             >
               Fechar
             </button>
+          </div>
+        </div>
+      </div>,
+      document.body
+    )}
+
+    {showTemplateFillLinkModal && createPortal(
+      <div className="fixed inset-0 z-[80] flex items-center justify-center px-3 sm:px-6 py-4">
+        <div
+          className="absolute inset-0 bg-slate-900/70 backdrop-blur-sm"
+          onClick={() => setShowTemplateFillLinkModal(false)}
+          aria-hidden="true"
+        />
+        <div className="relative w-full max-w-lg bg-white dark:bg-zinc-900 rounded-2xl shadow-2xl ring-1 ring-black/5 flex flex-col overflow-hidden">
+          <div className="h-2 w-full bg-indigo-500" />
+          <div className="px-5 sm:px-6 py-5 border-b border-slate-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 flex items-start justify-between gap-4">
+            <div className="flex items-center gap-4">
+              <div className="w-12 h-12 bg-indigo-100 dark:bg-indigo-900/30 rounded-xl flex items-center justify-center">
+                <Link2 className="w-6 h-6 text-indigo-600 dark:text-indigo-400" />
+              </div>
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400 dark:text-slate-500">
+                  Pronto para enviar
+                </p>
+                <h2 className="text-xl font-semibold text-slate-900 dark:text-white">Link de Preenchimento</h2>
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={() => setShowTemplateFillLinkModal(false)}
+              className="p-2 text-slate-400 hover:text-slate-600 dark:text-slate-300 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-white/10 rounded-xl transition"
+              aria-label="Fechar modal"
+            >
+              <X className="w-5 h-5" />
+            </button>
+          </div>
+
+          <div className="flex-1 overflow-y-auto bg-white dark:bg-zinc-900 p-5 sm:p-6">
+            <p className="text-sm text-slate-500 dark:text-slate-400 mb-4">
+              Envie este link para o cliente preencher os dados e o sistema encaminhar para assinatura.
+            </p>
+
+            <div className="bg-slate-50 dark:bg-zinc-800 rounded-xl p-4 mb-4 border border-slate-200 dark:border-zinc-700">
+              <p className="text-xs text-slate-500 dark:text-slate-400 uppercase tracking-wide font-semibold mb-2">Link para preenchimento:</p>
+              <div className="flex items-center gap-2 flex-col sm:flex-row">
+                <input
+                  type="text"
+                  readOnly
+                  value={templateFillLink}
+                  className="flex-1 w-full bg-white dark:bg-zinc-900 border border-slate-200 dark:border-zinc-700 rounded-lg px-3 py-2 text-sm text-slate-800 dark:text-white font-mono"
+                />
+                <button
+                  onClick={handleCopyTemplateFillLink}
+                  className={`px-4 py-2 rounded-lg text-sm font-semibold transition flex items-center justify-center gap-2 w-full sm:w-auto ${
+                    templateFillLinkCopied
+                      ? 'bg-indigo-600 text-white'
+                      : 'bg-slate-900 hover:bg-slate-800 text-white'
+                  }`}
+                >
+                  {templateFillLinkCopied ? (
+                    <>
+                      <CheckCircle2 className="w-4 h-4" />
+                      Copiado!
+                    </>
+                  ) : (
+                    <>
+                      <Copy className="w-4 h-4" />
+                      Copiar
+                    </>
+                  )}
+                </button>
+              </div>
+            </div>
+
+            <div className="bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-xl p-3">
+              <p className="text-xs text-amber-700 dark:text-amber-300">
+                <strong>Dica:</strong> Você pode enviar por WhatsApp/e-mail. O cliente preenche e no final já recebe o link de assinatura.
+              </p>
+            </div>
+          </div>
+
+          <div className="border-t border-slate-200 dark:border-zinc-800 bg-slate-50 dark:bg-zinc-900 px-4 sm:px-6 py-3">
+            <button
+              onClick={() => setShowTemplateFillLinkModal(false)}
+              className="w-full px-4 py-2.5 bg-slate-900 dark:bg-white text-white dark:text-slate-900 rounded-xl font-semibold transition hover:bg-slate-800 dark:hover:bg-slate-100"
+            >
+              Fechar
+            </button>
+          </div>
+        </div>
+      </div>,
+      document.body
+    )}
+
+    {showTemplateFormConfigModal && templateFormConfigTemplate && createPortal(
+      <div className="fixed inset-0 z-[85] flex items-center justify-center px-3 sm:px-6 py-4">
+        <div
+          className="absolute inset-0 bg-slate-900/70 backdrop-blur-sm"
+          onClick={() => {
+            if (!templateFormConfigSaving) {
+              setShowTemplateFormConfigModal(false);
+              setTemplateFormConfigTemplate(null);
+            }
+          }}
+          aria-hidden="true"
+        />
+        <div className="relative w-full max-w-3xl max-h-[92vh] bg-white dark:bg-zinc-900 rounded-2xl shadow-2xl ring-1 ring-black/5 flex flex-col overflow-hidden">
+          <div className="h-2 w-full bg-slate-900" />
+          <div className="px-5 sm:px-6 py-5 border-b border-slate-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 flex items-start justify-between gap-4">
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400 dark:text-slate-500">
+                Configuração do link público
+              </p>
+              <h2 className="text-xl font-semibold text-slate-900 dark:text-white">{templateFormConfigTemplate.name}</h2>
+              <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
+                Edite o título, a descrição e se o campo é obrigatório no formulário público.
+              </p>
+            </div>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  if (templateFormConfigSaving || templateFormConfigLoading) return;
+                  void handleSaveTemplateFormConfig();
+                }}
+                className={`px-3 py-2 rounded-xl bg-slate-900 dark:bg-white text-white dark:text-slate-900 text-sm font-semibold hover:bg-slate-800 dark:hover:bg-slate-100 transition inline-flex items-center justify-center gap-2 ${(templateFormConfigSaving || templateFormConfigLoading) ? 'opacity-60 pointer-events-none' : ''}`}
+              >
+                {templateFormConfigSaving && <Loader2 className="w-4 h-4 animate-spin" />}
+                Salvar
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  if (!templateFormConfigSaving) {
+                    setShowTemplateFormConfigModal(false);
+                    setTemplateFormConfigTemplate(null);
+                  }
+                }}
+                className="p-2 text-slate-400 hover:text-slate-600 dark:text-slate-300 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-white/10 rounded-xl transition"
+                aria-label="Fechar modal"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+          </div>
+
+          <div className="flex-1 overflow-y-auto bg-white dark:bg-zinc-900 p-5 sm:p-6">
+            {templateFormConfigError && (
+              <div className="mb-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+                {templateFormConfigError}
+              </div>
+            )}
+
+            {templateFormConfigLoading ? (
+              <div className="flex items-center justify-center py-10">
+                <Loader2 className="h-6 w-6 animate-spin text-slate-400" />
+              </div>
+            ) : templateFormConfigFields.length === 0 ? (
+              <p className="text-sm text-slate-600 dark:text-slate-400">Nenhum placeholder encontrado no template.</p>
+            ) : (
+              <div className="space-y-3">
+                {templateFormConfigFields.map((f, idx) => (
+                  <div
+                    key={`${f.placeholder}-${idx}`}
+                    className="rounded-xl border border-slate-200 dark:border-zinc-800 bg-slate-50 dark:bg-zinc-800/40 p-4"
+                    draggable={!templateFormConfigSaving && !templateFormConfigLoading}
+                    onDragStart={() => {
+                      templateFormConfigDragIndexRef.current = idx;
+                    }}
+                    onDragOver={(e) => {
+                      e.preventDefault();
+                    }}
+                    onDrop={(e) => {
+                      e.preventDefault();
+                      const from = templateFormConfigDragIndexRef.current;
+                      templateFormConfigDragIndexRef.current = null;
+                      if (from === null) return;
+                      if (from === idx) return;
+                      setTemplateFormConfigFields((prev) => {
+                        const next = [...prev];
+                        const [moved] = next.splice(from, 1);
+                        next.splice(idx, 0, moved);
+                        return templateFormConfigRecomputeOrder(next);
+                      });
+                    }}
+                  >
+                    <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                      <div className="min-w-0">
+                        <p className="text-xs text-slate-500 dark:text-slate-400 uppercase tracking-wide font-semibold">Placeholder</p>
+                        <p className="font-mono text-sm text-slate-800 dark:text-white break-all">[[{f.placeholder}]]</p>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <div className="text-slate-400 dark:text-slate-500 cursor-grab active:cursor-grabbing select-none">
+                          <GripVertical className="w-5 h-5" />
+                        </div>
+                      <div className="flex flex-col sm:items-end gap-2">
+                        <label className="inline-flex items-center gap-2 text-sm text-slate-700 dark:text-slate-200">
+                          <input
+                            type="checkbox"
+                            checked={f.enabled !== false}
+                            onChange={(e) =>
+                              setTemplateFormConfigFields((prev) =>
+                                prev.map((p, i) => (i === idx ? { ...p, enabled: e.target.checked, required: e.target.checked ? p.required : false } : p)),
+                              )
+                            }
+                          />
+                          Ativo
+                        </label>
+                        <label className="inline-flex items-center gap-2 text-sm text-slate-700 dark:text-slate-200">
+                          <input
+                            type="checkbox"
+                            checked={!!f.required}
+                            disabled={f.enabled === false}
+                            onChange={(e) =>
+                              setTemplateFormConfigFields((prev) =>
+                                prev.map((p, i) => (i === idx ? { ...p, required: e.target.checked } : p)),
+                              )
+                            }
+                          />
+                          Obrigatório
+                        </label>
+                      </div>
+                      </div>
+                    </div>
+
+                    <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 gap-4">
+                      <label className="block">
+                        <span className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Título</span>
+                        <input
+                          value={f.name}
+                          onChange={(e) =>
+                            setTemplateFormConfigFields((prev) =>
+                              prev.map((p, i) => (i === idx ? { ...p, name: e.target.value } : p)),
+                            )
+                          }
+                          className="mt-1 w-full rounded-lg border border-slate-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 px-3 py-2 text-sm text-slate-900 dark:text-white"
+                        />
+                      </label>
+                      <label className="block">
+                        <span className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Tipo</span>
+                        <select
+                          value={f.field_type}
+                          disabled={f.enabled === false}
+                          onChange={(e) => {
+                            const nextType = e.target.value as any;
+                            setTemplateFormConfigFields((prev) =>
+                              prev.map((p, i) => {
+                                if (i !== idx) return p;
+                                if (nextType !== 'select') {
+                                  return { ...p, field_type: nextType, options: null };
+                                }
+                                const k = normalizeKey(p.placeholder);
+                                const hasAny = Array.isArray(p.options) && p.options.length > 0;
+                                const preset =
+                                  k === 'ESTADO CIVIL'
+                                    ? [
+                                        { label: 'Solteiro(a)', value: 'Solteiro(a)' },
+                                        { label: 'Casado(a)', value: 'Casado(a)' },
+                                        { label: 'União estável', value: 'União estável' },
+                                        { label: 'Divorciado(a)', value: 'Divorciado(a)' },
+                                        { label: 'Viúvo(a)', value: 'Viúvo(a)' },
+                                      ]
+                                    : k === 'NACIONALIDADE'
+                                      ? [
+                                          { label: 'Brasileiro(a)', value: 'Brasileiro(a)' },
+                                          { label: 'Estrangeiro(a)', value: 'Estrangeiro(a)' },
+                                        ]
+                                      : null;
+                                return { ...p, field_type: nextType, options: hasAny ? p.options : preset };
+                              }),
+                            );
+                          }}
+                          className="mt-1 w-full rounded-lg border border-slate-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 px-3 py-2 text-sm text-slate-900 dark:text-white"
+                        >
+                          <option value="text">Texto</option>
+                          <option value="name">Nome</option>
+                          <option value="cpf">CPF</option>
+                          <option value="phone">Telefone</option>
+                          <option value="cep">CEP</option>
+                          <option value="textarea">Texto longo</option>
+                          <option value="number">Número</option>
+                          <option value="date">Data</option>
+                          <option value="select">Seleção</option>
+                        </select>
+                      </label>
+                      <label className="block">
+                        <span className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Descrição</span>
+                        <input
+                          value={(f.description as any) ?? ''}
+                          onChange={(e) =>
+                            setTemplateFormConfigFields((prev) =>
+                              prev.map((p, i) => (i === idx ? { ...p, description: e.target.value } : p)),
+                            )
+                          }
+                          className="mt-1 w-full rounded-lg border border-slate-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 px-3 py-2 text-sm text-slate-900 dark:text-white"
+                          placeholder="Ex: Digite o número com DDD"
+                        />
+                      </label>
+                    </div>
+
+                    {f.field_type === 'select' && (
+                      <div className="mt-4">
+                        <div className="flex items-center justify-between gap-3">
+                          <span className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Opções (1 por linha)</span>
+                          <div className="flex items-center gap-2">
+                            {['ESTADO CIVIL', 'NACIONALIDADE'].includes(normalizeKey(f.placeholder)) && (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  const k = normalizeKey(f.placeholder);
+                                  const preset =
+                                    k === 'ESTADO CIVIL'
+                                      ? [
+                                          { label: 'Solteiro(a)', value: 'Solteiro(a)' },
+                                          { label: 'Casado(a)', value: 'Casado(a)' },
+                                          { label: 'União estável', value: 'União estável' },
+                                          { label: 'Divorciado(a)', value: 'Divorciado(a)' },
+                                          { label: 'Viúvo(a)', value: 'Viúvo(a)' },
+                                        ]
+                                      : [
+                                          { label: 'Brasileiro(a)', value: 'Brasileiro(a)' },
+                                          { label: 'Estrangeiro(a)', value: 'Estrangeiro(a)' },
+                                        ];
+                                  setTemplateFormConfigFields((prev) => prev.map((p, i) => (i === idx ? { ...p, options: preset } : p)));
+                                }}
+                                className="px-3 py-1.5 rounded-lg border border-slate-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 text-xs font-semibold text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-white/10 transition"
+                              >
+                                Aplicar padrão
+                              </button>
+                            )}
+                            <button
+                              type="button"
+                              onClick={() => setTemplateFormConfigFields((prev) => prev.map((p, i) => (i === idx ? { ...p, options: null } : p)))}
+                              className="px-3 py-1.5 rounded-lg border border-slate-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 text-xs font-semibold text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-white/10 transition"
+                            >
+                              Limpar
+                            </button>
+                          </div>
+                        </div>
+                        <textarea
+                          value={templateFormConfigOptionsToText(f.options)}
+                          disabled={f.enabled === false}
+                          onChange={(e) => {
+                            const parsed = templateFormConfigParseOptions(e.target.value);
+                            setTemplateFormConfigFields((prev) => prev.map((p, i) => (i === idx ? { ...p, options: parsed } : p)));
+                          }}
+                          className="mt-2 w-full min-h-[96px] rounded-lg border border-slate-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 px-3 py-2 text-sm text-slate-900 dark:text-white"
+                          placeholder="Ex:\nSolteiro(a)\nCasado(a)"
+                        />
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          <div className="border-t border-slate-200 dark:border-zinc-800 bg-slate-50 dark:bg-zinc-900 px-4 sm:px-6 py-3">
+            <div className="flex flex-col sm:flex-row gap-3 sm:justify-end">
+              <button
+                type="button"
+                onClick={() => {
+                  if (!templateFormConfigSaving) {
+                    setShowTemplateFormConfigModal(false);
+                    setTemplateFormConfigTemplate(null);
+                  }
+                }}
+                className="px-4 py-2.5 rounded-xl border border-slate-200 dark:border-zinc-700 text-sm font-semibold text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-white/10 transition"
+                disabled={templateFormConfigSaving}
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  if (templateFormConfigSaving || templateFormConfigLoading) return;
+                  void handleSaveTemplateFormConfig();
+                }}
+                disabled={templateFormConfigSaving || templateFormConfigLoading}
+                className="px-4 py-2.5 rounded-xl text-sm font-semibold transition inline-flex items-center justify-center gap-2"
+                style={{
+                  backgroundColor: (templateFormConfigSaving || templateFormConfigLoading) ? '#cbd5e1' : '#0f172a',
+                  color: (templateFormConfigSaving || templateFormConfigLoading) ? '#475569' : '#ffffff',
+                  cursor: (templateFormConfigSaving || templateFormConfigLoading) ? 'not-allowed' : 'pointer',
+                }}
+              >
+                {templateFormConfigSaving && <Loader2 className="w-4 h-4 animate-spin" />}
+                Salvar configuração
+              </button>
+            </div>
           </div>
         </div>
       </div>,

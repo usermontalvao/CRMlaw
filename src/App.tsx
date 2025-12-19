@@ -56,7 +56,9 @@ const SignatureModule = lazy(() => import('./components/SignatureModule'));
 const SettingsModule = lazy(() => import('./components/SettingsModule'));
 const CronEndpoint = lazy(() => import('./components/CronEndpoint'));
 const PublicSigningPage = lazy(() => import('./components/PublicSigningPage'));
+const PublicTemplateFillPage = lazy(() => import('./components/PublicTemplateFillPage'));
 const PublicVerificationPage = lazy(() => import('./components/PublicVerificationPage'));
+const PublicPermalinkRedirect = lazy(() => import('./components/PublicPermalinkRedirect'));
 const DocsChangesPage = lazy(() => import('./components/DocsChangesPage'));
 import { useNotifications } from './hooks/useNotifications';
 import { usePresence } from './hooks/usePresence';
@@ -1225,6 +1227,8 @@ const App: React.FC = () => {
   const isDocsRoute = hashRoute?.includes('/docs') || pathname?.includes('/docs');
   const isCronRoute = hashRoute?.includes('/cron/djen') || pathname?.includes('/cron/djen');
   const isSigningRoute = hashRoute?.includes('/assinar/') || pathname?.includes('/assinar/');
+  const isTemplateFillRoute = hashRoute?.includes('/preencher/') || pathname?.includes('/preencher/');
+  const isPermalinkRoute = hashRoute?.includes('/p/') || pathname?.includes('/p/');
   const isVerificationRoute = hashRoute?.includes('/verificar') || pathname?.includes('/verificar');
 
   if (isTermsRoute) {
@@ -1251,6 +1255,37 @@ const App: React.FC = () => {
         </Suspense>
       </div>
     );
+  }
+
+  if (isPermalinkRoute) {
+    // Rota de permalink fixo: /#/p/:slug
+    // Extrai o slug e redireciona para o componente que faz o mint do token
+    let slug = hashRoute.split('/p/')[1]?.split('?')[0]?.split('#')[0];
+    if (!slug && pathname.includes('/p/')) {
+      slug = pathname.split('/p/')[1]?.split('?')[0]?.split('#')[0];
+    }
+    if (slug) {
+      return (
+        <Suspense fallback={<div className="min-h-screen bg-slate-100 flex items-center justify-center"><Loader2 className="w-8 h-8 animate-spin text-orange-600" /></div>}>
+          <PublicPermalinkRedirect />
+        </Suspense>
+      );
+    }
+  }
+
+  if (isTemplateFillRoute) {
+    // Extrair token do hash ou do pathname
+    let token = hashRoute.split('/preencher/')[1]?.split('?')[0]?.split('#')[0];
+    if (!token && pathname.includes('/preencher/')) {
+      token = pathname.split('/preencher/')[1]?.split('?')[0]?.split('#')[0];
+    }
+    if (token) {
+      return (
+        <Suspense fallback={<div className="min-h-screen bg-slate-100 flex items-center justify-center"><Loader2 className="w-8 h-8 animate-spin text-indigo-600" /></div>}>
+          <PublicTemplateFillPage token={token} />
+        </Suspense>
+      );
+    }
   }
 
   if (isSigningRoute) {

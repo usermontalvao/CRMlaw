@@ -1,5 +1,5 @@
 import { supabase } from '../config/supabase';
-import type { DocumentTemplate, CreateDocumentTemplateDTO, GeneratedDocument, CreateGeneratedDocumentDTO, SignatureFieldConfigValue, TemplateFile, CustomField, CreateCustomFieldDTO, UpdateCustomFieldDTO } from '../types/document.types';
+import type { DocumentTemplate, CreateDocumentTemplateDTO, GeneratedDocument, CreateGeneratedDocumentDTO, SignatureFieldConfigValue, TemplateFile, CustomField, CreateCustomFieldDTO, UpdateCustomFieldDTO, TemplateCustomField, UpsertTemplateCustomFieldDTO } from '../types/document.types';
 
 const STORAGE_BUCKET = 'document-templates';
 const GENERATED_STORAGE_BUCKET = 'generated-documents';
@@ -7,6 +7,7 @@ const GENERATED_STORAGE_BUCKET = 'generated-documents';
 class DocumentTemplateService {
   private tableName = 'document_templates';
   private historyTableName = 'generated_documents';
+  private templateCustomFieldsTableName = 'template_custom_fields';
 
   private async ensureBucket() {
     try {
@@ -469,6 +470,46 @@ class DocumentTemplateService {
     const files = await this.listTemplateFiles(templateId);
 
     return { ...template, files };
+  }
+
+  async listTemplateCustomFields(templateId: string): Promise<TemplateCustomField[]> {
+    const { data, error } = await supabase
+      .from(this.templateCustomFieldsTableName)
+      .select('*')
+      .eq('template_id', templateId)
+      .order('order', { ascending: true });
+
+    if (error) throw new Error(error.message);
+    return data ?? [];
+  }
+
+  async replaceTemplateCustomFields(templateId: string, fields: UpsertTemplateCustomFieldDTO[]) {
+    const { error: delError } = await supabase
+      .from(this.templateCustomFieldsTableName)
+      .delete()
+      .eq('template_id', templateId);
+
+    if (delError) throw new Error(delError.message);
+
+    if (fields.length === 0) return [] as TemplateCustomField[];
+
+    const payload = fields.map((f) => ({
+      template_id: templateId,
+      name: f.name,
+      placeholder: f.placeholder,
+      field_type: f.field_type,
+      enabled: f.enabled,
+      required: f.required,
+      default_value: f.default_value ?? null,
+      options: f.options ?? null,
+      description: f.description ?? null,
+      order: f.order,
+    }));
+
+    const { data, error } = await supabase.from(this.templateCustomFieldsTableName).insert(payload).select('*');
+    if (error) throw new Error(error.message);
+
+    return data ?? [];
   }
 
   // ==================== CAMPOS PERSONALIZADOS GLOBAIS ====================

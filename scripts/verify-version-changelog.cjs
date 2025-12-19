@@ -22,12 +22,14 @@ function getStagedFiles() {
 }
 
 function getJsonFromGit(ref, path) {
-  const raw = run(`git show ${ref}:${path}`);
+  const spec = ref === ':' ? `:${path}` : `${ref}:${path}`;
+  const raw = run(`git show ${spec}`);
   return JSON.parse(raw);
 }
 
 function getTextFromGit(ref, path) {
-  return run(`git show ${ref}:${path}`);
+  const spec = ref === ':' ? `:${path}` : `${ref}:${path}`;
+  return run(`git show ${spec}`);
 }
 
 function main() {

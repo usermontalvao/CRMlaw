@@ -46,6 +46,24 @@ import {
    ============================================================================ */
 
 const VERSION_CODENAMES: Record<string, { name: string; emoji: string }> = {
+  '1.0.31': { name: 'Café Constraint', emoji: '☕' },
+  '1.0.30': { name: 'Café Identidade', emoji: '☕' },
+  '1.0.29': { name: 'Café Progresso', emoji: '☕' },
+  '1.0.28': { name: 'Café Visível', emoji: '☕' },
+  '1.0.27': { name: 'Café Prático', emoji: '☕' },
+  '1.0.26': { name: 'Café Minimal', emoji: '☕' },
+  '1.0.25': { name: 'Café Clean', emoji: '☕' },
+  '1.0.24': { name: 'Café Suave', emoji: '☕' },
+  '1.0.23': { name: 'Café Intenso', emoji: '☕' },
+  '1.0.22': { name: 'Café Aromático', emoji: '☕' },
+  '1.0.21': { name: 'Café Aveludado', emoji: '☕' },
+  '1.0.20': { name: 'Café Cremoso', emoji: '☕' },
+  '1.0.19': { name: 'Café Forte', emoji: '☕' },
+  '1.0.18': { name: 'Café Duplo', emoji: '☕' },
+  '1.0.17': { name: 'Café Especial', emoji: '☕' },
+  '1.0.16': { name: 'Cold Brew', emoji: '🧋' },
+  '1.0.15': { name: 'Café Gelado', emoji: '🧊' },
+  '1.0.14': { name: 'Café com Leite', emoji: '🥛' },
   '1.0.13': { name: 'Café Preto', emoji: '☕' },
   '1.0.12': { name: 'Carioca', emoji: '☕' },
   '1.0.11': { name: 'Affogato', emoji: '🍨' },
@@ -425,6 +443,1007 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
    ============================================================================ */
 
 const releases: ReleaseNote[] = [
+  {
+    version: '1.0.66',
+    date: '2025-01-18',
+    summary: 'Git: correção do hook de versionamento',
+    modules: [
+      {
+        moduleId: 'sistema',
+        changes: [
+          {
+            type: 'fix',
+            title: 'Pre-commit não falha mais ao ler package.json staged',
+            description: 'Corrigido script scripts/verify-version-changelog.cjs para usar `git show :<arquivo>` ao ler arquivos no stage (evita erro "ambiguous argument ::package.json").',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.0.65',
+    date: '2025-01-18',
+    summary: 'Documentos: botão de geração melhorado',
+    modules: [
+      {
+        moduleId: 'documentos',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Gerar documentos (novo botão)',
+            description: 'Renomeado de "Gerar documento Word" para "Gerar documentos" e aplicado visual com gradiente/sombra e estados de loading/disabled mais claros.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.0.64',
+    date: '2025-01-18',
+    summary: 'Templates: botão Editar restaurado',
+    modules: [
+      {
+        moduleId: 'documentos',
+        changes: [
+          {
+            type: 'fix',
+            title: 'Ação de editar voltou para o card',
+            description: 'Na tela de gerenciamento de templates, o botão Editar foi adicionado novamente nos cards para acesso rápido ao modal de edição.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.0.63',
+    date: '2025-01-18',
+    summary: 'Templates: opção para habilitar parte contrária',
+    modules: [
+      {
+        moduleId: 'documentos',
+        changes: [
+          {
+            type: 'feature',
+            title: 'Habilitar/ocultar campo de parte contrária por template',
+            description: 'Na configuração do template, adicionado toggle para habilitar a Parte contrária (Réu). Quando desativado, o campo não aparece na geração e o placeholder [[réu]] fica vazio.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.0.62',
+    date: '2025-01-18',
+    summary: 'Nova tela de geração de documentos',
+    modules: [
+      {
+        moduleId: 'documentos',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Tela "Novo documento" redesenhada',
+            description: 'Layout em duas colunas com seleção visual de templates em cards, formulário mais intuitivo e feedback visual aprimorado.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.0.61',
+    date: '2025-01-18',
+    summary: 'Reorganização visual da tela de templates',
+    modules: [
+      {
+        moduleId: 'documentos',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Nova interface de gerenciamento de templates',
+            description: 'Templates agora são exibidos em cards organizados em grid, com ações agrupadas por categoria (principais e secundárias) para melhor experiência.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.0.60',
+    date: '2025-01-18',
+    summary: 'Correção definitiva do botão Salvar no modal de configuração',
+    modules: [
+      {
+        moduleId: 'documentos',
+        changes: [
+          {
+            type: 'fix',
+            title: 'Botão "Salvar configuração" agora sempre visível',
+            description: 'Aplicado estilo inline para garantir que o botão apareça corretamente independente do tema (dark mode estava sobrescrevendo as classes Tailwind).',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.0.59',
+    date: '2025-01-18',
+    summary: 'Assinatura: seleção múltipla de arquivos no upload',
+    modules: [
+      {
+        moduleId: 'assinatura',
+        changes: [
+          {
+            type: 'feature',
+            title: 'Selecionar todos e excluir selecionados',
+            description: 'Na etapa de upload do módulo de assinatura, agora é possível selecionar arquivos (checkbox), selecionar todos, limpar seleção e excluir os selecionados de uma vez.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.0.58',
+    date: '2025-01-18',
+    summary: 'Configuração do link público: botão salvar visível',
+    modules: [
+      {
+        moduleId: 'documentos',
+        changes: [
+          {
+            type: 'fix',
+            title: 'Botão “Salvar configuração” com melhor contraste',
+            description: 'No modal de configuração do link público, o botão de salvar agora permanece visível e legível mesmo quando está desabilitado (carregando).',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.0.57',
+    date: '2025-01-18',
+    summary: 'Tema: modal de documentos ajustado para o modo claro',
+    modules: [
+      {
+        moduleId: 'documentos',
+        changes: [
+          {
+            type: 'fix',
+            title: 'Modal de gerenciar documentos não fica mais preto',
+            description: 'O modal de gerenciamento de documentos do template agora força fundo branco e cores do tema claro, evitando contraste ruim no painel.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.0.56',
+    date: '2025-01-18',
+    summary: 'Painel de Documentos: melhor visibilidade e gestão de anexos',
+    modules: [
+      {
+        moduleId: 'documentos',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Resumo de principal + anexos nos templates',
+            description: 'A listagem de templates agora mostra um resumo “principal + X anexo(s)” para facilitar a conferência rápida.',
+          },
+          {
+            type: 'improvement',
+            title: 'Gerenciador de arquivos com destaque e download',
+            description: 'No gerenciador de documentos do template, o arquivo principal agora é destacado e cada item possui ação de download.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.0.55',
+    date: '2025-01-18',
+    summary: 'Melhoria no painel: loading do link de preenchimento por template',
+    modules: [
+      {
+        moduleId: 'documentos',
+        changes: [
+          {
+            type: 'fix',
+            title: 'Spinner não aparece em todos os templates',
+            description: 'Ao gerar o link público de preenchimento, o estado de carregamento agora fica apenas no template selecionado, evitando confusão visual no painel.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.0.54',
+    date: '2025-01-18',
+    summary: 'Template-fill agora inclui anexos do template',
+    modules: [
+      {
+        moduleId: 'assinatura-publica',
+        changes: [
+          {
+            type: 'fix',
+            title: 'Anexos incluídos na solicitação de assinatura',
+            description: 'Ao gerar documentos via link público (template-fill), os arquivos anexos do template agora também são renderizados e incluídos em attachment_paths, aparecendo na assinatura pública.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.0.53',
+    date: '2025-01-18',
+    summary: 'Link fixo reutilizável para WhatsApp (permalinks)',
+    modules: [
+      {
+        moduleId: 'assinatura-publica',
+        changes: [
+          {
+            type: 'feature',
+            title: 'Permalinks: links fixos que nunca expiram',
+            description: 'Novo sistema de permalinks permite criar um link fixo (ex: /p/procuracao-inss) que pode ser compartilhado no WhatsApp. Cada acesso gera um token único internamente, então o link nunca "morre" após uso.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.0.52',
+    date: '2025-01-18',
+    summary: 'Correção na geração de documento (arquivo principal vs anexos)',
+    modules: [
+      {
+        moduleId: 'assinatura-publica',
+        changes: [
+          {
+            type: 'fix',
+            title: 'Geração agora usa o documento principal',
+            description: 'Corrigido bug onde a geração de documento via link público usava o primeiro anexo em vez do arquivo principal do template. Agora prioriza corretamente template.file_path.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.0.51',
+    date: '2025-01-18',
+    summary: 'Validação mais rígida para CPF e Telefone no preenchimento público',
+    modules: [
+      {
+        moduleId: 'assinatura-publica',
+        changes: [
+          {
+            type: 'fix',
+            title: 'Não avança com CPF/Telefone incompletos',
+            description: 'No preenchimento público, CPF e Telefone agora são validados por quantidade de dígitos (máscara não conta como preenchimento). Assim o usuário não consegue avançar/submeter com valores incompletos.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.0.50',
+    date: '2025-01-18',
+    summary: 'Formulário público com cores do tema do CRM',
+    modules: [
+      {
+        moduleId: 'assinatura-publica',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Captura de informações com identidade visual do CRM',
+            description: 'O preenchimento público (nome/CPF/telefone/endereço) foi padronizado para usar a paleta laranja do CRM nos botões, foco de inputs, progresso e estados selecionados.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.0.49',
+    date: '2025-01-18',
+    summary: 'Preview de PDF com múltiplas páginas na assinatura pública',
+    modules: [
+      {
+        moduleId: 'assinatura-publica',
+        changes: [
+          {
+            type: 'fix',
+            title: 'PDF preview agora mostra todas as folhas',
+            description: 'Na página pública de assinatura, o preview em PDF não limita mais a visualização à primeira folha. O viewer voltou a permitir rolagem entre múltiplas páginas.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.0.48',
+    date: '2025-01-18',
+    summary: 'Correções na geração de documento (nome e páginas)',
+    modules: [
+      {
+        moduleId: 'assinatura-publica',
+        changes: [
+          {
+            type: 'fix',
+            title: 'PDF agora gera todas as páginas do DOCX',
+            description: 'Corrigido um retorno prematuro na conversão DOCX→PDF que fazia o compilado parar na primeira página. Agora o processo percorre todas as páginas/seções do documento.',
+          },
+          {
+            type: 'fix',
+            title: 'Nome do signatário não pode virar CEP/NCEP',
+            description: 'Blindagem na detecção do campo de nome no formulário público para impedir que placeholders de endereço/CEP (ex.: NCEP/CEP) sejam utilizados como nome na geração do documento.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.0.47',
+    date: '2025-01-18',
+    summary: 'Rodapé do PDF com link de verificação',
+    modules: [
+      {
+        moduleId: 'assinatura-publica',
+        changes: [
+          {
+            type: 'fix',
+            title: 'Link para verificar autenticidade no rodapé',
+            description: 'No PDF assinado (rodapé com Hash e Código), foi incluído também o link “Verificar” para conferência da autenticidade.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.0.46',
+    date: '2025-01-18',
+    summary: 'Endereço guiado: confirmação do ViaCEP e quadra opcional',
+    modules: [
+      {
+        moduleId: 'assinatura-publica',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Fluxo de CEP com confirmação',
+            description: 'No preenchimento público, após informar o CEP o sistema exibe o endereço encontrado e pergunta se está correto (Sim/Não). Se confirmado, prossegue para Número.',
+          },
+          {
+            type: 'improvement',
+            title: 'Quadra opcional',
+            description: 'Após informar o número, o formulário pergunta “Tem quadra?”. Se sim, exibe o campo Quadra (Complemento). Se não, pula essa etapa e não exige o complemento.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.0.45',
+    date: '2025-01-18',
+    summary: 'Ordem do formulário corrigida (CEP só na etapa de endereço)',
+    modules: [
+      {
+        moduleId: 'assinatura-publica',
+        changes: [
+          {
+            type: 'fix',
+            title: 'Fluxo normal antes do CEP',
+            description: 'O preenchimento público voltou a seguir a ordem normal (nome, CPF, etc.) e só exibe a etapa de CEP/endereço quando chega na parte de endereço do template, em vez de iniciar o formulário pelo CEP.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.0.44',
+    date: '2025-01-18',
+    summary: 'Endereço com CEP primeiro e detalhes mínimos',
+    modules: [
+      {
+        moduleId: 'assinatura-publica',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'CEP primeiro + pedir só o que faltar',
+            description: 'No preenchimento público, o endereço agora começa pedindo apenas o CEP. Após a busca no ViaCEP, o formulário solicita somente os campos que não forem preenchidos automaticamente (ex.: Número e Complemento — exibido como “Quadra”; Rua/Bairro só aparecem se não vierem do ViaCEP).',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.0.43',
+    date: '2025-01-18',
+    summary: 'Etapa de endereço mais compacta no mobile',
+    modules: [
+      {
+        moduleId: 'assinatura-publica',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Endereço com menos campos visíveis',
+            description: 'Na etapa Endereço do preenchimento público, os campos foram reduzidos para CEP, Endereço (rua), Número, Complemento e Bairro. Cidade/Estado continuam sendo preenchidos automaticamente via CEP quando existirem no template, mas não são exibidos nem bloqueiam o envio.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.0.42',
+    date: '2025-01-18',
+    summary: 'Endereço em uma etapa e envio automático no preenchimento público',
+    modules: [
+      {
+        moduleId: 'assinatura-publica',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Endereço em uma única tela',
+            description: 'No preenchimento público, os campos de endereço (CEP, rua, número, complemento, bairro, cidade, estado) agora aparecem juntos na mesma etapa, com busca automática via CEP (ViaCEP).',
+          },
+          {
+            type: 'improvement',
+            title: 'Envio automático ao finalizar',
+            description: 'A etapa final deixou de exigir clique em “Gerar documento”. Ao chegar no final do preenchimento, o sistema envia automaticamente e redireciona para a assinatura.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.0.41',
+    date: '2025-01-18',
+    summary: 'Etapa de dados mantida no fluxo normal de assinatura',
+    modules: [
+      {
+        moduleId: 'assinatura-publica',
+        changes: [
+          {
+            type: 'fix',
+            title: 'Só pula Nome/CPF/Telefone quando vier do template-fill',
+            description: 'O PublicSigningPage volta a solicitar nome/CPF/telefone no fluxo normal. A etapa de dados só é pulada quando o signatário foi criado via template-fill (prefill) e já está com os dados mínimos completos.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.0.40',
+    date: '2025-01-18',
+    summary: 'Redirecionamento automático para assinatura',
+    modules: [
+      {
+        moduleId: 'assinatura-publica',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Após finalizar, vai direto para a página de assinatura',
+            description: 'Ao concluir o preenchimento público, o sistema agora redireciona automaticamente para /#/assinar/{token}, eliminando a etapa intermediária de copiar o link de assinatura (mantém link de fallback caso o redirecionamento falhe).',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.0.39',
+    date: '2025-01-18',
+    summary: 'Mensagens de erro claras no template-fill',
+    modules: [
+      {
+        moduleId: 'assinatura-publica',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Erros do template-fill agora aparecem com mensagem real',
+            description: 'A Edge Function template-fill foi ajustada para retornar {success:false,error} em HTTP 200 e logar detalhes no console, evitando o “400 Bad Request” genérico no frontend e facilitando o diagnóstico.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.0.38',
+    date: '2025-01-18',
+    summary: 'DATA não é solicitada no preenchimento público',
+    modules: [
+      {
+        moduleId: 'assinatura-publica',
+        changes: [
+          {
+            type: 'fix',
+            title: 'Campo [[DATA]] não aparece no formulário mesmo configurado',
+            description: 'O placeholder DATA agora é sempre removido da lista de etapas do preenchimento público (inclusive quando estiver configurado como obrigatório no template). A data continua sendo preenchida automaticamente com a data do sistema no momento do envio.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.0.37',
+    date: '2025-01-18',
+    summary: 'Correção no select em lista (auto-avançar)',
+    modules: [
+      {
+        moduleId: 'assinatura-publica',
+        changes: [
+          {
+            type: 'fix',
+            title: 'Selecionar opção não exibe erro indevido',
+            description: 'Corrigida condição de corrida no select em lista: ao tocar em uma opção, o valor é aplicado e a etapa avança sem disparar a validação com estado antigo, evitando a mensagem “Preencha este campo para continuar.”',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.0.36',
+    date: '2025-01-18',
+    summary: 'Seleção com opções visíveis no preenchimento público',
+    modules: [
+      {
+        moduleId: 'assinatura-publica',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Campos de seleção sem dropdown',
+            description: 'No preenchimento público, campos do tipo "select" agora exibem as opções diretamente na tela (lista de botões), evitando abrir dropdown/modal e permitindo escolher com 1 toque, com avanço automático.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.0.35',
+    date: '2025-01-18',
+    summary: 'Auto-avançar em campos de seleção no preenchimento público',
+    modules: [
+      {
+        moduleId: 'assinatura-publica',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Seleção avança automaticamente',
+            description: 'No preenchimento público (Typeform), campos do tipo "select" avançam automaticamente para a próxima etapa assim que uma opção é selecionada, sem precisar clicar em "Próximo".',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.0.34',
+    date: '2025-01-18',
+    summary: 'Nome em maiúsculas no preenchimento público',
+    modules: [
+      {
+        moduleId: 'assinatura-publica',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Nome completo agora força MAIÚSCULAS',
+            description: 'No preenchimento público, o campo de identificação (signer_name) e campos configurados com tipo "name" passam a forçar o texto em maiúsculas durante a digitação, padronizando o nome no documento.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.0.33',
+    date: '2025-01-18',
+    summary: 'Correção de design: removido visual IA, design 100% mobile-first compatível com tema CRM.',
+    modules: [
+      {
+        moduleId: 'documentos',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Redesenho completo da página pública de preenchimento',
+            description: 'Correção drástica no design da página pública de preenchimento: removido completamente visual artificial de IA, gradientes, headers, logos, ícones, sombras e excessos. Design 100% mobile-first, compatível com tema CRM: fundo slate-50 simples, bordas padrão, tipografia menor (base text-sm), botões simples, inputs compactos, padding reduzido. Foco total em responsividade e usabilidade mobile, sem elementos que destoem do restante do sistema.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.0.32',
+    date: '2025-01-18',
+    summary: 'Redesenho profissional da página pública de preenchimento',
+    modules: [
+      {
+        moduleId: 'documentos',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Redesenho completo da página pública de preenchimento',
+            description: 'Redesenho completo da página pública de preenchimento (PublicTemplateFillPage) com visual profissional de plataforma de assinatura: header com logo Jurius, fundo gradiente sutil, tipografia refinada, ícones contextuais, botões com hover/active states, micro-interações, sombras e layout totalmente responsivo. Melhorias de UX: loading centralizado com ícone animado, erros com ícones visuais, progresso com gradiente animado e campos com focus ring emerald. Removido rodapé redundante e centralizado versão no header. Reforço de identidade visual similar a plataformas de e-signature estabelecidas.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.0.31',
+    date: '18/12/2025',
+    summary: 'Correções de constraint e DATA no formulário público',
+    modules: [
+      {
+        moduleId: 'documentos',
+        changes: [
+          {
+            type: 'fix',
+            title: 'Banco agora aceita tipos name/cpf/phone/cep no template_custom_fields',
+            description: 'Adicionada migration para atualizar o CHECK constraint de field_type em template_custom_fields, evitando erro ao salvar configuração do link público.',
+          },
+          {
+            type: 'fix',
+            title: 'Placeholder DATA aparece no modal e é inferido como Data',
+            description: 'A configuração do link público não filtra mais [[DATA]] e também detecta DATA/DATA_*/DATA * como tipo Data automaticamente.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.0.30',
+    date: '18/12/2025',
+    summary: 'Tipos de CPF/Telefone/Nome/CEP no link público',
+    modules: [
+      {
+        moduleId: 'documentos',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Configuração do link público com tipos de identificação e CEP',
+            description: 'Adicionadas opções de tipo CPF, Telefone, Nome e CEP na configuração do link público do template. Isso permite mapear placeholders mesmo com nomes diferentes e melhorar o preenchimento/integrações.',
+          },
+        ],
+      },
+      {
+        moduleId: 'assinatura-publica',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Máscaras e ViaCEP por tipo configurado',
+            description: 'O formulário público aplica máscara/teclado adequado para CPF, telefone e CEP, e o ViaCEP passa a ser acionado pelo campo configurado como CEP (não depende do placeholder se chamar exatamente CEP).',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.0.29',
+    date: '18/12/2025',
+    summary: 'Progresso mais simples no preenchimento público',
+    modules: [
+      {
+        moduleId: 'assinatura-publica',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Removido “0/14 obrigatórios” e substituído por percentual',
+            description: 'O formulário público agora exibe um progresso percentual (suavizado) para uma experiência mais leve; as validações de campos obrigatórios continuam funcionando normalmente.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.0.28',
+    date: '18/12/2025',
+    summary: 'Botão Salvar sempre visível no modal',
+    modules: [
+      {
+        moduleId: 'documentos',
+        changes: [
+          {
+            type: 'fix',
+            title: 'Salvar não fica “invisível” quando bloqueado',
+            description: 'O botão de salvar na configuração do link público deixou de usar o atributo disabled (que deixava o botão apagado demais) e passou a usar bloqueio por clique + opacidade, mantendo a visibilidade.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.0.27',
+    date: '18/12/2025',
+    summary: 'Salvar sempre visível na configuração do link público',
+    modules: [
+      {
+        moduleId: 'documentos',
+        changes: [
+          {
+            type: 'fix',
+            title: 'Botão Salvar disponível no topo do modal',
+            description: 'Adicionado botão de salvar no cabeçalho do modal de configuração do link público para garantir acesso mesmo quando o rodapé não estiver visível por scroll/tela menor.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.0.26',
+    date: '18/12/2025',
+    summary: 'Cabeçalho do preenchimento público mais limpo',
+    modules: [
+      {
+        moduleId: 'assinatura-publica',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Removido indicador "Etapa" (1/N) no cabeçalho',
+            description: 'O cabeçalho do preenchimento público ficou mais clean removendo o bloco de etapa; o progresso permanece na barra.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.0.25',
+    date: '18/12/2025',
+    summary: 'Interface mais limpa no preenchimento público',
+    modules: [
+      {
+        moduleId: 'assinatura-publica',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Removido indicador de placeholder na tela do cliente',
+            description: 'A linha "Obrigatório/Opcional · [[PLACEHOLDER]]" foi removida do formulário público para deixar a experiência mais limpa e profissional.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.0.24',
+    date: '18/12/2025',
+    summary: 'UI do preenchimento público mais leve e elegante',
+    modules: [
+      {
+        moduleId: 'assinatura-publica',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Layout do formulário público mais “magro”',
+            description: 'Ajustados tamanhos de fonte, espaçamentos, altura de inputs/botões, sombras e larguras para deixar o preenchimento público mais leve visualmente, sem perder legibilidade.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.0.23',
+    date: '18/12/2025',
+    summary: 'Formulário público pergunta apenas o que existe no documento',
+    modules: [
+      {
+        moduleId: 'assinatura-publica',
+        changes: [
+          {
+            type: 'fix',
+            title: 'Removido campo “fantasma” (ex: email) quando não existe no template',
+            description: 'O link público agora considera a interseção entre os campos configurados e os placeholders extraídos do DOCX, impedindo que campos antigos salvos na configuração apareçam no formulário quando não existem no documento.',
+          },
+          {
+            type: 'improvement',
+            title: 'Ordem do formulário segue o order configurado',
+            description: 'A sequência das perguntas segue a ordem configurada no template (order), sem reagrupamentos que alterem a experiência.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.0.22',
+    date: '18/12/2025',
+    summary: 'Ordenação por arrastar e opções pré-definidas no formulário público',
+    modules: [
+      {
+        moduleId: 'documentos',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Configuração do formulário do template com ordenação por arrastar',
+            description: 'Na configuração do link público do template, agora é possível reordenar os campos arrastando (drag-and-drop), persistindo a ordem no formulário público.',
+          },
+          {
+            type: 'feature',
+            title: 'Campos do tipo seleção com opções pré-definidas (presets)',
+            description: 'Você pode configurar campos como "Seleção" e definir opções (1 por linha). Para placeholders como "estado civil" e "nacionalidade", há presets prontos (editáveis).',
+          },
+        ],
+      },
+      {
+        moduleId: 'assinatura-publica',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Formulário público usa opções e tipo definidos no template',
+            description: 'O preenchimento público agora prioriza as configurações do template (tipo e opções) ao renderizar campos, permitindo selects customizados por template.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.0.21',
+    date: '18/12/2025',
+    summary: 'Campos dinâmicos no preenchimento público e assinatura mais direta',
+    modules: [
+      {
+        moduleId: 'assinatura-publica',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Preenchimento público pede apenas campos habilitados do template',
+            description: 'O formulário público passa a respeitar o flag "enabled" dos campos do template e não força etapas fixas (email/CPF/telefone) quando não existirem no documento.',
+          },
+          {
+            type: 'improvement',
+            title: 'Assinatura pública reaproveita dados do signatário e pode pular a etapa de dados',
+            description: 'Quando nome/CPF/telefone já estiverem disponíveis no bundle público, o modal segue direto para a etapa de assinatura após autenticação.',
+          },
+          {
+            type: 'fix',
+            title: 'Email do signatário opcional no submit de template-fill',
+            description: 'O backend aceita email opcional no fluxo público, gerando um email interno somente para satisfazer a restrição do banco, sem persistir no cadastro do cliente.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.0.20',
+    date: '18/12/2025',
+    summary: 'UI Typeform no preenchimento público',
+    modules: [
+      {
+        moduleId: 'assinatura-publica',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Formulário público com visual leve e alinhado ao CRM',
+            description: 'A tela de preenchimento público foi redesenhada para experiência Typeform (1 pergunta por vez), com layout mais leve, card central e estilo consistente com o tema do CRM.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.0.19',
+    date: '18/12/2025',
+    summary: 'Correção na identificação de placeholders em DOCX',
+    modules: [
+      {
+        moduleId: 'assinatura-publica',
+        changes: [
+          {
+            type: 'fix',
+            title: 'Detecção completa de [[...]] em templates DOCX',
+            description: 'A extração de placeholders agora varre document.xml + header/footer do DOCX para garantir que todos os [[...]] sejam identificados (ex: [[reu]] em cabeçalho/rodapé).',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.0.18',
+    date: '18/12/2025',
+    summary: 'Data automática e detecção de telefone no preenchimento público',
+    modules: [
+      {
+        moduleId: 'assinatura-publica',
+        changes: [
+          {
+            type: 'fix',
+            title: 'Placeholder DATA preenchido automaticamente',
+            description: 'O campo [[data]] agora é definido automaticamente com a data atual no momento do envio para assinatura (não é mais solicitado ao cliente no formulário público).',
+          },
+          {
+            type: 'improvement',
+            title: 'Telefone detectado automaticamente para autenticação',
+            description: 'O telefone do signatário é inferido automaticamente (signer.phone, ou fallback para [[telefone]]/[[celular]]) para suportar autenticação por telefone quando necessário.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.0.17',
+    date: '18/12/2025',
+    summary: 'Configuração do formulário público por template',
+    modules: [
+      {
+        moduleId: 'assinatura-publica',
+        changes: [
+          {
+            type: 'feature',
+            title: 'Editor de campos do link público (por template)',
+            description: 'Adicionada opção de configurar o formulário público por template, permitindo editar título (label), descrição/ajuda e marcar se o campo é obrigatório. As configurações ficam salvas em template_custom_fields e são respeitadas no preenchimento público (Typeform).',
+          },
+          {
+            type: 'fix',
+            title: 'Suporte a description em template_custom_fields',
+            description: 'Criada migration para adicionar a coluna description em template_custom_fields, habilitando ajuda/descrição por campo no formulário público.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.0.16',
+    date: '18/12/2025',
+    summary: 'Preenchimento estilo Typeform (1 pergunta por etapa)',
+    modules: [
+      {
+        moduleId: 'assinatura-publica',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Experiência Typeform no preenchimento público',
+            description: 'A página pública de preenchimento agora é um fluxo multi-etapas (1 campo por vez), com navegação Voltar/Próximo, Enter para avançar, validação por etapa e indicador de progresso.',
+          },
+          {
+            type: 'improvement',
+            title: 'ViaCEP integrado ao passo de CEP',
+            description: 'O autopreenchimento ViaCEP foi mantido e funciona no passo do CEP, preenchendo endereço/bairro/cidade/UF automaticamente quando aplicável.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.0.15',
+    date: '18/12/2025',
+    summary: 'Página pública de preenchimento responsiva + ViaCEP',
+    modules: [
+      {
+        moduleId: 'assinatura-publica',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Formulário público mais responsivo e interativo',
+            description: 'A página de preenchimento foi reorganizada em seções (Identificação/Endereço/Dados do documento), com layout mobile-first, barra de progresso e card lateral com orientações.',
+          },
+          {
+            type: 'feature',
+            title: 'Autopreenchimento de endereço por CEP (ViaCEP)',
+            description: 'Ao informar um CEP válido (8 dígitos), o sistema consulta a API ViaCEP e preenche automaticamente logradouro, bairro, cidade e UF (sem sobrescrever valores já digitados).',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.0.14',
+    date: '18/12/2025',
+    summary: 'Link público de preenchimento (estilo ZapSign) e assinatura automática',
+    modules: [
+      {
+        moduleId: 'assinatura-publica',
+        changes: [
+          {
+            type: 'feature',
+            title: 'Link público para preenchimento e envio para assinatura',
+            description: 'Criada rota pública de preenchimento (/#/preencher/:token), Edge Function para gerar DOCX preenchido e iniciar a solicitação de assinatura automaticamente, retornando o link de assinatura.',
+          },
+          {
+            type: 'improvement',
+            title: 'Campos de assinatura gerados automaticamente',
+            description: 'A Edge Function cria registros em signature_fields a partir do signature_field_config do template, garantindo posicionamento consistente para a assinatura pública.',
+          },
+        ],
+      },
+      {
+        moduleId: 'sistema',
+        changes: [
+          {
+            type: 'fix',
+            title: 'Suporte a document_id em signature_fields',
+            description: 'Adicionada migration para incluir signature_fields.document_id (default main), alinhando banco com serviços de assinatura/PDF e suporte a múltiplos documentos.',
+          },
+        ],
+      },
+    ],
+  },
   {
     version: '1.0.13',
     date: '17/12/2025',

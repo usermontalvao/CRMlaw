@@ -38,6 +38,15 @@ const formatCpf = (value: string): string => {
 const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
   const toast = useToastContext();
 
+  const isSignerDataComplete = (data: SignerData) => data.name.trim().length >= 3 && data.cpf.replace(/\D/g, '').length === 11;
+
+  const isTemplateFillSigner = (email?: string | null) => {
+    const e = (email || '').trim().toLowerCase();
+    return e.startsWith('public+') && e.endsWith('@crm.local');
+  };
+
+  const [allowSkipSignerDataStep, setAllowSkipSignerDataStep] = useState(false);
+
   useEffect(() => {
     const styleId = 'public-signing-loading-animations';
     if (document.getElementById(styleId)) return;
@@ -740,23 +749,22 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
   const finalizeGoogleUser = (user: GoogleUser) => {
     setGoogleUser(user);
 
-    if (signer?.email && user.email.toLowerCase() !== signer.email.toLowerCase()) {
-      toast.warning(
-        `Atenção: o email autenticado (${user.email}) é diferente do email do signatário (${signer.email}).`
-      );
-    }
+    const next: SignerData = {
+      ...signerData,
+      name: (signerData.name || user.name || '').toString(),
+    };
+    setSignerData(next);
 
-    if (user.name) {
-      setSignerData((prev) => ({ ...prev, name: user.name }));
-    }
-
-    setModalStep('data');
+    setModalStep(allowSkipSignerDataStep && isSignerDataComplete(next) ? 'signature' : 'data');
     toast.success('Autenticação realizada com sucesso!');
   };
 
   const handleGoogleCallback = (response: any) => {
     try {
-      // Decodificar JWT do Google
+      if (!response?.credential) {
+        throw new Error('Resposta inválida do Google');
+      }
+
       const base64Url = response.credential.split('.')[1];
       const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
       const jsonPayload = decodeURIComponent(
@@ -766,7 +774,7 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
           .join('')
       );
       const payload = JSON.parse(jsonPayload);
-      
+
       const user: GoogleUser = {
         email: payload.email,
         name: payload.name,
@@ -797,7 +805,7 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
 
   const handleSkipGoogleAuth = () => {
     // Permitir pular autenticação Google (opcional)
-    setModalStep('data');
+    setModalStep(allowSkipSignerDataStep && isSignerDataComplete(signerData) ? 'signature' : 'data');
   };
 
   const loadSignerData = async () => {
@@ -814,7 +822,12 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
       setSigner(data.signer);
       setRequest(data.request);
       setSignatureFields(data.fields ?? []);
-      setSignerData({ name: data.signer.name || '', cpf: '', phone: '' });
+      setAllowSkipSignerDataStep(isTemplateFillSigner((data.signer as any)?.email ?? null));
+      setSignerData({
+        name: data.signer.name || '',
+        cpf: data.signer.cpf || '',
+        phone: data.signer.phone || '',
+      });
       if (data.creator) setCreator(data.creator);
 
       // Tentar carregar preview do documento principal
@@ -1333,14 +1346,6 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
   };
 
   // ========== HELPERS ==========
-  const formatCpf = (value: string) => {
-    const numbers = value.replace(/\D/g, '').slice(0, 11);
-    return numbers
-      .replace(/(\d{3})(\d)/, '$1.$2')
-      .replace(/(\d{3})(\d)/, '$1.$2')
-      .replace(/(\d{3})(\d{1,2})$/, '$1-$2');
-  };
-
   const formatDate = (dateStr: string) => {
     return new Date(dateStr).toLocaleDateString('pt-BR', {
       day: '2-digit',
@@ -1406,7 +1411,11 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
         setSignerData((prev) => ({ ...prev, phone: res.phone || prev.phone }));
       }
       toast.success('Telefone verificado com sucesso!');
-      setModalStep('data');
+      setModalStep(
+        allowSkipSignerDataStep && isSignerDataComplete({ ...signerData, phone: res.phone || signerData.phone })
+          ? 'signature'
+          : 'data'
+      );
     } catch (e: any) {
       setPhoneOtpError(e?.message || 'Código inválido');
     } finally {
@@ -2052,7 +2061,7 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
             // Renderizar PDF com iframe
             <>
               <iframe
-                src={`${pdfUrl}#toolbar=0&navpanes=0&scrollbar=0&statusbar=0&view=FitH`}
+                src={`${pdfUrl}#toolbar=0&navpanes=0&statusbar=0`}
                 className="w-full h-full border-0 bg-white"
                 title="Documento PDF"
                 onLoad={() => setPdfFrameLoaded(true)}
@@ -2219,7 +2228,7 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
                         </div>
                       </div>
                       <button
-                        onClick={() => setModalStep('data')}
+                        onClick={() => setModalStep(isSignerDataComplete(signerData) ? 'signature' : 'data')}
                         className="w-full mt-4 py-3 bg-orange-600 hover:bg-orange-700 text-white rounded-xl font-semibold transition"
                       >
                         Continuar

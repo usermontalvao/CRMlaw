@@ -26,6 +26,7 @@ export interface DocumentTemplate {
   name: string;
   description?: string;
   content: string;
+  enable_defendant?: boolean;
   // Campos legados para compatibilidade (documento único)
   file_path?: string;
   file_name?: string;
@@ -43,6 +44,7 @@ export interface CreateDocumentTemplateDTO {
   name: string;
   description?: string;
   content: string;
+  enable_defendant?: boolean;
 }
 
 export interface GeneratedDocument {
@@ -110,4 +112,34 @@ export interface UpdateCustomFieldDTO {
   options?: CustomFieldOption[];
   description?: string;
   order?: number;
+}
+
+export type TemplateCustomFieldType = 'text' | 'number' | 'date' | 'select' | 'textarea' | 'name' | 'cpf' | 'phone' | 'cep';
+
+export interface TemplateCustomField {
+  id: string;
+  template_id: string;
+  name: string;
+  placeholder: string;
+  field_type: TemplateCustomFieldType;
+  enabled: boolean;
+  required: boolean;
+  default_value?: string | null;
+  options?: CustomFieldOption[] | null;
+  description?: string | null;
+  order: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface UpsertTemplateCustomFieldDTO {
+  name: string;
+  placeholder: string;
+  field_type: TemplateCustomFieldType;
+  enabled: boolean;
+  required: boolean;
+  default_value?: string | null;
+  options?: CustomFieldOption[] | null;
+  description?: string | null;
+  order: number;
 }
