@@ -870,8 +870,27 @@ const PublicTemplateFillPage: React.FC<PublicTemplateFillPageProps> = ({ token }
                   <button
                     type="button"
                     onClick={() => {
-                      setCepConfirmed(false);
+                      setCepConfirmed(null);
+                      setHasQuadra(null);
                       setStepError(null);
+                      lastCepLookupRef.current = '';
+                      setCepLookupError(null);
+                      setCepLookupLoading(false);
+
+                      setValues((prev) => {
+                        const next = { ...prev };
+                        const cepKey = cepPlaceholder;
+                        if (cepKey) next[cepKey] = '';
+
+                        const keysToClear = ['ENDERECO', 'NUMERO', 'COMPLEMENTO', 'BAIRRO', 'CIDADE', 'ESTADO'] as const;
+                        for (const k of keysToClear) {
+                          const placeholder = addressPlaceholders.get(k);
+                          if (placeholder) next[placeholder] = '';
+                        }
+
+                        return next;
+                      });
+
                       setStepIndex((prev) => Math.max(0, prev - 1));
                     }}
                     className="flex-1 px-3 py-2 border border-slate-200 bg-white text-slate-700 text-xs font-medium rounded hover:bg-slate-50"

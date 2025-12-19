@@ -444,6 +444,266 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
 
 const releases: ReleaseNote[] = [
   {
+    version: '1.0.81',
+    date: '2025-01-18',
+    summary: 'Assinatura: documento responsivo no celular',
+    modules: [
+      {
+        moduleId: 'assinatura',
+        changes: [
+          {
+            type: 'fix',
+            title: 'Visualização DOCX responsiva',
+            description: 'Na página pública de assinatura, documentos DOCX agora são escalados automaticamente para caber na tela do celular.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.0.80',
+    date: '2025-01-18',
+    summary: 'Link de preenchimento: botão Copiar mais visível',
+    modules: [
+      {
+        moduleId: 'documentos',
+        changes: [
+          {
+            type: 'fix',
+            title: 'Contraste do botão Copiar',
+            description: 'Ajustado o estilo do botão Copiar no modal do Link de Preenchimento para não ficar branco/invisível.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.0.79',
+    date: '2025-01-18',
+    summary: 'Link de preenchimento: botão Copiar ao lado do campo',
+    modules: [
+      {
+        moduleId: 'documentos',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Copiar ao lado do link (mais visível)',
+            description: 'No modal do Link de Preenchimento, o botão Copiar fica ao lado do campo do link para facilitar o uso.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.0.78',
+    date: '2025-01-18',
+    summary: 'Relatório de assinatura: ocultar e-mail interno',
+    modules: [
+      {
+        moduleId: 'assinatura',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Suprimir e-mail placeholder no histórico',
+            description: 'No PDF/relatório de assinatura, e-mails do tipo public+...@crm.local não são exibidos para evitar confusão.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.0.77',
+    date: '2025-01-18',
+    summary: 'Link de preenchimento: copiar ao lado do link',
+    modules: [
+      {
+        moduleId: 'documentos',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Botão de copiar ao lado do link',
+            description: 'No modal do Link de Preenchimento, o botão de copiar fica ao lado do campo do link para facilitar o envio.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.0.76',
+    date: '2025-01-18',
+    summary: 'Clientes: seleção em massa mais discreta',
+    modules: [
+      {
+        moduleId: 'clientes',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Botão Selecionar ao lado de Mostrar filtros',
+            description: 'A barra de ações (Selecionar todos/Limpar/Desativar selecionados) agora aparece apenas após ativar o modo Selecionar, com layout mais discreto.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.0.75',
+    date: '2025-01-18',
+    summary: 'CEP: corrigido retorno para trocar CEP',
+    modules: [
+      {
+        moduleId: 'documentos',
+        changes: [
+          {
+            type: 'fix',
+            title: 'Botão "Não" volta para editar o CEP',
+            description: 'Ao confirmar endereço pelo CEP e marcar "Não", o sistema limpa o CEP/endereço e retorna para permitir digitar um novo CEP.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.0.74',
+    date: '2025-01-18',
+    summary: 'Templates públicos: cria cliente ao encaminhar para assinatura',
+    modules: [
+      {
+        moduleId: 'documentos',
+        changes: [
+          {
+            type: 'fix',
+            title: 'Criar/associar cliente automaticamente no fluxo público',
+            description: 'Ao enviar um template pelo link público, o sistema cria/atualiza o cliente (status ativo) e salva o client_id na solicitação de assinatura.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.0.73',
+    date: '2025-01-18',
+    summary: 'Clientes: seleção em massa e ordenação',
+    modules: [
+      {
+        moduleId: 'clientes',
+        changes: [
+          {
+            type: 'feature',
+            title: 'Selecionar e desativar em massa',
+            description: 'Adicionado modo Selecionar com checkboxes, ações Selecionar todos/Limpar e botão para desativar clientes selecionados.',
+          },
+          {
+            type: 'improvement',
+            title: 'Ordenação Mais novos / Mais antigos',
+            description: 'Adicionado filtro simples de ordenação na listagem de clientes.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.0.72',
+    date: '2025-01-18',
+    summary: 'Clientes: CPF/CNPJ com máscara na listagem',
+    modules: [
+      {
+        moduleId: 'clientes',
+        changes: [
+          {
+            type: 'fix',
+            title: 'CPF e CNPJ exibidos com máscara',
+            description: 'A listagem de clientes agora aplica máscara automaticamente ao CPF/CNPJ (ex.: 292.779.731-53).',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.0.71',
+    date: '2025-01-18',
+    summary: 'Clientes: filtro por data de criação',
+    modules: [
+      {
+        moduleId: 'clientes',
+        changes: [
+          {
+            type: 'feature',
+            title: 'Filtro "Criado de" e "Criado até"',
+            description: 'Adicionado filtro por período de criação (de/até) na listagem de clientes.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.0.70',
+    date: '2025-01-18',
+    summary: 'Documentos: ações de copiar no link de preenchimento',
+    modules: [
+      {
+        moduleId: 'documentos',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Segundo botão de copiar (sem WhatsApp)',
+            description: 'No modal do Link de Preenchimento, removido botão de WhatsApp e adicionado um segundo botão (ícone) ao lado de Copiar para facilitar a ação.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.0.69',
+    date: '2025-01-18',
+    summary: 'Documentos: compartilhar link por WhatsApp',
+    modules: [
+      {
+        moduleId: 'documentos',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Botão WhatsApp ao lado de Copiar',
+            description: 'No modal do Link de Preenchimento, adicionado botão para abrir o WhatsApp com mensagem pronta e o link.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.0.68',
+    date: '2025-01-18',
+    summary: 'Assinatura: modo selecionar na lista',
+    modules: [
+      {
+        moduleId: 'assinatura',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Botão "Selecionar" ao lado de Filtros',
+            description: 'Adicionado botão Selecionar na toolbar para ativar/desativar o modo de seleção (checkboxes aparecem somente após clicar). Ao desativar, a seleção é limpa.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.0.67',
+    date: '2025-01-18',
+    summary: 'Assinatura: seleção múltipla na lista',
+    modules: [
+      {
+        moduleId: 'assinatura',
+        changes: [
+          {
+            type: 'feature',
+            title: 'Selecionar vários documentos e excluir em lote',
+            description: 'Adicionado checkbox nos cards/linhas (pendentes/concluídos) com ações de Selecionar todos, Limpar e Excluir selecionados (remove do painel/arquiva).',
+          },
+        ],
+      },
+    ],
+  },
+  {
     version: '1.0.66',
     date: '2025-01-18',
     summary: 'Git: correção do hook de versionamento',

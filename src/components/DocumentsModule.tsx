@@ -2340,12 +2340,15 @@ const DocumentsModule: React.FC<DocumentsModuleProps> = ({ onNavigateToModule })
                   className="flex-1 w-full bg-white dark:bg-zinc-900 border border-slate-200 dark:border-zinc-700 rounded-lg px-3 py-2 text-sm text-slate-800 dark:text-white font-mono"
                 />
                 <button
+                  type="button"
                   onClick={handleCopyTemplateFillLink}
-                  className={`px-4 py-2 rounded-lg text-sm font-semibold transition flex items-center justify-center gap-2 w-full sm:w-auto ${
+                  className={`px-4 py-2 rounded-lg text-sm font-semibold transition flex items-center justify-center gap-2 w-full sm:w-auto shadow-sm ring-1 ring-inset ${
                     templateFillLinkCopied
-                      ? 'bg-indigo-600 text-white'
-                      : 'bg-slate-900 hover:bg-slate-800 text-white'
+                      ? 'bg-emerald-600 hover:bg-emerald-700 text-white ring-emerald-700'
+                      : 'bg-indigo-600 hover:bg-indigo-700 text-white ring-indigo-700'
                   }`}
+                  title="Copiar link"
+                  aria-label="Copiar link"
                 >
                   {templateFillLinkCopied ? (
                     <>

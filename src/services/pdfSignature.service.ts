@@ -23,6 +23,12 @@ interface GeoInfo {
 class PdfSignatureService {
   private readonly storageBucketCache = new Map<string, string>();
 
+  private isInternalPlaceholderEmail(email: string | null | undefined): boolean {
+    const e = String(email || '').trim().toLowerCase();
+    if (!e) return false;
+    return e.startsWith('public+') && e.endsWith('@crm.local');
+  }
+
   private async sha256Hex(bytes: Uint8Array): Promise<string> {
     const ab = bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer;
     const hashBuffer = await crypto.subtle.digest('SHA-256', ab);
@@ -723,7 +729,7 @@ class PdfSignatureService {
     const creatorEmail = creator?.email ? ` (Email: ${creator.email})` : '';
     history.push({ label: 'Criado', when: createdAtStr, detail: `${creatorName} criou este documento.${creatorEmail}` });
 
-    const signerEmail = signer.email ? ` (Email: ${signer.email})` : '';
+    const signerEmail = signer.email && !this.isInternalPlaceholderEmail(signer.email) ? ` (Email: ${signer.email})` : '';
     const signerCpf = (signer as any).cpf ? `, CPF: ${(signer as any).cpf}` : '';
     const locationInfo = geo2.coordinates ? ` localizado em ${geo2.coordinates}${geo2.address ? ` - ${geo2.address}` : ''}` : '';
     if (viewedAtStr) {

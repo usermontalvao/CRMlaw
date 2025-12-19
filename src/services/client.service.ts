@@ -32,8 +32,9 @@ export class ClientService {
         );
       }
 
-      // Ordenar por data de criação (mais recentes primeiro)
-      query = query.order('created_at', { ascending: false });
+      // Ordenação
+      const sortAscending = filters?.sort_order === 'oldest';
+      query = query.order('created_at', { ascending: sortAscending });
 
       const { data, error } = await query;
 

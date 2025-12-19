@@ -177,6 +177,9 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, onParamC
   const [signStep, setSignStep] = useState<'signature' | 'facial' | 'confirm'>('signature');
   const [signLoading, setSignLoading] = useState(false);
   const [zoomImageUrl, setZoomImageUrl] = useState<string | null>(null);
+  const [selectionMode, setSelectionMode] = useState(false);
+  const [selectedRequestIds, setSelectedRequestIds] = useState<Set<string>>(new Set());
+  const [bulkDeleteLoading, setBulkDeleteLoading] = useState(false);
   const [auditLog, setAuditLog] = useState<SignatureAuditLog[]>([]);
   const [auditLogLoading, setAuditLogLoading] = useState(false);
   const [viewDocLoading, setViewDocLoading] = useState(false);
@@ -591,6 +594,73 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, onParamC
 
     return out;
   }, [requests, searchTerm, filterStatus, filterPeriod, filterMonth, filterDateFrom, filterDateTo, sortOrder]);
+
+  useEffect(() => {
+    setSelectedRequestIds((prev) => {
+      if (!prev.size) return prev;
+      const allowed = new Set(filteredRequests.map((r) => r.id));
+      const next = new Set<string>();
+      for (const id of prev) {
+        if (allowed.has(id)) next.add(id);
+      }
+      return next;
+    });
+  }, [filteredRequests]);
+
+  const toggleSelectedRequestId = (id: string) => {
+    setSelectedRequestIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const selectAllFilteredRequests = () => {
+    setSelectedRequestIds(new Set(filteredRequests.map((r) => r.id)));
+  };
+
+  const clearSelectedRequests = () => {
+    setSelectedRequestIds(new Set());
+  };
+
+  const toggleSelectionMode = () => {
+    setSelectionMode((prev) => {
+      const next = !prev;
+      if (!next) {
+        setSelectedRequestIds(new Set());
+      }
+      return next;
+    });
+  };
+
+  const deleteSelectedRequests = async () => {
+    if (selectedRequestIds.size === 0) return;
+
+    const confirmed = await confirmDelete({
+      title: 'Remover documentos selecionados',
+      message: `Você tem certeza que deseja remover ${selectedRequestIds.size} documento(s) do painel? Os links de assinatura serão invalidados.`,
+      confirmLabel: 'Remover',
+    });
+    if (!confirmed) return;
+
+    try {
+      setBulkDeleteLoading(true);
+      const ids = Array.from(selectedRequestIds);
+      for (const id of ids) {
+        await signatureService.archiveRequest(id);
+      }
+      toast.success('Documentos removidos do painel.');
+      setSelectedRequestIds(new Set());
+      detailsRequestIdRef.current = null;
+      setDetailsRequest(null);
+      loadData();
+    } catch (error: any) {
+      toast.error(error?.message || 'Erro ao excluir selecionados');
+    } finally {
+      setBulkDeleteLoading(false);
+    }
+  };
 
   const revokeIfBlobUrl = (url?: string | null) => {
     if (!url) return;
@@ -2456,6 +2526,41 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, onParamC
             </div>
           </div>
         </div>
+
+        {selectionMode && selectedRequestIds.size > 0 && (
+          <div className="mt-3 pt-3 border-t border-slate-200 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+            <div className="text-xs text-slate-600">
+              <span className="font-semibold text-slate-900">{selectedRequestIds.size}</span> selecionado(s)
+              <span className="text-slate-400"> · </span>
+              <span className="text-slate-500">Filtro atual ({filteredRequests.length})</span>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <button
+                type="button"
+                onClick={selectAllFilteredRequests}
+                className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 transition hover:bg-slate-50"
+              >
+                Selecionar todos
+              </button>
+              <button
+                type="button"
+                onClick={clearSelectedRequests}
+                className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 transition hover:bg-slate-50"
+              >
+                Limpar
+              </button>
+              <button
+                type="button"
+                onClick={() => void deleteSelectedRequests()}
+                disabled={bulkDeleteLoading}
+                className="inline-flex items-center gap-2 rounded-lg bg-red-600 px-3 py-2 text-xs font-semibold text-white transition hover:bg-red-700 disabled:opacity-60 disabled:cursor-not-allowed"
+              >
+                {bulkDeleteLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
+                Excluir selecionados
+              </button>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Toolbar */}
@@ -2484,6 +2589,19 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, onParamC
             >
               <Filter className="w-4 h-4" />
               Filtros
+            </button>
+
+            <button
+              type="button"
+              onClick={toggleSelectionMode}
+              className={`inline-flex items-center gap-2 rounded-lg border px-3 py-2 text-sm font-medium transition ${
+                selectionMode
+                  ? 'border-indigo-600 bg-indigo-600 text-white'
+                  : 'border-slate-200 text-slate-700 hover:bg-slate-50'
+              }`}
+            >
+              <Check className="w-4 h-4" />
+              Selecionar
             </button>
 
             <div className="flex items-center rounded-lg border border-slate-200 bg-white overflow-hidden">
@@ -2623,6 +2741,15 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, onParamC
                   className="flex items-center gap-4 p-4 sm:p-5 hover:bg-slate-50 cursor-pointer transition group"
                   onClick={() => openDetails(req)}
                 >
+                  {selectionMode && (
+                    <div className="flex-shrink-0" onClick={(e) => e.stopPropagation()}>
+                      <input
+                        type="checkbox"
+                        checked={selectedRequestIds.has(req.id)}
+                        onChange={() => toggleSelectedRequestId(req.id)}
+                      />
+                    </div>
+                  )}
                   {/* Icon */}
                   <div className={`w-11 h-11 rounded-xl flex items-center justify-center flex-shrink-0 ${
                     allSigned ? 'bg-emerald-100' : 'bg-amber-100'
@@ -2672,11 +2799,20 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, onParamC
                 const pct = totalSigners > 0 ? Math.round((signedCount / totalSigners) * 100) : 0;
 
                 return (
-                  <button
+                  <div
                     key={req.id}
                     onClick={() => openDetails(req)}
-                    className="group text-left rounded-xl border border-slate-200 bg-slate-50 p-4 hover:border-slate-300 transition"
+                    className="group text-left rounded-xl border border-slate-200 bg-slate-50 p-4 hover:border-slate-300 transition cursor-pointer relative"
                   >
+                    {selectionMode && (
+                      <div className="absolute top-3 right-3" onClick={(e) => e.stopPropagation()}>
+                        <input
+                          type="checkbox"
+                          checked={selectedRequestIds.has(req.id)}
+                          onChange={() => toggleSelectedRequestId(req.id)}
+                        />
+                      </div>
+                    )}
                     <div className="flex items-start gap-3">
                       <div className={`w-10 h-10 rounded-lg flex items-center justify-center flex-shrink-0 ${
                         allSigned ? 'bg-emerald-100' : 'bg-amber-100'
@@ -2709,7 +2845,7 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, onParamC
                         </div>
                       )}
                     </div>
-                  </button>
+                  </div>
                 );
               })}
             </div>

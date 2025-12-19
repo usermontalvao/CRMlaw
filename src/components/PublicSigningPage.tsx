@@ -109,6 +109,7 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
         box-shadow: none !important;
         margin: 0 !important;
         background: transparent !important;
+        transform-origin: top center !important;
       }
       /* FORÇAR A4 FIXO para garantir layout idêntico ao da criação */
       .docx-responsive .docx-wrapper > section,
@@ -139,15 +140,20 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
         .docx-responsive {
           overflow-x: hidden !important;
           padding: 12px !important;
-          align-items: center !important;
+          align-items: flex-start !important;
         }
 
         .docx-responsive .docx-wrapper > section,
         .docx-responsive .docx-wrapper > section > article {
-          width: 100% !important;
-          min-width: 0 !important;
-          max-width: 100% !important;
-          padding: 20px !important;
+          width: 794px !important;
+          min-width: 794px !important;
+          max-width: 794px !important;
+          padding: 24px !important;
+        }
+
+        /* Escala automática para caber no celular sem quebrar o layout do DOCX */
+        .docx-responsive .docx-wrapper {
+          transform: scale(calc((100vw - 24px) / 794)) !important;
         }
       }
     `;

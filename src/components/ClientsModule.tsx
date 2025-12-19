@@ -70,7 +70,7 @@ const ClientsModule: React.FC<ClientsModuleProps> = ({
   const [formPrefill, setFormPrefill] = useState<Partial<CreateClientDTO> | null>(null);
   const [formContext, setFormContext] = useState<'internal' | 'prefill' | 'param' | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
-  const [filters, setFilters] = useState<ClientFilters>({});
+  const [filters, setFilters] = useState<ClientFilters>({ sort_order: 'newest' });
   const [exporting, setExporting] = useState(false);
   const [clientProcesses, setClientProcesses] = useState<Process[]>([]);
   const [clientRequirements, setClientRequirements] = useState<Requirement[]>([]);
@@ -88,6 +88,9 @@ const ClientsModule: React.FC<ClientsModuleProps> = ({
   const [showIncompleteOnly, setShowIncompleteOnly] = useState(false);
   const [showMissingBanner, setShowMissingBanner] = useState(true);
   const [showFilters, setShowFilters] = useState<boolean>(false);
+  const [selectionMode, setSelectionMode] = useState(false);
+  const [selectedClientIds, setSelectedClientIds] = useState<Set<string>>(new Set());
+  const [bulkDeleteLoading, setBulkDeleteLoading] = useState(false);
 
   // Carregar clientes
   const loadClients = async () => {
@@ -224,6 +227,57 @@ const ClientsModule: React.FC<ClientsModuleProps> = ({
       clearTimeout(handler);
     };
   }, [searchTerm]);
+
+  const toggleSelectionMode = () => {
+    setSelectionMode((prev) => {
+      const next = !prev;
+      if (!next) {
+        setSelectedClientIds(new Set());
+      }
+      return next;
+    });
+  };
+
+  const toggleSelectedClientId = (clientId: string) => {
+    setSelectedClientIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(clientId)) next.delete(clientId);
+      else next.add(clientId);
+      return next;
+    });
+  };
+
+  const selectAllVisibleClients = () => {
+    setSelectedClientIds(new Set(clients.map((c) => c.id)));
+  };
+
+  const clearSelectedClients = () => {
+    setSelectedClientIds(new Set());
+  };
+
+  const deleteSelectedClients = async () => {
+    if (selectedClientIds.size === 0) return;
+
+    const confirmed = await confirmDelete({
+      title: 'Desativar clientes selecionados',
+      message: `Você tem certeza que deseja desativar ${selectedClientIds.size} cliente(s)? Essa ação pode ser revertida reativando o cadastro.`,
+      confirmLabel: 'Desativar',
+    });
+    if (!confirmed) return;
+
+    try {
+      setBulkDeleteLoading(true);
+      await Promise.all(Array.from(selectedClientIds).map((id) => clientService.deleteClient(id)));
+      setSelectedClientIds(new Set());
+      setSelectionMode(false);
+      loadClients();
+    } catch (error) {
+      console.error('Erro ao desativar clientes selecionados:', error);
+      alert('Erro ao desativar clientes selecionados');
+    } finally {
+      setBulkDeleteLoading(false);
+    }
+  };
 
   const loadClientRelations = async (clientId: string) => {
     try {
@@ -371,7 +425,7 @@ const ClientsModule: React.FC<ClientsModuleProps> = ({
     }
   };
 
-  const hasActiveFilters = Boolean(filters.status || filters.client_type || filters.search) || showIncompleteOnly;
+  const hasActiveFilters = Boolean(filters.status || filters.client_type || filters.search) || filters.sort_order === 'oldest' || showIncompleteOnly;
 
   const isFormModalOpen = modalState.type === 'create' || modalState.type === 'edit';
   const isDetailsModalOpen = modalState.type === 'details' && Boolean(selectedClient);
@@ -518,13 +572,27 @@ const ClientsModule: React.FC<ClientsModuleProps> = ({
         <div className="bg-white border border-slate-200 rounded-lg p-3 shadow-sm">
           <div className="flex items-center justify-between mb-2">
             <span className="text-xs sm:text-sm text-slate-600">Buscar e filtrar clientes</span>
-            <button
-              type="button"
-              onClick={() => setShowFilters((prev) => !prev)}
-              className="text-xs sm:text-sm font-medium text-blue-600 hover:text-blue-700 underline-offset-2 hover:underline"
-            >
-              {showFilters ? 'Ocultar filtros' : 'Mostrar filtros'}
-            </button>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={toggleSelectionMode}
+                className={`inline-flex items-center justify-center rounded-lg border px-3 py-1.5 text-xs font-semibold transition ${
+                  selectionMode
+                    ? 'border-indigo-600 bg-indigo-600 text-white'
+                    : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50'
+                }`}
+              >
+                Selecionar
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setShowFilters((prev) => !prev)}
+                className="text-xs sm:text-sm font-medium text-blue-600 hover:text-blue-700 underline-offset-2 hover:underline"
+              >
+                {showFilters ? 'Ocultar filtros' : 'Mostrar filtros'}
+              </button>
+            </div>
           </div>
 
           {showFilters && (
@@ -571,7 +639,19 @@ const ClientsModule: React.FC<ClientsModuleProps> = ({
                 </select>
               </div>
 
-              <div className="sm:col-span-2 lg:col-span-4 flex items-end gap-2">
+              <div className="lg:col-span-2">
+                <label className="block text-xs font-medium text-slate-600 mb-1.5">Ordenação</label>
+                <select
+                  value={filters.sort_order || 'newest'}
+                  onChange={(e) => setFilters({ ...filters, sort_order: (e.target.value as any) || 'newest' })}
+                  className="w-full px-3 py-1.5 rounded-lg border border-slate-200 bg-white text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition"
+                >
+                  <option value="newest">Mais novos</option>
+                  <option value="oldest">Mais antigos</option>
+                </select>
+              </div>
+
+              <div className="sm:col-span-2 lg:col-span-2 flex items-end gap-2">
                 <label className="flex-1 inline-flex items-center gap-1.5 text-xs font-medium text-slate-700 border border-slate-200 hover:bg-slate-50 rounded-lg px-3 py-1.5 bg-white cursor-pointer transition">
                   <input
                     type="checkbox"
@@ -605,6 +685,54 @@ const ClientsModule: React.FC<ClientsModuleProps> = ({
           )}
         </div>
 
+        {selectionMode && (
+          <div className="bg-white border border-slate-200 rounded-lg p-3 shadow-sm">
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+              <div className="text-xs text-slate-600">
+                <span className="text-slate-500">Dica: use “Selecionar” para desativar vários clientes.</span>
+                <span className="text-slate-400"> · </span>
+                <span className="font-semibold text-slate-900">{selectedClientIds.size}</span> selecionado(s)
+                <span className="text-slate-400"> · </span>
+                <span className="text-slate-500">Visíveis ({clients.length})</span>
+              </div>
+
+              <div className="flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  onClick={toggleSelectionMode}
+                  className="inline-flex items-center justify-center rounded-lg border border-indigo-200 bg-indigo-50 px-3 py-2 text-xs font-semibold text-indigo-700 transition hover:bg-indigo-100"
+                >
+                  Selecionar
+                </button>
+                <button
+                  type="button"
+                  onClick={selectAllVisibleClients}
+                  disabled={clients.length === 0}
+                  className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 transition hover:bg-slate-50 disabled:opacity-60 disabled:cursor-not-allowed"
+                >
+                  Selecionar todos
+                </button>
+                <button
+                  type="button"
+                  onClick={clearSelectedClients}
+                  disabled={selectedClientIds.size === 0}
+                  className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 transition hover:bg-slate-50 disabled:opacity-60 disabled:cursor-not-allowed"
+                >
+                  Limpar
+                </button>
+                <button
+                  type="button"
+                  onClick={() => void deleteSelectedClients()}
+                  disabled={selectedClientIds.size === 0 || bulkDeleteLoading}
+                  className="inline-flex items-center justify-center rounded-lg bg-red-600 px-3 py-2 text-xs font-semibold text-white transition hover:bg-red-700 disabled:opacity-60 disabled:cursor-not-allowed"
+                >
+                  {bulkDeleteLoading ? 'Desativando...' : 'Desativar selecionados'}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* Client List */}
         <ClientList
           clients={clients}
@@ -612,6 +740,9 @@ const ClientsModule: React.FC<ClientsModuleProps> = ({
           missingFieldsMap={missingFieldsMap}
           outdatedSet={outdatedSet}
           isFiltered={hasActiveFilters}
+          selectionMode={selectionMode}
+          selectedIds={selectedClientIds}
+          onToggleSelected={toggleSelectedClientId}
           onView={handleViewClient}
           onEdit={handleEditClient}
           onDelete={handleDeleteClient}

@@ -77,4 +77,5 @@ export interface ClientFilters {
   status?: ClientStatus;
   client_type?: ClientType;
   search?: string; // Busca por nome, CPF/CNPJ, email
+  sort_order?: 'newest' | 'oldest';
 }

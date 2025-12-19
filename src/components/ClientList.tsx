@@ -1,6 +1,7 @@
 import React from 'react';
 import { Eye, Edit, Trash2, User, Building2, MessageCircle, AlertTriangle, Clock, Search } from 'lucide-react';
 import type { Client } from '../types/client.types';
+import { formatCPF, formatCNPJ } from '../utils/formatters';
 
 interface ClientListProps {
   clients: Client[];
@@ -11,9 +12,24 @@ interface ClientListProps {
   missingFieldsMap?: Map<string, string[]>;
   outdatedSet?: Set<string>;
   isFiltered?: boolean;
+  selectionMode?: boolean;
+  selectedIds?: Set<string>;
+  onToggleSelected?: (clientId: string) => void;
 }
 
-const ClientList: React.FC<ClientListProps> = ({ clients, loading, onView, onEdit, onDelete, missingFieldsMap, outdatedSet, isFiltered }) => {
+const ClientList: React.FC<ClientListProps> = ({ clients, loading, onView, onEdit, onDelete, missingFieldsMap, outdatedSet, isFiltered, selectionMode = false, selectedIds, onToggleSelected }) => {
+  const formatCpfCnpj = (client: Client) => {
+    const raw = client.cpf_cnpj || '';
+    const digits = raw.replace(/\D/g, '');
+    if (!digits) return 'N/A';
+
+    if (client.client_type === 'pessoa_juridica' || digits.length > 11) {
+      return formatCNPJ(digits);
+    }
+
+    return formatCPF(digits);
+  };
+
   if (loading) {
     return (
       <div className="bg-white rounded-xl border border-gray-200 p-12">
@@ -57,11 +73,22 @@ const ClientList: React.FC<ClientListProps> = ({ clients, loading, onView, onEdi
           const missingFields = missingFieldsMap?.get(client.id) || [];
           const isOutdated = outdatedSet?.has(client.id) ?? false;
           const primaryPhone = client.phone || client.mobile || '';
+          const isSelected = selectionMode && Boolean(selectedIds?.has(client.id));
           
           return (
             <div key={client.id} className="bg-white rounded-lg border border-gray-200 p-3">
               <div className="flex items-start justify-between mb-2">
                 <div className="flex items-center gap-2 flex-1 min-w-0">
+                  {selectionMode && (
+                    <div className="flex-shrink-0">
+                      <input
+                        type="checkbox"
+                        checked={isSelected}
+                        onChange={() => onToggleSelected?.(client.id)}
+                        className="w-4 h-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
+                      />
+                    </div>
+                  )}
                   <div className={`flex-shrink-0 h-10 w-10 rounded-full flex items-center justify-center ${
                     client.client_type === 'pessoa_fisica' 
                       ? 'bg-blue-100 text-blue-600' 
@@ -109,7 +136,7 @@ const ClientList: React.FC<ClientListProps> = ({ clients, loading, onView, onEdi
               <div className="grid grid-cols-2 gap-2 text-xs mb-3">
                 <div>
                   <span className="text-gray-500">CPF/CNPJ:</span>
-                  <div className="font-medium text-gray-900">{client.cpf_cnpj || 'N/A'}</div>
+                  <div className="font-medium text-gray-900">{formatCpfCnpj(client)}</div>
                 </div>
                 <div>
                   <span className="text-gray-500">Contato:</span>
@@ -168,6 +195,11 @@ const ClientList: React.FC<ClientListProps> = ({ clients, loading, onView, onEdi
           <table className="min-w-full divide-y divide-gray-200">
             <thead className="bg-slate-50">
               <tr>
+                {selectionMode && (
+                  <th className="px-6 py-4 text-left text-xs font-semibold text-slate-700 uppercase tracking-wider">
+                    Selecionar
+                  </th>
+                )}
                 <th className="px-6 py-4 text-left text-xs font-semibold text-slate-700 uppercase tracking-wider">
                   Cliente
                 </th>
@@ -193,8 +225,19 @@ const ClientList: React.FC<ClientListProps> = ({ clients, loading, onView, onEdi
                 const missingFields = missingFieldsMap?.get(client.id) || [];
                 const isOutdated = outdatedSet?.has(client.id) ?? false;
                 const primaryPhone = client.phone || client.mobile || '';
+                const isSelected = selectionMode && Boolean(selectedIds?.has(client.id));
                 return (
                 <tr key={client.id} className="hover:bg-gray-50 transition-colors">
+                {selectionMode && (
+                  <td className="px-6 py-4 whitespace-nowrap">
+                    <input
+                      type="checkbox"
+                      checked={isSelected}
+                      onChange={() => onToggleSelected?.(client.id)}
+                      className="w-4 h-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
+                    />
+                  </td>
+                )}
                 <td className="px-6 py-4 whitespace-nowrap">
                   <div className="flex items-center">
                     <div className={`flex-shrink-0 h-10 w-10 rounded-full flex items-center justify-center ${
@@ -238,7 +281,7 @@ const ClientList: React.FC<ClientListProps> = ({ clients, loading, onView, onEdi
                   </span>
                 </td>
                 <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                  {client.cpf_cnpj || 'N/A'}
+                  {formatCpfCnpj(client)}
                 </td>
                 <td className="px-6 py-4 whitespace-nowrap">
                   <div className="flex items-center gap-2">

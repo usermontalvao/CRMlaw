@@ -83,6 +83,11 @@ const normalizeKey = (value: string) =>
 
 const cleanDigits = (value: string) => (value || '').replace(/\D/g, '');
 
+const inferClientType = (cpfCnpjDigits: string | null) => {
+  const digits = (cpfCnpjDigits || '').replace(/\D/g, '');
+  return digits.length > 11 ? 'pessoa_juridica' : 'pessoa_fisica';
+};
+
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders });
@@ -259,9 +264,12 @@ Deno.serve(async (req) => {
     const inferredCpf =
       cleanDigits((submitBody.signer?.cpf || '').trim()) || cleanDigits((valuesByKey.get('CPF') || '').trim());
 
+    const inferredCpfDigits = inferredCpf ? cleanDigits(inferredCpf) : '';
+    const inferredClientType = inferClientType(inferredCpfDigits || null);
+
     const clientPayload: Record<string, any> = {
       full_name: signerName,
-      cpf_cnpj: inferredCpf || null,
+      cpf_cnpj: inferredCpfDigits || null,
       email: providedEmail || null,
       phone: signerPhone || null,
       mobile: signerPhone || null,
@@ -275,7 +283,8 @@ Deno.serve(async (req) => {
       address_city: (valuesByKey.get('CIDADE') || '').trim() || null,
       address_state: (valuesByKey.get('ESTADO') || '').trim() || null,
       address_zip_code: cleanDigits((valuesByKey.get('CEP') || '').trim()) || null,
-      client_type: 'pessoa_fisica',
+      client_type: inferredClientType,
+      status: 'ativo',
       created_by: link.created_by,
       updated_by: link.created_by,
     };
