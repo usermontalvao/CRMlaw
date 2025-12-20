@@ -141,6 +141,16 @@ const FinancialModule: React.FC = () => {
   const [isIRModalOpen, setIsIRModalOpen] = useState(false);
   const [showAllCompleted, setShowAllCompleted] = useState(false);
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('list');
+  const activeAgreementsCount = useMemo(
+    () => agreements.filter((agreement) => agreement.status === 'ativo').length,
+    [agreements],
+  );
+  const concludedThisMonth = useMemo(() => {
+    return agreements.filter(
+      (agreement) =>
+        agreement.status === 'concluido' && agreement.updated_at?.slice(0, 7) === activeMonth,
+    ).length;
+  }, [agreements, activeMonth]);
   const pendingStatuses: InstallmentStatus[] = ['pendente', 'vencido'];
   const [editForm, setEditForm] = useState({
     clientId: '',
@@ -214,12 +224,6 @@ const FinancialModule: React.FC = () => {
   useEffect(() => {
     loadData(activeMonth);
   }, [activeMonth, loadData]);
-
-  useEffect(() => {
-    if (stats?.overdue_installments) {
-      setShowOverdueOnly(true);
-    }
-  }, [stats?.overdue_installments]);
 
   const formatCurrency = (value: number) => {
     return new Intl.NumberFormat('pt-BR', {
@@ -301,33 +305,49 @@ const FinancialModule: React.FC = () => {
     if (cents > 0) {
       return `${reais} e ${convertGroup(cents)} ${cents === 1 ? 'centavo' : 'centavos'}`;
     }
-    
+
     return reais;
   };
 
   const filteredAgreements = useMemo(() => {
-    return agreements.filter(agreement => {
-      const matchesSearch = 
-        agreement.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        getClientName(agreement.client_id).toLowerCase().includes(searchTerm.toLowerCase());
-      const matchesStatus = filterStatus === 'all' || agreement.status === filterStatus;
-      
+    const term = searchTerm.trim().toLowerCase();
+
+    return agreements.filter((agreement: Agreement) => {
+      const clientName = getClientName(agreement.client_id).toLowerCase();
+      const matchesSearch = !term
+        ? true
+        : [
+            agreement.title,
+            agreement.description,
+            agreement.notes,
+            clientName,
+            agreement.process_id,
+          ]
+            .filter(Boolean)
+            .some((value) => String(value).toLowerCase().includes(term));
+
+      const matchesStatus = filterStatus === 'all' ? true : agreement.status === filterStatus;
+
       // Filtro por status de pagamento
       let matchesPaymentStatus = true;
       if (filterPaymentStatus !== 'all') {
-        const agreementInstallments = allInstallments.filter(inst => inst.agreement_id === agreement.id);
-        const hasPending = agreementInstallments.some(inst => pendingStatuses.includes(inst.status as InstallmentStatus));
-        
+        const agreementInstallments = allInstallments.filter(
+          (inst) => inst.agreement_id === agreement.id,
+        );
+        const hasPending = agreementInstallments.some((inst) =>
+          pendingStatuses.includes(inst.status as InstallmentStatus),
+        );
+
         if (filterPaymentStatus === 'with_pending') {
           matchesPaymentStatus = hasPending;
         } else if (filterPaymentStatus === 'fully_paid') {
           matchesPaymentStatus = !hasPending && agreementInstallments.length > 0;
         }
       }
-      
+
       return matchesSearch && matchesStatus && matchesPaymentStatus;
     });
-  }, [agreements, searchTerm, filterStatus, filterPaymentStatus, clients, allInstallments]);
+  }, [agreements, searchTerm, filterStatus, filterPaymentStatus, allInstallments, pendingStatuses]);
 
   const nextDueInstallment = useMemo(() => {
     const pending = allInstallments
@@ -1871,13 +1891,13 @@ const FinancialModule: React.FC = () => {
 </head>
 <body class="font-display bg-background-light dark:bg-background-dark text-text-light dark:text-text-dark">
 <div class="relative flex min-h-screen w-full flex-col items-center justify-center p-4 sm:p-6 lg:p-8 group/design-root print-p-0" style='font-family: Inter, "Noto Sans", sans-serif;'>
-<div class="w-full max-w-4xl bg-paper-light dark:bg-paper-dark shadow-xl print-shadow-none">
+<div class="w-full max-w-4xl max-h-[92vh] bg-paper-light dark:bg-paper-dark shadow-xl print-shadow-none">
 <div class="flex flex-col">
 <header class="p-8 md:p-12 border-b border-border-light dark:border-border-dark">
 <div class="flex justify-between items-start">
 <div>
 <h1 class="font-serif text-3xl font-bold text-heading-light dark:text-heading-dark">RECIBO DE HONORÁRIOS</h1>
-<p class="text-xs text-subtle-light dark:text-subtle-dark mt-1">Nº ${receiptNumber}</p>
+<p class="text-xs font-semibold uppercase tracking-wider text-subtle-light dark:text-subtle-dark mt-1">Nº ${receiptNumber}</p>
 </div>
 <div class="text-right flex-shrink-0">
 <p class="text-xs font-semibold uppercase tracking-wider text-subtle-light dark:text-subtle-dark">Data de Emissão</p>
@@ -2076,10 +2096,10 @@ ${clientAddress ? `<div class="flex"><span class="text-subtle-light dark:text-su
                 <h1 className="text-lg font-bold text-slate-900">Gestão Financeira</h1>
                 <div className="flex items-center gap-2 mt-0.5 text-xs">
                   <span className="px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 font-medium">
-                    {filteredAgreements.filter(a => a.status === 'ativo').length} ativos
+                    {activeAgreementsCount} ativos
                   </span>
                   <span className="px-2 py-0.5 rounded-full bg-blue-50 text-blue-700 font-medium">
-                    {filteredAgreements.filter(a => a.status === 'concluido').length} concluídos
+                    {concludedThisMonth} concluídos no mês
                   </span>
                 </div>
               </div>
@@ -2105,7 +2125,7 @@ ${clientAddress ? `<div class="flex"><span class="text-subtle-light dark:text-su
               </button>
               <button onClick={handleOpenModal} className="inline-flex items-center gap-1 sm:gap-1.5 bg-emerald-600 hover:bg-emerald-700 text-white px-2 sm:px-3 py-1.5 sm:py-2 rounded-lg text-[10px] sm:text-xs font-semibold transition">
                 <PlusCircle className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
-                <span className="hidden xs:inline">Novo</span> Acordo
+                Novo Lançamento
               </button>
             </div>
           </div>
@@ -2311,7 +2331,7 @@ ${clientAddress ? `<div class="flex"><span class="text-subtle-light dark:text-su
                     {/* Valores e Honorários */}
                     <div className="grid grid-cols-1 md:grid-cols-4 gap-x-6 gap-y-4">
                       <div className="flex flex-col w-full md:col-span-1">
-                        <p className="text-zinc-900 dark:text-white text-sm font-medium pb-2">Valor total do acordo</p>
+                        <p className="text-zinc-900 dark:text-white text-sm font-medium pb-2">Valor total</p>
                         <input
                           type="number"
                           min="0"
@@ -2594,21 +2614,21 @@ ${clientAddress ? `<div class="flex"><span class="text-subtle-light dark:text-su
       {/* Parcelas Vencidas */}
       {stats && stats.overdue_installments > 0 && (
         <div className="bg-white border border-red-200 rounded-xl overflow-hidden shadow-sm">
-          <div className="flex items-center justify-between px-4 py-3 bg-red-50 border-b border-red-100">
+          <div className="bg-red-50 border-b border-red-100 px-4 py-3 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <div className="flex items-center gap-3">
-              <div className="w-8 h-8 bg-red-500 text-white rounded-lg flex items-center justify-center">
+              <div className="w-10 h-10 bg-red-500 text-white rounded-lg flex items-center justify-center">
                 <AlertCircle className="w-4 h-4" />
               </div>
               <div>
-                <p className="text-sm font-bold text-red-900">
+                <p className="text-base font-semibold text-red-900">
                   {stats.overdue_installments} parcela{stats.overdue_installments > 1 ? 's' : ''} em atraso
                 </p>
-                <p className="text-xs text-red-600">Regularize para evitar problemas</p>
+                <p className="text-xs text-red-600">Acompanhe e faça a cobrança para evitar inadimplência</p>
               </div>
             </div>
             <button
               onClick={() => setShowOverdueOnly(!showOverdueOnly)}
-              className="px-3 py-1.5 bg-red-100 hover:bg-red-200 text-red-700 rounded-lg text-xs font-semibold transition flex items-center gap-1"
+              className="w-full sm:w-auto inline-flex items-center justify-center gap-1 px-3 py-2 bg-white text-red-700 hover:bg-red-100 border border-red-200 rounded-lg text-xs font-semibold transition"
             >
               {showOverdueOnly ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
               {showOverdueOnly ? 'Ocultar' : 'Expandir'}
@@ -2629,14 +2649,17 @@ ${clientAddress ? `<div class="flex"><span class="text-subtle-light dark:text-su
                     : 0;
                   const clientName = inst.agreement ? getClientName(inst.agreement.client_id) : 'N/A';
                   return (
-                    <div key={inst.id} className="flex items-center justify-between gap-4 px-4 py-3 hover:bg-slate-50 transition">
+                    <div
+                      key={inst.id}
+                      className="flex flex-col sm:flex-row sm:items-center gap-4 px-4 py-4 sm:py-3 hover:bg-slate-50 transition"
+                    >
                       <div className="flex items-center gap-3 flex-1 min-w-0">
-                        <div className="flex-shrink-0 w-10 h-10 bg-red-100 text-red-700 rounded-lg flex items-center justify-center font-bold text-sm">
+                        <div className="flex-shrink-0 w-11 h-11 bg-red-100 text-red-700 rounded-lg flex items-center justify-center font-bold text-sm">
                           {inst.installment_number}º
                         </div>
                         <div className="flex-1 min-w-0">
                           <p className="text-sm font-semibold text-slate-900 truncate">{clientName}</p>
-                          <div className="flex items-center gap-2 mt-0.5">
+                          <div className="flex flex-wrap items-center gap-2 mt-0.5">
                             <p className="text-xs text-slate-500 truncate">{inst.agreement?.title}</p>
                             <span className="text-[10px] font-bold text-red-600 bg-red-100 px-1.5 py-0.5 rounded">
                               {daysOverdue} dia{daysOverdue > 1 ? 's' : ''} atraso
@@ -2644,11 +2667,14 @@ ${clientAddress ? `<div class="flex"><span class="text-subtle-light dark:text-su
                           </div>
                         </div>
                       </div>
-                      <div className="flex items-center gap-3 flex-shrink-0">
-                        <div className="text-right">
-                          <p className="text-base font-bold text-slate-900">{formatCurrency(inst.value)}</p>
-                          <p className="text-[10px] text-slate-400">
-                            {(parseLocalDate(inst.due_date) ?? new Date(inst.due_date)).toLocaleDateString('pt-BR', { day: '2-digit', month: 'short' })}
+                      <div className="flex flex-col sm:flex-row sm:items-center gap-3 w-full sm:w-auto">
+                        <div className="flex justify-between sm:flex-col sm:text-right text-sm font-semibold text-slate-900">
+                          <p>{formatCurrency(inst.value)}</p>
+                          <p className="text-[11px] font-normal text-slate-500">
+                            {(parseLocalDate(inst.due_date) ?? new Date(inst.due_date)).toLocaleDateString('pt-BR', {
+                              day: '2-digit',
+                              month: 'short',
+                            })}
                           </p>
                         </div>
                         <button
@@ -2658,7 +2684,7 @@ ${clientAddress ? `<div class="flex"><span class="text-subtle-light dark:text-su
                               handleOpenPaymentModal(inst);
                             }
                           }}
-                          className="inline-flex items-center gap-1.5 px-3 py-2 bg-emerald-500 hover:bg-emerald-600 text-white rounded-lg text-xs font-semibold transition shadow-sm hover:shadow"
+                          className="inline-flex items-center justify-center gap-1.5 px-3 py-2 bg-emerald-500 hover:bg-emerald-600 text-white rounded-lg text-xs font-semibold transition shadow-sm hover:shadow w-full sm:w-auto"
                         >
                           <CheckCircle className="w-3.5 h-3.5" />
                           Dar Baixa
@@ -2684,7 +2710,7 @@ ${clientAddress ? `<div class="flex"><span class="text-subtle-light dark:text-su
             </h3>
             <p className="text-sm text-slate-500 max-w-md mx-auto leading-relaxed">
               {agreements.length === 0
-                ? 'Comece criando um novo acordo financeiro clicando no botão "Novo Acordo" acima.'
+                ? 'Comece criando um novo lançamento financeiro clicando no botão "Novo Lançamento" acima.'
                 : 'Tente ajustar os filtros ou usar termos diferentes na busca para encontrar o que procura.'}
             </p>
             {agreements.length === 0 && (
@@ -2693,7 +2719,7 @@ ${clientAddress ? `<div class="flex"><span class="text-subtle-light dark:text-su
                 className="mt-8 inline-flex items-center gap-2 bg-emerald-600 hover:bg-emerald-700 text-white px-6 py-3 rounded-xl text-sm font-semibold transition-all duration-300 hover:shadow-lg hover:scale-105"
               >
                 <PlusCircle className="w-5 h-5" />
-                Criar Primeiro Acordo
+                Registrar Primeiro Lançamento
               </button>
             )}
           </div>
@@ -2701,7 +2727,7 @@ ${clientAddress ? `<div class="flex"><span class="text-subtle-light dark:text-su
           <>
           {/* Acordos Ativos */}
           {(() => {
-            const activeAgreements = filteredAgreements.filter(a => a.status === 'ativo');
+            const activeAgreements = filteredAgreements.filter((a: Agreement) => a.status === 'ativo');
             if (activeAgreements.length === 0) return null;
             
             return (
@@ -3064,7 +3090,7 @@ ${clientAddress ? `<div class="flex"><span class="text-subtle-light dark:text-su
 
           {/* Acordos Concluídos */}
           {(() => {
-            const completedAgreements = filteredAgreements.filter(a => a.status === 'concluido');
+            const completedAgreements = filteredAgreements.filter((a: Agreement) => a.status === 'concluido');
             if (completedAgreements.length === 0) return null;
             
             const displayedAgreements = showAllCompleted ? completedAgreements : completedAgreements.slice(0, 3);
@@ -3104,7 +3130,7 @@ ${clientAddress ? `<div class="flex"><span class="text-subtle-light dark:text-su
                   <div className="p-2 sm:p-6">
                     <div className="rounded-2xl border border-slate-200 overflow-hidden bg-white">
                       <div className="sm:hidden divide-y divide-slate-100">
-                        {displayedAgreements.map((agreement) => {
+                        {displayedAgreements.map((agreement: Agreement) => {
                           const agreementInstallments = allInstallments.filter(inst => inst.agreement_id === agreement.id);
                           const paidInstallments = agreementInstallments.filter(inst => inst.status === 'pago');
                           const isFullyPaid = agreementInstallments.length > 0 && paidInstallments.length === agreementInstallments.length;
@@ -3152,7 +3178,7 @@ ${clientAddress ? `<div class="flex"><span class="text-subtle-light dark:text-su
                             </tr>
                           </thead>
                           <tbody className="divide-y divide-slate-100">
-                            {displayedAgreements.map((agreement) => {
+                            {displayedAgreements.map((agreement: Agreement) => {
                               const agreementInstallments = allInstallments.filter(inst => inst.agreement_id === agreement.id);
                               const paidInstallments = agreementInstallments.filter(inst => inst.status === 'pago');
                               const isFullyPaid = agreementInstallments.length > 0 && paidInstallments.length === agreementInstallments.length;
@@ -3193,7 +3219,7 @@ ${clientAddress ? `<div class="flex"><span class="text-subtle-light dark:text-su
                   </div>
                 ) : (
                   <div className="divide-y divide-slate-100">
-                    {displayedAgreements.map((agreement, index) => {
+                    {displayedAgreements.map((agreement: Agreement, index: number) => {
                       const agreementInstallments = allInstallments.filter(inst => inst.agreement_id === agreement.id);
                       const paidInstallments = agreementInstallments.filter(inst => inst.status === 'pago');
                       const isFullyPaid = agreementInstallments.length > 0 && paidInstallments.length === agreementInstallments.length;
@@ -3282,7 +3308,7 @@ ${clientAddress ? `<div class="flex"><span class="text-subtle-light dark:text-su
 
           {/* Acordos Cancelados */}
           {(() => {
-            const canceledAgreements = filteredAgreements.filter(a => a.status === 'cancelado');
+            const canceledAgreements = agreements.filter((a: Agreement) => a.status === 'cancelado');
             if (canceledAgreements.length === 0) return null;
             
             return (
@@ -3301,7 +3327,7 @@ ${clientAddress ? `<div class="flex"><span class="text-subtle-light dark:text-su
                   </div>
                 </div>
                 <div className="divide-y divide-slate-200">
-                  {canceledAgreements.map((agreement) => {
+                  {canceledAgreements.map((agreement: Agreement) => {
                     const agreementInstallments = allInstallments.filter(inst => inst.agreement_id === agreement.id);
                     const paidInstallments = agreementInstallments.filter(inst => inst.status === 'pago');
                     
@@ -3372,7 +3398,7 @@ ${clientAddress ? `<div class="flex"><span class="text-subtle-light dark:text-su
       )}
       </div>
 
-      {/* Modal de novo acordo */}
+      {/* Modal de novo lançamento */}
       {isModalOpen && (
         <div className="fixed inset-0 z-[70] flex items-center justify-center px-3 sm:px-6 py-4">
           <div className="absolute inset-0 bg-slate-900/70 backdrop-blur-sm" onClick={handleCloseModal} aria-hidden="true" />
@@ -3381,7 +3407,7 @@ ${clientAddress ? `<div class="flex"><span class="text-subtle-light dark:text-su
             <div className="px-5 sm:px-8 py-5 border-b border-slate-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 flex items-start justify-between gap-4">
               <div>
                 <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400 dark:text-slate-500">Financeiro</p>
-                <h2 className="text-xl font-semibold text-slate-900 dark:text-white">Novo Acordo</h2>
+                <h2 className="text-xl font-semibold text-slate-900 dark:text-white">Novo Lançamento</h2>
               </div>
               <button
                 type="button"
@@ -3425,10 +3451,10 @@ ${clientAddress ? `<div class="flex"><span class="text-subtle-light dark:text-su
                     />
                   </div>
                   <div className="flex flex-col w-full">
-                    <p className="text-zinc-900 dark:text-white text-sm font-medium pb-2">Título do acordo</p>
+                    <p className="text-zinc-900 dark:text-white text-sm font-medium pb-2">Título do lançamento</p>
                     <input
                       type="text"
-                      placeholder="Digite o título do acordo"
+                      placeholder="Digite o título do lançamento"
                       value={formData.title}
                       onChange={(e) => handleChange('title', e.target.value)}
                       className="w-full rounded-lg text-zinc-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500/50 border border-zinc-200 dark:border-zinc-600 bg-white dark:bg-zinc-800 h-11 placeholder:text-zinc-500 px-4 text-sm"
@@ -3436,7 +3462,7 @@ ${clientAddress ? `<div class="flex"><span class="text-subtle-light dark:text-su
                     />
                   </div>
                   <div className="flex flex-col w-full">
-                    <p className="text-zinc-900 dark:text-white text-sm font-medium pb-2">Data do acordo</p>
+                    <p className="text-zinc-900 dark:text-white text-sm font-medium pb-2">Data do lançamento</p>
                     <input
                       type="date"
                       value={formData.agreementDate}
@@ -3458,7 +3484,7 @@ ${clientAddress ? `<div class="flex"><span class="text-subtle-light dark:text-su
                 {/* Valores e Honorários */}
                 <div className="grid grid-cols-1 md:grid-cols-4 gap-x-6 gap-y-4">
                   <div className="flex flex-col w-full md:col-span-1">
-                    <p className="text-zinc-900 dark:text-white text-sm font-medium pb-2">Valor total do acordo</p>
+                    <p className="text-zinc-900 dark:text-white text-sm font-medium pb-2">Valor total</p>
                     <input
                       type="number"
                       min="0"
@@ -3752,7 +3778,7 @@ ${clientAddress ? `<div class="flex"><span class="text-subtle-light dark:text-su
 
       {/* Modal de Detalhes do Acordo */}
       {isDetailsModalOpen && selectedAgreement && (
-        <div className="fixed inset-0 z-[70] flex items-center justify-center px-3 sm:px-6 py-4">
+        <div className="fixed inset-0 z-[70] flex items-start sm:items-center justify-center px-3 sm:px-6 py-4 overflow-y-auto">
           <div className="absolute inset-0 bg-slate-900/70 backdrop-blur-sm" onClick={handleCloseDetails} aria-hidden="true" />
           <div className="relative w-full max-w-5xl max-h-[92vh] bg-white dark:bg-zinc-900 rounded-2xl shadow-2xl ring-1 ring-black/5 flex flex-col overflow-hidden">
             <div className="h-2 w-full bg-orange-500" />
@@ -3771,7 +3797,7 @@ ${clientAddress ? `<div class="flex"><span class="text-subtle-light dark:text-su
                 <X className="w-5 h-5" />
               </button>
             </div>
-            <div className="flex flex-col p-6 gap-6 flex-1 min-h-0 overflow-y-auto bg-white dark:bg-zinc-900">
+            <div className="flex flex-col p-6 gap-6 flex-1 min-h-0 overflow-y-auto touch-pan-y overscroll-contain [-webkit-overflow-scrolling:touch] bg-white dark:bg-zinc-900">
 
               {/* Grid de 3 colunas */}
               <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 flex-1 min-h-0">
@@ -3878,16 +3904,16 @@ ${clientAddress ? `<div class="flex"><span class="text-subtle-light dark:text-su
                 </div>
 
                 {/* Coluna 2 - Parcelas */}
-                <div className="lg:col-span-2 h-full min-h-0">
-                  <div className="border border-gray-200 dark:border-zinc-700 rounded-lg p-4 h-full flex flex-col min-h-0 bg-white dark:bg-zinc-800/60">
-                    <div className="flex items-center justify-between gap-3 mb-4">
-                      <h2 className="text-lg font-semibold text-zinc-900 dark:text-white">💳 Parcelas e Pagamentos</h2>
+                <div className="lg:col-span-2 lg:h-full min-h-0">
+                  <div className="border border-gray-200 dark:border-zinc-700 rounded-lg p-3 lg:h-full flex flex-col min-h-0 bg-white dark:bg-zinc-800/60">
+                    <div className="flex items-center justify-between gap-3 mb-3">
+                      <h2 className="text-base font-semibold text-zinc-900 dark:text-white">💳 Parcelas e Pagamentos</h2>
                       {installments.length > 0 && installments.every(inst => inst.status === 'pago') && (
                         <button
                           onClick={() => handleGenerateFullReceipt(selectedAgreement)}
-                          className="flex items-center gap-2 rounded-lg bg-emerald-600 text-white text-sm font-semibold px-4 py-2 shadow hover:bg-emerald-700 transition"
+                          className="flex items-center gap-2 rounded-lg bg-emerald-600 text-white text-xs font-semibold px-3 py-1.5 shadow hover:bg-emerald-700 transition"
                         >
-                          <FileText className="w-4 h-4" /> Recibo total
+                          <FileText className="w-3.5 h-3.5" /> Recibo total
                         </button>
                       )}
                     </div>
@@ -3902,7 +3928,7 @@ ${clientAddress ? `<div class="flex"><span class="text-subtle-light dark:text-su
                         <p>Nenhuma parcela encontrada</p>
                       </div>
                     ) : (
-                      <div className="space-y-4 flex-grow overflow-y-auto pr-1">
+                      <div className="space-y-2 pr-1 lg:flex-grow lg:overflow-y-auto">
                         {installments.map((installment, index) => {
                           const isOverdue = pendingStatuses.includes(installment.status as InstallmentStatus) && installment.due_date < today;
                           const isPaid = installment.status === 'pago';
@@ -3920,86 +3946,151 @@ ${clientAddress ? `<div class="flex"><span class="text-subtle-light dark:text-su
                             cartao_credito: 'Cartão de Crédito',
                             cartao_debito: 'Cartão de Débito',
                           };
+                          const installmentsCount = selectedAgreement.installments_count || 1;
+                          const netAgreementValue =
+                            selectedAgreement.net_value ??
+                            (selectedAgreement.total_value - selectedAgreement.fee_value);
+                          const clientInstallmentValue = netAgreementValue / installmentsCount;
                           
+                          const dueDate = dueMidnight ?? new Date(installment.due_date);
+                          const diffMs = dueDate.getTime() - todayMidnight.getTime();
+                          const daysUntilDue = diffMs > 0 ? Math.ceil(diffMs / (1000 * 60 * 60 * 24)) : 0;
+                          const pendingMessage =
+                            daysUntilDue === 0
+                              ? 'Vence hoje'
+                              : daysUntilDue === 1
+                                ? 'Vence amanhã'
+                                : `Vence em ${daysUntilDue} dias`;
+
+                          const theme = isPaid
+                            ? {
+                                border: 'border-emerald-200 dark:border-emerald-500/40',
+                                bg: 'from-emerald-50/80 via-white to-white dark:from-emerald-500/10 dark:via-zinc-900 dark:to-zinc-900',
+                                badge: 'bg-emerald-100 text-emerald-800 dark:bg-emerald-500/20 dark:text-emerald-100',
+                                pill: 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-200',
+                                number: 'bg-emerald-500',
+                              }
+                            : isOverdue
+                              ? {
+                                  border: 'border-rose-200 dark:border-rose-500/40',
+                                  bg: 'from-rose-50/80 via-white to-white dark:from-rose-500/15 dark:via-zinc-900 dark:to-zinc-900',
+                                  badge: 'bg-rose-100 text-rose-800 dark:bg-rose-500/20 dark:text-rose-200',
+                                  pill: 'bg-rose-500/10 text-rose-700 dark:text-rose-200',
+                                  number: 'bg-rose-500',
+                                }
+                              : {
+                                  border: 'border-slate-200 dark:border-slate-600',
+                                  bg: 'from-slate-50/70 via-white to-white dark:from-slate-500/10 dark:via-zinc-900 dark:to-zinc-900',
+                                  badge: 'bg-slate-100 text-slate-700 dark:bg-slate-500/20 dark:text-slate-200',
+                                  pill: 'bg-slate-500/10 text-slate-700 dark:text-slate-200',
+                                  number: 'bg-slate-500',
+                                };
+
+                          const statusBadge = isPaid
+                            ? 'Pagamento concluído'
+                            : isOverdue
+                              ? 'Em atraso'
+                              : 'Aguardando';
+
+                          const statusDescription = isPaid
+                            ? `Recebido em ${new Date(installment.payment_date!).toLocaleDateString('pt-BR')}`
+                            : isOverdue
+                              ? `Vencida há ${daysOverdue} ${daysOverdue === 1 ? 'dia' : 'dias'}`
+                              : pendingMessage;
+
                           return (
                             <div
                               key={installment.id}
-                              className={`border rounded-lg p-4 ${
-                                isPaid ? 'border-green-200 dark:border-green-700 bg-green-50/50 dark:bg-green-900/20' :
-                                isOverdue ? 'border-red-300 dark:border-red-700 bg-red-50/50 dark:bg-red-900/20' :
-                                'border-gray-200 dark:border-zinc-700 bg-gray-50/50 dark:bg-zinc-800/20'
-                              }`}
+                              className={`rounded-xl border ${theme.border} bg-gradient-to-br ${theme.bg} shadow-sm transition-all duration-200 hover:shadow-md`}
                             >
                               {/* Header da parcela */}
-                              <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2 mb-4">
-                                <div className="flex items-center gap-3">
-                                  <span className={`inline-flex items-center justify-center h-6 w-6 rounded-full text-white text-sm font-bold ${
-                                    isPaid ? 'bg-green-500' :
-                                    isOverdue ? 'bg-red-500' :
-                                    'bg-gray-400 dark:bg-gray-600'
-                                  }`}>
+                              <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between border-b border-white/70 dark:border-white/10 px-3 py-3">
+                                <div className="flex items-center gap-2">
+                                  <span className={`inline-flex items-center justify-center w-9 h-9 rounded-xl text-white text-xs font-bold ${theme.number}`}>
                                     {installment.installment_number}
                                   </span>
-                                  <span className="font-semibold text-gray-800 dark:text-gray-200">
-                                    Parcela {installment.installment_number}/{selectedAgreement.installments_count}
-                                  </span>
+                                  <div>
+                                    <p className="text-xs font-semibold text-slate-900 dark:text-white">
+                                      Parcela {installment.installment_number}/{selectedAgreement.installments_count}
+                                    </p>
+                                    <span
+                                      className={`mt-0.5 inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-[10px] font-semibold ${theme.pill}`}
+                                    >
+                                      {statusDescription}
+                                    </span>
+                                  </div>
                                 </div>
-                                <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
-                                  isPaid ? 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-300' :
-                                  isOverdue ? 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-300' :
-                                  'bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-300'
-                                }`}>
-                                  {isPaid ? 'Pagamento concluído' : isOverdue ? `Vencida há ${daysOverdue} dias` : 'Pendente'}
+                                <span className={`inline-flex items-center justify-center px-2.5 py-0.5 rounded-full text-[10px] font-semibold ${theme.badge}`}>
+                                  {statusBadge}
                                 </span>
                               </div>
 
                               {/* Detalhes da parcela */}
-                              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-x-4 gap-y-3 text-sm">
+                              <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 px-3 py-3 text-xs">
                                 {isPaid ? (
                                   <>
-                                    <div className="flex flex-col rounded-md border border-gray-200 dark:border-zinc-700 bg-gray-50 dark:bg-zinc-700/60 px-3 py-2">
-                                      <span className="text-gray-500 dark:text-gray-400">Recebido em</span>
-                                      <span className="font-medium text-gray-800 dark:text-gray-100">{new Date(installment.payment_date!).toLocaleDateString('pt-BR')}</span>
+                                    <div className="rounded-lg border border-white/70 bg-white/80 px-3 py-2 dark:bg-white/5 dark:border-white/10">
+                                      <span className="text-[10px] uppercase tracking-wide text-slate-400 dark:text-slate-500">Recebido em</span>
+                                      <p className="text-xs font-semibold text-slate-900 dark:text-white">
+                                        {new Date(installment.payment_date!).toLocaleDateString('pt-BR')}
+                                      </p>
                                     </div>
-                                    <div className="flex flex-col rounded-md border border-gray-200 dark:border-zinc-700 bg-gray-50 dark:bg-zinc-700/60 px-3 py-2">
-                                      <span className="text-gray-500 dark:text-gray-400">Valor recebido</span>
-                                      <span className="font-medium text-gray-800 dark:text-gray-100">{formatCurrency(installment.paid_value || installment.value)}</span>
+                                    <div className="rounded-lg border border-white/70 bg-white/80 px-3 py-2 dark:bg-white/5 dark:border-white/10">
+                                      <span className="text-[10px] uppercase tracking-wide text-slate-400 dark:text-slate-500">Valor recebido</span>
+                                      <p className="text-xs font-semibold text-slate-900 dark:text-white">
+                                        {formatCurrency(installment.paid_value || installment.value)}
+                                      </p>
                                     </div>
-                                    <div className="flex flex-col rounded-md border border-gray-200 dark:border-zinc-700 bg-gray-50 dark:bg-zinc-700/60 px-3 py-2">
-                                      <span className="text-gray-500 dark:text-gray-400">Método</span>
-                                      <span className="font-medium text-gray-800 dark:text-gray-100">{installment.payment_method ? paymentMethodLabels[installment.payment_method] : 'Não informado'}</span>
+                                    <div className="rounded-lg border border-white/70 bg-white/80 px-3 py-2 dark:bg-white/5 dark:border-white/10">
+                                      <span className="text-[10px] uppercase tracking-wide text-slate-400 dark:text-slate-500">Método</span>
+                                      <p className="text-xs font-semibold text-slate-900 dark:text-white">
+                                        {installment.payment_method ? paymentMethodLabels[installment.payment_method] : 'Não informado'}
+                                      </p>
                                     </div>
-                                    <div className="flex flex-col rounded-md border border-gray-200 dark:border-zinc-700 bg-gray-50 dark:bg-zinc-700/60 px-3 py-2">
-                                      <span className="text-gray-500 dark:text-gray-400">Vencimento</span>
+                                    <div className="rounded-lg border border-white/70 bg-white/80 px-3 py-2 dark:bg-white/5 dark:border-white/10">
+                                      <span className="text-[10px] uppercase tracking-wide text-slate-400 dark:text-slate-500">Vencimento</span>
                                       {(() => {
                                         const pay = installment.payment_date ? (parseLocalDate(installment.payment_date) ?? new Date(installment.payment_date)) : null;
-                                        const due = parseLocalDate(installment.due_date) ?? new Date(installment.due_date);
-                                        const late = pay ? pay.getTime() > due.getTime() : false;
+                                        const late = pay ? pay.getTime() > dueDate.getTime() : false;
                                         return (
-                                          <span className={`font-medium ${late ? 'text-orange-600 dark:text-orange-300' : 'text-green-600 dark:text-green-300'}`}>
+                                          <p className={`text-xs font-semibold ${late ? 'text-rose-600 dark:text-rose-200' : 'text-emerald-600 dark:text-emerald-200'}`}>
                                             {late ? 'Pago com atraso' : 'Pago em dia'}
-                                          </span>
+                                          </p>
                                         );
                                       })()}
                                     </div>
-                                    <div className="flex flex-col rounded-md border border-gray-200 dark:border-zinc-700 bg-gray-50 dark:bg-zinc-700/60 px-3 py-2">
-                                      <span className="text-gray-500 dark:text-gray-400">Honorários</span>
-                                      <span className="font-medium text-gray-800 dark:text-gray-100">{formatCurrency(selectedAgreement.fee_value / selectedAgreement.installments_count)}</span>
+                                    <div className="rounded-lg border border-white/70 bg-white/80 px-3 py-2 dark:bg-white/5 dark:border-white/10">
+                                      <span className="text-[10px] uppercase tracking-wide text-slate-400 dark:text-slate-500">Honorários</span>
+                                      <p className="text-xs font-semibold text-slate-900 dark:text-white">
+                                        {formatCurrency(selectedAgreement.fee_value / selectedAgreement.installments_count)}
+                                      </p>
                                     </div>
                                   </>
                                 ) : (
                                   <>
-                                    <div className="flex flex-col rounded-md border border-gray-200 dark:border-zinc-700 bg-gray-50 dark:bg-zinc-700/60 px-3 py-2">
-                                      <span className="text-gray-500 dark:text-gray-400">Vencimento</span>
-                                      <span className="font-medium text-gray-800 dark:text-gray-100">{(parseLocalDate(installment.due_date) ?? new Date(installment.due_date)).toLocaleDateString('pt-BR')}</span>
+                                    <div className="rounded-lg border border-white/70 bg-white/80 px-3 py-2 dark:bg-white/5 dark:border-white/10">
+                                      <span className="text-[10px] uppercase tracking-wide text-slate-400 dark:text-slate-500">Vencimento</span>
+                                      <p className="text-xs font-semibold text-slate-900 dark:text-white">
+                                        {dueDate.toLocaleDateString('pt-BR')}
+                                      </p>
                                     </div>
-                                    <div className="flex flex-col rounded-md border border-gray-200 dark:border-zinc-700 bg-gray-50 dark:bg-zinc-700/60 px-3 py-2">
-                                      <span className="text-gray-500 dark:text-gray-400">Valor</span>
-                                      <span className="font-medium text-gray-800 dark:text-gray-100">{formatCurrency(selectedAgreement.total_value / selectedAgreement.installments_count)}</span>
+                                    <div className="rounded-lg border border-white/70 bg-white/80 px-3 py-2 dark:bg-white/5 dark:border-white/10">
+                                      <span className="text-[10px] uppercase tracking-wide text-slate-400 dark:text-slate-500">Valor</span>
+                                      <p className="text-xs font-semibold text-slate-900 dark:text-white">
+                                        {formatCurrency(selectedAgreement.total_value / installmentsCount)}
+                                      </p>
                                     </div>
-                                    <div className="flex flex-col rounded-md border border-gray-200 dark:border-zinc-700 bg-gray-50 dark:bg-zinc-700/60 px-3 py-2">
-                                      <span className="text-gray-500 dark:text-gray-400">Honorários</span>
-                                      <span className="font-medium text-gray-800 dark:text-gray-100">{formatCurrency(selectedAgreement.fee_value / selectedAgreement.installments_count)}</span>
+                                    <div className="rounded-lg border border-white/70 bg-white/80 px-3 py-2 dark:bg-white/5 dark:border-white/10">
+                                      <span className="text-[10px] uppercase tracking-wide text-slate-400 dark:text-slate-500">Valor cliente</span>
+                                      <p className="text-xs font-semibold text-slate-900 dark:text-white">
+                                        {formatCurrency(clientInstallmentValue)}
+                                      </p>
+                                    </div>
+                                    <div className="rounded-lg border border-white/70 bg-white/80 px-3 py-2 dark:bg-white/5 dark:border-white/10">
+                                      <span className="text-[10px] uppercase tracking-wide text-slate-400 dark:text-slate-500">Honorários</span>
+                                      <p className="text-xs font-semibold text-slate-900 dark:text-white">
+                                        {formatCurrency(selectedAgreement.fee_value / installmentsCount)}
+                                      </p>
                                     </div>
                                   </>
                                 )}
@@ -4007,24 +4098,33 @@ ${clientAddress ? `<div class="flex"><span class="text-subtle-light dark:text-su
 
                               {/* Footer da parcela */}
                               {isPaid ? (
-                                <div className="mt-4 pt-4 border-t border-gray-200 dark:border-zinc-700 flex justify-end">
-                                  <button
-                                    onClick={() => handleGenerateReceipt(selectedAgreement, installment)}
-                                    className="flex min-w-[84px] cursor-pointer items-center justify-center rounded-lg h-9 px-3 bg-white dark:bg-zinc-700 text-gray-700 dark:text-gray-100 border border-gray-300 dark:border-zinc-600 text-sm font-medium hover:bg-gray-50 dark:hover:bg-zinc-700"
-                                  >
-                                    Gerar recibo
-                                  </button>
+                                <div className="px-3 pb-3">
+                                  <div className="mt-1 flex justify-end">
+                                    <button
+                                      onClick={() => handleGenerateReceipt(selectedAgreement, installment)}
+                                      className="inline-flex items-center gap-2 rounded-xl border border-emerald-100 bg-white/90 px-3 py-1.5 text-xs font-semibold text-emerald-700 shadow-sm transition hover:bg-white dark:border-emerald-500/40 dark:bg-zinc-900/60 dark:text-emerald-200"
+                                    >
+                                      <FileText className="w-3.5 h-3.5" />
+                                      Gerar recibo
+                                    </button>
+                                  </div>
                                 </div>
                               ) : (
-                                <div className="mt-4 pt-4 border-t border-gray-200 dark:border-zinc-700 flex justify-end">
-                                  <button
-                                    onClick={() => handleOpenPaymentModal(installment)}
-                                    className={`flex min-w-[84px] cursor-pointer items-center justify-center rounded-lg h-9 px-4 text-white text-sm font-medium ${
-                                      isOverdue ? 'bg-red-600 hover:bg-red-700' : 'bg-blue-500 hover:bg-blue-600'
-                                    }`}
-                                  >
-                                    <CheckCircle className="w-4 h-4 mr-2" /> Dar Baixa
-                                  </button>
+                                <div className="px-3 pb-3">
+                                  <div className="mt-1 flex flex-col gap-1.5 text-xs text-slate-500 dark:text-slate-400 sm:flex-row sm:items-center sm:justify-between">
+                                    <span>
+                                      Registre o pagamento assim que receber para manter o financeiro atualizado.
+                                    </span>
+                                    <button
+                                      onClick={() => handleOpenPaymentModal(installment)}
+                                      className={`inline-flex items-center justify-center gap-2 rounded-xl px-3 py-1.5 text-xs font-semibold text-white shadow-sm transition ${
+                                        isOverdue ? 'bg-rose-600 hover:bg-rose-700 shadow-rose-500/30' : 'bg-blue-600 hover:bg-blue-700 shadow-blue-500/30'
+                                      }`}
+                                    >
+                                      <CheckCircle className="w-3.5 h-3.5" />
+                                      Dar baixa
+                                    </button>
+                                  </div>
                                 </div>
                               )}
                             </div>

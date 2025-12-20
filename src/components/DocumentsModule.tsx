@@ -1395,7 +1395,7 @@ const DocumentsModule: React.FC<DocumentsModuleProps> = ({ onNavigateToModule })
       {activeView === 'new-doc' && (
         <div className="grid gap-6 lg:grid-cols-5">
           {/* Coluna esquerda: Seleção de template */}
-          <div className="lg:col-span-2 space-y-4">
+          <div className="hidden lg:block lg:col-span-2 space-y-4">
             <div>
               <h4 className="text-sm font-semibold text-slate-900 mb-1">Escolha o template</h4>
               <p className="text-xs text-slate-500">Selecione o modelo para gerar o documento</p>
@@ -1417,7 +1417,7 @@ const DocumentsModule: React.FC<DocumentsModuleProps> = ({ onNavigateToModule })
                 </button>
               </div>
             ) : (
-              <div className="space-y-2 max-h-[400px] overflow-y-auto pr-1">
+              <div className="space-y-2 sm:max-h-[400px] sm:overflow-y-auto sm:pr-1">
                 {templates.map((template) => {
                   const isSelected = selectedTemplateId === template.id;
                   const summary = templateFilesSummary[template.id];
@@ -1481,6 +1481,24 @@ const DocumentsModule: React.FC<DocumentsModuleProps> = ({ onNavigateToModule })
               </div>
 
               <div className="space-y-4">
+                <div className="lg:hidden">
+                  <label className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-slate-500">
+                    Template *
+                  </label>
+                  <select
+                    value={selectedTemplateId}
+                    onChange={(e) => setSelectedTemplateId(e.target.value)}
+                    disabled={loading || templates.length === 0}
+                    className="w-full rounded-lg border border-slate-200 bg-white px-4 py-2.5 text-sm text-slate-900 transition hover:border-slate-300 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 disabled:bg-slate-100 disabled:text-slate-400"
+                  >
+                    <option value="">Selecione um template...</option>
+                    {templates.map((template) => (
+                      <option key={template.id} value={template.id}>
+                        {template.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
                 {/* Cliente */}
                 <div>
                   <label className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-slate-500">
@@ -1540,11 +1558,11 @@ const DocumentsModule: React.FC<DocumentsModuleProps> = ({ onNavigateToModule })
                   </div>
                 )}
 
-                {/* Botão gerar */}
+                {/* Botão gerar (desktop) */}
                 <button
                   onClick={handleGenerateDocx}
                   disabled={generatingDocx || !selectedClientId || !selectedTemplateId}
-                  className="w-full rounded-xl px-6 py-3.5 text-sm font-semibold transition inline-flex items-center justify-center gap-2 shadow-sm hover:shadow-md active:shadow-sm"
+                  className="hidden sm:inline-flex w-full rounded-xl px-6 py-3.5 text-sm font-semibold transition items-center justify-center gap-2 shadow-sm hover:shadow-md active:shadow-sm"
                   style={{
                     backgroundColor: (generatingDocx || !selectedClientId || !selectedTemplateId) ? '#e2e8f0' : '#4f46e5',
                     backgroundImage: (generatingDocx || !selectedClientId || !selectedTemplateId)
@@ -1566,6 +1584,35 @@ const DocumentsModule: React.FC<DocumentsModuleProps> = ({ onNavigateToModule })
                     </>
                   )}
                 </button>
+
+                {/* Botão gerar (mobile sticky) */}
+                <div className="sm:hidden sticky bottom-0 -mx-5 px-5 pb-5 pt-3 bg-white/95 backdrop-blur border-t border-slate-200">
+                  <button
+                    onClick={handleGenerateDocx}
+                    disabled={generatingDocx || !selectedClientId || !selectedTemplateId}
+                    className="w-full rounded-xl px-6 py-3.5 text-sm font-semibold transition inline-flex items-center justify-center gap-2 shadow-sm hover:shadow-md active:shadow-sm"
+                    style={{
+                      backgroundColor: (generatingDocx || !selectedClientId || !selectedTemplateId) ? '#e2e8f0' : '#4f46e5',
+                      backgroundImage: (generatingDocx || !selectedClientId || !selectedTemplateId)
+                        ? 'none'
+                        : 'linear-gradient(135deg, #4f46e5 0%, #4338ca 55%, #3730a3 100%)',
+                      color: (generatingDocx || !selectedClientId || !selectedTemplateId) ? '#94a3b8' : '#ffffff',
+                      cursor: (generatingDocx || !selectedClientId || !selectedTemplateId) ? 'not-allowed' : 'pointer',
+                    }}
+                  >
+                    {generatingDocx ? (
+                      <>
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                        Gerando documento...
+                      </>
+                    ) : (
+                      <>
+                        <FileDown className="h-4 w-4" />
+                        Gerar documento
+                      </>
+                    )}
+                  </button>
+                </div>
 
                 {/* Dica */}
                 {!selectedTemplateId && (

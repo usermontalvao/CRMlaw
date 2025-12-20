@@ -444,6 +444,162 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
 
 const releases: ReleaseNote[] = [
   {
+    version: '1.0.92',
+    date: '2025-12-20',
+    summary: 'Documentos: geração mais direta no mobile',
+    modules: [
+      {
+        moduleId: 'documentos',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Template selecionado no topo do formulário (mobile)',
+            description:
+              'No celular, a lista lateral de templates foi ocultada e a seleção do template foi movida para dentro do formulário de geração, reduzindo rolagem e deixando o fluxo mais rápido.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.0.91',
+    date: '2025-12-20',
+    summary: 'Documentos: UX mobile melhorada',
+    modules: [
+      {
+        moduleId: 'documentos',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'CTA de geração sempre visível no celular',
+            description:
+              'O botão “Gerar documento” agora fica em um footer sticky no mobile e a lista de templates não usa mais scroll interno no celular, reduzindo esforço e melhorando a navegação.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.0.90',
+    date: '2025-12-20',
+    summary: 'Modal financeiro mais compacto',
+    modules: [
+      {
+        moduleId: 'financeiro',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Parcelas e pagamentos com menos altura',
+            description:
+              'Reduzimos espaçamentos, paddings e ajustamos o grid do card de parcelas no modal de detalhes para evitar excesso de altura e deixar a leitura mais fluida.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.0.89',
+    date: '2025-01-19',
+    summary: 'Cartões de parcelas redesenhados',
+    modules: [
+      {
+        moduleId: 'financeiro',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Visual premium para “Parcelas e Pagamentos”',
+            description:
+              'Cartões com gradiente, badges de status e botão “Dar baixa” destacando atraso/pendência tornam a experiência mais clara e bonita no modal de detalhes.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.0.88',
+    date: '2025-01-19',
+    summary: 'Rolagem do modal de detalhes no mobile',
+    modules: [
+      {
+        moduleId: 'financeiro',
+        changes: [
+          {
+            type: 'fix',
+            title: 'Parcelas acessíveis no modal de detalhes (mobile)',
+            description:
+              'Eliminamos o scroll aninhado e reforçamos o touch scrolling (iOS/Android), permitindo rolar até “Parcelas e Pagamentos” e registrar baixa normalmente no celular.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.0.87',
+    date: '2025-01-19',
+    summary: 'Correções de modal financeiro e estabilidade',
+    modules: [
+      {
+        moduleId: 'financeiro',
+        changes: [
+          {
+            type: 'fix',
+            title: 'Erro 500 por hooks duplicados resolvido',
+            description:
+              'Restauramos o filtro memoizado principal e removemos o useMemo duplicado dentro da área de cancelados, eliminando o ReferenceError/Hook Order que derrubava o módulo financeiro.',
+          },
+          {
+            type: 'improvement',
+            title: 'Modal de detalhes rolável no mobile',
+            description:
+              'O modal de detalhes agora usa layout scrollável no viewport inteiro, permitindo acessar a seção de parcelas e registrar pagamentos em telas menores.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.0.86',
+    date: '2025-01-18',
+    summary: 'Formulário financeiro preparado para lançamentos gerais',
+    modules: [
+      {
+        moduleId: 'financeiro',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Terminologia genérica no cadastro',
+            description:
+              'Renomeamos botão, título do modal e campos “Título/Data do Acordo” para “Novo Lançamento / Título do lançamento / Data do lançamento”, permitindo usar o módulo também para lançamentos que não sejam acordos.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.0.85',
+    date: '2025-01-18',
+    summary: 'Logo oficial “J” aplicada aos ícones do app',
+    modules: [
+      {
+        moduleId: 'branding',
+        changes: [
+          {
+            type: 'fix',
+            title: 'Logo Jurius aplicada na inicialização',
+            description:
+              'Atualizamos os ícones maskable (192px e 512px) usados no PWA e no app desktop/mobile para exibir a marca oficial com o “J” sobre fundo laranja, substituindo o ícone antigo com letras WA.',
+          },
+          {
+            type: 'improvement',
+            title: 'Script de geração de ícones padronizado',
+            description:
+              'Adicionamos um script convert-logo.ps1 que desenha programaticamente o gradiente laranja e a letra “J”, garantindo consistência sempre que os ícones precisarem ser regenerados.',
+          },
+        ],
+      },
+    ],
+  },
+  {
     version: '1.0.84',
     date: '2025-01-18',
     summary: 'Detalhes de assinatura otimizados para dispositivos móveis',
