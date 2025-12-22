@@ -86,9 +86,9 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, onParamC
   const [viewMode, setViewMode] = useState<'list' | 'grid'>(() => {
     try {
       const saved = typeof window !== 'undefined' ? window.localStorage.getItem('signature_view_mode') : null;
-      return saved === 'grid' ? 'grid' : 'list';
+      return saved === 'list' ? 'list' : 'grid';
     } catch {
-      return 'list';
+      return 'grid';
     }
   });
 
@@ -1311,21 +1311,53 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, onParamC
     const bucketsToTry = ['document-templates', 'generated-documents', 'signatures'];
 
     const tryGetSignedUrl = async (path: string): Promise<string | null> => {
-      const results = await Promise.allSettled(
-        bucketsToTry.map(async (bucket) => {
+      if (!path) return null;
+      
+      // Remover barras iniciais
+      const sanitizedPath = path.replace(/^\/+/, '');
+      
+      // Verificar se o path já contém um bucket conhecido
+      const pathParts = sanitizedPath.split('/');
+      const firstPart = pathParts[0];
+      
+      // Se o primeiro segmento do path é um bucket conhecido, usar apenas esse bucket
+      if (bucketsToTry.includes(firstPart)) {
+        // Remover o bucket do path para evitar duplicação
+        const objectPath = pathParts.slice(1).join('/');
+        if (!objectPath) return null; // Path inválido (só tem o bucket)
+        
+        console.log(`🔍 Tentando bucket específico: ${firstPart}, path: ${objectPath}`);
+        
+        const { data: signedData, error } = await supabase.storage
+          .from(firstPart)
+          .createSignedUrl(objectPath, 3600);
+          
+        if (!error && signedData?.signedUrl) {
+          return signedData.signedUrl;
+        }
+        
+        // Se falhou com o bucket específico, não tentar outros buckets
+        console.log(`❌ Falha ao obter URL assinada para ${firstPart}/${objectPath}:`, error?.message);
+        return null;
+      }
+      
+      // Se não tem bucket no path, tentar todos os buckets em sequência
+      console.log(`🔍 Tentando todos os buckets para: ${sanitizedPath}`);
+      
+      for (const bucket of bucketsToTry) {
+        try {
           const { data: signedData, error } = await supabase.storage
             .from(bucket)
-            .createSignedUrl(path, 3600);
+            .createSignedUrl(sanitizedPath, 3600);
+            
           if (!error && signedData?.signedUrl) {
             return signedData.signedUrl;
           }
-          return null;
-        })
-      );
-
-      for (const r of results) {
-        if (r.status === 'fulfilled' && r.value) return r.value;
+        } catch (e) {
+          console.log(`❌ Erro ao tentar bucket ${bucket}:`, e);
+        }
       }
+      
       return null;
     };
 
@@ -2928,138 +2960,140 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, onParamC
               </div>
 
               {/* Botões de ação */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 md:flex md:flex-wrap gap-2 sm:gap-3">
-                {detailsRequest.document_path && (
-                  <button
-                    disabled={viewDocLoading}
-                    onClick={async () => {
-                      try {
-                        setViewDocLoading(true);
-                        
-                        // Buscar dados atualizados do banco
-                        const freshRequest = await signatureService.getRequestWithSigners(detailsRequest.id);
-                        if (!freshRequest) {
-                          toast.error('Erro ao carregar dados do documento');
-                          return;
-                        }
-                        
-                        const signedSigner = freshRequest.signers.find(s => s.status === 'signed');
-                        const docPathLower = (freshRequest.document_path || '').toLowerCase();
-                        const isDocxFile = docPathLower.endsWith('.docx') || docPathLower.endsWith('.doc');
-                        
-                        // Se tem signatário assinado
-                        if (signedSigner) {
-                          // Verificar se já existe PDF assinado salvo no bucket 'assinados'
-                          if (signedSigner.signed_document_path) {
-                            const signedUrl = await pdfSignatureService.getSignedPdfUrl(signedSigner.signed_document_path);
-                            if (signedUrl) {
-                              console.log('[VIEW] Usando PDF já salvo:', signedSigner.signed_document_path);
-                              window.open(signedUrl, '_blank');
-                              return;
-                            }
+              <div className="flex flex-col lg:flex-row lg:items-stretch gap-2 sm:gap-3">
+                <div className="flex flex-col sm:flex-row flex-1 gap-2 sm:gap-3">
+                  {detailsRequest.document_path && (
+                    <button
+                      disabled={viewDocLoading}
+                      onClick={async () => {
+                        try {
+                          setViewDocLoading(true);
+                          
+                          // Buscar dados atualizados do banco
+                          const freshRequest = await signatureService.getRequestWithSigners(detailsRequest.id);
+                          if (!freshRequest) {
+                            toast.error('Erro ao carregar dados do documento');
+                            return;
                           }
                           
-                          // Se não existe, gerar, salvar e abrir
-                          // Importante: se for DOCX, nÃ£o tentar parsear DOCX como PDF (pdf-lib quebra com "No PDF header found").
-                          if (isDocxFile) {
-                            toast.info('Documento DOCX - gerando relatÃ³rio de assinatura (fallback)');
+                          const signedSigner = freshRequest.signers.find(s => s.status === 'signed');
+                          const docPathLower = (freshRequest.document_path || '').toLowerCase();
+                          const isDocxFile = docPathLower.endsWith('.docx') || docPathLower.endsWith('.doc');
+                          
+                          // Se tem signatário assinado
+                          if (signedSigner) {
+                            // Verificar se já existe PDF assinado salvo no bucket 'assinados'
+                            if (signedSigner.signed_document_path) {
+                              const signedUrl = await pdfSignatureService.getSignedPdfUrl(signedSigner.signed_document_path);
+                              if (signedUrl) {
+                                console.log('[VIEW] Usando PDF já salvo:', signedSigner.signed_document_path);
+                                window.open(signedUrl, '_blank');
+                                return;
+                              }
+                            }
+                            
+                            // Se não existe, gerar, salvar e abrir
+                            // Importante: se for DOCX, nÃ£o tentar parsear DOCX como PDF (pdf-lib quebra com "No PDF header found").
+                            if (isDocxFile) {
+                              toast.info('Documento DOCX - gerando relatÃ³rio de assinatura (fallback)');
+                              const freshSigner = await signatureService.getSignerById(signedSigner.id);
+                              if (!freshSigner) {
+                                toast.error('Erro ao carregar dados do signatÃ¡rio');
+                                return;
+                              }
+                              const { filePath: signedPdfPath, sha256 } = await pdfSignatureService.saveSignatureReportToStorage({
+                                request: freshRequest,
+                                signer: freshSigner,
+                                creator: null,
+                              });
+                              await signatureService.updateSignerSignedDocumentMeta(freshSigner.id, { signed_document_path: signedPdfPath, signed_pdf_sha256: sha256 });
+                              const signedUrl = await pdfSignatureService.getSignedPdfUrl(signedPdfPath);
+                              if (signedUrl) window.open(signedUrl, '_blank');
+                              else toast.error('Erro ao abrir relatÃ³rio');
+                              return;
+                            }
+
+                            toast.info('Gerando documento assinado...');
+                            const originalUrl = await signatureService.getDocumentPreviewUrl(freshRequest.document_path!);
+                            if (!originalUrl) {
+                              toast.error('Erro ao obter documento original');
+                              return;
+                            }
+                            
                             const freshSigner = await signatureService.getSignerById(signedSigner.id);
                             if (!freshSigner) {
                               toast.error('Erro ao carregar dados do signatÃ¡rio');
                               return;
                             }
-                            const { filePath: signedPdfPath, sha256 } = await pdfSignatureService.saveSignatureReportToStorage({
+                            
+                            // Gerar e salvar PDF no bucket 'assinados'
+                            const attachmentPaths = (freshRequest as any).attachment_paths as string[] | null | undefined;
+                            const attachmentPdfItems: { documentId: string; url: string }[] = [];
+                            for (let i = 0; i < (attachmentPaths ?? []).length; i++) {
+                              const p = attachmentPaths?.[i];
+                              if (!p || !p.toLowerCase().endsWith('.pdf')) continue;
+                              const u = await signatureService.getDocumentPreviewUrl(p);
+                              if (u) attachmentPdfItems.push({ documentId: `attachment-${i}`, url: u });
+                            }
+
+                            const { filePath: signedPdfPath, sha256 } = await pdfSignatureService.saveSignedPdfToStorage({
                               request: freshRequest,
                               signer: freshSigner,
+                              originalPdfUrl: originalUrl,
                               creator: null,
+                              attachmentPdfItems,
                             });
+                            
+                            // Atualizar o signer com o path do PDF assinado
                             await signatureService.updateSignerSignedDocumentMeta(freshSigner.id, { signed_document_path: signedPdfPath, signed_pdf_sha256: sha256 });
+                            
+                            // Abrir o PDF salvo
                             const signedUrl = await pdfSignatureService.getSignedPdfUrl(signedPdfPath);
-                            if (signedUrl) window.open(signedUrl, '_blank');
-                            else toast.error('Erro ao abrir relatÃ³rio');
-                            return;
-                          }
-
-                          toast.info('Gerando documento assinado...');
-                          const originalUrl = await signatureService.getDocumentPreviewUrl(freshRequest.document_path!);
-                          if (!originalUrl) {
-                            toast.error('Erro ao obter documento original');
+                            if (signedUrl) {
+                              window.open(signedUrl, '_blank');
+                            } else {
+                              toast.error('Erro ao abrir documento assinado');
+                            }
                             return;
                           }
                           
-                          const freshSigner = await signatureService.getSignerById(signedSigner.id);
-                          if (!freshSigner) {
-                            toast.error('Erro ao carregar dados do signatÃ¡rio');
-                            return;
-                          }
-                          
-                          // Gerar e salvar PDF no bucket 'assinados'
-                          const attachmentPaths = (freshRequest as any).attachment_paths as string[] | null | undefined;
-                          const attachmentPdfItems: { documentId: string; url: string }[] = [];
-                          for (let i = 0; i < (attachmentPaths ?? []).length; i++) {
-                            const p = attachmentPaths?.[i];
-                            if (!p || !p.toLowerCase().endsWith('.pdf')) continue;
-                            const u = await signatureService.getDocumentPreviewUrl(p);
-                            if (u) attachmentPdfItems.push({ documentId: `attachment-${i}`, url: u });
-                          }
-
-                          const { filePath: signedPdfPath, sha256 } = await pdfSignatureService.saveSignedPdfToStorage({
-                            request: freshRequest,
-                            signer: freshSigner,
-                            originalPdfUrl: originalUrl,
-                            creator: null,
-                            attachmentPdfItems,
-                          });
-                          
-                          // Atualizar o signer com o path do PDF assinado
-                          await signatureService.updateSignerSignedDocumentMeta(freshSigner.id, { signed_document_path: signedPdfPath, signed_pdf_sha256: sha256 });
-                          
-                          // Abrir o PDF salvo
-                          const signedUrl = await pdfSignatureService.getSignedPdfUrl(signedPdfPath);
-                          if (signedUrl) {
-                            window.open(signedUrl, '_blank');
-                          } else {
-                            toast.error('Erro ao abrir documento assinado');
-                          }
-                          return;
+                          // Se não está assinado, mostrar documento original
+                          const url = await signatureService.getDocumentPreviewUrl(detailsRequest.document_path!);
+                          if (url) window.open(url, '_blank');
+                          else toast.error('Erro ao obter URL do documento');
+                        } catch (e) {
+                          console.error('Erro ao abrir documento:', e);
+                          toast.error('Erro ao abrir documento');
+                        } finally {
+                          setViewDocLoading(false);
                         }
-                        
-                        // Se não está assinado, mostrar documento original
-                        const url = await signatureService.getDocumentPreviewUrl(detailsRequest.document_path!);
-                        if (url) window.open(url, '_blank');
-                        else toast.error('Erro ao obter URL do documento');
-                      } catch (e) {
-                        console.error('Erro ao abrir documento:', e);
-                        toast.error('Erro ao abrir documento');
-                      } finally {
-                        setViewDocLoading(false);
-                      }
-                    }}
-                    className="flex items-center justify-center gap-2 px-3 sm:px-4 py-2 bg-orange-500 text-white rounded-lg text-sm font-medium hover:bg-orange-600 transition disabled:opacity-70 disabled:cursor-wait w-full"
+                      }}
+                      className="flex items-center justify-center gap-2 px-3 sm:px-4 py-2 bg-orange-500 text-white rounded-lg text-sm font-medium hover:bg-orange-600 transition disabled:opacity-70 disabled:cursor-wait w-full flex-1"
+                    >
+                      {viewDocLoading ? (
+                        <>
+                          <Loader2 className="w-4 h-4 animate-spin" />
+                          Abrindo...
+                        </>
+                      ) : (
+                        <>
+                          <Eye className="w-4 h-4" />
+                          {detailsRequest.signers.some(s => s.status === 'signed') ? 'Ver assinado' : 'Visualizar'}
+                        </>
+                      )}
+                    </button>
+                  )}
+                  <button
+                    onClick={() => handleDownloadDocument(detailsRequest)}
+                    className="flex items-center justify-center gap-2 px-3 sm:px-4 py-2 bg-orange-500 text-white rounded-lg text-sm font-medium hover:bg-orange-600 transition w-full flex-1"
                   >
-                    {viewDocLoading ? (
-                      <>
-                        <Loader2 className="w-4 h-4 animate-spin" />
-                        Abrindo...
-                      </>
-                    ) : (
-                      <>
-                        <Eye className="w-4 h-4" />
-                        {detailsRequest.signers.some(s => s.status === 'signed') ? 'Ver assinado' : 'Visualizar'}
-                      </>
-                    )}
+                    <Download className="w-4 h-4" />
+                    Baixar documento
                   </button>
-                )}
-                <button
-                  onClick={() => handleDownloadDocument(detailsRequest)}
-                  className="flex items-center justify-center gap-2 px-3 sm:px-4 py-2 bg-orange-500 text-white rounded-lg text-sm font-medium hover:bg-orange-600 transition w-full"
-                >
-                  <Download className="w-4 h-4" />
-                  Baixar documento
-                </button>
+                </div>
                 <button
                   onClick={() => handleDeleteRequest(detailsRequest.id)}
-                  className="flex items-center justify-center gap-2 px-3 sm:px-4 py-2 bg-red-50 text-red-600 rounded-lg text-sm font-medium hover:bg-red-100 transition w-full sm:col-span-2 md:w-auto"
+                  className="flex items-center justify-center gap-2 px-3 sm:px-4 py-2 bg-red-50 text-red-600 rounded-lg text-sm font-medium hover:bg-red-100 transition w-full lg:w-auto lg:px-5"
                 >
                   <Trash2 className="w-4 h-4" />
                   Excluir

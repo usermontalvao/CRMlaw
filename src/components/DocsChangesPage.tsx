@@ -444,6 +444,23 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
 
 const releases: ReleaseNote[] = [
   {
+    version: '1.0.98',
+    date: '2025-12-22',
+    summary: 'Atualização de versão e changelog',
+    modules: [
+      {
+        moduleId: 'sistema',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Versão atualizada para 1.0.98',
+            description: 'Incremento de versão do sistema conforme processo de commit.',
+          },
+        ],
+      },
+    ],
+  },
+  {
     version: '1.0.92',
     date: '2025-12-20',
     summary: 'Documentos: geração mais direta no mobile',
