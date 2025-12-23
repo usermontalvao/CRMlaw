@@ -16,6 +16,8 @@ export type ProcessPracticeArea =
 
 export type HearingMode = 'presencial' | 'online';
 
+export type RequirementRole = 'principal' | 'ms';
+
 export interface Process {
   id: string;
   client_id: string;
@@ -23,6 +25,8 @@ export interface Process {
   status: ProcessStatus;
   distributed_at: string | null;
   practice_area: ProcessPracticeArea;
+  requirement_id?: string | null;
+  requirement_role?: RequirementRole | null;
   court?: string | null;
   responsible_lawyer?: string | null;
   responsible_lawyer_id?: string | null;
@@ -44,6 +48,8 @@ export interface CreateProcessDTO {
   status?: ProcessStatus;
   distributed_at?: string | null;
   practice_area: ProcessPracticeArea;
+  requirement_id?: string | null;
+  requirement_role?: RequirementRole | null;
   court?: string | null;
   responsible_lawyer?: string | null;
   responsible_lawyer_id?: string | null;
@@ -64,4 +70,6 @@ export interface ProcessFilters {
   client_id?: string;
   search?: string;
   practice_area?: ProcessPracticeArea;
+  requirement_id?: string;
+  requirement_role?: RequirementRole;
 }

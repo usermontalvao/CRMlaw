@@ -444,6 +444,732 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
 
 const releases: ReleaseNote[] = [
   {
+    version: '1.1.30',
+    date: '2025-12-22',
+    summary: 'Requerimentos: histórico de status, alertas MS e ações rápidas',
+    modules: [
+      {
+        moduleId: 'requerimentos',
+        changes: [
+          {
+            type: 'feature',
+            title: 'Histórico de status (auditoria)',
+            description:
+              'O modal de detalhes agora exibe o histórico de mudanças de status do requerimento (de → para, data/hora e autor/sistema).',
+          },
+          {
+            type: 'improvement',
+            title: 'Alertas de MS por nível + filtro',
+            description:
+              'Em análise agora mostra alertas por nível (30/60/90+ dias) e foi adicionado filtro “Somente risco MS (90+)”.',
+          },
+          {
+            type: 'improvement',
+            title: 'Ações rápidas no detalhe',
+            description:
+              'Adicionados botões rápidos no detalhe para voltar para Em análise, registrar prazo de exigência e agendar perícia.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.1.29',
+    date: '2025-12-22',
+    summary: 'Requerimentos: status após perícia automático',
+    modules: [
+      {
+        moduleId: 'requerimentos',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Retorno automático para Em análise após última perícia',
+            description:
+              'Quando a última perícia agendada já passou, o requerimento volta automaticamente para Em análise (checagem periódica e ao retornar foco na janela).',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.1.28',
+    date: '2025-12-22',
+    summary: 'Requerimentos: modal de exigência com visual claro',
+    modules: [
+      {
+        moduleId: 'requerimentos',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Modal de prazo de exigência mais claro',
+            description:
+              'Modal "Registrar prazo para exigência" agora usa fundo branco claro e faixa laranja no topo para melhor legibilidade.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.1.27',
+    date: '2025-12-22',
+    summary: 'Requerimentos: contagem MS e Agenda: log em linha do tempo',
+    modules: [
+      {
+        moduleId: 'requerimentos',
+        changes: [
+          {
+            type: 'fix',
+            title: 'Tempo em análise reinicia ao voltar para Em análise',
+            description:
+              'A contagem de dias para MS passa a considerar a última entrada no status Em análise (ex.: após perícia/exigência, reinicia ao retornar para Em análise).',
+          },
+        ],
+      },
+      {
+        moduleId: 'agenda',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Log de exclusões agrupado por dia',
+            description:
+              'Log de exclusões agora exibe separadores por data (Hoje/Ontem/Data) para leitura mais rápida, mantendo filtro de 30 dias.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.1.26',
+    date: '2025-12-22',
+    summary: 'Agenda e Requerimentos: ajustes no log e perícias',
+    modules: [
+      {
+        moduleId: 'agenda',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Log de exclusões simplificado',
+            description:
+              'Removida opção de limpar log; exibição limitada aos últimos 30 dias.',
+          },
+        ],
+      },
+      {
+        moduleId: 'requerimentos',
+        changes: [
+          {
+            type: 'fix',
+            title: 'Perícia não cria mais prazo',
+            description:
+              'Ao agendar perícia médica ou social, agora é criado apenas o compromisso na Agenda, sem gerar prazo duplicado.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.1.25',
+    date: '2025-12-22',
+    summary: 'Agenda: simplificação do log de exclusões',
+    modules: [
+      {
+        moduleId: 'agenda',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Log de exclusões apenas automático',
+            description:
+              'Removida a opção de adicionar manualmente exclusões no log, mantendo apenas o registro automático ao excluir compromissos.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.1.24',
+    date: '2025-12-22',
+    summary: 'Agenda: registrar exclusões antigas no log',
+    modules: [
+      {
+        moduleId: 'agenda',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Inserção manual no log de exclusões',
+            description:
+              'Modal de Log agora permite adicionar manualmente exclusões realizadas anteriormente (ex.: exclusões de hoje antes do log existir) e pré-preenche data/hora ao abrir.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.1.23',
+    date: '2025-12-22',
+    summary: 'Agenda: log de exclusões de compromissos',
+    modules: [
+      {
+        moduleId: 'agenda',
+        changes: [
+          {
+            type: 'feature',
+            title: 'Log de exclusões na Agenda',
+            description:
+              'Adicionado log persistente (localStorage) para exclusões de compromissos, com botão “Log” ao lado de “Filtros” e modal para visualizar e limpar histórico.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.1.22',
+    date: '2025-12-22',
+    summary: 'Requerimentos: correção de espaço vazio à direita na tabela',
+    modules: [
+      {
+        moduleId: 'requerimentos',
+        changes: [
+          {
+            type: 'fix',
+            title: 'Tabela ocupa toda a largura disponível',
+            description:
+              'A tabela desktop passou a usar w-full, evitando que o container reserve uma área vazia à direita após a coluna Ações (efeito de “coluna fantasma”).',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.1.21',
+    date: '2025-12-22',
+    summary: 'Requerimentos: melhoria visual do banner e badges de mandado de segurança',
+    modules: [
+      {
+        moduleId: 'requerimentos',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Design aprimorado para alertas',
+            description:
+              'Banner com gradiente red-to-orange, borda esquerda destacada, ícone em círculo e número de dias em negrito. Badges na tabela com fundo vermelho claro e ícone de relógio para análise normal.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.1.20',
+    date: '2025-12-22',
+    summary: 'Requerimentos: correção definitiva de overflow no texto "Possível mandado de segurança"',
+    modules: [
+      {
+        moduleId: 'requerimentos',
+        changes: [
+          {
+            type: 'fix',
+            title: 'Layout responsivo sem scroll horizontal',
+            description:
+              'Aplicadas correções abrangentes: tabela com min-w-[800px], colunas com max-width e truncate, texto com break-words e flex items-start para garantir que o banner longo caiba 100% em todos os breakpoints sem scroll.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.1.19',
+    date: '2025-12-22',
+    summary: 'Requerimentos: correção de layout para evitar scroll no banner de mandado de segurança',
+    modules: [
+      {
+        moduleId: 'requerimentos',
+        changes: [
+          {
+            type: 'fix',
+            title: 'Banner "Possível mandado de segurança" sem overflow',
+            description:
+              'Ajustado layout do banner e da lista para que o texto "Possível mandado de segurança — Em análise há X dias" caiba 100% na tela sem causar scroll horizontal.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.1.18',
+    date: '2025-12-22',
+    summary: 'Requerimentos: correção de visibilidade do botão Salvar no modal Template MS',
+    modules: [
+      {
+        moduleId: 'requerimentos',
+        changes: [
+          {
+            type: 'fix',
+            title: 'Botão Salvar agora visível',
+            description:
+              'Adicionado !important nas classes de fundo do botão Salvar para garantir que o fundo preto seja aplicado mesmo com conflitos de CSS.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.1.17',
+    date: '2025-12-22',
+    summary: 'Requerimentos: botão Salvar com fundo preto no modal Template MS',
+    modules: [
+      {
+        moduleId: 'requerimentos',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Botão Salvar com fundo preto',
+            description:
+              'Ajuste visual no modal de Template MS: botão Salvar agora utiliza fundo preto para maior contraste e destaque.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.1.16',
+    date: '2025-12-22',
+    summary: 'Requerimentos: modal Template MS com altura maior e rodapé fixo',
+    modules: [
+      {
+        moduleId: 'requerimentos',
+        changes: [
+          {
+            type: 'fix',
+            title: 'Botão Salvar visível em telas menores',
+            description:
+              'Modal do Template MS agora usa layout em coluna (flex) com corpo rolável e rodapé fixo, além de altura máxima maior (max-h-[90vh]) para garantir que o botão Salvar fique acessível.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.1.15',
+    date: '2025-12-22',
+    summary: 'Requerimentos: ajuste visual no modal do Template MS',
+    modules: [
+      {
+        moduleId: 'requerimentos',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Linha laranja no topo do modal',
+            description:
+              'Adicionada linha laranja (gradiente) no topo do modal de Template MS para destacar visualmente.',
+          },
+          {
+            type: 'fix',
+            title: 'Botão Salvar sempre visível',
+            description:
+              'Área de conteúdo do modal agora é rolável (max-h-[35vh] overflow-y-auto) para garantir que o botão Salvar nunca fique escondido.',
+          },
+          {
+            type: 'improvement',
+            title: 'Lista de placeholders disponíveis',
+            description:
+              'Adicionada seção com todos os placeholders configurados no módulo (dados do cliente e do requerimento) para facilitar a criação de templates.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.1.14',
+    date: '2025-12-22',
+    summary: 'Requerimentos: correção de cidade em maiúsculo no cabeçalho do MS',
+    modules: [
+      {
+        moduleId: 'requerimentos',
+        changes: [
+          {
+            type: 'fix',
+            title: 'Placeholder [[Cidade]] (cabeçalho) agora é preenchido',
+            description:
+              'O preenchimento de placeholders do MS passou a cobrir também a variação com primeira letra maiúscula (ex.: [[Cidade]]), garantindo que a cidade saia em maiúsculo no cabeçalho do DOCX.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.1.13',
+    date: '2025-12-22',
+    summary: 'Documentos: ocultar Modelo MS (Requerimentos) em Novo documento',
+    modules: [
+      {
+        moduleId: 'documentos',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Modelo MS (Requerimentos) apenas em Gerenciar templates',
+            description:
+              'O template de MS usado pelo módulo de Requerimentos não aparece mais na seleção de “Novo documento”, ficando disponível somente em “Gerenciar templates”.',
+          },
+        ],
+      },
+      {
+        moduleId: 'requerimentos',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Marcação do template MS para filtro no módulo Documentos',
+            description:
+              'O template MS criado pelo Requerimentos agora recebe a tag [REQUERIMENTOS_MS] na descrição para facilitar organização e filtros.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.1.12',
+    date: '2025-12-22',
+    summary: 'Requerimentos: ajustes finos no MS (Word/DOCX)',
+    modules: [
+      {
+        moduleId: 'requerimentos',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Cidade em maiúsculo e data por extenso',
+            description:
+              'No MS gerado em Word (DOCX), o placeholder [[cidade]] passa a sair em maiúsculo e o [[DATA_REQUERIMENTO]] passa a sair por extenso.',
+          },
+          {
+            type: 'fix',
+            title: 'Remoção de vírgula dupla no endereço',
+            description:
+              'Correção automática no DOCX gerado para evitar trechos como ", , Bairro" quando o complemento estiver vazio.',
+          },
+          {
+            type: 'improvement',
+            title: 'Modal do Template MS mais claro',
+            description:
+              'Ajustado o visual do modal de Template MS para ficar claramente em fundo branco e com textos coerentes com geração em Word (DOCX).',
+          },
+          {
+            type: 'improvement',
+            title: 'Remoção do botão Gerar MS do header da listagem',
+            description:
+              'O botão de gerar MS foi removido do header da tela inicial de Requerimentos, mantendo a geração dentro dos detalhes do requerimento.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.1.11',
+    date: '2025-12-22',
+    summary: 'Requerimentos: fluxo de template MS igual ao módulo Documentos',
+    modules: [
+      {
+        moduleId: 'requerimentos',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Seleção de template ao gerar MS',
+            description:
+              'Ao clicar em "Gerar MS (Word/DOCX)" sem template selecionado, o modal de seleção/upload de template abre automaticamente (mesmo comportamento do módulo Documentos).',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.1.10',
+    date: '2025-12-22',
+    summary: 'Requerimentos: MS gerado em Word (DOCX) mantendo layout',
+    modules: [
+      {
+        moduleId: 'requerimentos',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Geração do MS em DOCX (sem conversão PDF)',
+            description:
+              'O Mandado de Segurança agora é gerado e anexado como Word (DOCX) já preenchido a partir do template, preservando o layout original do modelo (sem conversão para PDF).',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.1.9',
+    date: '2025-12-22',
+    summary: 'Requerimentos/Documentos: correção de upload no bucket generated-documents',
+    modules: [
+      {
+        moduleId: 'requerimentos',
+        changes: [
+          {
+            type: 'fix',
+            title: 'Upload do MS (PDF) não bloqueado por RLS',
+            description:
+              'Adicionadas policies de Storage (SELECT/INSERT/DELETE) para usuários autenticados no bucket generated-documents, corrigindo erro “new row violates row-level security policy” ao gerar e anexar PDFs.',
+          },
+        ],
+      },
+      {
+        moduleId: 'documentos',
+        changes: [
+          {
+            type: 'fix',
+            title: 'Upload de documentos gerados no bucket generated-documents',
+            description:
+              'Políticas de acesso ao bucket generated-documents ajustadas para permitir upload/download de documentos gerados por usuários autenticados.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.1.8',
+    date: '2025-12-22',
+    summary: 'Requerimentos: correção template MS (configuração)',
+    modules: [
+      {
+        moduleId: 'requerimentos',
+        changes: [
+          {
+            type: 'fix',
+            title: 'Configuração requirements_ms_template_id sem NULL',
+            description:
+              'Corrigido erro de NOT NULL na tabela system_settings: a configuração do template MS agora inicializa com string vazia (JSON) e o salvamento do template não envia null.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.1.7',
+    date: '2025-12-22',
+    summary: 'Requerimentos: template MS em Word (DOCX)',
+    modules: [
+      {
+        moduleId: 'requerimentos',
+        changes: [
+          {
+            type: 'feature',
+            title: 'Template MS (DOCX) no Requerimentos',
+            description:
+              'Adicionado gerenciamento de template Word do Mandado de Segurança (DOCX) no módulo de Requerimentos, com seleção/envio do arquivo e preenchimento automático dos placeholders na geração do PDF.',
+          },
+          {
+            type: 'improvement',
+            title: 'Template padrão persistido',
+            description:
+              'O template selecionado para o MS agora é salvo nas configurações do sistema e aplicado automaticamente nas próximas gerações.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.1.6',
+    date: '2025-12-22',
+    summary: 'Requerimentos: botão MS ao lado do Exportar Excel',
+    modules: [
+      {
+        moduleId: 'requerimentos',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Gerar MS (PDF) no header',
+            description:
+              'Adicionado botão “Gerar MS (PDF)” ao lado de “Exportar Excel” no topo do módulo. Ele gera o MS do requerimento que estiver aberto em “Detalhes”.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.1.5',
+    date: '2025-12-22',
+    summary: 'Requerimentos: anexos mais visíveis nos detalhes',
+    modules: [
+      {
+        moduleId: 'requerimentos',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'CTA de anexos no estado vazio',
+            description:
+              'Na seção “Documentos do requerimento”, quando não houver anexos, o painel agora mostra um botão grande “Gerar MS (PDF)” dentro do card para facilitar encontrar e usar a funcionalidade.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.1.4',
+    date: '2025-12-22',
+    summary: 'Requerimentos: gerar MS em PDF e anexar no próprio requerimento',
+    modules: [
+      {
+        moduleId: 'requerimentos',
+        changes: [
+          {
+            type: 'feature',
+            title: 'Gerar Mandado de Segurança (PDF) no Requerimento',
+            description:
+              'Adicionado botão “Gerar MS (PDF)” nos detalhes do requerimento, gerando a petição com placeholders preenchidos automaticamente (incluindo BENEFICIO pelo tipo cadastrado) e salvando como documento anexado ao requerimento.',
+          },
+          {
+            type: 'feature',
+            title: 'Documentos do requerimento (listar/baixar/excluir)',
+            description:
+              'Criada infraestrutura de anexos do requerimento para armazenar PDFs no bucket de documentos gerados e gerenciar download/exclusão diretamente no módulo.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.1.3',
+    date: '2025-12-22',
+    summary: 'Documentos: modelo de MS + campos dinâmicos do template',
+    modules: [
+      {
+        moduleId: 'documentos',
+        changes: [
+          {
+            type: 'feature',
+            title: 'Modelo - Mandado de Segurança (INSS)',
+            description:
+              'Adicionado template de Mandado de Segurança (demora na análise do requerimento), com placeholders e campos para protocolo, benefício, APS/cidade de referência e tempo em análise. Valor da causa padronizado em 1 salário mínimo e assinatura configurada para Cuiabá-MT (data atual).',
+          },
+          {
+            type: 'improvement',
+            title: 'Campos do Modelo (dinâmicos) ao gerar documento',
+            description:
+              'Para templates em texto, o gerador agora exibe automaticamente os campos extras detectados (placeholders [[...]]), permitindo preencher tudo sem editar o template.',
+          },
+          {
+            type: 'improvement',
+            title: 'Placeholders do cliente: RG, data de nascimento e endereço completo',
+            description:
+              'Adicionados placeholders para RG, data de nascimento e endereço completo no mapeamento automático do cliente ao gerar documentos.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.1.2',
+    date: '2025-12-22',
+    summary: 'Requerimentos: conversão em processos (principal e MS)',
+    modules: [
+      {
+        moduleId: 'requerimentos',
+        changes: [
+          {
+            type: 'feature',
+            title: 'Converter requerimento em processo principal e/ou MS',
+            description:
+              'Nos detalhes do requerimento, agora é possível criar/abrir um processo principal e também um processo de Mandado de Segurança (MS) separado, ambos vinculados ao mesmo requerimento.',
+          },
+        ],
+      },
+      {
+        moduleId: 'processos',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Vínculo com requerimento via requirement_id/requirement_role',
+            description:
+              'Processos agora suportam vínculo opcional com requerimentos e um papel (principal/ms) para permitir coexistência de processo administrativo e MS.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.1.1',
+    date: '2025-12-22',
+    summary: 'Requerimentos: aviso de MS com contagem de dias',
+    modules: [
+      {
+        moduleId: 'requerimentos',
+        changes: [
+          {
+            type: 'fix',
+            title: 'Alerta de mandado de segurança mostra quantos dias em análise',
+            description:
+              'No aviso “Possível mandado de segurança”, a interface agora exibe explicitamente a contagem de dias em análise (lista e detalhes).',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.1.0',
+    date: '2025-12-22',
+    summary: 'Requerimentos: acompanhamento premium (agenda + alertas)',
+    modules: [
+      {
+        moduleId: 'requerimentos',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Perícias também viram compromissos na Agenda',
+            description:
+              'Ao agendar perícia médica/social, o sistema cria eventos no calendário (event_type=pericia) além dos prazos vinculados.',
+          },
+          {
+            type: 'improvement',
+            title: 'Hierarquia de acompanhamento: “Em exigência” no topo',
+            description:
+              'Reordenamos abas, dropdowns e ordenação interna para priorizar o que exige ação imediata (Exigência → Perícia → Análise).',
+          },
+          {
+            type: 'feature',
+            title: 'Aviso de mandado de segurança após 90 dias em análise',
+            description:
+              'Requerimentos em análise há 90+ dias exibem alerta destacado na lista e nos detalhes para apoiar decisões rápidas do time.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.0.99',
+    date: '2025-12-22',
+    summary: 'Requerimentos: agendamento de perícias e automação de status',
+    modules: [
+      {
+        moduleId: 'sistema',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Modal de agendamento de perícia (claro) e exceção ao dark mode',
+            description:
+              'O modal de agendamento de perícia agora força visual claro e legível mesmo com overrides globais de modais no modo escuro.',
+          },
+        ],
+      },
+      {
+        moduleId: 'requerimentos',
+        changes: [
+          {
+            type: 'feature',
+            title: 'Agendamento de perícia médica e/ou social',
+            description:
+              'Novo fluxo para registrar perícia médica e/ou social no requerimento, salvando as datas/horas e criando prazos vinculados automaticamente.',
+          },
+          {
+            type: 'improvement',
+            title: 'Status muda automaticamente para “Em análise” após as perícias',
+            description:
+              'Quando passa a data da última perícia registrada (médica/social), o status do requerimento é atualizado automaticamente para “Em análise”.',
+          },
+        ],
+      },
+    ],
+  },
+  {
     version: '1.0.98',
     date: '2025-12-22',
     summary: 'Atualização de versão e changelog',

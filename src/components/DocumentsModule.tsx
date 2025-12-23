@@ -64,11 +64,58 @@ const escapeRegExp = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\
 
 const normalizeKey = (value: string) => removeDiacritics((value || '').trim()).toUpperCase();
 
+const formatDateLong = (date: Date) => {
+  try {
+    const dtf = new Intl.DateTimeFormat('pt-BR', { day: '2-digit', month: 'long', year: 'numeric' });
+    const formatted = dtf.format(date);
+    return formatted;
+  } catch {
+    return date.toLocaleDateString('pt-BR');
+  }
+};
+
+const extractPlaceholdersFromText = (content: string): string[] => {
+  const found: string[] = [];
+  const seen = new Set<string>();
+  const re = /\[\[([^\]]+)\]\]/g;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(content))) {
+    const raw = (m[1] || '').trim();
+    if (!raw) continue;
+    if (/^ASSINATURA(_\d+)?$/i.test(raw)) continue;
+    const k = normalizeKey(raw);
+    if (seen.has(k)) continue;
+    seen.add(k);
+    found.push(raw);
+  }
+  return found;
+};
+
 const formatDate = (value?: string | null) => {
   if (!value) return '';
   const parsed = new Date(value);
   if (Number.isNaN(parsed.getTime())) return value;
   return parsed.toLocaleDateString('pt-BR');
+};
+
+const buildFullAddress = (client: Client) => {
+  const parts: string[] = [];
+  const street = (client.address_street || '').trim();
+  const number = (client.address_number || '').trim();
+  const complement = (client.address_complement || '').trim();
+  const neighborhood = (client.address_neighborhood || '').trim();
+  const city = (client.address_city || '').trim();
+  const state = (client.address_state || '').trim();
+  const cep = (client.address_zip_code || '').trim();
+
+  const line1 = [street, number ? `nº ${number}` : '', complement].filter(Boolean).join(', ');
+  const line2 = [neighborhood ? `Bairro ${neighborhood}` : '', city, state].filter(Boolean).join(' - ');
+
+  if (line1) parts.push(line1);
+  if (line2) parts.push(line2);
+  if (cep) parts.push(`CEP ${cep}`);
+
+  return parts.join(', ');
 };
 
 const extractPlaceholdersFromDocxZip = (zip: PizZip): string[] => {
@@ -247,6 +294,9 @@ const DocumentsModule: React.FC<DocumentsModuleProps> = ({ onNavigateToModule })
   const [creatingTemplateFillLinkId, setCreatingTemplateFillLinkId] = useState<string | null>(null);
 
   const [templateFilesSummary, setTemplateFilesSummary] = useState<Record<string, { count: number; firstFileName?: string }>>({});
+
+  const [templateExtraPlaceholders, setTemplateExtraPlaceholders] = useState<string[]>([]);
+  const [templateExtraValues, setTemplateExtraValues] = useState<Record<string, string>>({});
 
   const [showTemplateFormConfigModal, setShowTemplateFormConfigModal] = useState(false);
   const [templateFormConfigTemplate, setTemplateFormConfigTemplate] = useState<DocumentTemplate | null>(null);
@@ -544,6 +594,22 @@ const DocumentsModule: React.FC<DocumentsModuleProps> = ({ onNavigateToModule })
     [templates, selectedTemplateId],
   );
 
+  const isRequirementsMsTemplate = (template: DocumentTemplate) => {
+    const name = removeDiacritics((template.name || '').toString()).toUpperCase();
+    const description = removeDiacritics((template.description || '').toString()).toUpperCase();
+    return name.startsWith('MODELO MS (REQUERIMENTOS)') || description.includes('[REQUERIMENTOS_MS]');
+  };
+
+  const newDocTemplates = useMemo(() => templates.filter((t) => !isRequirementsMsTemplate(t)), [templates]);
+
+  useEffect(() => {
+    if (activeView !== 'new-doc' || !selectedTemplateId) return;
+    const current = templates.find((t) => t.id === selectedTemplateId);
+    if (current && isRequirementsMsTemplate(current)) {
+      setSelectedTemplateId('');
+    }
+  }, [activeView, selectedTemplateId, templates]);
+
   const shouldShowDefendantField = (selectedTemplate?.enable_defendant ?? true) === true;
 
   useEffect(() => {
@@ -551,6 +617,68 @@ const DocumentsModule: React.FC<DocumentsModuleProps> = ({ onNavigateToModule })
       setDefendantInput('');
     }
   }, [shouldShowDefendantField]);
+
+  useEffect(() => {
+    if (!selectedTemplateId || !selectedTemplate || selectedTemplate.file_path) {
+      setTemplateExtraPlaceholders([]);
+      setTemplateExtraValues({});
+      return;
+    }
+
+    const placeholders = extractPlaceholdersFromText(selectedTemplate.content || '');
+
+    const builtInKeys = new Set(
+      [
+        'NOME COMPLETO',
+        'NACIONALIDADE',
+        'ESTADO CIVIL',
+        'PROFISSÃO',
+        'RG',
+        'DATA_NASCIMENTO',
+        'CPF',
+        'ENDEREÇO',
+        'NÚMERO',
+        'COMPLEMENTO',
+        'BAIRRO',
+        'CIDADE',
+        'ESTADO',
+        'CEP',
+        'ENDERECO_COMPLETO',
+        'TELEFONE',
+        'CELULAR',
+        'RÉU',
+        'REU',
+        'DATA',
+      ].map((p) => normalizeKey(p)),
+    );
+
+    const extras = placeholders.filter((p) => !builtInKeys.has(normalizeKey(p)));
+    setTemplateExtraPlaceholders(extras);
+
+    const now = new Date();
+    const defaults: Record<string, string> = {
+      DATA_ATUAL_EXTENSO: formatDateLong(now),
+      SUBSECAO_JUDICIARIA: 'BALSAS',
+      UF_SUBSECAO: 'MA',
+      CIDADE_REFERENCIA_INSS: selectedClient?.address_city || 'CUIABÁ',
+      UF_REFERENCIA_INSS: selectedClient?.address_state || 'MT',
+    };
+
+    setTemplateExtraValues((prev) => {
+      const next: Record<string, string> = {};
+      for (const ph of extras) {
+        const key = normalizeKey(ph);
+        const prevKey = Object.keys(prev).find((k) => normalizeKey(k) === key);
+        if (prevKey) {
+          next[ph] = prev[prevKey];
+          continue;
+        }
+        const defKey = Object.keys(defaults).find((k) => normalizeKey(k) === key);
+        next[ph] = defKey ? defaults[defKey] : '';
+      }
+      return next;
+    });
+  }, [selectedTemplateId, selectedTemplate, selectedClient]);
 
   const handleOpenModal = () => {
     setIsModalOpen(true);
@@ -611,6 +739,8 @@ const DocumentsModule: React.FC<DocumentsModuleProps> = ({ onNavigateToModule })
     registerPlaceholder('nacionalidade', client.nationality);
     registerPlaceholder('estado civil', formatMaritalStatus(client.marital_status));
     registerPlaceholder('profissão', client.profession);
+    registerPlaceholder('RG', client.rg);
+    registerPlaceholder('DATA_NASCIMENTO', formatDate(client.birth_date));
     registerPlaceholder('CPF', client.cpf_cnpj);
     registerPlaceholder('endereço', client.address_street);
     registerPlaceholder('número', client.address_number);
@@ -619,11 +749,16 @@ const DocumentsModule: React.FC<DocumentsModuleProps> = ({ onNavigateToModule })
     registerPlaceholder('cidade', client.address_city);
     registerPlaceholder('estado', client.address_state);
     registerPlaceholder('CEP', client.address_zip_code);
+    registerPlaceholder('ENDERECO_COMPLETO', buildFullAddress(client));
     const primaryPhone = client.phone || client.mobile || '';
     registerPlaceholder('telefone', primaryPhone);
     registerPlaceholder('celular', primaryPhone);
     registerPlaceholder('réu', shouldShowDefendantField ? defendantInput : '');
     registerPlaceholder('data', formatDate(currentDate.toISOString()));
+
+    Object.entries(templateExtraValues).forEach(([key, value]) => {
+      registerPlaceholder(key, value);
+    });
 
     return placeholders;
   };
@@ -1405,7 +1540,7 @@ const DocumentsModule: React.FC<DocumentsModuleProps> = ({ onNavigateToModule })
               <div className="flex items-center justify-center py-8">
                 <Loader2 className="h-5 w-5 animate-spin text-slate-400" />
               </div>
-            ) : templates.length === 0 ? (
+            ) : newDocTemplates.length === 0 ? (
               <div className="rounded-xl border-2 border-dashed border-slate-200 bg-slate-50 p-6 text-center">
                 <FileText className="mx-auto h-8 w-8 text-slate-300" />
                 <p className="mt-2 text-sm text-slate-500">Nenhum template disponível</p>
@@ -1418,7 +1553,7 @@ const DocumentsModule: React.FC<DocumentsModuleProps> = ({ onNavigateToModule })
               </div>
             ) : (
               <div className="space-y-2 sm:max-h-[400px] sm:overflow-y-auto sm:pr-1">
-                {templates.map((template) => {
+                {newDocTemplates.map((template) => {
                   const isSelected = selectedTemplateId === template.id;
                   const summary = templateFilesSummary[template.id];
                   const filesCount = summary?.count ?? 0;
@@ -1488,11 +1623,11 @@ const DocumentsModule: React.FC<DocumentsModuleProps> = ({ onNavigateToModule })
                   <select
                     value={selectedTemplateId}
                     onChange={(e) => setSelectedTemplateId(e.target.value)}
-                    disabled={loading || templates.length === 0}
+                    disabled={loading || newDocTemplates.length === 0}
                     className="w-full rounded-lg border border-slate-200 bg-white px-4 py-2.5 text-sm text-slate-900 transition hover:border-slate-300 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 disabled:bg-slate-100 disabled:text-slate-400"
                   >
                     <option value="">Selecione um template...</option>
-                    {templates.map((template) => (
+                    {newDocTemplates.map((template) => (
                       <option key={template.id} value={template.id}>
                         {template.name}
                       </option>
@@ -1541,6 +1676,60 @@ const DocumentsModule: React.FC<DocumentsModuleProps> = ({ onNavigateToModule })
                       value={defendantInput}
                       onChange={(e) => setDefendantInput(e.target.value)}
                     />
+                  </div>
+                )}
+
+                {/* Campos do Modelo (dinâmicos) */}
+                {templateExtraPlaceholders.length > 0 && (
+                  <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+                    <div className="flex items-center gap-2">
+                      <Sparkles className="h-4 w-4 text-slate-500" />
+                      <p className="text-sm font-semibold text-slate-900">Campos do Modelo</p>
+                    </div>
+                    <p className="mt-1 text-xs text-slate-500">
+                      Preencha os campos específicos do template selecionado.
+                    </p>
+
+                    <div className="mt-3 grid grid-cols-1 gap-3">
+                      {templateExtraPlaceholders.map((ph) => {
+                        const value = templateExtraValues[ph] ?? '';
+                        const key = normalizeKey(ph);
+                        const isLong = key.includes('ENDERECO') || key.includes('OBS') || key.includes('DESCR') || key.includes('TEXTO');
+                        const isNumber = key.includes('DIAS') || key.includes('NUM') || key.includes('VALOR');
+                        const isDate = key.startsWith('DATA');
+
+                        const commonProps = {
+                          value,
+                          onChange: (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
+                            const nextValue = e.target.value;
+                            setTemplateExtraValues((prev) => ({ ...prev, [ph]: nextValue }));
+                          },
+                        };
+
+                        return (
+                          <div key={ph}>
+                            <label className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-slate-500">
+                              {ph}
+                            </label>
+                            {isLong ? (
+                              <textarea
+                                rows={3}
+                                className="w-full rounded-lg border border-slate-200 bg-white px-4 py-2.5 text-sm text-slate-900 transition hover:border-slate-300 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/20"
+                                placeholder={`Preencher ${ph}...`}
+                                {...commonProps}
+                              />
+                            ) : (
+                              <input
+                                type={isDate ? 'text' : isNumber ? 'number' : 'text'}
+                                className="w-full rounded-lg border border-slate-200 bg-white px-4 py-2.5 text-sm text-slate-900 transition hover:border-slate-300 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/20"
+                                placeholder={`Preencher ${ph}...`}
+                                {...commonProps}
+                              />
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
                   </div>
                 )}
 

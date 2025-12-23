@@ -26,7 +26,10 @@ export interface Requirement {
   benefit_type: BenefitType;
   status: RequirementStatus;
   entry_date: string | null;
+  analysis_started_at?: string | null;
   exigency_due_date?: string | null;
+  pericia_medica_at?: string | null;
+  pericia_social_at?: string | null;
   phone?: string | null;
   inss_password?: string | null;
   observations?: string | null;
@@ -43,7 +46,10 @@ export interface CreateRequirementDTO {
   benefit_type: BenefitType;
   status?: RequirementStatus;
   entry_date?: string | null;
+  analysis_started_at?: string | null;
   exigency_due_date?: string | null;
+  pericia_medica_at?: string | null;
+  pericia_social_at?: string | null;
   phone?: string | null;
   inss_password?: string | null;
   observations?: string | null;
@@ -60,4 +66,13 @@ export interface RequirementFilters {
   cpf?: string;
   benefit_type?: BenefitType;
   client_id?: string;
+}
+
+export interface RequirementStatusHistoryEntry {
+  id: string;
+  requirement_id: string;
+  from_status: string | null;
+  to_status: string;
+  changed_at: string;
+  changed_by: string | null;
 }

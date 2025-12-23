@@ -7,7 +7,7 @@ import interactionPlugin from '@fullcalendar/interaction';
 import listPlugin from '@fullcalendar/list';
 import ptLocale from '@fullcalendar/core/locales/pt-br';
 import type { EventContentArg, EventInput } from '@fullcalendar/core';
-import { Loader2, Calendar as CalendarIcon, X, Filter, FileSpreadsheet, FileText, Plus } from 'lucide-react';
+import { Loader2, Calendar as CalendarIcon, X, Filter, FileSpreadsheet, FileText, Plus, History } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { deadlineService } from '../services/deadline.service';
 import { processService } from '../services/process.service';
@@ -29,6 +29,17 @@ declare global {
 }
 
 type EventType = 'deadline' | 'hearing' | 'requirement' | 'payment' | 'meeting' | 'pericia';
+
+type DeletionLogEntry = {
+  id: string;
+  title: string;
+  type: EventType;
+  start_at: string;
+  deleted_at: string;
+  deleted_by: string;
+};
+
+const CALENDAR_DELETION_LOG_KEY = 'crm-calendar-deletion-log';
 
 type NewEventForm = {
   title: string;
@@ -115,6 +126,8 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({
   const [editingEventId, setEditingEventId] = useState<string | null>(null);
   const [feedback, setFeedback] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
   const [isExportModalOpen, setIsExportModalOpen] = useState(false);
+  const [isDeletionLogOpen, setIsDeletionLogOpen] = useState(false);
+  const [deletionLog, setDeletionLog] = useState<DeletionLogEntry[]>([]);
   const [exportPeriod, setExportPeriod] = useState<'7' | '15' | '30' | '60' | 'custom'>('30');
   const [exportStartDate, setExportStartDate] = useState('');
   const [exportEndDate, setExportEndDate] = useState('');
@@ -283,6 +296,60 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({
       return '';
     }
   }, []);
+
+  const toLogIsoFromLocal = useCallback((dateOnly: string, timeOnly?: string) => {
+    if (!dateOnly) return '';
+    const time = timeOnly?.trim() ? timeOnly.trim() : '00:00';
+    const dt = new Date(`${dateOnly}T${time}:00`);
+    if (Number.isNaN(dt.getTime())) return '';
+    return dt.toISOString();
+  }, []);
+
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(CALENDAR_DELETION_LOG_KEY);
+      if (!raw) return;
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) {
+        const valid = parsed
+          .filter((item) => item && typeof item === 'object')
+          .slice(0, 200)
+          .map((item) => ({
+            id: String((item as any).id ?? ''),
+            title: String((item as any).title ?? ''),
+            type: String((item as any).type ?? 'meeting') as EventType,
+            start_at: String((item as any).start_at ?? ''),
+            deleted_at: String((item as any).deleted_at ?? ''),
+            deleted_by: String((item as any).deleted_by ?? ''),
+          }))
+          .filter((item) => Boolean(item.id) && Boolean(item.deleted_at));
+
+        setDeletionLog(valid);
+      }
+    } catch {
+      setDeletionLog([]);
+    }
+  }, []);
+
+  const persistDeletionLog = useCallback((next: DeletionLogEntry[]) => {
+    try {
+      localStorage.setItem(CALENDAR_DELETION_LOG_KEY, JSON.stringify(next.slice(0, 200)));
+    } catch {
+      // ignore
+    }
+  }, []);
+
+  const addDeletionLogEntry = useCallback(
+    (entry: DeletionLogEntry) => {
+      setDeletionLog((prev) => {
+        const next = [entry, ...prev].slice(0, 200);
+        persistDeletionLog(next);
+        return next;
+      });
+    },
+    [persistDeletionLog],
+  );
+
 
   const selectedEventModuleLabel = useMemo(() => {
     if (!selectedEvent?.extendedProps?.moduleLink) return null;
@@ -676,6 +743,14 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({
 
     try {
       setSavingEvent(true);
+      addDeletionLogEntry({
+        id: editingEventId,
+        title: newEventForm.title?.trim() || '(Sem título)',
+        type: newEventForm.type,
+        start_at: toLogIsoFromLocal(newEventForm.date, newEventForm.time),
+        deleted_at: new Date().toISOString(),
+        deleted_by: userName || 'Usuário',
+      });
       await calendarService.deleteEvent(editingEventId);
 
       setCalendarEventsData((prev) => prev.filter((event) => event.id !== editingEventId));
@@ -1379,6 +1454,15 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({
             >
               <Filter className="w-4 h-4" />
               <span className="hidden sm:inline">Filtros</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setIsDeletionLogOpen(true)}
+              className="inline-flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-slate-600 hover:bg-slate-100 border border-slate-200 rounded-lg transition-colors"
+              title="Log de exclusões"
+            >
+              <History className="w-4 h-4" />
+              <span className="hidden sm:inline">Log</span>
             </button>
             <button
               type="button"
@@ -2225,6 +2309,142 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({
         </div>
       </div>
       )}
+
+      {isDeletionLogOpen &&
+        createPortal(
+          <div className="fixed inset-0 z-[75] flex items-center justify-center px-3 sm:px-6 py-4">
+            <div
+              className="absolute inset-0 bg-slate-900/70 backdrop-blur-sm"
+              onClick={() => setIsDeletionLogOpen(false)}
+              aria-hidden="true"
+            />
+            <div className="relative w-full max-w-2xl max-h-[90vh] bg-white dark:bg-zinc-900 rounded-2xl shadow-2xl ring-1 ring-black/5 flex flex-col overflow-hidden">
+              <div className="h-2 w-full bg-orange-500" />
+              <div className="px-5 sm:px-8 py-5 border-b border-slate-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 flex items-start justify-between gap-4">
+                <div>
+                  <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400 dark:text-slate-500">
+                    Auditoria
+                  </p>
+                  <h2 className="text-xl font-semibold text-slate-900 dark:text-white">Log de Exclusões</h2>
+                  <p className="text-sm text-slate-500 dark:text-slate-400 mt-0.5">
+                    Exclusões dos últimos 30 dias.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setIsDeletionLogOpen(false)}
+                  className="p-2 text-slate-400 hover:text-slate-600 dark:text-slate-300 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-white/10 rounded-xl transition"
+                  aria-label="Fechar modal"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+
+              <div className="flex-1 overflow-y-auto bg-white dark:bg-zinc-900 p-4 sm:p-6">
+                {(() => {
+                  const thirtyDaysAgo = new Date();
+                  thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+                  const filtered = deletionLog
+                    .filter((e) => {
+                      const deletedDate = new Date(e.deleted_at);
+                      return deletedDate >= thirtyDaysAgo;
+                    })
+                    .slice()
+                    .sort((a, b) => new Date(b.deleted_at).getTime() - new Date(a.deleted_at).getTime());
+
+                  const pad = (n: number) => String(n).padStart(2, '0');
+                  const toDayKey = (date: Date) => `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
+                  const today = new Date();
+                  const todayKey = toDayKey(today);
+                  const yesterday = new Date(today);
+                  yesterday.setDate(yesterday.getDate() - 1);
+                  const yesterdayKey = toDayKey(yesterday);
+
+                  const groups = filtered.reduce<Record<string, DeletionLogEntry[]>>((acc, entry) => {
+                    const d = new Date(entry.deleted_at);
+                    const key = toDayKey(d);
+                    if (!acc[key]) acc[key] = [];
+                    acc[key].push(entry);
+                    return acc;
+                  }, {});
+                  const groupKeys = Object.keys(groups).sort((a, b) => (a < b ? 1 : -1));
+
+                  const formatDayLabel = (key: string) => {
+                    if (key === todayKey) return 'Hoje';
+                    if (key === yesterdayKey) return 'Ontem';
+                    const dt = new Date(`${key}T00:00:00`);
+                    if (Number.isNaN(dt.getTime())) return key;
+                    return dt.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric' });
+                  };
+                  if (filtered.length === 0) {
+                    return (
+                      <div className="rounded-xl border border-slate-200 dark:border-zinc-800 bg-slate-50 dark:bg-zinc-900/40 p-6 text-sm text-slate-600 dark:text-slate-400">
+                        Nenhuma exclusão nos últimos 30 dias.
+                      </div>
+                    );
+                  }
+                  return (
+                    <div className="space-y-6">
+                      {groupKeys.map((key) => (
+                        <div key={key}>
+                          <div className="flex items-center justify-between mb-2">
+                            <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500 dark:text-slate-400">
+                              {formatDayLabel(key)}
+                            </p>
+                            <p className="text-xs text-slate-400 dark:text-slate-500">
+                              {groups[key].length} {groups[key].length === 1 ? 'item' : 'itens'}
+                            </p>
+                          </div>
+                          <div className="space-y-3">
+                            {groups[key].map((entry) => (
+                              <div
+                                key={`${entry.id}-${entry.deleted_at}`}
+                                className="rounded-xl border border-slate-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-4"
+                              >
+                                <div className="flex items-start justify-between gap-3">
+                                  <div className="min-w-0">
+                                    <p className="text-sm font-semibold text-slate-900 dark:text-white truncate">
+                                      {entry.title}
+                                    </p>
+                                    <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
+                                      Data: {formatDateTime(entry.start_at)}
+                                    </p>
+                                    <p className="text-xs text-slate-500 dark:text-slate-400">
+                                      Excluído em: {formatDateTime(entry.deleted_at)}
+                                    </p>
+                                    <p className="text-xs text-slate-500 dark:text-slate-400">
+                                      Por: {entry.deleted_by}
+                                    </p>
+                                  </div>
+                                  <span className="shrink-0 inline-flex items-center px-2 py-1 rounded-full text-[10px] font-semibold bg-slate-100 dark:bg-white/10 text-slate-700 dark:text-slate-200">
+                                    {entry.type}
+                                  </span>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  );
+                })()}
+              </div>
+
+              <div className="flex-shrink-0 border-t border-slate-200 dark:border-zinc-800 bg-slate-50 dark:bg-zinc-900 px-4 sm:px-6 py-3 sm:py-4">
+                <div className="flex justify-end">
+                  <button
+                    type="button"
+                    onClick={() => setIsDeletionLogOpen(false)}
+                    className="px-4 py-2 text-xs sm:text-sm font-semibold bg-slate-900 hover:bg-slate-800 text-white rounded-lg transition"
+                  >
+                    Fechar
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>,
+          document.body,
+        )}
     </div>
   );
 };

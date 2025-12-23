@@ -750,6 +750,41 @@ div[class*="fixed"][class*="z-50"] ::-webkit-scrollbar-thumb {
   border-radius: 3px;
 }
 
+ div.pericia-light-modal[class*="fixed"][class*="inset-0"][class*="z-"] {
+   background: rgba(0, 0, 0, 0.45) !important;
+   backdrop-filter: blur(8px) !important;
+   -webkit-backdrop-filter: blur(8px) !important;
+ }
+
+ div.pericia-light-modal[class*="fixed"][class*="inset-0"][class*="z-"] > div.pericia-light-modal__panel {
+   background: #ffffff !important;
+   border: 1px solid rgba(15, 23, 42, 0.12) !important;
+   box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.35) !important;
+ }
+
+ div.pericia-light-modal[class*="fixed"][class*="inset-0"][class*="z-"] > div.pericia-light-modal__panel h3 {
+   color: #0f172a !important;
+ }
+
+ div.pericia-light-modal[class*="fixed"][class*="inset-0"][class*="z-"] > div.pericia-light-modal__panel p,
+ div.pericia-light-modal[class*="fixed"][class*="inset-0"][class*="z-"] > div.pericia-light-modal__panel label {
+   color: #334155 !important;
+ }
+
+ div.pericia-light-modal[class*="fixed"][class*="inset-0"][class*="z-"] > div.pericia-light-modal__panel input,
+ div.pericia-light-modal[class*="fixed"][class*="inset-0"][class*="z-"] > div.pericia-light-modal__panel select,
+ div.pericia-light-modal[class*="fixed"][class*="inset-0"][class*="z-"] > div.pericia-light-modal__panel textarea,
+ div.pericia-light-modal[class*="fixed"][class*="inset-0"][class*="z-"] > div.pericia-light-modal__panel .input-field {
+   background: #f8fafc !important;
+   border-color: rgba(15, 23, 42, 0.18) !important;
+   color: #0f172a !important;
+ }
+
+ div.pericia-light-modal[class*="fixed"][class*="inset-0"][class*="z-"] > div.pericia-light-modal__panel input::placeholder,
+ div.pericia-light-modal[class*="fixed"][class*="inset-0"][class*="z-"] > div.pericia-light-modal__panel textarea::placeholder {
+   color: #64748b !important;
+ }
+
 /* ===== EXCEÇÃO: Dropdown de busca de clientes (z-[60]) ===== */
 div[class*="z-[60]"] {
   background: #ffffff !important;

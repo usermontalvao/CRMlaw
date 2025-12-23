@@ -5,10 +5,12 @@ import type {
   UpdateRequirementDTO,
   RequirementFilters,
   RequirementStatus,
+  RequirementStatusHistoryEntry,
 } from '../types/requirement.types';
 
 class RequirementService {
   private tableName = 'requirements';
+  private statusHistoryTableName = 'requirement_status_history';
 
   async listRequirements(filters?: RequirementFilters): Promise<Requirement[]> {
     let query = supabase
@@ -69,13 +71,20 @@ class RequirementService {
   }
 
   async createRequirement(payload: CreateRequirementDTO): Promise<Requirement> {
+    const nextPayload: Record<string, any> = { ...payload };
+    if (payload.status === 'em_analise' && nextPayload.analysis_started_at === undefined) {
+      nextPayload.analysis_started_at = new Date().toISOString();
+    }
+
     const { data, error } = await supabase
       .from(this.tableName)
       .insert({
-        ...payload,
-        status: payload.status ?? 'nao_iniciado',
-        protocol: payload.protocol || null,
-        exigency_due_date: payload.exigency_due_date ?? null,
+        ...nextPayload,
+        status: nextPayload.status ?? 'aguardando_confeccao',
+        protocol: nextPayload.protocol || null,
+        exigency_due_date: nextPayload.exigency_due_date ?? null,
+        pericia_medica_at: nextPayload.pericia_medica_at ?? null,
+        pericia_social_at: nextPayload.pericia_social_at ?? null,
       })
       .select()
       .single();
@@ -89,11 +98,16 @@ class RequirementService {
   }
 
   async updateRequirement(id: string, payload: UpdateRequirementDTO): Promise<Requirement> {
+    const nextPayload: Record<string, any> = { ...payload };
+    if (payload.status === 'em_analise' && nextPayload.analysis_started_at === undefined) {
+      nextPayload.analysis_started_at = new Date().toISOString();
+    }
+
     const { data, error } = await supabase
       .from(this.tableName)
       .update({
-        ...payload,
-        exigency_due_date: payload.exigency_due_date ?? null,
+        ...nextPayload,
+        exigency_due_date: nextPayload.exigency_due_date ?? null,
         updated_at: new Date().toISOString(),
       })
       .eq('id', id)
@@ -109,9 +123,14 @@ class RequirementService {
   }
 
   async updateStatus(id: string, status: RequirementStatus): Promise<Requirement> {
+    const payload: Record<string, any> = { status, updated_at: new Date().toISOString() };
+    if (status === 'em_analise') {
+      payload.analysis_started_at = new Date().toISOString();
+    }
+
     const { data, error } = await supabase
       .from(this.tableName)
-      .update({ status, updated_at: new Date().toISOString() })
+      .update(payload)
       .eq('id', id)
       .select()
       .single();
@@ -134,6 +153,21 @@ class RequirementService {
       console.error('Erro ao deletar requerimento:', error);
       throw new Error(error.message);
     }
+  }
+
+  async listStatusHistory(requirementId: string): Promise<RequirementStatusHistoryEntry[]> {
+    const { data, error } = await supabase
+      .from(this.statusHistoryTableName)
+      .select('*')
+      .eq('requirement_id', requirementId)
+      .order('changed_at', { ascending: false });
+
+    if (error) {
+      console.error('Erro ao listar histórico de status do requerimento:', error);
+      throw new Error(error.message);
+    }
+
+    return (data ?? []) as RequirementStatusHistoryEntry[];
   }
 }
 

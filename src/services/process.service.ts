@@ -60,6 +60,14 @@ class ProcessService {
       query = query.eq('practice_area', filters.practice_area);
     }
 
+    if (filters?.requirement_id) {
+      query = query.eq('requirement_id', filters.requirement_id);
+    }
+
+    if (filters?.requirement_role) {
+      query = query.eq('requirement_role', filters.requirement_role);
+    }
+
     if (filters?.search) {
       const term = filters.search.trim();
       if (term) {
