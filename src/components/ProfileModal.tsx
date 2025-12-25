@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
+import { createPortal } from 'react-dom';
 import {
   X,
   Save,
@@ -14,12 +15,17 @@ import {
   Mail,
   Award,
   Calendar,
+  CalendarDays,
   ChevronDown,
   RefreshCw,
   Settings,
   Download,
   History,
   Filter,
+  FileText,
+  Clock,
+  Bell,
+  User,
 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { profileService } from '../services/profile.service';
@@ -73,6 +79,20 @@ interface StatsData {
   totalCases: number;
   totalTasks: number;
   completedTasks: number;
+  // Métricas de Requerimentos
+  totalRequirements: number;
+  requirementsInAnalysis: number;
+  requirementsDeferred: number;
+  // Métricas de Prazos
+  totalDeadlines: number;
+  overdueDeadlines: number;
+  upcomingDeadlines: number;
+  // Métricas de Agenda
+  totalEvents: number;
+  eventsThisMonth: number;
+  // Métricas de Intimações
+  totalIntimacoes: number;
+  unreadIntimacoes: number;
 }
 
 interface DjenStatusState {
@@ -121,6 +141,20 @@ export default function ProfileModal({
     totalCases: 0,
     totalTasks: 0,
     completedTasks: 0,
+    // Métricas de Requerimentos
+    totalRequirements: 0,
+    requirementsInAnalysis: 0,
+    requirementsDeferred: 0,
+    // Métricas de Prazos
+    totalDeadlines: 0,
+    overdueDeadlines: 0,
+    upcomingDeadlines: 0,
+    // Métricas de Agenda
+    totalEvents: 0,
+    eventsThisMonth: 0,
+    // Métricas de Intimações
+    totalIntimacoes: 0,
+    unreadIntimacoes: 0,
   });
 
   const [djenCardOpen, setDjenCardOpen] = useState(false);
@@ -256,21 +290,85 @@ export default function ProfileModal({
   }, [initialProfile]);
 
   const loadStats = useCallback(async () => {
-    if (!user) return;
+    if (!user) {
+      console.log('loadStats: user não disponível');
+      return;
+    }
 
     try {
-      const [clients, cases, tasks] = await Promise.all([
-        clientService.listClients().catch(() => []),
-        caseService.listCases().catch(() => []),
-        taskService.listTasks().catch(() => []),
+      console.log('loadStats: carregando estatísticas para user', user.id);
+      const [clients, cases, tasks, intimacoes] = await Promise.all([
+        clientService.listClients().catch((err: any) => {
+          console.error('Erro ao carregar clientes:', err);
+          return [];
+        }),
+        caseService.listCases().catch((err: any) => {
+          console.error('Erro ao carregar casos:', err);
+          return [];
+        }),
+        taskService.listTasks().catch((err: any) => {
+          console.error('Erro ao carregar tarefas:', err);
+          return [];
+        }),
+        djenLocalService.listComunicacoes().catch((err: any) => {
+          console.error('Erro ao carregar intimações:', err);
+          return [];
+        }),
       ]);
 
-      setStats({
+      // Carregar dados adicionais via Supabase
+      const { data: requirements, error: reqError } = await supabase
+        .from('requirements')
+        .select('*');
+      
+      const { data: deadlines, error: deadError } = await supabase
+        .from('deadlines')
+        .select('*');
+      
+      const { data: events, error: eventError } = await supabase
+        .from('calendar_events')
+        .select('*');
+
+      console.log('loadStats: dados carregados', { 
+        clients: clients.length, 
+        cases: cases.length, 
+        tasks: tasks.length,
+        requirements: requirements?.length || 0,
+        deadlines: deadlines?.length || 0,
+        events: events?.length || 0,
+        intimacoes: intimacoes.length
+      });
+      
+      const today = new Date();
+      const thisMonth = new Date(today.getFullYear(), today.getMonth(), 1);
+      const nextWeek = new Date(today.getTime() + 7 * 24 * 60 * 60 * 1000);
+      
+      const newStats = {
         totalClients: clients.length,
         totalCases: cases.length,
         totalTasks: tasks.length,
         completedTasks: tasks.filter((t: any) => t.status === 'completed').length,
-      });
+        // Métricas de Requerimentos
+        totalRequirements: requirements?.length || 0,
+        requirementsInAnalysis: requirements?.filter((r: any) => r.status === 'em_analise').length || 0,
+        requirementsDeferred: requirements?.filter((r: any) => r.status === 'deferido').length || 0,
+        // Métricas de Prazos
+        totalDeadlines: deadlines?.length || 0,
+        overdueDeadlines: deadlines?.filter((d: any) => new Date(d.due_date) < today).length || 0,
+        upcomingDeadlines: deadlines?.filter((d: any) => {
+          const dueDate = new Date(d.due_date);
+          return dueDate >= today && dueDate <= nextWeek;
+        }).length || 0,
+        // Métricas de Agenda
+        totalEvents: events?.length || 0,
+        eventsThisMonth: events?.filter((e: any) => new Date(e.date) >= thisMonth).length || 0,
+        // Métricas de Intimações
+        totalIntimacoes: intimacoes.length,
+        unreadIntimacoes: intimacoes.filter((i: any) => !i.lida).length,
+      };
+      
+      console.log('loadStats: stats calculados', newStats);
+      setStats(newStats);
     } catch (error) {
       console.error('Erro ao carregar estatísticas:', error);
     }
@@ -281,26 +379,18 @@ export default function ProfileModal({
       resetProfileFormFromProps();
       loadStats();
       setMessage(null);
-      setActiveTab((prev) => prev); // mantém aba ativa ao reabrir
     }
   }, [isOpen, resetProfileFormFromProps, loadStats]);
 
   const handleProfileChange = (field: keyof ProfileFormData, value: string) => {
-    setProfileForm((prev) => ({ ...prev, [field]: value }));
+    setProfileForm(prev => ({ ...prev, [field]: value }));
   };
 
-  const handleAvatarChange = async (event: React.ChangeEvent<HTMLInputElement>) => {
+  const handleAvatarChange = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (!file) return;
 
-    if (!file.type.startsWith('image/')) {
-      setMessage({ type: 'error', text: 'Selecione um arquivo de imagem válido.' });
-      event.target.value = '';
-      return;
-    }
-
-    const fileSizeMb = file.size / (1024 * 1024);
-    if (fileSizeMb > MAX_AVATAR_SIZE_MB) {
+    if (file.size > MAX_AVATAR_SIZE_MB * 1024 * 1024) {
       setMessage({
         type: 'error',
         text: `A imagem deve ter no máximo ${MAX_AVATAR_SIZE_MB}MB.`,
@@ -351,19 +441,16 @@ export default function ProfileModal({
         email: payload.email,
         avatarUrl: payload.avatar_url,
         role: payload.role,
-        oab: payload.oab ?? undefined,
-        phone: payload.phone ?? undefined,
-        bio: payload.bio ?? undefined,
-        lawyerFullName: payload.lawyer_full_name ?? undefined,
+        oab: payload.oab,
+        phone: payload.phone,
+        bio: payload.bio,
+        lawyerFullName: payload.lawyer_full_name,
       });
 
       setMessage({ type: 'success', text: 'Perfil atualizado com sucesso!' });
-      setTimeout(() => onClose(), 1000);
-    } catch (error: any) {
-      setMessage({
-        type: 'error',
-        text: error?.message || 'Erro ao atualizar perfil.',
-      });
+    } catch (error) {
+      console.error('Erro ao salvar perfil:', error);
+      setMessage({ type: 'error', text: 'Erro ao salvar perfil. Tente novamente.' });
     } finally {
       setSaving(false);
     }
@@ -373,13 +460,13 @@ export default function ProfileModal({
     e.preventDefault();
     if (!user) return;
 
-    if (!passwordForm.newPassword || passwordForm.newPassword.length < 8) {
-      setMessage({ type: 'error', text: 'A senha deve ter pelo menos 8 caracteres.' });
+    if (passwordForm.newPassword !== passwordForm.confirmPassword) {
+      setMessage({ type: 'error', text: 'As senhas não coincidem.' });
       return;
     }
 
-    if (passwordForm.newPassword !== passwordForm.confirmPassword) {
-      setMessage({ type: 'error', text: 'As senhas não coincidem.' });
+    if (passwordForm.newPassword.length < 6) {
+      setMessage({ type: 'error', text: 'A senha deve ter pelo menos 6 caracteres.' });
       return;
     }
 
@@ -393,392 +480,171 @@ export default function ProfileModal({
 
       if (error) throw error;
 
-      setMessage({ type: 'success', text: 'Senha atualizada com sucesso!' });
       setPasswordForm({ newPassword: '', confirmPassword: '' });
-    } catch (error: any) {
-      setMessage({
-        type: 'error',
-        text: error?.message || 'Erro ao atualizar senha.',
-      });
+      setMessage({ type: 'success', text: 'Senha atualizada com sucesso!' });
+    } catch (error) {
+      console.error('Erro ao atualizar senha:', error);
+      setMessage({ type: 'error', text: 'Erro ao atualizar senha. Tente novamente.' });
     } finally {
       setSaving(false);
     }
   };
 
+  const completionRate = stats.totalTasks > 0 
+    ? Math.round((stats.completedTasks / stats.totalTasks) * 100)
+    : 0;
+
   if (!isOpen) return null;
 
-  const completionRate =
-    stats.totalTasks > 0
-      ? Math.round((stats.completedTasks / stats.totalTasks) * 100)
-      : 0;
-
-  return (
-    <div className="fixed inset-0 bg-black/40 backdrop-blur-md flex items-center justify-center z-50 p-4 animate-in fade-in duration-300">
-      <div className="bg-white rounded-[2rem] shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-hidden flex flex-col animate-in zoom-in-95 duration-300 ring-1 ring-black/5">
+  const content = (
+    <div className="fixed inset-0 z-[70] flex items-center justify-center px-3 sm:px-6 py-4">
+      <div
+        className="absolute inset-0 bg-slate-900/70 backdrop-blur-sm"
+        onClick={onClose}
+        aria-hidden="true"
+      />
+      <div className="relative w-full max-w-4xl max-h-[92vh] bg-white dark:bg-zinc-900 rounded-2xl shadow-2xl ring-1 ring-black/5 flex flex-col overflow-hidden">
         <div className="h-2 w-full bg-orange-500" />
-        {/* Header Minimalista */}
-        <div className="relative px-8 pt-8 pb-4 flex-shrink-0">
-          <button
-            onClick={onClose}
-            disabled={saving}
-            className="absolute top-6 right-6 text-slate-400 hover:text-slate-600 hover:bg-slate-50 p-2 rounded-full transition-all disabled:opacity-50"
-          >
-            <X className="w-6 h-6" />
-          </button>
-
-          <div className="flex flex-col items-center text-center">
-            <div className="relative group">
-              <div className="w-24 h-24 rounded-full p-1 ring-2 ring-slate-100 bg-white shadow-sm">
-                <img
-                  src={profileForm.avatarUrl || GENERIC_AVATAR}
-                  alt={profileForm.name}
-                  className="w-full h-full object-cover rounded-full"
-                />
-              </div>
-              <label className="absolute bottom-0 right-0 p-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-full cursor-pointer shadow-lg transition-transform hover:scale-110 active:scale-95">
-                <Camera className="w-4 h-4" />
-                <input
-                  type="file"
-                  accept="image/*"
-                  onChange={handleAvatarChange}
-                  className="hidden"
-                />
-              </label>
-            </div>
-            <h2 className="mt-4 text-xl font-bold text-slate-900 tracking-tight">
-              {profileForm.name}
-            </h2>
-            <p className="text-sm font-medium text-slate-500 flex items-center gap-2 mt-1">
-              <span className="px-2 py-0.5 rounded-full bg-blue-50 text-blue-700 text-xs font-bold uppercase tracking-wider">
-                {profileForm.role}
-              </span>
-              <span>{profileForm.email}</span>
+        <div className="px-5 sm:px-8 py-5 border-b border-slate-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 flex items-start justify-between gap-4">
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400 dark:text-slate-500">
+              Perfil do Usuário
             </p>
+            <h2 className="text-xl font-semibold text-slate-900 dark:text-white">Configurações</h2>
           </div>
+          <button
+            type="button"
+            onClick={onClose}
+            className="p-2 text-slate-400 hover:text-slate-600 dark:text-slate-300 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-white/10 rounded-xl transition"
+            aria-label="Fechar modal"
+          >
+            <X className="w-5 h-5" />
+          </button>
         </div>
 
-        {/* Modern Tabs */}
-        <div className="px-8 mt-2 flex-shrink-0">
-          <div className="flex p-1 bg-slate-100 rounded-xl overflow-x-auto scrollbar-hide">
-            {[
-              { id: 'dados', label: 'Dados Pessoais' },
-              { id: 'profissional', label: 'Profissional' },
-              { id: 'sobre', label: 'Bio' },
-              { id: 'security', label: 'Senha' },
-              { id: 'stats', label: 'Métricas' },
-            ].map((tab) => (
-              <button
-                key={tab.id}
-                onClick={() => setActiveTab(tab.id as ActiveTab)}
-                className={`flex-1 px-4 py-2 text-sm font-medium rounded-lg whitespace-nowrap transition-all duration-200 ${
-                  activeTab === tab.id
-                    ? 'bg-white text-slate-900 shadow-sm'
-                    : 'text-slate-500 hover:text-slate-700 hover:bg-slate-200/50'
+        <div className="flex-1 overflow-y-auto bg-white dark:bg-zinc-900">
+          {/* Tabs Navigation */}
+          <div className="border-b border-slate-200 dark:border-zinc-800 bg-slate-50 dark:bg-zinc-900">
+            <nav className="flex space-x-8 px-8" aria-label="Tabs">
+              {[
+                { id: 'dados', label: 'Dados Pessoais', icon: User },
+                { id: 'profissional', label: 'Profissional', icon: Briefcase },
+                { id: 'sobre', label: 'Sobre Você', icon: Award },
+                { id: 'security', label: 'Segurança', icon: Shield },
+                { id: 'stats', label: 'Estatísticas', icon: TrendingUp },
+              ].map((tab) => {
+                const Icon = tab.icon;
+                return (
+                  <button
+                    key={tab.id}
+                    onClick={() => setActiveTab(tab.id as ActiveTab)}
+                    className={`flex items-center gap-2 py-4 px-1 border-b-2 font-medium text-sm transition-colors whitespace-nowrap ${
+                      activeTab === tab.id
+                        ? 'border-orange-500 text-orange-600 dark:text-orange-400'
+                        : 'border-transparent text-slate-500 hover:text-slate-700 hover:border-slate-300 dark:text-slate-400 dark:hover:text-slate-300'
+                    }`}
+                  >
+                    <Icon className="w-4 h-4" />
+                    {tab.label}
+                  </button>
+                );
+              })}
+            </nav>
+          </div>
+
+          {/* Tab Content */}
+          <div className="p-8">
+            {message && (
+              <div
+                className={`mb-6 p-4 rounded-xl border ${
+                  message.type === 'success'
+                    ? 'bg-emerald-50 border-emerald-200 text-emerald-800 dark:bg-emerald-900/20 dark:border-emerald-800 dark:text-emerald-200'
+                    : 'bg-red-50 border-red-200 text-red-800 dark:bg-red-900/20 dark:border-red-800 dark:text-red-200'
                 }`}
               >
-                {tab.label}
-              </button>
-            ))}
-          </div>
-        </div>
+                <p className="text-sm font-medium">{message.text}</p>
+              </div>
+            )}
 
-        {/* Message Toast */}
-        {message && (
-          <div className="px-8 mt-4">
-            <div
-              className={`rounded-xl p-3 text-sm font-medium flex items-center gap-3 animate-in slide-in-from-top-2 ${
-                message.type === 'success'
-                  ? 'bg-emerald-50 text-emerald-700 border border-emerald-100'
-                  : 'bg-red-50 text-red-700 border border-red-100'
-              }`}
-            >
-              <div
-                className={`w-2 h-2 rounded-full ${
-                  message.type === 'success' ? 'bg-emerald-500' : 'bg-red-500'
-                }`}
-              />
-              {message.text}
-            </div>
-          </div>
-        )}
-
-        {/* Content Area */}
-        <div className="flex-1 overflow-y-auto p-8">
-          {/* Aba Dados */}
-          {activeTab === 'dados' && (
-            <form onSubmit={handleSaveProfile} className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-300">
-              <div className="grid gap-6">
-                <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-2">
-                    Nome Completo
-                  </label>
-                  <input
-                    type="text"
-                    value={profileForm.name}
-                    onChange={(e) => handleProfileChange('name', e.target.value)}
-                    className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
-                    required
-                  />
+            {/* Tab Contents */}
+            {activeTab === 'dados' && (
+              <form onSubmit={handleSaveProfile} className="space-y-6">
+                <div className="flex items-center gap-6 pb-6 border-b border-slate-200">
+                  <div className="relative">
+                    <img
+                      src={profileForm.avatarUrl}
+                      alt={profileForm.name}
+                      className="w-20 h-20 rounded-full object-cover ring-4 ring-slate-100"
+                    />
+                    <label className="absolute -bottom-1 -right-1 w-8 h-8 bg-orange-500 hover:bg-orange-600 text-white rounded-full flex items-center justify-center cursor-pointer transition-colors shadow-lg">
+                      <Camera className="w-4 h-4" />
+                      <input
+                        type="file"
+                        className="hidden"
+                        accept="image/*"
+                        onChange={handleAvatarChange}
+                      />
+                    </label>
+                  </div>
+                  <div>
+                    <h3 className="text-lg font-semibold text-slate-900">{profileForm.name}</h3>
+                    <p className="text-sm text-slate-500">{profileForm.role}</p>
+                  </div>
                 </div>
 
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                   <div>
-                    <label className="block text-sm font-medium text-slate-700 mb-2">
+                    <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
+                      Nome Completo
+                    </label>
+                    <input
+                      type="text"
+                      value={profileForm.name}
+                      onChange={(e) => handleProfileChange('name', e.target.value)}
+                      className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 transition-all"
+                      required
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
+                      Email
+                    </label>
+                    <input
+                      type="email"
+                      value={profileForm.email}
+                      onChange={(e) => handleProfileChange('email', e.target.value)}
+                      className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 transition-all"
+                    />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
+                      Cargo
+                    </label>
+                    <select
+                      value={profileForm.role}
+                      onChange={(e) => handleProfileChange('role', e.target.value as UserRole)}
+                      className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 transition-all"
+                    >
+                      <option value="Advogado">Advogado</option>
+                      <option value="Auxiliar">Auxiliar</option>
+                      <option value="Estagiário">Estagiário</option>
+                      <option value="Administrador">Administrador</option>
+                      <option value="Sócio">Sócio</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
                       Telefone
                     </label>
                     <input
                       type="tel"
                       value={profileForm.phone}
                       onChange={(e) => handleProfileChange('phone', e.target.value)}
-                      className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
+                      className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 transition-all"
                       placeholder="(00) 00000-0000"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-slate-700 mb-2">
-                      E-mail
-                    </label>
-                    <input
-                      type="email"
-                      value={profileForm.email}
-                      className="w-full px-4 py-2.5 bg-slate-100 border-transparent rounded-xl text-slate-500 cursor-not-allowed"
-                      disabled
-                    />
-                  </div>
-                </div>
-              </div>
-
-              <div className="flex justify-end pt-4">
-                <button
-                  type="submit"
-                  disabled={saving}
-                  className="px-8 py-3 bg-slate-900 hover:bg-slate-800 text-white font-semibold rounded-xl transition-all flex items-center gap-2 shadow-lg shadow-slate-900/20 hover:shadow-xl hover:scale-[1.02] active:scale-[0.98] disabled:opacity-70 disabled:cursor-not-allowed disabled:transform-none"
-                >
-                  {saving ? <Loader2 className="w-5 h-5 animate-spin" /> : 'Salvar Alterações'}
-                </button>
-              </div>
-            </form>
-          )}
-
-          {/* Aba Profissional */}
-          {activeTab === 'profissional' && (
-            <form onSubmit={handleSaveProfile} className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-300">
-              <div className="grid grid-cols-2 gap-6">
-                <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-2">
-                    Cargo
-                  </label>
-                  <div className="relative">
-                    <select
-                      value={profileForm.role}
-                      onChange={(e) => handleProfileChange('role', e.target.value as UserRole)}
-                      className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 appearance-none transition-all"
-                    >
-                      <option value="Advogado">Advogado</option>
-                      <option value="Sócio">Sócio</option>
-                      <option value="Administrador">Administrador</option>
-                      <option value="Auxiliar">Auxiliar</option>
-                      <option value="Estagiário">Estagiário</option>
-                    </select>
-                    <Briefcase className="absolute right-4 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" />
-                  </div>
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-2">
-                    OAB
-                  </label>
-                  <input
-                    type="text"
-                    value={profileForm.oab}
-                    onChange={(e) => handleProfileChange('oab', e.target.value)}
-                    className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
-                    placeholder="UF 000000"
-                  />
-                </div>
-              </div>
-
-              {(profileForm.role === 'Advogado' || profileForm.role === 'Sócio') && (
-                <>
-                  <div className="bg-blue-50/50 p-6 rounded-2xl border border-blue-100">
-                    <label className="block text-sm font-bold text-blue-900 mb-2">
-                      Monitoramento DJEN
-                    </label>
-                    <p className="text-xs text-blue-700 mb-4">
-                      Nome exato para busca automática de publicações no Diário de Justiça.
-                    </p>
-                    <input
-                      type="text"
-                      value={profileForm.lawyerFullName}
-                      onChange={(e) => handleProfileChange('lawyerFullName', e.target.value)}
-                      className="w-full px-4 py-2.5 bg-white border border-blue-200 rounded-xl text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
-                      placeholder="Nome completo do advogado"
-                    />
-                  </div>
-
-                  <div className="rounded-2xl border border-slate-200 bg-white/80 p-5 shadow-sm">
-                    <button
-                      type="button"
-                      onClick={() => setDjenCardOpen((prev) => !prev)}
-                      className="flex w-full items-center justify-between text-left"
-                      aria-expanded={djenCardOpen}
-                    >
-                      <div>
-                        <p className="text-sm font-semibold text-slate-900">Intimações DJEN</p>
-                        <p className="text-xs text-slate-500">Monitoramento contínuo das comunicações judiciais pelo cron do Supabase.</p>
-                      </div>
-                      <span className={`rounded-full bg-slate-100 p-1.5 text-slate-500 transition-transform ${djenCardOpen ? 'rotate-180' : ''}`}>
-                        <ChevronDown className="w-4 h-4" />
-                      </span>
-                    </button>
-
-                    {djenCardOpen && (
-                      <div className="mt-5 space-y-4 animate-in fade-in">
-                        <div className="flex flex-wrap items-center gap-2 text-xs font-semibold">
-                          <span className="rounded-full bg-emerald-50 px-3 py-1 text-emerald-600">Monitoramento contínuo</span>
-                          <span className="rounded-full bg-blue-50 px-3 py-1 text-blue-600">Sincronização automática • a cada 6h</span>
-                          <span className="flex items-center gap-1 rounded-full bg-slate-100 px-3 py-1 text-slate-600">
-                            <RefreshCw className="w-3 h-3 animate-spin" /> Sincronizando...
-                          </span>
-                        </div>
-                        <p className="text-sm text-slate-600">
-                          Acompanhe todas as publicações oficiais e sincronize dados relevantes diretamente para clientes e processos vinculados.
-                        </p>
-
-                        <div className="flex flex-wrap gap-3">
-                          <button
-                            type="button"
-                            className="flex items-center gap-2 rounded-xl bg-slate-900 px-4 py-2 text-sm font-semibold text-white transition hover:bg-slate-800"
-                          >
-                            <RefreshCw className="w-4 h-4" /> Atualizar status
-                          </button>
-                          <button
-                            type="button"
-                            className="flex items-center gap-2 rounded-xl border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
-                          >
-                            <History className="w-4 h-4" /> Gerenciar histórico
-                          </button>
-                          <button
-                            type="button"
-                            className="flex items-center gap-2 rounded-xl border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
-                          >
-                            <Download className="w-4 h-4" /> Exportar
-                          </button>
-                          <button
-                            type="button"
-                            className="flex items-center gap-2 rounded-xl border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
-                          >
-                            <Settings className="w-4 h-4" /> Configurações
-                          </button>
-                        </div>
-
-                        <div className="space-y-2">
-                          <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Filtros rápidos</p>
-                          <div className="flex flex-wrap gap-2">
-                            {['Todas', 'Pendentes', 'Com prazo', 'Arquivadas'].map((filter) => (
-                              <button
-                                key={filter}
-                                type="button"
-                                className="rounded-full border border-slate-200 px-3 py-1 text-xs font-medium text-slate-600 transition hover:border-slate-900 hover:text-slate-900"
-                              >
-                                {filter}
-                              </button>
-                            ))}
-                          </div>
-                          <button
-                            type="button"
-                            className="inline-flex items-center gap-2 text-xs font-semibold text-slate-600 hover:text-slate-900"
-                          >
-                            <Filter className="w-3.5 h-3.5" /> Filtros avançados
-                          </button>
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                </>
-              )}
-
-              <div className="flex justify-end pt-4">
-                <button
-                  type="submit"
-                  disabled={saving}
-                  className="px-8 py-3 bg-slate-900 hover:bg-slate-800 text-white font-semibold rounded-xl transition-all flex items-center gap-2 shadow-lg shadow-slate-900/20 hover:shadow-xl hover:scale-[1.02] active:scale-[0.98] disabled:opacity-70 disabled:cursor-not-allowed disabled:transform-none"
-                >
-                  {saving ? <Loader2 className="w-5 h-5 animate-spin" /> : 'Salvar Alterações'}
-                </button>
-              </div>
-            </form>
-          )}
-
-          {/* Aba Bio */}
-          {activeTab === 'sobre' && (
-            <form onSubmit={handleSaveProfile} className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-300">
-              <div>
-                <label className="block text-sm font-medium text-slate-700 mb-2">
-                  Biografia Profissional
-                </label>
-                <div className="relative">
-                  <textarea
-                    value={profileForm.bio}
-                    onChange={(e) => handleProfileChange('bio', e.target.value)}
-                    rows={8}
-                    className="w-full px-4 py-4 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 resize-none transition-all leading-relaxed"
-                    placeholder="Compartilhe sua experiência, especializações e conquistas..."
-                  />
-                  <div className="absolute bottom-4 right-4 text-xs text-slate-400 pointer-events-none">
-                    {profileForm.bio.length} caracteres
-                  </div>
-                </div>
-              </div>
-
-              <div className="flex justify-end pt-4">
-                <button
-                  type="submit"
-                  disabled={saving}
-                  className="px-8 py-3 bg-slate-900 hover:bg-slate-800 text-white font-semibold rounded-xl transition-all flex items-center gap-2 shadow-lg shadow-slate-900/20 hover:shadow-xl hover:scale-[1.02] active:scale-[0.98] disabled:opacity-70 disabled:cursor-not-allowed disabled:transform-none"
-                >
-                  {saving ? <Loader2 className="w-5 h-5 animate-spin" /> : 'Salvar Alterações'}
-                </button>
-              </div>
-            </form>
-          )}
-
-          {/* Aba Segurança */}
-          {activeTab === 'security' && (
-            <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-300">
-              <form onSubmit={handlePasswordSubmit} className="space-y-6">
-                <div className="flex items-center gap-3 pb-4 border-b border-slate-100">
-                  <div className="p-2 bg-rose-50 text-rose-600 rounded-lg">
-                    <Key className="w-5 h-5" />
-                  </div>
-                  <div>
-                    <h3 className="text-sm font-bold text-slate-900">Alterar Senha</h3>
-                    <p className="text-xs text-slate-500">Mantenha sua conta segura.</p>
-                  </div>
-                </div>
-
-                <div className="space-y-4">
-                  <div>
-                    <label className="block text-sm font-medium text-slate-700 mb-2">
-                      Nova Senha
-                    </label>
-                    <input
-                      type="password"
-                      value={passwordForm.newPassword}
-                      onChange={(e) => setPasswordForm(prev => ({ ...prev, newPassword: e.target.value }))}
-                      className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-rose-500/20 focus:border-rose-500 transition-all"
-                      placeholder="••••••••"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-slate-700 mb-2">
-                      Confirmar Senha
-                    </label>
-                    <input
-                      type="password"
-                      value={passwordForm.confirmPassword}
-                      onChange={(e) => setPasswordForm(prev => ({ ...prev, confirmPassword: e.target.value }))}
-                      className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-rose-500/20 focus:border-rose-500 transition-all"
-                      placeholder="••••••••"
                     />
                   </div>
                 </div>
@@ -787,112 +653,354 @@ export default function ProfileModal({
                   <button
                     type="submit"
                     disabled={saving}
-                    className="px-6 py-2.5 bg-rose-600 hover:bg-rose-700 text-white font-medium rounded-xl transition-all shadow-lg shadow-rose-600/20 hover:shadow-xl hover:scale-[1.02] active:scale-[0.98] disabled:opacity-70"
+                    className="px-6 py-2.5 bg-orange-500 hover:bg-orange-600 text-white font-medium rounded-xl transition-colors disabled:opacity-50 flex items-center gap-2"
                   >
-                    {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Atualizar Senha'}
+                    {saving ? (
+                      <>
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                        Salvando...
+                      </>
+                    ) : (
+                      <>
+                        <Save className="w-4 h-4" />
+                        Salvar Alterações
+                      </>
+                    )}
                   </button>
                 </div>
               </form>
+            )}
 
-              <div className="space-y-4">
-                <div className="flex items-center gap-3 pb-4 border-b border-slate-100">
-                  <div className="p-2 bg-slate-50 text-slate-600 rounded-lg">
-                    <Shield className="w-5 h-5" />
+            {activeTab === 'profissional' && (
+              <form onSubmit={handleSaveProfile} className="space-y-6">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
+                      Nome Completo para Documentos
+                    </label>
+                    <input
+                      type="text"
+                      value={profileForm.lawyerFullName}
+                      onChange={(e) => handleProfileChange('lawyerFullName', e.target.value)}
+                      className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 transition-all"
+                      placeholder="Nome como deve aparecer em documentos jurídicos"
+                    />
                   </div>
                   <div>
-                    <h3 className="text-sm font-bold text-slate-900">Detalhes da Conta</h3>
-                    <p className="text-xs text-slate-500">Informações de registro.</p>
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="p-4 bg-slate-50 rounded-xl border border-slate-100">
-                    <p className="text-xs text-slate-500 mb-1">ID do Usuário</p>
-                    <p className="text-xs font-mono text-slate-900 truncate">{user?.id}</p>
-                  </div>
-                  <div className="p-4 bg-slate-50 rounded-xl border border-slate-100">
-                    <p className="text-xs text-slate-500 mb-1">Criado em</p>
-                    <p className="text-sm font-medium text-slate-900">
-                      {user?.created_at ? new Date(user.created_at).toLocaleDateString('pt-BR') : '-'}
-                    </p>
-                  </div>
-                </div>
-              </div>
-            </div>
-          )}
-
-          {/* Aba Métricas */}
-          {activeTab === 'stats' && (
-            <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-300">
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div className="relative p-6 bg-gradient-to-br from-blue-500 to-blue-600 rounded-2xl text-white shadow-lg shadow-blue-500/20 overflow-hidden group">
-                  <div className="relative z-10">
-                    <div className="flex items-center justify-between mb-4">
-                      <Users className="w-5 h-5 opacity-80" />
-                      <TrendingUp className="w-4 h-4 opacity-60" />
-                    </div>
-                    <p className="text-3xl font-bold mb-1 tracking-tight">{stats.totalClients}</p>
-                    <p className="text-sm font-medium opacity-80">Clientes Ativos</p>
-                  </div>
-                  <div className="absolute -right-4 -bottom-4 w-24 h-24 bg-white/10 rounded-full blur-2xl group-hover:bg-white/20 transition-colors" />
-                </div>
-
-                <div className="p-6 bg-white border border-slate-100 rounded-2xl shadow-sm hover:shadow-md transition-shadow group">
-                  <div className="flex items-center justify-between mb-4">
-                    <Briefcase className="w-5 h-5 text-purple-600" />
-                    <div className="p-1.5 bg-purple-50 rounded-lg group-hover:bg-purple-100 transition-colors">
-                      <TrendingUp className="w-3.5 h-3.5 text-purple-600" />
-                    </div>
-                  </div>
-                  <p className="text-3xl font-bold text-slate-900 mb-1 tracking-tight">{stats.totalCases}</p>
-                  <p className="text-sm font-medium text-slate-500">Processos Ativos</p>
-                </div>
-
-                <div className="p-6 bg-white border border-slate-100 rounded-2xl shadow-sm hover:shadow-md transition-shadow group">
-                  <div className="flex items-center justify-between mb-4">
-                    <CheckCircle className="w-5 h-5 text-emerald-600" />
-                    <div className="p-1.5 bg-emerald-50 rounded-lg group-hover:bg-emerald-100 transition-colors">
-                      <TrendingUp className="w-3.5 h-3.5 text-emerald-600" />
-                    </div>
-                  </div>
-                  <p className="text-3xl font-bold text-slate-900 mb-1 tracking-tight">{stats.completedTasks}</p>
-                  <p className="text-sm font-medium text-slate-500">Tarefas Concluídas</p>
-                </div>
-
-                <div className="p-6 bg-white border border-slate-100 rounded-2xl shadow-sm hover:shadow-md transition-shadow group">
-                  <div className="flex items-center justify-between mb-4">
-                    <Activity className="w-5 h-5 text-amber-600" />
-                    <div className="p-1.5 bg-amber-50 rounded-lg group-hover:bg-amber-100 transition-colors">
-                      <TrendingUp className="w-3.5 h-3.5 text-amber-600" />
-                    </div>
-                  </div>
-                  <p className="text-3xl font-bold text-slate-900 mb-1 tracking-tight">{stats.totalTasks}</p>
-                  <p className="text-sm font-medium text-slate-500">Total de Tarefas</p>
-                </div>
-              </div>
-
-              <div className="p-6 bg-slate-900 rounded-2xl text-white shadow-xl relative overflow-hidden">
-                <div className="relative z-10">
-                  <div className="flex justify-between items-end mb-4">
-                    <div>
-                      <h4 className="text-lg font-bold">Produtividade</h4>
-                      <p className="text-sm text-slate-400">Taxa de conclusão de tarefas</p>
-                    </div>
-                    <span className="text-3xl font-bold text-emerald-400">{completionRate}%</span>
-                  </div>
-                  <div className="w-full bg-slate-800 rounded-full h-2 overflow-hidden">
-                    <div
-                      className="bg-gradient-to-r from-emerald-400 to-emerald-600 h-full rounded-full transition-all duration-1000 ease-out"
-                      style={{ width: `${completionRate}%` }}
+                    <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
+                      Número OAB
+                    </label>
+                    <input
+                      type="text"
+                      value={profileForm.oab}
+                      onChange={(e) => handleProfileChange('oab', e.target.value)}
+                      className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 transition-all"
+                      placeholder="UF 123456"
                     />
                   </div>
                 </div>
-                <div className="absolute right-0 top-0 w-32 h-32 bg-emerald-500/10 rounded-full blur-3xl -translate-y-1/2 translate-x-1/2" />
+
+                <div className="bg-blue-50 border border-blue-200 rounded-xl p-4">
+                  <p className="text-sm text-blue-800">
+                    <strong>Atenção:</strong> Estes dados serão utilizados para gerar documentos e petições.
+                    Mantenha-os sempre atualizados.
+                  </p>
+                </div>
+
+                <div className="flex justify-end">
+                  <button
+                    type="submit"
+                    disabled={saving}
+                    className="px-6 py-2.5 bg-orange-500 hover:bg-orange-600 text-white font-medium rounded-xl transition-colors disabled:opacity-50 flex items-center gap-2"
+                  >
+                    {saving ? (
+                      <>
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                        Salvando...
+                      </>
+                    ) : (
+                      <>
+                        <Save className="w-4 h-4" />
+                        Salvar Alterações
+                      </>
+                    )}
+                  </button>
+                </div>
+              </form>
+            )}
+
+            {activeTab === 'sobre' && (
+              <form onSubmit={handleSaveProfile} className="space-y-6">
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
+                    Biografia Profissional
+                  </label>
+                  <textarea
+                    value={profileForm.bio}
+                    onChange={(e) => handleProfileChange('bio', e.target.value)}
+                    rows={6}
+                    className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 transition-all resize-none"
+                    placeholder="Fale sobre sua formação, especializações e áreas de atuação..."
+                  />
+                </div>
+
+                <div className="flex justify-end">
+                  <button
+                    type="submit"
+                    disabled={saving}
+                    className="px-6 py-2.5 bg-orange-500 hover:bg-orange-600 text-white font-medium rounded-xl transition-colors disabled:opacity-50 flex items-center gap-2"
+                  >
+                    {saving ? (
+                      <>
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                        Salvando...
+                      </>
+                    ) : (
+                      <>
+                        <Save className="w-4 h-4" />
+                        Salvar Alterações
+                      </>
+                    )}
+                  </button>
+                </div>
+              </form>
+            )}
+
+            {activeTab === 'security' && (
+              <div className="space-y-8">
+                <div>
+                  <h3 className="text-lg font-semibold text-slate-900 mb-6">Alterar Senha</h3>
+                  <form onSubmit={handlePasswordSubmit} className="space-y-6">
+                    <div>
+                      <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
+                        Nova Senha
+                      </label>
+                      <input
+                        type="password"
+                        value={passwordForm.newPassword}
+                        onChange={(e) => setPasswordForm(prev => ({ ...prev, newPassword: e.target.value }))}
+                        className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 transition-all"
+                        placeholder="••••••••"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
+                        Confirmar Senha
+                      </label>
+                      <input
+                        type="password"
+                        value={passwordForm.confirmPassword}
+                        onChange={(e) => setPasswordForm(prev => ({ ...prev, confirmPassword: e.target.value }))}
+                        className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 transition-all"
+                        placeholder="••••••••"
+                      />
+                    </div>
+                    <div className="flex justify-end">
+                      <button
+                        type="submit"
+                        disabled={saving}
+                        className="px-6 py-2.5 bg-orange-500 hover:bg-orange-600 text-white font-medium rounded-xl transition-colors disabled:opacity-50 flex items-center gap-2"
+                      >
+                        {saving ? (
+                          <>
+                            <Loader2 className="w-4 h-4 animate-spin" />
+                            Atualizando...
+                          </>
+                        ) : (
+                          <>
+                            <Shield className="w-4 h-4" />
+                            Atualizar Senha
+                          </>
+                        )}
+                      </button>
+                    </div>
+                  </form>
+                </div>
+
+                <div className="border-t border-slate-200 pt-8">
+                  <h3 className="text-lg font-semibold text-slate-900 mb-6">Detalhes da Conta</h3>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <div className="bg-slate-50 p-4 rounded-xl">
+                      <p className="text-xs text-slate-500 mb-1">ID do Usuário</p>
+                      <p className="text-sm font-mono text-slate-900">{user?.id}</p>
+                    </div>
+                    <div className="bg-slate-50 p-4 rounded-xl">
+                      <p className="text-xs text-slate-500 mb-1">Criado em</p>
+                      <p className="text-sm text-slate-900">
+                        {user?.created_at ? new Date(user.created_at).toLocaleDateString('pt-BR') : '-'}
+                      </p>
+                    </div>
+                  </div>
+                </div>
               </div>
-            </div>
-          )}
+            )}
+
+            {activeTab === 'stats' && (
+              <div className="space-y-8">
+                {/* Cards Principais */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+                  <div className="bg-white border border-slate-200 rounded-xl p-6 shadow-sm">
+                    <div className="flex items-center justify-between mb-4">
+                      <div className="p-2 bg-blue-100 rounded-lg">
+                        <Users className="w-6 h-6 text-blue-600" />
+                      </div>
+                      <span className="text-2xl font-bold text-slate-900">{stats.totalClients}</span>
+                    </div>
+                    <p className="text-sm text-slate-600">Clientes Ativos</p>
+                  </div>
+
+                  <div className="bg-white border border-slate-200 rounded-xl p-6 shadow-sm">
+                    <div className="flex items-center justify-between mb-4">
+                      <div className="p-2 bg-emerald-100 rounded-lg">
+                        <Briefcase className="w-6 h-6 text-emerald-600" />
+                      </div>
+                      <span className="text-2xl font-bold text-slate-900">{stats.totalCases}</span>
+                    </div>
+                    <p className="text-sm text-slate-600">Processos Ativos</p>
+                  </div>
+
+                  <div className="bg-white border border-slate-200 rounded-xl p-6 shadow-sm">
+                    <div className="flex items-center justify-between mb-4">
+                      <div className="p-2 bg-purple-100 rounded-lg">
+                        <CheckCircle className="w-6 h-6 text-purple-600" />
+                      </div>
+                      <span className="text-2xl font-bold text-slate-900">{stats.completedTasks}</span>
+                    </div>
+                    <p className="text-sm text-slate-600">Tarefas Concluídas</p>
+                  </div>
+
+                  <div className="bg-white border border-slate-200 rounded-xl p-6 shadow-sm">
+                    <div className="flex items-center justify-between mb-4">
+                      <div className="p-2 bg-orange-100 rounded-lg">
+                        <Activity className="w-6 h-6 text-orange-600" />
+                      </div>
+                      <span className="text-2xl font-bold text-slate-900">{stats.totalTasks}</span>
+                    </div>
+                    <p className="text-sm text-slate-600">Total de Tarefas</p>
+                  </div>
+                </div>
+
+                {/* Produtividade */}
+                <div className="bg-gradient-to-r from-orange-50 to-amber-50 border border-orange-200 rounded-xl p-6">
+                  <h3 className="text-lg font-semibold text-slate-900 mb-4">Produtividade</h3>
+                  <div className="space-y-3">
+                    <div className="flex justify-between items-center">
+                      <span className="text-sm text-slate-600">Taxa de Conclusão</span>
+                      <span className="text-lg font-bold text-orange-600">{completionRate}%</span>
+                    </div>
+                    <div className="w-full bg-orange-200 rounded-full h-2">
+                      <div 
+                        className="bg-orange-500 h-2 rounded-full transition-all duration-300"
+                        style={{ width: `${completionRate}%` }}
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                {/* Requerimentos */}
+                <div>
+                  <h3 className="text-lg font-semibold text-slate-900 mb-4">Requerimentos</h3>
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                    <div className="bg-white border border-slate-200 rounded-xl p-4">
+                      <div className="flex items-center justify-between mb-2">
+                        <span className="text-2xl font-bold text-slate-900">{stats.totalRequirements}</span>
+                        <FileText className="w-4 h-4 text-blue-600" />
+                      </div>
+                      <p className="text-xs text-slate-600">Total</p>
+                    </div>
+                    <div className="bg-white border border-slate-200 rounded-xl p-4">
+                      <div className="flex items-center justify-between mb-2">
+                        <span className="text-2xl font-bold text-slate-900">{stats.requirementsInAnalysis}</span>
+                        <Clock className="w-4 h-4 text-yellow-600" />
+                      </div>
+                      <p className="text-xs text-slate-600">Em Análise</p>
+                    </div>
+                    <div className="bg-white border border-slate-200 rounded-xl p-4">
+                      <div className="flex items-center justify-between mb-2">
+                        <span className="text-2xl font-bold text-slate-900">{stats.requirementsDeferred}</span>
+                        <CheckCircle className="w-4 h-4 text-green-600" />
+                      </div>
+                      <p className="text-xs text-slate-600">Deferidos</p>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Prazos */}
+                <div>
+                  <h3 className="text-lg font-semibold text-slate-900 mb-4">Prazos</h3>
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                    <div className="bg-white border border-slate-200 rounded-xl p-4">
+                      <div className="flex items-center justify-between mb-2">
+                        <span className="text-2xl font-bold text-slate-900">{stats.totalDeadlines}</span>
+                        <Calendar className="w-4 h-4 text-slate-600" />
+                      </div>
+                      <p className="text-xs text-slate-600">Total</p>
+                    </div>
+                    <div className="bg-red-50 border border-red-200 rounded-xl p-4">
+                      <div className="flex items-center justify-between mb-2">
+                        <span className="text-2xl font-bold text-red-600">{stats.overdueDeadlines}</span>
+                        <Clock className="w-4 h-4 text-red-600" />
+                      </div>
+                      <p className="text-xs text-red-600">Vencidos</p>
+                    </div>
+                    <div className="bg-yellow-50 border border-yellow-200 rounded-xl p-4">
+                      <div className="flex items-center justify-between mb-2">
+                        <span className="text-2xl font-bold text-yellow-600">{stats.upcomingDeadlines}</span>
+                        <CalendarDays className="w-4 h-4 text-yellow-600" />
+                      </div>
+                      <p className="text-xs text-yellow-600">Próxima Semana</p>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Agenda */}
+                <div>
+                  <h3 className="text-lg font-semibold text-slate-900 mb-4">Agenda</h3>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div className="bg-white border border-slate-200 rounded-xl p-4">
+                      <div className="flex items-center justify-between mb-2">
+                        <span className="text-2xl font-bold text-slate-900">{stats.totalEvents}</span>
+                        <Calendar className="w-4 h-4 text-blue-600" />
+                      </div>
+                      <p className="text-xs text-slate-600">Total de Eventos</p>
+                    </div>
+                    <div className="bg-blue-50 border border-blue-200 rounded-xl p-4">
+                      <div className="flex items-center justify-between mb-2">
+                        <span className="text-2xl font-bold text-blue-600">{stats.eventsThisMonth}</span>
+                        <CalendarDays className="w-4 h-4 text-blue-600" />
+                      </div>
+                      <p className="text-xs text-blue-600">Este Mês</p>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Intimações DJEN */}
+                <div>
+                  <h3 className="text-lg font-semibold text-slate-900 mb-4">Intimações DJEN</h3>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div className="bg-white border border-slate-200 rounded-xl p-4">
+                      <div className="flex items-center justify-between mb-2">
+                        <span className="text-2xl font-bold text-slate-900">{stats.totalIntimacoes}</span>
+                        <Bell className="w-4 h-4 text-slate-600" />
+                      </div>
+                      <p className="text-xs text-slate-600">Total</p>
+                    </div>
+                    <div className="bg-red-50 border border-red-200 rounded-xl p-4">
+                      <div className="flex items-center justify-between mb-2">
+                        <span className="text-2xl font-bold text-red-600">{stats.unreadIntimacoes}</span>
+                        <Bell className="w-4 h-4 text-red-600" />
+                      </div>
+                      <p className="text-xs text-red-600">Não Lidas</p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
         </div>
       </div>
     </div>
   );
+
+  return createPortal(content, document.body);
 }

@@ -451,6 +451,36 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
 
 const releases: ReleaseNote[] = [
   {
+    version: '1.1.65',
+    date: '2025-12-25',
+    summary: 'Perfil: melhorias de acessibilidade e legibilidade',
+    modules: [
+      {
+        moduleId: 'perfil',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Métricas com contraste alto',
+            description:
+              'Aba "Métricas" agora utiliza cards brancos com texto escuro para garantir alta legibilidade e contraste.',
+          },
+          {
+            type: 'fix',
+            title: 'Cores de ícones e labels corrigidas',
+            description:
+              'Corrigidas as cores dos ícones e labels para garantir visibilidade adequada das estatísticas no perfil.',
+          },
+          {
+            type: 'improvement',
+            title: 'Melhorias de acessibilidade',
+            description:
+              'Aprimorada a acessibilidade geral do dashboard do perfil com melhor contraste e legibilidade.',
+          },
+        ],
+      },
+    ],
+  },
+  {
     version: '1.1.64',
     date: '2025-12-24',
     summary: 'Requerimentos: textos oficiais e labels do BPC LOAS',
@@ -3609,27 +3639,27 @@ const DocsChangesPage: React.FC = () => {
             </div>
 
             {/* Quick Stats */}
-            <div className="mt-8 p-6 bg-gradient-to-r from-orange-50 to-amber-50 rounded-2xl border border-orange-100">
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 text-center">
-                <div>
-                  <div className="text-2xl font-bold text-orange-600">{SYSTEM_MODULES.length}</div>
-                  <div className="text-xs text-slate-600">Módulos</div>
+            <div className="mt-8 p-6 bg-white rounded-2xl border border-slate-200 shadow-sm">
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+                <div className="bg-slate-50 rounded-xl p-4 border border-slate-200">
+                  <div className="text-3xl font-bold text-slate-900">{SYSTEM_MODULES.length}</div>
+                  <div className="text-sm text-slate-600 font-medium mt-1">Módulos</div>
                 </div>
-                <div>
-                  <div className="text-2xl font-bold text-orange-600">
+                <div className="bg-slate-50 rounded-xl p-4 border border-slate-200">
+                  <div className="text-3xl font-bold text-slate-900">
                     {SYSTEM_MODULES.reduce((acc, m) => acc + m.features.length, 0)}
                   </div>
-                  <div className="text-xs text-slate-600">Funcionalidades</div>
+                  <div className="text-sm text-slate-600 font-medium mt-1">Funcionalidades</div>
                 </div>
-                <div>
-                  <div className="text-2xl font-bold text-orange-600">{releases.length}</div>
-                  <div className="text-xs text-slate-600">Versões</div>
+                <div className="bg-slate-50 rounded-xl p-4 border border-slate-200">
+                  <div className="text-3xl font-bold text-slate-900">{releases.length}</div>
+                  <div className="text-sm text-slate-600 font-medium mt-1">Versões</div>
                 </div>
-                <div>
-                  <div className="text-2xl font-bold text-orange-600">
+                <div className="bg-slate-50 rounded-xl p-4 border border-slate-200">
+                  <div className="text-3xl font-bold text-slate-900">
                     {releases.reduce((acc, r) => acc + r.modules.reduce((a, m) => a + m.changes.length, 0), 0)}
                   </div>
-                  <div className="text-xs text-slate-600">Alterações</div>
+                  <div className="text-sm text-slate-600 font-medium mt-1">Alterações</div>
                 </div>
               </div>
             </div>

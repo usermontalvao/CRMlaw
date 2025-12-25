@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.1.65
+- Perfil: métricas da aba "Métricas" com contraste alto (cards brancos, texto escuro).
+- Corrigidas cores dos ícones e labels para garantir visibilidade das estatísticas.
+- Melhorias de acessibilidade e legibilidade no dashboard do perfil.
+
 ## 1.1.64
 - Requerimentos/MS: textos oficiais atualizados para BPC LOAS.
 - MS agora imprime:
