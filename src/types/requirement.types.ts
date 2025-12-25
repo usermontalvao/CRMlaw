@@ -9,6 +9,8 @@ export type RequirementStatus =
 
 export type BenefitType =
   | 'bpc_loas'
+  | 'bpc_loas_deficiencia'
+  | 'bpc_loas_idoso'
   | 'aposentadoria_tempo'
   | 'aposentadoria_idade'
   | 'aposentadoria_invalidez'

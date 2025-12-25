@@ -46,6 +46,13 @@ import {
    ============================================================================ */
 
 const VERSION_CODENAMES: Record<string, { name: string; emoji: string }> = {
+  '1.1.37': { name: 'Café Botão', emoji: '🔘' },
+  '1.1.36': { name: 'Café Leve', emoji: '🪶' },
+  '1.1.35': { name: 'Café Comentário', emoji: '📝' },
+  '1.1.34': { name: 'Café Destaque', emoji: '🖤' },
+  '1.1.33': { name: 'Café Correção', emoji: '👁️' },
+  '1.1.32': { name: 'Café Social', emoji: '💬' },
+  '1.1.31': { name: 'Café Visual', emoji: '🎨' },
   '1.0.31': { name: 'Café Constraint', emoji: '☕' },
   '1.0.30': { name: 'Café Identidade', emoji: '☕' },
   '1.0.29': { name: 'Café Progresso', emoji: '☕' },
@@ -443,6 +450,198 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
    ============================================================================ */
 
 const releases: ReleaseNote[] = [
+  {
+    version: '1.1.64',
+    date: '2025-12-24',
+    summary: 'Requerimentos: textos oficiais e labels do BPC LOAS',
+    modules: [
+      {
+        moduleId: 'requerimentos',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Textos oficiais do MS atualizados para BPC/LOAS',
+            description:
+              'O Mandado de Segurança agora imprime os textos “Benefício de Prestação Continuada (BPC/LOAS) à Pessoa com Deficiência” e “Benefício de Prestação Continuada (BPC/LOAS) – Idoso”, seguindo o padrão exigido pelo Ministério da Saúde.',
+          },
+          {
+            type: 'improvement',
+            title: 'Label claro para registros legados de BPC LOAS',
+            description:
+              'O tipo legado “bpc_loas” passou a ser exibido como “BPC LOAS - Deficiente”, mantendo compatibilidade com dados antigos sem confundir os operadores.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.1.37',
+    date: '2025-12-23',
+    summary: 'Requerimentos: botões de documentos refinados',
+    modules: [
+      {
+        moduleId: 'requerimentos',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Botões do header de documentos mais premium',
+            description:
+              'Botões “Ver docs” e “Gerar MS” ajustados para mesmo tamanho, rounded-full, sombras mais suaves e disabled mais elegante.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.1.36',
+    date: '2025-12-23',
+    summary: 'Requerimentos: modal de detalhes mais leve',
+    modules: [
+      {
+        moduleId: 'requerimentos',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Seções recolhíveis no modal de detalhes',
+            description:
+              'Histórico de Notas, Histórico de Status e Documentos agora podem ser recolhidos/expandidos, reduzindo poluição visual no modal.',
+          },
+          {
+            type: 'improvement',
+            title: 'Composer de notas mais compacto',
+            description:
+              'Área de registrar nota foi compactada para ficar mais parecida com comentários e ocupar menos espaço.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.1.35',
+    date: '2025-12-23',
+    summary: 'Requerimentos: registrar notas no estilo comentários',
+    modules: [
+      {
+        moduleId: 'requerimentos',
+        changes: [
+          {
+            type: 'feature',
+            title: 'Campo para registrar nota no Histórico de Notas',
+            description:
+              'Seção “Histórico de Notas” agora possui composer (avatar + campo de texto + botão Publicar) semelhante a comentários de redes sociais.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.1.34',
+    date: '2025-12-23',
+    summary: 'Requerimentos: botão Gerar MS mais visível',
+    modules: [
+      {
+        moduleId: 'requerimentos',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Destaque no botão Gerar MS',
+            description:
+              'Botão “Gerar MS (Word/DOCX)” agora possui maior contraste, tamanho e sombra para ficar fácil de localizar na seção de documentos.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.1.33',
+    date: '2025-12-23',
+    summary: 'Requerimentos: correções e ajustes no histórico de notas',
+    modules: [
+      {
+        moduleId: 'requerimentos',
+        changes: [
+          {
+            type: 'fix',
+            title: 'Correção ao abrir detalhes (Eye)',
+            description:
+              'Corrigido erro que impedia abrir detalhes de requerimentos por falta de import do ícone Eye.',
+          },
+          {
+            type: 'improvement',
+            title: 'Histórico de notas mais parecido com comentários',
+            description:
+              'Notas agora exibem avatar/foto do autor quando disponível, nome do usuário e data/hora de forma mais clara, com fluxo de resposta mais simples.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.1.32',
+    date: '2025-12-23',
+    summary: 'Requerimentos: melhorias na interação social e layout',
+    modules: [
+      {
+        moduleId: 'requerimentos',
+        changes: [
+          {
+            type: 'feature',
+            title: 'Histórico de notas estilo chat',
+            description:
+              'Visualização de notas redesenhada para parecer comentários de redes sociais, com foto do autor, nome, data/hora e agrupamento de respostas.',
+          },
+          {
+            type: 'improvement',
+            title: 'Organização dos botões de ação',
+            description:
+              'Botões do rodapé do modal reorganizados para melhor hierarquia visual, separando ações principais de ações destrutivas.',
+          },
+          {
+            type: 'improvement',
+            title: 'Destaque para Gerar MS',
+            description:
+              'Botão "Gerar MS" agora possui destaque visual com fundo preto para facilitar a localização.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.1.31',
+    date: '2025-12-22',
+    summary: 'Requerimentos: layout visual aprimorado do modal de detalhes',
+    modules: [
+      {
+        moduleId: 'requerimentos',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Layout visual do modal de detalhes redesenhado',
+            description:
+              'Modal de detalhes agora exibe informações organizadas em seções com gradientes, ícones contextuais e cores distintas por categoria.',
+          },
+          {
+            type: 'feature',
+            title: 'Seções agrupadas por categoria',
+            description:
+              'Informações divididas em: Informações Principais (azul), Informações Adicionais (âmbar), Observações (roxo), Histórico de Notas (verde), Histórico de Status (índigo), Processos Vinculados (ciano) e Documentos (rosa).',
+          },
+          {
+            type: 'feature',
+            title: 'Ícones contextuais em todos os campos',
+            description:
+              'Cada campo e seção agora possui ícones relevantes para melhor identificação visual: FileText para protocolo, User para beneficiário, Phone para telefone, etc.',
+          },
+          {
+            type: 'improvement',
+            title: 'UX responsiva e dark mode aprimorado',
+            description:
+              'Layout totalmente responsivo com suporte aprimorado ao dark mode, cards com gradientes sutis e melhor legibilidade em todas as telas.',
+          },
+        ],
+      },
+    ],
+  },
   {
     version: '1.1.30',
     date: '2025-12-22',

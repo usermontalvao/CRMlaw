@@ -5,11 +5,12 @@ import {
   Loader2,
   Edit2,
   Trash2,
-  Search,
+  Reply,
+  SendHorizontal,
+  ChevronDown,
   Eye,
   X,
   MessageSquare,
-  Reply,
   FileSpreadsheet,
   Calendar,
   AlertTriangle,
@@ -18,6 +19,27 @@ import {
   Clock,
   Settings,
   Upload,
+  ClipboardList,
+  Bell,
+  Stethoscope,
+  History,
+  NotebookPen,
+  User,
+  FileCheck,
+  Phone,
+  Lock,
+  File,
+  Link,
+  FolderOpen,
+  Search,
+  Activity,
+  HeartPulse,
+  Brain,
+  Microscope,
+  TestTube,
+  TrendingUp,
+  Zap,
+  RefreshCw,
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { saveAs } from 'file-saver';
@@ -51,68 +73,58 @@ const STATUS_OPTIONS: {
   label: string;
   badge: string;
   color: string;
-  animation?: string;
-  animationStyle?: React.CSSProperties;
-  icon?: 'spinner';
+  icon?: React.ComponentType<{ className?: string }>;
 }[] = [
   {
     key: 'em_exigencia',
     label: 'Em Exigência',
-    badge: 'bg-yellow-500 text-white',
-    color: 'yellow',
-    animation: 'animate-pulse ring-2 ring-yellow-300/50 shadow shadow-yellow-200/60',
-    animationStyle: { animationDuration: '2s' },
-  },
-  {
-    key: 'aguardando_pericia',
-    label: 'Aguardando Perícia',
-    badge: 'bg-cyan-500 text-white',
-    color: 'cyan',
-    animation: 'animate-pulse ring-2 ring-cyan-300/60 shadow shadow-cyan-200/60',
-    animationStyle: { animationDuration: '2.4s' },
+    badge: 'bg-amber-500 text-white border border-amber-600',
+    color: 'amber',
+    icon: AlertTriangle,
   },
   {
     key: 'em_analise',
     label: 'Em Análise',
-    badge: 'bg-slate-400 text-white',
-    color: 'slate',
-    animation: 'animate-pulse ring-2 ring-blue-300/60 shadow-md shadow-blue-200/40',
-    animationStyle: { animationDuration: '1.6s' },
-    icon: 'spinner',
+    badge: 'bg-blue-500 text-white border border-blue-600',
+    color: 'blue',
+    icon: Activity,
+  },
+  {
+    key: 'aguardando_pericia',
+    label: 'Aguardando Perícia',
+    badge: 'bg-cyan-500 text-white border border-cyan-600',
+    color: 'cyan',
+    icon: Stethoscope,
   },
   {
     key: 'aguardando_confeccao',
     label: 'Aguardando Confecção',
-    badge: 'bg-blue-500 text-white',
-    color: 'blue',
-    animation: 'animate-pulse ring-2 ring-blue-300/60 shadow shadow-blue-200/60',
-    animationStyle: { animationDuration: '2.2s' },
+    badge: 'bg-indigo-500 text-white border border-indigo-600',
+    color: 'indigo',
+    icon: FileText,
   },
   {
     key: 'deferido',
     label: 'Deferidos',
-    badge: 'bg-green-600 text-white',
+    badge: 'bg-green-500 text-white border border-green-600',
     color: 'green',
-    animation: 'animate-pulse ring-2 ring-green-300/60 shadow shadow-green-200/50',
-    animationStyle: { animationDuration: '2.8s' },
+    icon: TrendingUp,
   },
   {
     key: 'indeferido',
     label: 'Indeferidos',
-    badge: 'bg-red-600 text-white',
+    badge: 'bg-red-500 text-white border border-red-600',
     color: 'red',
-    animation: 'animate-pulse ring-2 ring-red-300/60 shadow shadow-red-200/60',
-    animationStyle: { animationDuration: '2.2s' },
   },
   {
     key: 'ajuizado',
     label: 'Ajuizados',
-    badge: 'bg-blue-900 text-white',
-    color: 'blue',
-    animation: 'animate-pulse ring-2 ring-blue-800/50 shadow shadow-blue-800/40',
-    animationStyle: { animationDuration: '2.6s' },
+    badge: 'bg-slate-700 text-white border border-slate-800',
+    color: 'slate',
   },
 ];
+
+type StatusConfig = (typeof STATUS_OPTIONS)[number];
 
 const STATUS_PRIORITY: Record<RequirementStatus, number> = {
   em_exigencia: 0,
@@ -132,7 +144,9 @@ const DEADLINE_PRIORITY_OPTIONS: { value: DeadlinePriority; label: string }[] = 
 ];
 
 const BENEFIT_TYPES: { key: BenefitType; label: string }[] = [
-  { key: 'bpc_loas', label: 'BPC/LOAS' },
+  { key: 'bpc_loas', label: 'BPC LOAS - Deficiente' },
+  { key: 'bpc_loas_deficiencia', label: 'BPC LOAS - Deficiência' },
+  { key: 'bpc_loas_idoso', label: 'BPC LOAS - Idoso' },
   { key: 'aposentadoria_tempo', label: 'Aposentadoria por Tempo de Contribuição' },
   { key: 'aposentadoria_idade', label: 'Aposentadoria por Idade' },
   { key: 'aposentadoria_invalidez', label: 'Aposentadoria por Invalidez' },
@@ -432,7 +446,7 @@ Por esse motivo o (a) Impetrante impetra o presente Mandado de Segurança, busca
 3 – DO DIREITO
 3.1 – DO CABIMENTO DO MANDADO DE SEGURANÇA
 
-Conforme o Artigo 5º LXIX, da Constituição da República Federativa do Brasil, conceder-se-á mandado de segurança para proteger direito líquido e certo, não amparado por “habeas-corpus” ou “habeas-data”, quando o responsável pela ilegalidade ou abuso de poder for autoridade pública ou agente de pessoa jurídica no exercício de atribuições do Poder Público.
+Conforme o Artigo 5º LXIX, da Constituição da República Federativa do Brasil, conceder-se-á mandado de segurança para proteger direito líquido e certo, não amparado por "habeas-corpus" ou "habeas-data", quando o responsável pela ilegalidade ou abuso de poder for autoridade pública ou agente de pessoa jurídica no exercício de atribuições do Poder Público.
             Nesse mesmo sentido é a redação do artigo 1º da Lei 12.016 de 2009 ao assegurar que conceder-se-á mandado de segurança para proteger direito líquido e certo, não amparado por habeas corpus ou habeas data, sempre que, ilegalmente ou com abuso de poder, qualquer pessoa física ou jurídica sofrer violação ou houver justo receio de sofrê-la por parte de autoridade, seja de que categoria for e sejam quais forem as funções que exerça.
             No caso em tela, o direito líquido e certo está sendo violado por ato ilegal do INSS – na figura do Gerente da Agência da Previdência Social, eis que até o presente momento o seu pedido de concessão do benefício ([[BENEFICIO]])   sequer fora analisado, estando o direito do segurado à razoável duração do processo e à celeridade de sua tramitação sendo ferido de morte.
 Sobre o tema, a jurisprudência entende que:
@@ -498,14 +512,18 @@ const RequirementsModule: React.FC<RequirementsModuleProps> = ({ forceCreate, en
   const [filterOnlyMsRisk, setFilterOnlyMsRisk] = useState(false);
   const [activeStatusTab, setActiveStatusTab] = useState<RequirementStatus | 'todos'>('todos');
   const [viewMode, setViewMode] = useState<'list' | 'details'>('list');
+  const [activeDetailTab, setActiveDetailTab] = useState<'overview' | 'notes' | 'observations' | 'documents' | 'history'>('overview');
   const [selectedRequirementForView, setSelectedRequirementForView] = useState<Requirement | null>(null);
   const [noteDraft, setNoteDraft] = useState('');
   const [addingNote, setAddingNote] = useState(false);
   const [noteError, setNoteError] = useState<string | null>(null);
+  const [notesExpanded, setNotesExpanded] = useState(false);
   const [replyingTo, setReplyingTo] = useState<string | null>(null);
   const [replyDraft, setReplyDraft] = useState('');
   const [addingReply, setAddingReply] = useState(false);
   const [replyError, setReplyError] = useState<string | null>(null);
+  const [statusExpanded, setStatusExpanded] = useState(false);
+  const [documentsExpanded, setDocumentsExpanded] = useState(false);
   const [statusUpdatingId, setStatusUpdatingId] = useState<string | null>(null);
   const [linkedProcesses, setLinkedProcesses] = useState<{ principal?: Process | null; ms?: Process | null }>({
     principal: null,
@@ -958,7 +976,7 @@ const RequirementsModule: React.FC<RequirementsModuleProps> = ({ forceCreate, en
     };
 
     const now = new Date();
-    const benefitLabel = getBenefitTypeLabel(requirement.benefit_type);
+    const benefitLabel = getMsBenefitTypeLabel(requirement.benefit_type);
     const primaryPhone = client.mobile || client.phone || requirement.phone || '';
 
     const entryDate = requirement.entry_date ? new Date(requirement.entry_date) : null;
@@ -1753,7 +1771,7 @@ const RequirementsModule: React.FC<RequirementsModuleProps> = ({ forceCreate, en
   const getStatusBadge = (status: RequirementStatus) => {
     const statusConfig = getStatusConfig(status);
     return statusConfig
-      ? `${statusConfig.badge} ${statusConfig.animation ?? ''}`
+      ? `${statusConfig.badge}`
       : 'bg-slate-100 text-slate-600';
   };
 
@@ -1765,6 +1783,16 @@ const RequirementsModule: React.FC<RequirementsModuleProps> = ({ forceCreate, en
   const getBenefitTypeLabel = (type: BenefitType) => {
     const typeConfig = BENEFIT_TYPES.find((item) => item.key === type);
     return typeConfig ? typeConfig.label : type;
+  };
+
+  const getMsBenefitTypeLabel = (type: BenefitType) => {
+    if (type === 'bpc_loas' || type === 'bpc_loas_deficiencia') {
+      return 'Benefício de Prestação Continuada (BPC/LOAS) à Pessoa com Deficiência';
+    }
+    if (type === 'bpc_loas_idoso') {
+      return 'Benefício de Prestação Continuada (BPC/LOAS) – Idoso';
+    }
+    return getBenefitTypeLabel(type);
   };
 
   const getNoteAuthorDisplay = (note: RequirementNote) => {
@@ -2189,69 +2217,126 @@ const RequirementsModule: React.FC<RequirementsModuleProps> = ({ forceCreate, en
   const renderNote = (note: RequirementNote, depth: number = 0) => {
     const isReplying = replyingTo === note.id;
     const canDelete = note.author_id === user?.id || user?.user_metadata?.role === 'admin';
+    const noteDate = new Date(note.created_at);
+    const formattedDate = noteDate.toLocaleDateString('pt-BR');
+    const formattedTime = noteDate.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+    const authorName = note.author_name || 'Usuário';
+    const authorInitial = authorName.charAt(0).toUpperCase();
+    const hasReplies = note.replies && note.replies.length > 0;
 
     return (
-      <div key={note.id} className={`${depth > 0 ? 'ml-8 border-l-2 border-slate-200 pl-4' : ''}`}>
-        <div className="bg-slate-50 border border-slate-100 rounded-lg p-4 text-sm text-slate-700">
-          <div className="flex items-center justify-between text-xs text-slate-500 mb-2">
-            <span>{getNoteAuthorDisplay(note)}</span>
-            <div className="flex items-center gap-2">
-              <span>{formatDateTime(note.created_at)}</span>
-              {canDelete && (
-                <button
-                  onClick={() => handleDeleteNote(note.id)}
-                  className="text-red-500 hover:text-red-700 transition-colors"
-                  title="Excluir nota"
-                >
-                  <Trash2 className="w-3 h-3" />
-                </button>
-              )}
-            </div>
+      <div key={note.id} className={`${depth > 0 ? 'ml-10 pl-4 border-l-2 border-slate-200 dark:border-zinc-600' : ''} mb-3`}>
+        <div className="flex items-start gap-3 group">
+          {/* Avatar do usuário */}
+          <div
+            className="flex-shrink-0 w-8 h-8 rounded-full border border-slate-200 dark:border-zinc-700 bg-blue-100 dark:bg-blue-900/50 text-blue-600 dark:text-blue-300 font-medium text-sm flex items-center justify-center overflow-hidden"
+            style={note.author_avatar ? { backgroundImage: `url(${note.author_avatar})`, backgroundSize: 'cover', backgroundPosition: 'center' } : undefined}
+            title={authorName}
+          >
+            {!note.author_avatar && authorInitial}
           </div>
-          <p className="whitespace-pre-wrap">{note.text}</p>
-          <div className="flex items-center gap-2 mt-3">
-            <button
-              onClick={() => setReplyingTo(isReplying ? null : note.id)}
-              className="text-blue-600 hover:text-blue-700 text-xs flex items-center gap-1 transition-colors"
-            >
-              <Reply className="w-3 h-3" />
-              Responder
-            </button>
+          
+          {/* Conteúdo do comentário */}
+          <div className="flex-1 min-w-0">
+            <div className="bg-white dark:bg-zinc-800 rounded-xl p-3 border border-slate-200 dark:border-zinc-700">
+              {/* Cabeçalho com nome e data */}
+              <div className="flex items-center justify-between mb-1">
+                <div className="flex items-center gap-2">
+                  <span className="text-sm font-semibold text-slate-900 dark:text-white">{authorName}</span>
+                  <span className="text-xs text-slate-500 dark:text-slate-400">•</span>
+                  <span className="text-xs text-slate-500 dark:text-slate-400" title={`${formattedDate} às ${formattedTime}`}>
+                    {formattedDate} {formattedTime}
+                  </span>
+                </div>
+                {canDelete && (
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleDeleteNote(note.id);
+                    }}
+                    className="opacity-0 group-hover:opacity-100 text-slate-400 hover:text-red-500 transition-colors p-1 -mr-1"
+                    title="Excluir comentário"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                  </button>
+                )}
+              </div>
+              
+              {/* Texto do comentário */}
+              <p className="text-sm text-slate-800 dark:text-slate-200 whitespace-pre-wrap break-words">{note.text}</p>
+              
+              {/* Ações do comentário */}
+              <div className="mt-2 flex items-center gap-4">
+                <button
+                  onClick={() => setReplyingTo(isReplying ? null : note.id)}
+                  className="text-xs text-slate-500 hover:text-blue-600 dark:text-slate-400 dark:hover:text-blue-400 flex items-center gap-1 transition-colors"
+                >
+                  <MessageSquare className="w-3.5 h-3.5" />
+                  <span>Responder</span>
+                </button>
+                {hasReplies && (
+                  <span className="text-xs text-slate-400 dark:text-slate-500">
+                    {note.replies?.length} {note.replies?.length === 1 ? 'resposta' : 'respostas'}
+                  </span>
+                )}
+              </div>
+            </div>
+            
+            {/* Formulário de resposta */}
+            {isReplying && (
+              <div className="mt-3 pl-2">
+                <div className="bg-white dark:bg-zinc-800 rounded-xl border border-slate-200 dark:border-zinc-700 overflow-hidden transition-all duration-200">
+                  {replyError && (
+                    <div className="px-4 py-2 bg-red-50 dark:bg-red-900/30 text-red-600 dark:text-red-300 text-sm">
+                      {replyError}
+                    </div>
+                  )}
+                  <div className="p-3">
+                    <textarea
+                      value={replyDraft}
+                      onChange={(e) => setReplyDraft(e.target.value)}
+                      rows={2}
+                      className="w-full bg-white dark:bg-zinc-800 border border-slate-200 dark:border-zinc-600 rounded-lg px-3 py-2 text-sm text-slate-800 dark:text-slate-200 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-transparent transition-colors resize-none"
+                      placeholder="Digite sua resposta..."
+                    />
+                    <div className="flex items-center justify-end gap-2 mt-2">
+                      <button
+                        onClick={() => setReplyingTo(null)}
+                        className="px-3 py-1.5 text-xs font-medium text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-zinc-700 rounded-lg transition-colors"
+                      >
+                        Cancelar
+                      </button>
+                      <button
+                        onClick={handleAddReply}
+                        disabled={addingReply || !replyDraft.trim()}
+                        className="px-4 py-1.5 text-xs font-medium bg-gradient-to-r from-blue-500 to-blue-600 hover:from-blue-600 hover:to-blue-700 text-white rounded-lg transition-all flex items-center gap-1.5 disabled:opacity-50 disabled:cursor-not-allowed"
+                      >
+                        {addingReply ? (
+                          <>
+                            <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                            <span>Enviando...</span>
+                          </>
+                        ) : (
+                          <>
+                            <SendHorizontal className="w-3.5 h-3.5" />
+                            <span>Responder</span>
+                          </>
+                        )}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
         </div>
 
-        {isReplying && (
-          <div className="mt-3 ml-8">
-            <div className="bg-white border border-slate-200 rounded-lg p-4">
-              {replyError && <p className="text-sm text-red-600 mb-2">{replyError}</p>}
-              <textarea
-                value={replyDraft}
-                onChange={(e) => setReplyDraft(e.target.value)}
-                rows={3}
-                className="input-field w-full text-sm"
-                placeholder="Digite sua resposta..."
-              />
-              <div className="flex justify-end gap-2 mt-2">
-                <button
-                  onClick={() => setReplyingTo(null)}
-                  className="px-3 py-1 text-xs text-slate-600 hover:text-slate-800 transition-colors"
-                >
-                  Cancelar
-                </button>
-                <button
-                  onClick={handleAddReply}
-                  disabled={addingReply}
-                  className="px-3 py-1 text-xs bg-blue-600 hover:bg-blue-700 text-white rounded transition-colors flex items-center gap-1 disabled:opacity-60"
-                >
-                  {addingReply && <Loader2 className="w-3 h-3 animate-spin" />}
-                  {addingReply ? 'Enviando...' : 'Responder'}
-                </button>
-              </div>
-            </div>
+        {/* Respostas */}
+        {hasReplies && (
+          <div className="mt-2 pl-11">
+            {note.replies?.map((reply) => renderNote(reply, depth + 1))}
           </div>
         )}
-
-        {note.replies && note.replies.map((reply) => renderNote(reply, depth + 1))}
       </div>
     );
   };
@@ -2597,25 +2682,35 @@ const RequirementsModule: React.FC<RequirementsModuleProps> = ({ forceCreate, en
   , document.body);
 
   const exigencyDeadlineModal = exigencyModal && (
-    <div className="pericia-light-modal fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center z-[60] p-4">
-      <div className="pericia-light-modal__panel bg-white rounded-2xl shadow-2xl w-full max-w-lg overflow-hidden">
+    <div className="pericia-light-modal fixed inset-0 z-[95] flex items-center justify-center p-4">
+      <div className="absolute inset-0" onClick={handleCloseExigencyModal} aria-hidden="true" />
+      <div className="pericia-light-modal__panel relative w-full max-w-lg overflow-hidden rounded-2xl shadow-2xl bg-white dark:bg-zinc-900">
         <div className="h-2 w-full bg-orange-500" />
-        <div className="px-6 py-4 border-b border-slate-200 flex items-center justify-between bg-white">
-          <div>
-            <h3 className="text-lg font-semibold text-slate-900">Registrar prazo para exigência</h3>
-            {exigencyModal.beneficiaryName && (
-              <p className="text-sm text-slate-600 mt-1">
-                Beneficiário: <span className="font-medium">{exigencyModal.beneficiaryName}</span>
-              </p>
-            )}
-            {exigencyModal.benefitTypeLabel && (
-              <p className="text-xs text-slate-500">Benefício: {exigencyModal.benefitTypeLabel}</p>
-            )}
+        <div className="px-6 py-4 border-b border-slate-200 dark:border-zinc-800 flex items-start justify-between gap-4">
+          <div className="flex items-start gap-3 min-w-0">
+            <div className="mt-0.5 h-10 w-10 rounded-xl bg-orange-50 dark:bg-orange-500/10 flex items-center justify-center flex-shrink-0">
+              <ClipboardList className="w-5 h-5 text-orange-600 dark:text-orange-400" />
+            </div>
+            <div className="min-w-0">
+              <h3 className="text-lg font-semibold text-slate-900 dark:text-white">Registrar prazo para exigência</h3>
+              <div className="mt-1 space-y-0.5">
+                {exigencyModal.beneficiaryName && (
+                  <p className="text-sm text-slate-600 dark:text-zinc-300 truncate">
+                    Beneficiário: <span className="font-medium">{exigencyModal.beneficiaryName}</span>
+                  </p>
+                )}
+                {exigencyModal.benefitTypeLabel && (
+                  <p className="text-xs text-slate-500 dark:text-zinc-400 truncate">Benefício: {exigencyModal.benefitTypeLabel}</p>
+                )}
+              </div>
+            </div>
           </div>
           <button
+            type="button"
             onClick={handleCloseExigencyModal}
-            className="text-slate-500 hover:text-slate-700 hover:bg-slate-100 rounded-lg p-1 transition"
+            className="p-2 text-slate-400 hover:text-slate-600 dark:text-slate-300 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-white/10 rounded-xl transition"
             title="Fechar"
+            aria-label="Fechar"
           >
             <X className="w-5 h-5" />
           </button>
@@ -2670,14 +2765,16 @@ const RequirementsModule: React.FC<RequirementsModuleProps> = ({ forceCreate, en
           </div>
         </div>
 
-        <div className="px-6 py-4 border-t border-slate-200 flex items-center justify-end gap-3">
+        <div className="px-6 py-4 border-t border-slate-200 dark:border-zinc-800 flex items-center justify-end gap-3 bg-slate-50/60 dark:bg-zinc-900">
           <button
+            type="button"
             onClick={handleCloseExigencyModal}
             className="px-4 py-2 text-sm font-medium text-slate-600 hover:text-slate-800 transition"
           >
             Cancelar
           </button>
           <button
+            type="button"
             onClick={handleCreateExigencyDeadline}
             className="inline-flex items-center gap-2 px-4 py-2 text-sm font-semibold bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition disabled:opacity-60"
             disabled={exigencySubmittingRef.current}
@@ -2691,21 +2788,36 @@ const RequirementsModule: React.FC<RequirementsModuleProps> = ({ forceCreate, en
   );
 
   const periciaSchedulingModal = periciaModal && (
-    <div className="pericia-light-modal fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center z-[55] p-4">
-      <div className="pericia-light-modal__panel bg-white rounded-2xl shadow-2xl w-full max-w-lg">
-        <div className="px-6 py-4 border-b border-slate-200 flex items-center justify-between">
-          <div>
-            <h3 className="text-lg font-semibold text-slate-900">Agendar perícia</h3>
-            {periciaModal.beneficiaryName && (
-              <p className="text-sm text-slate-700 mt-1">
-                Beneficiário: <span className="font-medium text-slate-900">{periciaModal.beneficiaryName}</span>
-              </p>
-            )}
-            {periciaModal.benefitTypeLabel && (
-              <p className="text-xs text-slate-600">Benefício: {periciaModal.benefitTypeLabel}</p>
-            )}
+    <div className="pericia-light-modal fixed inset-0 z-[95] flex items-center justify-center p-4">
+      <div className="absolute inset-0" onClick={handleClosePericiaModal} aria-hidden="true" />
+      <div className="pericia-light-modal__panel relative w-full max-w-lg rounded-2xl shadow-2xl bg-white dark:bg-zinc-900 overflow-hidden">
+        <div className="h-2 w-full bg-cyan-500" />
+        <div className="px-6 py-4 border-b border-slate-200 dark:border-zinc-800 flex items-start justify-between gap-4">
+          <div className="flex items-start gap-3 min-w-0">
+            <div className="mt-0.5 h-10 w-10 rounded-xl bg-cyan-50 dark:bg-cyan-500/10 flex items-center justify-center flex-shrink-0">
+              <Stethoscope className="w-5 h-5 text-cyan-700 dark:text-cyan-300" />
+            </div>
+            <div className="min-w-0">
+              <h3 className="text-lg font-semibold text-slate-900 dark:text-white">Agendar perícia</h3>
+              <div className="mt-1 space-y-0.5">
+                {periciaModal.beneficiaryName && (
+                  <p className="text-sm text-slate-700 dark:text-zinc-300 truncate">
+                    Beneficiário: <span className="font-medium">{periciaModal.beneficiaryName}</span>
+                  </p>
+                )}
+                {periciaModal.benefitTypeLabel && (
+                  <p className="text-xs text-slate-600 dark:text-zinc-400 truncate">Benefício: {periciaModal.benefitTypeLabel}</p>
+                )}
+              </div>
+            </div>
           </div>
-          <button onClick={handleClosePericiaModal} className="text-slate-500 hover:text-slate-700 hover:bg-slate-100 rounded-lg p-1 transition" title="Fechar">
+          <button
+            type="button"
+            onClick={handleClosePericiaModal}
+            className="p-2 text-slate-400 hover:text-slate-600 dark:text-slate-300 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-white/10 rounded-xl transition"
+            title="Fechar"
+            aria-label="Fechar"
+          >
             <X className="w-5 h-5" />
           </button>
         </div>
@@ -2793,8 +2905,9 @@ const RequirementsModule: React.FC<RequirementsModuleProps> = ({ forceCreate, en
           </p>
         </div>
 
-        <div className="px-6 py-4 border-t border-slate-200 flex items-center justify-end gap-3">
+        <div className="px-6 py-4 border-t border-slate-200 dark:border-zinc-800 flex items-center justify-end gap-3 bg-slate-50/60 dark:bg-zinc-900">
           <button
+            type="button"
             onClick={handleClosePericiaModal}
             disabled={periciaSaving}
             className="px-4 py-2 text-sm font-medium text-slate-600 hover:text-slate-800 transition disabled:opacity-60"
@@ -2802,6 +2915,7 @@ const RequirementsModule: React.FC<RequirementsModuleProps> = ({ forceCreate, en
             Cancelar
           </button>
           <button
+            type="button"
             onClick={handleSavePericiaSchedule}
             disabled={periciaSaving}
             className="inline-flex items-center gap-2 px-4 py-2 text-sm font-semibold bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition disabled:opacity-60"
@@ -2815,12 +2929,12 @@ const RequirementsModule: React.FC<RequirementsModuleProps> = ({ forceCreate, en
   );
 
   const detailsModal = viewMode === 'details' && selectedRequirementForView ? (() => {
-    const noteCount = detailNotes.length;
     const detailStatusConfig = getStatusConfig(selectedRequirementForView.status);
     const analysisDays = getAnalysisDays(selectedRequirementForView);
     const showMandadoRisk = isMandadoRisk(selectedRequirementForView);
     const periciaMedicaAt = selectedRequirementForView.pericia_medica_at ?? null;
     const periciaSocialAt = selectedRequirementForView.pericia_social_at ?? null;
+    
     const getHistoryActor = (changedBy: string | null) => {
       if (!changedBy) return 'Sistema';
       if (memberByUserId.has(changedBy)) return memberByUserId.get(changedBy)!.name || 'Usuário';
@@ -2828,10 +2942,12 @@ const RequirementsModule: React.FC<RequirementsModuleProps> = ({ forceCreate, en
       if (changedBy === user?.id) return 'Usuário';
       return 'Usuário';
     };
+    
     const getHistoryStatus = (status: string | null) => {
       if (!status) return '—';
       return getStatusLabel(status as any);
     };
+
     return createPortal(
       <div className="fixed inset-0 z-[70] flex items-center justify-center px-3 sm:px-6 py-4">
         <div
@@ -2841,295 +2957,373 @@ const RequirementsModule: React.FC<RequirementsModuleProps> = ({ forceCreate, en
         />
         <div className="relative w-full max-w-4xl max-h-[92vh] bg-white dark:bg-zinc-900 rounded-2xl shadow-2xl ring-1 ring-black/5 flex flex-col overflow-hidden">
           <div className="h-2 w-full bg-orange-500" />
+          
+          {/* Header padrão do sistema */}
           <div className="px-5 sm:px-8 py-5 border-b border-slate-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 flex items-start justify-between gap-4">
             <div>
-              <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400 dark:text-slate-500">Detalhes</p>
-              <h2 className="text-xl font-semibold text-slate-900 dark:text-white">Detalhes do Requerimento</h2>
+              <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400 dark:text-slate-500">
+                Detalhes do Requerimento
+              </p>
+              <h2 className="text-xl font-semibold text-slate-900 dark:text-white">{selectedRequirementForView.beneficiary}</h2>
+              <div className="flex flex-wrap items-center gap-x-4 gap-y-1 mt-1 text-sm text-slate-600 dark:text-slate-400">
+                <span className="font-mono">{selectedRequirementForView.protocol}</span>
+              </div>
             </div>
-            <button
-              type="button"
-              onClick={handleBackToList}
-              className="p-2 text-slate-400 hover:text-slate-600 dark:text-slate-300 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-white/10 rounded-xl transition"
-              aria-label="Fechar modal"
-            >
-              <X className="w-5 h-5" />
-            </button>
+            <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2">
+                <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-bold ${getStatusBadge(selectedRequirementForView.status)}`} style={detailStatusConfig?.animationStyle}>
+                  {getStatusLabel(selectedRequirementForView.status)}
+                  {detailStatusConfig?.icon === 'spinner' && <Loader2 className="w-3 h-3 animate-spin" />}
+                </span>
+                {showMandadoRisk && (
+                  <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-bold bg-red-600 text-white animate-pulse">
+                    <AlertTriangle className="w-3 h-3" /> MS Risk
+                  </span>
+                )}
+              </div>
+              <button
+                type="button"
+                onClick={handleBackToList}
+                className="p-2 text-slate-400 hover:text-slate-600 dark:text-slate-300 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-white/10 rounded-xl transition"
+                aria-label="Fechar modal"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
           </div>
-          <div className="flex-1 overflow-y-auto bg-white dark:bg-zinc-900 p-6">
+
+          {/* Abas de navegação */}
+          <div className="px-5 sm:px-6 py-2 bg-white dark:bg-zinc-900 border-b border-slate-200 dark:border-zinc-800 flex items-center gap-1 overflow-x-auto">
+            {[
+              { key: 'overview', label: 'Visão Geral', icon: ClipboardList },
+              { key: 'notes', label: 'Notas', icon: MessageSquare, count: noteThreads.length },
+              { key: 'observations', label: 'Observações', icon: NotebookPen },
+              { key: 'documents', label: 'Documentos', icon: FileText, count: requirementDocuments.length },
+              { key: 'history', label: 'Histórico', icon: History, count: statusHistory.length },
+            ].map((tab) => (
+              <button
+                key={tab.key}
+                type="button"
+                onClick={() => setActiveDetailTab(tab.key as typeof activeDetailTab)}
+                className={`inline-flex items-center gap-2 px-4 py-2.5 text-sm font-medium rounded-lg transition whitespace-nowrap ${
+                  activeDetailTab === tab.key
+                    ? 'bg-orange-100 dark:bg-orange-900/30 text-orange-700 dark:text-orange-300'
+                    : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-zinc-800'
+                }`}
+              >
+                <tab.icon className="w-4 h-4" />
+                {tab.label}
+                {typeof tab.count === 'number' && tab.count > 0 && (
+                  <span className={`ml-1 px-1.5 py-0.5 text-xs font-bold rounded-full ${activeDetailTab === tab.key ? 'bg-orange-200 dark:bg-orange-800 text-orange-800 dark:text-orange-200' : 'bg-slate-200 dark:bg-zinc-700 text-slate-600 dark:text-slate-300'}`}>
+                    {tab.count}
+                  </span>
+                )}
+              </button>
+            ))}
+          </div>
+
+          {/* Conteúdo das Abas */}
+          <div className="flex-1 overflow-y-auto bg-slate-50 dark:bg-zinc-950 p-4 sm:p-6">
             {error && (
               <div className="mb-4 rounded-lg border border-red-200 dark:border-red-800 bg-red-50 dark:bg-red-900/20 px-4 py-3 text-sm text-red-700 dark:text-red-300">
                 {error}
               </div>
             )}
 
-            {showMandadoRisk && (
-              <div className="mb-4 rounded-xl border-l-4 border-red-500 bg-gradient-to-r from-red-50 to-orange-50 px-4 py-3 text-sm text-red-800 shadow-sm">
-                <div className="flex items-start gap-3">
-                  <div className="flex-shrink-0 w-8 h-8 bg-red-100 rounded-full flex items-center justify-center">
-                    <AlertTriangle className="w-4 h-4 text-red-600" />
+            {/* ABA: VISÃO GERAL */}
+            {activeDetailTab === 'overview' && (
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                {/* Coluna Esquerda - Informações do Cliente */}
+                <div className="space-y-5">
+                  <div className="rounded-2xl border border-slate-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 shadow-sm">
+                    <div className="px-5 py-4 border-b border-slate-100 dark:border-zinc-800">
+                      <h3 className="text-sm font-semibold text-slate-700 dark:text-slate-300">Informações do Cliente</h3>
+                    </div>
+                    <dl className="divide-y divide-slate-100 dark:divide-zinc-800 px-5">
+                      <div className="flex items-center justify-between gap-4 py-3">
+                        <dt className="text-sm text-slate-500 dark:text-slate-400">Nome</dt>
+                        <dd className="text-sm font-semibold text-slate-900 dark:text-white text-right">{selectedRequirementForView.beneficiary}</dd>
+                      </div>
+                      <div className="flex items-center justify-between gap-4 py-3">
+                        <dt className="text-sm text-slate-500 dark:text-slate-400">CPF</dt>
+                        <dd className="text-sm font-semibold text-slate-900 dark:text-white font-mono">{formatCPF(selectedRequirementForView.cpf)}</dd>
+                      </div>
+                      <div className="flex items-center justify-between gap-4 py-3">
+                        <dt className="text-sm text-slate-500 dark:text-slate-400">Telefone</dt>
+                        <dd className="text-sm font-semibold text-slate-900 dark:text-white">{selectedRequirementForView.phone ? formatPhone(selectedRequirementForView.phone) : '—'}</dd>
+                      </div>
+                      <div className="flex items-center justify-between gap-4 py-3">
+                        <dt className="text-sm text-slate-500 dark:text-slate-400">Benefício</dt>
+                        <dd className="text-sm font-semibold text-slate-900 dark:text-white">{getBenefitTypeLabel(selectedRequirementForView.benefit_type) || '—'}</dd>
+                      </div>
+                    </dl>
                   </div>
-                  <div className="min-w-0 flex-1">
-                    <p className="font-semibold text-red-900">Possível mandado de segurança</p>
-                    <p className="text-xs mt-1 text-red-700">
-                      Requerimento em análise há <span className="font-bold text-red-800">{analysisDays}</span> dias. Avalie medidas cabíveis.
-                    </p>
+
+                  <div className="rounded-2xl border border-slate-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 shadow-sm">
+                    <div className="px-5 py-4 border-b border-slate-100 dark:border-zinc-800 flex items-center justify-between">
+                      <h3 className="text-sm font-semibold text-slate-700 dark:text-slate-300">Processos Vinculados</h3>
+                      <span className="text-xs text-slate-400 dark:text-slate-500">Controle rápido</span>
+                    </div>
+                    <div className="divide-y divide-slate-100 dark:divide-zinc-800">
+                      <div className="flex items-center justify-between px-5 py-4 gap-3">
+                        <div className="flex items-start gap-3">
+                          <FolderOpen className="w-4 h-4 text-blue-500 mt-0.5" />
+                          <div>
+                            <p className="text-sm font-semibold text-slate-900 dark:text-white">Processo Principal</p>
+                            <p className="text-xs text-slate-500">{linkedProcesses.principal ? linkedProcesses.principal.process_code || 'Vinculado' : 'Não criado'}</p>
+                          </div>
+                        </div>
+                        {linkedProcesses.principal ? (
+                          <button
+                            type="button"
+                            onClick={() => handleOpenProcessDetails(linkedProcesses.principal!.id)}
+                            className="px-3 py-1.5 text-xs font-medium bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition"
+                          >
+                            Abrir
+                          </button>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={() => handleCreateProcessFromRequirement('principal')}
+                            className="px-3 py-1.5 text-xs font-medium bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg transition"
+                          >
+                            Criar
+                          </button>
+                        )}
+                      </div>
+                      <div className="flex items-center justify-between px-5 py-4 gap-3">
+                        <div className="flex items-start gap-3">
+                          <AlertTriangle className="w-4 h-4 text-purple-500 mt-0.5" />
+                          <div>
+                            <p className="text-sm font-semibold text-slate-900 dark:text-white">Mandado de Segurança</p>
+                            <p className="text-xs text-slate-500">{linkedProcesses.ms ? linkedProcesses.ms.process_code || 'Vinculado' : 'Não criado'}</p>
+                          </div>
+                        </div>
+                        {linkedProcesses.ms ? (
+                          <button
+                            type="button"
+                            onClick={() => handleOpenProcessDetails(linkedProcesses.ms!.id)}
+                            className="px-3 py-1.5 text-xs font-medium bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition"
+                          >
+                            Abrir
+                          </button>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={() => handleCreateProcessFromRequirement('ms')}
+                            className="px-3 py-1.5 text-xs font-medium bg-purple-600 hover:bg-purple-700 text-white rounded-lg transition"
+                          >
+                            Criar MS
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Coluna Direita - Informações do Requerimento */}
+                <div className="space-y-5">
+                  <div className="rounded-2xl border border-slate-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 shadow-sm">
+                    <div className="px-5 py-4 border-b border-slate-100 dark:border-zinc-800">
+                      <h3 className="text-sm font-semibold text-slate-700 dark:text-slate-300">Informações do Requerimento</h3>
+                    </div>
+                    <dl className="divide-y divide-slate-100 dark:divide-zinc-800 px-5">
+                      <div className="flex items-center justify-between gap-4 py-3">
+                        <dt className="text-sm text-slate-500 dark:text-slate-400">Data de Entrada</dt>
+                        <dd className="text-sm font-semibold text-slate-900 dark:text-white">{formatDate(selectedRequirementForView.entry_date)}</dd>
+                      </div>
+                      <div className="flex items-center justify-between gap-4 py-3">
+                        <dt className="text-sm text-slate-500 dark:text-slate-400">Telefone</dt>
+                        <dd className="text-sm font-semibold text-slate-900 dark:text-white">{selectedRequirementForView.phone || '—'}</dd>
+                      </div>
+                      <div className="flex items-center justify-between gap-4 py-3">
+                        <dt className="text-sm text-slate-500 dark:text-slate-400">Senha INSS</dt>
+                        <dd className="text-sm font-semibold text-slate-900 dark:text-white font-mono">{selectedRequirementForView.inss_password || '—'}</dd>
+                      </div>
+                      <div className="flex items-center justify-between gap-4 py-3">
+                        <dt className="text-sm text-slate-500 dark:text-slate-400">Protocolo</dt>
+                        <dd className="text-sm font-semibold text-slate-900 dark:text-white font-mono">{selectedRequirementForView.protocol}</dd>
+                      </div>
+                      <div className="flex items-center justify-between gap-4 py-3">
+                        <dt className="text-sm text-slate-500 dark:text-slate-400">Benefício</dt>
+                        <dd className="text-sm font-semibold text-slate-900 dark:text-white">{getBenefitTypeLabel(selectedRequirementForView.benefit_type)}</dd>
+                      </div>
+                      {selectedRequirementForView.status === 'em_analise' && typeof analysisDays === 'number' && (
+                        <div className="flex items-center justify-between gap-4 py-3">
+                          <dt className="text-sm text-slate-500 dark:text-slate-400">Tempo em Análise</dt>
+                          <dd className={`text-sm font-semibold ${showMandadoRisk ? 'text-red-600' : 'text-slate-900 dark:text-white'}`}>{analysisDays} dias</dd>
+                        </div>
+                      )}
+                      {selectedRequirementForView.status === 'em_exigencia' && selectedRequirementForView.exigency_due_date && (
+                        <div className="flex items-center justify-between gap-4 py-3">
+                          <dt className="text-sm text-amber-600 dark:text-amber-400">Prazo Exigência</dt>
+                          <dd className="text-sm font-semibold text-amber-700 dark:text-amber-300">{formatDate(selectedRequirementForView.exigency_due_date)}</dd>
+                        </div>
+                      )}
+                    </dl>
+                  </div>
+
+                  {(periciaMedicaAt || periciaSocialAt) && (
+                    <div className="rounded-2xl border border-slate-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 shadow-sm">
+                      <div className="px-5 py-4 border-b border-slate-100 dark:border-zinc-800">
+                        <h3 className="text-sm font-semibold text-cyan-700 dark:text-cyan-300">Perícias Agendadas</h3>
+                      </div>
+                      <div className="px-5 py-4 space-y-2">
+                        {periciaMedicaAt && (
+                          <div className="flex items-center justify-between text-sm">
+                            <span className="text-slate-500 dark:text-slate-400">Médica</span>
+                            <span className="font-semibold text-cyan-700 dark:text-cyan-300">{formatDateTime(periciaMedicaAt)}</span>
+                          </div>
+                        )}
+                        {periciaSocialAt && (
+                          <div className="flex items-center justify-between text-sm">
+                            <span className="text-slate-500 dark:text-slate-400">Social</span>
+                            <span className="font-semibold text-cyan-700 dark:text-cyan-300">{formatDateTime(periciaSocialAt)}</span>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {/* ABA: NOTAS */}
+            {activeDetailTab === 'notes' && (
+              <div className="space-y-4">
+                <div className="bg-white dark:bg-zinc-900 rounded-xl border border-slate-200 dark:border-zinc-800 overflow-hidden">
+                  {noteThreads.length === 0 ? (
+                    <div className="text-center py-12">
+                      <MessageSquare className="w-12 h-12 text-slate-300 dark:text-slate-600 mx-auto mb-3" />
+                      <p className="text-sm text-slate-500 dark:text-slate-400">Nenhuma nota registrada.</p>
+                      <p className="text-xs text-slate-400 dark:text-slate-500 mt-1">Use o campo abaixo para adicionar a primeira nota.</p>
+                    </div>
+                  ) : (
+                    <div className="divide-y divide-slate-100 dark:divide-zinc-800 max-h-[400px] overflow-y-auto p-4 space-y-3">
+                      {noteThreads.slice().reverse().map((thread) => renderNote(thread))}
+                    </div>
+                  )}
+                </div>
+
+                <div className="bg-white dark:bg-zinc-900 rounded-xl p-4 border border-slate-200 dark:border-zinc-800">
+                  {noteError && (
+                    <div className="mb-3 text-sm text-red-600 dark:text-red-300 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-900/40 rounded-lg px-3 py-2">
+                      {noteError}
+                    </div>
+                  )}
+                  <div className="flex items-start gap-3">
+                    <div
+                      className="flex-shrink-0 w-9 h-9 rounded-full border border-slate-200 dark:border-zinc-700 bg-slate-100 dark:bg-zinc-800 text-slate-600 dark:text-slate-200 font-semibold text-sm flex items-center justify-center overflow-hidden"
+                      style={user?.user_metadata?.avatar_url ? { backgroundImage: `url(${String(user.user_metadata.avatar_url)})`, backgroundSize: 'cover', backgroundPosition: 'center' } : undefined}
+                    >
+                      {!user?.user_metadata?.avatar_url && String(user?.email || 'U').charAt(0).toUpperCase()}
+                    </div>
+                    <div className="flex-1">
+                      <textarea
+                        value={noteDraft}
+                        onChange={(e) => setNoteDraft(e.target.value)}
+                        onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); void handleAddNote(); } }}
+                        rows={2}
+                        className="w-full bg-slate-50 dark:bg-zinc-800 border border-slate-200 dark:border-zinc-700 rounded-xl px-4 py-3 text-sm text-slate-800 dark:text-slate-100 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-orange-500/30 focus:border-orange-500/50 transition resize-none"
+                        placeholder="Adicione uma nota..."
+                      />
+                      <div className="mt-2 flex justify-end">
+                        <button
+                          type="button"
+                          onClick={() => void handleAddNote()}
+                          disabled={addingNote || !noteDraft.trim()}
+                          className="inline-flex items-center gap-2 px-4 py-2 text-sm font-semibold bg-orange-500 hover:bg-orange-600 text-white rounded-lg transition disabled:opacity-50"
+                        >
+                          {addingNote ? <Loader2 className="w-4 h-4 animate-spin" /> : <SendHorizontal className="w-4 h-4" />}
+                          Publicar
+                        </button>
+                      </div>
+                    </div>
                   </div>
                 </div>
               </div>
             )}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              <div>
-                <label className="text-xs font-semibold text-slate-500 uppercase">Protocolo</label>
-                <p className="text-base text-slate-900 mt-1 font-mono">{selectedRequirementForView.protocol}</p>
-              </div>
-              <div>
-                <label className="text-xs font-semibold text-slate-500 uppercase">Beneficiário</label>
-                <p className="text-base text-slate-900 mt-1">{selectedRequirementForView.beneficiary}</p>
-              </div>
-              <div>
-                <label className="text-xs font-semibold text-slate-500 uppercase">CPF</label>
-                <p className="text-base text-slate-900 mt-1">{selectedRequirementForView.cpf}</p>
-              </div>
-              <div>
-                <label className="text-xs font-semibold text-slate-500 uppercase">Tipo de Benefício</label>
-                <p className="text-base text-slate-900 mt-1">{getBenefitTypeLabel(selectedRequirementForView.benefit_type)}</p>
-              </div>
-              <div>
-                <label className="text-xs font-semibold text-slate-500 uppercase">Status</label>
-                <p className="mt-1">
-                  <span
-                    className={`inline-flex items-center gap-2 px-3 py-1 rounded-full text-xs font-semibold ${getStatusBadge(selectedRequirementForView.status)}`}
-                    style={detailStatusConfig?.animationStyle}
-                  >
-                    {getStatusLabel(selectedRequirementForView.status)}
-                    {detailStatusConfig?.icon === 'spinner' && (
-                      <Loader2 className="w-3 h-3 animate-spin" />
-                    )}
-                  </span>
-                </p>
-              </div>
-              {selectedRequirementForView.status === 'em_exigencia' && (
-                <div>
-                  <label className="text-xs font-semibold text-slate-500 uppercase">Prazo da Exigência</label>
-                  <p className="text-base text-slate-900 mt-1">
-                    {selectedRequirementForView.exigency_due_date
-                      ? formatDate(selectedRequirementForView.exigency_due_date)
-                      : 'Prazo não definido'}
+
+            {/* ABA: OBSERVAÇÕES */}
+            {activeDetailTab === 'observations' && (
+              <div className="space-y-4">
+                <div className="bg-white dark:bg-zinc-900 rounded-xl p-4 border border-slate-200 dark:border-zinc-800">
+                  <div className="flex items-center gap-3 mb-3">
+                    <div className="p-2 bg-orange-100 dark:bg-orange-900/30 rounded-lg">
+                      <NotebookPen className="w-5 h-5 text-orange-600 dark:text-orange-300" />
+                    </div>
+                    <div>
+                      <p className="text-sm font-semibold text-slate-700 dark:text-slate-200">Observações do Requerimento</p>
+                      <p className="text-xs text-slate-500 dark:text-slate-400">Notas internas adicionadas pela equipe</p>
+                    </div>
+                  </div>
+                  <div className="rounded-xl border border-slate-100 dark:border-zinc-800 bg-slate-50 dark:bg-zinc-800/40 p-4">
+                    <p className="text-sm text-slate-700 dark:text-slate-300 whitespace-pre-wrap leading-relaxed">
+                      {selectedRequirementForView.observations || 'Nenhuma observação registrada.'}
+                    </p>
+                  </div>
+                </div>
+
+                <div className="bg-white dark:bg-zinc-900 rounded-xl p-4 border border-slate-200 dark:border-zinc-800">
+                  <p className="text-xs uppercase tracking-wide text-slate-500 dark:text-slate-400 mb-2">Última atualização</p>
+                  <p className="text-sm font-medium text-slate-900 dark:text-white">
+                    {selectedRequirementForView.updated_at
+                      ? formatDateTime(selectedRequirementForView.updated_at)
+                      : '—'}
                   </p>
                 </div>
-              )}
+              </div>
+            )}
 
-              {(periciaMedicaAt || periciaSocialAt) && (
-                <div>
-                  <label className="text-xs font-semibold text-slate-500 uppercase">Perícias</label>
-                  <div className="mt-1 space-y-1 text-sm text-slate-900">
-                    {periciaMedicaAt && <p>Perícia médica: {formatDateTime(periciaMedicaAt)}</p>}
-                    {periciaSocialAt && <p>Perícia social: {formatDateTime(periciaSocialAt)}</p>}
-                  </div>
-                </div>
-              )}
-
-              {selectedRequirementForView.status === 'em_analise' && typeof analysisDays === 'number' && !showMandadoRisk && (
-                <div>
-                  <label className="text-xs font-semibold text-slate-500 uppercase">Tempo em análise</label>
-                  <p className="text-base text-slate-900 mt-1">{analysisDays} dias</p>
-                </div>
-              )}
-              <div>
-                <label className="text-xs font-semibold text-slate-500 uppercase">Data de Entrada</label>
-                <p className="text-base text-slate-900 mt-1">{formatDate(selectedRequirementForView.entry_date)}</p>
-              </div>
-              <div>
-                <label className="text-xs font-semibold text-slate-500 uppercase">Telefone</label>
-                <p className="text-base text-slate-900 mt-1">{selectedRequirementForView.phone || 'Não informado'}</p>
-              </div>
-              <div>
-                <label className="text-xs font-semibold text-slate-500 uppercase">Senha do INSS</label>
-                <p className="text-base text-slate-900 mt-1">{selectedRequirementForView.inss_password || 'Não informado'}</p>
-              </div>
-              <div className="md:col-span-2">
-                <label className="text-xs font-semibold text-slate-500 uppercase">Observações</label>
-                <p className="text-base text-slate-900 mt-1">{selectedRequirementForView.observations || 'Nenhuma observação'}</p>
-              </div>
-              <div className="md:col-span-2">
-                <label className="text-xs font-semibold text-slate-500 uppercase">Histórico de notas</label>
-                {noteThreads.length === 0 ? (
-                  <p className="text-sm text-slate-500 mt-2">Nenhuma nota registrada no momento.</p>
-                ) : (
-                  <div className="mt-2 space-y-4">{noteThreads.map((thread) => renderNote(thread))}</div>
-                )}
-              </div>
-
-              <div className="md:col-span-2">
-                <label className="text-xs font-semibold text-slate-500 uppercase">Histórico de status</label>
-                {statusHistoryLoading ? (
-                  <div className="mt-2 rounded-xl border border-slate-200 bg-white px-4 py-4 text-sm text-slate-500 flex items-center gap-2">
-                    <Loader2 className="w-4 h-4 animate-spin" />
-                    Carregando histórico...
-                  </div>
-                ) : statusHistory.length === 0 ? (
-                  <p className="text-sm text-slate-500 mt-2">Nenhuma alteração de status registrada ainda.</p>
-                ) : (
-                  <div className="mt-2 rounded-xl border border-slate-200 bg-white overflow-hidden">
-                    <div className="divide-y divide-slate-200">
-                      {statusHistory.slice(0, 12).map((entry) => (
-                        <div key={entry.id} className="px-4 py-3 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
-                          <div className="min-w-0">
-                            <p className="text-sm font-semibold text-slate-900">
-                              {getHistoryStatus(entry.from_status)} → {getHistoryStatus(entry.to_status)}
-                            </p>
-                            <p className="text-xs text-slate-500 mt-0.5">
-                              Por: <span className="font-medium text-slate-700">{getHistoryActor(entry.changed_by)}</span>
-                            </p>
-                          </div>
-                          <div className="text-xs text-slate-500 whitespace-nowrap">{formatDateTime(entry.changed_at)}</div>
-                        </div>
-                      ))}
-                    </div>
-                    {statusHistory.length > 12 && (
-                      <div className="px-4 py-2 text-xs text-slate-500 bg-slate-50 border-t border-slate-200">
-                        Mostrando as últimas 12 alterações (total: {statusHistory.length}).
-                      </div>
-                    )}
-                  </div>
-                )}
-              </div>
-
-              <div className="md:col-span-2">
-                <label className="text-xs font-semibold text-slate-500 uppercase">Processos vinculados</label>
-                <div className="mt-2 grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  <div className="rounded-xl border border-slate-200 bg-white p-4">
-                    <div className="flex items-start justify-between gap-2">
-                      <div>
-                        <p className="text-sm font-semibold text-slate-900">Processo Principal</p>
-                        <p className="text-xs text-slate-600 mt-1">
-                          {linkedProcesses.principal
-                            ? `Vinculado: ${linkedProcesses.principal.process_code || 'sem número'}`
-                            : 'Ainda não criado'}
-                        </p>
-                      </div>
-                      {loadingLinkedProcesses && <Loader2 className="w-4 h-4 animate-spin text-slate-400" />}
-                    </div>
-                    <div className="mt-3 flex gap-2">
-                      {linkedProcesses.principal ? (
-                        <button
-                          type="button"
-                          onClick={() => handleOpenProcessDetails(linkedProcesses.principal!.id)}
-                          className="flex-1 px-3 py-2 text-xs font-semibold bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition"
-                        >
-                          Abrir
-                        </button>
-                      ) : (
-                        <button
-                          type="button"
-                          onClick={() => handleCreateProcessFromRequirement('principal')}
-                          className="flex-1 px-3 py-2 text-xs font-semibold bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg transition"
-                        >
-                          Converter
-                        </button>
-                      )}
-                    </div>
-                  </div>
-
-                  <div className="rounded-xl border border-slate-200 bg-white p-4">
-                    <div className="flex items-start justify-between gap-2">
-                      <div>
-                        <p className="text-sm font-semibold text-slate-900">Mandado de Segurança (MS)</p>
-                        <p className="text-xs text-slate-600 mt-1">
-                          {linkedProcesses.ms
-                            ? `Vinculado: ${linkedProcesses.ms.process_code || 'sem número'}`
-                            : 'Ainda não criado'}
-                        </p>
-                      </div>
-                      {loadingLinkedProcesses && <Loader2 className="w-4 h-4 animate-spin text-slate-400" />}
-                    </div>
-                    <div className="mt-3 flex gap-2">
-                      {linkedProcesses.ms ? (
-                        <button
-                          type="button"
-                          onClick={() => handleOpenProcessDetails(linkedProcesses.ms!.id)}
-                          className="flex-1 px-3 py-2 text-xs font-semibold bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition"
-                        >
-                          Abrir
-                        </button>
-                      ) : (
-                        <button
-                          type="button"
-                          onClick={() => handleCreateProcessFromRequirement('ms')}
-                          className="flex-1 px-3 py-2 text-xs font-semibold bg-purple-600 hover:bg-purple-700 text-white rounded-lg transition"
-                        >
-                          Criar MS
-                        </button>
-                      )}
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              <div className="md:col-span-2">
+            {/* ABA: DOCUMENTOS */}
+            {activeDetailTab === 'documents' && (
+              <div className="space-y-4">
                 <div className="flex items-center justify-between gap-3">
-                  <label className="text-xs font-semibold text-slate-500 uppercase">Documentos do requerimento</label>
+                  <p className="text-sm font-medium text-slate-700 dark:text-slate-300">
+                    {requirementDocuments.length} documento{requirementDocuments.length !== 1 ? 's' : ''} anexado{requirementDocuments.length !== 1 ? 's' : ''}
+                  </p>
                   <button
                     type="button"
                     onClick={handleGenerateMsPdf}
                     disabled={generatingMsPdf}
-                    className="inline-flex items-center gap-2 px-3 py-2 text-xs font-semibold bg-slate-900 hover:bg-slate-800 text-white rounded-lg transition disabled:opacity-60"
+                    className="inline-flex items-center gap-2 px-4 py-2 text-sm font-semibold bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition disabled:opacity-50"
                   >
                     {generatingMsPdf ? <Loader2 className="w-4 h-4 animate-spin" /> : <FileText className="w-4 h-4" />}
-                    Gerar MS (Word/DOCX)
+                    Gerar MS (DOCX)
                   </button>
                 </div>
 
-                <div className="mt-2 rounded-xl border border-slate-200 bg-white overflow-hidden">
+                <div className="bg-white dark:bg-zinc-900 rounded-xl border border-slate-200 dark:border-zinc-800 overflow-hidden">
                   {requirementDocumentsLoading ? (
-                    <div className="px-4 py-4 text-sm text-slate-500 flex items-center gap-2">
+                    <div className="px-4 py-12 text-sm text-slate-500 dark:text-slate-400 flex items-center justify-center gap-2">
                       <Loader2 className="w-4 h-4 animate-spin" />
                       Carregando documentos...
                     </div>
                   ) : requirementDocuments.length === 0 ? (
-                    <div className="px-4 py-4">
-                      <p className="text-sm text-slate-500">Nenhum documento anexado ainda.</p>
-                      <button
-                        type="button"
-                        onClick={handleGenerateMsPdf}
-                        disabled={generatingMsPdf}
-                        className="mt-3 inline-flex w-full items-center justify-center gap-2 rounded-lg px-4 py-3 text-sm font-semibold transition disabled:opacity-60"
-                        style={{
-                          backgroundColor: generatingMsPdf ? '#e2e8f0' : '#0f172a',
-                          color: generatingMsPdf ? '#94a3b8' : '#ffffff',
-                        }}
-                      >
-                        {generatingMsPdf ? <Loader2 className="w-4 h-4 animate-spin" /> : <FileText className="w-4 h-4" />}
-                        Gerar MS (Word/DOCX)
-                      </button>
-                      <p className="mt-2 text-xs text-slate-400">
-                        O Word (DOCX) será gerado com os dados do requerimento e do cliente e ficará salvo aqui para baixar quando quiser.
-                      </p>
+                    <div className="text-center py-12">
+                      <FileText className="w-12 h-12 text-slate-300 dark:text-slate-600 mx-auto mb-3" />
+                      <p className="text-sm text-slate-500 dark:text-slate-400">Nenhum documento anexado.</p>
+                      <p className="text-xs text-slate-400 dark:text-slate-500 mt-1">Clique em "Gerar MS" para criar o documento do Mandado de Segurança.</p>
                     </div>
                   ) : (
-                    <div className="divide-y divide-slate-200">
+                    <div className="divide-y divide-slate-100 dark:divide-zinc-800">
                       {requirementDocuments.map((doc) => (
-                        <div key={doc.id} className="px-4 py-3 flex items-center justify-between gap-3">
-                          <div className="min-w-0">
-                            <p className="text-sm font-semibold text-slate-900 truncate">{doc.file_name}</p>
-                            <p className="text-xs text-slate-500">{formatDate(doc.created_at)}</p>
+                        <div key={doc.id} className="px-4 py-3 flex items-center justify-between gap-3 hover:bg-slate-50 dark:hover:bg-zinc-800/50 transition">
+                          <div className="min-w-0 flex items-center gap-3">
+                            <div className="w-10 h-10 bg-rose-100 dark:bg-rose-900/30 rounded-lg flex items-center justify-center flex-shrink-0">
+                              <FileText className="w-5 h-5 text-rose-600 dark:text-rose-400" />
+                            </div>
+                            <div className="min-w-0">
+                              <p className="text-sm font-medium text-slate-900 dark:text-white truncate">{doc.file_name}</p>
+                              <p className="text-xs text-slate-500 dark:text-slate-400">{formatDate(doc.created_at)}</p>
+                            </div>
                           </div>
                           <div className="flex items-center gap-2">
-                            <button
-                              type="button"
-                              onClick={() => handleDownloadRequirementDocument(doc)}
-                              className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-semibold bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition"
-                            >
+                            <button type="button" onClick={() => handleDownloadRequirementDocument(doc)} className="p-2 text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-lg transition" title="Baixar">
                               <FileDown className="w-4 h-4" />
-                              Baixar
                             </button>
-                            <button
-                              type="button"
-                              onClick={() => handleDeleteRequirementDocument(doc)}
-                              className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-semibold bg-red-50 hover:bg-red-100 text-red-700 rounded-lg transition"
-                            >
+                            <button type="button" onClick={() => handleDeleteRequirementDocument(doc)} className="p-2 text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition" title="Excluir">
                               <Trash2 className="w-4 h-4" />
-                              Excluir
                             </button>
                           </div>
                         </div>
@@ -3138,54 +3332,77 @@ const RequirementsModule: React.FC<RequirementsModuleProps> = ({ forceCreate, en
                   )}
                 </div>
               </div>
-            </div>
-            <div className="flex flex-wrap gap-3 mt-8 pt-6 border-t border-gray-200">
-              {selectedRequirementForView.status !== 'em_analise' && (
-                <button
-                  onClick={handleQuickBackToAnalysis}
-                  className="inline-flex items-center gap-2 bg-slate-900 hover:bg-slate-800 text-white font-medium px-4 py-2.5 rounded-lg transition"
-                >
-                  <Clock className="w-4 h-4" />
-                  Voltar p/ Em análise
-                </button>
-              )}
-              <button
-                onClick={() => openExigencyModal(selectedRequirementForView)}
-                className="inline-flex items-center gap-2 bg-amber-500 hover:bg-amber-600 text-white font-medium px-4 py-2.5 rounded-lg transition"
-              >
-                <Calendar className="w-4 h-4" />
-                Prazo Exigência
-              </button>
-              <button
-                onClick={() => openPericiaModal(selectedRequirementForView)}
-                className="inline-flex items-center gap-2 bg-cyan-600 hover:bg-cyan-700 text-white font-medium px-4 py-2.5 rounded-lg transition"
-              >
-                <Calendar className="w-4 h-4" />
-                Agendar Perícia
-              </button>
-              <button
-                onClick={() => handleOpenModal(selectedRequirementForView)}
-                className="inline-flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white font-medium px-4 py-2.5 rounded-lg transition"
-              >
-                <Edit2 className="w-4 h-4" />
-                Editar Requerimento
-              </button>
-              <button
-                onClick={() => handleWhatsApp(selectedRequirementForView.phone)}
-                className="inline-flex items-center gap-2 bg-green-600 hover:bg-green-700 text-white font-medium px-4 py-2.5 rounded-lg transition"
-              >
+            )}
+
+            {/* ABA: HISTÓRICO */}
+            {activeDetailTab === 'history' && (
+              <div className="bg-white dark:bg-zinc-900 rounded-xl border border-slate-200 dark:border-zinc-800 overflow-hidden">
+                {statusHistoryLoading ? (
+                  <div className="px-4 py-12 text-sm text-slate-500 dark:text-slate-400 flex items-center justify-center gap-2">
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    Carregando histórico...
+                  </div>
+                ) : statusHistory.length === 0 ? (
+                  <div className="text-center py-12">
+                    <History className="w-12 h-12 text-slate-300 dark:text-slate-600 mx-auto mb-3" />
+                    <p className="text-sm text-slate-500 dark:text-slate-400">Nenhuma alteração de status registrada.</p>
+                  </div>
+                ) : (
+                  <div className="divide-y divide-slate-100 dark:divide-zinc-800 max-h-[400px] overflow-y-auto">
+                    {statusHistory.slice(0, 20).map((entry) => (
+                      <div key={entry.id} className="px-4 py-3 flex items-center justify-between gap-3 hover:bg-slate-50 dark:hover:bg-zinc-800/50 transition">
+                        <div className="min-w-0">
+                          <p className="text-sm font-medium text-slate-900 dark:text-white">
+                            {getHistoryStatus(entry.from_status)} → {getHistoryStatus(entry.to_status)}
+                          </p>
+                          <p className="text-xs text-slate-500 dark:text-slate-400">Por: {getHistoryActor(entry.changed_by)}</p>
+                        </div>
+                        <p className="text-xs text-slate-400 dark:text-slate-500 whitespace-nowrap">{formatDateTime(entry.changed_at)}</p>
+                      </div>
+                    ))}
+                    {statusHistory.length > 20 && (
+                      <div className="px-4 py-2 text-center text-xs text-slate-500 bg-slate-50 dark:bg-zinc-800">
+                        Mostrando 20 de {statusHistory.length} alterações
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+
+          {/* Footer com ações */}
+          <div className="px-5 sm:px-6 py-4 bg-white dark:bg-zinc-900 border-t border-slate-200 dark:border-zinc-800 flex flex-wrap items-center justify-between gap-3">
+            <button
+              type="button"
+              onClick={() => { handleDeleteRequirement(selectedRequirementForView.id); handleBackToList(); }}
+              className="inline-flex items-center gap-2 px-3 py-2 text-sm font-medium text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition"
+            >
+              <Trash2 className="w-4 h-4" />
+              Excluir
+            </button>
+            <div className="flex flex-wrap items-center gap-2">
+              <button type="button" onClick={() => handleWhatsApp(selectedRequirementForView.phone)} className="inline-flex items-center gap-2 px-3 py-2 text-sm font-medium text-white bg-green-600 hover:bg-green-700 rounded-lg transition">
                 <MessageSquare className="w-4 h-4" />
                 WhatsApp
               </button>
-              <button
-                onClick={() => {
-                  handleDeleteRequirement(selectedRequirementForView.id);
-                  handleBackToList();
-                }}
-                className="inline-flex items-center gap-2 bg-red-50 hover:bg-red-100 text-red-600 font-medium px-4 py-2.5 rounded-lg transition"
-              >
-                <Trash2 className="w-4 h-4" />
-                Excluir Requerimento
+              {selectedRequirementForView.status !== 'em_analise' && (
+                <button type="button" onClick={handleQuickBackToAnalysis} className="inline-flex items-center gap-2 px-3 py-2 text-sm font-medium text-slate-700 dark:text-slate-300 bg-slate-100 dark:bg-zinc-800 hover:bg-slate-200 dark:hover:bg-zinc-700 rounded-lg transition">
+                  <Clock className="w-4 h-4" />
+                  Análise
+                </button>
+              )}
+              <button type="button" onClick={() => openExigencyModal(selectedRequirementForView)} className="inline-flex items-center gap-2 px-3 py-2 text-sm font-medium text-white bg-amber-500 hover:bg-amber-600 rounded-lg transition">
+                <Calendar className="w-4 h-4" />
+                Exigência
+              </button>
+              <button type="button" onClick={() => openPericiaModal(selectedRequirementForView)} className="inline-flex items-center gap-2 px-3 py-2 text-sm font-medium text-white bg-cyan-600 hover:bg-cyan-700 rounded-lg transition">
+                <Stethoscope className="w-4 h-4" />
+                Perícia
+              </button>
+              <button type="button" onClick={() => handleOpenModal(selectedRequirementForView)} className="inline-flex items-center gap-2 px-3 py-2 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-lg transition">
+                <Edit2 className="w-4 h-4" />
+                Editar
               </button>
             </div>
           </div>
@@ -3265,19 +3482,28 @@ const RequirementsModule: React.FC<RequirementsModuleProps> = ({ forceCreate, en
             <button
               key={status.key}
               onClick={() => setActiveStatusTab(status.key)}
-              className={`px-2.5 sm:px-4 py-1.5 sm:py-2 rounded-lg text-xs sm:text-sm font-medium transition whitespace-nowrap ${
+              className={`px-3 sm:px-4 py-2 rounded-lg text-xs sm:text-sm font-medium transition-all whitespace-nowrap ${
                 activeStatusTab === status.key
-                  ? `${status.badge} ${status.animation ?? ''}`
+                  ? `${status.badge} shadow-md transform scale-105`
                   : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
               }`}
-              style={activeStatusTab === status.key ? status.animationStyle : undefined}
             >
               <span className="inline-flex items-center gap-2">
-                {status.label}
-                {status.icon === 'spinner' && (
-                  <Loader2 className="w-3 h-3 animate-spin" />
+                {status.icon && (
+                  <status.icon 
+                    className={`w-4 h-4 ${
+                      status.key === 'em_exigencia' ? 'animate-pulse text-white drop-shadow-sm' :
+                      status.key === 'aguardando_pericia' ? 'animate-bounce text-white drop-shadow-sm' :
+                      status.key === 'aguardando_confeccao' ? 'animate-pulse text-white drop-shadow-sm' :
+                      status.key === 'deferido' ? 'animate-pulse text-white drop-shadow-sm' :
+                      'text-white'
+                    }`} 
+                  />
                 )}
-                ({statusCounts[status.key]})
+                {status.label}
+                <span className="text-xs opacity-75">
+                  ({statusCounts[status.key]})
+                </span>
               </span>
             </button>
           ))}
@@ -3428,14 +3654,24 @@ const RequirementsModule: React.FC<RequirementsModuleProps> = ({ forceCreate, en
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap">
                         <div className="flex items-center gap-2">
+                          {statusConfig?.icon && (
+                            <statusConfig.icon 
+                              className={`w-4 h-4 ${
+                                statusConfig.key === 'em_exigencia' ? 'animate-pulse text-amber-500 drop-shadow-sm' :
+                                statusConfig.key === 'aguardando_pericia' ? 'animate-bounce text-cyan-500 drop-shadow-sm' :
+                                statusConfig.key === 'aguardando_confeccao' ? 'animate-pulse text-indigo-500 drop-shadow-sm' :
+                                statusConfig.key === 'deferido' ? 'animate-pulse text-green-500 drop-shadow-sm' :
+                                'text-slate-600'
+                              }`} 
+                            />
+                          )}
                           <select
                             value={requirement.status}
                             onChange={(e) => handleStatusChange(requirement.id, e.target.value as RequirementStatus)}
                             disabled={isUpdating}
                             className={`text-xs font-semibold px-3 py-1 rounded-full border-0 shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50 transition ${
                               statusConfig?.badge ?? 'bg-slate-200 text-slate-700'
-                            } ${statusConfig?.animation ?? ''}`}
-                            style={statusConfig?.animationStyle}
+                            }`}
                           >
                             {STATUS_OPTIONS.map((opt) => (
                               <option key={opt.key} value={opt.key}>
@@ -3443,7 +3679,7 @@ const RequirementsModule: React.FC<RequirementsModuleProps> = ({ forceCreate, en
                               </option>
                             ))}
                           </select>
-                          {(requirement.status === 'em_analise' || isUpdating) && (
+                          {isUpdating && (
                             <Loader2 className="w-4 h-4 text-blue-500 animate-spin" />
                           )}
                         </div>

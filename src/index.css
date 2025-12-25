@@ -750,40 +750,76 @@ div[class*="fixed"][class*="z-50"] ::-webkit-scrollbar-thumb {
   border-radius: 3px;
 }
 
- div.pericia-light-modal[class*="fixed"][class*="inset-0"][class*="z-"] {
-   background: rgba(0, 0, 0, 0.45) !important;
-   backdrop-filter: blur(8px) !important;
-   -webkit-backdrop-filter: blur(8px) !important;
- }
+div.pericia-light-modal[class*="fixed"][class*="inset-0"][class*="z-"] {
+  background: rgba(0, 0, 0, 0.45) !important;
+  backdrop-filter: blur(8px) !important;
+  -webkit-backdrop-filter: blur(8px) !important;
+}
 
- div.pericia-light-modal[class*="fixed"][class*="inset-0"][class*="z-"] > div.pericia-light-modal__panel {
-   background: #ffffff !important;
-   border: 1px solid rgba(15, 23, 42, 0.12) !important;
-   box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.35) !important;
- }
+:not(.dark) div.pericia-light-modal[class*="fixed"][class*="inset-0"][class*="z-"] > div.pericia-light-modal__panel {
+  background: #ffffff !important;
+  border: 1px solid rgba(15, 23, 42, 0.12) !important;
+  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.35) !important;
+}
 
- div.pericia-light-modal[class*="fixed"][class*="inset-0"][class*="z-"] > div.pericia-light-modal__panel h3 {
-   color: #0f172a !important;
- }
+:not(.dark) div.pericia-light-modal[class*="fixed"][class*="inset-0"][class*="z-"] > div.pericia-light-modal__panel h3 {
+  color: #0f172a !important;
+}
 
- div.pericia-light-modal[class*="fixed"][class*="inset-0"][class*="z-"] > div.pericia-light-modal__panel p,
- div.pericia-light-modal[class*="fixed"][class*="inset-0"][class*="z-"] > div.pericia-light-modal__panel label {
-   color: #334155 !important;
- }
+:not(.dark) div.pericia-light-modal[class*="fixed"][class*="inset-0"][class*="z-"] > div.pericia-light-modal__panel p,
+:not(.dark) div.pericia-light-modal[class*="fixed"][class*="inset-0"][class*="z-"] > div.pericia-light-modal__panel label {
+  color: #334155 !important;
+}
 
- div.pericia-light-modal[class*="fixed"][class*="inset-0"][class*="z-"] > div.pericia-light-modal__panel input,
- div.pericia-light-modal[class*="fixed"][class*="inset-0"][class*="z-"] > div.pericia-light-modal__panel select,
- div.pericia-light-modal[class*="fixed"][class*="inset-0"][class*="z-"] > div.pericia-light-modal__panel textarea,
- div.pericia-light-modal[class*="fixed"][class*="inset-0"][class*="z-"] > div.pericia-light-modal__panel .input-field {
-   background: #f8fafc !important;
-   border-color: rgba(15, 23, 42, 0.18) !important;
-   color: #0f172a !important;
- }
+:not(.dark) div.pericia-light-modal[class*="fixed"][class*="inset-0"][class*="z-"] > div.pericia-light-modal__panel input,
+:not(.dark) div.pericia-light-modal[class*="fixed"][class*="inset-0"][class*="z-"] > div.pericia-light-modal__panel select,
+:not(.dark) div.pericia-light-modal[class*="fixed"][class*="inset-0"][class*="z-"] > div.pericia-light-modal__panel textarea,
+:not(.dark) div.pericia-light-modal[class*="fixed"][class*="inset-0"][class*="z-"] > div.pericia-light-modal__panel .input-field {
+  background: #f8fafc !important;
+  border-color: rgba(15, 23, 42, 0.18) !important;
+  color: #0f172a !important;
+}
 
- div.pericia-light-modal[class*="fixed"][class*="inset-0"][class*="z-"] > div.pericia-light-modal__panel input::placeholder,
- div.pericia-light-modal[class*="fixed"][class*="inset-0"][class*="z-"] > div.pericia-light-modal__panel textarea::placeholder {
-   color: #64748b !important;
- }
+:not(.dark) div.pericia-light-modal[class*="fixed"][class*="inset-0"][class*="z-"] > div.pericia-light-modal__panel input::placeholder,
+:not(.dark) div.pericia-light-modal[class*="fixed"][class*="inset-0"][class*="z-"] > div.pericia-light-modal__panel textarea::placeholder {
+  color: #64748b !important;
+}
+
+.dark div.pericia-light-modal[class*="fixed"][class*="inset-0"][class*="z-"] > div.pericia-light-modal__panel {
+  background: #1c1c1e !important;
+  border: 1px solid rgba(255, 255, 255, 0.1) !important;
+  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.55) !important;
+}
+
+.dark div.pericia-light-modal[class*="fixed"][class*="inset-0"][class*="z-"] > div.pericia-light-modal__panel h3 {
+  color: #f5f5f7 !important;
+}
+
+.dark div.pericia-light-modal[class*="fixed"][class*="inset-0"][class*="z-"] > div.pericia-light-modal__panel p,
+.dark div.pericia-light-modal[class*="fixed"][class*="inset-0"][class*="z-"] > div.pericia-light-modal__panel label {
+  color: rgba(245, 245, 247, 0.82) !important;
+}
+
+.dark div.pericia-light-modal[class*="fixed"][class*="inset-0"][class*="z-"] > div.pericia-light-modal__panel input,
+.dark div.pericia-light-modal[class*="fixed"][class*="inset-0"][class*="z-"] > div.pericia-light-modal__panel select,
+.dark div.pericia-light-modal[class*="fixed"][class*="inset-0"][class*="z-"] > div.pericia-light-modal__panel textarea,
+.dark div.pericia-light-modal[class*="fixed"][class*="inset-0"][class*="z-"] > div.pericia-light-modal__panel .input-field {
+  background: #2c2c2e !important;
+  border: 1px solid rgba(255, 255, 255, 0.1) !important;
+  color: #f5f5f7 !important;
+}
+
+.dark div.pericia-light-modal[class*="fixed"][class*="inset-0"][class*="z-"] > div.pericia-light-modal__panel input:focus,
+.dark div.pericia-light-modal[class*="fixed"][class*="inset-0"][class*="z-"] > div.pericia-light-modal__panel select:focus,
+.dark div.pericia-light-modal[class*="fixed"][class*="inset-0"][class*="z-"] > div.pericia-light-modal__panel textarea:focus {
+  border-color: #0a84ff !important;
+  box-shadow: 0 0 0 3px rgba(10, 132, 255, 0.2) !important;
+}
+
+.dark div.pericia-light-modal[class*="fixed"][class*="inset-0"][class*="z-"] > div.pericia-light-modal__panel input::placeholder,
+.dark div.pericia-light-modal[class*="fixed"][class*="inset-0"][class*="z-"] > div.pericia-light-modal__panel textarea::placeholder {
+  color: rgba(245, 245, 247, 0.45) !important;
+}
 
 /* ===== EXCEÇÃO: Dropdown de busca de clientes (z-[60]) ===== */
 div[class*="z-[60]"] {
