@@ -1,6 +1,20 @@
 # Changelog
 
-## 1.1.65
+## 1.1.69
+- Financeiro: separadores brilhantes agora aparecem entre parcelas no modo escuro quando existe mais de uma parcela.
+- Linha discreta `via-white/15` com fade nas extremidades adiciona leitura entre cards.
+
+## 1.1.68
+- Financeiro: cartão de parcelas em atraso no dark mode agora usa gradiente vinho (#3f0b1d → #09090b) alinhado ao tema.
+- Badges/pílulas receberam `dark:bg-[#4c0e1f]` e texto claro para leitura segura.
+- Indicador numérico usa `dark:bg-[#fb7185]` para manter o status visual.
+
+## 1.1.67
+- Financeiro: melhorado contraste do card vermelho (parcelas em atraso) no modo escuro.
+- Fundo alterado de `dark:from-rose-500/15` para `dark:from-rose-500/30` com fundo zinc-800.
+- Bordas e badges ajustados para melhor legibilidade em dark mode.
+
+## 1.1.66
 - Perfil: métricas da aba "Métricas" com contraste alto (cards brancos, texto escuro).
 - Corrigidas cores dos ícones e labels para garantir visibilidade das estatísticas.
 - Melhorias de acessibilidade e legibilidade no dashboard do perfil.

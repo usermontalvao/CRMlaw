@@ -2794,10 +2794,10 @@ ${clientAddress ? `<div class="flex"><span class="text-subtle-light dark:text-su
                         <div
                           className={`absolute top-2 sm:top-3 right-2 sm:right-3 h-2 w-2 sm:h-2.5 sm:w-2.5 rounded-full ${
                             isFullyPaid
-                              ? 'bg-emerald-500'
+                              ? 'bg-emerald-500 dark:bg-orange-500'
                               : overdueInstallments.length > 0
-                                ? 'bg-red-500'
-                                : 'bg-amber-500'
+                                ? 'bg-red-500 dark:bg-orange-500'
+                                : 'bg-amber-500 dark:bg-orange-500'
                           }`}
                         />
 
@@ -2878,17 +2878,17 @@ ${clientAddress ? `<div class="flex"><span class="text-subtle-light dark:text-su
 
                             <div className="mt-2 sm:mt-3">
                               <div className="flex items-center justify-between text-[10px] sm:text-[11px]">
-                                <span className="text-slate-400">Progresso</span>
-                                <span className="font-semibold text-slate-700">{paidInstallments.length}/{agreementInstallments.length}</span>
+                                <span className="text-slate-400 dark:text-slate-500">Progresso</span>
+                                <span className="font-semibold text-slate-700 dark:text-slate-300">{paidInstallments.length}/{agreementInstallments.length}</span>
                               </div>
-                              <div className="mt-1.5 sm:mt-2 h-1 sm:h-1.5 w-full bg-slate-100 rounded-full overflow-hidden">
+                              <div className="financial-progress-track mt-1.5 sm:mt-2 h-1 sm:h-1.5 w-full bg-slate-200 dark:bg-orange-500/25 rounded-full overflow-hidden">
                                 <div
-                                  className={`h-full rounded-full transition-all duration-500 ${
+                                  className={`financial-progress-fill h-full rounded-full transition-all duration-500 ${
                                     isFullyPaid
-                                      ? 'bg-emerald-500'
+                                      ? 'bg-emerald-500 dark:bg-orange-500'
                                       : overdueInstallments.length > 0
-                                        ? 'bg-red-500'
-                                        : 'bg-amber-500'
+                                        ? 'bg-red-500 dark:bg-orange-500'
+                                        : 'bg-amber-500 dark:bg-orange-500'
                                   }`}
                                   style={{ width: `${progress}%` }}
                                 />
@@ -3052,9 +3052,9 @@ ${clientAddress ? `<div class="flex"><span class="text-subtle-light dark:text-su
                                       </td>
                                       <td className="px-4 py-3 hidden lg:table-cell">
                                         <div className="flex items-center gap-2">
-                                          <div className="flex-1 h-1.5 bg-slate-100 rounded-full overflow-hidden">
+                                          <div className="financial-progress-track flex-1 h-1.5 bg-slate-200 dark:bg-orange-500/25 rounded-full overflow-hidden">
                                             <div
-                                              className={`h-full rounded-full ${isFullyPaid ? 'bg-emerald-500' : overdueInstallments.length > 0 ? 'bg-red-500' : 'bg-amber-500'}`}
+                                              className={`financial-progress-fill h-full rounded-full ${isFullyPaid ? 'bg-emerald-500 dark:bg-orange-500' : overdueInstallments.length > 0 ? 'bg-red-500 dark:bg-orange-500' : 'bg-amber-500 dark:bg-orange-500'}`}
                                               style={{ width: `${progress}%` }}
                                             />
                                           </div>
@@ -3972,11 +3972,11 @@ ${clientAddress ? `<div class="flex"><span class="text-subtle-light dark:text-su
                               }
                             : isOverdue
                               ? {
-                                  border: 'border-rose-200 dark:border-rose-500/40',
-                                  bg: 'from-rose-50/80 via-white to-white dark:from-rose-500/15 dark:via-zinc-900 dark:to-zinc-900',
-                                  badge: 'bg-rose-100 text-rose-800 dark:bg-rose-500/20 dark:text-rose-200',
-                                  pill: 'bg-rose-500/10 text-rose-700 dark:text-rose-200',
-                                  number: 'bg-rose-500',
+                                  border: 'border-rose-200 dark:border-[#fb7185]/40',
+                                  bg: 'from-rose-50/80 via-white to-white dark:from-[#3f0b1d] dark:via-[#1a090f] dark:to-[#09090b]',
+                                  badge: 'bg-rose-100 text-rose-800 dark:bg-[#4c0e1f] dark:text-[#ffe4e6]',
+                                  pill: 'bg-rose-500/15 text-rose-700 dark:bg-[#4c0e1f]/80 dark:text-[#fecdd3]',
+                                  number: 'bg-rose-500 dark:bg-[#fb7185]',
                                 }
                               : {
                                   border: 'border-slate-200 dark:border-slate-600',
@@ -3999,10 +3999,10 @@ ${clientAddress ? `<div class="flex"><span class="text-subtle-light dark:text-su
                               : pendingMessage;
 
                           return (
-                            <div
-                              key={installment.id}
-                              className={`rounded-xl border ${theme.border} bg-gradient-to-br ${theme.bg} shadow-sm transition-all duration-200 hover:shadow-md`}
-                            >
+                            <React.Fragment key={installment.id}>
+                              <div
+                                className={`rounded-xl border ${theme.border} bg-gradient-to-br ${theme.bg} shadow-sm transition-all duration-200 hover:shadow-md`}
+                              >
                               {/* Header da parcela */}
                               <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between border-b border-white/70 dark:border-white/10 px-3 py-3">
                                 <div className="flex items-center gap-2">
@@ -4127,7 +4127,11 @@ ${clientAddress ? `<div class="flex"><span class="text-subtle-light dark:text-su
                                   </div>
                                 </div>
                               )}
-                            </div>
+                              </div>
+                              {installments.length > 1 && index < installments.length - 1 && (
+                                <div className="hidden dark:block h-px bg-gradient-to-r from-transparent via-white/15 to-transparent mx-2 rounded-full" />
+                              )}
+                            </React.Fragment>
                           );
                         })}
                       </div>

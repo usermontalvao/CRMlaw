@@ -2051,6 +2051,30 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({
         .calendar-container .fc-scrollgrid {
           width: 100% !important;
         }
+
+        /* Dark mode calendar container styles */
+        .dark .calendar-container .fc-theme-standard .fc-scrollgrid {
+          border-color: #374151;
+        }
+        .dark .calendar-container .fc-theme-standard td,
+        .dark .calendar-container .fc-theme-standard th {
+          border-color: #374151;
+        }
+        .dark .calendar-container .fc-daygrid-day-number {
+          color: #f3f4f6;
+        }
+        .dark .calendar-container .fc-col-header-cell {
+          background-color: #1f2937;
+        }
+        .dark .calendar-container .fc-col-header-cell-cushion {
+          color: #9ca3af;
+        }
+        .dark .calendar-container .fc-day-today {
+          background-color: #1e293b !important;
+        }
+        .dark .calendar-container .fc-daygrid-day.fc-day-today .fc-daygrid-day-number {
+          color: #60a5fa;
+        }
         .calendar-chip {
           display: flex;
           align-items: center;
@@ -2127,6 +2151,58 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({
         .calendar-chip--requirement {
           background: #ffedd5;
           color: #c2410c;
+          border-color: #f97316;
+        }
+
+        /* Dark mode styles for calendar chips */
+        .dark .calendar-chip--deadline {
+          background: #1e1b4b;
+          color: #a5b4fc;
+          border-color: #6366f1;
+        }
+        .dark .calendar-chip--deadline.calendar-event--priority-urgent {
+          background: #450a0a;
+          color: #fca5a5;
+          border-color: #ef4444;
+        }
+        .dark .calendar-chip--deadline.calendar-event--priority-high {
+          background: #451a03;
+          color: #fcd34d;
+          border-color: #f59e0b;
+        }
+        .dark .calendar-chip--deadline.calendar-event--priority-medium {
+          background: #1e1b4b;
+          color: #a5b4fc;
+          border-color: #6366f1;
+        }
+        .dark .calendar-chip--deadline.calendar-event--priority-low {
+          background: #0f172a;
+          color: #cbd5e1;
+          border-color: #64748b;
+        }
+        .dark .calendar-chip--hearing {
+          background: #450a0a;
+          color: #fca5a5;
+          border-color: #ef4444;
+        }
+        .dark .calendar-chip--payment {
+          background: #0c4a6e;
+          color: #7dd3fc;
+          border-color: #0ea5e9;
+        }
+        .dark .calendar-chip--pericia {
+          background: #3b0764;
+          color: #d8b4fe;
+          border-color: #a855f7;
+        }
+        .dark .calendar-chip--meeting {
+          background: #064e3b;
+          color: #6ee7b7;
+          border-color: #10b981;
+        }
+        .dark .calendar-chip--requirement {
+          background: #431407;
+          color: #fed7aa;
           border-color: #f97316;
         }
         .calendar-container .fc-list-event-title {

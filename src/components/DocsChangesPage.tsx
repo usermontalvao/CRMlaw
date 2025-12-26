@@ -451,6 +451,42 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
 
 const releases: ReleaseNote[] = [
   {
+    version: '1.1.69',
+    date: '2025-12-26',
+    summary: 'Financeiro: separadores visuais entre parcelas no modo escuro',
+    modules: [
+      {
+        moduleId: 'financeiro',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Separadores brilhantes entre parcelas',
+            description:
+              'Adicionadas linhas decorativas com gradiente via-white/15 entre cards de parcelas no modo escuro quando há mais de uma parcela, melhorando a organização visual.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.1.68',
+    date: '2025-12-26',
+    summary: 'Financeiro: cartão de parcelas em atraso com gradiente vinho no modo escuro',
+    modules: [
+      {
+        moduleId: 'financeiro',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Gradiente vinho para cartões em atraso',
+            description:
+              'Cartões de parcelas em atraso agora usam gradiente vinho (#3f0b1d → #09090b) no modo escuro, com badges/pílulas em #4c0e1f e indicador numérico em #fb7185.',
+          },
+        ],
+      },
+    ],
+  },
+  {
     version: '1.1.65',
     date: '2025-12-25',
     summary: 'Perfil: melhorias de acessibilidade e legibilidade',
