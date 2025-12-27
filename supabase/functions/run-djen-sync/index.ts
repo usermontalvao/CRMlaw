@@ -11,6 +11,9 @@ const DJEN_BASE_URL = 'https://comunicaapi.pje.jus.br/api/v1'
 // Token simples para proteger o endpoint (pode ser alterado)
 const SYNC_TOKEN = Deno.env.get('DJEN_SYNC_TOKEN') || 'djen-sync-2024'
 
+// OpenAI API Key para análise automática
+const OPENAI_API_KEY = Deno.env.get('OPENAI_API_KEY')
+
 serve(async (req) => {
   // Handle CORS preflight
   if (req.method === 'OPTIONS') {
@@ -18,11 +21,45 @@ serve(async (req) => {
   }
 
   try {
+    console.log(`📥 DJEN SYNC request: ${req.method} ${req.url}`)
     // Verificar token de segurança
     const url = new URL(req.url)
     const token = url.searchParams.get('token')
-    
+
+    const nowIso = new Date().toISOString()
+    const dateRangeStart = getDateDaysAgo(7)
+    const dateRangeEnd = getDateToday()
+
+    const supabaseClient = createClient(
+      Deno.env.get('SUPABASE_URL') ?? '',
+      Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
+    )
+
     if (token !== SYNC_TOKEN) {
+      try {
+        await supabaseClient
+          .from('djen_sync_history')
+          .insert({
+            id: crypto.randomUUID(),
+            synced_at: nowIso,
+            date_range_start: dateRangeStart,
+            date_range_end: dateRangeEnd,
+            items_found: 0,
+            items_saved: 0,
+            success: false,
+            source: 'cron_supabase',
+            origin: 'scheduled_trigger',
+            trigger_type: 'pg_cron',
+            status: 'error',
+            run_started_at: nowIso,
+            run_finished_at: nowIso,
+            error_message: 'Token inválido',
+            message: 'Execução bloqueada: token inválido'
+          })
+      } catch (e) {
+        console.error('Falha ao registrar token inválido em djen_sync_history:', e)
+      }
+
       return new Response(
         JSON.stringify({ error: 'Token inválido' }),
         {
@@ -32,12 +69,11 @@ serve(async (req) => {
       )
     }
 
-    const supabaseClient = createClient(
-      Deno.env.get('SUPABASE_URL') ?? '',
-      Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
-    )
-
-    console.log('🚀 Iniciando sincronização DJEN via link público...')
+    const executionId = crypto.randomUUID().substring(0, 8)
+    console.log(`\n${'='.repeat(60)}`)
+    console.log(`🚀 [${executionId}] CRON DJEN SYNC - INICIANDO`)
+    console.log(`📅 Data/Hora: ${new Date().toISOString()}`)
+    console.log(`${'='.repeat(60)}\n`)
 
     // Registrar início da execução
     const syncStartTime = new Date().toISOString()
@@ -45,15 +81,24 @@ serve(async (req) => {
     const { data: syncLog } = await supabaseClient
       .from('djen_sync_history')
       .insert({
-        source: 'public_link',
-        origin: 'manual_trigger',
-        trigger_type: 'http_request',
+        id: crypto.randomUUID(),
+        synced_at: syncStartTime,
+        date_range_start: dateRangeStart,
+        date_range_end: dateRangeEnd,
+        items_found: 0,
+        items_saved: 0,
+        success: false,
+        source: 'cron_supabase',
+        origin: 'scheduled_trigger',
+        trigger_type: 'pg_cron',
         status: 'running',
         run_started_at: syncStartTime,
-        message: 'Sincronização iniciada via link público'
+        message: `[${executionId}] Sincronização iniciada via cron Supabase`
       })
       .select()
       .single()
+    
+    console.log(`📝 [${executionId}] Log de sync criado: ${syncLog?.id || 'N/A'}`)
 
     let totalSaved = 0
     let totalFound = 0
@@ -74,12 +119,17 @@ serve(async (req) => {
         .eq('status', 'andamento')
         .limit(50)
 
+      console.log(`\n📊 [${executionId}] DADOS ENCONTRADOS:`)
+      console.log(`   👤 Perfis com advogado: ${profiles?.length || 0}`)
+      console.log(`   📁 Processos em andamento: ${processes?.length || 0}`)
+
       if (profiles && profiles.length > 0) {
+        console.log(`\n🔄 [${executionId}] ETAPA 1: Sincronização por advogado`)
         // Sincronizar por nome do advogado
         for (const profile of profiles) {
           if (!profile.lawyer_full_name) continue
 
-          console.log(`🔍 Buscando intimações para: ${profile.lawyer_full_name}`)
+          console.log(`   🔍 Buscando: ${profile.lawyer_full_name}`)
 
           const params = new URLSearchParams({
             nomeAdvogado: profile.lawyer_full_name,
@@ -98,8 +148,8 @@ serve(async (req) => {
               totalFound += data.items.length
               
               // Salvar comunicações no banco
-              const saved = await saveCommunications(supabaseClient, data.items, processes || [])
-              totalSaved += saved
+              const result = await saveCommunications(supabaseClient, data.items, processes || [])
+              totalSaved += result.saved
             }
           }
 
@@ -110,16 +160,19 @@ serve(async (req) => {
 
       // Sincronizar por processos cadastrados
       if (processes && processes.length > 0) {
+        console.log(`\n🔄 [${executionId}] ETAPA 2: Sincronização por processo`)
         const processNumbers = processes
-          .map(p => p.process_code?.replace(/\D/g, ''))
-          .filter(code => code && code.length === 20)
+          .map((p: any) => p.process_code?.replace(/\D/g, ''))
+          .filter((code: any) => code && code.length === 20)
 
-        for (const processNumber of processNumbers.slice(0, 10)) { // Limitar a 10 processos
-          console.log(`🔍 Buscando intimações para processo: ${processNumber}`)
+        console.log(`   📋 Processos válidos: ${processNumbers.length}`)
+
+        for (const processNumber of processNumbers) { // Buscar TODOS os processos
+          console.log(`   🔍 Buscando: ${processNumber.substring(0, 7)}...`)
 
           const params = new URLSearchParams({
             numeroProcesso: processNumber,
-            dataDisponibilizacaoInicio: getDateDaysAgo(30),
+            dataDisponibilizacaoInicio: getDateDaysAgo(7),
             dataDisponibilizacaoFim: getDateToday(),
             meio: 'D',
             itensPorPagina: '100',
@@ -134,8 +187,8 @@ serve(async (req) => {
               totalFound += data.items.length
               
               // Salvar comunicações no banco
-              const saved = await saveCommunications(supabaseClient, data.items, processes)
-              totalSaved += saved
+              const result = await saveCommunications(supabaseClient, data.items, processes)
+              totalSaved += result.saved
             }
           }
 
@@ -152,6 +205,7 @@ serve(async (req) => {
     // Atualizar log de sincronização
     const syncEndTime = new Date().toISOString()
     const finalStatus = errorMessage ? 'error' : 'success'
+    const finalSuccess = !errorMessage
 
     if (syncLog) {
       await supabaseClient
@@ -161,24 +215,90 @@ serve(async (req) => {
           run_finished_at: syncEndTime,
           items_found: totalFound,
           items_saved: totalSaved,
+          success: finalSuccess,
+          synced_at: syncEndTime,
+          date_range_start: dateRangeStart,
+          date_range_end: dateRangeEnd,
           error_message: errorMessage,
           message: errorMessage || `Sincronização concluída: ${totalSaved} intimações salvas de ${totalFound} encontradas`
         })
         .eq('id', syncLog.id)
     }
 
-    console.log(`✅ Sincronização concluída: ${totalSaved} intimações salvas de ${totalFound} encontradas`)
+    console.log(`\n📈 [${executionId}] RESULTADO SINCRONIZAÇÃO:`)
+    console.log(`   📥 Encontradas: ${totalFound}`)
+    console.log(`   💾 Salvas: ${totalSaved}`)
+    console.log(`   ⏱️ Status: ${finalStatus}`)
+
+    // ========================================
+    // ANÁLISE AUTOMÁTICA DE IA
+    // ========================================
+    let totalAnalyzed = 0
+    
+    if (OPENAI_API_KEY) {
+      console.log(`\n🤖 [${executionId}] ETAPA 3: Análise automática de IA`)
+      
+      try {
+        // Buscar intimações sem análise (últimas 50)
+        const { data: unanalyzed } = await supabaseClient
+          .from('djen_comunicacoes')
+          .select('id, texto, tipo_comunicacao, numero_processo')
+          .is('ai_analysis', null)
+          .order('created_at', { ascending: false })
+          .limit(50)
+
+        if (unanalyzed && unanalyzed.length > 0) {
+          console.log(`📊 ${unanalyzed.length} intimações sem análise encontradas`)
+
+          for (const intimacao of unanalyzed) {
+            try {
+              const analysis = await analyzeIntimation(intimacao.texto, intimacao.tipo_comunicacao)
+              
+              if (analysis) {
+                await supabaseClient
+                  .from('djen_comunicacoes')
+                  .update({ ai_analysis: analysis })
+                  .eq('id', intimacao.id)
+
+                totalAnalyzed++
+                console.log(`✅ Analisada intimação ${intimacao.id}`)
+              }
+
+              // Delay entre análises para não estourar rate limit
+              await new Promise(resolve => setTimeout(resolve, 1500))
+            } catch (aiError) {
+              console.error(`❌ Erro ao analisar intimação ${intimacao.id}:`, aiError)
+            }
+          }
+        }
+
+        console.log(`   ✅ Análise IA concluída: ${totalAnalyzed} analisadas`)
+      } catch (aiError) {
+        console.error(`   ❌ Erro na análise automática de IA:`, aiError)
+      }
+    } else {
+      console.log(`\n⚠️ [${executionId}] OPENAI_API_KEY não configurada - análise IA ignorada`)
+    }
+
+    // Log final
+    const totalDuration = ((new Date().getTime() - new Date(syncStartTime).getTime()) / 1000).toFixed(1)
+    console.log(`\n${'='.repeat(60)}`)
+    console.log(`✅ [${executionId}] CRON DJEN SYNC - FINALIZADO`)
+    console.log(`   📥 Encontradas: ${totalFound} | 💾 Salvas: ${totalSaved} | 🤖 Analisadas: ${totalAnalyzed}`)
+    console.log(`   ⏱️ Duração: ${totalDuration}s`)
+    console.log(`${'='.repeat(60)}\n`)
 
     return new Response(
       JSON.stringify({
         success: true,
-        message: `Sincronização DJEN concluída`,
+        message: `Sincronização DJEN + Análise IA concluída`,
         stats: {
           found: totalFound,
           saved: totalSaved,
+          analyzed: totalAnalyzed,
           status: finalStatus,
           started_at: syncStartTime,
-          finished_at: syncEndTime
+          finished_at: new Date().toISOString()
         }
       }),
       {
@@ -214,42 +334,135 @@ function getDateDaysAgo(days: number): string {
   return date.toISOString().split('T')[0]
 }
 
-async function saveCommunications(supabase: any, communications: any[], processes: any[]): Promise<number> {
+// Função para analisar intimação com IA
+async function analyzeIntimation(texto: string, tipoComunicacao: string): Promise<any> {
+  if (!OPENAI_API_KEY || !texto) return null
+
+  const prompt = `Analise esta intimação judicial e retorne um JSON com:
+- summary: resumo em 1-2 frases
+- urgency: "alta", "media" ou "baixa"
+- deadline_days: número de dias para prazo (se mencionado, senão null)
+- action_required: true/false se requer ação imediata
+- key_points: array com até 3 pontos principais
+
+Tipo: ${tipoComunicacao || 'Intimação'}
+Texto: ${texto.substring(0, 2000)}
+
+Responda APENAS com o JSON, sem markdown.`
+
+  try {
+    const response = await fetch('https://api.openai.com/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${OPENAI_API_KEY}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        model: 'gpt-4o-mini',
+        messages: [
+          { role: 'system', content: 'Você é um assistente jurídico especializado em análise de intimações. Responda sempre em JSON válido.' },
+          { role: 'user', content: prompt }
+        ],
+        temperature: 0.3,
+      }),
+    })
+
+    if (!response.ok) {
+      console.error('Erro OpenAI:', await response.text())
+      return null
+    }
+
+    const data = await response.json()
+    const content = data.choices?.[0]?.message?.content
+
+    if (!content) return null
+
+    // Tentar parsear JSON
+    const jsonMatch = content.match(/\{[\s\S]*\}/)
+    if (jsonMatch) {
+      return JSON.parse(jsonMatch[0])
+    }
+
+    return null
+  } catch (error) {
+    console.error('Erro ao analisar com IA:', error)
+    return null
+  }
+}
+
+async function saveCommunications(supabase: any, communications: any[], processes: any[]): Promise<{ saved: number, processesUpdated: string[] }> {
   let savedCount = 0
+  const processesUpdated: string[] = []
 
   for (const comm of communications) {
     try {
-      // Verificar se já existe
-      const { data: existing } = await supabase
-        .from('djen_comunicacoes_local')
+      const djenId = comm.id ?? comm.djenId ?? comm.djen_id
+      const hash = comm.hash ?? comm.hashComunicacao ?? comm.hash_comunicacao
+      const numeroComunicacao = comm.numeroComunicacao ?? comm.numero_comunicacao ?? null
+      const dataDisponibilizacao = comm.dataDisponibilizacao ?? comm.data_disponibilizacao
+
+      if (!djenId || !hash || !dataDisponibilizacao) {
+        console.error('❌ Comunicação inválida (campos obrigatórios ausentes):', {
+          djenId,
+          hash,
+          numeroComunicacao,
+          dataDisponibilizacao,
+        })
+        continue
+      }
+
+      // Verificar se já existe (hash é UNIQUE na tabela)
+      const { data: existing, error: existingError } = await supabase
+        .from('djen_comunicacoes')
         .select('id')
-        .eq('numero_comunicacao', comm.numeroComunicacao)
-        .single()
+        .eq('hash', hash)
+        .maybeSingle()
+
+      if (existingError) {
+        console.error('⚠️ Erro ao verificar duplicidade por hash:', existingError)
+      }
 
       if (existing) continue // Já existe
 
-      // Tentar vincular com processo
+      // Extrair número do processo (da API ou do texto)
+      let numeroProcesso = comm.numeroProcesso ?? comm.numero_processo ?? null
+      
+      // Se não veio da API, tentar extrair do texto
+      if (!numeroProcesso && comm.texto) {
+        // Padrão CNJ: 1234567-12.1234.1.12.1234 ou variações
+        const processMatch = comm.texto.match(/(\d{7}-\d{2}\.\d{4}\.\d\.\d{2}\.\d{4})/i)
+        if (processMatch) {
+          numeroProcesso = processMatch[1]
+          console.log(`   📋 Número extraído do texto: ${numeroProcesso}`)
+        }
+      }
+
+      // Tentar vincular com processo cadastrado
       let processId = null
       let clientId = null
+      let linkedProcess = null
 
-      if (comm.numeroProcesso) {
-        const processNumber = comm.numeroProcesso.replace(/\D/g, '')
-        const process = processes.find(p => 
+      if (numeroProcesso) {
+        const processNumber = numeroProcesso.replace(/\D/g, '')
+        linkedProcess = processes.find((p: any) => 
           p.process_code?.replace(/\D/g, '') === processNumber
         )
         
-        if (process) {
-          processId = process.id
-          clientId = process.client_id
+        if (linkedProcess) {
+          processId = linkedProcess.id
+          clientId = linkedProcess.client_id
+          console.log(`   🔗 Vinculado ao processo: ${linkedProcess.process_code}`)
         }
       }
 
       // Salvar comunicação
       const { error } = await supabase
-        .from('djen_comunicacoes_local')
+        .from('djen_comunicacoes')
         .insert({
+          djen_id: djenId,
+          hash,
           numero_comunicacao: comm.numeroComunicacao,
-          numero_processo: comm.numeroProcesso,
+          numero_processo: numeroProcesso,
           numero_processo_mascara: comm.numeroProcessoMascara,
           sigla_tribunal: comm.siglaTribunal,
           nome_orgao: comm.nomeOrgao,
@@ -257,16 +470,58 @@ async function saveCommunications(supabase: any, communications: any[], processe
           tipo_comunicacao: comm.tipoComunicacao,
           tipo_documento: comm.tipoDocumento,
           meio: comm.meio,
-          meio_completo: comm.meiocompleto,
+          meio_completo: comm.meioCompleto ?? comm.meiocompleto ?? comm.meio_completo,
           link: comm.link,
-          data_disponibilizacao: comm.data_disponibilizacao,
+          data_disponibilizacao: dataDisponibilizacao,
           process_id: processId,
           client_id: clientId,
-          lida: false
+          lida: false,
+          ativo: true,
         })
+
+      if (error) {
+        console.error('❌ Erro ao inserir comunicação DJEN:', {
+          djenId,
+          hash,
+          numeroComunicacao,
+          numeroProcesso: comm.numeroProcesso,
+          dataDisponibilizacao,
+          error,
+        })
+      }
 
       if (!error) {
         savedCount++
+        
+        // Se vinculou a um processo, atualizar status e flags do processo
+        if (linkedProcess && processId) {
+          try {
+            const newStatus = detectProcessStatus(comm.texto, comm.tipoComunicacao)
+            const updatePayload: any = {
+              djen_synced: true,
+              djen_last_sync: new Date().toISOString(),
+              djen_has_data: true,
+              updated_at: new Date().toISOString()
+            }
+            
+            // Atualizar status se detectou um novo
+            if (newStatus && newStatus !== linkedProcess.status) {
+              updatePayload.status = newStatus
+              console.log(`📊 Processo ${processId}: ${linkedProcess.status} → ${newStatus}`)
+            }
+            
+            await supabase
+              .from('processes')
+              .update(updatePayload)
+              .eq('id', processId)
+            
+            if (!processesUpdated.includes(processId)) {
+              processesUpdated.push(processId)
+            }
+          } catch (updateError) {
+            console.error(`Erro ao atualizar processo ${processId}:`, updateError)
+          }
+        }
       }
 
     } catch (saveError) {
@@ -274,5 +529,86 @@ async function saveCommunications(supabase: any, communications: any[], processe
     }
   }
 
-  return savedCount
+  return { saved: savedCount, processesUpdated }
+}
+
+// Detecta status do processo baseado no texto da intimação
+function detectProcessStatus(texto: string, tipoComunicacao?: string): string | null {
+  if (!texto) return null
+  
+  const textoLower = texto.toLowerCase()
+  
+  // Arquivado
+  if (textoLower.includes('arquivamento definitivo') || 
+      textoLower.includes('autos arquivados') ||
+      textoLower.includes('baixa definitiva') ||
+      (textoLower.includes('arquivado') && textoLower.includes('transitado'))) {
+    return 'arquivado'
+  }
+
+  // Cumprimento de sentença
+  if (textoLower.includes('cumprimento de sentença') || 
+      textoLower.includes('fase de cumprimento') ||
+      textoLower.includes('liquidação de sentença')) {
+    return 'cumprimento'
+  }
+
+  // Recurso
+  if (textoLower.includes('apelação') ||
+      textoLower.includes('agravo de instrumento') ||
+      textoLower.includes('agravo interno') ||
+      textoLower.includes('embargos de declaração') ||
+      textoLower.includes('recurso especial') ||
+      textoLower.includes('recurso extraordinário')) {
+    return 'recurso'
+  }
+
+  // Sentença
+  if (textoLower.includes('julgo procedente') || 
+      textoLower.includes('julgo improcedente') ||
+      textoLower.includes('julgo parcialmente procedente') ||
+      textoLower.includes('extingo o processo') ||
+      textoLower.includes('homologo o acordo')) {
+    return 'sentenca'
+  }
+
+  // Instrução
+  if (textoLower.includes('audiência de instrução') ||
+      textoLower.includes('instrução e julgamento') ||
+      textoLower.includes('produção de provas') ||
+      textoLower.includes('oitiva de testemunhas')) {
+    return 'instrucao'
+  }
+
+  // Conciliação
+  if (textoLower.includes('audiência de conciliação') ||
+      textoLower.includes('conciliação virtual') ||
+      textoLower.includes('conciliação designada') ||
+      textoLower.includes('pauta de conciliação')) {
+    return 'conciliacao'
+  }
+
+  // Contestação
+  if (textoLower.includes('contestação') || 
+      textoLower.includes('defesa apresentada') ||
+      textoLower.includes('juntada de contestação')) {
+    return 'contestacao'
+  }
+
+  // Citação
+  if (textoLower.includes('citação') || 
+      textoLower.includes('cite-se') ||
+      textoLower.includes('fica citado')) {
+    return 'citacao'
+  }
+
+  // Em andamento genérico
+  if (textoLower.includes('intimação') ||
+      textoLower.includes('despacho') ||
+      textoLower.includes('prazo') ||
+      textoLower.includes('manifestação')) {
+    return 'andamento'
+  }
+
+  return null
 }

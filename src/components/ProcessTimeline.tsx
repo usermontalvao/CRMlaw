@@ -30,6 +30,8 @@ import {
   Users,
 } from 'lucide-react';
 import { processTimelineService, type TimelineEvent } from '../services/processTimeline.service';
+import { processService } from '../services/process.service';
+import type { ProcessStatus } from '../types/process.types';
 
 interface ProcessTimelineProps {
   processCode: string;
@@ -94,8 +96,13 @@ const getStatusLabel = (status: string) => {
     nao_protocolado: 'Não Protocolado',
     aguardando_confeccao: 'Aguardando Confecção',
     distribuido: 'Distribuído',
+    citacao: 'Citação',
+    conciliacao: 'Conciliação',
+    contestacao: 'Contestação',
+    instrucao: 'Instrução',
     andamento: 'Em Andamento',
     sentenca: 'Sentença',
+    recurso: 'Recurso',
     cumprimento: 'Cumprimento',
     arquivado: 'Arquivado',
   };
@@ -255,13 +262,54 @@ const detectCurrentStage = (events: TimelineEvent[]): number => {
     (titles.some(t => t.includes('audiência')) || descriptions.some(d => d.includes('audiência')));
   if (hasIntimacaoAudiencia) return 2;
   
-  // Se tem despacho, provavelmente está em instrução
+  // Verificar despachos com ordens de bloqueio (fase de execução)
+  const hasDespachoBloqueio = titles.some(t => 
+    t.includes('bloqueio') && 
+    (t.includes('contas') || t.includes('aplicações') || t.includes('bens'))
+  ) || descriptions.some(d => 
+    d.includes('bloqueio') && 
+    (d.includes('contas') || d.includes('aplicações') || d.includes('bens'))
+  );
+  if (hasDespachoBloqueio) return 8; // Fase de execução
+  
+  // Se tem despacho regular, provavelmente está em instrução
   if (eventTypes.includes('despacho')) return 4;
+  
+  // Verificar intimações específicas com bloqueio
+  const hasIntimacaoBloqueio = eventTypes.includes('intimacao') && (
+    titles.some(t => t.includes('bloqueio')) || 
+    descriptions.some(d => d.includes('bloqueio'))
+  );
+  if (hasIntimacaoBloqueio) return 8; // Fase de execução
   
   // Se tem intimação genérica, provavelmente está em instrução
   if (eventTypes.includes('intimacao')) return 4;
   
   return 0; // Distribuição
+};
+
+const mapStageToStatus = (stage: number): ProcessStatus => {
+  switch (stage) {
+    case 1:
+      return 'citacao';
+    case 2:
+      return 'conciliacao';
+    case 3:
+      return 'contestacao';
+    case 4:
+      return 'instrucao';
+    case 5:
+      return 'sentenca';
+    case 6:
+      return 'recurso';
+    case 7:
+      return 'cumprimento';
+    case 8:
+      return 'cumprimento';
+    case 0:
+    default:
+      return 'distribuido';
+  }
 };
 
 // Função para limpar tags HTML do conteúdo
@@ -304,41 +352,72 @@ export const ProcessTimeline: React.FC<ProcessTimelineProps> = ({
   const [showSummaryDetails, setShowSummaryDetails] = useState(false);
 
   // Buscar e analisar automaticamente
+  // PRIORIZA banco local (djen_comunicacoes_local) com IA já pronta pelo cron
+  // Fallback para DJEN direto se não houver dados no banco
   const fetchAndAnalyze = async () => {
     try {
       setLoading(true);
       setError(null);
       
-      // Buscar e analisar automaticamente com IA
-      setAnalyzing(true);
-      const data = await processTimelineService.fetchAndAnalyzeTimeline(
-        processCode,
-        (current, total) => setAnalyzeProgress({ current, total })
-      );
+      let data: TimelineEvent[] = [];
+      
+      // Se tem processId, buscar do banco local (com IA já pronta pelo cron)
+      if (processId) {
+        console.log('📦 Buscando timeline do banco local...');
+        data = await processTimelineService.fetchTimelineFromDatabase(processId, processCode);
+        
+        // Se veio do banco e tem eventos com IA, não precisa analisar novamente
+        const hasAiAnalysis = data.some(e => e.aiAnalysis);
+        if (data.length > 0 && hasAiAnalysis) {
+          console.log(`✅ ${data.length} eventos carregados do banco (${data.filter(e => e.aiAnalysis).length} com IA)`);
+        } else if (data.length > 0) {
+          // Tem dados mas sem IA, analisar em background
+          console.log('🤖 Dados do banco sem IA, analisando...');
+          setAnalyzing(true);
+          data = await processTimelineService.fetchAndAnalyzeTimeline(
+            processCode,
+            (current, total) => setAnalyzeProgress({ current, total })
+          );
+        }
+      } else {
+        // Sem processId, buscar do DJEN e analisar
+        setAnalyzing(true);
+        data = await processTimelineService.fetchAndAnalyzeTimeline(
+          processCode,
+          (current, total) => setAnalyzeProgress({ current, total })
+        );
+      }
+      
       setEvents(data);
-      setCurrentStage(detectCurrentStage(data));
+      const stage = detectCurrentStage(data);
+      setCurrentStage(stage);
 
-      // Atualizar status do processo automaticamente se tiver processId
+      // Atualizar status do processo obrigatoriamente conforme o mapa (estágio exibido)
       if (processId && data.length > 0) {
-        const newStatus = await processTimelineService.autoUpdateProcessStatus(processId, data);
-        if (newStatus) {
-          setStatusUpdated(newStatus);
-          onStatusUpdated?.(newStatus);
+        const mappedStatus = mapStageToStatus(stage);
+        const currentProcess = await processService.getProcessById(processId);
+        if (currentProcess && currentProcess.status !== mappedStatus) {
+          await processService.updateStatus(processId, mappedStatus);
+          setStatusUpdated(mappedStatus);
+          onStatusUpdated?.(mappedStatus);
         }
       }
     } catch (err: any) {
-      // Se falhar a análise, tentar apenas buscar
+      // Se falhar, tentar apenas buscar do DJEN
       try {
         const data = await processTimelineService.fetchProcessTimeline(processCode);
         setEvents(data);
-        setCurrentStage(detectCurrentStage(data));
+        const stage = detectCurrentStage(data);
+        setCurrentStage(stage);
 
-        // Tentar atualizar status mesmo sem análise IA
+        // Atualizar status do processo obrigatoriamente conforme o mapa (estágio exibido)
         if (processId && data.length > 0) {
-          const newStatus = await processTimelineService.autoUpdateProcessStatus(processId, data);
-          if (newStatus) {
-            setStatusUpdated(newStatus);
-            onStatusUpdated?.(newStatus);
+          const mappedStatus = mapStageToStatus(stage);
+          const currentProcess = await processService.getProcessById(processId);
+          if (currentProcess && currentProcess.status !== mappedStatus) {
+            await processService.updateStatus(processId, mappedStatus);
+            setStatusUpdated(mappedStatus);
+            onStatusUpdated?.(mappedStatus);
           }
         }
       } catch (innerErr: any) {
@@ -390,7 +469,7 @@ export const ProcessTimeline: React.FC<ProcessTimelineProps> = ({
     const matchesGrau = filterGrau === 'todos' || event.grauRecursal === filterGrau;
     const matchesSearch = !searchTerm || 
       event.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      event.description.toLowerCase().includes(searchTerm.toLowerCase());
+      (event.description || '').toLowerCase().includes(searchTerm.toLowerCase());
     return matchesType && matchesGrau && matchesSearch;
   });
 
@@ -410,12 +489,12 @@ export const ProcessTimeline: React.FC<ProcessTimelineProps> = ({
   };
 
   return (
-    <div className="bg-white dark:bg-zinc-900 rounded-2xl shadow-2xl ring-1 ring-black/5 overflow-hidden w-[92vw] max-w-6xl max-h-[90vh] min-h-[500px] flex flex-col">
+    <div className="bg-white dark:bg-zinc-900 rounded-2xl shadow-2xl ring-1 ring-black/5 overflow-hidden w-[92vw] max-w-5xl max-h-[90vh] min-h-[520px] flex flex-col">
       {/* Barra laranja do topo */}
       <div className="h-1 w-full bg-gradient-to-r from-orange-500 via-amber-500 to-orange-500" />
       
       {/* Header compacto */}
-      <div className="px-4 py-2 border-b border-slate-200 dark:border-zinc-800 flex items-center justify-between">
+      <div className="px-5 py-3 border-b border-slate-200 dark:border-zinc-800 flex items-center justify-between">
         <div className="flex items-center gap-2">
           <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-orange-500 to-amber-500 flex items-center justify-center">
             <Clock className="w-4 h-4 text-white" />
@@ -425,13 +504,23 @@ export const ProcessTimeline: React.FC<ProcessTimelineProps> = ({
             <p className="text-xs text-slate-500 truncate max-w-[400px]">{clientName} • <span className="font-mono">{processCode}</span></p>
           </div>
         </div>
-        <button onClick={onClose} className="p-1.5 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-lg transition">
-          <X className="w-4 h-4" />
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={refreshTimeline}
+            disabled={loading}
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium text-slate-600 dark:text-slate-200 bg-slate-100/70 dark:bg-zinc-800 hover:bg-slate-100 dark:hover:bg-zinc-700 border border-slate-200 dark:border-zinc-700 transition disabled:opacity-60"
+          >
+            <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
+            {analyzing ? `${analyzeProgress.current}/${analyzeProgress.total}` : 'Atualizar'}
+          </button>
+          <button onClick={onClose} className="p-2 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-lg transition">
+            <X className="w-4 h-4" />
+          </button>
+        </div>
       </div>
 
       {/* Estágios - Linha completa abaixo do header */}
-      <div className="px-4 py-3 bg-slate-50 dark:bg-zinc-800/50 border-b border-slate-200 dark:border-zinc-700">
+      <div className="px-5 py-4 bg-slate-50 dark:bg-zinc-800/50 border-b border-slate-200 dark:border-zinc-700">
         <div className="flex items-center justify-between mb-2">
           <p className="text-xs font-semibold text-slate-600 dark:text-slate-300">Estágio do Processo</p>
           <span className="text-xs font-bold px-2 py-0.5 rounded-lg bg-orange-100 text-orange-700">{currentStage + 1}/{PROCESS_STAGES.length} • {PROCESS_STAGES[currentStage]?.label}</span>
@@ -464,38 +553,38 @@ export const ProcessTimeline: React.FC<ProcessTimelineProps> = ({
       </div>
 
       {/* Layout em 2 colunas */}
-      <div className="flex-1 flex flex-col md:flex-row overflow-hidden">
+      <div className="flex-1 grid grid-cols-1 md:grid-cols-[320px_1fr] overflow-hidden">
         {/* Coluna Esquerda - Resumo e Filtros */}
-        <div className="w-full md:w-[260px] flex-shrink-0 md:border-r border-slate-200 dark:border-zinc-800 bg-slate-50 dark:bg-zinc-900 overflow-y-auto p-3 space-y-3">
+        <div className="border-b md:border-b-0 md:border-r border-slate-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 overflow-y-auto p-4 space-y-4">
 
           {/* Status Updated */}
           {statusUpdated && (
-            <div className="px-2 py-1.5 bg-emerald-50 border border-emerald-200 rounded-lg flex items-center gap-1.5">
-              <CheckCircle2 className="w-3 h-3 text-emerald-600" />
-              <p className="text-xs text-emerald-700">Status: <strong>{getStatusLabel(statusUpdated)}</strong></p>
+            <div className="px-3 py-2 bg-emerald-50 border border-emerald-200 rounded-xl flex items-center gap-2">
+              <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+              <p className="text-xs text-emerald-700">Status atualizado: <strong>{getStatusLabel(statusUpdated)}</strong></p>
             </div>
           )}
 
           {/* Filtros compactos */}
-          <div className="bg-white dark:bg-zinc-800 rounded-lg border border-slate-200 dark:border-zinc-700 p-3">
-            <p className="text-xs font-semibold text-slate-700 dark:text-white mb-2">Filtros</p>
+          <div className="bg-slate-50/70 dark:bg-zinc-800/50 rounded-2xl border border-slate-200 dark:border-zinc-700 p-4">
+            <p className="text-xs font-semibold text-slate-700 dark:text-white mb-3">Filtros</p>
             
-            <div className="flex flex-wrap gap-1 mb-2">
+            <div className="flex flex-wrap gap-1.5 mb-3">
               {eventTypeCounts.intimacao > 0 && (
                 <button onClick={() => setFilterType(filterType === 'intimacao' ? 'todos' : 'intimacao')}
-                  className={`inline-flex items-center gap-1 px-2 py-1 rounded-md text-xs font-medium transition ${filterType === 'intimacao' ? 'bg-blue-600 text-white' : 'bg-blue-50 text-blue-700 hover:bg-blue-100'}`}>
+                  className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-medium transition border ${filterType === 'intimacao' ? 'bg-blue-600 text-white border-blue-600' : 'bg-white/60 dark:bg-zinc-900/40 text-blue-700 dark:text-blue-300 border-blue-200 dark:border-blue-800 hover:bg-white dark:hover:bg-zinc-900/60'}`}>
                   <Bell className="w-3 h-3" /> {eventTypeCounts.intimacao}
                 </button>
               )}
               {eventTypeCounts.decisao > 0 && (
                 <button onClick={() => setFilterType(filterType === 'decisao' ? 'todos' : 'decisao')}
-                  className={`inline-flex items-center gap-1 px-2 py-1 rounded-md text-xs font-medium transition ${filterType === 'decisao' ? 'bg-amber-600 text-white' : 'bg-amber-50 text-amber-700 hover:bg-amber-100'}`}>
+                  className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-medium transition border ${filterType === 'decisao' ? 'bg-amber-600 text-white border-amber-600' : 'bg-white/60 dark:bg-zinc-900/40 text-amber-700 dark:text-amber-300 border-amber-200 dark:border-amber-800 hover:bg-white dark:hover:bg-zinc-900/60'}`}>
                   <Scale className="w-3 h-3" /> {eventTypeCounts.decisao}
                 </button>
               )}
               {eventTypeCounts.despacho > 0 && (
                 <button onClick={() => setFilterType(filterType === 'despacho' ? 'todos' : 'despacho')}
-                  className={`inline-flex items-center gap-1 px-2 py-1 rounded-md text-xs font-medium transition ${filterType === 'despacho' ? 'bg-slate-700 text-white' : 'bg-slate-100 text-slate-700 hover:bg-slate-200'}`}>
+                  className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-medium transition border ${filterType === 'despacho' ? 'bg-slate-700 text-white border-slate-700' : 'bg-white/60 dark:bg-zinc-900/40 text-slate-700 dark:text-slate-200 border-slate-200 dark:border-zinc-700 hover:bg-white dark:hover:bg-zinc-900/60'}`}>
                   <FileText className="w-3 h-3" /> {eventTypeCounts.despacho}
                 </button>
               )}
@@ -505,10 +594,10 @@ export const ProcessTimeline: React.FC<ProcessTimelineProps> = ({
               <div className="relative">
                 <Search className="absolute left-2 top-1/2 -translate-y-1/2 w-3 h-3 text-slate-400" />
                 <input type="text" value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} placeholder="Buscar..."
-                  className="w-full pl-7 pr-2 py-1.5 bg-slate-50 dark:bg-zinc-900 border border-slate-200 dark:border-zinc-700 rounded-md text-xs focus:outline-none focus:ring-1 focus:ring-orange-500" />
+                  className="w-full pl-7 pr-2 py-2 bg-white/70 dark:bg-zinc-900/50 border border-slate-200 dark:border-zinc-700 rounded-xl text-xs focus:outline-none focus:ring-2 focus:ring-orange-500/40" />
               </div>
               <select value={filterGrau} onChange={(e) => setFilterGrau(e.target.value)}
-                className="w-full px-2 py-1.5 bg-slate-50 dark:bg-zinc-900 border border-slate-200 dark:border-zinc-700 rounded-md text-xs">
+                className="w-full px-2 py-2 bg-white/70 dark:bg-zinc-900/50 border border-slate-200 dark:border-zinc-700 rounded-xl text-xs">
                 {GRAU_RECURSAL.map((grau) => (<option key={grau.key} value={grau.key}>{grau.label}</option>))}
               </select>
             </div>
@@ -523,14 +612,7 @@ export const ProcessTimeline: React.FC<ProcessTimelineProps> = ({
               )}
             </div>
 
-            <button
-              onClick={refreshTimeline}
-              disabled={loading}
-              className="mt-2 w-full flex items-center justify-center gap-1.5 px-3 py-2 bg-orange-500 hover:bg-orange-600 text-white rounded-lg text-xs font-semibold transition disabled:opacity-60"
-            >
-              <RefreshCw className={`w-3 h-3 ${loading ? 'animate-spin' : ''}`} />
-              {analyzing ? `${analyzeProgress.current}/${analyzeProgress.total}` : 'Atualizar'}
-            </button>
+            
           </div>
 
           {/* Resumos - Colapsável */}
@@ -684,7 +766,7 @@ export const ProcessTimeline: React.FC<ProcessTimelineProps> = ({
         </div>
 
         {/* Coluna Direita - Lista de Movimentações */}
-        <div className="flex-1 overflow-y-auto p-4 bg-slate-50 dark:bg-zinc-950">
+        <div className="flex-1 overflow-y-auto p-5 bg-slate-50 dark:bg-zinc-950">
         {loading ? (
           <div className="flex flex-col items-center justify-center py-16">
             <Loader2 className="w-10 h-10 text-orange-500 animate-spin mb-4" />
@@ -759,177 +841,110 @@ export const ProcessTimeline: React.FC<ProcessTimelineProps> = ({
                 };
 
                 return (
-                  <div key={event.id} className="relative pl-14">
-                    {/* "Estamos aqui" indicator for latest event */}
-                    {isLatest && (
-                      <div className="absolute left-0 top-3 z-10">
-                        <span className="inline-flex items-center gap-1 bg-orange-500 text-white text-[10px] font-bold px-2 py-1 rounded-lg shadow-lg">
-                          <span className="w-1.5 h-1.5 bg-white rounded-full animate-pulse" />
-                          ATUAL
-                        </span>
-                      </div>
-                    )}
-
+                  <div key={event.id} className="relative pl-10">
                     {/* Timeline dot */}
                     <div
-                      className={`absolute left-4 w-5 h-5 rounded-full border-2 border-white shadow flex items-center justify-center ${getDotColor()}`}
-                      style={{ top: '1.25rem' }}
-                    >
-                      <Icon className="w-2.5 h-2.5 text-white" />
-                    </div>
+                      className={`absolute left-0 w-2.5 h-2.5 rounded-full ${isLatest ? 'bg-orange-500' : 'bg-slate-300 dark:bg-zinc-600'}`}
+                      style={{ top: '1.05rem' }}
+                    />
 
                     {/* Event card */}
-                    <div className={`rounded-xl border transition-all hover:shadow-lg ${getBgColor()}`}>
+                    <div className={`group rounded-2xl border shadow-sm transition-all ${getBgColor()} ${isExpanded ? 'shadow-md' : 'hover:shadow-md'}`}>
                       {/* Card header */}
                       <div
-                        className="p-4 cursor-pointer"
+                        className="px-4 py-3 cursor-pointer"
                         onClick={() => toggleExpand(event.id)}
                       >
-                        {/* Top row: badges + date */}
-                        <div className="flex items-center justify-between gap-3 mb-3">
-                          <div className="flex items-center gap-1.5 flex-wrap">
-                            <span className="inline-flex items-center px-2.5 py-1 rounded-lg text-xs font-bold uppercase bg-slate-800 text-white">
-                              {getEventTypeLabel(event.type)}
-                            </span>
+                        {/* Date + Type */}
+                        <div className="flex items-center justify-between gap-3 mb-1">
+                          <div className="flex items-center gap-2 text-[11px] text-slate-500 dark:text-slate-400">
+                            <span>{formatDate(event.date)}</span>
+                            <span className="text-slate-300 dark:text-slate-600">·</span>
+                            <span className="font-medium">{getEventTypeLabel(event.type)}</span>
                             {event.grauRecursal && (
-                              <span className="inline-flex items-center px-2 py-1 rounded-lg text-xs font-semibold bg-indigo-100 text-indigo-700">
-                                {event.grauRecursal}
-                              </span>
+                              <span className="text-slate-400 dark:text-slate-500">· {event.grauRecursal}</span>
                             )}
-                            {hasAI && (
-                              <span className={`inline-flex items-center gap-1 px-2 py-1 rounded-lg text-xs font-semibold ${getUrgencyColor(event.aiAnalysis?.urgency)} text-white`}>
-                                <Sparkles className="w-3 h-3" />
-                                {getUrgencyLabel(event.aiAnalysis?.urgency)}
-                              </span>
-                            )}
-                            {hasAI && event.aiAnalysis?.actionRequired && (
-                              <span className="inline-flex items-center gap-1 px-2 py-1 rounded-lg text-xs font-semibold bg-red-600 text-white">
-                                <AlertTriangle className="w-3 h-3" />
-                                Ação
-                              </span>
+                            {event.aiAnalysis?.actionRequired && (
+                              <span className="text-red-500">•</span>
                             )}
                           </div>
-                          <div className="flex items-center gap-1.5 text-xs text-slate-500 font-medium flex-shrink-0">
-                            <Calendar className="w-3.5 h-3.5" />
-                            {formatDate(event.date)}
+                          <div className="text-slate-400">
+                            {isExpanded ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
                           </div>
                         </div>
 
-                        {/* Title + Órgão row */}
-                        <div className="flex items-start justify-between gap-3">
-                          <div className="flex-1 min-w-0">
-                            {event.orgao && (
-                              <p className="text-xs text-slate-500 dark:text-slate-400 mb-1 truncate">
-                                {event.orgao}
-                              </p>
-                            )}
-                            <h3 className="text-base font-semibold text-slate-900 dark:text-white line-clamp-2">
-                              {event.title === 'Notificação' || event.title === 'Intimação' || event.title === 'Despacho' 
-                                ? (event.description?.substring(0, 80)?.replace(/<[^>]*>/g, '')?.trim() + '...' || event.title)
-                                : event.title}
-                            </h3>
-                          </div>
-                          <button className="p-1 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-lg transition flex-shrink-0">
-                            {isExpanded ? <ChevronUp className="w-5 h-5" /> : <ChevronDown className="w-5 h-5" />}
-                          </button>
-                        </div>
-                        {/* AI Summary */}
-                        {hasAI && event.aiAnalysis?.summary && (
-                          <div className="mt-3 p-3 bg-gradient-to-r from-purple-50 to-indigo-50 dark:from-purple-900/20 dark:to-indigo-900/20 rounded-xl border border-purple-100 dark:border-purple-800">
-                            <p className="text-sm text-purple-900 dark:text-purple-100 flex items-start gap-2">
-                              <Sparkles className="w-4 h-4 text-purple-500 flex-shrink-0 mt-0.5" />
-                              <span>{event.aiAnalysis.summary}</span>
-                            </p>
-                          </div>
-                        )}
+                        {/* Title */}
+                        <h3 className="text-sm font-medium text-slate-800 dark:text-slate-100 leading-relaxed">
+                          {event.title === 'Notificação' || event.title === 'Intimação' || event.title === 'Despacho' 
+                            ? (event.description?.substring(0, 120)?.replace(/<[^>]*>/g, '')?.trim() + '...' || event.title)
+                            : event.title}
+                        </h3>
 
-                        {/* AI Key Points (collapsed) */}
-                        {hasAI && event.aiAnalysis?.keyPoints && event.aiAnalysis.keyPoints.length > 0 && !isExpanded && (
-                          <div className="flex flex-wrap gap-2 mt-3">
-                            {event.aiAnalysis.keyPoints.slice(0, 3).map((point, i) => (
-                              <span key={i} className="inline-flex items-center px-2.5 py-1 rounded-lg bg-slate-100 dark:bg-zinc-800 text-slate-700 dark:text-slate-300 text-xs font-medium">
-                                • {point}
-                              </span>
-                            ))}
-                          </div>
+                        {/* AI Summary - only when collapsed */}
+                        {hasAI && event.aiAnalysis?.summary && !isExpanded && (
+                          <p className="text-xs text-slate-400 dark:text-slate-500 mt-2 line-clamp-2">
+                            {event.aiAnalysis.summary}
+                          </p>
                         )}
                       </div>
 
                       {/* Expanded content */}
                       {isExpanded && (
                         <div className="px-4 pb-4 border-t border-slate-100 dark:border-zinc-800">
-                          {hasAI && event.aiAnalysis?.keyPoints && event.aiAnalysis.keyPoints.length > 0 && (
-                            <div className="mt-4">
-                              <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-2">Pontos Importantes</p>
-                              <ul className="space-y-2">
-                                {event.aiAnalysis.keyPoints.map((point, i) => (
-                                  <li key={i} className="flex items-start gap-2.5 text-sm text-slate-700 dark:text-slate-300 p-2 bg-emerald-50 dark:bg-emerald-900/20 rounded-lg">
-                                    <CheckCircle2 className="w-4 h-4 text-emerald-600 flex-shrink-0 mt-0.5" />
-                                    {point}
-                                  </li>
-                                ))}
-                              </ul>
-                            </div>
+                          {/* AI Summary */}
+                          {hasAI && event.aiAnalysis?.summary && (
+                            <p className="text-sm text-slate-600 dark:text-slate-300 mt-4 mb-4">
+                              {event.aiAnalysis.summary}
+                            </p>
                           )}
 
-                          <div className="mt-4">
-                            <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-2">Conteúdo Completo</p>
-                            <div className="bg-slate-50 dark:bg-zinc-800 rounded-xl p-4 max-h-64 overflow-y-auto border border-slate-200 dark:border-zinc-700">
-                              <p className="text-sm text-slate-600 dark:text-slate-300 whitespace-pre-wrap font-mono leading-relaxed">
-                                {cleanHtmlContent(event.description) || 'Conteúdo não disponível'}
-                              </p>
-                            </div>
+                          {/* Key Points */}
+                          {hasAI && event.aiAnalysis?.keyPoints && event.aiAnalysis.keyPoints.length > 0 && (
+                            <ul className="space-y-1 mb-4">
+                              {event.aiAnalysis.keyPoints.map((point, i) => (
+                                <li key={i} className="text-xs text-slate-500 dark:text-slate-400 flex items-start gap-2">
+                                  <span className="text-emerald-500 mt-0.5">✓</span>
+                                  {point}
+                                </li>
+                              ))}
+                            </ul>
+                          )}
+
+                          {/* Full content */}
+                          <div className="bg-slate-50 dark:bg-zinc-800/50 rounded-xl p-3 max-h-48 overflow-y-auto mb-4">
+                            <p className="text-xs text-slate-500 dark:text-slate-400 whitespace-pre-wrap">
+                              {cleanHtmlContent(event.description) || 'Conteúdo não disponível'}
+                            </p>
+                          </div>
+
+                          {/* Actions */}
+                          <div className="flex items-center gap-4 text-[11px]">
+                            <button
+                              onClick={(e) => { e.stopPropagation(); onAddDeadline?.(event); }}
+                              className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-300"
+                            >
+                              + Prazo
+                            </button>
+                            <button
+                              onClick={(e) => { e.stopPropagation(); onAddAppointment?.(event); }}
+                              className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-300"
+                            >
+                              + Compromisso
+                            </button>
+                            {event.rawData?.link && (
+                              <a
+                                href={event.rawData.link}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                onClick={(e) => e.stopPropagation()}
+                                className="text-blue-500 hover:text-blue-600 ml-auto"
+                              >
+                                DJEN →
+                              </a>
+                            )}
                           </div>
                         </div>
                       )}
-
-                      {/* Ações Rápidas - Fixas no rodapé do card */}
-                      <div className="px-4 py-3 bg-slate-50 dark:bg-zinc-800/50 border-t border-slate-200 dark:border-zinc-700 rounded-b-xl">
-                        <div className="flex items-center gap-2 flex-wrap">
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              onAddDeadline?.(event);
-                            }}
-                            className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-amber-100 hover:bg-amber-200 dark:bg-amber-900/30 dark:hover:bg-amber-900/50 text-amber-700 dark:text-amber-300 rounded-lg text-xs font-semibold transition"
-                          >
-                            <Timer className="w-3.5 h-3.5" />
-                            Prazo
-                          </button>
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              onAddAppointment?.(event);
-                            }}
-                            className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-indigo-100 hover:bg-indigo-200 dark:bg-indigo-900/30 dark:hover:bg-indigo-900/50 text-indigo-700 dark:text-indigo-300 rounded-lg text-xs font-semibold transition"
-                          >
-                            <ClipboardList className="w-3.5 h-3.5" />
-                            Compromisso
-                          </button>
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              onAddToCalendar?.(event);
-                            }}
-                            className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-blue-100 hover:bg-blue-200 dark:bg-blue-900/30 dark:hover:bg-blue-900/50 text-blue-700 dark:text-blue-300 rounded-lg text-xs font-semibold transition"
-                          >
-                            <CalendarPlus className="w-3.5 h-3.5" />
-                            Calendário
-                          </button>
-                          {event.rawData?.link && (
-                            <a
-                              href={event.rawData.link}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              onClick={(e) => e.stopPropagation()}
-                              className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-slate-200 hover:bg-slate-300 dark:bg-zinc-700 dark:hover:bg-zinc-600 text-slate-700 dark:text-slate-300 rounded-lg text-xs font-semibold transition"
-                            >
-                              <ExternalLink className="w-3.5 h-3.5" />
-                              DJEN
-                            </a>
-                          )}
-                        </div>
-                      </div>
                     </div>
                   </div>
                 );

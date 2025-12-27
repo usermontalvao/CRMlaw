@@ -43,6 +43,7 @@ import { useDeleteConfirm } from '../contexts/DeleteConfirmContext';
 import SignaturePositionDesigner from './SignaturePositionDesigner';
 import TemplateFilesManager from './TemplateFilesManager';
 import CustomFieldsManager from './CustomFieldsManager';
+import StandardPetitionsModule from './StandardPetitionsModule';
 import type { DocumentTemplate, CreateDocumentTemplateDTO, TemplateCustomField, UpsertTemplateCustomFieldDTO, CustomField } from '../types/document.types';
 import type { Client } from '../types/client.types';
 import type { Process } from '../types/process.types';
@@ -241,7 +242,7 @@ const DocumentsModule: React.FC<DocumentsModuleProps> = ({ onNavigateToModule })
   const [fileInput, setFileInput] = useState<File | null>(null);
   const [downloadingTemplateId, setDownloadingTemplateId] = useState<string | null>(null);
   const [templateActionError, setTemplateActionError] = useState<string | null>(null);
-  const [activeView, setActiveView] = useState<'new-doc' | 'manage'>('new-doc');
+  const [activeView, setActiveView] = useState<'new-doc' | 'manage' | 'petitions'>('new-doc');
   const [isPreviewModalOpen, setIsPreviewModalOpen] = useState(false);
   const [previewTemplate, setPreviewTemplate] = useState<DocumentTemplate | null>(null);
   const [previewPdfUrl, setPreviewPdfUrl] = useState<string | null>(null);
@@ -601,6 +602,7 @@ const DocumentsModule: React.FC<DocumentsModuleProps> = ({ onNavigateToModule })
   };
 
   const newDocTemplates = useMemo(() => templates.filter((t) => !isRequirementsMsTemplate(t)), [templates]);
+  const manageTemplates = useMemo(() => templates.filter((t) => !isRequirementsMsTemplate(t)), [templates]);
 
   useEffect(() => {
     if (activeView !== 'new-doc' || !selectedTemplateId) return;
@@ -1523,6 +1525,17 @@ const DocumentsModule: React.FC<DocumentsModuleProps> = ({ onNavigateToModule })
             <Settings className="h-4 w-4" />
             Gerenciar templates
           </button>
+          <button
+            onClick={() => setActiveView('petitions')}
+            className={`inline-flex items-center justify-center gap-2 rounded-lg px-4 py-2 text-sm font-medium transition ${
+              activeView === 'petitions'
+                ? 'bg-slate-900 text-white'
+                : 'border border-slate-200 text-slate-700 hover:bg-slate-50'
+            }`}
+          >
+            <BookOpen className="h-4 w-4" />
+            Petições Padrões
+          </button>
         </div>
       </div>
 
@@ -1822,7 +1835,7 @@ const DocumentsModule: React.FC<DocumentsModuleProps> = ({ onNavigateToModule })
           <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <div>
               <h4 className="text-lg font-semibold text-slate-900">Meus Templates</h4>
-              <p className="text-sm text-slate-500">{templates.length} template(s) cadastrado(s)</p>
+              <p className="text-sm text-slate-500">{manageTemplates.length} template(s) cadastrado(s)</p>
             </div>
             <div className="flex flex-wrap gap-2">
               <button
@@ -1848,7 +1861,7 @@ const DocumentsModule: React.FC<DocumentsModuleProps> = ({ onNavigateToModule })
             <div className="flex items-center justify-center py-12">
               <Loader2 className="h-6 w-6 animate-spin text-slate-400" />
             </div>
-          ) : templates.length === 0 ? (
+          ) : manageTemplates.length === 0 ? (
             <div className="rounded-2xl border-2 border-dashed border-slate-200 bg-slate-50 py-12 text-center">
               <FileText className="mx-auto h-10 w-10 text-slate-300" />
               <p className="mt-3 text-sm text-slate-500">Nenhum template cadastrado</p>
@@ -1862,7 +1875,7 @@ const DocumentsModule: React.FC<DocumentsModuleProps> = ({ onNavigateToModule })
             </div>
           ) : (
             <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-              {templates.map((template) => {
+              {manageTemplates.map((template) => {
                 const summary = templateFilesSummary[template.id];
                 const attachmentsCount = summary?.count ?? 0;
                 const filesLabel = template.file_path
@@ -1997,6 +2010,11 @@ const DocumentsModule: React.FC<DocumentsModuleProps> = ({ onNavigateToModule })
             </div>
           )}
         </div>
+      )}
+
+      {/* Petições Padrões */}
+      {activeView === 'petitions' && (
+        <StandardPetitionsModule onNavigateToModule={onNavigateToModule} />
       )}
 
       {/* Novo template modal */}

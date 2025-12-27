@@ -2,8 +2,13 @@ export type ProcessStatus =
   | 'nao_protocolado'
   | 'distribuido'
   | 'aguardando_confeccao'
+  | 'citacao'
+  | 'conciliacao'
+  | 'contestacao'
+  | 'instrucao'
   | 'andamento'
   | 'sentenca'
+  | 'recurso'
   | 'cumprimento'
   | 'arquivado';
 

@@ -1,5 +1,6 @@
 import { djenService } from './djen.service';
 import { processService } from './process.service';
+import { supabase } from '../config/supabase';
 import type { DjenComunicacao } from '../types/djen.types';
 import type { ProcessStatus } from '../types/process.types';
 
@@ -39,7 +40,7 @@ interface StoredTimelineCache {
 class ProcessTimelineService {
   private groqApiKey: string | null = null;
   private cache: Map<string, TimelineCache> = new Map();
-  private readonly CACHE_DURATION = 60 * 60 * 1000; // 1 hora - só atualiza quando há nova publicação
+  private readonly CACHE_DURATION = 24 * 60 * 60 * 1000; // 24 horas - evita recarregamento frequente
 
   constructor() {
     this.groqApiKey = import.meta.env.VITE_GROQ_API_KEY;
@@ -236,6 +237,85 @@ class ProcessTimelineService {
   }
 
   /**
+   * Busca timeline do banco local (djen_comunicacoes) com análise IA já pronta
+   * Usado quando o cron já sincronizou e analisou as intimações
+   * Fallback para DJEN direto se não houver dados no banco
+   */
+  async fetchTimelineFromDatabase(processId: string, processCode: string): Promise<TimelineEvent[]> {
+    try {
+      // Buscar comunicações do banco local vinculadas ao processo
+      const { data: comunicacoes, error } = await supabase
+        .from('djen_comunicacoes')
+        .select('*')
+        .eq('process_id', processId)
+        .order('data_disponibilizacao', { ascending: false });
+
+      if (error) {
+        console.error('Erro ao buscar comunicações do banco:', error);
+        // Fallback para DJEN direto
+        return this.fetchProcessTimeline(processCode);
+      }
+
+      // Se não tem dados no banco, buscar do DJEN
+      if (!comunicacoes || comunicacoes.length === 0) {
+        console.log('📡 Sem dados no banco, buscando do DJEN...');
+        return this.fetchProcessTimeline(processCode);
+      }
+
+      console.log(`📦 ${comunicacoes.length} comunicações encontradas no banco local`);
+
+      // Converter para eventos de timeline
+      const events: TimelineEvent[] = comunicacoes.map((item: any, index: number) => {
+        // Mapear ai_analysis do banco para o formato esperado
+        let aiAnalysis: TimelineEvent['aiAnalysis'] | undefined;
+        if (item.ai_analysis) {
+          const analysis = typeof item.ai_analysis === 'string' 
+            ? JSON.parse(item.ai_analysis) 
+            : item.ai_analysis;
+          aiAnalysis = {
+            summary: analysis.summary || '',
+            urgency: analysis.urgency || 'baixa',
+            actionRequired: analysis.action_required || false,
+            keyPoints: analysis.key_points || [],
+          };
+        }
+
+        return {
+          id: item.id || `event-${index}`,
+          date: item.data_disponibilizacao || '',
+          type: this.mapTipoDocumento(item.tipo_documento || item.tipo_comunicacao, item.texto),
+          title: item.tipo_documento || item.tipo_comunicacao || 'Publicação',
+          description: item.texto || '',
+          orgao: item.nome_orgao || '',
+          grauRecursal: this.detectGrauRecursal(item.nome_orgao, item.texto),
+          hash: item.numero_comunicacao?.toString(),
+          rawData: {
+            numeroComunicacao: item.numero_comunicacao,
+            numeroProcesso: item.numero_processo,
+            numeroProcessoMascara: item.numero_processo_mascara,
+            siglaTribunal: item.sigla_tribunal,
+            nomeOrgao: item.nome_orgao,
+            texto: item.texto,
+            tipoComunicacao: item.tipo_comunicacao,
+            tipoDocumento: item.tipo_documento,
+            meio: item.meio,
+            meiocompleto: item.meio_completo,
+            link: item.link,
+            datadisponibilizacao: item.data_disponibilizacao,
+          } as unknown as DjenComunicacao,
+          aiAnalysis,
+        };
+      });
+
+      return events;
+    } catch (error: any) {
+      console.error('Erro ao buscar timeline do banco:', error);
+      // Fallback para DJEN direto
+      return this.fetchProcessTimeline(processCode);
+    }
+  }
+
+  /**
    * Analisa um evento da timeline usando IA (Groq)
    */
   async analyzeTimelineEvent(event: TimelineEvent): Promise<TimelineEvent['aiAnalysis']> {
@@ -263,6 +343,8 @@ Responda APENAS com JSON válido no formato:
 Regras:
 - Se mencionar prazo, urgência deve ser "alta" ou "critica"
 - Se for citação ou intimação para manifestação, actionRequired = true
+- Se mencionar "bloqueio" de contas/aplicações/bens, urgência = "critica" e actionRequired = true
+- Se for despacho com ordens executivas (penhora, arresto, sequestro), urgência = "critica"
 - Se for apenas movimentação de rotina, urgência = "baixa"
 - Seja conciso no resumo`;
 
@@ -573,43 +655,110 @@ Regras:
 
   /**
    * Detecta o status sugerido do processo baseado nos eventos da timeline
+   * Prioriza o evento mais recente para determinar o status atual
+   * Retorna sub-estágios específicos (citacao, conciliacao, contestacao, instrucao, recurso)
    */
   detectSuggestedStatus(events: TimelineEvent[]): ProcessStatus | null {
     if (events.length === 0) return null;
 
-    // Analisar todos os eventos para detectar o estágio
-    const allText = events.map(e => 
+    // Ordenar eventos por data (mais recente primeiro)
+    const sortedEvents = [...events].sort((a, b) => {
+      const dateA = new Date(a.date || 0).getTime();
+      const dateB = new Date(b.date || 0).getTime();
+      return dateB - dateA;
+    });
+
+    // Analisar os eventos mais recentes (últimos 5) para determinar status atual
+    const recentEvents = sortedEvents.slice(0, 5);
+    const recentText = recentEvents.map(e => 
       (e.title + ' ' + e.description + ' ' + (e.aiAnalysis?.summary || '')).toLowerCase()
     ).join(' ');
 
-    // Verificar do mais avançado para o menos avançado
-    
-    // Arquivado
-    if (allText.includes('arquivamento') || allText.includes('arquivado') ||
-        allText.includes('baixa definitiva') || allText.includes('autos arquivados')) {
+    // Verificar tipos de eventos recentes primeiro
+    const recentTypes = recentEvents.map(e => e.type);
+
+    // Arquivado - apenas se explicitamente mencionado nos eventos recentes
+    if (recentText.includes('arquivamento definitivo') || 
+        recentText.includes('autos arquivados') ||
+        recentText.includes('baixa definitiva') ||
+        (recentText.includes('arquivado') && recentText.includes('transitado'))) {
       return 'arquivado';
     }
 
     // Cumprimento de sentença / Execução
-    if (allText.includes('cumprimento de sentença') || allText.includes('execução') ||
-        allText.includes('fase de cumprimento') || allText.includes('liquidação')) {
+    if (recentText.includes('cumprimento de sentença') || 
+        recentText.includes('fase de cumprimento') ||
+        recentText.includes('liquidação de sentença') ||
+        (recentText.includes('execução') && !recentText.includes('recurso'))) {
       return 'cumprimento';
     }
 
+    // Recurso
+    if (recentTypes.includes('recurso') ||
+        recentText.includes('recurso') ||
+        recentText.includes('apelação') ||
+        recentText.includes('agravo') ||
+        recentText.includes('embargos de declaração')) {
+      return 'recurso';
+    }
+
     // Sentença proferida
-    if (allText.includes('sentença') || allText.includes('sentenca') ||
-        allText.includes('julgo procedente') || allText.includes('julgo improcedente') ||
-        allText.includes('julgamento') || events.some(e => e.type === 'sentenca')) {
+    if (recentTypes.includes('sentenca') ||
+        recentText.includes('sentença proferida') ||
+        recentText.includes('julgo procedente') || 
+        recentText.includes('julgo improcedente') ||
+        recentText.includes('julgou procedente') ||
+        recentText.includes('julgou improcedente')) {
       return 'sentenca';
     }
 
-    // Em andamento (citação, contestação, instrução, audiência)
-    if (allText.includes('citação') || allText.includes('citacao') ||
-        allText.includes('contestação') || allText.includes('contestacao') ||
-        allText.includes('audiência') || allText.includes('audiencia') ||
-        allText.includes('instrução') || allText.includes('instrucao') ||
-        allText.includes('intimação') || allText.includes('intimacao') ||
-        allText.includes('prazo') || allText.includes('manifestação')) {
+    // Instrução (audiência de instrução, produção de provas)
+    if (recentText.includes('audiência de instrução') ||
+        recentText.includes('audiencia de instrucao') ||
+        recentText.includes('instrução e julgamento') ||
+        recentText.includes('produção de provas') ||
+        recentText.includes('oitiva de testemunhas') ||
+        recentText.includes('perícia')) {
+      return 'instrucao';
+    }
+
+    // Conciliação (audiência de conciliação designada ou realizada)
+    // Prioridade sobre contestação, pois a audiência geralmente vem antes ou define a fase atual
+    if (recentText.includes('audiência de conciliação') ||
+        recentText.includes('audiencia de conciliacao') ||
+        recentText.includes('conciliação virtual') ||
+        recentText.includes('conciliação designada') ||
+        recentText.includes('pauta de conciliação')) {
+      return 'conciliacao';
+    }
+
+    // Contestação
+    if (recentText.includes('contestação') || 
+        recentText.includes('contestacao') ||
+        recentText.includes('defesa apresentada') ||
+        recentText.includes('juntada de contestação') ||
+        recentText.includes('réu contestou')) {
+      return 'contestacao';
+    }
+
+    // Citação
+    if (recentTypes.includes('citacao') ||
+        recentText.includes('citação') || 
+        recentText.includes('citacao') ||
+        recentText.includes('citado') ||
+        recentText.includes('cite-se')) {
+      return 'citacao';
+    }
+
+    // Em andamento genérico (intimação, decisão, despacho sem fase específica)
+    if (recentTypes.includes('intimacao') ||
+        recentTypes.includes('decisao') ||
+        recentTypes.includes('despacho') ||
+        recentText.includes('intimação') || recentText.includes('intimacao') ||
+        recentText.includes('decisão') || recentText.includes('despacho') ||
+        recentText.includes('prazo') || recentText.includes('manifestação') ||
+        recentText.includes('inversão') || recentText.includes('deferiu') ||
+        recentText.includes('indeferiu')) {
       return 'andamento';
     }
 
@@ -634,22 +783,9 @@ Regras:
       const currentProcess = await processService.getProcessById(processId);
       if (!currentProcess) return null;
 
-      // Definir hierarquia de status (do menos avançado para o mais avançado)
-      const statusHierarchy: ProcessStatus[] = [
-        'nao_protocolado',
-        'aguardando_confeccao', 
-        'distribuido',
-        'andamento',
-        'sentenca',
-        'cumprimento',
-        'arquivado'
-      ];
-
-      const currentIndex = statusHierarchy.indexOf(currentProcess.status);
-      const suggestedIndex = statusHierarchy.indexOf(suggestedStatus);
-
-      // Só atualiza se o status sugerido for mais avançado que o atual
-      if (suggestedIndex > currentIndex) {
+      // Se o status sugerido for diferente do atual, atualiza
+      // A análise da IA/timeline deve prevalecer para corrigir status incorretos
+      if (suggestedStatus !== currentProcess.status) {
         await processService.updateStatus(processId, suggestedStatus);
         console.log(`✅ Status do processo atualizado automaticamente: ${currentProcess.status} → ${suggestedStatus}`);
         return suggestedStatus;

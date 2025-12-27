@@ -441,10 +441,10 @@ export default function ProfileModal({
         email: payload.email,
         avatarUrl: payload.avatar_url,
         role: payload.role,
-        oab: payload.oab,
-        phone: payload.phone,
-        bio: payload.bio,
-        lawyerFullName: payload.lawyer_full_name,
+        oab: payload.oab ?? undefined,
+        phone: payload.phone ?? undefined,
+        bio: payload.bio ?? undefined,
+        lawyerFullName: payload.lawyer_full_name ?? undefined,
       });
 
       setMessage({ type: 'success', text: 'Perfil atualizado com sucesso!' });

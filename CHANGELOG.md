@@ -1,5 +1,223 @@
 # Changelog
 
+## 1.3.6
+- Intimações DJEN: análise automática de IA agora é disparada quando novas intimações chegam via realtime.
+
+## 1.3.5
+- Intimações DJEN: toast de realtime agora mostra a quantidade de novas intimações recebidas (inserts agrupados em lote).
+
+## 1.3.4
+- Edge Function run-djen-sync: removido limite de 10 processos - agora busca TODOS os processos cadastrados.
+
+## 1.3.3
+- Database: habilitado Realtime (postgres_changes) para tabela `djen_comunicacoes` - agora a lista atualiza automaticamente ao chegar nova intimação.
+
+## 1.3.2
+- Intimações DJEN: busca agora considera também o número do processo cadastrado (process_code) e agrupamento prioriza process_code quando houver vínculo.
+
+## 1.3.1
+- Intimações DJEN: atualização automática da lista e notificação quando chegar nova intimação (realtime).
+
+## 1.3.0
+- Intimações DJEN: período de busca alterado para 7 dias (Edge Function + sync manual).
+- Edge Function run-djen-sync: extrai número do processo do texto quando não vem da API.
+- Edge Function run-djen-sync: vinculação automática com processos cadastrados melhorada.
+- Deletadas intimações antigas do banco (desde 11/12).
+
+## 1.2.9
+- Database: coluna `numero_processo` em `djen_comunicacoes` agora é nullable (API do DJEN nem sempre retorna esse campo).
+
+## 1.2.8
+- Edge Function run-djen-sync: corrigido insert em `djen_comunicacoes` preenchendo campos obrigatórios (`djen_id` e `hash`) e melhorados logs de erro para diagnosticar falhas (evita "saved=0" silencioso).
+
+## 1.2.7
+- Intimações DJEN: corrigido "Última atualização" para exibir a sincronização mais recente (não a primeira).
+- Edge Function run-djen-sync: corrigido nome da tabela `djen_comunicacoes_local` → `djen_comunicacoes`.
+- Corrigido nome da tabela em `processTimeline.service.ts`.
+
+## 1.2.6
+- Intimações DJEN: melhorias visuais no header e ações (layout mais premium).
+- Intimações DJEN: período de busca do DJEN ampliado para 15 dias (cron/Edge Function e sincronização manual).
+
+## 1.2.5
+- Intimações DJEN: "Última atualização" agora é baseada exclusivamente no histórico do cron (`djen_sync_history`).
+- DJEN cron: Edge Function `run-djen-sync` registra execução bloqueada (token inválido) no `djen_sync_history`.
+
+## 1.2.4
+- Intimações DJEN: sincronização manual agora registra na tabela `djen_sync_history` do Supabase.
+- Intimações DJEN: adicionados métodos `logSync` e `updateSync` no service de status.
+
+## 1.2.3
+- Intimações DJEN: criada migration para tabela `djen_sync_history` com políticas RLS corretas.
+- Intimações DJEN: corrigido service para não lançar exceção quando tabela não existe.
+
+## 1.2.2
+- Modelos de Documentos: scroll automático ao selecionar categoria, modelo e cliente na aba Gerar.
+
+## 1.2.1
+- Modelos de Documentos: repaginação do layout geral do módulo mantendo abas (Gerar/Gerenciar), com header premium e contadores.
+- Modelos de Documentos: aba Gerenciar com filtros e ação "Novo Modelo" em layout mais limpo.
+
+## 1.2.0
+- Petições Padrões: novo layout da aba "Gerar Documento" com fluxo em 3 passos (Categoria → Modelo → Cliente).
+- Petições Padrões: seleção visual de categorias com contagem de modelos disponíveis.
+- Petições Padrões: indicador de progresso (steps) no topo do formulário.
+- Petições Padrões: animações suaves ao revelar cada etapa.
+- Petições Padrões: header com gradiente e design mais moderno.
+- Petições Padrões: campos personalizados agora aparecem em grid 2 colunas.
+
+## 1.1.99
+- Petições Padrões: normalização automática de pontuação para evitar vírgulas duplicadas quando campos opcionais (ex: complemento) estão vazios.
+
+## 1.1.98
+- Petições Padrões: cidade agora é formatada em Title Case (ex: "Várzea Grande") e UF em maiúsculo (ex: "MT") na geração de documentos.
+
+## 1.1.97
+- Petições Padrões: invertida ordem das abas - "Gerar Documento" agora é a primeira aba (padrão).
+
+## 1.1.96
+- Petições Padrões: adicionada função de substituir template DOCX no modal de edição.
+- Petições Padrões: UI melhorada para mostrar arquivo atual e botão "Substituir" quando já existe um template.
+- Petições Padrões: aviso visual quando o arquivo será substituído.
+
+## 1.1.95
+- Petições Padrões: corrigido conflito entre [[ESTADO]] (UF) e [[ESTADO CIVIL]] - agora cidade e UF mantêm capitalização original.
+- Petições Padrões: adicionado placeholder [[UF]] como alternativa para estado.
+
+## 1.1.94
+- Petições Padrões: CPF agora é formatado com máscara (000.000.000-00).
+- Petições Padrões: CEP agora é formatado com máscara (00000-000).
+- Petições Padrões: nacionalidade, estado civil e profissão agora são exibidos em minúsculo.
+
+## 1.1.93
+- Petições Padrões: placeholders do cliente agora funcionam igual ao módulo Documentos (com variações: maiúsculo, minúsculo, com/sem acento, com espaço ou underscore).
+- Petições Padrões: adicionado placeholder [[ENDERECO_COMPLETO]] com endereço formatado.
+- Petições Padrões: corrigido problema de campos do cliente vindo "undefined".
+
+## 1.1.92
+- Petições Padrões: arquivos DOCX agora são processados automaticamente com substituição de placeholders (não pede mais para editar manualmente).
+- Petições Padrões: usa docxtemplater para gerar documento DOCX com todos os campos preenchidos.
+
+## 1.1.91
+- Petições Padrões: campo tipo "date" agora abre calendário nativo do navegador.
+- Petições Padrões: campos personalizados agora são renderizados conforme seu tipo (date, textarea, select, number, currency).
+- Petições Padrões: geração de documento agora aplica corretamente os valores dos campos personalizados.
+- Petições Padrões: datas são formatadas para DD/MM/YYYY e moedas para R$ X.XXX,XX no documento gerado.
+
+## 1.1.90
+- Petições Padrões: adicionada opção de editar campo personalizado no modal de campos.
+
+## 1.1.89
+- Petições Padrões: modais (Nova/Editar, Campos, Visualizar) agora respeitam o tema e não ficam pretos no modo claro.
+
+## 1.1.88
+- Documentos: templates marcados como petições/requerimentos não aparecem mais na aba "Gerenciar templates" (ficam apenas na aba "Petições Padrões").
+
+## 1.1.87
+- **Submódulo Petições Padrões**: Nova aba no módulo de Documentos para gerenciar petições e requerimentos padrões.
+  - CRUD completo de petições com categorias (Requerimento Administrativo, Petição Inicial, Recurso, Contestação, Outros)
+  - Upload de arquivos DOCX ou criação de templates em texto com placeholders
+  - Campos personalizados por petição (texto, número, data, seleção, moeda, CPF, telefone, CEP)
+  - Geração de documentos com substituição automática de dados do cliente
+  - Histórico de documentos gerados
+- Arquivos criados:
+  - `src/components/StandardPetitionsModule.tsx` - Componente de UI completo
+  - `src/services/standardPetition.service.ts` - Service com CRUD
+  - `src/types/standardPetition.types.ts` - Tipos TypeScript
+  - `supabase/migrations/20251227_standard_petitions.sql` - Migration do banco
+
+## 1.1.86
+- Processos: exibida a última atualização do cron DJEN no header (data/hora, status, encontrados/salvos).
+
+## 1.1.85
+- Módulo Intimações: banner "Atualizando dados em segundo plano..." agora só aparece após o primeiro carregamento completo (não aparece ao entrar no módulo).
+
+## 1.1.84
+- Módulo Intimações: não exibe mais o banner "Atualizando dados em segundo plano..." no carregamento inicial.
+
+## 1.1.83
+- **Módulo Intimações**: Removida análise automática de IA ao abrir o módulo (agora só via cron)
+- **UI Melhorada**: Header redesenhado com card de "Última atualização" mostrando:
+  - Data e hora da última execução do cron
+  - Status (Sucesso/Erro/Executando) com badge colorido
+  - Quantidade de intimações encontradas e salvas
+- Removida mensagem "Atualizando em segundo plano" desnecessária
+
+## 1.1.82
+- **Cron 2x/dia**: Alterado de 1x para 2x por dia (7h e 19h)
+- **Módulo Intimações**: Removida sincronização automática ao abrir o módulo (agora só via cron ou botão manual)
+- **Edge Function**: Logs detalhados da execução do cron com ID único de execução, etapas numeradas e duração total
+- Header atualizado: "Sincronização automática: 2x/dia (7h e 19h) via cron Supabase"
+
+## 1.1.81
+- **Cron DJEN Completo**: Edge Function `run-djen-sync` agora atualiza **status do processo automaticamente** quando salva nova intimação vinculada.
+  - Detecta status baseado no texto: citação, conciliação, contestação, instrução, sentença, recurso, cumprimento, arquivado
+  - Atualiza flags `djen_synced`, `djen_last_sync`, `djen_has_data` no processo
+- **Linha do Tempo do Processo**: agora busca do **banco local** (`djen_comunicacoes_local`) com análise IA já pronta pelo cron.
+  - Abre instantaneamente sem precisar chamar OpenAI/Groq novamente
+  - Fallback para DJEN direto se não houver dados no banco
+  - Novo método `fetchTimelineFromDatabase` no `processTimeline.service.ts`
+- Fluxo completo: Cron diário → Sincroniza DJEN → Salva intimações → Analisa IA → Atualiza processo → Timeline pronta
+
+## 1.1.80
+- Edge Function `run-djen-sync`: agora executa **análise automática de IA** após sincronizar intimações do DJEN.
+  - Busca até 50 intimações sem análise
+  - Chama OpenAI (gpt-4o-mini) para extrair: resumo, urgência, prazo, pontos-chave
+  - Salva análise no campo `ai_analysis` da tabela `djen_comunicacoes_local`
+  - Delay de 1.5s entre análises para respeitar rate limit
+  - Requer `OPENAI_API_KEY` configurada nos secrets do Supabase
+- Cron diário unificado: sincronização DJEN + análise IA em uma única chamada
+
+## 1.1.79
+- Linha do Tempo (Processos): modal mais organizado e com visual mais premium:
+  - Header com ação de atualizar e melhor alinhamento/spacing
+  - Layout em 2 colunas com sidebar mais limpa e componentes com bordas arredondadas
+  - Cards de eventos com hierarquia visual melhor e expansão mais legível
+- Linha do Tempo (Processos): correção de segurança no filtro/busca quando `description` vem vazio.
+
+## 1.1.78
+- Linha do Tempo (Processos): redesign ultra-minimalista:
+  - Sem cards, bordas ou sombras - apenas texto e espaço
+  - Timeline dot mínimo (2px)
+  - Data e tipo em linha única discreta
+  - Título como elemento principal
+  - Ações aparecem apenas quando expandido
+  - Conteúdo expandido limpo e compacto
+
+## 1.1.77
+- Linha do Tempo (Processos): redesign completo dos cards com UI/UX mais limpo e humano:
+  - Tipografia mais leve e hierarquia visual clara
+  - Badges removidos, substituídos por texto sutil
+  - Indicadores de urgência discretos (apenas quando necessário)
+  - Botões de ação como links minimalistas
+  - Cards com bordas arredondadas e sombras suaves
+  - Espaçamento respirado e cores neutras
+
+## 1.1.76
+- Linha do Tempo (Processos): reduzida poluição visual nos cards (badges mais discretos/compactos e ações em botões outline menores).
+
+## 1.1.75
+- Processos: status do processo agora é persistido **obrigatoriamente** conforme o subestágio do mapa exibido na Linha do Tempo (ex.: Conciliação/Contestação/Recurso), garantindo consistência entre modal e lista.
+- Build: correções de TypeScript para compatibilidade de tipos em Perfil/Requerimentos.
+
+## 1.1.74
+- Processos: ajustada ordem de prioridade na detecção automática de status. Agora "Conciliação" tem prioridade sobre "Contestação" e a detecção de Contestação exige termos mais específicos (evitando falsos positivos como "solicitou retificação").
+
+## 1.1.73
+- Processos: adicionados **sub-estágios** ao status do processo: Citação, Conciliação, Contestação, Instrução e Recurso.
+- IA agora detecta e atualiza automaticamente para o sub-estágio correto baseado nos eventos da timeline.
+- Novos badges coloridos para cada sub-estágio na lista de processos.
+- Migration SQL incluída para atualizar constraint do banco de dados.
+
+## 1.1.72
+- Processos: melhorada detecção de status pela IA. Agora prioriza os **eventos mais recentes** (últimos 5) e exige termos mais específicos para "Arquivado" (ex.: "arquivamento definitivo", "autos arquivados"). Eventos como Decisão, Intimação e Citação agora corretamente detectam status "Em Andamento".
+
+## 1.1.71
+- Processos: corrigida lógica de atualização automática de status pela IA. Agora a análise pode **corrigir** status incorretos (ex.: "Arquivado" → "Em Andamento"), não apenas avançar na hierarquia.
+
+## 1.1.70
+- Processos: corrigido status exibido no front após análise/sincronização (DJEN/IA). Agora a atualização de status passa por `processService.updateStatus`, garantindo invalidação de cache e recarregamento correto.
+
 ## 1.1.69
 - Financeiro: separadores brilhantes agora aparecem entre parcelas no modo escuro quando existe mais de uma parcela.
 - Linha discreta `via-white/15` com fade nas extremidades adiciona leitura entre cards.

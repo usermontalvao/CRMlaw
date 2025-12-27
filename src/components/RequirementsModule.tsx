@@ -74,6 +74,8 @@ const STATUS_OPTIONS: {
   badge: string;
   color: string;
   icon?: React.ComponentType<{ className?: string }>;
+  animation?: string;
+  animationStyle?: React.CSSProperties;
 }[] = [
   {
     key: 'em_exigencia',
@@ -2973,7 +2975,7 @@ const RequirementsModule: React.FC<RequirementsModuleProps> = ({ forceCreate, en
               <div className="flex items-center gap-2">
                 <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-bold ${getStatusBadge(selectedRequirementForView.status)}`} style={detailStatusConfig?.animationStyle}>
                   {getStatusLabel(selectedRequirementForView.status)}
-                  {detailStatusConfig?.icon === 'spinner' && <Loader2 className="w-3 h-3 animate-spin" />}
+                  {selectedRequirementForView.status === 'em_analise' && <Loader2 className="w-3 h-3 animate-spin" />}
                 </span>
                 {showMandadoRisk && (
                   <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-bold bg-red-600 text-white animate-pulse">

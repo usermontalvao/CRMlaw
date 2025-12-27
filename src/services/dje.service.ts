@@ -1,4 +1,6 @@
 import { supabase } from '../config/supabase';
+import { processService } from './process.service';
+import type { ProcessStatus } from '../types/process.types';
 
 export interface DJePublication {
   numeroProcesso: string;
@@ -50,7 +52,7 @@ class DJeService {
   /**
    * Analyze content and determine if process status should be updated
    */
-  private analyzeContent(content: string): string | null {
+  private analyzeContent(content: string): ProcessStatus | null {
     const lowerContent = content.toLowerCase();
     
     // Priority order: more specific statuses first
@@ -77,13 +79,8 @@ class DJeService {
     const newStatus = this.analyzeContent(content);
     
     if (newStatus) {
-      await supabase
-        .from('processes')
-        .update({ 
-          status: newStatus,
-          updated_at: new Date().toISOString()
-        })
-        .eq('id', processId);
+      // Use processService so cache is invalidated and UI reloads show the new status.
+      await processService.updateStatus(processId, newStatus);
       
       console.log(`✅ Processo ${processId} atualizado para status: ${newStatus}`);
     }

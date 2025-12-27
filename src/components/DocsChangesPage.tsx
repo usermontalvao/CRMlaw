@@ -451,6 +451,23 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
 
 const releases: ReleaseNote[] = [
   {
+    version: '1.3.7',
+    date: '27/12/2025',
+    summary: 'Intimações DJEN: header simplificado para barra compacta única',
+    modules: [
+      {
+        moduleId: 'intimacoes',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Header compacto do módulo Intimações',
+            description: 'Header simplificado para uma única barra compacta com título, última atualização inline e botões essenciais (Sincronizar, Exportar, Configurações), liberando espaço significativo para a lista de intimações.',
+          },
+        ],
+      },
+    ],
+  },
+  {
     version: '1.1.69',
     date: '2025-12-26',
     summary: 'Financeiro: separadores visuais entre parcelas no modo escuro',
