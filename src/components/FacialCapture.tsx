@@ -1,5 +1,6 @@
 import React, { useRef, useState, useCallback, useEffect } from 'react';
-import { Camera, RotateCcw, Check, AlertCircle, Video, VideoOff } from 'lucide-react';
+import { Camera, RotateCcw, Check, AlertCircle, Video, VideoOff, Loader2, AlertTriangle } from 'lucide-react';
+import { supabase } from '../config/supabase';
 
 interface FacialCaptureProps {
   onCapture: (imageData: string | null) => void;
@@ -8,6 +9,14 @@ interface FacialCaptureProps {
   disabled?: boolean;
   label?: string;
   description?: string;
+  validateWithAI?: boolean;
+}
+
+interface AIValidationResult {
+  valid: boolean;
+  score: number;
+  issues: string[];
+  message: string;
 }
 
 const FacialCapture: React.FC<FacialCaptureProps> = ({
@@ -16,7 +25,8 @@ const FacialCapture: React.FC<FacialCaptureProps> = ({
   height = 240,
   disabled = false,
   label = 'Captura Facial',
-  description = 'Clique em “Permitir câmera” e aguarde a solicitação do navegador',
+  description = 'Clique em "Permitir câmera" e aguarde a solicitação do navegador',
+  validateWithAI = true,
 }) => {
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -26,6 +36,8 @@ const FacialCapture: React.FC<FacialCaptureProps> = ({
   const [capturedImage, setCapturedImage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
+  const [isValidating, setIsValidating] = useState(false);
+  const [validationResult, setValidationResult] = useState<AIValidationResult | null>(null);
 
   const startCamera = useCallback(async () => {
     if (disabled) return;
@@ -87,7 +99,30 @@ const FacialCapture: React.FC<FacialCaptureProps> = ({
     setIsStreaming(false);
   }, []);
 
-  const capturePhoto = useCallback(() => {
+  const validatePhotoWithAI = useCallback(async (imageData: string): Promise<AIValidationResult | null> => {
+    try {
+      setIsValidating(true);
+      setValidationResult(null);
+
+      const { data, error } = await supabase.functions.invoke('analyze-facial-photo', {
+        body: { imageBase64: imageData }
+      });
+
+      if (error) {
+        console.error('Erro ao validar foto:', error);
+        return null;
+      }
+
+      return data as AIValidationResult;
+    } catch (err) {
+      console.error('Erro na validação:', err);
+      return null;
+    } finally {
+      setIsValidating(false);
+    }
+  }, []);
+
+  const capturePhoto = useCallback(async () => {
     const video = videoRef.current;
     const canvas = canvasRef.current;
     if (!video || !canvas) return;
@@ -105,17 +140,38 @@ const FacialCapture: React.FC<FacialCaptureProps> = ({
     // Converter para base64
     const imageData = canvas.toDataURL('image/jpeg', 0.9);
     setCapturedImage(imageData);
-    onCapture(imageData);
 
     // Parar a câmera após captura
     stopCamera();
-  }, [width, height, onCapture, stopCamera]);
+
+    // Validar com IA se habilitado
+    if (validateWithAI) {
+      const result = await validatePhotoWithAI(imageData);
+      setValidationResult(result);
+
+      if (result && !result.valid) {
+        // Foto não passou na validação - não chamar onCapture ainda
+        return;
+      }
+    }
+
+    // Foto válida ou validação desabilitada
+    onCapture(imageData);
+  }, [width, height, onCapture, stopCamera, validateWithAI, validatePhotoWithAI]);
 
   const retakePhoto = useCallback(() => {
     setCapturedImage(null);
+    setValidationResult(null);
     onCapture(null);
     startCamera();
   }, [onCapture, startCamera]);
+
+  const acceptPhotoAnyway = useCallback(() => {
+    if (capturedImage) {
+      onCapture(capturedImage);
+      setValidationResult(null);
+    }
+  }, [capturedImage, onCapture]);
 
   // Cleanup ao desmontar
   useEffect(() => {
@@ -203,7 +259,31 @@ const FacialCapture: React.FC<FacialCaptureProps> = ({
         )}
 
         {/* Indicador de foto capturada */}
-        {capturedImage && (
+        {capturedImage && !isValidating && !validationResult && (
+          <div className="absolute top-3 right-3 bg-emerald-500 text-white rounded-full p-1.5">
+            <Check className="w-4 h-4" />
+          </div>
+        )}
+
+        {/* Indicador de validação em andamento */}
+        {isValidating && (
+          <div className="absolute inset-0 flex flex-col items-center justify-center bg-slate-900/80">
+            <Loader2 className="w-8 h-8 text-blue-400 animate-spin mb-2" />
+            <span className="text-white text-sm">Analisando foto...</span>
+          </div>
+        )}
+
+        {/* Resultado da validação - Foto inválida */}
+        {validationResult && !validationResult.valid && (
+          <div className="absolute inset-0 flex flex-col items-center justify-center bg-red-900/90 p-4">
+            <AlertTriangle className="w-10 h-10 text-amber-400 mb-2" />
+            <span className="text-white text-sm font-medium text-center mb-1">Foto não aprovada</span>
+            <span className="text-amber-200 text-xs text-center">{validationResult.message}</span>
+          </div>
+        )}
+
+        {/* Resultado da validação - Foto válida */}
+        {validationResult && validationResult.valid && (
           <div className="absolute top-3 right-3 bg-emerald-500 text-white rounded-full p-1.5">
             <Check className="w-4 h-4" />
           </div>
@@ -250,16 +330,28 @@ const FacialCapture: React.FC<FacialCaptureProps> = ({
           </>
         )}
 
-        {capturedImage && (
-          <button
-            type="button"
-            onClick={retakePhoto}
-            disabled={disabled}
-            className="flex items-center gap-1.5 px-4 py-2 text-sm font-medium text-slate-600 bg-slate-100 hover:bg-slate-200 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            <RotateCcw className="w-4 h-4" />
-            Tirar Outra Foto
-          </button>
+        {capturedImage && !isValidating && (
+          <>
+            <button
+              type="button"
+              onClick={retakePhoto}
+              disabled={disabled}
+              className="flex items-center gap-1.5 px-4 py-2 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              <RotateCcw className="w-4 h-4" />
+              Tirar Nova Foto
+            </button>
+            {validationResult && !validationResult.valid && (
+              <button
+                type="button"
+                onClick={acceptPhotoAnyway}
+                disabled={disabled}
+                className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-slate-600 bg-slate-100 hover:bg-slate-200 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                Usar mesmo assim
+              </button>
+            )}
+          </>
         )}
       </div>
     </div>

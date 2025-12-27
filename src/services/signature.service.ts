@@ -674,6 +674,9 @@ class SignatureService {
     // Verificar se todos os signatários assinaram
     await this.checkAndUpdateRequestStatus(signer.signature_request_id);
 
+    // Criar notificação realtime para o criador do documento
+    await this.createSignatureNotification(signer.signature_request_id, data);
+
     return data;
   }
 
@@ -733,6 +736,63 @@ class SignatureService {
         .eq('id', requestId);
 
       if (error) throw new Error(error.message);
+    }
+  }
+
+  // ==================== NOTIFICAÇÃO REALTIME ====================
+
+  private async createSignatureNotification(requestId: string, signer: Signer): Promise<void> {
+    try {
+      // Buscar o request para obter o created_by e document_name
+      const { data: request } = await supabase
+        .from(this.requestsTable)
+        .select('created_by, document_name')
+        .eq('id', requestId)
+        .single();
+
+      if (!request?.created_by) return;
+
+      // Verificar quantos signatários já assinaram
+      const { data: signers } = await supabase
+        .from(this.signersTable)
+        .select('status')
+        .eq('signature_request_id', requestId);
+
+      const totalSigners = signers?.length || 0;
+      const signedCount = signers?.filter(s => s.status === 'signed').length || 0;
+      const allSigned = totalSigners > 0 && signedCount === totalSigners;
+
+      // Montar título e mensagem
+      const title = allSigned 
+        ? '✅ Documento Totalmente Assinado!'
+        : '✍️ Nova Assinatura Recebida';
+      
+      const message = allSigned
+        ? `"${request.document_name}" foi assinado por todos (${signedCount}/${totalSigners})`
+        : `${signer.name} assinou "${request.document_name}" (${signedCount}/${totalSigners})`;
+
+      // Criar notificação
+      await supabase.from('user_notifications').insert({
+        user_id: request.created_by,
+        title,
+        message,
+        type: 'process_updated',
+        read: false,
+        created_at: new Date().toISOString(),
+        metadata: {
+          signature_type: allSigned ? 'completed' : 'partial',
+          signer_name: signer.name,
+          signer_email: signer.email,
+          document_name: request.document_name,
+          signed_count: signedCount,
+          total_signers: totalSigners,
+          request_id: requestId,
+        },
+      });
+
+      console.log(`🔔 Notificação de assinatura criada: ${title}`);
+    } catch (err) {
+      console.error('Erro ao criar notificação de assinatura:', err);
     }
   }
 

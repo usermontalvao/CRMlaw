@@ -71,6 +71,12 @@ const formatToken = (token: string | null | undefined): string | null => {
   return `${token.slice(0, 8)}****${token.slice(-4)}`;
 };
 
+const isInternalPlaceholderEmail = (email: string | null | undefined): boolean => {
+  const e = String(email || '').trim().toLowerCase();
+  if (!e) return false;
+  return e.startsWith('public+') && e.endsWith('@crm.local');
+};
+
 const SignatureReport: React.FC<SignatureReportProps> = ({ signer, request, creator, onClose }) => {
   const [signatureImageUrl, setSignatureImageUrl] = useState<string | null>(null);
   const [facialImageUrl, setFacialImageUrl] = useState<string | null>(null);
@@ -375,8 +381,19 @@ const SignatureReport: React.FC<SignatureReportProps> = ({ signer, request, crea
                 {/* Contatos */}
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
                   <div>
-                    <span className="text-gray-500">E-mail do signatário:</span>{' '}
-                    <span className="text-gray-800">{signer.email}</span>
+                    <span className="text-gray-500">Contato do signatário:</span>{' '}
+                    <span className="text-gray-800">
+                      {(() => {
+                        const authEmail = String(signer.auth_email || '').trim();
+                        const phone = String(signer.phone || '').trim();
+                        const rawEmail = String(signer.email || '').trim();
+                        const displayContact =
+                          authEmail ||
+                          (signer.auth_provider === 'phone' ? phone : '') ||
+                          (!isInternalPlaceholderEmail(rawEmail) ? rawEmail : '');
+                        return displayContact || '—';
+                      })()}
+                    </span>
                   </div>
                   {signer.auth_email && signer.auth_email !== signer.email && (
                     <div>

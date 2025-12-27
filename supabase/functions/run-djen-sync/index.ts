@@ -231,60 +231,62 @@ serve(async (req) => {
     console.log(`   ⏱️ Status: ${finalStatus}`)
 
     // ========================================
-    // ANÁLISE AUTOMÁTICA DE IA
+    // ANÁLISE AUTOMÁTICA + NOTIFICAÇÕES (quase realtime)
     // ========================================
     let totalAnalyzed = 0
-    
-    if (OPENAI_API_KEY) {
-      console.log(`\n🤖 [${executionId}] ETAPA 3: Análise automática de IA`)
-      
+    let totalNotified = 0
+    let analysisError: string | null = null
+
+    if (totalSaved > 0) {
+      console.log(`\n🤖 [${executionId}] ETAPA 3: Analisar intimações e gerar notificações (analyze-intimations)`)
       try {
-        // Buscar intimações sem análise (últimas 50)
-        const { data: unanalyzed } = await supabaseClient
-          .from('djen_comunicacoes')
-          .select('id, texto, tipo_comunicacao, numero_processo')
-          .is('ai_analysis', null)
-          .order('created_at', { ascending: false })
-          .limit(50)
-
-        if (unanalyzed && unanalyzed.length > 0) {
-          console.log(`📊 ${unanalyzed.length} intimações sem análise encontradas`)
-
-          for (const intimacao of unanalyzed) {
-            try {
-              const analysis = await analyzeIntimation(intimacao.texto, intimacao.tipo_comunicacao)
-              
-              if (analysis) {
-                await supabaseClient
-                  .from('djen_comunicacoes')
-                  .update({ ai_analysis: analysis })
-                  .eq('id', intimacao.id)
-
-                totalAnalyzed++
-                console.log(`✅ Analisada intimação ${intimacao.id}`)
-              }
-
-              // Delay entre análises para não estourar rate limit
-              await new Promise(resolve => setTimeout(resolve, 1500))
-            } catch (aiError) {
-              console.error(`❌ Erro ao analisar intimação ${intimacao.id}:`, aiError)
-            }
-          }
+        const supabaseUrl = Deno.env.get('SUPABASE_URL')
+        if (!supabaseUrl) {
+          throw new Error('SUPABASE_URL não configurada')
         }
 
-        console.log(`   ✅ Análise IA concluída: ${totalAnalyzed} analisadas`)
-      } catch (aiError) {
-        console.error(`   ❌ Erro na análise automática de IA:`, aiError)
+        const analyzeUrl = `${supabaseUrl}/functions/v1/analyze-intimations`
+        const controller = new AbortController()
+        const timeout = setTimeout(() => controller.abort(), 25000)
+
+        const response = await fetch(analyzeUrl, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ trigger: 'run-djen-sync', execution_id: executionId }),
+          signal: controller.signal,
+        })
+
+        clearTimeout(timeout)
+
+        const rawText = await response.text()
+        if (!response.ok) {
+          analysisError = `HTTP ${response.status}: ${rawText}`
+          console.error(`   ❌ [${executionId}] Falha ao chamar analyze-intimations:`, analysisError)
+        } else {
+          try {
+            const payload = JSON.parse(rawText)
+            totalAnalyzed = Number(payload?.analyzed ?? 0)
+            totalNotified = Number(payload?.notified ?? 0)
+          } catch {
+            // Se não for JSON, só loga
+            console.log(`   ⚠️ [${executionId}] Resposta não-JSON de analyze-intimations: ${rawText}`)
+          }
+
+          console.log(`   ✅ [${executionId}] analyze-intimations: analisadas=${totalAnalyzed} notificações=${totalNotified}`)
+        }
+      } catch (aiError: any) {
+        analysisError = aiError?.message || String(aiError)
+        console.error(`   ❌ [${executionId}] Erro ao chamar analyze-intimations:`, aiError)
       }
     } else {
-      console.log(`\n⚠️ [${executionId}] OPENAI_API_KEY não configurada - análise IA ignorada`)
+      console.log(`\nℹ️ [${executionId}] Nenhuma intimação nova salva - pulando análise/notificações imediatas`)
     }
 
     // Log final
     const totalDuration = ((new Date().getTime() - new Date(syncStartTime).getTime()) / 1000).toFixed(1)
     console.log(`\n${'='.repeat(60)}`)
     console.log(`✅ [${executionId}] CRON DJEN SYNC - FINALIZADO`)
-    console.log(`   📥 Encontradas: ${totalFound} | 💾 Salvas: ${totalSaved} | 🤖 Analisadas: ${totalAnalyzed}`)
+    console.log(`   📥 Encontradas: ${totalFound} | 💾 Salvas: ${totalSaved} | 🤖 Analisadas: ${totalAnalyzed} | 🔔 Notificadas: ${totalNotified}`)
     console.log(`   ⏱️ Duração: ${totalDuration}s`)
     console.log(`${'='.repeat(60)}\n`)
 
@@ -296,6 +298,8 @@ serve(async (req) => {
           found: totalFound,
           saved: totalSaved,
           analyzed: totalAnalyzed,
+          notified: totalNotified,
+          analysis_error: analysisError,
           status: finalStatus,
           started_at: syncStartTime,
           finished_at: new Date().toISOString()

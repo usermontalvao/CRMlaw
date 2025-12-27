@@ -73,6 +73,41 @@ const subDays = (date: Date, amount: number) => {
   return result;
 };
 
+// Extrai nomes das partes do texto da intimação
+const extractPartesFromTexto = (texto: string): { nome: string; polo: string }[] => {
+  const partes: { nome: string; polo: string }[] = [];
+  
+  // Padrões comuns no texto das intimações
+  const patterns = [
+    { regex: /Requerente:\s*([^\.;,\n]+)/gi, polo: 'Requerente' },
+    { regex: /Requerido:\s*([^\.;,\n]+)/gi, polo: 'Requerido' },
+    { regex: /Autor:\s*([^\.;,\n]+)/gi, polo: 'Autor' },
+    { regex: /Réu:\s*([^\.;,\n]+)/gi, polo: 'Réu' },
+    { regex: /Reclamante:\s*([^\.;,\n]+)/gi, polo: 'Reclamante' },
+    { regex: /Reclamado:\s*([^\.;,\n]+)/gi, polo: 'Reclamado' },
+    { regex: /Exequente:\s*([^\.;,\n]+)/gi, polo: 'Exequente' },
+    { regex: /Executado:\s*([^\.;,\n]+)/gi, polo: 'Executado' },
+    { regex: /Impetrante:\s*([^\.;,\n]+)/gi, polo: 'Impetrante' },
+    { regex: /Impetrado:\s*([^\.;,\n]+)/gi, polo: 'Impetrado' },
+    { regex: /Agravante:\s*([^\.;,\n]+)/gi, polo: 'Agravante' },
+    { regex: /Agravado:\s*([^\.;,\n]+)/gi, polo: 'Agravado' },
+    { regex: /Apelante:\s*([^\.;,\n]+)/gi, polo: 'Apelante' },
+    { regex: /Apelado:\s*([^\.;,\n]+)/gi, polo: 'Apelado' },
+  ];
+
+  for (const { regex, polo } of patterns) {
+    let match;
+    while ((match = regex.exec(texto)) !== null) {
+      const nome = match[1].trim();
+      if (nome && nome.length > 2 && nome.length < 200) {
+        partes.push({ nome, polo });
+      }
+    }
+  }
+
+  return partes;
+};
+
 interface IntimationsModuleProps {
   onNavigateToModule?: (moduleKey: string, params?: any) => void;
 }
@@ -257,20 +292,30 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
         // Não bloqueia o fluxo se falhar ao salvar
       }
 
-      // 🔔 Criar notificação para intimações urgentes com prazo curto
-      if (analysis.urgency === 'alta' && analysis.deadline?.days && analysis.deadline.days <= 5) {
+      // 🔔 Criar notificação apenas para intimações URGENTES
+      if (user?.id && (analysis.urgency === 'alta' || analysis.urgency === 'critica')) {
         try {
-          await userNotificationService.createNotification({
+          const prazoInfo = analysis.deadline?.days 
+            ? `Prazo: ${analysis.deadline.days} dia(s)` 
+            : 'Prazo não identificado';
+          
+          console.log(`🔔 Criando notificação urgente para user_id: ${user.id}`);
+          
+          const notification = await userNotificationService.createNotification({
             title: '⚠️ Intimação Urgente',
-            message: `Prazo de ${analysis.deadline.days} dia(s) - Processo ${intimation.numero_processo}`,
-            type: 'intimation_urgent',
-            user_id: user?.id || '',
+            message: `${prazoInfo} • Processo ${intimation.numero_processo_mascara || intimation.numero_processo}`,
+            type: 'intimation_new',
+            user_id: user.id,
             intimation_id: intimation.id,
+            metadata: {
+              urgency: analysis.urgency,
+              deadline_days: analysis.deadline?.days,
+              tribunal: intimation.sigla_tribunal,
+            },
           });
-          console.log(`🔔 Notificação criada para intimação urgente ${intimation.id.substring(0, 8)}`);
+          console.log(`✅ Notificação criada: ${notification.id}`);
         } catch (notifErr: any) {
-          console.error('Erro ao criar notificação:', notifErr);
-          // Não bloqueia o fluxo
+          console.error('❌ Erro ao criar notificação:', notifErr?.message || notifErr);
         }
       }
       
@@ -375,14 +420,75 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
     }
   };
 
+  // Vinculação automática: se nome da parte = nome do cliente, vincula automaticamente
+  const autoLinkIntimations = useCallback(async (intimationsData: DjenComunicacaoLocal[], clientsData: Client[]) => {
+    if (!clientsData.length) return;
+    
+    // Criar mapa de nomes de clientes (normalizado) -> client_id
+    const clientNameMap = new Map<string, string>();
+    clientsData.forEach(client => {
+      const normalizedName = client.full_name.trim().toUpperCase();
+      clientNameMap.set(normalizedName, client.id);
+    });
+
+    let linkedCount = 0;
+    
+    for (const intimation of intimationsData) {
+      // Pular se já tem cliente vinculado
+      if (intimation.client_id) continue;
+      
+      // Buscar partes: primeiro dos destinatários, depois do texto
+      const partes = intimation.djen_destinatarios && intimation.djen_destinatarios.length > 0
+        ? intimation.djen_destinatarios.map(d => d.nome)
+        : extractPartesFromTexto(intimation.texto || '').map(p => p.nome);
+      
+      // Verificar se alguma parte corresponde a um cliente
+      for (const parteNome of partes) {
+        const normalizedParte = parteNome.trim().toUpperCase();
+        const matchedClientId = clientNameMap.get(normalizedParte);
+        
+        if (matchedClientId) {
+          try {
+            await djenLocalService.vincularCliente(intimation.id, matchedClientId);
+            linkedCount++;
+            console.log(`🔗 Vinculação automática: "${parteNome}" -> cliente ${matchedClientId.substring(0, 8)}`);
+            break; // Vincula apenas ao primeiro match
+          } catch (err) {
+            console.error(`Erro ao vincular automaticamente:`, err);
+          }
+        }
+      }
+    }
+    
+    if (linkedCount > 0) {
+      console.log(`✅ ${linkedCount} intimação(ões) vinculada(s) automaticamente`);
+    }
+    
+    return linkedCount;
+  }, []);
+
   // Recarregar apenas intimações (sem flash/reload)
   const reloadIntimations = useCallback(async (runAutoAnalysis: boolean = false) => {
     try {
       const intimationsData = await djenLocalService.listComunicacoes();
-      setIntimations(intimationsData);
+      
+      // Vinculação automática
+      if (clients.length > 0) {
+        const linked = await autoLinkIntimations(intimationsData, clients);
+        if (linked && linked > 0) {
+          // Recarregar para pegar os vínculos atualizados
+          const updatedData = await djenLocalService.listComunicacoes();
+          setIntimations(updatedData);
+        } else {
+          setIntimations(intimationsData);
+        }
+      } else {
+        setIntimations(intimationsData);
+      }
 
       // Carregar análises salvas do banco de dados
-      if (intimationsData.length > 0) {
+      const currentIntimations = intimationsData;
+      if (currentIntimations.length > 0) {
         try {
           const intimationIds = intimationsData.map(int => int.id);
           console.log(`🔍 Buscando análises para ${intimationIds.length} intimação(ões)...`);
@@ -410,7 +516,7 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
       console.error('Erro ao recarregar intimações:', err);
       toast.error('Erro ao atualizar', 'Não foi possível recarregar as intimações');
     }
-  }, []);
+  }, [clients, autoLinkIntimations]);
 
   const loadData = useCallback(async (runAutoAnalysis: boolean = false) => {
     try {
@@ -734,6 +840,13 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
       setIntimations(prev => prev.map(int => 
         int.id === id ? { ...int, lida: true, lida_em: new Date().toISOString() } : int
       ));
+      
+      // 🔔 Marcar notificação correspondente como lida
+      if (user?.id) {
+        try {
+          await userNotificationService.markAsReadByIntimationId(id, user.id);
+        } catch {}
+      }
       
       toast.success('Marcado como lida');
     } catch (err: any) {
@@ -1256,6 +1369,27 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
               </div>
             )}
 
+            {/* Partes (destinatários ou extraídas do texto) */}
+            {(() => {
+              const partes = selectedIntimation.djen_destinatarios && selectedIntimation.djen_destinatarios.length > 0
+                ? selectedIntimation.djen_destinatarios.map(d => ({ nome: d.nome, polo: d.polo || '' }))
+                : extractPartesFromTexto(selectedIntimation.texto || '');
+              
+              return partes.length > 0 ? (
+                <div>
+                  <label className="text-xs font-semibold text-slate-500 uppercase mb-2 block">Partes</label>
+                  <div className="flex flex-wrap gap-2">
+                    {partes.map((parte, idx) => (
+                      <span key={idx} className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-blue-50 text-blue-700 rounded-lg text-sm border border-blue-100">
+                        <span className="font-medium">{parte.nome}</span>
+                        {parte.polo && <span className="text-blue-500 text-xs">({parte.polo})</span>}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              ) : null;
+            })()}
+
             <div>
               <label className="text-xs font-semibold text-slate-500 uppercase mb-2 block">Conteúdo</label>
               <div className="bg-slate-50 border border-slate-200 rounded-lg p-4">
@@ -1338,329 +1472,54 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
           Atualizando dados em segundo plano...
         </div>
       )}
-      {/* Header minimalista */}
-      <div className="bg-white border border-slate-200 rounded-xl shadow-sm overflow-hidden">
-        <div className="h-1 bg-gradient-to-r from-amber-400 via-amber-500 to-orange-500" />
-        <div className="p-4 sm:p-5">
-          <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3 sm:gap-4">
-            <div className="flex-1">
-              <div className="flex items-center gap-3">
-                <div className="p-2.5 bg-gradient-to-br from-amber-100 to-orange-100 rounded-xl ring-1 ring-amber-200">
-                  <Bell className="w-5 h-5 sm:w-6 sm:h-6 text-amber-700" />
-                </div>
-                <div>
-                  <h1 className="text-lg sm:text-xl font-bold text-slate-900 tracking-tight">
-                    Intimações DJEN
-                  </h1>
-                  <p className="text-xs text-slate-500">
-                    Sincronização automática 2x/dia (7h e 19h)
-                  </p>
-                </div>
-              </div>
-              
-              {/* Card de última atualização */}
-              <div className="mt-4 p-3.5 bg-gradient-to-r from-slate-50 via-slate-50 to-slate-100 rounded-xl border border-slate-200">
-                <div className="flex flex-wrap items-center justify-between gap-2">
-                  <div className="flex items-center gap-2">
-                    <Clock className="w-4 h-4 text-slate-500" />
-                    <span className="text-xs font-medium text-slate-600">Última atualização:</span>
-                    {syncStatusLoading ? (
-                      <span className="inline-flex items-center gap-1 text-xs text-slate-500">
-                        <Loader2 className="w-3 h-3 animate-spin" /> Carregando...
-                      </span>
-                    ) : getLastSyncDate() ? (
-                      <span className="text-xs font-semibold text-slate-800">
-                        {getLastSyncDate()!.toLocaleString('pt-BR', {
-                          day: '2-digit',
-                          month: '2-digit',
-                          year: 'numeric',
-                          hour: '2-digit',
-                          minute: '2-digit'
-                        })}
-                      </span>
-                    ) : (
-                      <span className="text-xs text-slate-500">Nunca executado</span>
-                    )}
-                  </div>
-                  {syncLogs.length > 0 && syncLogs[0]?.status && (
-                    <span className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-semibold shadow-sm ${
-                      syncLogs[0].status === 'success' 
-                        ? 'bg-emerald-100 text-emerald-700' 
-                        : syncLogs[0].status === 'error' 
-                          ? 'bg-red-100 text-red-700' 
-                          : 'bg-amber-100 text-amber-700'
-                    }`}>
-                      {syncLogs[0].status === 'success' ? (
-                        <><CheckCircle className="w-3 h-3" /> Sucesso</>
-                      ) : syncLogs[0].status === 'error' ? (
-                        <><AlertCircle className="w-3 h-3" /> Erro</>
-                      ) : (
-                        <><Loader2 className="w-3 h-3 animate-spin" /> Executando</>
-                      )}
-                    </span>
-                  )}
-                </div>
-                {syncLogs.length > 0 && syncLogs[0]?.items_saved !== undefined && (
-                  <div className="mt-2.5 flex flex-wrap gap-3 text-xs text-slate-600">
-                    <span className="inline-flex items-center gap-1">
-                      <FileText className="w-3 h-3" />
-                      {syncLogs[0].items_found || 0} encontradas
-                    </span>
-                    <span className="inline-flex items-center gap-1">
-                      <Download className="w-3 h-3" />
-                      {syncLogs[0].items_saved || 0} salvas
-                    </span>
-                  </div>
-                )}
-              </div>
-            </div>
-            <div className="flex flex-col sm:flex-row flex-wrap gap-2 sm:gap-3 w-full sm:w-auto">
-              <button
-                onClick={handleSync}
-                disabled={syncing}
-                className="inline-flex items-center justify-center gap-1.5 bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 text-white text-xs font-semibold px-3.5 py-2 rounded-xl transition shadow-sm disabled:opacity-50 w-full sm:w-auto"
-              >
-                {syncing ? (
-                  <>
-                    <Loader2 className="w-4 h-4 animate-spin" />
-                    Sincronizando...
-                  </>
-                ) : (
-                  <>
-                    <RefreshCw className="w-4 h-4" />
-                    Sincronizar agora
-                  </>
-                )}
-              </button>
-              <div className="relative">
-                <button
-                  onClick={() => setShowClearMenu((prev) => !prev)}
-                  disabled={syncing}
-                  className="inline-flex items-center justify-center gap-1.5 border border-slate-200 text-slate-700 hover:bg-slate-50 text-xs font-semibold px-3.5 py-2 rounded-xl transition disabled:opacity-50 w-full sm:w-auto"
-                >
-                  <Trash2 className="w-4 h-4" />
-                  Gerenciar histórico
-                </button>
-                {showClearMenu && (
-                  <div className="absolute right-0 mt-2 w-60 bg-white rounded-lg shadow-lg border border-gray-200 z-50 text-sm text-slate-700">
-                    <button
-                      onClick={handleDeleteSelected}
-                      className="w-full text-left px-4 py-2 hover:bg-gray-50 flex items-center gap-2 disabled:text-slate-400"
-                    >
-                      <CheckCircle className="w-4 h-4" /> Remover selecionadas
-                    </button>
-                    <button
-                      onClick={handleDeleteRead}
-                      className="w-full text-left px-4 py-2 hover:bg-gray-50 flex items-center gap-2"
-                    >
-                      <EyeOff className="w-4 h-4" /> Remover lidas
-                    </button>
-                    <button
-                      onClick={handleClearAllIntimations}
-                      disabled={clearingAll || intimations.length === 0}
-                      className="w-full text-left px-4 py-2 hover:bg-gray-50 flex items-center gap-2 text-red-600 disabled:text-red-300"
-                    >
-                      <Trash2 className="w-4 h-4" /> Remover tudo
-                    </button>
-                  </div>
-                )}
-              </div>
-              <div className="relative">
-                <button
-                  onClick={() => setShowExportMenu((prev) => !prev)}
-                  disabled={filteredIntimations.length === 0}
-                  className="inline-flex items-center justify-center gap-1.5 border border-slate-200 text-slate-700 hover:bg-slate-50 text-xs font-semibold px-3.5 py-2 rounded-xl transition disabled:opacity-50 w-full sm:w-auto"
-                >
-                  <Download className="w-4 h-4" />
-                  Exportar
-                </button>
-                {showExportMenu && (
-                  <div className="absolute right-0 mt-2 w-48 bg-white rounded-lg shadow-lg border border-gray-200 z-50">
-                    <div className="py-1 text-sm text-gray-700">
-                      <button
-                        onClick={handleExportCSV}
-                        className="w-full text-left px-4 py-2 hover:bg-gray-100 flex items-center gap-2"
-                      >
-                        <FileText className="w-4 h-4" /> CSV
-                      </button>
-                      <button
-                        onClick={handleExportExcel}
-                        className="w-full text-left px-4 py-2 hover:bg-gray-100 flex items-center gap-2"
-                      >
-                        <FileText className="w-4 h-4" /> Excel
-                      </button>
-                      <button
-                        onClick={handleExportPDF}
-                        className="w-full text-left px-4 py-2 hover:bg-gray-100 flex items-center gap-2"
-                      >
-                        <FileText className="w-4 h-4" /> PDF
-                      </button>
-                    </div>
-                  </div>
-                )}
-              </div>
-              <div className="relative">
-                <button
-                  onClick={() => setShowSettingsMenu((prev) => !prev)}
-                  className="inline-flex items-center justify-center gap-1.5 border border-slate-200 text-slate-700 hover:bg-slate-50 text-xs font-semibold px-3.5 py-2 rounded-xl transition w-full sm:w-auto"
-                >
-                  <UserCog className="w-4 h-4" />
-                  Configurações
-                </button>
-                {showSettingsMenu && (
-                  <div className="absolute right-0 mt-2 w-80 bg-white rounded-lg shadow-lg border border-gray-200 z-50 p-4">
-                    <div className="mb-4">
-                      <h3 className="text-sm font-semibold text-slate-900 mb-2">Configurações do Módulo</h3>
-                      <p className="text-xs text-slate-500">Gerencie preferências de visualização.</p>
-                    </div>
-                    <div className="space-y-4">
-                      <div>
-                        <label className="text-xs font-medium text-slate-700">Visualização padrão</label>
-                        <div className="mt-2">
-                          <label className="inline-flex items-center gap-2 text-xs text-slate-600">
-                            <input
-                              type="checkbox"
-                              checked={moduleSettings.defaultGroupByProcess}
-                              onChange={(e) => {
-                                setModuleSettings((prev) => ({
-                                  ...prev,
-                                  defaultGroupByProcess: e.target.checked,
-                                }));
-                                setGroupByProcess(e.target.checked);
-                              }}
-                              className="rounded border-slate-300 text-blue-600 focus:ring-blue-500"
-                            />
-                            Agrupar por processo automaticamente
-                          </label>
-                        </div>
-                      </div>
-                      <div>
-                        <label className="text-xs font-medium text-slate-700">Filtro padrão</label>
-                        <select
-                          value={moduleSettings.defaultStatusFilter}
-                          onChange={(e) => {
-                            const value = e.target.value as 'all' | 'unread' | 'read';
-                            setModuleSettings((prev) => ({
-                              ...prev,
-                              defaultStatusFilter: value,
-                            }));
-                            setStatusFilter(value);
-                          }}
-                          className="mt-1 w-full px-2 py-1.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-1 focus:ring-blue-500 text-xs"
-                        >
-                          <option value="all">Todas</option>
-                          <option value="unread">Não lidas</option>
-                          <option value="read">Lidas</option>
-                        </select>
-                        <p className="text-xs text-slate-500 mt-1">Define o filtro aplicado ao abrir o módulo.</p>
-                      </div>
-                    </div>
-                  </div>
-                )}
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* Cards compactos de indicadores */}
-      <div className="grid grid-cols-2 lg:grid-cols-5 gap-2 sm:gap-4">
-        <div className="bg-white border border-slate-200 rounded-lg p-3 sm:p-4">
-          <div className="flex items-center justify-between">
-            <span className="text-[11px] uppercase text-slate-500 font-semibold tracking-wide">
-              Não lidas
-            </span>
+      {/* Barra única: Header + Filtros + Ações */}
+      <div className="bg-white border border-slate-100 rounded-lg p-3">
+        {/* Linha 1: Título, indicadores e sincronizar */}
+        <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
+          <div className="flex items-center gap-2 text-xs text-slate-500">
             <Bell className="w-4 h-4 text-amber-600" />
-          </div>
-          <p className="text-xl sm:text-2xl font-bold text-slate-900 mt-1">{unreadCount}</p>
-          <p className="text-[11px] text-slate-500">pendentes de leitura</p>
-        </div>
-        <div className="bg-white border border-slate-200 rounded-lg p-3 sm:p-4">
-          <div className="flex items-center justify-between">
-            <span className="text-[11px] uppercase text-slate-500 font-semibold tracking-wide">
-              Total
+            <span className="font-semibold text-slate-800 text-sm">Intimações</span>
+            <span className="hidden sm:inline-flex items-center gap-1">
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
+              Online
             </span>
-            <FileText className="w-4 h-4 text-slate-500" />
+            <span>•</span>
+            <span>{intimations.length} total</span>
+            <span className="font-medium text-amber-600">{unreadCount} não lidas</span>
+            {aiUrgencyStats.alta > 0 && (
+              <span className="font-medium text-red-600">{aiUrgencyStats.alta} Alta</span>
+            )}
+            {aiUrgencyStats.baixa > 0 && (
+              <span className="font-medium text-emerald-600">{aiUrgencyStats.baixa} Baixa</span>
+            )}
           </div>
-          <p className="text-xl sm:text-2xl font-bold text-slate-900 mt-1">{intimations.length}</p>
-          <p className="text-[11px] text-slate-500">intimações salvas</p>
+          <button
+            onClick={handleSync}
+            disabled={syncing}
+            className="inline-flex items-center gap-1.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-medium px-3 py-1.5 rounded-lg transition disabled:opacity-50"
+          >
+            {syncing ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5" />}
+            <span className="hidden sm:inline">{syncing ? 'Sincronizando...' : 'Sincronizar'}</span>
+          </button>
         </div>
-        <div className="bg-white border border-slate-200 rounded-lg p-3 sm:p-4">
-          <div className="flex items-center justify-between">
-            <span className="text-[11px] uppercase text-slate-500 font-semibold tracking-wide">
-              Novas (7d)
-            </span>
-            <Sparkles className="w-4 h-4 text-purple-600" />
-          </div>
-          <p className="text-xl sm:text-2xl font-bold text-slate-900 mt-1">{newWeekCount}</p>
-          <p className="text-[11px] text-slate-500 flex items-center gap-1">
-            +{newTodayCount} hoje
-          </p>
-        </div>
-        <div className="bg-white border border-slate-200 rounded-lg p-3 sm:p-4">
-          <div className="flex items-center justify-between">
-            <span className="text-[11px] uppercase text-slate-500 font-semibold tracking-wide">
-              Processos
-            </span>
-            <Link2 className="w-4 h-4 text-blue-600" />
-          </div>
-          <p className="text-xl sm:text-2xl font-bold text-slate-900 mt-1">{linkedProcessesCount}</p>
-          <p className="text-[11px] text-slate-500">processos vinculados</p>
-        </div>
-        <div className="bg-white border border-slate-200 rounded-lg p-3 sm:p-4">
-          <div className="flex items-center justify-between">
-            <span className="text-[11px] uppercase text-slate-500 font-semibold tracking-wide">
-              Cobertura IA
-            </span>
-            <Sparkles className="w-4 h-4 text-purple-600" />
-          </div>
-          <p className="text-xl sm:text-2xl font-bold text-slate-900 mt-1">{aiCoverage}%</p>
-          <div className="mt-2 h-1.5 bg-slate-100 rounded-full overflow-hidden">
-            <div className="h-full bg-purple-500" style={{ width: `${aiCoverage}%` }} />
-          </div>
-        </div>
-      </div>
 
-      {/* Resumo de urgência */}
-      {aiUrgencyStats.unreadAnalyzed > 0 && (
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-          <div className="bg-white border border-red-200 rounded-lg p-3 sm:p-4">
-            <p className="text-[11px] uppercase font-semibold text-red-600">Urgência alta</p>
-            <p className="text-xl font-bold text-red-700 mt-1">{aiUrgencyStats.alta}</p>
-            <p className="text-[11px] text-slate-500">não lidas analisadas</p>
-          </div>
-          <div className="bg-white border border-amber-200 rounded-lg p-3 sm:p-4">
-            <p className="text-[11px] uppercase font-semibold text-amber-600">Urgência média</p>
-            <p className="text-xl font-bold text-amber-700 mt-1">{aiUrgencyStats.media}</p>
-            <p className="text-[11px] text-slate-500">não lidas analisadas</p>
-          </div>
-          <div className="bg-white border border-emerald-200 rounded-lg p-3 sm:p-4">
-            <p className="text-[11px] uppercase font-semibold text-emerald-600">Urgência baixa</p>
-            <p className="text-xl font-bold text-emerald-700 mt-1">{aiUrgencyStats.baixa}</p>
-            <p className="text-[11px] text-slate-500">não lidas analisadas</p>
-          </div>
-        </div>
-      )}
-
-
-      {/* Filtros e Busca */}
-      <div className="bg-white border border-gray-200 rounded-xl p-3 sm:p-6">
-        <div className="flex flex-col lg:flex-row gap-3 sm:gap-4">
-          <div className="relative flex-1">
-            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-slate-400 w-5 h-5" />
+        {/* Linha 2: Busca, filtros e ações */}
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="relative flex-1 min-w-[200px]">
+            <Search className="absolute left-2.5 top-1/2 transform -translate-y-1/2 text-slate-400 w-4 h-4" />
             <input
               type="text"
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
-              placeholder="Buscar por processo, conteúdo ou órgão..."
-              className="w-full pl-10 pr-4 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+              placeholder="Pesquisar por cliente, OAB ou processo..."
+              className="w-full pl-8 pr-3 py-1.5 border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-blue-500 text-sm"
             />
           </div>
 
           <select
             value={statusFilter}
             onChange={(e) => setStatusFilter(e.target.value as any)}
-            className="px-4 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm min-w-[160px]"
+            className="px-2.5 py-1.5 border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-blue-500 text-sm"
           >
             <option value="all">Todas ({intimations.length})</option>
             <option value="unread">Não Lidas ({unreadCount})</option>
@@ -1670,7 +1529,7 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
           <select
             value={tribunalFilter}
             onChange={(e) => setTribunalFilter(e.target.value)}
-            className="px-4 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm min-w-[160px]"
+            className="px-2.5 py-1.5 border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-blue-500 text-sm"
           >
             <option value="all">Todos os Tribunais</option>
             {availableTribunals.map((tribunal) => (
@@ -1683,7 +1542,7 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
           <select
             value={dateFilter}
             onChange={(e) => setDateFilter(e.target.value as any)}
-            className="px-4 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm min-w-[160px]"
+            className="px-2.5 py-1.5 border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-blue-500 text-sm"
           >
             <option value="30days">Últimos 30 dias</option>
             <option value="60days">Últimos 60 dias</option>
@@ -1693,40 +1552,145 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
 
           <button
             onClick={() => setShowFilters(!showFilters)}
-            className={`inline-flex items-center gap-2 px-4 py-2.5 rounded-lg transition text-sm font-medium ${
+            className={`inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg transition text-sm ${
               showFilters
-                ? 'bg-indigo-100 text-indigo-700 border border-indigo-300'
-                : 'border border-gray-300 text-slate-700 hover:bg-slate-50'
+                ? 'bg-slate-100 text-slate-700 border border-slate-300'
+                : 'border border-gray-200 text-slate-600 hover:bg-slate-50'
             }`}
           >
-            <Filter className="w-4 h-4" />
-            {showFilters ? 'Ocultar Filtros' : 'Filtros Avançados'}
+            <Filter className="w-3.5 h-3.5" />
+            <span className="hidden sm:inline">Filtros</span>
           </button>
 
-          <button
-            onClick={() => {
-              setSelectionMode(!selectionMode);
-              if (selectionMode) setSelectedIds(new Set());
-            }}
-            className={`inline-flex items-center gap-2 px-4 py-2.5 rounded-lg transition text-sm font-medium ${
-              selectionMode
-                ? 'bg-purple-100 text-purple-700 border border-purple-300'
-                : 'border border-gray-300 text-slate-700 hover:bg-slate-50'
-            }`}
-          >
-            {selectionMode ? 'Cancelar Seleção' : 'Selecionar Múltiplas'}
-          </button>
+          <div className="relative">
+            <button
+              onClick={() => setShowClearMenu((prev) => !prev)}
+              disabled={syncing}
+              className="inline-flex items-center gap-1.5 border border-gray-200 text-slate-600 hover:bg-slate-50 text-sm px-2.5 py-1.5 rounded-lg transition disabled:opacity-50"
+            >
+              <Trash2 className="w-3.5 h-3.5" />
+            </button>
+            {showClearMenu && (
+              <div className="absolute right-0 mt-2 w-56 bg-white rounded-lg shadow-lg border border-gray-200 z-50 text-sm text-slate-700">
+                <button
+                  onClick={handleDeleteSelected}
+                  className="w-full text-left px-4 py-2.5 hover:bg-gray-50 flex items-center gap-2 disabled:text-slate-400"
+                >
+                  <CheckCircle className="w-4 h-4" /> Remover selecionadas
+                </button>
+                <button
+                  onClick={handleDeleteRead}
+                  className="w-full text-left px-4 py-2.5 hover:bg-gray-50 flex items-center gap-2"
+                >
+                  <EyeOff className="w-4 h-4" /> Remover lidas
+                </button>
+                <button
+                  onClick={handleClearAllIntimations}
+                  disabled={clearingAll || intimations.length === 0}
+                  className="w-full text-left px-4 py-2.5 hover:bg-gray-50 flex items-center gap-2 text-red-600 disabled:text-red-300"
+                >
+                  <Trash2 className="w-4 h-4" /> Remover tudo
+                </button>
+              </div>
+            )}
+          </div>
 
-          <button
-            onClick={() => setGroupByProcess(!groupByProcess)}
-            className={`inline-flex items-center gap-2 px-4 py-2.5 rounded-lg transition text-sm font-medium ${
-              groupByProcess
-                ? 'bg-blue-100 text-blue-700 border border-blue-300'
-                : 'border border-gray-300 text-slate-700 hover:bg-slate-50'
-            }`}
-          >
-            {groupByProcess ? 'Desagrupar Processos' : 'Agrupar por Processo'}
-          </button>
+          <div className="relative">
+            <button
+              onClick={() => setShowExportMenu((prev) => !prev)}
+              disabled={filteredIntimations.length === 0}
+              className="inline-flex items-center gap-1.5 border border-gray-200 text-slate-600 hover:bg-slate-50 text-sm px-2.5 py-1.5 rounded-lg transition disabled:opacity-50"
+            >
+              <Download className="w-3.5 h-3.5" />
+            </button>
+            {showExportMenu && (
+              <div className="absolute right-0 mt-2 w-44 bg-white rounded-lg shadow-lg border border-gray-200 z-50">
+                <div className="py-1 text-sm text-gray-700">
+                  <button
+                    onClick={handleExportCSV}
+                    className="w-full text-left px-4 py-2.5 hover:bg-gray-50 flex items-center gap-2"
+                  >
+                    <FileText className="w-4 h-4" /> CSV
+                  </button>
+                  <button
+                    onClick={handleExportExcel}
+                    className="w-full text-left px-4 py-2.5 hover:bg-gray-50 flex items-center gap-2"
+                  >
+                    <FileText className="w-4 h-4" /> Excel
+                  </button>
+                  <button
+                    onClick={handleExportPDF}
+                    className="w-full text-left px-4 py-2.5 hover:bg-gray-50 flex items-center gap-2"
+                  >
+                    <FileText className="w-4 h-4" /> PDF
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+
+          <div className="relative">
+            <button
+              onClick={() => setShowSettingsMenu((prev) => !prev)}
+              className="inline-flex items-center gap-1.5 border border-gray-200 text-slate-600 hover:bg-slate-50 text-sm px-2.5 py-1.5 rounded-lg transition"
+            >
+              <UserCog className="w-3.5 h-3.5" />
+            </button>
+            {showSettingsMenu && (
+              <div className="absolute right-0 mt-2 w-72 bg-white rounded-lg shadow-lg border border-gray-200 z-50 p-4">
+                <div className="mb-3">
+                  <h3 className="text-sm font-semibold text-slate-900">Configurações</h3>
+                </div>
+                <div className="space-y-3">
+                  <label className="flex items-center gap-2 text-sm text-slate-600 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={moduleSettings.defaultGroupByProcess}
+                      onChange={(e) => {
+                        setModuleSettings((prev) => ({
+                          ...prev,
+                          defaultGroupByProcess: e.target.checked,
+                        }));
+                        setGroupByProcess(e.target.checked);
+                      }}
+                      className="rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                    />
+                    Agrupar por processo
+                  </label>
+                  <label className="flex items-center gap-2 text-sm text-slate-600 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={selectionMode}
+                      onChange={(e) => {
+                        setSelectionMode(e.target.checked);
+                        if (!e.target.checked) setSelectedIds(new Set());
+                      }}
+                      className="rounded border-slate-300 text-purple-600 focus:ring-purple-500"
+                    />
+                    Modo seleção múltipla
+                  </label>
+                  <div className="pt-2 border-t border-gray-100">
+                    <label className="block text-xs font-medium text-slate-600 mb-1">Filtro padrão</label>
+                    <select
+                      value={moduleSettings.defaultStatusFilter}
+                      onChange={(e) => {
+                        const value = e.target.value as 'all' | 'unread' | 'read';
+                        setModuleSettings((prev) => ({
+                          ...prev,
+                          defaultStatusFilter: value,
+                        }));
+                      }}
+                      className="w-full px-2 py-1.5 border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-blue-500 text-sm"
+                    >
+                      <option value="all">Todas</option>
+                      <option value="unread">Não lidas</option>
+                      <option value="read">Lidas</option>
+                    </select>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
         </div>
 
         {showFilters && (
@@ -1885,6 +1849,24 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
                               </span>
                             )}
                           </div>
+                          {/* Partes (destinatários ou extraídas do texto) */}
+                          {(() => {
+                            const partes = intimation.djen_destinatarios && intimation.djen_destinatarios.length > 0
+                              ? intimation.djen_destinatarios.map(d => ({ nome: d.nome, polo: d.polo || '' }))
+                              : extractPartesFromTexto(intimation.texto || '');
+                            
+                            return partes.length > 0 ? (
+                              <div className="flex flex-wrap items-center gap-1.5 text-xs text-slate-600">
+                                <span className="font-medium text-slate-500">Partes:</span>
+                                {partes.map((parte, idx) => (
+                                  <span key={idx} className="inline-flex items-center gap-1 px-1.5 py-0.5 bg-blue-50 text-blue-700 rounded text-[11px]">
+                                    {parte.nome}
+                                    {parte.polo && <span className="text-blue-500">({parte.polo})</span>}
+                                  </span>
+                                ))}
+                              </div>
+                            ) : null;
+                          })()}
                           {/* Texto da intimação - compacto em mobile */}
                           <p className={`text-xs sm:text-sm text-slate-700 ${!isExpanded ? 'line-clamp-1 sm:line-clamp-2' : ''}`}>
                             {intimation.texto}
@@ -2137,6 +2119,25 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
                       </p>
                     )}
                   </div>
+
+                  {/* Partes (destinatários ou extraídas do texto) */}
+                  {(() => {
+                    const partes = intimation.djen_destinatarios && intimation.djen_destinatarios.length > 0
+                      ? intimation.djen_destinatarios.map(d => ({ nome: d.nome, polo: d.polo || '' }))
+                      : extractPartesFromTexto(intimation.texto || '');
+                    
+                    return partes.length > 0 ? (
+                      <div className="flex flex-wrap items-center gap-1.5 text-xs text-slate-600 mb-2">
+                        <span className="font-medium text-slate-500">Partes:</span>
+                        {partes.map((parte, idx) => (
+                          <span key={idx} className="inline-flex items-center gap-1 px-1.5 py-0.5 bg-blue-50 text-blue-700 rounded text-[11px]">
+                            {parte.nome}
+                            {parte.polo && <span className="text-blue-500">({parte.polo})</span>}
+                          </span>
+                        ))}
+                      </div>
+                    ) : null;
+                  })()}
 
                   {intimation.client_id && (
                     <p className={`text-xs sm:text-sm text-slate-600 mb-1 truncate sm:whitespace-normal ${!isExpanded ? 'hidden sm:block' : ''}`}>

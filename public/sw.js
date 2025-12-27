@@ -1,6 +1,6 @@
 // Service Worker para Push Notifications
 
-const CACHE_NAME = 'crm-cache-v3'; // Incrementado para forçar atualização
+const CACHE_NAME = 'crm-cache-v4'; // Incrementado para forçar atualização
 
 // Install event
 self.addEventListener('install', (event) => {
@@ -71,18 +71,28 @@ self.addEventListener('notificationclick', (event) => {
   
   event.notification.close();
 
+  const payload = event.notification.data || {};
+
   // Abre ou foca a janela do app
   event.waitUntil(
     clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clientList) => {
       // Se já tem uma janela aberta, foca nela
       for (const client of clientList) {
         if (client.url.includes(self.location.origin) && 'focus' in client) {
-          return client.focus();
+          return client.focus().then(() => {
+            try {
+              client.postMessage(payload);
+            } catch {}
+          });
         }
       }
       // Senão, abre uma nova janela
       if (clients.openWindow) {
-        return clients.openWindow('/');
+        return clients.openWindow('/').then((client) => {
+          try {
+            client?.postMessage(payload);
+          } catch {}
+        });
       }
     })
   );

@@ -16,6 +16,8 @@ import { clientService } from '../services/client.service';
 import { calendarService } from '../services/calendar.service';
 import { ClientSearchSelect } from './ClientSearchSelect';
 import { useDeleteConfirm } from '../contexts/DeleteConfirmContext';
+import { userNotificationService } from '../services/userNotification.service';
+import { useAuth } from '../contexts/AuthContext';
 import type { Deadline } from '../types/deadline.types';
 import type { Process } from '../types/process.types';
 import type { Requirement } from '../types/requirement.types';
@@ -94,6 +96,7 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({
   onParamConsumed,
 }) => {
   const { confirmDelete } = useDeleteConfirm();
+  const { user } = useAuth();
 
   const calendarRef = useRef<FullCalendar | null>(null);
   const [loading, setLoading] = useState(true);
@@ -719,6 +722,27 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({
           start: createdEvent.start_at,
           allDay: isAllDay,
         });
+        
+        // 🔔 Criar notificação para novo compromisso
+        if (user?.id && createdEvent) {
+          try {
+            const eventDate = new Date(createdEvent.start_at);
+            const formattedDate = eventDate.toLocaleDateString('pt-BR', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' });
+            
+            await userNotificationService.createNotification({
+              title: '📅 Novo Compromisso',
+              message: `${createdEvent.title} • ${formattedDate}`,
+              type: 'appointment_assigned',
+              user_id: user.id,
+              appointment_id: createdEvent.id,
+              metadata: {
+                event_type: newEventForm.type,
+                start_at: createdEvent.start_at,
+              },
+            });
+          } catch {}
+        }
+        
         setFeedback({ type: 'success', message: `Compromisso "${newEventForm.title}" criado com sucesso!` });
       }
 

@@ -1,8 +1,11 @@
-import React from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { ArrowLeft, User, Building2, Mail, Phone, MapPin, Calendar, FileText, Edit, MessageCircle, Briefcase, Scale, FileCheck, Plus, Clock, FolderPlus, Gavel, Loader2, ClipboardList, AlertCircle } from 'lucide-react';
 import type { Client } from '../types/client.types';
 import type { Process } from '../types/process.types';
 import type { Requirement } from '../types/requirement.types';
+import type { SignatureRequestWithSigners } from '../types/signature.types';
+import { signatureService } from '../services/signature.service';
+import { pdfSignatureService } from '../services/pdfSignature.service';
 
 interface ClientDetailsProps {
   client: Client;
@@ -50,6 +53,10 @@ const formatPhone = (value: string) => {
 };
 
 const ClientDetails: React.FC<ClientDetailsProps> = ({ client, processes, requirements, relationsLoading, onBack, onEdit, onCreateProcess, onCreateRequirement, onCreateDeadline, missingFields = [], isOutdated = false }) => {
+  const [signatureRequests, setSignatureRequests] = useState<SignatureRequestWithSigners[]>([]);
+  const [signatureLoading, setSignatureLoading] = useState(false);
+  const [signatureError, setSignatureError] = useState<string | null>(null);
+
   const formatDate = (dateString?: string) => {
     if (!dateString) return 'N/A';
     return new Date(dateString).toLocaleDateString('pt-BR');
@@ -85,6 +92,41 @@ const ClientDetails: React.FC<ClientDetailsProps> = ({ client, processes, requir
       <p className="text-sm font-semibold text-slate-900 mt-0.5">{value ?? 'Não informado'}</p>
     </div>
   );
+
+  useEffect(() => {
+    let isMounted = true;
+
+    const loadSignedDocuments = async () => {
+      try {
+        setSignatureLoading(true);
+        setSignatureError(null);
+        const requests = await signatureService.listRequestsWithSigners({ client_id: client.id });
+        if (!isMounted) return;
+        setSignatureRequests(requests);
+      } catch (error: any) {
+        console.error('Erro ao carregar documentos assinados do cliente:', error);
+        if (!isMounted) return;
+        setSignatureError(error?.message || 'Erro ao carregar documentos assinados');
+        setSignatureRequests([]);
+      } finally {
+        if (!isMounted) return;
+        setSignatureLoading(false);
+      }
+    };
+
+    void loadSignedDocuments();
+    return () => {
+      isMounted = false;
+    };
+  }, [client.id]);
+
+  const signedDocuments = useMemo(() => {
+    return (signatureRequests ?? []).filter((request) => {
+      const hasSignedPdf = (request.signers ?? []).some((s) => Boolean(s.signed_document_path));
+      const isSigned = request.status === 'signed' || Boolean(request.signed_at);
+      return hasSignedPdf || isSigned;
+    });
+  }, [signatureRequests]);
 
   return (
     <div className="w-full rounded-2xl bg-white shadow-xl border border-slate-200 text-xs sm:text-sm">
@@ -212,6 +254,70 @@ const ClientDetails: React.FC<ClientDetailsProps> = ({ client, processes, requir
         </div>
 
         <div className="space-y-4">
+          <div className="rounded-2xl border border-slate-200 bg-white shadow-sm p-4 space-y-3">
+            <h3 className="text-slate-900 text-base font-semibold">Documentos/Contratos assinados</h3>
+            {signatureLoading ? (
+              <div className="py-4 flex items-center text-slate-500 gap-2 text-sm">
+                <Loader2 className="w-4 h-4 animate-spin" />
+                Carregando documentos assinados...
+              </div>
+            ) : signatureError ? (
+              <div className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-800">
+                {signatureError}
+              </div>
+            ) : signedDocuments.length === 0 ? (
+              <p className="text-slate-500 text-sm">Nenhum documento assinado encontrado para este cliente.</p>
+            ) : (
+              <div className="grid grid-cols-1 gap-3">
+                {signedDocuments.map((request) => {
+                  const signedSigner = (request.signers ?? []).find((s) => Boolean(s.signed_document_path)) ?? null;
+                  const signedAt = request.signed_at || signedSigner?.signed_at || null;
+
+                  return (
+                    <div
+                      key={request.id}
+                      className="rounded-xl border border-slate-200 p-4 hover:bg-slate-50 transition"
+                    >
+                      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                        <div className="min-w-0">
+                          <p className="text-sm font-semibold text-slate-900 truncate">{request.document_name || 'Documento'}</p>
+                          <p className="text-xs text-slate-500 mt-0.5">
+                            Assinado em: {signedAt ? formatDateTime(signedAt) : '—'}
+                          </p>
+                        </div>
+
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span className="px-3 py-1 inline-flex items-center gap-1.5 text-xs font-semibold rounded-full bg-emerald-100 text-emerald-700">
+                            <FileCheck className="w-3.5 h-3.5" />
+                            Assinado
+                          </span>
+
+                          <button
+                            type="button"
+                            onClick={async () => {
+                              try {
+                                if (!signedSigner?.signed_document_path) return;
+                                const url = await pdfSignatureService.getSignedPdfUrl(signedSigner.signed_document_path);
+                                if (url) window.open(url, '_blank');
+                              } catch (e) {
+                                console.error('Erro ao abrir documento assinado:', e);
+                              }
+                            }}
+                            disabled={!signedSigner?.signed_document_path}
+                            className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg border border-slate-200 text-xs font-semibold text-slate-700 hover:bg-white disabled:opacity-50 disabled:cursor-not-allowed"
+                          >
+                            <FileText className="w-4 h-4" />
+                            Ver assinado
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+
           <div className="rounded-2xl border border-slate-200 bg-white shadow-sm p-4 space-y-3">
             <h3 className="text-slate-900 text-base font-semibold">Processos vinculados</h3>
             {relationsLoading ? (

@@ -46,6 +46,7 @@ import {
    ============================================================================ */
 
 const VERSION_CODENAMES: Record<string, { name: string; emoji: string }> = {
+  '1.3.31': { name: 'Café Premium', emoji: '☕' },
   '1.1.37': { name: 'Café Botão', emoji: '🔘' },
   '1.1.36': { name: 'Café Leve', emoji: '🪶' },
   '1.1.35': { name: 'Café Comentário', emoji: '📝' },
@@ -450,6 +451,24 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
    ============================================================================ */
 
 const releases: ReleaseNote[] = [
+  {
+    version: '1.3.31',
+    date: '27/12/2025',
+    summary: 'Documentação: redesign para o padrão visual do sistema',
+    modules: [
+      {
+        moduleId: 'docs',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Página de Documentação com layout limpo/profissional',
+            description:
+              'A superpágina de documentação foi redesenhada para o padrão visual do CRM (sem gradientes chamativos e sem aparência de template), mantendo sidebar, busca e seções (Início, Guia, Changelog, FAQ).',
+          },
+        ],
+      },
+    ],
+  },
   {
     version: '1.3.7',
     date: '27/12/2025',

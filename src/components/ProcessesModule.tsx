@@ -900,6 +900,24 @@ const ProcessesModule: React.FC<ProcessesModuleProps> = ({ forceCreate, entityId
 
         const newProcess = await processService.createProcess(createPayload as any);
 
+        // 🔔 Criar notificação para novo processo
+        if (user?.id && newProcess) {
+          try {
+            const clientName = clients.find(c => c.id === createPayload.client_id)?.full_name || 'Cliente';
+            await userNotificationService.createNotification({
+              title: '📋 Novo Processo',
+              message: `${createPayload.process_code || 'Sem número'} • ${clientName}`,
+              type: 'process_updated',
+              user_id: user.id,
+              process_id: newProcess.id,
+              metadata: {
+                status: createPayload.status,
+                client_name: clientName,
+              },
+            });
+          } catch {}
+        }
+
         if (newProcess && trimmedProcessCode) {
           processDjenSyncService
             .syncProcessWithDjen(newProcess as Process)

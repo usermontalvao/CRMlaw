@@ -729,14 +729,26 @@ class PdfSignatureService {
     const creatorEmail = creator?.email ? ` (Email: ${creator.email})` : '';
     history.push({ label: 'Criado', when: createdAtStr, detail: `${creatorName} criou este documento.${creatorEmail}` });
 
-    const signerEmail = signer.email && !this.isInternalPlaceholderEmail(signer.email) ? ` (Email: ${signer.email})` : '';
+    const authEmail = String(signer.auth_email || '').trim();
+    const phone = String((signer as any).phone || '').trim();
+    const rawEmail = String(signer.email || '').trim();
+    const displayContact =
+      authEmail ||
+      (signer.auth_provider === 'phone' ? phone : '') ||
+      (!this.isInternalPlaceholderEmail(rawEmail) ? rawEmail : '');
+    const displayContactLabel = authEmail
+      ? 'Email'
+      : signer.auth_provider === 'phone'
+        ? 'Telefone'
+        : 'Email';
+    const signerContact = displayContact ? ` (${displayContactLabel}: ${displayContact})` : '';
     const signerCpf = (signer as any).cpf ? `, CPF: ${(signer as any).cpf}` : '';
     const locationInfo = geo2.coordinates ? ` localizado em ${geo2.coordinates}${geo2.address ? ` - ${geo2.address}` : ''}` : '';
     if (viewedAtStr) {
       history.push({
         label: 'Visualizado',
         when: viewedAtStr,
-        detail: `${signer.name}${signerEmail}${signerCpf} visualizou este documento${signer.signer_ip ? ` por meio do IP ${signer.signer_ip}` : ''}${locationInfo}`,
+        detail: `${signer.name}${signerContact}${signerCpf} visualizou este documento${signer.signer_ip ? ` por meio do IP ${signer.signer_ip}` : ''}${locationInfo}`,
       });
     }
 
@@ -757,7 +769,7 @@ class PdfSignatureService {
     history.push({
       label: 'Assinado',
       when: signedAtStr2,
-      detail: `${signer.name}${signerEmail}${signerCpf} assinou este documento${signer.signer_ip ? ` por meio do IP ${signer.signer_ip}` : ''}${locationInfo}${authSummary ? `. ${authSummary}` : ''}`,
+      detail: `${signer.name}${signerContact}${signerCpf} assinou este documento${signer.signer_ip ? ` por meio do IP ${signer.signer_ip}` : ''}${locationInfo}${authSummary ? `. ${authSummary}` : ''}`,
     });
 
     let y = h3 - 105;

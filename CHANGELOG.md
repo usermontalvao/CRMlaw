@@ -1,5 +1,130 @@
 # Changelog
 
+## 1.3.31
+- Documentação: redesign da superpágina para o padrão visual do sistema (layout limpo/profissional, sem gradientes chamativos e sem aparência de template), mantendo sidebar, busca e seções.
+
+## 1.3.30
+- Documentação: nova superpágina de documentação premium com design moderno, sidebar de navegação, seções organizadas (Início, Guia do Sistema, Changelog, FAQ), busca integrada e layout responsivo.
+
+## 1.3.29
+- Autenticidade/Verificação: exibição do contato do signatário agora prioriza o e-mail/telefone realmente usado na autenticação (Google/telefone), evitando mostrar e-mail interno `public+...@crm.local`.
+
+## 1.3.28
+- Assinatura (selfie): anti-falso-negativo — se a IA reclamar apenas de “clareza/borrão/iluminação” mas não indicar ausência de rosto/obstrução/borrão severo, a foto é aceita.
+
+## 1.3.27
+- Assinatura (selfie): critérios da IA ajustados para não reprovar por iluminação; reprova apenas por ausência de rosto, obstrução no rosto ou foto muito borrada.
+
+## 1.3.26
+- Assinatura Pública: validação de selfie com IA agora bloqueia envio quando a foto estiver sem rosto visível/nítido e exibe o motivo.
+- Edge Function: `analyze-facial-photo` agora aceita validação via `token` público (sem login) com checagem no backend.
+
+## 1.3.25
+- Assinatura Eletrônica: validação de foto facial com IA (OpenAI Vision) - verifica nitidez, iluminação e visibilidade do rosto.
+- Se a foto não passar na validação, exibe mensagem e pede para tirar nova foto.
+- Opção "Usar mesmo assim" para casos excepcionais.
+
+## 1.3.24
+- Notificações: suporte a notificação do navegador ao receber notificações via Realtime (quando o usuário conceder permissão).
+- Notificações: clique na notificação de assinatura abre diretamente o módulo Assinaturas no modal de detalhes.
+
+## 1.3.23
+- Notificações: popups na tela agora ficam fixos até o usuário fechar (sem expirar automaticamente).
+- Notificações: redesign das notificações de assinatura (badge + progresso + cores) no popup e no dropdown.
+
+## 1.3.22
+- Notificações: `analyze-intimations` agora cria notificação para todas as novas intimações analisadas (não apenas urgentes).
+- Notificações: título da intimação agora reflete a urgência (📄/📋/⚠️/🚨).
+- Notificações: `NotificationBell` com Realtime mais robusto em ambiente dev (evita duplicidade no React StrictMode).
+
+## 1.3.21
+- Notificações: integração de Requerimentos (alertas de MS/tempo em análise) via `notification-scheduler`.
+- Notificações: `user_notifications` agora suporta `requirement_id` e tipo `requirement_alert`.
+- Notificações: clique no sino/popup abre diretamente Requerimentos quando o alerta for de requerimento.
+- Notificações: scheduler agora respeita `notify_days_before` (prazos) e `notify_minutes_before` (agenda) e usa deduplicação por `dedupe_key`.
+- Notificações: correção de seleção de usuários ativos via `profiles.is_active`/`profiles.user_id`.
+
+## 1.3.20
+- Notificações: popup na tela agora permanece por 60 minutos (com botão de fechar).
+- Notificações: múltiplos popups empilhados (um em cima do outro) no canto da tela.
+
+## 1.3.19
+- Notificações: popup na tela estilo Facebook/Instagram quando chega notificação via Realtime.
+- Notificações: intimações agora exibem partes (nomes/polo) e resumo/assunto para maior precisão.
+- Notificações: assinaturas digitais disparam popup realtime quando alguém assina documento.
+- Notificações: barra de progresso visual no popup (6 segundos para fechar automaticamente).
+
+## 1.3.18
+- Clientes: seção "Documentos/Contratos assinados" nos detalhes do cliente (lista documentos assinados via módulo de Assinatura Digital, com acesso ao PDF assinado).
+
+## 1.3.17
+- Notificações: geração quase realtime de notificações de intimações (run-djen-sync chama analyze-intimations ao salvar novas intimações).
+- Notificações: dropdown do sino exibe apenas não lidas (ao marcar como lida, some da lista).
+
+## 1.3.16
+- Notificações: Edge Function `analyze-intimations` para análise automática de intimações via cron.
+- Notificações: cron job executa a cada 30 minutos para analisar novas intimações.
+- Notificações: intimações urgentes (alta/crítica) geram notificação automática.
+- Notificações: usa Groq AI como provider principal, OpenAI como fallback.
+
+## 1.3.15
+- Notificações: ao marcar intimação como lida, notificação correspondente é marcada como lida automaticamente.
+- Notificações: dropdown mostra apenas notificações não lidas (lidas somem da lista).
+
+## 1.3.14
+- Notificações: sistema de lembretes automáticos via Edge Function (cron).
+- Notificações: lembrete de prazo 1-3 dias antes do vencimento.
+- Notificações: lembrete de compromisso 1 dia antes.
+- Notificações: alerta de intimação urgente (análise IA).
+- Notificações: alerta de assinatura pendente há mais de 1 dia.
+- Notificações: trigger automático quando cliente assina documento.
+- Notificações: cron jobs executam a cada hora e às 8h da manhã.
+- Notificações: deduplicação para evitar notificações repetidas em 24h.
+
+## 1.3.13
+- Notificações: integração completa em todo o sistema.
+- Notificações: prazos criados geram notificação (urgente se ≤3 dias ou prioridade alta).
+- Notificações: compromissos criados geram notificação com data/hora.
+- Notificações: assinaturas digitais geram notificação quando cliente assina.
+- Notificações: processos criados geram notificação com número e cliente.
+- Notificações: ícone de caneta (PenTool) para assinaturas digitais.
+
+## 1.3.12
+- Notificações: cria notificação para TODAS as intimações (não apenas urgentes).
+- Notificações: badges de tribunal e urgência (ALTA, CRÍTICA) nas notificações.
+- Notificações: ícone diferenciado para intimações urgentes (triângulo vermelho).
+- Notificações: cor de fundo do ícone baseada na urgência.
+- Notificações: mensagem com resumo da análise de IA.
+
+## 1.3.11
+- Notificações: suporte a Realtime (notificações instantâneas via WebSocket).
+- Notificações: som toca automaticamente ao receber nova notificação.
+- Notificações: habilitado Realtime na tabela user_notifications.
+
+## 1.3.10
+- Notificações: corrigido RLS policy para permitir INSERT/UPDATE/DELETE na tabela user_notifications.
+
+## 1.3.9
+- Notificações: novo sistema estilo Facebook/Instagram com dropdown moderno.
+- Notificações: som de alerta usando Web Audio API (pode ser ativado/desativado).
+- Notificações: badge com contador animado (pulse) no ícone do sino.
+- Notificações: tempo relativo (agora, 5m, 2h, 3d).
+- Notificações: ações rápidas (marcar como lida, deletar) ao passar o mouse.
+- Notificações: botão para marcar todas como lidas.
+- Notificações: polling automático a cada 30 segundos.
+
+## 1.3.8
+- Notificações: corrigido erro 400 ao criar notificações de intimação urgente (mapeia `intimation_urgent` para `intimation_new` e registra `urgent: true` no metadata).
+
+## 1.3.7
+- Intimações DJEN: layout unificado em barra única (header + filtros + ações).
+- Intimações DJEN: indicadores inline (total, não lidas, urgência).
+- Intimações DJEN: botões de ação apenas com ícones (Filtros, Histórico, Exportar, Config).
+- Intimações DJEN: exibição dos nomes das partes (destinatários ou extraídos do texto).
+- Intimações DJEN: fallback de extração de partes do texto quando não há destinatários cadastrados.
+- Intimações DJEN: vinculação automática quando nome da parte = nome do cliente cadastrado (match 100%).
+- Intimações DJEN: prioridade de visualização para as intimações.
+
 ## 1.3.6
 - Intimações DJEN: análise automática de IA agora é disparada quando novas intimações chegam via realtime.
 

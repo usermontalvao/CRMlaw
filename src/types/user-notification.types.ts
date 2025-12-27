@@ -7,7 +7,8 @@ export type UserNotificationType =
   | 'intimation_new'
   | 'intimation_urgent'
   | 'deadline_reminder'
-  | 'appointment_reminder';
+  | 'appointment_reminder'
+  | 'requirement_alert';
 
 export interface UserNotification {
   id: string;
@@ -23,6 +24,7 @@ export interface UserNotification {
   appointment_id?: string | null;
   process_id?: string | null;
   intimation_id?: string | null;
+  requirement_id?: string | null;
   
   // Metadados
   metadata?: Record<string, any> | null;
@@ -37,5 +39,6 @@ export interface CreateUserNotificationDTO {
   appointment_id?: string | null;
   process_id?: string | null;
   intimation_id?: string | null;
+  requirement_id?: string | null;
   metadata?: Record<string, any> | null;
 }

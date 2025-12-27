@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { AlertCircle, Camera, CheckCircle, ChevronLeft, Clock, Copy, Download, ExternalLink, FileText, Loader2, Lock, MapPin, PenTool, RotateCcw, Scale, Share2, User, X, Shield } from 'lucide-react';
+import { AlertCircle, Camera, CheckCircle, ChevronLeft, Clock, Copy, Download, ExternalLink, FileText, Loader2, Lock, MapPin, PenTool, RotateCcw, Scale, Share2, User, X, Shield, AlertTriangle } from 'lucide-react';
 import { signatureService } from '../services/signature.service';
 import { pdfSignatureService } from '@/services/pdfSignature.service';
 import { googleAuthService, type GoogleUser } from '../services/googleAuth.service';
@@ -7,6 +7,7 @@ import { useToastContext } from '../contexts/ToastContext';
 import type { SignDocumentDTO, SignatureAuditLog, SignatureField, Signer, SignatureRequest } from '../types/signature.types';
 import SignatureReport from './SignatureReport';
 import { renderAsync } from 'docx-preview';
+import { supabase } from '../config/supabase';
 
 interface PublicSigningPageProps {
   token: string;
@@ -19,6 +20,13 @@ interface SignerData {
   name: string;
   cpf: string;
   phone: string;
+}
+
+interface FacialAIValidationResult {
+  valid: boolean;
+  score: number;
+  issues: string[];
+  message: string;
 }
 
 const formatCpf = (value: string): string => {
@@ -227,6 +235,8 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
   const [signerData, setSignerData] = useState<SignerData>({ name: '', cpf: '', phone: '' });
   const [signatureData, setSignatureData] = useState<string | null>(null);
   const [facialData, setFacialData] = useState<string | null>(null);
+  const [facialValidating, setFacialValidating] = useState(false);
+  const [facialValidation, setFacialValidation] = useState<FacialAIValidationResult | null>(null);
   const [loading, setLoading] = useState(false);
   const signingStatusMessages = useMemo(
     () => ['Enviando assinatura…', 'Estamos preparando tudo…', 'Mais um instante…', 'Estamos confirmando a autenticidade…', 'Finalizando…'],
@@ -1063,7 +1073,28 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
     setCameraActive(false);
   };
 
-  const capturePhoto = () => {
+  const validateFacialPhotoWithAI = async (imageBase64: string): Promise<FacialAIValidationResult | null> => {
+    try {
+      setFacialValidating(true);
+      const { data, error } = await supabase.functions.invoke('analyze-facial-photo', {
+        body: { token, imageBase64 },
+      });
+
+      if (error) {
+        console.error('Erro ao validar selfie:', error);
+        return null;
+      }
+
+      return data as FacialAIValidationResult;
+    } catch (err) {
+      console.error('Erro ao validar selfie:', err);
+      return null;
+    } finally {
+      setFacialValidating(false);
+    }
+  };
+
+  const capturePhoto = async () => {
     if (!videoRef.current) return;
 
     const canvas = document.createElement('canvas');
@@ -1073,12 +1104,20 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
     if (!ctx) return;
 
     ctx.drawImage(videoRef.current, 0, 0);
-    setFacialData(canvas.toDataURL('image/jpeg', 0.8));
+    const imageData = canvas.toDataURL('image/jpeg', 0.85);
+    setFacialValidation(null);
+    setFacialData(imageData);
     stopCamera();
+
+    const result = await validateFacialPhotoWithAI(imageData);
+    if (result) {
+      setFacialValidation(result);
+    }
   };
 
   const retakePhoto = () => {
     setFacialData(null);
+    setFacialValidation(null);
   };
 
   // ========== LOCATION ==========
@@ -2561,11 +2600,41 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
                     <p className="text-sm text-slate-500 mt-1">Tire uma selfie para validar a assinatura</p>
                   </div>
 
+                  {facialValidating && (
+                    <div className="rounded-2xl border border-orange-200 bg-orange-50 px-4 py-3">
+                      <div className="flex items-start gap-3">
+                        <Loader2 className="w-5 h-5 text-orange-600 animate-spin flex-shrink-0" />
+                        <div className="min-w-0">
+                          <div className="text-sm font-semibold text-orange-800">Analisando sua foto...</div>
+                          <div className="text-xs text-orange-700 mt-0.5">Aguarde alguns segundos. Precisamos ver o rosto com nitidez.</div>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {facialValidation && facialValidation.valid === false && (
+                    <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3">
+                      <div className="flex items-start gap-3">
+                        <AlertTriangle className="w-5 h-5 text-red-600 flex-shrink-0" />
+                        <div className="min-w-0">
+                          <div className="text-sm font-semibold text-red-800">Foto não aprovada</div>
+                          <div className="text-xs text-red-700 mt-0.5">{facialValidation.message}</div>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
                   {facialData ? (
                     <div className="space-y-4">
                       {/* Preview da foto capturada */}
                       <div className="relative">
-                        <div className="bg-gradient-to-br from-emerald-50 to-emerald-100 rounded-2xl p-4 border border-emerald-200">
+                        <div
+                          className={`rounded-2xl p-4 border ${
+                            facialValidation?.valid === false
+                              ? 'bg-gradient-to-br from-red-50 to-red-100 border-red-200'
+                              : 'bg-gradient-to-br from-emerald-50 to-emerald-100 border-emerald-200'
+                          }`}
+                        >
                           <div className="flex flex-col items-center">
                             <div className="relative mb-3">
                               <img 
@@ -2574,12 +2643,38 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
                                 className="w-32 h-32 object-cover rounded-full border-4 border-white shadow-lg" 
                                 style={{ transform: 'scaleX(-1)' }} 
                               />
-                              <div className="absolute -bottom-1 -right-1 w-8 h-8 bg-emerald-500 rounded-full flex items-center justify-center shadow-md">
-                                <CheckCircle className="w-5 h-5 text-white" />
-                              </div>
+                              {facialValidating ? (
+                                <div className="absolute -bottom-1 -right-1 w-8 h-8 bg-orange-600 rounded-full flex items-center justify-center shadow-md">
+                                  <Loader2 className="w-5 h-5 text-white animate-spin" />
+                                </div>
+                              ) : facialValidation?.valid === false ? (
+                                <div className="absolute -bottom-1 -right-1 w-8 h-8 bg-red-600 rounded-full flex items-center justify-center shadow-md">
+                                  <AlertTriangle className="w-5 h-5 text-white" />
+                                </div>
+                              ) : (
+                                <div className="absolute -bottom-1 -right-1 w-8 h-8 bg-emerald-500 rounded-full flex items-center justify-center shadow-md">
+                                  <CheckCircle className="w-5 h-5 text-white" />
+                                </div>
+                              )}
                             </div>
-                            <p className="text-base font-semibold text-emerald-800">Foto capturada!</p>
-                            <p className="text-sm text-emerald-600">Verificação facial concluída</p>
+                            <p
+                              className={`text-base font-semibold ${
+                                facialValidation?.valid === false ? 'text-red-800' : 'text-emerald-800'
+                              }`}
+                            >
+                              {facialValidating
+                                ? 'Analisando foto...'
+                                : facialValidation?.valid === false
+                                  ? 'Tire outra foto'
+                                  : 'Foto aprovada!'}
+                            </p>
+                            <p className={`text-sm ${facialValidation?.valid === false ? 'text-red-600' : 'text-emerald-600'}`}>
+                              {facialValidating
+                                ? 'Precisamos ver seu rosto com nitidez.'
+                                : facialValidation?.valid === false
+                                  ? 'Deixe o rosto totalmente visível (sem cobrir) e tire a foto sem tremer.'
+                                  : 'Verificação facial concluída'}
+                            </p>
                           </div>
                         </div>
                       </div>
@@ -2587,6 +2682,7 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
                       <button
                         onClick={() => {
                           setFacialData(null);
+                          setFacialValidation(null);
                           startCamera();
                         }}
                         className="w-full py-3 border border-slate-200 rounded-xl font-semibold text-slate-700 hover:bg-slate-50 transition flex items-center justify-center gap-2"
@@ -2596,13 +2692,22 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
                       </button>
                       <button
                         onClick={handleSign}
-                        disabled={loading}
-                        className="w-full py-4 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-bold text-lg shadow-lg shadow-emerald-500/30 transition-colors disabled:opacity-50 flex items-center justify-center gap-2"
+                        disabled={loading || facialValidating || facialValidation?.valid === false}
+                        className={`w-full py-4 text-white rounded-xl font-bold text-lg shadow-lg transition-colors flex items-center justify-center gap-2 disabled:opacity-50 ${
+                          (loading || facialValidating || facialValidation?.valid === false)
+                            ? 'bg-slate-400 shadow-slate-400/20 cursor-not-allowed'
+                            : 'bg-emerald-600 hover:bg-emerald-700 shadow-emerald-500/30'
+                        }`}
                       >
                         {loading ? (
                           <>
                             <Loader2 className="w-5 h-5 animate-spin" />
                             Enviando...
+                          </>
+                        ) : facialValidating ? (
+                          <>
+                            <Loader2 className="w-5 h-5 animate-spin" />
+                            Validando foto...
                           </>
                         ) : (
                           <>

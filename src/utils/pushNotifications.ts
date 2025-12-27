@@ -77,36 +77,48 @@ class PushNotificationService {
    * Envia uma notificação local
    */
   async showNotification(payload: PushNotificationPayload): Promise<void> {
+    console.log('📤 pushNotifications.showNotification chamado:', payload.title);
+    
     if (!this.isEnabled()) {
-      console.warn('Notificações não estão habilitadas');
+      console.warn('⚠️ Notificações não estão habilitadas, permissão:', this.getPermissionStatus());
       return;
     }
 
     try {
+      // Tenta obter registration se não tiver
+      if (!this.registration && 'serviceWorker' in navigator) {
+        this.registration = await navigator.serviceWorker.ready;
+        console.log('📤 Service Worker obtido via ready');
+      }
+
       // Se temos service worker, usa ele
       if (this.registration) {
+        console.log('📤 Mostrando notificação via Service Worker');
         await this.registration.showNotification(payload.title, {
           body: payload.body,
-          icon: payload.icon || '/logo192.png',
-          badge: payload.badge || '/favicon.ico',
+          icon: payload.icon || '/icon-192.png',
+          badge: payload.badge || '/favicon.svg',
           tag: payload.tag,
           data: payload.data,
           requireInteraction: payload.requireInteraction || false,
           silent: payload.silent || false,
         });
+        console.log('✅ Notificação do navegador exibida com sucesso');
       } else {
         // Fallback para notificação direta
+        console.log('📤 Mostrando notificação via Notification API direta');
         new Notification(payload.title, {
           body: payload.body,
-          icon: payload.icon || '/logo192.png',
+          icon: payload.icon || '/icon-192.png',
           tag: payload.tag,
           data: payload.data,
           requireInteraction: payload.requireInteraction || false,
           silent: payload.silent || false,
         });
+        console.log('✅ Notificação direta exibida');
       }
     } catch (error) {
-      console.error('Erro ao mostrar notificação:', error);
+      console.error('❌ Erro ao mostrar notificação:', error);
     }
   }
 

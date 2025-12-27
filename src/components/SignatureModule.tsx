@@ -15,6 +15,7 @@ import { supabase } from '../config/supabase';
 import { documentTemplateService } from '../services/documentTemplate.service';
 import { signatureFieldsService } from '../services/signatureFields.service';
 import { useDeleteConfirm } from '../contexts/DeleteConfirmContext';
+import { userNotificationService } from '../services/userNotification.service';
 import SignatureCanvas from './SignatureCanvas';
 import FacialCapture from './FacialCapture';
 import type {
@@ -64,10 +65,11 @@ interface SignatureModulePrefillData {
 
 interface SignatureModuleProps {
   prefillData?: SignatureModulePrefillData;
+  focusRequestId?: string;
   onParamConsumed?: () => void;
 }
 
-const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, onParamConsumed }) => {
+const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusRequestId, onParamConsumed }) => {
   const toast = useToastContext();
   const { user } = useAuth();
   const { confirmDelete } = useDeleteConfirm();
@@ -1415,6 +1417,27 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, onParamC
     })();
   };
 
+  const focusConsumedRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    if (!focusRequestId) return;
+    if (focusConsumedRef.current === focusRequestId) return;
+    focusConsumedRef.current = focusRequestId;
+
+    (async () => {
+      try {
+        const data = await signatureService.getRequestWithSigners(focusRequestId).catch(() => null);
+        if (data) {
+          openDetails(data);
+        }
+      } finally {
+        if (onParamConsumed) {
+          onParamConsumed();
+        }
+      }
+    })();
+  }, [focusRequestId, onParamConsumed]);
+
   const copyLink = (token: string) => { navigator.clipboard.writeText(signatureService.generatePublicSigningUrl(token)); toast.success('Link copiado!'); };
 
   const handleDeleteRequest = async (requestId: string) => {
@@ -1710,6 +1733,25 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, onParamC
     try {
       setSignLoading(true);
       await signatureService.signDocument(signingSigner.id, { signature_image: signatureData, facial_image: facialData });
+      
+      // 🔔 Criar notificação de assinatura
+      if (user?.id && detailsRequest) {
+        try {
+          await userNotificationService.createNotification({
+            title: '✍️ Documento Assinado',
+            message: `${signingSigner.name} assinou o documento "${detailsRequest.document_name}"`,
+            type: 'process_updated',
+            user_id: user.id,
+            metadata: {
+              signer_name: signingSigner.name,
+              signer_email: signingSigner.email,
+              document_name: detailsRequest.document_name,
+              signature_type: 'digital',
+            },
+          });
+        } catch {}
+      }
+      
       toast.success('Assinado!'); setSignModalOpen(false); loadData();
       if (detailsRequest) openDetails(detailsRequest);
     } catch (error: any) { toast.error(error.message || 'Erro'); } finally { setSignLoading(false); }

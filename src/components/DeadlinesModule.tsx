@@ -44,6 +44,8 @@ import { profileService } from '../services/profile.service';
 import { settingsService } from '../services/settings.service';
 import { ClientSearchSelect } from './ClientSearchSelect';
 import { useDeleteConfirm } from '../contexts/DeleteConfirmContext';
+import { userNotificationService } from '../services/userNotification.service';
+import { useAuth } from '../contexts/AuthContext';
 import type { Deadline, DeadlineStatus, DeadlinePriority, DeadlineType } from '../types/deadline.types';
 import type { Process } from '../types/process.types';
 import type { Requirement } from '../types/requirement.types';
@@ -333,6 +335,7 @@ interface DeadlinesModuleProps {
 
 const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId, onParamConsumed, prefillData }) => {
   const { confirmDelete } = useDeleteConfirm();
+  const { user } = useAuth();
 
   const [deadlines, setDeadlines] = useState<Deadline[]>([]);
   const [loading, setLoading] = useState(true);
@@ -1122,7 +1125,29 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
           await handleReload();
         }
       } else {
-        await deadlineService.createDeadline(payloadBase as any);
+        const newDeadline = await deadlineService.createDeadline(payloadBase as any);
+        
+        // 🔔 Criar notificação para novo prazo
+        if (user?.id && newDeadline) {
+          try {
+            const daysUntilDue = Math.ceil((new Date(payloadBase.due_date).getTime() - Date.now()) / (1000 * 60 * 60 * 24));
+            const isUrgent = daysUntilDue <= 3 || payloadBase.priority === 'urgente' || payloadBase.priority === 'alta';
+            
+            await userNotificationService.createNotification({
+              title: isUrgent ? '⚠️ Prazo Urgente Criado' : '📅 Novo Prazo',
+              message: `${payloadBase.title} • Vence em ${daysUntilDue} dia(s)`,
+              type: 'deadline_assigned',
+              user_id: user.id,
+              deadline_id: newDeadline.id,
+              metadata: {
+                priority: payloadBase.priority,
+                type: payloadBase.type,
+                days_until_due: daysUntilDue,
+              },
+            });
+          } catch {}
+        }
+        
         await handleReload();
       }
 

@@ -12,6 +12,12 @@ interface VerificationResult {
   message: string;
 }
 
+const isInternalPlaceholderEmail = (email: string | null | undefined): boolean => {
+  const e = String(email || '').trim().toLowerCase();
+  if (!e) return false;
+  return e.startsWith('public+') && e.endsWith('@crm.local');
+};
+
 const PublicVerificationPage: React.FC = () => {
   const [hash, setHash] = useState('');
   const [loading, setLoading] = useState(false);
@@ -231,9 +237,17 @@ const PublicVerificationPage: React.FC = () => {
                       <div>
                         <p className="text-xs font-medium text-slate-400 uppercase tracking-wide mb-1">Signatário</p>
                         <p className="text-sm text-slate-900 font-medium">{result.signer.name}</p>
-                        {result.signer.email && (
-                          <p className="text-xs text-slate-500">{result.signer.email}</p>
-                        )}
+                        {(() => {
+                          const authEmail = String(result.signer!.auth_email || '').trim();
+                          const phone = String(result.signer!.phone || '').trim();
+                          const rawEmail = String(result.signer!.email || '').trim();
+                          const displayContact =
+                            authEmail ||
+                            (result.signer!.auth_provider === 'phone' ? phone : '') ||
+                            (!isInternalPlaceholderEmail(rawEmail) ? rawEmail : '');
+                          if (!displayContact) return null;
+                          return <p className="text-xs text-slate-500">{displayContact}</p>;
+                        })()}
                       </div>
 
                       <div>

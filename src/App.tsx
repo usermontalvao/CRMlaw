@@ -34,7 +34,7 @@ import Login from './components/Login';
 import OfflinePage from './components/OfflinePage';
 import AppLayout from './components/layout/AppLayout';
 import Header from './components/layout/Header';
-import { NotificationCenterNew as NotificationCenter } from './components/NotificationCenterNew';
+import { NotificationBell } from './components/NotificationBell';
 import SessionWarning from './components/SessionWarning';
 import TermsPrivacyPage from './components/TermsPrivacyPage';
 import ProfileModal, { type AppProfile, type UserRole } from './components/ProfileModal';
@@ -59,7 +59,7 @@ const PublicSigningPage = lazy(() => import('./components/PublicSigningPage'));
 const PublicTemplateFillPage = lazy(() => import('./components/PublicTemplateFillPage'));
 const PublicVerificationPage = lazy(() => import('./components/PublicVerificationPage'));
 const PublicPermalinkRedirect = lazy(() => import('./components/PublicPermalinkRedirect'));
-const DocsChangesPage = lazy(() => import('./components/DocsChangesPage'));
+const DocsPage = lazy(() => import('./components/DocsPage'));
 import { useNotifications } from './hooks/useNotifications';
 import { usePresence } from './hooks/usePresence';
 import { pushNotifications } from './utils/pushNotifications';
@@ -85,6 +85,21 @@ const MainApp: React.FC = () => {
   const { theme, toggleTheme } = useTheme();
   const [isMobileNavOpen, setIsMobileNavOpen] = useState(false);
   const [isOnline, setIsOnline] = useState(navigator.onLine);
+
+  useEffect(() => {
+    if (!('serviceWorker' in navigator)) return;
+
+    const handler = (event: MessageEvent) => {
+      const data = (event as any)?.data;
+      if (!data) return;
+      if (data.action === 'navigate' && data.module) {
+        navigateTo(data.module as any, data.params);
+      }
+    };
+
+    navigator.serviceWorker.addEventListener('message', handler);
+    return () => navigator.serviceWorker.removeEventListener('message', handler);
+  }, [navigateTo]);
 
   // Detectar status de conexão
   useEffect(() => {
@@ -985,8 +1000,8 @@ const MainApp: React.FC = () => {
                     </span>
                   )}
                 </button>
-                <NotificationCenter 
-                  onNavigateToModule={(moduleKey, params) => {
+                <NotificationBell 
+                  onNavigateToModule={(moduleKey: string, params?: any) => {
                     navigateTo(moduleKey as any, params);
                   }}
                 />
@@ -1172,6 +1187,11 @@ const MainApp: React.FC = () => {
             {activeModule === 'assinaturas' && (
               <SignatureModule 
                 prefillData={moduleParams['assinaturas'] ? JSON.parse(moduleParams['assinaturas']).prefill : undefined}
+                focusRequestId={
+                  moduleParams['assinaturas'] && JSON.parse(moduleParams['assinaturas']).mode === 'details'
+                    ? JSON.parse(moduleParams['assinaturas']).requestId
+                    : undefined
+                }
                 onParamConsumed={() => clearModuleParams('assinaturas')}
               />
             )}
@@ -1242,7 +1262,7 @@ const App: React.FC = () => {
   if (isDocsRoute) {
     return (
       <Suspense fallback={<div className="min-h-screen bg-slate-100 flex items-center justify-center"><Loader2 className="w-8 h-8 animate-spin text-amber-600" /></div>}>
-        <DocsChangesPage />
+        <DocsPage />
       </Suspense>
     );
   }

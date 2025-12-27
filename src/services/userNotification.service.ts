@@ -4,6 +4,22 @@ import type { UserNotification, CreateUserNotificationDTO } from '../types/user-
 class UserNotificationService {
   private tableName = 'user_notifications';
 
+  private normalizePayloadForDb(payload: CreateUserNotificationDTO): CreateUserNotificationDTO {
+    if (payload.type === 'intimation_urgent') {
+      return {
+        ...payload,
+        type: 'intimation_new',
+        metadata: {
+          ...(payload.metadata || {}),
+          original_type: 'intimation_urgent',
+          urgent: true,
+        },
+      };
+    }
+
+    return payload;
+  }
+
   /**
    * Lista notificações do usuário
    */
@@ -32,10 +48,11 @@ class UserNotificationService {
    * Cria uma nova notificação para usuário
    */
   async createNotification(payload: CreateUserNotificationDTO): Promise<UserNotification> {
+    const dbPayload = this.normalizePayloadForDb(payload);
     const { data, error } = await supabase
       .from(this.tableName)
       .insert({
-        ...payload,
+        ...dbPayload,
         read: false,
         created_at: new Date().toISOString(),
       })
@@ -56,18 +73,19 @@ class UserNotificationService {
   }): Promise<UserNotification | null> {
     try {
       const { payload, dedupeKey } = params;
+      const dbPayload = this.normalizePayloadForDb(payload);
 
-      if (dedupeKey && payload.user_id && payload.type) {
+      if (dedupeKey && dbPayload.user_id && dbPayload.type) {
         let query = supabase
           .from(this.tableName)
           .select('id')
-          .eq('user_id', payload.user_id)
-          .eq('type', payload.type)
+          .eq('user_id', dbPayload.user_id)
+          .eq('type', dbPayload.type)
           .eq('read', false)
           .limit(1);
 
-        if (payload.process_id) {
-          query = query.eq('process_id', payload.process_id);
+        if (dbPayload.process_id) {
+          query = query.eq('process_id', dbPayload.process_id);
         }
 
         query = query.filter('metadata->>dedupe_key', 'eq', dedupeKey);
@@ -82,9 +100,9 @@ class UserNotificationService {
     }
 
     return this.createNotification({
-      ...params.payload,
+      ...this.normalizePayloadForDb(params.payload),
       metadata: {
-        ...(params.payload.metadata || {}),
+        ...(this.normalizePayloadForDb(params.payload).metadata || {}),
         ...(params.dedupeKey ? { dedupe_key: params.dedupeKey } : {}),
       },
     });
@@ -117,6 +135,23 @@ class UserNotificationService {
 
     if (error) {
       console.error('Erro ao marcar todas como lidas:', error);
+      throw new Error(error.message);
+    }
+  }
+
+  /**
+   * Marca notificação como lida pelo ID da intimação
+   */
+  async markAsReadByIntimationId(intimationId: string, userId: string): Promise<void> {
+    const { error } = await supabase
+      .from(this.tableName)
+      .update({ read: true })
+      .eq('user_id', userId)
+      .eq('intimation_id', intimationId)
+      .eq('read', false);
+
+    if (error) {
+      console.error('Erro ao marcar notificação da intimação como lida:', error);
       throw new Error(error.message);
     }
   }
