@@ -1,5 +1,8 @@
 # Changelog
 
+## 1.3.38
+- Documentos: adicionado campo de busca para filtrar modelos no seletor de templates (inclui Petições Padrões e Novo Documento) para facilitar quando houver muitos arquivos/modelos.
+
 ## 1.3.37
 - Cache/Sincronização: implementado sistema de eventos globais para invalidação de cache e sincronização de clientes. Clientes criados, atualizados ou excluídos agora são refletidos imediatamente em todos os módulos (Dashboard, Clientes, Processos, Financeiro) sem necessidade de atualizar a página.
 - Documentos: corrigido campo nome do modal "Adicionar Template" que não era limpo ao abrir o modal.

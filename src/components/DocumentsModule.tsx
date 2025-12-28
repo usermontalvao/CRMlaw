@@ -229,6 +229,7 @@ const DocumentsModule: React.FC<DocumentsModuleProps> = ({ onNavigateToModule })
   const [selectedProcessId, setSelectedProcessId] = useState('');
   const [showProcessSuggestions, setShowProcessSuggestions] = useState(false);
   const [selectedTemplateId, setSelectedTemplateId] = useState('');
+  const [templateSearchQuery, setTemplateSearchQuery] = useState('');
   const [defendantInput, setDefendantInput] = useState('');
   const [generatingDocx, setGeneratingDocx] = useState(false);
   const [generationError, setGenerationError] = useState<string | null>(null);
@@ -602,6 +603,11 @@ const DocumentsModule: React.FC<DocumentsModuleProps> = ({ onNavigateToModule })
   };
 
   const newDocTemplates = useMemo(() => templates.filter((t) => !isRequirementsMsTemplate(t)), [templates]);
+  const filteredNewDocTemplates = useMemo(() => {
+    const q = templateSearchQuery.trim().toLowerCase();
+    if (!q) return newDocTemplates;
+    return newDocTemplates.filter((template) => (template.name || '').toLowerCase().includes(q));
+  }, [newDocTemplates, templateSearchQuery]);
   const manageTemplates = useMemo(() => templates.filter((t) => !isRequirementsMsTemplate(t)), [templates]);
 
   useEffect(() => {
@@ -1569,8 +1575,25 @@ const DocumentsModule: React.FC<DocumentsModuleProps> = ({ onNavigateToModule })
                 </button>
               </div>
             ) : (
-              <div className="space-y-2 sm:max-h-[400px] sm:overflow-y-auto sm:pr-1">
-                {newDocTemplates.map((template) => {
+              <div className="space-y-2">
+                <div>
+                  <div className="relative">
+                    <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                    <input
+                      type="text"
+                      value={templateSearchQuery}
+                      onChange={(e) => setTemplateSearchQuery(e.target.value)}
+                      placeholder="Buscar modelo..."
+                      className="w-full rounded-xl border border-slate-200 bg-white pl-10 pr-4 py-2.5 text-sm text-slate-900 transition hover:border-slate-300 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/20"
+                    />
+                  </div>
+                  {templateSearchQuery.trim() && filteredNewDocTemplates.length === 0 && (
+                    <p className="mt-2 text-xs text-slate-500">Nenhum template encontrado.</p>
+                  )}
+                </div>
+
+                <div className="space-y-2 sm:max-h-[360px] sm:overflow-y-auto sm:pr-1">
+                {filteredNewDocTemplates.map((template) => {
                   const isSelected = selectedTemplateId === template.id;
                   const summary = templateFilesSummary[template.id];
                   const filesCount = summary?.count ?? 0;
@@ -1615,6 +1638,7 @@ const DocumentsModule: React.FC<DocumentsModuleProps> = ({ onNavigateToModule })
                     </button>
                   );
                 })}
+                </div>
               </div>
             )}
           </div>
@@ -1637,6 +1661,16 @@ const DocumentsModule: React.FC<DocumentsModuleProps> = ({ onNavigateToModule })
                   <label className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-slate-500">
                     Template *
                   </label>
+                  <div className="relative mb-2">
+                    <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                    <input
+                      type="text"
+                      value={templateSearchQuery}
+                      onChange={(e) => setTemplateSearchQuery(e.target.value)}
+                      placeholder="Buscar modelo..."
+                      className="w-full rounded-lg border border-slate-200 bg-white pl-10 pr-4 py-2.5 text-sm text-slate-900 transition hover:border-slate-300 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/20"
+                    />
+                  </div>
                   <select
                     value={selectedTemplateId}
                     onChange={(e) => setSelectedTemplateId(e.target.value)}
@@ -1644,7 +1678,7 @@ const DocumentsModule: React.FC<DocumentsModuleProps> = ({ onNavigateToModule })
                     className="w-full rounded-lg border border-slate-200 bg-white px-4 py-2.5 text-sm text-slate-900 transition hover:border-slate-300 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 disabled:bg-slate-100 disabled:text-slate-400"
                   >
                     <option value="">Selecione um template...</option>
-                    {newDocTemplates.map((template) => (
+                    {filteredNewDocTemplates.map((template) => (
                       <option key={template.id} value={template.id}>
                         {template.name}
                       </option>

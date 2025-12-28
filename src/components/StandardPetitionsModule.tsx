@@ -111,6 +111,7 @@ const StandardPetitionsModule: React.FC<StandardPetitionsModuleProps> = ({ onNav
   const [selectedPetitionId, setSelectedPetitionId] = useState('');
   const [selectedCategory, setSelectedCategory] = useState<StandardPetitionCategory | ''>('');
   const [selectedClientId, setSelectedClientId] = useState('');
+  const [modelSearchQuery, setModelSearchQuery] = useState('');
   const [fieldValues, setFieldValues] = useState<Record<string, string>>({});
   const [petitionFields, setPetitionFields] = useState<StandardPetitionField[]>([]);
   const [generating, setGenerating] = useState(false);
@@ -177,6 +178,22 @@ const StandardPetitionsModule: React.FC<StandardPetitionsModuleProps> = ({ onNav
   }, [petitions, searchTerm, categoryFilter]);
 
   const activePetitions = useMemo(() => petitions.filter((p) => p.is_active), [petitions]);
+
+  const filteredModelsByCategory = useMemo(() => {
+    if (!selectedCategory) return [];
+    const q = modelSearchQuery.trim().toLowerCase();
+    const base = activePetitions.filter((p) => p.category === selectedCategory);
+    if (!q) return base;
+    return base.filter((p) => {
+      const name = (p.name || '').toLowerCase();
+      const desc = (p.description || '').toLowerCase();
+      return name.includes(q) || desc.includes(q);
+    });
+  }, [activePetitions, modelSearchQuery, selectedCategory]);
+
+  useEffect(() => {
+    setModelSearchQuery('');
+  }, [selectedCategory]);
 
   const petitionCounts = useMemo(() => {
     const total = petitions.length;
@@ -911,10 +928,21 @@ const StandardPetitionsModule: React.FC<StandardPetitionsModuleProps> = ({ onNav
                       Selecione o Modelo
                     </span>
                   </label>
+                  <div className="relative mb-3">
+                    <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                    <input
+                      type="text"
+                      value={modelSearchQuery}
+                      onChange={(e) => setModelSearchQuery(e.target.value)}
+                      placeholder="Buscar modelo..."
+                      className="w-full rounded-xl border border-slate-200 bg-white pl-10 pr-4 py-2.5 text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-orange-500/20 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-100 dark:placeholder:text-zinc-500"
+                    />
+                  </div>
+                  {modelSearchQuery.trim() && filteredModelsByCategory.length === 0 && (
+                    <p className="mb-2 text-xs text-slate-500 dark:text-zinc-400">Nenhum modelo encontrado.</p>
+                  )}
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                    {activePetitions
-                      .filter(p => p.category === selectedCategory)
-                      .map((petition) => {
+                    {filteredModelsByCategory.map((petition) => {
                         const isSelected = selectedPetitionId === petition.id;
                         return (
                           <button

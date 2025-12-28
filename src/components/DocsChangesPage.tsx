@@ -46,6 +46,7 @@ import {
    ============================================================================ */
 
 const VERSION_CODENAMES: Record<string, { name: string; emoji: string }> = {
+  '1.3.38': { name: 'Café Filtro', emoji: '🔎' },
   '1.3.37': { name: 'Café Sincronizado', emoji: '🔄' },
   '1.3.35': { name: 'Café Padrão', emoji: '🎨' },
   '1.3.34': { name: 'Café Petições', emoji: '📄' },
@@ -456,6 +457,24 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
    ============================================================================ */
 
 const releases: ReleaseNote[] = [
+  {
+    version: '1.3.38',
+    date: '28/12/2025',
+    summary: 'Documentos: busca para filtrar modelos no seletor',
+    modules: [
+      {
+        moduleId: 'documentos',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Busca rápida no seletor de modelos (templates/petições)',
+            description:
+              'Adicionado campo de busca para filtrar modelos por nome/descrição ao selecionar o modelo, facilitando o uso quando houver muitos templates/arquivos (Petições Padrões e Novo Documento).',
+          },
+        ],
+      },
+    ],
+  },
   {
     version: '1.3.37',
     date: '27/12/2025',
