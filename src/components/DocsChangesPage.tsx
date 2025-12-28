@@ -46,6 +46,11 @@ import {
    ============================================================================ */
 
 const VERSION_CODENAMES: Record<string, { name: string; emoji: string }> = {
+  '1.3.37': { name: 'Café Sincronizado', emoji: '🔄' },
+  '1.3.35': { name: 'Café Padrão', emoji: '🎨' },
+  '1.3.34': { name: 'Café Petições', emoji: '📄' },
+  '1.3.33': { name: 'Café Overlay', emoji: '🧩' },
+  '1.3.32': { name: 'Café Turbo', emoji: '⚡' },
   '1.3.31': { name: 'Café Premium', emoji: '☕' },
   '1.1.37': { name: 'Café Botão', emoji: '🔘' },
   '1.1.36': { name: 'Café Leve', emoji: '🪶' },
@@ -451,6 +456,140 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
    ============================================================================ */
 
 const releases: ReleaseNote[] = [
+  {
+    version: '1.3.37',
+    date: '27/12/2025',
+    summary: 'Cache/Sincronização: clientes atualizam em tempo real + ajustes no modal de documentos',
+    modules: [
+      {
+        moduleId: 'dashboard',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Dashboard atualizado automaticamente após mudanças de clientes',
+            description:
+              'Implementado mecanismo de sincronização via eventos globais para recarregar o dashboard automaticamente após criar/editar/excluir clientes, eliminando a necessidade de atualizar a página.',
+          },
+        ],
+      },
+      {
+        moduleId: 'clientes',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Listas e buscas de clientes atualizam sem refresh',
+            description:
+              'Módulos passam a reagir a eventos de mudança de clientes, garantindo consistência imediata entre telas após cadastros e atualizações.',
+          },
+        ],
+      },
+      {
+        moduleId: 'processos',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Processos: seleção/listagem de clientes sincronizada',
+            description:
+              'Atualização automática das listas usadas para seleção de cliente após mudanças cadastrais, garantindo que novos clientes fiquem disponíveis imediatamente.',
+          },
+        ],
+      },
+      {
+        moduleId: 'financeiro',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Financeiro recarrega dados quando clientes mudam',
+            description:
+              'O módulo Financeiro passa a recarregar seus dados quando ocorrerem alterações no cadastro de clientes, evitando inconsistências em filtros e listagens.',
+          },
+        ],
+      },
+      {
+        moduleId: 'documentos',
+        changes: [
+          {
+            type: 'fix',
+            title: 'Modal de templates: nome/estado resetados corretamente ao abrir',
+            description:
+              'Ao abrir o modal de "Adicionar Template", os campos do formulário são reinicializados para evitar valores residuais de aberturas anteriores.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.3.35',
+    date: '27/12/2025',
+    summary: 'Documentos: Petições Padrões — adequação ao padrão visual do CRM',
+    modules: [
+      {
+        moduleId: 'documentos',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Petições Padrões com visual padrão do CRM',
+            description:
+              'A UI de Petições Padrões foi completamente adequada ao padrão visual dos demais módulos: header branco com ícone azul, botões laranja, cards de estatísticas separados, remoção de gradientes escuros e consistência de cores em todos os elementos.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.3.34',
+    date: '27/12/2025',
+    summary: 'Documentos: Petições Padrões — ajustes de tema e dark mode',
+    modules: [
+      {
+        moduleId: 'documentos',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Petições Padrões com tema do CRM (incluindo dark mode)',
+            description:
+              'A UI de Petições Padrões foi padronizada para o tema do CRM (cores/bordas/inputs/botões) com suporte a dark mode, incluindo os modais de criar/editar, campos personalizados e visualização.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.3.33',
+    date: '27/12/2025',
+    summary: 'Documentos: correção do dropdown de seleção de cliente',
+    modules: [
+      {
+        moduleId: 'documentos',
+        changes: [
+          {
+            type: 'fix',
+            title: 'Dropdown de clientes não fica atrás do rodapé/overflow',
+            description:
+              'A lista de sugestões do campo "Buscar cliente" passou a abrir em overlay (portal) com posicionamento fixo, evitando ser cortada por containers com overflow ou sobreposição do rodapé.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.3.32',
+    date: '27/12/2025',
+    summary: 'Performance: carregamento mais rápido dos módulos',
+    modules: [
+      {
+        moduleId: 'sistema',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Prefetch em background dos módulos principais',
+            description:
+              'Após login, o sistema pré-carrega os chunks dos módulos mais usados em background (idle), reduzindo o tempo de carregamento ao navegar entre módulos.',
+          },
+        ],
+      },
+    ],
+  },
   {
     version: '1.3.31',
     date: '27/12/2025',

@@ -319,6 +319,8 @@ const isDueSoon = (dueDate: string): boolean => {
   return days >= 0 && days <= 2;
 };
 
+import { events, SYSTEM_EVENTS } from '../utils/events';
+
 interface DeadlinesModuleProps {
   forceCreate?: boolean;
   entityId?: string;

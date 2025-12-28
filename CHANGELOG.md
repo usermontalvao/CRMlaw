@@ -1,5 +1,24 @@
 # Changelog
 
+## 1.3.37
+- Cache/Sincronização: implementado sistema de eventos globais para invalidação de cache e sincronização de clientes. Clientes criados, atualizados ou excluídos agora são refletidos imediatamente em todos os módulos (Dashboard, Clientes, Processos, Financeiro) sem necessidade de atualizar a página.
+- Documentos: corrigido campo nome do modal "Adicionar Template" que não era limpo ao abrir o modal.
+
+## 1.3.36
+- Cache/Sincronização: clientes criados, atualizados ou excluídos agora são refletidos imediatamente em todos os módulos (Dashboard, Clientes, Processos, Financeiro) sem necessidade de atualizar a página. Implementado sistema de eventos globais para invalidação de cache e sincronização de estado entre componentes.
+
+## 1.3.35
+- Documentos: Petições Padrões — adequação completa ao padrão visual do CRM (header branco, botões laranja, cards de stats, remoção de gradientes escuros) para consistência com os demais módulos.
+
+## 1.3.34
+- Documentos: Petições Padrões — ajustes de tema (cores/bordas/inputs/botões) e suporte a dark mode (incluindo modais de criar/editar, campos e visualização).
+
+## 1.3.33
+- Documentos: corrigido dropdown de seleção de cliente (autocomplete) que podia ficar cortado/atrás do rodapé ou de containers com overflow; lista agora abre em overlay (portal) com posicionamento inteligente.
+
+## 1.3.32
+- Performance: pré-carregamento (prefetch) em background dos módulos principais após login para navegação mais rápida e redução do tempo de carregamento ao abrir módulos.
+
 ## 1.3.31
 - Documentação: redesign da superpágina para o padrão visual do sistema (layout limpo/profissional, sem gradientes chamativos e sem aparência de template), mantendo sidebar, busca e seções.
 

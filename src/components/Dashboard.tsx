@@ -50,6 +50,7 @@ import type { FinancialStats, Installment, Agreement } from '../types/financial.
 import type { DjenComunicacaoLocal } from '../types/djen.types';
 import { FinancialCard } from './dashboard/FinancialCard';
 import { DashboardHeader } from './dashboard/DashboardHeader';
+import { events, SYSTEM_EVENTS } from '../utils/events';
 
 interface DashboardProps {
   onNavigateToModule?: (moduleKey: string, params?: Record<string, string>) => void;
@@ -183,10 +184,6 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToModule }) => {
   const [selectedIntimacao, setSelectedIntimacao] = useState<DjenComunicacaoLocal | null>(null);
   const clientMap = useMemo(() => new Map(clients.map((client) => [client.id, client])), [clients]);
 
-  useEffect(() => {
-    loadDashboardData();
-  }, []);
-
   const withTimeout = useCallback(<T,>(promise: Promise<T>, label: string): Promise<T> => {
     return new Promise((resolve, reject) => {
       const timer = setTimeout(() => {
@@ -226,7 +223,7 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToModule }) => {
             
             // Verificar se o cache ainda é válido
             if (now - cache.timestamp < CACHE_DURATION) {
-              console.log('📦 Carregando Dashboard do cache');
+              console.log(' Carregando Dashboard do cache');
               setClients(cache.data.clients);
               setProcesses(cache.data.processes);
               setDeadlines(cache.data.deadlines);
@@ -246,7 +243,7 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToModule }) => {
       }
 
       // Carregar dados da API com limites para reduzir egress
-      console.log('🔄 Carregando Dashboard da API (com limites)');
+      console.log(' Carregando Dashboard da API (com limites)');
       const today = new Date().toISOString().split('T')[0];
       const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
       
@@ -331,18 +328,18 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToModule }) => {
       
       // Filtrar parcelas vencidas (reutilizar variável today já declarada)
       const overdue = allInstallmentsData
-        .filter((inst) => (inst.status === 'pendente' || inst.status === 'vencido') && inst.due_date < today)
-        .sort((a, b) => a.due_date.localeCompare(b.due_date))
+        .filter((inst: any) => (inst.status === 'pendente' || inst.status === 'vencido') && inst.due_date < today)
+        .sort((a: any, b: any) => a.due_date.localeCompare(b.due_date))
         .slice(0, 5);
 
       // Carregar estatísticas de urgência das intimações
       if (djenIntimacoesData.length > 0) {
         try {
-          const intimationIds = djenIntimacoesData.map(int => int.id);
+          const intimationIds = djenIntimacoesData.map((int: any) => int.id);
           const analyses = await intimationAnalysisService.getAnalysesByIntimationIds(intimationIds);
           
           const stats = { alta: 0, media: 0, baixa: 0, sem_analise: 0 };
-          djenIntimacoesData.forEach((intimacao) => {
+          djenIntimacoesData.forEach((intimacao: any) => {
             const analysis = analyses.get(intimacao.id);
             if (analysis && analysis.urgency) {
               stats[analysis.urgency as 'alta' | 'media' | 'baixa']++;
@@ -383,7 +380,7 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToModule }) => {
         },
       };
       localStorage.setItem(DASHBOARD_CACHE_KEY, JSON.stringify(cacheData));
-      console.log('💾 Dashboard salvo no cache');
+      console.log(' Dashboard salvo no cache');
     } catch (error) {
       console.error('Erro ao carregar dados do dashboard:', error);
     } finally {
@@ -391,8 +388,22 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToModule }) => {
     }
   }, [safeFetch]);
 
+  useEffect(() => {
+    loadDashboardData();
+  }, [loadDashboardData]);
+
+  useEffect(() => {
+    const unsubscribe = events.on(SYSTEM_EVENTS.CLIENTS_CHANGED, () => {
+      console.log('🔄 Dashboard: Mudança de clientes detectada, recarregando...');
+      loadDashboardData(true); // Forçar recarregamento ignorando cache
+    });
+    
+    return () => unsubscribe();
+  }, [loadDashboardData]);
+
   const activeClients = clients.filter((c) => c.status === 'ativo').length;
   const activeProcesses = processes.length;
+  // ... (rest of the code remains the same)
   const pendingDeadlines = deadlines.filter((d) => d.status === 'pendente').length;
   const pendingTasks = tasks.filter((t) => t.status === 'pending').length;
   const awaitingRequirements = requirements.filter((r) => r.status === 'aguardando_confeccao');

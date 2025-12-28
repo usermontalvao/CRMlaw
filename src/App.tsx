@@ -115,6 +115,52 @@ const MainApp: React.FC = () => {
     };
   }, []);
   const { user, loading, signIn, signOut, resetPassword } = useAuth();
+
+  useEffect(() => {
+    if (!user) return;
+
+    const connection = (navigator as any)?.connection;
+    const saveData = Boolean(connection?.saveData);
+    const effectiveType = String(connection?.effectiveType || '');
+
+    if (saveData) return;
+    if (effectiveType && effectiveType.includes('2g')) return;
+
+    const prefetch = () => {
+      const tasks = [
+        () => import('./components/Dashboard'),
+        () => import('./components/ProcessesModule'),
+        () => import('./components/ClientsModule'),
+        () => import('./components/DeadlinesModule'),
+        () => import('./components/CalendarModule'),
+        () => import('./components/FinancialModule'),
+        () => import('./components/DocumentsModule'),
+        () => import('./components/IntimationsModule'),
+        () => import('./components/NotificationsModuleNew'),
+        () => import('./components/TasksModule'),
+        () => import('./components/SignatureModule'),
+        () => import('./components/LeadsModule'),
+        () => import('./components/RequirementsModule'),
+        () => import('./components/SettingsModule'),
+        () => import('./components/DocsPage'),
+      ];
+
+      tasks.forEach((task, idx) => {
+        window.setTimeout(() => {
+          task().catch(() => undefined);
+        }, 200 * idx);
+      });
+    };
+
+    const ric = (window as any)?.requestIdleCallback;
+    if (typeof ric === 'function') {
+      ric(prefetch, { timeout: 2000 });
+      return;
+    }
+
+    const timer = window.setTimeout(prefetch, 600);
+    return () => window.clearTimeout(timer);
+  }, [user]);
   
   // Ativar sincronização automática com DJEN
   useDjenSync();

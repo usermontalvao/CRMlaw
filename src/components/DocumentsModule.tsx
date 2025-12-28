@@ -685,6 +685,10 @@ const DocumentsModule: React.FC<DocumentsModuleProps> = ({ onNavigateToModule })
   const handleOpenModal = () => {
     setIsModalOpen(true);
     setUploadError(null);
+    setNameInput('');
+    setDescriptionInput('');
+    setEnableDefendantInput(true);
+    setFileInput(null);
   };
 
   const handleCloseModal = () => {

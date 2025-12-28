@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useLayoutEffect, useRef, type CSSProperties } from 'react';
 import { createPortal } from 'react-dom';
 import { Plus, X } from 'lucide-react';
 import { clientService } from '../services/client.service';
@@ -26,6 +26,7 @@ export const ClientSearchSelect: React.FC<ClientSearchSelectProps> = ({
   className = '',
   allowCreate = true,
 }) => {
+  const anchorRef = useRef<HTMLDivElement | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [searchResults, setSearchResults] = useState<ClientSearchResult[]>([]);
   const [searchLoading, setSearchLoading] = useState(false);
@@ -33,6 +34,7 @@ export const ClientSearchSelect: React.FC<ClientSearchSelectProps> = ({
   const [selectedClientName, setSelectedClientName] = useState('');
   const [isClientFormModalOpen, setIsClientFormModalOpen] = useState(false);
   const [clientFormPrefill, setClientFormPrefill] = useState<Partial<CreateClientDTO> | null>(null);
+  const [dropdownStyle, setDropdownStyle] = useState<CSSProperties | null>(null);
 
   // Carregar nome do cliente selecionado
   useEffect(() => {
@@ -101,6 +103,52 @@ export const ClientSearchSelect: React.FC<ClientSearchSelectProps> = ({
     setSearchOpen(false);
   };
 
+  useLayoutEffect(() => {
+    if (!searchOpen || value) return;
+
+    const updatePosition = () => {
+      const anchor = anchorRef.current;
+      if (!anchor) return;
+
+      const rect = anchor.getBoundingClientRect();
+      const maxHeight = 240;
+      const margin = 8;
+      const spaceBelow = window.innerHeight - rect.bottom - margin;
+      const shouldScroll = spaceBelow < maxHeight + 16;
+      
+      if (shouldScroll) {
+        // Rola a página para cima para que o dropdown caiba
+        const scrollY = window.scrollY + (rect.bottom + maxHeight + margin - window.innerHeight);
+        window.scrollTo({ top: scrollY, behavior: 'smooth' });
+      }
+      
+      const top = rect.bottom + 4;
+
+      setDropdownStyle({
+        position: 'fixed',
+        top,
+        left: rect.left,
+        width: rect.width,
+        zIndex: 10000,
+      });
+    };
+
+    updatePosition();
+    window.addEventListener('resize', updatePosition);
+    window.addEventListener('scroll', updatePosition, true);
+
+    return () => {
+      window.removeEventListener('resize', updatePosition);
+      window.removeEventListener('scroll', updatePosition, true);
+    };
+  }, [searchOpen, value, searchLoading, searchResults.length, searchTerm]);
+
+  useEffect(() => {
+    if (!searchOpen) {
+      setDropdownStyle(null);
+    }
+  }, [searchOpen]);
+
   return (
     <div className={className}>
       {label && (
@@ -110,7 +158,7 @@ export const ClientSearchSelect: React.FC<ClientSearchSelectProps> = ({
         </label>
       )}
       
-      <div className="relative">
+      <div ref={anchorRef} className="relative">
         {/* Campo de busca */}
         {!value && (
           <input
@@ -141,8 +189,12 @@ export const ClientSearchSelect: React.FC<ClientSearchSelectProps> = ({
         )}
 
         {/* Dropdown de resultados */}
-        {searchOpen && !value && (searchLoading || searchResults.length > 0 || searchTerm.trim().length >= 2) && (
-          <div className="client-search-dropdown absolute left-0 right-0 mt-1 rounded-lg shadow-xl z-[60] max-h-60 overflow-y-auto">
+        {searchOpen && !value && dropdownStyle && (searchLoading || searchResults.length > 0 || searchTerm.trim().length >= 2) && typeof document !== 'undefined' && (
+          createPortal(
+            <div
+              className="client-search-dropdown rounded-lg shadow-xl z-[60] max-h-60 overflow-y-auto border border-zinc-200 bg-white"
+              style={dropdownStyle}
+            >
             {searchLoading && (
               <div className="px-3 py-2 text-slate-500 text-sm" style={{ background: '#ffffff' }}>Buscando...</div>
             )}
@@ -199,7 +251,9 @@ export const ClientSearchSelect: React.FC<ClientSearchSelectProps> = ({
                 <span className="text-sm font-semibold">Adicionar Novo Cliente</span>
               </button>
             )}
-          </div>
+            </div>,
+            document.body,
+          )
         )}
       </div>
 

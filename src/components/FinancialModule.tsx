@@ -54,6 +54,7 @@ import type {
   PaymentAuditLog,
 } from '../types/financial.types';
 import type { Client } from '../types/client.types';
+import { events, SYSTEM_EVENTS } from '../utils/events';
 
 const FinancialModule: React.FC = () => {
   const toast = useToastContext();
@@ -223,6 +224,16 @@ const FinancialModule: React.FC = () => {
 
   useEffect(() => {
     loadData(activeMonth);
+  }, [activeMonth, loadData]);
+
+  // Escutar eventos globais de mudança de clientes
+  useEffect(() => {
+    const unsubscribe = events.on(SYSTEM_EVENTS.CLIENTS_CHANGED, () => {
+      console.log('🔄 FinancialModule: Mudança de clientes detectada, recarregando...');
+      loadData(activeMonth);
+    });
+    
+    return () => unsubscribe();
   }, [activeMonth, loadData]);
 
   const formatCurrency = (value: number) => {

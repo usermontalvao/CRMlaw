@@ -13,6 +13,8 @@ import { requirementService } from '../services/requirement.service';
 import type { Process } from '../types/process.types';
 import type { Requirement } from '../types/requirement.types';
 
+import { events, SYSTEM_EVENTS } from '../utils/events';
+
 interface ClientsModuleProps {
   prefillData?: Partial<CreateClientDTO> | null;
   onClientSaved?: () => void;
@@ -139,6 +141,16 @@ const ClientsModule: React.FC<ClientsModuleProps> = ({
   useEffect(() => {
     loadClients();
   }, [filters, showIncompleteOnly]);
+
+  // Escutar eventos globais de mudança de clientes
+  useEffect(() => {
+    const unsubscribe = events.on(SYSTEM_EVENTS.CLIENTS_CHANGED, () => {
+      console.log('🔄 ClientsModule: Mudança de clientes detectada, recarregando lista...');
+      loadClients();
+    });
+    
+    return () => unsubscribe();
+  }, [filters]); // Recarregar respeitando filtros atuais
 
   useEffect(() => {
     if (!prefillData) return;

@@ -42,6 +42,7 @@ import { useDeleteConfirm } from '../contexts/DeleteConfirmContext';
 import type { Process, ProcessStatus, ProcessPracticeArea, HearingMode } from '../types/process.types';
 import type { Client } from '../types/client.types';
 import type { Profile } from '../services/profile.service';
+import { events, SYSTEM_EVENTS } from '../utils/events';
 
 const STATUS_OPTIONS: { key: ProcessStatus; label: string; badge: string }[] = [
   { key: 'nao_protocolado', label: 'Não Protocolado', badge: 'bg-slate-100 text-slate-700' },
@@ -447,6 +448,21 @@ const ProcessesModule: React.FC<ProcessesModuleProps> = ({ forceCreate, entityId
       }
     };
     loadAllClients();
+  }, []);
+
+  // Escutar eventos globais de mudança de clientes
+  useEffect(() => {
+    const unsubscribe = events.on(SYSTEM_EVENTS.CLIENTS_CHANGED, async () => {
+      console.log('🔄 ProcessesModule: Mudança de clientes detectada, atualizando...');
+      try {
+        const data = await clientService.listClients();
+        setAllClients(data);
+      } catch (err) {
+        console.error('Erro ao recarregar clientes:', err);
+      }
+    });
+    
+    return () => unsubscribe();
   }, []);
 
   useEffect(() => {

@@ -34,8 +34,8 @@ import {
   Menu,
 } from 'lucide-react';
 
-const CURRENT_VERSION = '1.3.31';
-const VERSION_CODENAME = 'Café Premium';
+const CURRENT_VERSION = '1.3.35';
+const VERSION_CODENAME = 'Café Padrão';
 
 type DocSection = 'inicio' | 'guia' | 'changelog' | 'faq';
 

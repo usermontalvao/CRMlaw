@@ -6,6 +6,7 @@
 import { supabase } from '../config/supabase.js';
 import type { Client, CreateClientDTO } from '../types/client.types.js';
 import type { ClientFilters } from '../types/client.types.js';
+import { events, SYSTEM_EVENTS } from '../utils/events';
 
 export class ClientService {
   private tableName = 'clients';
@@ -34,7 +35,7 @@ export class ClientService {
 
       // Ordenação
       const sortAscending = filters?.sort_order === 'oldest';
-      query = query.order('created_at', { ascending: sortAscending });
+      query = query.order('full_name', { ascending: true });
 
       const { data, error } = await query;
 
@@ -129,6 +130,12 @@ export class ClientService {
         throw new Error(`Erro ao criar cliente: ${error.message}`);
       }
 
+      // Invalida cache do dashboard para forçar recarregamento
+      localStorage.removeItem('crm-dashboard-cache');
+      
+      // Dispara evento global de mudança de clientes
+      events.emit(SYSTEM_EVENTS.CLIENTS_CHANGED, { action: 'create', client: data });
+
       return data;
     } catch (error) {
       console.error('Erro ao criar cliente:', error);
@@ -167,6 +174,12 @@ export class ClientService {
         throw new Error(`Erro ao atualizar cliente: ${error.message}`);
       }
 
+      // Invalida cache do dashboard para forçar recarregamento
+      localStorage.removeItem('crm-dashboard-cache');
+      
+      // Dispara evento global de mudança de clientes
+      events.emit(SYSTEM_EVENTS.CLIENTS_CHANGED, { action: 'update', client: data });
+
       return data;
     } catch (error) {
       console.error('Erro ao atualizar cliente:', error);
@@ -181,13 +194,19 @@ export class ClientService {
     try {
       const { error } = await supabase
         .from(this.tableName)
-        .delete()
+        .update({ status: 'inativo' })
         .eq('id', id);
 
       if (error) {
         console.error('Erro ao deletar cliente:', error);
         throw new Error(`Erro ao deletar cliente: ${error.message}`);
       }
+
+      // Invalida cache do dashboard para forçar recarregamento
+      localStorage.removeItem('crm-dashboard-cache');
+      
+      // Dispara evento global de mudança de clientes
+      events.emit(SYSTEM_EVENTS.CLIENTS_CHANGED, { action: 'delete', id });
     } catch (error) {
       console.error('Erro ao deletar cliente:', error);
       throw error;
@@ -208,6 +227,12 @@ export class ClientService {
         console.error('Erro ao deletar cliente permanentemente:', error);
         throw new Error(`Erro ao deletar cliente: ${error.message}`);
       }
+
+      // Invalida cache do dashboard para forçar recarregamento
+      localStorage.removeItem('crm-dashboard-cache');
+      
+      // Dispara evento global de mudança de clientes
+      events.emit(SYSTEM_EVENTS.CLIENTS_CHANGED, { action: 'delete', id });
     } catch (error) {
       console.error('Erro ao deletar cliente permanentemente:', error);
       throw error;
