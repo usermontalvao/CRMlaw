@@ -56,4 +56,9 @@ export const SYSTEM_EVENTS = {
   PROCESS_DELETED: 'process_deleted',
   DASHBOARD_REFRESH: 'dashboard_refresh',
   NOTIFICATIONS_CHANGED: 'notifications_changed',
+  // Petition Editor floating widget wevents
+  PETITION_EDITOR_OPEN: 'petition_editor_open',
+  PETITION_EDITOR_CLOSE: 'petition_editor_close',
+  PETITION_EDITOR_MINIMIZE: 'petition_editor_minimize',
+  PETITION_EDITOR_MAXIMIZE: 'petition_editor_maximize',
 };

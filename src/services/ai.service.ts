@@ -76,6 +76,21 @@ class AIService {
     return this.enabled && (this.groqApiKey !== null || this.openai !== null);
   }
 
+  async generateText(systemPrompt: string, userPrompt: string, maxTokens: number = 800): Promise<string> {
+    if (!this.isEnabled()) return '';
+
+    const messages = [
+      { role: 'system', content: systemPrompt },
+      { role: 'user', content: userPrompt },
+    ];
+
+    if (this.useGroq && this.groqApiKey) {
+      return this.callGroqAPI(messages, maxTokens);
+    }
+
+    return this.callOpenAIDirectly(messages, maxTokens);
+  }
+
   /**
    * Verifica se deve usar fallback OpenAI (Groq em cooldown)
    */

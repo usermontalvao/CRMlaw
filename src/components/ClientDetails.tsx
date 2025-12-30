@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { ArrowLeft, User, Building2, Mail, Phone, MapPin, Calendar, FileText, Edit, MessageCircle, Briefcase, Scale, FileCheck, Plus, Clock, FolderPlus, Gavel, Loader2, ClipboardList, AlertCircle } from 'lucide-react';
+import { ArrowLeft, User, Building2, Mail, Phone, MapPin, Calendar, FileText, Edit, MessageCircle, Briefcase, Scale, FileCheck, Plus, Clock, FolderPlus, Gavel, Loader2, ClipboardList, AlertCircle, PenTool } from 'lucide-react';
+import { events, SYSTEM_EVENTS } from '../utils/events';
 import type { Client } from '../types/client.types';
 import type { Process } from '../types/process.types';
 import type { Requirement } from '../types/requirement.types';
@@ -159,7 +160,7 @@ const ClientDetails: React.FC<ClientDetailsProps> = ({ client, processes, requir
         </div>
         <div className="rounded-2xl border border-slate-200 bg-white shadow-sm p-4 space-y-3">
           <h3 className="text-slate-900 text-base font-semibold">Ações rápidas</h3>
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
             {onCreateProcess && (
               <button
                 onClick={onCreateProcess}
@@ -184,6 +185,16 @@ const ClientDetails: React.FC<ClientDetailsProps> = ({ client, processes, requir
                 Novo Prazo
               </button>
             )}
+            <button
+              onClick={() => {
+                events.emit(SYSTEM_EVENTS.PETITION_EDITOR_OPEN, { clientId: client.id });
+              }}
+              className="px-4 py-2.5 rounded-xl border border-amber-200 bg-amber-50 text-sm font-semibold text-amber-700 hover:bg-amber-100 transition flex items-center justify-center gap-2"
+              title="Abrir Editor de Petições vinculado a este cliente"
+            >
+              <PenTool className="w-4 h-4" />
+              Nova Petição
+            </button>
           </div>
         </div>
 

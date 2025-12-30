@@ -60,10 +60,15 @@ const PublicTemplateFillPage = lazy(() => import('./components/PublicTemplateFil
 const PublicVerificationPage = lazy(() => import('./components/PublicVerificationPage'));
 const PublicPermalinkRedirect = lazy(() => import('./components/PublicPermalinkRedirect'));
 const DocsPage = lazy(() => import('./components/DocsPage'));
+// Editor de Petições - Módulo isolado (pode ser removido sem afetar outros módulos)
+const PetitionEditorModule = lazy(() => import('./components/PetitionEditorModule'));
+// Widget flutuante do Editor de Petições
+const PetitionEditorWidget = lazy(() => import('./components/PetitionEditorWidget'));
 import { useNotifications } from './hooks/useNotifications';
 import { usePresence } from './hooks/usePresence';
 import { pushNotifications } from './utils/pushNotifications';
 import { useAuth } from './contexts/AuthContext';
+import { events, SYSTEM_EVENTS } from './utils/events';
 import { useTheme } from './contexts/ThemeContext';
 import { CacheProvider } from './contexts/CacheContext';
 import { useDjenSync } from './hooks/useDjenSync';
@@ -752,14 +757,16 @@ const MainApp: React.FC = () => {
         <SessionWarning />
       {/* Sidebar Minimalista */}
       {isMobileNavOpen && (
-        <div 
-          className="fixed inset-0 bg-black/50 z-40 md:hidden" 
-          onClick={() => setIsMobileNavOpen(false)} 
+        <div
+          className="fixed inset-0 bg-black/50 z-40 md:hidden"
+          onClick={() => setIsMobileNavOpen(false)}
         />
       )}
       <aside
         className={`fixed inset-y-0 left-0 bg-slate-900 text-white z-50 flex flex-col w-20 border-r border-slate-800 ${
-          isMobileNavOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0'
+          isMobileNavOpen
+            ? 'translate-x-0'
+            : '-translate-x-full md:translate-x-0'
         } transition-transform duration-300`}
       >
         {/* Logo */}
@@ -892,6 +899,18 @@ const MainApp: React.FC = () => {
             <span className="text-[9px] mt-1">Agenda</span>
           </button>
 
+          {/* Editor de Petições - Widget flutuante (remover este bloco para desativar) */}
+          <button
+            onClick={() => { 
+              setIsMobileNavOpen(false); 
+              events.emit(SYSTEM_EVENTS.PETITION_EDITOR_OPEN);
+            }}
+            className="relative flex flex-col items-center py-2.5 px-1 rounded-lg transition-colors text-slate-400 hover:text-white hover:bg-slate-800/50"
+            title="Abrir Editor de Petições (Widget Flutuante)"
+          >
+            <FileText className="w-5 h-5" />
+            <span className="text-[9px] mt-1">Petições</span>
+          </button>
 
           <div className="my-2 mx-2 h-px bg-slate-800" />
 
@@ -905,9 +924,8 @@ const MainApp: React.FC = () => {
         </nav>
       </aside>
 
-      {/* Main Content Area */}
+        {/* Main Content Area */}
       <div className="md:ml-20 ml-0 transition-all duration-300">
-        {/* Top Bar */}
         <header className="bg-white border-b border-gray-200 sticky top-0 z-30 transition-colors duration-300">
           <div className="px-3 sm:px-4 lg:px-8 py-3 sm:py-4">
             <div className="flex items-center justify-between gap-2 sm:gap-4">
@@ -1249,9 +1267,9 @@ const MainApp: React.FC = () => {
         <div className="px-3 sm:px-4 lg:px-6 xl:px-8 py-6">
           <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 border-t border-slate-200 pt-4 text-xs text-slate-500">
             <div className="flex items-center gap-2">
-              <span className="font-semibold text-slate-700">Jurius</span>
-              <span>v{__APP_VERSION__}</span>
+              <span>© {new Date().getFullYear()} jurius.com.br</span>
             </div>
+            <span>v{__APP_VERSION__}</span>
             <a href="#/docs" className="font-semibold text-orange-700 hover:text-orange-600 transition">
               Alterações
             </a>
@@ -1268,6 +1286,11 @@ const MainApp: React.FC = () => {
 
         {/* ClientFormModal removido para evitar overlay duplicado; usar fluxo do módulo Clientes */}
       </div>
+
+      {/* Widget flutuante do Editor de Petições - renderizado fora do fluxo de módulos */}
+      <Suspense fallback={null}>
+        <PetitionEditorWidget />
+      </Suspense>
       </div>
     </CacheProvider>
   );

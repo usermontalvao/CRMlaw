@@ -399,14 +399,96 @@ export const NotificationBell: React.FC<NotificationBellProps> = ({ onNavigateTo
 
       {/* Dropdown panel - estilo Facebook/Instagram */}
       {isOpen && (
-        <div className="absolute right-0 mt-2 w-80 sm:w-96 bg-white rounded-xl shadow-2xl border border-slate-200 z-50 overflow-hidden">
-          {/* Header */}
-          <div className="flex items-center justify-between px-4 py-3 border-b border-slate-100 bg-slate-50">
-            <h3 className="text-base font-semibold text-slate-900">Notificações</h3>
-            <div className="flex items-center gap-2">
+        <>
+          {/* Backdrop móvel para fechar ao clicar fora */}
+          <div className="fixed inset-0 z-[90] sm:hidden bg-black/20 backdrop-blur-sm" onClick={() => setIsOpen(false)} />
+          
+          {/* Container Mobile (Fixed) */}
+          <div className="fixed left-4 right-4 top-[70px] z-[100] bg-white rounded-xl shadow-2xl border border-slate-200 overflow-hidden sm:hidden flex flex-col max-h-[calc(100vh-100px)] animate-in fade-in zoom-in-95 duration-200">
+            <div className="flex items-center justify-between px-4 py-3 border-b border-slate-100 bg-slate-50 flex-shrink-0">
+              <h3 className="text-base font-semibold text-slate-900">Notificações</h3>
+              <div className="flex items-center gap-2">
+                {unreadCount > 0 && (
+                  <button
+                    onClick={markAllAsRead}
+                    className="text-xs text-blue-600 hover:text-blue-700 font-medium"
+                  >
+                    Ler todas
+                  </button>
+                )}
+                <button
+                  onClick={() => setIsOpen(false)}
+                  className="p-1.5 rounded-full hover:bg-slate-200 transition"
+                >
+                  <X className="w-5 h-5 text-slate-500" />
+                </button>
+              </div>
+            </div>
+
+            <div className="overflow-y-auto overscroll-contain flex-1">
+              {loading && notifications.length === 0 ? (
+                <div className="flex items-center justify-center py-8">
+                  <Loader2 className="w-6 h-6 animate-spin text-slate-400" />
+                </div>
+              ) : unreadNotifications.length === 0 ? (
+                <div className="flex flex-col items-center justify-center py-8 text-slate-400">
+                  <Bell className="w-8 h-8 mb-2 opacity-50" />
+                  <p className="text-sm">Nenhuma notificação</p>
+                </div>
+              ) : (
+                <div className="divide-y divide-slate-100">
+                  {unreadNotifications.slice(0, 20).map((notification) => (
+                    <div
+                      key={notification.id}
+                      className={`group flex items-start gap-3 px-4 py-3 active:bg-slate-50 transition ${
+                        !notification.read ? 'bg-blue-50/50' : ''
+                      }`}
+                      onClick={() => handleClick(notification)}
+                    >
+                      <div className={`flex-shrink-0 w-10 h-10 rounded-full flex items-center justify-center ${getIconBgColor(notification)}`}>
+                        {getIcon(notification)}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-start gap-2 justify-between">
+                          <p className={`text-sm ${!notification.read ? 'font-semibold text-slate-900' : 'text-slate-700'} line-clamp-2`}>
+                            {notification.title}
+                          </p>
+                          <span className="text-[10px] text-slate-400 whitespace-nowrap ml-2">
+                            {getRelativeTime(notification.created_at)}
+                          </span>
+                        </div>
+                        <p className="text-xs text-slate-500 line-clamp-2 mt-1">{notification.message}</p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {notifications.length > 0 && (
+              <div className="border-t border-slate-100 px-4 py-3 bg-slate-50 flex-shrink-0">
+                <button
+                  onClick={() => {
+                    if (onNavigateToModule) onNavigateToModule('notificacoes');
+                    setIsOpen(false);
+                  }}
+                  className="w-full text-center text-sm text-blue-600 font-medium py-2 bg-white border border-blue-100 rounded-lg shadow-sm active:bg-blue-50"
+                >
+                  Ver todas as notificações
+                </button>
+              </div>
+            )}
+          </div>
+
+          {/* Container Desktop (Absolute) */}
+          <div className="hidden sm:block absolute right-0 mt-2 w-96 max-w-[calc(100vw-2rem)] bg-white rounded-xl shadow-2xl border border-slate-200 z-50 overflow-hidden origin-top-right animate-in fade-in zoom-in-95 duration-200">
+            {/* Header */}
+          <div className="flex items-center justify-between px-3 sm:px-4 py-2.5 sm:py-3 border-b border-slate-100 bg-slate-50">
+            <h3 className="text-sm sm:text-base font-semibold text-slate-900 truncate">Notificações</h3>
+            <div className="flex items-center gap-1 sm:gap-2">
               <button
                 onClick={toggleSound}
-                className="p-1.5 rounded-full hover:bg-slate-200 transition"
+                className="p-1.5 rounded-full hover:bg-slate-200 transition hidden sm:block"
                 title={soundEnabled ? 'Desativar som' : 'Ativar som'}
               >
                 {soundEnabled ? (
@@ -418,9 +500,10 @@ export const NotificationBell: React.FC<NotificationBellProps> = ({ onNavigateTo
               {unreadCount > 0 && (
                 <button
                   onClick={markAllAsRead}
-                  className="text-xs text-blue-600 hover:text-blue-700 font-medium"
+                  className="text-xs text-blue-600 hover:text-blue-700 font-medium whitespace-nowrap"
                 >
-                  Marcar todas como lidas
+                  <span className="hidden sm:inline">Marcar todas como lidas</span>
+                  <span className="sm:hidden">Ler todas</span>
                 </button>
               )}
               <button
@@ -432,9 +515,9 @@ export const NotificationBell: React.FC<NotificationBellProps> = ({ onNavigateTo
             </div>
           </div>
 
-          {/* Content */}
-          <div className="max-h-[400px] overflow-y-auto">
-            {loading && notifications.length === 0 ? (
+            {/* Content */}
+            <div className="max-h-[60vh] overflow-y-auto overscroll-contain">
+              {loading && notifications.length === 0 ? (
               <div className="flex items-center justify-center py-8">
                 <Loader2 className="w-6 h-6 animate-spin text-slate-400" />
               </div>
@@ -445,7 +528,7 @@ export const NotificationBell: React.FC<NotificationBellProps> = ({ onNavigateTo
               </div>
             ) : (
               <div className="divide-y divide-slate-100">
-                {unreadNotifications.map((notification) => (
+                {unreadNotifications.slice(0, 10).map((notification) => (
                   <div
                     key={notification.id}
                     className={`group flex items-start gap-3 px-4 py-3 hover:bg-slate-50 cursor-pointer transition ${
@@ -460,40 +543,38 @@ export const NotificationBell: React.FC<NotificationBellProps> = ({ onNavigateTo
 
                     {/* Content */}
                     <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2">
-                        <p className={`text-sm ${!notification.read ? 'font-semibold text-slate-900' : 'text-slate-700'}`}>
+                      <div className="flex items-start gap-2">
+                        <p className={`text-sm ${!notification.read ? 'font-semibold text-slate-900' : 'text-slate-700'} line-clamp-2`}>
                           {notification.title}
                         </p>
                         {notification.metadata?.tribunal && (
-                          <span className="px-1.5 py-0.5 text-[10px] font-medium bg-slate-200 text-slate-600 rounded">
+                          <span className="px-1.5 py-0.5 text-[10px] font-medium bg-slate-200 text-slate-600 rounded flex-shrink-0">
                             {notification.metadata.tribunal}
                           </span>
                         )}
-                        {notification.metadata?.urgency === 'alta' && (
-                          <span className="px-1.5 py-0.5 text-[10px] font-bold bg-orange-100 text-orange-700 rounded">
-                            ALTA
-                          </span>
-                        )}
-                        {notification.metadata?.urgency === 'critica' && (
-                          <span className="px-1.5 py-0.5 text-[10px] font-bold bg-red-100 text-red-700 rounded animate-pulse">
-                            CRÍTICA
-                          </span>
-                        )}
-                        {isSignatureNotification(notification) && (
-                          <span
-                            className={`px-1.5 py-0.5 text-[10px] font-bold rounded ${
-                              getSignatureAccent(notification) === 'emerald'
-                                ? 'bg-emerald-100 text-emerald-700'
-                                : 'bg-teal-100 text-teal-700'
-                            }`}
-                          >
-                            {getSignatureBadge(notification)}
-                          </span>
-                        )}
                       </div>
-                      <p className="text-xs text-slate-500 line-clamp-2 mt-0.5">
-                        {notification.message}
-                      </p>
+                      {notification.metadata?.urgency === 'alta' && (
+                        <span className="inline-flex items-center gap-1 px-1.5 py-0.5 text-[10px] font-bold bg-orange-100 text-orange-700 rounded mt-1 w-fit">
+                          ALTA
+                        </span>
+                      )}
+                      {notification.metadata?.urgency === 'critica' && (
+                        <span className="inline-flex items-center gap-1 px-1.5 py-0.5 text-[10px] font-bold bg-red-100 text-red-700 rounded mt-1 w-fit animate-pulse">
+                          CRÍTICA
+                        </span>
+                      )}
+                      {isSignatureNotification(notification) && (
+                        <span
+                          className={`inline-flex items-center gap-1 px-1.5 py-0.5 text-[10px] font-bold rounded mt-1 w-fit ${
+                            getSignatureAccent(notification) === 'emerald'
+                              ? 'bg-emerald-100 text-emerald-700'
+                              : 'bg-teal-100 text-teal-700'
+                          }`}
+                        >
+                          {getSignatureBadge(notification)}
+                        </span>
+                      )}
+                      <p className="text-xs text-slate-500 line-clamp-2 mt-1">{notification.message}</p>
                       {isSignatureNotification(notification) && (
                         <div className="mt-1">
                           {(() => {
@@ -553,21 +634,22 @@ export const NotificationBell: React.FC<NotificationBellProps> = ({ onNavigateTo
             )}
           </div>
 
-          {/* Footer */}
-          {notifications.length > 0 && (
-            <div className="border-t border-slate-100 px-4 py-2 bg-slate-50">
-              <button
-                onClick={() => {
-                  if (onNavigateToModule) onNavigateToModule('notificacoes');
-                  setIsOpen(false);
-                }}
-                className="w-full text-center text-sm text-blue-600 hover:text-blue-700 font-medium py-1"
-              >
-                Ver todas as notificações
-              </button>
-            </div>
-          )}
-        </div>
+            {/* Footer */}
+            {notifications.length > 0 && (
+              <div className="border-t border-slate-100 px-3 sm:px-4 py-3 bg-slate-50 sticky bottom-0">
+                <button
+                  onClick={() => {
+                    if (onNavigateToModule) onNavigateToModule('notificacoes');
+                    setIsOpen(false);
+                  }}
+                  className="w-full text-center text-sm text-blue-600 hover:text-blue-700 font-medium py-1 bg-white border border-blue-100 rounded-lg shadow-sm"
+                >
+                  {notifications.length > 10 ? 'Ver todas as notificações' : 'Ver notificações'}
+                </button>
+              </div>
+            )}
+          </div>
+        </>
       )}
       {/* Popup de notificações na tela (estilo Facebook/Instagram) */}
       {popupNotifications.length > 0 && createPortal(
@@ -606,7 +688,7 @@ export const NotificationBell: React.FC<NotificationBellProps> = ({ onNavigateTo
           {popupNotifications.map((notification) => (
             <div
               key={notification.id}
-              className="pointer-events-auto bg-white rounded-xl shadow-2xl border border-slate-200 p-4 max-w-sm cursor-pointer hover:bg-slate-50 transition-colors"
+              className="pointer-events-auto bg-white rounded-xl shadow-2xl border border-slate-200 p-3 sm:p-4 max-w-[calc(100vw-2rem)] sm:max-w-sm cursor-pointer hover:bg-slate-50 transition-colors"
               style={{ animation: 'slideInRight 0.3s ease-out' }}
               onClick={() => {
                 handleClick(notification);
@@ -621,35 +703,31 @@ export const NotificationBell: React.FC<NotificationBellProps> = ({ onNavigateTo
                 
                 {/* Conteúdo */}
                 <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2">
-                    <p className="text-sm font-semibold text-slate-900 line-clamp-1">
-                      {notification.title}
-                    </p>
-                    {notification.metadata?.urgency === 'critica' && (
-                      <span className="px-1.5 py-0.5 text-[10px] font-bold bg-red-100 text-red-700 rounded animate-pulse">
-                        CRÍTICA
-                      </span>
-                    )}
-                    {notification.metadata?.urgency === 'alta' && (
-                      <span className="px-1.5 py-0.5 text-[10px] font-bold bg-orange-100 text-orange-700 rounded">
-                        ALTA
-                      </span>
-                    )}
-                    {isSignatureNotification(notification) && (
-                      <span
-                        className={`px-1.5 py-0.5 text-[10px] font-bold rounded ${
-                          notification.metadata?.signature_type === 'completed'
-                            ? 'bg-emerald-100 text-emerald-700'
-                            : 'bg-teal-100 text-teal-700'
-                        }`}
-                      >
-                        {getSignatureBadge(notification)}
-                      </span>
-                    )}
+                  <div className="flex items-start gap-2">
+                    <p className="text-sm font-semibold text-slate-900 line-clamp-2">{notification.title}</p>
                   </div>
-                  <p className="text-xs text-slate-600 line-clamp-2 mt-0.5">
-                    {notification.message}
-                  </p>
+                  {notification.metadata?.urgency === 'critica' && (
+                    <span className="inline-flex items-center gap-1 px-1.5 py-0.5 text-[10px] font-bold bg-red-100 text-red-700 rounded animate-pulse mt-1 w-fit">
+                      CRÍTICA
+                    </span>
+                  )}
+                  {notification.metadata?.urgency === 'alta' && (
+                    <span className="inline-flex items-center gap-1 px-1.5 py-0.5 text-[10px] font-bold bg-orange-100 text-orange-700 rounded mt-1 w-fit">
+                      ALTA
+                    </span>
+                  )}
+                  {isSignatureNotification(notification) && (
+                    <span
+                      className={`inline-flex items-center gap-1 px-1.5 py-0.5 text-[10px] font-bold rounded mt-1 w-fit ${
+                        notification.metadata?.signature_type === 'completed'
+                          ? 'bg-emerald-100 text-emerald-700'
+                          : 'bg-teal-100 text-teal-700'
+                      }`}
+                    >
+                      {getSignatureBadge(notification)}
+                    </span>
+                  )}
+                  <p className="text-xs text-slate-600 line-clamp-2 mt-1">{notification.message}</p>
                   {isSignatureNotification(notification) && (
                     <div className="mt-1">
                       {(() => {

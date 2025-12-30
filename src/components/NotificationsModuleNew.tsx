@@ -259,11 +259,11 @@ const NotificationsModuleNew: React.FC<NotificationsModuleProps> = ({ onNavigate
   return (
     <div className="space-y-6">
       {/* Header com Estatísticas */}
-      <div className="bg-gradient-to-br from-blue-600 to-indigo-700 rounded-2xl p-8 text-white shadow-xl">
-        <div className="flex items-center justify-between mb-6">
+      <div className="bg-gradient-to-br from-blue-600 to-indigo-700 rounded-2xl p-4 sm:p-6 lg:p-8 text-white shadow-xl">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
           <div>
-            <h2 className="text-3xl font-bold flex items-center gap-3 mb-2">
-              <Bell className="w-8 h-8" />
+            <h2 className="text-2xl sm:text-3xl font-bold flex items-center gap-3 mb-2">
+              <Bell className="w-6 h-6 sm:w-8 sm:h-8" />
               Central de Notificações
             </h2>
             <p className="text-blue-100 text-sm">Gerencie todas as suas notificações em um só lugar</p>
@@ -271,45 +271,45 @@ const NotificationsModuleNew: React.FC<NotificationsModuleProps> = ({ onNavigate
           <button
             onClick={loadNotifications}
             disabled={loading}
-            className="p-3 bg-white/20 hover:bg-white/30 rounded-xl transition disabled:opacity-50"
+            className="p-2 sm:p-3 bg-white/20 hover:bg-white/30 rounded-xl transition disabled:opacity-50"
           >
-            <RefreshCw className={`w-5 h-5 ${loading ? 'animate-spin' : ''}`} />
+            <RefreshCw className={`w-4 h-4 sm:w-5 sm:h-5 ${loading ? 'animate-spin' : ''}`} />
           </button>
         </div>
 
         {/* Stats Cards */}
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-          <div className="bg-white/10 backdrop-blur-sm rounded-xl p-4 border border-white/20">
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
+          <div className="bg-white/10 backdrop-blur-sm rounded-xl p-3 sm:p-4 border border-white/20">
             <p className="text-blue-100 text-xs font-medium mb-1">Total</p>
-            <p className="text-3xl font-bold">{stats.total}</p>
+            <p className="text-2xl sm:text-3xl font-bold">{stats.total}</p>
           </div>
-          <div className="bg-white/10 backdrop-blur-sm rounded-xl p-4 border border-white/20">
+          <div className="bg-white/10 backdrop-blur-sm rounded-xl p-3 sm:p-4 border border-white/20">
             <p className="text-blue-100 text-xs font-medium mb-1">Não Lidas</p>
-            <p className="text-3xl font-bold">{stats.unread}</p>
+            <p className="text-2xl sm:text-3xl font-bold">{stats.unread}</p>
           </div>
-          <div className="bg-white/10 backdrop-blur-sm rounded-xl p-4 border border-white/20">
+          <div className="bg-white/10 backdrop-blur-sm rounded-xl p-3 sm:p-4 border border-white/20">
             <p className="text-blue-100 text-xs font-medium mb-1">Urgentes</p>
-            <p className="text-3xl font-bold text-red-300">{stats.urgent}</p>
+            <p className="text-2xl sm:text-3xl font-bold text-red-300">{stats.urgent}</p>
           </div>
-          <div className="bg-white/10 backdrop-blur-sm rounded-xl p-4 border border-white/20">
+          <div className="bg-white/10 backdrop-blur-sm rounded-xl p-3 sm:p-4 border border-white/20">
             <p className="text-blue-100 text-xs font-medium mb-1">Lidas</p>
-            <p className="text-3xl font-bold">{stats.total - stats.unread}</p>
+            <p className="text-2xl sm:text-3xl font-bold">{stats.total - stats.unread}</p>
           </div>
         </div>
       </div>
 
       {/* Filtros e Busca */}
-      <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-6">
-        <div className="flex flex-col lg:flex-row gap-4">
+      <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-4 sm:p-6">
+        <div className="flex flex-col gap-4">
           {/* Busca */}
-          <div className="relative flex-1">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 w-5 h-5" />
+          <div className="relative w-full">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 w-4 h-4 sm:w-5 sm:h-5" />
             <input
               type="text"
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
               placeholder="Buscar notificações..."
-              className="w-full pl-10 pr-4 py-3 border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              className="w-full pl-9 sm:pl-10 pr-4 py-2.5 sm:py-3 border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
             />
             {searchTerm && (
               <button
@@ -321,49 +321,50 @@ const NotificationsModuleNew: React.FC<NotificationsModuleProps> = ({ onNavigate
             )}
           </div>
 
-          {/* Filtro de Tipo */}
-          <select
-            value={filterType}
-            onChange={(e) => setFilterType(e.target.value as any)}
-            className="px-4 py-3 border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 min-w-[180px]"
-          >
-            <option value="all">Todos os tipos</option>
-            <option value="intimation">Intimações ({stats.byType.intimation})</option>
-            <option value="deadline">Prazos ({stats.byType.deadline})</option>
-            <option value="appointment">Compromissos ({stats.byType.appointment})</option>
-          </select>
+          {/* Filtros em linha no desktop, empilhados no mobile */}
+          <div className="flex flex-col sm:flex-row gap-2 sm:gap-4">
+            <select
+              value={filterType}
+              onChange={(e) => setFilterType(e.target.value as any)}
+              className="px-3 py-2.5 sm:px-4 sm:py-3 border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm w-full sm:w-auto"
+            >
+              <option value="all">Todos os tipos</option>
+              <option value="intimation">Intimações ({stats.byType.intimation})</option>
+              <option value="deadline">Prazos ({stats.byType.deadline})</option>
+              <option value="appointment">Compromissos ({stats.byType.appointment})</option>
+            </select>
 
-          {/* Filtro de Status */}
-          <select
-            value={filterStatus}
-            onChange={(e) => setFilterStatus(e.target.value as any)}
-            className="px-4 py-3 border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 min-w-[160px]"
-          >
-            <option value="all">Todas ({stats.total})</option>
-            <option value="unread">Não lidas ({stats.unread})</option>
-            <option value="read">Lidas ({stats.total - stats.unread})</option>
-          </select>
+            <select
+              value={filterStatus}
+              onChange={(e) => setFilterStatus(e.target.value as any)}
+              className="px-3 py-2.5 sm:px-4 sm:py-3 border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm w-full sm:w-auto"
+            >
+              <option value="all">Todas ({stats.total})</option>
+              <option value="unread">Não lidas ({stats.unread})</option>
+              <option value="read">Lidas ({stats.total - stats.unread})</option>
+            </select>
+          </div>
 
           {/* Ações */}
-          <div className="flex gap-2">
+          <div className="flex flex-col sm:flex-row gap-2 sm:gap-3">
             {stats.unread > 0 && (
               <button
                 onClick={markAllAsRead}
-                className="inline-flex items-center gap-2 px-4 py-3 bg-emerald-600 hover:bg-emerald-700 text-white font-medium rounded-xl transition"
+                className="inline-flex items-center justify-center gap-2 px-4 py-2.5 sm:py-3 bg-emerald-600 hover:bg-emerald-700 text-white font-medium rounded-xl transition text-sm"
                 title="Marcar todas como lidas"
               >
                 <CheckCheck className="w-4 h-4" />
-                <span className="hidden sm:inline">Marcar todas</span>
+                <span>Marcar todas</span>
               </button>
             )}
             {stats.total > stats.unread && (
               <button
                 onClick={clearAllRead}
-                className="inline-flex items-center gap-2 px-4 py-3 border border-slate-300 hover:bg-slate-50 text-slate-700 font-medium rounded-xl transition"
+                className="inline-flex items-center justify-center gap-2 px-4 py-2.5 sm:py-3 border border-slate-300 hover:bg-slate-50 text-slate-700 font-medium rounded-xl transition text-sm"
                 title="Limpar lidas"
               >
                 <Trash2 className="w-4 h-4" />
-                <span className="hidden sm:inline">Limpar lidas</span>
+                <span>Limpar lidas</span>
               </button>
             )}
           </div>
@@ -371,18 +372,20 @@ const NotificationsModuleNew: React.FC<NotificationsModuleProps> = ({ onNavigate
 
         {/* Info de filtros ativos */}
         {(searchTerm || filterType !== 'all' || filterStatus !== 'all') && (
-          <div className="mt-4 flex items-center gap-2 text-sm text-slate-600">
-            <Filter className="w-4 h-4" />
-            <span>
-              Mostrando {filteredNotifications.length} de {stats.total} notificações
-            </span>
+          <div className="mt-4 flex flex-col sm:flex-row sm:items-center gap-2 text-sm text-slate-600">
+            <div className="flex items-center gap-2">
+              <Filter className="w-4 h-4" />
+              <span>
+                Mostrando {filteredNotifications.length} de {stats.total} notificações
+              </span>
+            </div>
             <button
               onClick={() => {
                 setSearchTerm('');
                 setFilterType('all');
                 setFilterStatus('all');
               }}
-              className="ml-2 text-blue-600 hover:text-blue-700 font-medium"
+              className="text-blue-600 hover:text-blue-700 font-medium"
             >
               Limpar filtros
             </button>
@@ -393,14 +396,14 @@ const NotificationsModuleNew: React.FC<NotificationsModuleProps> = ({ onNavigate
       {/* Lista de Notificações */}
       <div className="space-y-3">
         {filteredNotifications.length === 0 ? (
-          <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-16 text-center">
-            <div className="w-20 h-20 rounded-full bg-gradient-to-br from-slate-100 to-slate-200 flex items-center justify-center mx-auto mb-4">
-              <Bell className="w-10 h-10 text-slate-400" />
+          <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-8 sm:p-16 text-center">
+            <div className="w-16 h-16 sm:w-20 sm:h-20 rounded-full bg-gradient-to-br from-slate-100 to-slate-200 flex items-center justify-center mx-auto mb-4">
+              <Bell className="w-8 h-8 sm:w-10 sm:h-10 text-slate-400" />
             </div>
-            <h3 className="text-xl font-bold text-slate-900 mb-2">
+            <h3 className="text-lg sm:text-xl font-bold text-slate-900 mb-2">
               {searchTerm || filterType !== 'all' || filterStatus !== 'all' ? 'Nenhuma notificação encontrada' : 'Você está em dia!'}
             </h3>
-            <p className="text-slate-600">
+            <p className="text-sm text-slate-600">
               {searchTerm || filterType !== 'all' || filterStatus !== 'all' 
                 ? 'Tente ajustar os filtros de busca' 
                 : 'Não há notificações no momento'}
@@ -422,17 +425,19 @@ const NotificationsModuleNew: React.FC<NotificationsModuleProps> = ({ onNavigate
                 <div className="absolute left-0 top-0 bottom-0 w-1.5 bg-blue-600" />
               )}
 
-              <div className="p-6 pl-8">
-                <div className="flex gap-4">
+              <div className="p-4 sm:p-6 pl-6 sm:pl-8">
+                <div className="flex gap-3 sm:gap-4">
                   {/* Ícone */}
-                  {getIcon(notification.type, notification.priority)}
+                  <div className="flex-shrink-0 w-10 h-10 sm:w-12 sm:h-12 rounded-xl flex items-center justify-center">
+                    {getIcon(notification.type, notification.priority)}
+                  </div>
 
                   {/* Conteúdo */}
                   <div className="flex-1 min-w-0">
                     {/* Header */}
-                    <div className="flex items-start justify-between gap-4 mb-2">
+                    <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-2 mb-2">
                       <div className="flex-1">
-                        <div className="flex items-center gap-2 mb-1">
+                        <div className="flex flex-wrap items-center gap-2 mb-1">
                           <span className="text-xs font-bold uppercase tracking-wider text-slate-500">
                             {getTypeLabel(notification.type)}
                           </span>
@@ -443,12 +448,12 @@ const NotificationsModuleNew: React.FC<NotificationsModuleProps> = ({ onNavigate
                             </span>
                           )}
                         </div>
-                        <h3 className={`text-lg leading-tight mb-1 ${
+                        <h3 className={`text-base sm:text-lg leading-tight mb-1 break-words ${
                           notification.isRead ? 'font-medium text-slate-700' : 'font-bold text-slate-900'
                         }`}>
                           {notification.title}
                         </h3>
-                        <p className={`text-sm ${notification.isRead ? 'text-slate-500' : 'text-slate-600'}`}>
+                        <p className={`text-sm break-words ${notification.isRead ? 'text-slate-500' : 'text-slate-600'}`}>
                           {notification.description}
                         </p>
                       </div>
@@ -464,15 +469,15 @@ const NotificationsModuleNew: React.FC<NotificationsModuleProps> = ({ onNavigate
                             className="p-2 hover:bg-blue-100 rounded-lg transition opacity-0 group-hover:opacity-100"
                             title="Marcar como lida"
                           >
-                            <Check className="w-5 h-5 text-blue-600" />
+                            <Check className="w-4 h-4 sm:w-5 sm:h-5 text-blue-600" />
                           </button>
                         )}
-                        <ChevronRight className="w-5 h-5 text-slate-400 group-hover:text-slate-600 transition" />
+                        <ChevronRight className="w-4 h-4 sm:w-5 sm:h-5 text-slate-400 group-hover:text-slate-600 transition" />
                       </div>
                     </div>
 
                     {/* Footer */}
-                    <div className="flex items-center gap-4 text-xs text-slate-500">
+                    <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-4 text-xs text-slate-500">
                       <span className="flex items-center gap-1">
                         <Clock className="w-3.5 h-3.5" />
                         {formatDate(notification.date)}

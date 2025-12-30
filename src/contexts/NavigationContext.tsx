@@ -17,7 +17,8 @@ export type ModuleName =
   | 'monitor'
   | 'login'
   | 'cron'
-  | 'configuracoes';
+  | 'configuracoes'
+  | 'peticoes'; // Editor de Petições - Módulo isolado
 
 interface ModuleParams {
   [key: string]: any;

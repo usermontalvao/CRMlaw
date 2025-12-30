@@ -46,6 +46,8 @@ import {
    ============================================================================ */
 
 const VERSION_CODENAMES: Record<string, { name: string; emoji: string }> = {
+  '1.8.76': { name: 'Café Petição', emoji: '📄' },
+  '1.3.66': { name: 'Café Notificado', emoji: '🔔' },
   '1.3.38': { name: 'Café Filtro', emoji: '🔎' },
   '1.3.37': { name: 'Café Sincronizado', emoji: '🔄' },
   '1.3.35': { name: 'Café Padrão', emoji: '🎨' },
@@ -457,6 +459,48 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
    ============================================================================ */
 
 const releases: ReleaseNote[] = [
+  {
+    version: '1.8.76',
+    date: '29/12/2025',
+    summary: 'Editor de Petições: ajustes no toolbar para preservar área de edição.',
+    modules: [
+      {
+        moduleId: 'sistema',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Toolbar do editor ajustada para manter mais espaço de edição',
+            description:
+              'Toolbar do Syncfusion foi ajustada/remodelada para evitar que itens empurrem o documento e para preservar a área de edição em 100% de zoom.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.3.66',
+    date: '28/12/2025',
+    summary: 'Ajustes de responsividade nas notificações.',
+    modules: [
+      {
+        moduleId: 'notificacoes',
+        changes: [
+          {
+            type: 'fix',
+            title: 'Responsividade do Dropdown Mobile',
+            description:
+              'Dropdown de notificações agora usa posicionamento fixo em mobile para evitar cortes laterais e garantir usabilidade em telas pequenas.',
+          },
+          {
+            type: 'improvement',
+            title: 'Layout do Módulo de Notificações',
+            description:
+              'Melhorias de layout no módulo de notificações para evitar overflow de texto e garantir que filtros e botões se adaptem a telas menores.',
+          },
+        ],
+      },
+    ],
+  },
   {
     version: '1.3.38',
     date: '28/12/2025',

@@ -6,7 +6,14 @@ import { AuthProvider } from './contexts/AuthContext';
 import { ToastProvider } from './contexts/ToastContext';
 import { ThemeProvider } from './contexts/ThemeContext';
 import { DeleteConfirmProvider } from './contexts/DeleteConfirmContext';
+import { registerLicense } from '@syncfusion/ej2-base';
 import './index.css';
+
+// Registrar licença Syncfusion (lendo do .env com prefixo VITE_)
+const syncfusionLicenseKey = import.meta.env.VITE_SYNCFUSION_LICENSE_KEY || '';
+if (syncfusionLicenseKey) {
+  registerLicense(syncfusionLicenseKey);
+}
 
 // Detectar rotas especiais antes de forçar "/"
 const currentPath = window.location.pathname;
