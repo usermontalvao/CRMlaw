@@ -1,5 +1,26 @@
 # Changelog
 
+## 1.8.89
+- **Editor de Petições (Recentes)**: corrigido bug onde múltiplos cliques ao abrir um documento recente podiam carregar vazio e disparar salvamento automático em branco.
+- **Editor de Petições (Tela Inicial)**: renomeado atalho "Modelo" para "Documento padrão".
+
+## 1.8.88
+- **Editor de Petições (Tela Inicial)**: adicionados atalhos "Modelo" e "Importar arquivo" em "Novo".
+- **Editor de Petições (Recentes)**: confirmação de exclusão agora mostra detalhes (documento/cliente/total) como nos demais módulos.
+
+## 1.8.87
+- **Editor de Petições (Tela Inicial)**: exibe nome do usuário logado (sem e-mail), adiciona botões de minimizar/fechar (widget) e mostra Recentes com arquivo + cliente vinculado.
+
+## 1.8.86
+- **Editor de Petições (Salvamento)**: documentos passam a ser salvos apenas quando há cliente vinculado (autosave e salvar manual).
+- **Editor de Petições (Recentes)**: adicionada ação para excluir todos os documentos salvos e listagem de recentes agora considera apenas itens com cliente.
+
+## 1.8.85
+- **Editor de Petições (UI)**: tela inicial (abertura) remodelada em estilo Word (Novo/Recentes) e exibição do nome do usuário.
+
+## 1.8.84
+- **Editor de Petições (Blocos)**: cabeçalho agora é inserido sem numeração (sem prefixo "1 - "), mantendo o cabeçalho limpo.
+
 ## 1.8.83
 - **Editor de Petições (Blocos)**: corrigido erro 400 ao listar blocos no Supabase (coluna `order` agora é referenciada corretamente na ordenação).
 - **Editor de Petições (Syncfusion)**: mitigados crashes/intermitências do ruler/selection quando o documento ainda não está inicializado.

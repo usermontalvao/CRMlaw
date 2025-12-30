@@ -46,6 +46,11 @@ import {
    ============================================================================ */
 
 const VERSION_CODENAMES: Record<string, { name: string; emoji: string }> = {
+  '1.8.89': { name: 'Café Recente', emoji: '⏱️' },
+  '1.8.88': { name: 'Café Atalhos', emoji: '🧷' },
+  '1.8.87': { name: 'Café Saudação', emoji: '🪪' },
+  '1.8.86': { name: 'Café Cliente', emoji: '👤' },
+  '1.8.85': { name: 'Café Word', emoji: '🗂️' },
   '1.8.84': { name: 'Café Sem Cabeçalho', emoji: '📄' },
   '1.8.83': { name: 'Café Ordenado', emoji: '🧭' },
   '1.8.82': { name: 'Café Expresso', emoji: '🚀' },
@@ -467,6 +472,126 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
    ============================================================================ */
 
 const releases: ReleaseNote[] = [
+  {
+    version: '1.8.89',
+    date: '30/12/2025',
+    summary: 'Editor de Petições: abrir recentes mais estável (sem documento vazio) e atalho Documento padrão.',
+    modules: [
+      {
+        moduleId: 'sistema',
+        changes: [
+          {
+            type: 'fix',
+            title: 'Abrir recente sem salvar vazio',
+            description:
+              'Corrigida condição de corrida ao abrir documentos recentes (múltiplos cliques) que podia carregar o editor vazio e disparar autosave em branco.',
+          },
+          {
+            type: 'improvement',
+            title: 'Atalho Documento padrão',
+            description:
+              'O atalho "Modelo" foi renomeado para "Documento padrão", refletindo o template padrão já configurado.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.8.88',
+    date: '30/12/2025',
+    summary: 'Editor de Petições: atalhos de modelo/importação e exclusões mais claras em Recentes.',
+    modules: [
+      {
+        moduleId: 'sistema',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Atalhos: Modelo e Importar arquivo',
+            description:
+              'Na abertura do Editor de Petições, a seção "Novo" passou a incluir atalhos para carregar o modelo padrão e importar arquivo Word.',
+          },
+          {
+            type: 'improvement',
+            title: 'Confirmação de exclusão mais completa',
+            description:
+              'Ao excluir um item (ou todos) em Recentes, a confirmação agora exibe detalhes como documento, cliente e total, seguindo o padrão dos outros módulos.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.8.87',
+    date: '30/12/2025',
+    summary: 'Editor de Petições: tela inicial com nome do usuário (sem e-mail), botões e recentes com cliente.',
+    modules: [
+      {
+        moduleId: 'sistema',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Abertura com nome do usuário e saudação',
+            description:
+              'A tela inicial do Editor de Petições mostra o nome do usuário logado (sem e-mail) e a saudação varia conforme o horário (bom dia/boa tarde/boa noite).',
+          },
+          {
+            type: 'improvement',
+            title: 'Controles no topo (widget)',
+            description:
+              'Adicionados botões de minimizar e fechar no canto superior direito quando aberto como widget.',
+          },
+          {
+            type: 'improvement',
+            title: 'Recentes com cliente vinculado',
+            description:
+              'A lista de recentes exibe o nome do arquivo e o cliente vinculado, facilitando encontrar o documento certo.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.8.86',
+    date: '30/12/2025',
+    summary: 'Editor de Petições: salvamento apenas com cliente e limpeza de documentos salvos.',
+    modules: [
+      {
+        moduleId: 'sistema',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Salvar apenas com cliente vinculado',
+            description:
+              'O salvamento (inclusive automático) passa a ocorrer somente quando há cliente selecionado, evitando documentos soltos sem vínculo.',
+          },
+          {
+            type: 'improvement',
+            title: 'Limpar documentos salvos',
+            description:
+              'Adicionada ação para excluir todos os documentos salvos e a listagem de recentes agora considera apenas itens com cliente.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.8.85',
+    date: '30/12/2025',
+    summary: 'Editor de Petições: tela inicial remodelada no estilo Word e nome do usuário visível.',
+    modules: [
+      {
+        moduleId: 'sistema',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Tela inicial estilo Word (Novo/Recentes)',
+            description:
+              'A abertura do Editor de Petições foi reorganizada para um layout estilo Word, com seção "Novo" e lista de "Recentes", além de exibir o nome do usuário.',
+          },
+        ],
+      },
+    ],
+  },
   {
     version: '1.8.84',
     date: '30/12/2025',

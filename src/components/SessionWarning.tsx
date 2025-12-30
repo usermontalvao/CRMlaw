@@ -19,7 +19,7 @@ const SessionWarning: React.FC = () => {
               Sessão Expirando
             </h3>
             <p className="text-sm text-amber-700 mt-1">
-              Sua sessão expirará em 5 minutos por inatividade.
+              Sua sessão expirará em 5 minutos por inatividade. Salve seu trabalho para evitar perda.
             </p>
             <div className="flex items-center gap-2 mt-3">
               <button

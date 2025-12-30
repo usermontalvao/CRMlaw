@@ -431,6 +431,16 @@ class PetitionEditorService {
     if (error) throw new Error(error.message);
   }
 
+  async deleteAllPetitions(): Promise<void> {
+    // PostgREST exige um filtro para delete; como id é UUID, "neq('', ...)" efetivamente atinge todas as linhas visíveis via RLS.
+    const { error } = await supabase
+      .from(this.petitionsTable)
+      .delete()
+      .neq('id', '');
+
+    if (error) throw new Error(error.message);
+  }
+
   // ==================== EXPORTAÇÃO ====================
 
   generateDocxContent(content: string, title: string): string {

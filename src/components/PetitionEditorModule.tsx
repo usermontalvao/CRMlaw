@@ -1,7 +1,12 @@
 // Editor de Petições Trabalhistas - Syncfusion DocumentEditor v4
 // Módulo isolado - pode ser removido sem afetar outros módulos
 
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+declare global {
+  interface Window {
+    __autoSaving?: boolean;
+  }
+}
+import React, { useRef, useState, useEffect, useCallback, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import {
   Plus,
@@ -462,6 +467,18 @@ const PetitionEditorModule: React.FC<PetitionEditorModuleProps> = ({
   onRequestMinimize,
 }) => {
   const { user } = useAuth();
+  const userDisplayName =
+    (user?.user_metadata as any)?.full_name ||
+    (user?.user_metadata as any)?.name ||
+    (user?.user_metadata as any)?.display_name ||
+    'Usuário';
+
+  const getGreeting = () => {
+    const hour = new Date().getHours();
+    if (hour < 12) return 'Bom dia';
+    if (hour < 18) return 'Boa tarde';
+    return 'Boa noite';
+  };
   
   // Estados principais
   const [loading, setLoading] = useState(true);
@@ -600,6 +617,8 @@ const PetitionEditorModule: React.FC<PetitionEditorModuleProps> = ({
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [hasDefaultTemplate, setHasDefaultTemplate] = useState(false);
   const [defaultTemplateName, setDefaultTemplateName] = useState<string | null>(null);
+
+  const isLoadingPetitionRef = useRef(false);
 
   const [showCompanyLookupModal, setShowCompanyLookupModal] = useState(false);
   const [companyCnpjInput, setCompanyCnpjInput] = useState('');
@@ -1175,10 +1194,11 @@ Regras:
   const [isMinimized, setIsMinimized] = useState(false);
   const [showStartScreen, setShowStartScreen] = useState<boolean>(() => isFloatingWidget && !initialPetitionId);
 
-  // Helper para mostrar mensagem de sucesso temporária
+  // Helper para mostrar mensagem de sucesso temporária (desativado para não poluir o topo)
   const showSuccessMessage = (msg: string) => {
-    setSuccess(msg);
-    window.setTimeout(() => setSuccess(null), 3000);
+    // Desativado para não ocupar espaço no topo
+    // setSuccess(msg);
+    // window.setTimeout(() => setSuccess(null), 3000);
   };
 
   // Salvar petição
@@ -1233,7 +1253,10 @@ Regras:
 
       setHasUnsavedChanges(false);
       setLastSaved(new Date());
-      showSuccessMessage('Documento salvo com sucesso');
+      // Não mostrar mensagem de sucesso em salvamento automático (apenas em salvamento manual)
+      if (!window.__autoSaving) {
+        showSuccessMessage('Documento salvo com sucesso');
+      }
     } catch (err) {
       console.error('Erro ao salvar:', err);
       setError(err instanceof Error ? err.message : 'Erro ao salvar documento');
@@ -1252,6 +1275,9 @@ Regras:
 
   // Carregar petição existente
   const loadPetition = async (petition: SavedPetition) => {
+    if (isLoadingPetitionRef.current) return;
+    isLoadingPetitionRef.current = true;
+
     // Atualizar estados primeiro
     setCurrentPetitionId(petition.id);
     setPetitionTitle(petition.title || '');
@@ -1269,22 +1295,32 @@ Regras:
     }
 
     setHasUnsavedChanges(false);
-    setShowStartScreen(false);
 
-    // Se o editor já está disponível, carregar o conteúdo
+    // Bloquear autosave durante load (evita salvar documento vazio)
+    window.__autoSaving = true;
+
     const editor = editorRef.current;
     if (editor && petition.content) {
       try {
         await editor.loadSfdt(petition.content);
-        showSuccessMessage('Documento carregado');
+        setShowStartScreen(false);
       } catch (err) {
         console.error('Erro ao carregar conteúdo:', err);
         setError('Erro ao carregar documento');
+      } finally {
+        window.__autoSaving = false;
+        isLoadingPetitionRef.current = false;
       }
-    } else {
-      // Guardar para carregar depois que o editor estiver pronto
-      pendingPetitionRef.current = petition;
+      return;
     }
+
+    // Guardar para carregar depois que o editor estiver pronto
+    pendingPetitionRef.current = petition;
+    setShowStartScreen(false);
+    window.setTimeout(() => {
+      window.__autoSaving = false;
+      isLoadingPetitionRef.current = false;
+    }, 500);
   };
 
   // Carregar petição pendente quando o editor estiver pronto
@@ -1493,7 +1529,14 @@ Regras:
 
   // Handler de mudança de conteúdo do editor
   const handleContentChange = () => {
+    if (isLoadingPetitionRef.current) return;
     setHasUnsavedChanges(true);
+    // Salva automaticamente após qualquer alteração
+    (window as any).__autoSaving = true;
+    window.setTimeout(() => {
+      (window as any).__autoSaving = false;
+      savePetition();
+    }, 0);
   };
 
   // Salvar bloco (criar ou atualizar)
@@ -1900,6 +1943,7 @@ Regras:
       if (client) {
         setSelectedClient(client);
         setSidebarTab('blocks');
+        window.setTimeout(() => savePetition(), 0);
         // Filtrar petições do cliente para mostrar opções
         const clientPetitions = savedPetitions.filter(p => p.client_id === initialClientId);
         if (clientPetitions.length > 0) {
@@ -2020,6 +2064,7 @@ Regras:
   // Inserir qualificação do cliente
   const insertClientQualification = (client: Client) => {
     setSelectedClient(client);
+    window.setTimeout(() => savePetition(), 0);
     const editor = editorRef.current;
     if (!editor) return;
 
@@ -2034,6 +2079,7 @@ Regras:
     editor.insertText(rest);
     setHasUnsavedChanges(true);
     showSuccessMessage('DAS QUESTÕES INICIAIS inseridas');
+    window.setTimeout(() => savePetition(), 0);
     window.setTimeout(() => {
       const ed = editorRef.current;
       if (ed) {
@@ -2051,50 +2097,139 @@ Regras:
   // Tela de início (quando showStartScreen === true)
   if (showStartScreen) {
     return (
-      <div className={`${isFloatingWidget ? 'h-full' : 'h-screen'} flex flex-col bg-gradient-to-br from-slate-50 to-amber-50/30`}>
-        {/* Header */}
-        <div className="h-2 w-full shrink-0 bg-gradient-to-r from-orange-500 to-orange-600" />
-        <div className="flex-1 flex items-center justify-center p-8">
-          <div className="max-w-md w-full space-y-6 text-center">
-            <div className="space-y-2">
-              <FileText className="w-16 h-16 mx-auto text-amber-500" />
-              <h1 className="text-2xl font-bold text-slate-800">Editor de Petições</h1>
-              <p className="text-slate-500">Crie e gerencie suas petições trabalhistas</p>
+      <div className={`${isFloatingWidget ? 'h-full' : 'h-screen'} flex flex-col bg-white`}>
+        {/* Top bar (estilo Word) */}
+        <div className="h-12 flex items-center justify-between px-4 border-b border-slate-200">
+          <div className="flex items-center gap-2">
+            <div className="w-7 h-7 rounded bg-blue-600 flex items-center justify-center">
+              <FileText className="w-4 h-4 text-white" />
             </div>
-            <div className="space-y-3">
+            <div className="text-sm font-semibold text-slate-900">Editor de Petições</div>
+          </div>
+          <div className="flex items-center gap-1">
+            {isFloatingWidget && (
               <button
-                onClick={() => { newPetition(); setShowStartScreen(false); }}
-                className="w-full px-4 py-3 bg-amber-500 text-white rounded-lg hover:bg-amber-600 transition-colors flex items-center justify-center gap-2 font-medium"
+                onClick={() => onRequestMinimize?.()}
+                className="p-1.5 hover:bg-slate-100 rounded transition-colors text-slate-500 hover:text-slate-700"
+                title="Minimizar"
               >
-                <Plus className="w-5 h-5" />
-                Nova Petição
+                <Minimize2 className="w-4 h-4" />
               </button>
-              {savedPetitions.length > 0 && (
-                <div className="pt-4 border-t border-slate-200">
-                  <p className="text-sm text-slate-500 mb-3">Petições recentes</p>
-                  <div className="space-y-2 max-h-48 overflow-y-auto">
-                    {savedPetitions.slice(0, 5).map((p) => (
-                      <button
-                        key={p.id}
-                        onClick={() => { loadPetition(p); setShowStartScreen(false); }}
-                        className="w-full px-3 py-2 text-left bg-white border border-slate-200 rounded-lg hover:border-amber-300 hover:bg-amber-50/50 transition-colors"
-                      >
-                        <div className="font-medium text-slate-700 truncate">{p.title || 'Sem título'}</div>
-                        <div className="text-xs text-slate-400" data-tick={relativeTimeTick}>{formatRelativeTime(p.updated_at)}</div>
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              )}
-            </div>
+            )}
             {isFloatingWidget && (
               <button
                 onClick={() => onRequestClose?.()}
-                className="text-sm text-slate-400 hover:text-slate-600"
+                className="p-1.5 hover:bg-slate-100 rounded transition-colors text-slate-500 hover:text-slate-700"
+                title="Fechar"
               >
-                Fechar
+                <X className="w-4 h-4" />
               </button>
             )}
+          </div>
+        </div>
+
+        <div className="flex-1 overflow-y-auto">
+          <div className="max-w-6xl mx-auto px-4 py-6">
+            {/* Saudação */}
+            <div className="mb-5">
+              <div className="text-xl font-bold text-slate-900">{getGreeting()}</div>
+              <div className="text-xs text-slate-500">{userDisplayName}</div>
+            </div>
+
+            {/* Novo */}
+            <div className="mb-6">
+              <div className="text-xs font-semibold text-slate-700 mb-2">Novo</div>
+              <div className="flex gap-4 flex-wrap">
+                <button
+                  onClick={() => { newPetition(); setShowStartScreen(false); }}
+                  className="w-[160px] rounded border border-slate-300 hover:border-blue-500 hover:shadow-sm bg-white transition text-left"
+                >
+                  <div className="h-[110px] bg-slate-100 flex items-center justify-center">
+                    <div className="w-[78px] h-[96px] bg-white border border-slate-300 shadow-sm" />
+                  </div>
+                  <div className="px-3 py-2">
+                    <div className="text-xs font-medium text-slate-800">Documento em branco</div>
+                  </div>
+                </button>
+
+                <button
+                  onClick={() => {
+                    setShowStartScreen(false);
+                    window.setTimeout(() => {
+                      void loadDefaultTemplate();
+                    }, 150);
+                  }}
+                  disabled={!hasDefaultTemplate}
+                  className="w-[160px] rounded border border-slate-300 hover:border-blue-500 hover:shadow-sm bg-white transition text-left disabled:opacity-60 disabled:hover:border-slate-300"
+                  title={hasDefaultTemplate ? `Carregar documento padrão${defaultTemplateName ? `: ${defaultTemplateName}` : ''}` : 'Nenhum documento padrão definido'}
+                >
+                  <div className="h-[110px] bg-slate-100 flex items-center justify-center">
+                    <div className="w-[78px] h-[96px] bg-white border border-slate-300 shadow-sm flex items-center justify-center">
+                      <FileText className="w-8 h-8 text-slate-400" />
+                    </div>
+                  </div>
+                  <div className="px-3 py-2">
+                    <div className="text-xs font-medium text-slate-800">Documento padrão</div>
+                  </div>
+                </button>
+
+                <button
+                  onClick={() => {
+                    setShowStartScreen(false);
+                    window.setTimeout(() => {
+                      fileInputRef.current?.click();
+                    }, 150);
+                  }}
+                  className="w-[160px] rounded border border-slate-300 hover:border-blue-500 hover:shadow-sm bg-white transition text-left"
+                >
+                  <div className="h-[110px] bg-slate-100 flex items-center justify-center">
+                    <div className="w-[78px] h-[96px] bg-white border border-slate-300 shadow-sm flex items-center justify-center">
+                      <FileUp className="w-8 h-8 text-slate-400" />
+                    </div>
+                  </div>
+                  <div className="px-3 py-2">
+                    <div className="text-xs font-medium text-slate-800">Importar arquivo</div>
+                  </div>
+                </button>
+              </div>
+            </div>
+
+            {/* Recentes */}
+            <div className="border-t border-slate-200 pt-4">
+              <div className="flex items-center justify-between mb-2">
+                <div className="text-xs font-semibold text-slate-700">Recentes</div>
+              </div>
+
+              <div className="bg-white border border-slate-200 rounded">
+                <div className="grid grid-cols-12 px-3 py-2 text-[11px] text-slate-500 border-b border-slate-200">
+                  <div className="col-span-5">Arquivo</div>
+                  <div className="col-span-4">Cliente</div>
+                  <div className="col-span-3 text-right">Modificado</div>
+                </div>
+
+                {savedPetitions.length === 0 ? (
+                  <div className="px-3 py-4 text-sm text-slate-500">Nenhuma petição recente</div>
+                ) : (
+                  <div className="max-h-[360px] overflow-y-auto">
+                    {savedPetitions.slice(0, 15).map((p) => (
+                      <button
+                        key={p.id}
+                        onClick={() => { void loadPetition(p); }}
+                        className="w-full grid grid-cols-12 px-3 py-2 text-left hover:bg-slate-50 border-b border-slate-100 last:border-b-0 items-center"
+                      >
+                        <div className="col-span-5">
+                          <div className="text-sm text-slate-800 truncate">{p.title || 'Sem título'}</div>
+                        </div>
+                        <div className="col-span-4 text-xs text-slate-600 truncate">{p.client_name || '—'}</div>
+                        <div className="col-span-3 text-right text-xs text-slate-500" data-tick={relativeTimeTick}>
+                          {formatRelativeTime(p.updated_at)}
+                        </div>
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
           </div>
         </div>
       </div>
@@ -2143,7 +2278,7 @@ Regras:
         <input
           type="text"
           value={petitionTitle}
-          onChange={(e) => { setPetitionTitle(e.target.value); setHasUnsavedChanges(true); }}
+          onChange={(e) => { setPetitionTitle(e.target.value); setHasUnsavedChanges(true); window.setTimeout(() => savePetition(), 0); }}
           className="flex-1 max-w-sm px-2 py-1 text-sm font-semibold border border-transparent hover:border-slate-200 focus:border-amber-400 rounded focus:outline-none"
           placeholder="Título da petição..."
         />
@@ -2153,7 +2288,7 @@ Regras:
           <div className="flex items-center gap-1.5 px-2 py-1 bg-amber-50 border border-amber-200 rounded text-xs">
             <User className="w-3.5 h-3.5 text-amber-600" />
             <span className="text-amber-700 font-medium">{selectedClient.full_name}</span>
-            <button onClick={() => setSelectedClient(null)} className="text-amber-500 hover:text-amber-700">
+            <button onClick={() => { setSelectedClient(null); window.setTimeout(() => savePetition(), 0); }} className="text-amber-500 hover:text-amber-700">
               <X className="w-3.5 h-3.5" />
             </button>
           </div>
@@ -2362,7 +2497,9 @@ Regras:
           </div>
         </div>
       )}
-      {success && (
+
+      {/* Desativado para não ocupar espaço no topo */}
+      {false && success && (
         <div className="mx-3 mt-2 px-3 py-2 bg-emerald-50 border border-emerald-200 rounded-lg flex items-center gap-2 text-sm text-emerald-700">
           <Star className="w-4 h-4" />
           {success}

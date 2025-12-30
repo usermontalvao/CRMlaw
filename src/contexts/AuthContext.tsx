@@ -125,7 +125,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
       if (inactiveTime > maxInactiveTime) {
         console.warn('⏰ Logout automático por inatividade (6h)');
-        signOut();
+        // Força reload para limpar estado e evitar perda de dados
+        window.location.href = '/login?reason=session_expired';
         return;
       }
       
@@ -151,9 +152,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         }
 
         if (!data.session) {
-          console.warn('Sessão expirada, fazendo logout...');
-          setSession(null);
-          setUser(null);
+          console.warn('Sessão expirada, forçando reload...');
+          // Força reload para limpar estado e evitar perda de dados
+          window.location.href = '/login?reason=session_expired';
           return;
         }
 
