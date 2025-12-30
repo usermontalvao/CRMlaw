@@ -3035,23 +3035,112 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
                             }
                             
                             // Se não existe, gerar, salvar e abrir
-                            // Importante: se for DOCX, nÃ£o tentar parsear DOCX como PDF (pdf-lib quebra com "No PDF header found").
+                            // Importante: se for DOCX, renderizar offscreen e converter para PDF completo
                             if (isDocxFile) {
-                              toast.info('Documento DOCX - gerando relatÃ³rio de assinatura (fallback)');
+                              toast.info('Gerando documento DOCX assinado...');
                               const freshSigner = await signatureService.getSignerById(signedSigner.id);
                               if (!freshSigner) {
-                                toast.error('Erro ao carregar dados do signatÃ¡rio');
+                                toast.error('Erro ao carregar dados do signatário');
                                 return;
                               }
-                              const { filePath: signedPdfPath, sha256 } = await pdfSignatureService.saveSignatureReportToStorage({
-                                request: freshRequest,
-                                signer: freshSigner,
-                                creator: null,
-                              });
-                              await signatureService.updateSignerSignedDocumentMeta(freshSigner.id, { signed_document_path: signedPdfPath, signed_pdf_sha256: sha256 });
-                              const signedUrl = await pdfSignatureService.getSignedPdfUrl(signedPdfPath);
-                              if (signedUrl) window.open(signedUrl, '_blank');
-                              else toast.error('Erro ao abrir relatÃ³rio');
+                              
+                              try {
+                                // Renderizar DOCX offscreen
+                                const ensureOffscreenDocxStyle = () => {
+                                  const styleId = 'docx-offscreen-style-view';
+                                  if (document.getElementById(styleId)) return;
+                                  const style = document.createElement('style');
+                                  style.id = styleId;
+                                  style.textContent = `
+                                    .docx-wrapper {
+                                      background: #ffffff !important;
+                                      padding: 0 !important;
+                                    }
+                                    .docx-wrapper > section,
+                                    .docx-wrapper article,
+                                    .docx-wrapper .docx {
+                                      width: 794px !important;
+                                      min-width: 794px !important;
+                                      max-width: 794px !important;
+                                      background: #ffffff !important;
+                                    }
+                                  `;
+                                  document.head.appendChild(style);
+                                };
+
+                                const renderDocxOffscreen = async (docxUrl: string) => {
+                                  ensureOffscreenDocxStyle();
+                                  const res = await fetch(docxUrl);
+                                  if (!res.ok) throw new Error(`Falha ao baixar DOCX: HTTP ${res.status}`);
+                                  const blob = await res.blob();
+
+                                  const host = document.createElement('div');
+                                  host.style.position = 'fixed';
+                                  host.style.left = '-100000px';
+                                  host.style.top = '0';
+                                  host.style.width = '794px';
+                                  host.style.background = '#ffffff';
+                                  host.style.zIndex = '-1';
+                                  host.style.pointerEvents = 'none';
+                                  document.body.appendChild(host);
+
+                                  await renderAsync(blob, host, undefined, {
+                                    className: 'docx-wrapper',
+                                    inWrapper: true,
+                                    ignoreWidth: false,
+                                    ignoreHeight: false,
+                                    breakPages: true,
+                                    renderHeaders: true,
+                                    renderFooters: true,
+                                    renderFootnotes: true,
+                                  });
+
+                                  await new Promise(r => setTimeout(r, 500));
+                                  return host;
+                                };
+
+                                const mainDocUrl = await signatureService.getDocumentPreviewUrl(freshRequest.document_path!);
+                                if (!mainDocUrl) {
+                                  toast.error('Erro ao obter URL do documento');
+                                  return;
+                                }
+
+                                const mainHost = await renderDocxOffscreen(mainDocUrl);
+                                
+                                try {
+                                  const fieldsOverride = await signatureFieldsService.listByRequest(freshRequest.id);
+                                  
+                                  const { filePath: signedPdfPath, sha256 } = await pdfSignatureService.saveSignedDocxAsPdf({
+                                    request: freshRequest,
+                                    signer: freshSigner,
+                                    creator: null,
+                                    docxContainer: mainHost,
+                                    attachmentDocxItems: [],
+                                    attachmentPdfItems: [],
+                                    fieldsOverride,
+                                  });
+                                  
+                                  await signatureService.updateSignerSignedDocumentMeta(freshSigner.id, { signed_document_path: signedPdfPath, signed_pdf_sha256: sha256 });
+                                  const signedUrl = await pdfSignatureService.getSignedPdfUrl(signedPdfPath);
+                                  if (signedUrl) window.open(signedUrl, '_blank');
+                                  else toast.error('Erro ao abrir documento assinado');
+                                } finally {
+                                  try { mainHost.remove(); } catch { /* noop */ }
+                                }
+                              } catch (e) {
+                                console.error('[VIEW] Erro ao gerar PDF do DOCX:', e);
+                                toast.error('Erro ao gerar documento. Gerando relatório...');
+                                // Fallback: gerar apenas relatório
+                                const { filePath: signedPdfPath, sha256 } = await pdfSignatureService.saveSignatureReportToStorage({
+                                  request: freshRequest,
+                                  signer: freshSigner,
+                                  creator: null,
+                                });
+                                await signatureService.updateSignerSignedDocumentMeta(freshSigner.id, { signed_document_path: signedPdfPath, signed_pdf_sha256: sha256 });
+                                const signedUrl = await pdfSignatureService.getSignedPdfUrl(signedPdfPath);
+                                if (signedUrl) window.open(signedUrl, '_blank');
+                                else toast.error('Erro ao abrir relatório');
+                              }
                               return;
                             }
 

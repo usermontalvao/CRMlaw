@@ -867,11 +867,14 @@ class PdfSignatureService {
         const { width, height } = page.getSize();
         const { x, y, w, h } = this.percentToPdfRect(width, height, f);
 
-        // Usar tamanho do campo definido (sem escala extra)
+        // Escala 1.5x para melhor visibilidade
+        const scale = 1.5;
+        const desiredW = w * scale;
+        const desiredH = h * scale;
         const drawX = Math.max(0, Math.min(width, x));
         const drawY = Math.max(0, Math.min(height, y));
-        const drawW = Math.max(1, Math.min(w, width - drawX));
-        const drawH = Math.max(1, Math.min(h, height - drawY));
+        const drawW = Math.max(1, Math.min(desiredW, width - drawX));
+        const drawH = Math.max(1, Math.min(desiredH, height - drawY));
         console.log('[PDF] Desenhando assinatura na pÃ¡gina', pageIndex + 1, '- PosiÃ§Ã£o:', { x, y, w, h }, '- PÃ¡gina:', { width, height });
         console.log('[PDF] Campo original:', { x_percent: f.x_percent, y_percent: f.y_percent, w_percent: f.w_percent, h_percent: f.h_percent });
         page.drawImage(signatureImage, { x: drawX, y: drawY, width: drawW, height: drawH });
@@ -1162,11 +1165,14 @@ class PdfSignatureService {
       signatureImage: EmbeddedImage;
     }) => {
       const { pdfPage, pageW, x, y, w, h, minY, maxY, signatureImage } = params;
-      // Usar tamanho do campo definido (sem escala extra)
+      // Escala 1.5x para melhor visibilidade
+      const scale = 1.5;
+      const desiredW = w * scale;
+      const desiredH = h * scale;
       const drawX = Math.max(0, Math.min(pageW, x));
       const drawY = Math.max(minY, Math.min(maxY, y));
-      const drawW = Math.max(1, Math.min(w, pageW - drawX));
-      const drawH = Math.max(1, Math.min(h, maxY - drawY));
+      const drawW = Math.max(1, Math.min(desiredW, pageW - drawX));
+      const drawH = Math.max(1, Math.min(desiredH, maxY - drawY));
       pdfPage.drawImage(signatureImage, { x: drawX, y: drawY, width: drawW, height: drawH });
     };
 

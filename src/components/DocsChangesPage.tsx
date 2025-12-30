@@ -46,6 +46,10 @@ import {
    ============================================================================ */
 
 const VERSION_CODENAMES: Record<string, { name: string; emoji: string }> = {
+  '1.9.01': { name: 'Café Selo', emoji: '🏷️' },
+  '1.9.00': { name: 'Café Recomendado', emoji: '⭐' },
+  '1.8.99': { name: 'Café Escala', emoji: '📏' },
+  '1.8.98': { name: 'Café Documento', emoji: '📄' },
   '1.8.97': { name: 'Café Assinatura', emoji: '✍️' },
   '1.8.96': { name: 'Café Exclusão', emoji: '🗑️' },
   '1.8.95': { name: 'Café Memória', emoji: '🧠' },
@@ -480,6 +484,78 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
    ============================================================================ */
 
 const releases: ReleaseNote[] = [
+  {
+    version: '1.9.01',
+    date: '30/12/2025',
+    summary: 'Assinatura: selo "Recomendado" reposicionado para não sobrepor o botão do Google.',
+    modules: [
+      {
+        moduleId: 'assinaturas',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Selo Recomendado (posição)',
+            description:
+              'Selo "Recomendado" foi reposicionado acima do botão do Google, sem interferir no clique.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.00',
+    date: '30/12/2025',
+    summary: 'Assinatura: destaque visual "Recomendado" no login com Google.',
+    modules: [
+      {
+        moduleId: 'assinaturas',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Login Google recomendado',
+            description:
+              'Adicionado selo "Recomendado" na opção "Fazer Login com o Google" durante a confirmação de identidade no fluxo de assinatura.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.8.99',
+    date: '30/12/2025',
+    summary: 'Assinatura: ajustada escala da assinatura para 1.5x.',
+    modules: [
+      {
+        moduleId: 'assinaturas',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Escala da assinatura ajustada',
+            description:
+              'Assinatura agora é renderizada com escala 1.5x (meio termo entre muito pequena e muito grande).',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.8.98',
+    date: '30/12/2025',
+    summary: 'Assinatura: documentos DOCX agora mostram o documento completo com assinatura, não apenas o relatório.',
+    modules: [
+      {
+        moduleId: 'assinaturas',
+        changes: [
+          {
+            type: 'fix',
+            title: 'Documento DOCX completo',
+            description:
+              'Corrigido problema onde documentos DOCX assinados mostravam apenas o relatório de assinatura. Agora renderiza o documento completo com a assinatura aplicada.',
+          },
+        ],
+      },
+    ],
+  },
   {
     version: '1.8.97',
     date: '30/12/2025',

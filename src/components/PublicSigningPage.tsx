@@ -2288,7 +2288,16 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
 
                       <div className={`space-y-3 ${googleAuthLoading ? 'opacity-70 pointer-events-none' : ''}`}>
                         {/* Botão Google - renderizado diretamente pelo Google Identity */}
-                        <div ref={googleButtonRef} className="flex justify-center" />
+                        <div className="w-full">
+                          <div className="flex justify-end mb-1">
+                            <div
+                              className="pointer-events-none rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-bold text-amber-700 border border-amber-200"
+                            >
+                              Recomendado
+                            </div>
+                          </div>
+                          <div ref={googleButtonRef} className="flex justify-center" />
+                        </div>
 
                         <div className="relative py-2 flex items-center justify-center">
                           <div className="absolute inset-0 flex items-center">

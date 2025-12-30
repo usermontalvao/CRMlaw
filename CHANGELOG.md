@@ -1,5 +1,17 @@
 # Changelog
 
+## 1.9.01
+- **Assinatura (Login Google)**: ajustado selo "Recomendado" para não sobrepor o botão do Google.
+
+## 1.9.00
+- **Assinatura (Login Google)**: adicionado selo "Recomendado" na opção "Fazer Login com o Google".
+
+## 1.8.99
+- **Assinatura (PDF)**: ajustada escala da assinatura para 1.5x (meio termo entre muito pequena e muito grande).
+
+## 1.8.98
+- **Assinatura (DOCX)**: corrigido problema onde documentos DOCX assinados mostravam apenas o relatório de assinatura; agora gera o documento completo com a assinatura.
+
 ## 1.8.97
 - **Assinatura (PDF)**: corrigido tamanho excessivo da assinatura no documento final; removida escala 2x que causava assinaturas muito grandes.
 
