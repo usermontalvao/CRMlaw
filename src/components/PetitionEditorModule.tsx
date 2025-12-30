@@ -1396,10 +1396,14 @@ Regras:
     const editor = editorRef.current;
     if (!editor) return;
 
-    // Numeração automática: incrementar contador e gerar prefixo
-    const currentNumber = blockAutoNumberNextRef.current ?? 1;
-    const numberPrefix = `${currentNumber} - `;
-    blockAutoNumberNextRef.current = currentNumber + 1;
+    // Numeração automática: incrementar contador e gerar prefixo (exceto cabeçalho)
+    const isCabecalho = block.category === 'cabecalho';
+    let numberPrefix = '';
+    if (!isCabecalho) {
+      const currentNumber = blockAutoNumberNextRef.current ?? 1;
+      numberPrefix = `${currentNumber} - `;
+      blockAutoNumberNextRef.current = currentNumber + 1;
+    }
 
     const sfdt = String(block.content || '').trim();
     const looksLikeSfdt = sfdt.startsWith('{') || sfdt.startsWith('[');
@@ -1443,7 +1447,7 @@ Regras:
         const fragment = await blockConvertEditorRef.current.convertSfdtToFragment(processed);
         if (fragment && fragment.trim()) {
           // Inserção síncrona para evitar perda de foco
-          editor.insertText(numberPrefix);
+          if (numberPrefix) editor.insertText(numberPrefix);
           const ok = editor.pasteSfdt(fragment);
           if (ok) {
             setHasUnsavedChanges(true);
@@ -1459,7 +1463,11 @@ Regras:
       if (!content.trim() || content.trim().startsWith('{') || content.trim().startsWith('[')) {
         content = 'Pré-visualização indisponível';
       }
-      editor.insertText(numberPrefix + applyClientPlaceholders(content));
+      if (numberPrefix) {
+        editor.insertText(numberPrefix + applyClientPlaceholders(content));
+      } else {
+        editor.insertText(applyClientPlaceholders(content));
+      }
       setHasUnsavedChanges(true);
       showSuccessMessage('Bloco inserido');
       restoreFocus();

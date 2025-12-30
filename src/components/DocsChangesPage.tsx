@@ -46,6 +46,7 @@ import {
    ============================================================================ */
 
 const VERSION_CODENAMES: Record<string, { name: string; emoji: string }> = {
+  '1.8.84': { name: 'Café Sem Cabeçalho', emoji: '📄' },
   '1.8.83': { name: 'Café Ordenado', emoji: '🧭' },
   '1.8.82': { name: 'Café Expresso', emoji: '🚀' },
   '1.8.81': { name: 'Café Simples', emoji: '☕' },
@@ -466,6 +467,24 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
    ============================================================================ */
 
 const releases: ReleaseNote[] = [
+  {
+    version: '1.8.84',
+    date: '30/12/2025',
+    summary: 'Editor de Petições: cabeçalho agora é inserido sem numeração.',
+    modules: [
+      {
+        moduleId: 'sistema',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Cabeçalho sem numeração',
+            description:
+              'Blocos da categoria "cabecalho" agora são inseridos sem o prefixo numérico ("1 - "), mantendo o cabeçalho limpo.',
+          },
+        ],
+      },
+    ],
+  },
   {
     version: '1.8.83',
     date: '30/12/2025',
