@@ -1,5 +1,8 @@
 # Changelog
 
+## 1.8.97
+- **Assinatura (PDF)**: corrigido tamanho excessivo da assinatura no documento final; removida escala 2x que causava assinaturas muito grandes.
+
 ## 1.8.96
 - **Editor de Petições (Recentes)**: adicionado botão de excluir em cada item da lista de Recentes com confirmação via modal de cálculo.
 - **Clientes (Detalhes)**: adicionada seção "Petições vinculadas" com opção de abrir e excluir petições do cliente.

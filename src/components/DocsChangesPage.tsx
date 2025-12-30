@@ -46,6 +46,7 @@ import {
    ============================================================================ */
 
 const VERSION_CODENAMES: Record<string, { name: string; emoji: string }> = {
+  '1.8.97': { name: 'Café Assinatura', emoji: '✍️' },
   '1.8.96': { name: 'Café Exclusão', emoji: '🗑️' },
   '1.8.95': { name: 'Café Memória', emoji: '🧠' },
   '1.8.94': { name: 'Café Padrão', emoji: '📌' },
@@ -479,6 +480,24 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
    ============================================================================ */
 
 const releases: ReleaseNote[] = [
+  {
+    version: '1.8.97',
+    date: '30/12/2025',
+    summary: 'Assinatura: corrigido tamanho excessivo da assinatura no PDF gerado.',
+    modules: [
+      {
+        moduleId: 'assinaturas',
+        changes: [
+          {
+            type: 'fix',
+            title: 'Tamanho da assinatura no PDF',
+            description:
+              'Removida escala 2x que causava assinaturas muito grandes no documento final. Agora a assinatura respeita o tamanho do campo definido.',
+          },
+        ],
+      },
+    ],
+  },
   {
     version: '1.8.96',
     date: '30/12/2025',
