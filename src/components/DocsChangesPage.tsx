@@ -46,6 +46,20 @@ import {
    ============================================================================ */
 
 const VERSION_CODENAMES: Record<string, { name: string; emoji: string }> = {
+  '1.9.18': { name: 'Café Vinculado', emoji: '🔗' },
+  '1.9.17': { name: 'Café Integração', emoji: '🔗' },
+  '1.9.16': { name: 'Café Indicadores', emoji: '🏷️' },
+  '1.9.15': { name: 'Café Link Estilo', emoji: '🔗' },
+  '1.9.14': { name: 'Café Compacto', emoji: '📦' },
+  '1.9.13': { name: 'Café Visual Leve', emoji: '🌟' },
+  '1.9.09': { name: 'Café Dark Button', emoji: '🌚' },
+  '1.9.08': { name: 'Café Design Fino', emoji: '✨' },
+  '1.9.07': { name: 'Café Modal Compacto', emoji: '🪟' },
+  '1.9.06': { name: 'Café Estável', emoji: '🛠️' },
+  '1.9.05': { name: 'Café Criar Processo', emoji: '➕' },
+  '1.9.04': { name: 'Café Confecção', emoji: '🧵' },
+  '1.9.03': { name: 'Café Processo', emoji: '⚖️' },
+  '1.9.02': { name: 'Café Atalhos', emoji: '🔗' },
   '1.9.01': { name: 'Café Selo', emoji: '🏷️' },
   '1.9.00': { name: 'Café Recomendado', emoji: '⭐' },
   '1.8.99': { name: 'Café Escala', emoji: '📏' },
@@ -484,6 +498,244 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
    ============================================================================ */
 
 const releases: ReleaseNote[] = [
+  {
+    version: '1.9.18',
+    date: '30/12/2025',
+    summary: 'Assinaturas ↔ Requerimentos: correção do vínculo automático.',
+    modules: [
+      {
+        moduleId: 'assinaturas',
+        changes: [
+          {
+            type: 'fix',
+            title: 'Badge de requerimento',
+            description:
+              'Corrigido o fluxo de criação de requerimento via assinatura para manter o signature_id até o momento de salvar, garantindo que o requirement_id seja atualizado corretamente e o badge "Requerimento Criado" apareça no card da assinatura.',
+          },
+        ],
+      },
+      {
+        moduleId: 'requerimentos',
+        changes: [
+          {
+            type: 'fix',
+            title: 'Persistência do prefill',
+            description:
+              'O módulo de requerimentos agora persiste o identificador da assinatura de origem localmente durante a criação, mesmo após o consumo dos parâmetros de navegação.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.17',
+    date: '30/12/2025',
+    summary: 'Assinaturas ↔ Requerimentos: integração automática implementada.',
+    modules: [
+      {
+        moduleId: 'assinaturas',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Vinculação automática',
+            description:
+              'Ao criar um requerimento a partir de uma assinatura, o sistema agora atualiza automaticamente o requirement_id na assinatura, fazendo com que o badge "Requerimento Criado" apareça instantaneamente no card da assinatura.',
+          },
+        ],
+      },
+      {
+        moduleId: 'requerimentos',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Origem da assinatura',
+            description:
+              'O módulo de requerimentos agora aceita e processa o campo signature_id no prefillData, permitindo rastrear e atualizar a assinatura de origem automaticamente.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.16',
+    date: '30/12/2025',
+    summary: 'Assinaturas: indicadores visuais de processo e requerimento.',
+    modules: [
+      {
+        moduleId: 'assinaturas',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Badges de criação',
+            description:
+              'Cards de assinatura agora exibem badges coloridos quando um processo ou requerimento é criado a partir da assinatura. Badge azul para "Processo Criado" e badge verde para "Requerimento Criado", seguindo o design de referência.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.15',
+    date: '30/12/2025',
+    summary: 'Assinaturas: botões de ação convertidos para estilo de links.',
+    modules: [
+      {
+        moduleId: 'assinaturas',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Links estilizados',
+            description:
+              'Os botões "Abrir processo" e "Requerimento" foram convertidos para estilo de texto sem fundo, comportando-se como links estilizados com ícones, hover effects (cor laranja) e animações de escala, seguindo o padrão de UI moderno.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.14',
+    date: '30/12/2025',
+    summary: 'Assinaturas: botões de ação secundários mais compactos.',
+    modules: [
+      {
+        moduleId: 'assinaturas',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Botões compactos',
+            description:
+              'Os botões "Criar processo" e "Requerimento" foram redimensionados para ficarem mais compactos, com padding reduzido (py-2.5), fonte menor (text-xs) e ícones ajustados (w-3.5 h-3.5), resultando em uma interface mais limpa e menos chamativa.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.08',
+    date: '30/12/2025',
+    summary: 'Assinaturas: ajuste fino no design das ações de processo/requerimento.',
+    modules: [
+      {
+        moduleId: 'assinaturas',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Design das ações refinado',
+            description:
+              'Os botões de "Processo" e "Requerimento" no detalhe da assinatura foram redesenhados para ficarem lado a lado, com ícones atualizados e um visual mais limpo, conforme o novo padrão de UI.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.07',
+    date: '30/12/2025',
+    summary: 'Assinaturas: modal de detalhes mais compacto e organizado.',
+    modules: [
+      {
+        moduleId: 'assinaturas',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Detalhes mais compactos',
+            description:
+              'No detalhe da assinatura, o modal ficou menor e as ações de Processo/Requerimento foram movidas para abaixo das ações principais, com visual mais discreto e criação de processo em bloco interno.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.06',
+    date: '30/12/2025',
+    summary: 'Assinaturas: correção de estabilidade no módulo.',
+    modules: [
+      {
+        moduleId: 'assinaturas',
+        changes: [
+          {
+            type: 'fix',
+            title: 'Crash no módulo de Assinaturas',
+            description:
+              'Corrigido erro "Cannot access detailsRequest before initialization" que podia impedir o carregamento do módulo de Assinaturas.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.05',
+    date: '30/12/2025',
+    summary: 'Assinaturas: botão Processo abre criação quando não há vínculo.',
+    modules: [
+      {
+        moduleId: 'assinaturas',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Fluxo de criar processo no detalhe',
+            description:
+              'No detalhe da assinatura, se não existir processo vinculado, o botão Processo abre diretamente a criação (Aguardando Confecção) com seleção de área.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.04',
+    date: '30/12/2025',
+    summary: 'Assinaturas: criar processo (Aguardando Confecção) direto do detalhe.',
+    modules: [
+      {
+        moduleId: 'assinaturas',
+        changes: [
+          {
+            type: 'feature',
+            title: 'Criar processo a partir da assinatura',
+            description:
+              'No detalhe da assinatura, quando não há processo vinculado, agora é possível selecionar a área e criar um Processo com status "Aguardando Confecção".',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.03',
+    date: '30/12/2025',
+    summary: 'Assinaturas: botão Abrir processo corrigido no detalhe.',
+    modules: [
+      {
+        moduleId: 'assinaturas',
+        changes: [
+          {
+            type: 'fix',
+            title: 'Abrir processo no detalhe (fallback)',
+            description:
+              'Quando não há process_id, o sistema tenta localizar o processo pelo número e abre o detalhe automaticamente. Também houve ajuste visual para evitar botões “bugados”.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.02',
+    date: '30/12/2025',
+    summary: 'Assinaturas: atalhos no detalhe após assinatura (processo e requerimento).',
+    modules: [
+      {
+        moduleId: 'assinaturas',
+        changes: [
+          {
+            type: 'feature',
+            title: 'Abrir processo / criar requerimento',
+            description:
+              'No detalhe da assinatura, quando todos assinam, agora há atalhos para abrir o Processo vinculado e iniciar um Requerimento Administrativo (a confeccionar).',
+          },
+        ],
+      },
+    ],
+  },
   {
     version: '1.9.01',
     date: '30/12/2025',

@@ -47,6 +47,7 @@ import PizZip from 'pizzip';
 import Docxtemplater from 'docxtemplater';
 import { requirementService } from '../services/requirement.service';
 import { clientService } from '../services/client.service';
+import { signatureService } from '../services/signature.service';
 import { requirementDocumentService } from '../services/requirementDocument.service';
 import { documentTemplateService } from '../services/documentTemplate.service';
 import { settingsService } from '../services/settings.service';
@@ -491,6 +492,7 @@ interface RequirementsModuleProps {
     client_id?: string;
     beneficiary?: string;
     cpf?: string;
+    signature_id?: string;
   };
   onParamConsumed?: () => void;
 }
@@ -576,6 +578,7 @@ const RequirementsModule: React.FC<RequirementsModuleProps> = ({ forceCreate, en
     notify_days_before: '3',
   });
   const exigencySubmittingRef = useRef(false);
+  const [sourceSignatureId, setSourceSignatureId] = useState<string | null>(null);
 
   const memberMap = useMemo(() => new Map(members.map((member) => [member.id, member])), [members]);
   const memberByUserId = useMemo(
@@ -1280,37 +1283,32 @@ const RequirementsModule: React.FC<RequirementsModuleProps> = ({ forceCreate, en
   useEffect(() => {
     if (forceCreate && !isModalOpen) {
       setSelectedRequirement(null);
-      
+
       // Aplicar prefill se fornecido
       if (prefillData) {
-        console.log('=== REQUIREMENTS MODULE ===');
-        console.log('Aplicando prefill:', prefillData);
-        
         const formattedCpf = prefillData.cpf ? formatCPF(prefillData.cpf) : '';
-        
+
         const newFormData = {
           ...emptyForm,
           client_id: prefillData.client_id || emptyForm.client_id,
           beneficiary: prefillData.beneficiary || emptyForm.beneficiary,
           cpf: formattedCpf || emptyForm.cpf,
         };
-        
-        console.log('FormData que será aplicado:', newFormData);
-        
+
         setFormData(newFormData);
-        
+        setSourceSignatureId(prefillData.signature_id ?? null);
+
         if (prefillData.beneficiary) {
           setBeneficiarySearchTerm(prefillData.beneficiary);
         }
       } else {
-        console.log('=== REQUIREMENTS MODULE ===');
-        console.log('Nenhum prefillData fornecido');
         setFormData(emptyForm);
         setBeneficiarySearchTerm('');
+        setSourceSignatureId(null);
       }
-      
+
       setIsModalOpen(true);
-      
+
       if (onParamConsumed) {
         onParamConsumed();
       }
@@ -1533,6 +1531,7 @@ const RequirementsModule: React.FC<RequirementsModuleProps> = ({ forceCreate, en
     setFormData(emptyForm);
     setBeneficiarySearchTerm('');
     setShowBeneficiarySuggestions(false);
+    setSourceSignatureId(null);
   };
 
   useEffect(() => {
@@ -1707,7 +1706,23 @@ const RequirementsModule: React.FC<RequirementsModuleProps> = ({ forceCreate, en
           createPayload.notes = serializeNotes([newNote]);
         }
 
-        await requirementService.createRequirement(createPayload as any);
+        const created = await requirementService.createRequirement(createPayload as any);
+
+        // Se foi criado a partir de uma assinatura, atualizar o requirement_id na assinatura
+        if (sourceSignatureId) {
+          try {
+            const updatePayload: Record<string, any> = {
+              requirement_id: created.id,
+              requirement_number: created.protocol || null,
+            };
+
+            await signatureService.updateRequest(sourceSignatureId, updatePayload);
+          } catch (error) {
+            console.error('❌ Erro ao atualizar assinatura com requirement_id:', error);
+            // Não bloquear o fluxo se falhar a atualização da assinatura
+          }
+        }
+
         await handleReload();
       }
       setIsModalOpen(false);
@@ -1715,6 +1730,7 @@ const RequirementsModule: React.FC<RequirementsModuleProps> = ({ forceCreate, en
         setSelectedRequirement(null);
       }
       setFormData(emptyForm);
+      setSourceSignatureId(null);
     } catch (err: any) {
       setError(err.message || 'Não foi possível salvar o requerimento.');
       toast.error(err.message || 'Não foi possível salvar o requerimento.');

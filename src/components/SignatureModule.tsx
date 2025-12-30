@@ -4,18 +4,21 @@ import { Document, Page, pdfjs } from 'react-pdf';
 import { renderAsync } from 'docx-preview';
 import {
   FileText, Upload, Plus, Trash2, X, Check, Clock, CheckCircle, Send, Copy,
-  User, Mail, Loader2, ChevronLeft, Eye, Filter, Search, MousePointer2,
+  User, Mail, Loader2, ChevronLeft, Eye, EyeOff, Filter, Search, MousePointer2,
   Type, Hash, Calendar, PenTool, Users, Download, AlertTriangle, ExternalLink, ChevronRight, ZoomIn, ZoomOut, Shield, Lightbulb, Pencil, Maximize2, Minimize2, LayoutList, LayoutGrid,
 } from 'lucide-react';
 import { useToastContext } from '../contexts/ToastContext';
 import { useAuth } from '../contexts/AuthContext';
+import { useNavigation } from '../contexts/NavigationContext';
 import { signatureService } from '../services/signature.service';
+import { processService } from '../services/process.service';
 import { pdfSignatureService } from '../services/pdfSignature.service';
 import { supabase } from '../config/supabase';
 import { documentTemplateService } from '../services/documentTemplate.service';
 import { signatureFieldsService } from '../services/signatureFields.service';
 import { useDeleteConfirm } from '../contexts/DeleteConfirmContext';
 import { userNotificationService } from '../services/userNotification.service';
+import type { ProcessPracticeArea } from '../types/process.types';
 import SignatureCanvas from './SignatureCanvas';
 import FacialCapture from './FacialCapture';
 import type {
@@ -72,6 +75,7 @@ interface SignatureModuleProps {
 const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusRequestId, onParamConsumed }) => {
   const toast = useToastContext();
   const { user } = useAuth();
+  const { navigateTo } = useNavigation();
   const { confirmDelete } = useDeleteConfirm();
 
   const [loading, setLoading] = useState(true);
@@ -96,6 +100,11 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
 
   const [wizardStep, setWizardStep] = useState<WizardStep>('list');
   const [wizardLoading, setWizardLoading] = useState(false);
+
+  const [openProcessLoading, setOpenProcessLoading] = useState(false);
+  const [showCreateProcess, setShowCreateProcess] = useState(false);
+  const [createProcessArea, setCreateProcessArea] = useState<ProcessPracticeArea>('previdenciario');
+  const [createProcessLoading, setCreateProcessLoading] = useState(false);
 
   useEffect(() => {
     try {
@@ -172,6 +181,13 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
 
   const [createdRequest, setCreatedRequest] = useState<SignatureRequestWithSigners | null>(null);
   const [detailsRequest, setDetailsRequest] = useState<SignatureRequestWithSigners | null>(null);
+
+  useEffect(() => {
+    setShowCreateProcess(false);
+    setOpenProcessLoading(false);
+    setCreateProcessLoading(false);
+  }, [detailsRequest?.id]);
+
   const [signModalOpen, setSignModalOpen] = useState(false);
   const [signingSigner, setSigningSigner] = useState<Signer | null>(null);
   const [signatureData, setSignatureData] = useState<string | null>(null);
@@ -2867,6 +2883,20 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
                             </>
                           )}
                         </div>
+                        <div className="flex items-center gap-2 ml-3">
+                          {req.process_id && (
+                            <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-bold border border-sky-200 bg-sky-50 text-sky-700 uppercase tracking-wider">
+                              <FileText className="w-3 h-3" />
+                              Processo Criado
+                            </span>
+                          )}
+                          {req.requirement_id && (
+                            <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-orange-100 text-orange-700">
+                              <Plus className="w-3.5 h-3.5" />
+                              <span className="text-xs font-bold">Requerimento Criado</span>
+                            </span>
+                          )}
+                        </div>
                       </div>
 
                       {totalSigners > 0 && (
@@ -2930,13 +2960,27 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
 
                     <div className="mt-3 pt-3 border-t border-slate-200">
                       <div className="flex items-center justify-between">
-                        <div className={`px-2.5 py-1 rounded-full text-[11px] font-semibold flex items-center gap-1 ${
-                          allSigned ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'
-                        }`}>
-                          {allSigned ? (
-                            <><CheckCircle className="w-3 h-3" /> Concluído</>
-                          ) : (
-                            <><Clock className="w-3 h-3" /> {signedCount}/{totalSigners}</>
+                        <div className="flex items-center gap-2">
+                          <div className={`px-2.5 py-1 rounded-full text-[11px] font-semibold flex items-center gap-1 ${
+                            allSigned ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'
+                          }`}>
+                            {allSigned ? (
+                              <><CheckCircle className="w-3 h-3" /> Concluído</>
+                            ) : (
+                              <><Clock className="w-3 h-3" /> {signedCount}/{totalSigners}</>
+                            )}
+                          </div>
+                          {req.process_id && (
+                            <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-bold border border-sky-200 bg-sky-50 text-sky-700 uppercase tracking-wider">
+                              <FileText className="w-3 h-3" />
+                              Processo Criado
+                            </span>
+                          )}
+                          {req.requirement_id && (
+                            <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-orange-100 text-orange-700">
+                              <Plus className="w-3.5 h-3.5" />
+                              <span className="text-xs font-bold">Requerimento Criado</span>
+                            </span>
                           )}
                         </div>
                         <span className="text-xs text-slate-500">{allSigned ? '100%' : `${pct}%`}</span>
@@ -2957,7 +3001,7 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
 
       {detailsRequest && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-6 bg-slate-50/80 dark:bg-slate-50/80 backdrop-blur-md">
-          <div className="bg-white dark:bg-white rounded-2xl shadow-[0_24px_60px_rgba(15,23,42,0.12)] border border-slate-200 dark:border-slate-200 w-full max-w-3xl max-h-[95vh] sm:max-h-[85vh] overflow-hidden flex flex-col mx-auto">
+          <div className="bg-white dark:bg-white rounded-2xl shadow-[0_24px_60px_rgba(15,23,42,0.12)] border border-slate-200 dark:border-slate-200 w-full max-w-2xl max-h-[92vh] sm:max-h-[82vh] overflow-hidden flex flex-col mx-auto">
             <div className="h-2 sm:h-3 w-full shrink-0 bg-gradient-to-r from-orange-500 to-orange-600" />
 
             <div className="relative px-3 sm:px-6 py-3 sm:py-4 border-b border-slate-200 dark:border-slate-200 bg-white dark:bg-white flex flex-col gap-1.5 sm:gap-2">
@@ -3002,8 +3046,8 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
               </div>
 
               {/* Botões de ação */}
-              <div className="flex flex-col lg:flex-row lg:items-stretch gap-2 sm:gap-3">
-                <div className="flex flex-col sm:flex-row flex-1 gap-2 sm:gap-3">
+              <div className="flex flex-col gap-2">
+                <div className="flex flex-col sm:flex-row gap-2 sm:gap-3">
                   {detailsRequest.document_path && (
                     <button
                       disabled={viewDocLoading}
@@ -3153,7 +3197,7 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
                             
                             const freshSigner = await signatureService.getSignerById(signedSigner.id);
                             if (!freshSigner) {
-                              toast.error('Erro ao carregar dados do signatÃ¡rio');
+                              toast.error('Erro ao carregar dados do signatário');
                               return;
                             }
                             
@@ -3199,7 +3243,7 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
                           setViewDocLoading(false);
                         }
                       }}
-                      className="flex items-center justify-center gap-2 px-3 sm:px-4 py-2 bg-orange-500 text-white rounded-lg text-sm font-medium hover:bg-orange-600 transition disabled:opacity-70 disabled:cursor-wait w-full flex-1"
+                      className="flex items-center justify-center gap-2 px-4 py-3 bg-orange-500 text-white rounded-xl text-sm font-semibold hover:bg-orange-600 transition shadow-sm disabled:opacity-70 disabled:cursor-wait w-full sm:flex-1"
                     >
                       {viewDocLoading ? (
                         <>
@@ -3216,19 +3260,160 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
                   )}
                   <button
                     onClick={() => handleDownloadDocument(detailsRequest)}
-                    className="flex items-center justify-center gap-2 px-3 sm:px-4 py-2 bg-orange-500 text-white rounded-lg text-sm font-medium hover:bg-orange-600 transition w-full flex-1"
+                    className="flex items-center justify-center gap-2 px-4 py-3 bg-orange-500 text-white rounded-xl text-sm font-semibold hover:bg-orange-600 transition shadow-sm w-full sm:flex-1"
                   >
                     <Download className="w-4 h-4" />
                     Baixar documento
                   </button>
+                  <button
+                    onClick={() => handleDeleteRequest(detailsRequest.id)}
+                    className="flex items-center justify-center gap-2 px-4 py-3 bg-red-50 text-red-600 rounded-xl text-sm font-semibold hover:bg-red-100 transition shadow-sm w-full sm:w-auto sm:px-6"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                    Excluir
+                  </button>
                 </div>
-                <button
-                  onClick={() => handleDeleteRequest(detailsRequest.id)}
-                  className="flex items-center justify-center gap-2 px-3 sm:px-4 py-2 bg-red-50 text-red-600 rounded-lg text-sm font-medium hover:bg-red-100 transition w-full lg:w-auto lg:px-5"
-                >
-                  <Trash2 className="w-4 h-4" />
-                  Excluir
-                </button>
+
+                {detailsRequest.signers.every((s) => s.status === 'signed') && (
+                  <div className="mt-2 pt-2 border-t border-slate-100">
+                    <div className="flex flex-wrap items-center justify-start gap-6 mt-2 pl-1">
+                      <button
+                        disabled={openProcessLoading}
+                        onClick={async () => {
+                          if (openProcessLoading) return;
+                          try {
+                            setOpenProcessLoading(true);
+
+                            if (detailsRequest.process_id) {
+                              setDetailsRequest(null);
+                              navigateTo('processos', { mode: 'details', entityId: detailsRequest.process_id } as any);
+                              return;
+                            }
+
+                            setShowCreateProcess((v) => !v);
+                          } catch (e) {
+                            console.error('Erro ao abrir processo:', e);
+                            toast.error('Erro ao abrir processo');
+                          } finally {
+                            setOpenProcessLoading(false);
+                          }
+                        }}
+                        className="group flex items-center gap-2 text-sm font-medium text-slate-600 hover:text-orange-500 transition-colors disabled:opacity-70"
+                      >
+                        {openProcessLoading ? (
+                          <>
+                            <Loader2 className="w-4 h-4 animate-spin" />
+                            <span>Abrindo...</span>
+                          </>
+                        ) : (
+                          <>
+                            {detailsRequest.process_id ? (
+                              <ExternalLink className="w-4 h-4 group-hover:scale-110 transition-transform" />
+                            ) : showCreateProcess ? (
+                              <EyeOff className="w-4 h-4 group-hover:scale-110 transition-transform" />
+                            ) : (
+                              <Plus className="w-4 h-4 group-hover:scale-110 transition-transform" />
+                            )}
+                            <span className="hover:underline underline-offset-4">
+                              {detailsRequest.process_id ? 'Abrir processo' : (showCreateProcess ? 'Ocultar processo' : 'Criar processo')}
+                            </span>
+                          </>
+                        )}
+                      </button>
+                      <button
+                        onClick={() => {
+                          if (!detailsRequest.client_id) {
+                            toast.error('Vincule um cliente para criar o requerimento.');
+                            return;
+                          }
+                          const cpf = detailsRequest.signers.find((s) => s.cpf)?.cpf || undefined;
+                          const beneficiary = detailsRequest.client_name || undefined;
+                          setDetailsRequest(null);
+                          const prefillData = {
+                            client_id: detailsRequest.client_id,
+                            beneficiary,
+                            cpf,
+                            signature_id: detailsRequest.id,
+                          };
+                          
+                          navigateTo('requerimentos', {
+                            mode: 'create',
+                            prefill: prefillData,
+                          } as any);
+                        }}
+                        className="group flex items-center gap-2 text-sm font-medium text-slate-600 hover:text-orange-500 transition-colors"
+                      >
+                        <FileText className="w-4 h-4 group-hover:scale-110 transition-transform" />
+                        <span className="hover:underline underline-offset-4">Requerimento</span>
+                      </button>
+                    </div>
+
+                    {showCreateProcess && !detailsRequest.process_id && (
+                      <div className="mt-3 p-3 rounded-xl bg-slate-50 border border-slate-100">
+                        <div className="flex flex-col sm:flex-row gap-2 sm:gap-3">
+                          <select
+                            value={createProcessArea}
+                            onChange={(e) => setCreateProcessArea(e.target.value as ProcessPracticeArea)}
+                            className="w-full sm:w-auto px-3 py-2 border border-slate-200 rounded-lg text-sm font-medium text-slate-700 bg-white focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 outline-none transition-all"
+                          >
+                            <option value="trabalhista">Trabalhista</option>
+                            <option value="familia">Família</option>
+                            <option value="consumidor">Consumidor</option>
+                            <option value="previdenciario">Previdenciário</option>
+                            <option value="civel">Cível</option>
+                          </select>
+                          <button
+                            disabled={createProcessLoading}
+                            onClick={async () => {
+                              if (!detailsRequest.client_id) {
+                                toast.error('Vincule um cliente para criar o processo.');
+                                return;
+                              }
+                              try {
+                                setCreateProcessLoading(true);
+                                const created = await processService.createProcess({
+                                  client_id: detailsRequest.client_id,
+                                  process_code: (detailsRequest.process_number || '').trim(),
+                                  status: 'aguardando_confeccao',
+                                  practice_area: createProcessArea,
+                                  notes: `Origem: Assinatura ${detailsRequest.document_name}`,
+                                } as any);
+
+                                await signatureService.updateRequest(detailsRequest.id, {
+                                  process_id: created.id,
+                                  process_number: created.process_code || detailsRequest.process_number || null,
+                                });
+
+                                setShowCreateProcess(false);
+                                setDetailsRequest(null);
+                                navigateTo('processos', { mode: 'details', entityId: created.id } as any);
+                                toast.success('Processo criado (Aguardando confecção).');
+                              } catch (err: any) {
+                                console.error(err);
+                                toast.error(err.message || 'Não foi possível criar o processo.');
+                              } finally {
+                                setCreateProcessLoading(false);
+                              }
+                            }}
+                            className="inline-flex items-center justify-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold bg-emerald-600 text-white hover:bg-emerald-700 transition shadow-sm w-full sm:w-auto disabled:opacity-70 disabled:cursor-wait"
+                          >
+                            {createProcessLoading ? (
+                              <>
+                                <Loader2 className="w-4 h-4 animate-spin" />
+                                Criando...
+                              </>
+                            ) : (
+                              <>
+                                <Plus className="w-4 h-4" />
+                                Criar
+                              </>
+                            )}
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
 
               {/* Signatários */}

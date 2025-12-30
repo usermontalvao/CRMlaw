@@ -14,6 +14,8 @@ export interface SignatureRequest {
   client_name?: string | null;
   process_id?: string | null;
   process_number?: string | null;
+  requirement_id?: string | null;
+  requirement_number?: string | null;
   status: SignatureStatus;
   auth_method: SignerAuthMethod;
   expires_at?: string | null;
@@ -78,6 +80,8 @@ export interface CreateSignatureRequestDTO {
   client_name?: string | null;
   process_id?: string | null;
   process_number?: string | null;
+  requirement_id?: string | null;
+  requirement_number?: string | null;
   auth_method: SignerAuthMethod;
   expires_at?: string | null;
   signers: CreateSignerDTO[];

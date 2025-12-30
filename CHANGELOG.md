@@ -1,5 +1,53 @@
 # Changelog
 
+## 1.9.18
+- **Assinaturas ↔ Requerimentos**: correção do vínculo automático do requerimento criado via assinatura (persistência do `signature_id` até o momento do salvar), garantindo exibição do badge "Requerimento Criado".
+
+## 1.9.17
+- **Assinaturas ↔ Requerimentos**: integração automática - ao criar requerimento a partir da assinatura, o badge "Requerimento Criado" agora aparece automaticamente no card.
+
+## 1.9.16
+- **Assinaturas (Cards)**: indicadores visuais para processo e requerimento criados a partir da assinatura (badges coloridos nos cards).
+
+## 1.9.15
+- **Assinaturas (Detalhes)**: botões "Abrir processo" e "Requerimento" agora em estilo de texto (sem fundo), com ícones e hover effects, seguindo o padrão de links estilizados.
+
+## 1.9.14
+- **Assinaturas (Detalhes)**: botões "Criar processo" e "Requerimento" agora mais compactos (padding reduzido, fonte menor e ícones ajustados).
+
+## 1.9.13
+- **Assinaturas (Detalhes)**: ajuste fino nos botões "Criar processo" e "Requerimento" para fundo mais claro (neutral-700), com bordas definidas e ícones brancos, melhorando a definição visual.
+
+## 1.9.11
+- **Assinaturas (Detalhes)**: fidelização total do design dos botões "Criar processo" e "Requerimento" (fundo dark #333333, ícones brancos e ajuste de pesos de fonte).
+
+## 1.9.10
+- **Assinaturas (Detalhes)**: refinamento final do design dos botões de ação (Top e Bottom), garantindo que todos utilizem cantos `rounded-xl`, cores vibrantes e o novo padrão visual dark para ações secundárias.
+
+## 1.9.09
+- **Assinaturas (Detalhes)**: botões "Processo" e "Requerimento" agora utilizam fundo escuro e texto branco, seguindo o novo padrão visual de destaque secundário.
+
+## 1.9.08
+- **Assinaturas (Detalhes)**: refinamento do design das ações de Processo e Requerimento (botões lado a lado com estilo modernizado).
+
+## 1.9.07
+- **Assinaturas (Detalhes)**: modal de detalhes mais compacto e ações de Processo/Requerimento reposicionadas abaixo dos botões principais (mais discretas).
+
+## 1.9.06
+- **Assinaturas (Estabilidade)**: corrigido erro que quebrava o módulo de Assinaturas (referência a `detailsRequest` antes da inicialização).
+
+## 1.9.05
+- **Assinaturas (Detalhes)**: botão "Processo" agora abre fluxo de criação quando não há processo vinculado (status "Aguardando Confecção" com seleção de área).
+
+## 1.9.04
+- **Assinaturas (Detalhes)**: quando não há processo vinculado, agora permite selecionar a área e criar um Processo com status "Aguardando Confecção".
+
+## 1.9.03
+- **Assinaturas (Detalhes)**: corrigido botão "Abrir processo" (fallback por número do processo) e ajustes no layout dos botões.
+
+## 1.9.02
+- **Assinaturas (Detalhes)**: após assinar, adicionados atalhos para abrir o Processo vinculado e iniciar um Requerimento Administrativo (a confeccionar).
+
 ## 1.9.01
 - **Assinatura (Login Google)**: ajustado selo "Recomendado" para não sobrepor o botão do Google.
 
