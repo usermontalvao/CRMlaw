@@ -46,6 +46,13 @@ import {
    ============================================================================ */
 
 const VERSION_CODENAMES: Record<string, { name: string; emoji: string }> = {
+  '1.8.96': { name: 'Café Exclusão', emoji: '🗑️' },
+  '1.8.95': { name: 'Café Memória', emoji: '🧠' },
+  '1.8.94': { name: 'Café Padrão', emoji: '📌' },
+  '1.8.93': { name: 'Café Vinculado', emoji: '🔗' },
+  '1.8.92': { name: 'Café Template', emoji: '📎' },
+  '1.8.91': { name: 'Café Nome', emoji: '📝' },
+  '1.8.90': { name: 'Café Vínculo', emoji: '🔗' },
   '1.8.89': { name: 'Café Recente', emoji: '⏱️' },
   '1.8.88': { name: 'Café Atalhos', emoji: '🧷' },
   '1.8.87': { name: 'Café Saudação', emoji: '🪪' },
@@ -472,6 +479,161 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
    ============================================================================ */
 
 const releases: ReleaseNote[] = [
+  {
+    version: '1.8.96',
+    date: '30/12/2025',
+    summary: 'Editor de Petições e Clientes: exclusão de petições nos Recentes e no Detalhes do Cliente.',
+    modules: [
+      {
+        moduleId: 'sistema',
+        changes: [
+          {
+            type: 'feature',
+            title: 'Excluir petições nos Recentes',
+            description:
+              'Adicionado botão de lixeira em cada item da lista de Recentes no Editor de Petições, com confirmação via modal de cálculo matemático.',
+          },
+        ],
+      },
+      {
+        moduleId: 'clientes',
+        changes: [
+          {
+            type: 'feature',
+            title: 'Petições vinculadas no Detalhes do Cliente',
+            description:
+              'Nova seção "Petições vinculadas" no painel do cliente, permitindo abrir e excluir petições com confirmação via modal de cálculo.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.8.95',
+    date: '30/12/2025',
+    summary: 'Editor de Petições: Documento padrão com fallback em memória quando o storage do navegador falhar.',
+    modules: [
+      {
+        moduleId: 'sistema',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Persistência do Documento padrão',
+            description:
+              'Quando o navegador não consegue persistir o Documento padrão (armazenamento cheio), o sistema avisa e mantém um fallback em memória para a sessão atual.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.8.94',
+    date: '30/12/2025',
+    summary: 'Editor de Petições: Documento padrão agora carrega o template selecionado após importação.',
+    modules: [
+      {
+        moduleId: 'sistema',
+        changes: [
+          {
+            type: 'fix',
+            title: 'Documento padrão após importar',
+            description:
+              'Ao importar um arquivo Word, ele passa a ser armazenado como Documento padrão, permitindo abrir pelo atalho "Novo → Documento padrão".',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.8.93',
+    date: '30/12/2025',
+    summary: 'Clientes: melhorias na seção de documentos assinados/gerados no Detalhes do Cliente.',
+    modules: [
+      {
+        moduleId: 'clientes',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Documento/Contratos assinados (Vinculado)',
+            description:
+              'A seção agora exibe o item "Vinculado" e organiza o conteúdo em "Assinados" e "Gerados", mantendo a mensagem de vazio abaixo das listas.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.8.92',
+    date: '30/12/2025',
+    summary: 'Editor de Petições: Documento padrão volta a abrir pelo Novo.',
+    modules: [
+      {
+        moduleId: 'sistema',
+        changes: [
+          {
+            type: 'fix',
+            title: 'Novo → Documento padrão',
+            description:
+              'O carregamento do documento padrão foi ajustado para aguardar o editor estar pronto e evitar falha silenciosa ao abrir o template cadastrado.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.8.91',
+    date: '30/12/2025',
+    summary: 'Editor de Petições: nome do usuário com capitalização correta na tela inicial.',
+    modules: [
+      {
+        moduleId: 'sistema',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Capitalização do nome do usuário',
+            description:
+              'A saudação na tela inicial agora formata o nome para exibição correta (ex.: "Pedro"), incluindo nomes compostos e conectivos.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.8.90',
+    date: '30/12/2025',
+    summary: 'Editor de Petições: salvar só com cliente, limpeza de órfãos e Documento padrão corrigido.',
+    modules: [
+      {
+        moduleId: 'sistema',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Salvar apenas com cliente vinculado',
+            description:
+              'O salvamento (manual e automático) passa a ocorrer somente quando há cliente selecionado, evitando documentos sem vínculo.',
+          },
+          {
+            type: 'fix',
+            title: 'Remoção de documentos sem vinculação',
+            description:
+              'Documentos antigos sem `client_id` são removidos automaticamente para manter a lista de Recentes consistente.',
+          },
+          {
+            type: 'fix',
+            title: 'Documento padrão no Novo',
+            description:
+              'O atalho "Novo → Documento padrão" foi ajustado para garantir que o editor esteja montado antes de carregar o template.',
+          },
+          {
+            type: 'improvement',
+            title: 'Nome do usuário na saudação',
+            description:
+              'A saudação na tela inicial passa a exibir o nome do usuário logado (via user_metadata), com fallback sem exibir o e-mail completo.',
+          },
+        ],
+      },
+    ],
+  },
   {
     version: '1.8.89',
     date: '30/12/2025',

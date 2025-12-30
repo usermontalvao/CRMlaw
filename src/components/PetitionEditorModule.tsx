@@ -51,6 +51,7 @@ import type {
 } from '../types/petitionEditor.types';
 import type { Client } from '../types/client.types';
 import { useAuth } from '../contexts/AuthContext';
+import { useDeleteConfirm } from '../contexts/DeleteConfirmContext';
 import { supabase } from '../config/supabase';
 import SyncfusionEditor, { SyncfusionEditorRef } from './SyncfusionEditor';
 
@@ -467,11 +468,31 @@ const PetitionEditorModule: React.FC<PetitionEditorModuleProps> = ({
   onRequestMinimize,
 }) => {
   const { user } = useAuth();
-  const userDisplayName =
+  const { confirmDelete } = useDeleteConfirm();
+
+  const formatUserDisplayName = (raw: string) => {
+    const trimmed = raw.trim();
+    if (!trimmed) return '';
+
+    const lowerWords = new Set(['de', 'da', 'do', 'das', 'dos', 'e']);
+    return trimmed
+      .split(/\s+/g)
+      .map((word, idx) => {
+        const lower = word.toLowerCase();
+        if (idx > 0 && lowerWords.has(lower)) return lower;
+        return lower.charAt(0).toUpperCase() + lower.slice(1);
+      })
+      .join(' ');
+  };
+
+  const rawUserDisplayName =
     (user?.user_metadata as any)?.full_name ||
     (user?.user_metadata as any)?.name ||
     (user?.user_metadata as any)?.display_name ||
+    (typeof user?.email === 'string' && user.email.includes('@') ? user.email.split('@')[0] : '') ||
     'Usuário';
+
+  const userDisplayName = formatUserDisplayName(rawUserDisplayName) || 'Usuário';
 
   const getGreeting = () => {
     const hour = new Date().getHours();
@@ -617,6 +638,7 @@ const PetitionEditorModule: React.FC<PetitionEditorModuleProps> = ({
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [hasDefaultTemplate, setHasDefaultTemplate] = useState(false);
   const [defaultTemplateName, setDefaultTemplateName] = useState<string | null>(null);
+  const defaultTemplateMemoryRef = useRef<{ name: string; dataBase64: string } | null>(null);
 
   const isLoadingPetitionRef = useRef(false);
 
@@ -1203,6 +1225,11 @@ Regras:
 
   // Salvar petição
   const savePetition = async () => {
+    // Regra: salvar apenas documentos vinculados a cliente
+    if (!selectedClient?.id) {
+      if (!window.__autoSaving) setError('Selecione um cliente antes de salvar a petição');
+      return;
+    }
     if (saving) return;
     setSaving(true);
     setError(null);
@@ -1413,6 +1440,26 @@ Regras:
 
       const arrayBuffer = await file.arrayBuffer();
       await editor.loadDocx(arrayBuffer, file.name);
+
+      try {
+        const dataBase64 = arrayBufferToBase64(arrayBuffer);
+        defaultTemplateMemoryRef.current = { name: file.name, dataBase64 };
+        setHasDefaultTemplate(true);
+        setDefaultTemplateName(file.name);
+
+        try {
+          window.localStorage.setItem(
+            DEFAULT_TEMPLATE_STORAGE_KEY,
+            JSON.stringify({ name: file.name, dataBase64 })
+          );
+        } catch (storageErr) {
+          console.error('Erro ao salvar Documento padrão no storage:', storageErr);
+          setError('Não foi possível salvar o Documento padrão no navegador (armazenamento cheio).');
+        }
+      } catch {
+        // ignore
+      }
+
       blockAutoNumberNextRef.current = null;
       setHasUnsavedChanges(true);
       showSuccessMessage(`Arquivo "${file.name}" importado`);
@@ -1632,21 +1679,36 @@ Regras:
     return bytes.buffer;
   };
 
+  const waitForEditorReady = async (maxTries = 30, intervalMs = 150) => {
+    for (let i = 0; i < maxTries; i += 1) {
+      const editor = editorRef.current;
+      if (editor && typeof (editor as any).loadDocx === 'function') return editor;
+      await new Promise<void>((resolve) => window.setTimeout(resolve, intervalMs));
+    }
+    return null;
+  };
+
   const loadDefaultTemplate = async () => {
     try {
-      const raw = window.localStorage.getItem(DEFAULT_TEMPLATE_STORAGE_KEY);
-      if (!raw) {
-        setError('Nenhum modelo padrão definido');
-        return;
-      }
-      const parsed = JSON.parse(raw) as { name?: string; dataBase64?: string };
+      const memory = defaultTemplateMemoryRef.current;
+      const raw = memory ? null : window.localStorage.getItem(DEFAULT_TEMPLATE_STORAGE_KEY);
+      const parsed =
+        memory ??
+        (raw ? (JSON.parse(raw) as { name?: string; dataBase64?: string }) : null);
+
       if (!parsed?.dataBase64) {
         setError('Nenhum modelo padrão definido');
         return;
       }
 
+      const editor = await waitForEditorReady();
+      if (!editor) {
+        setError('Editor não disponível');
+        return;
+      }
+
       const arrayBuffer = base64ToArrayBuffer(parsed.dataBase64);
-      await editorRef.current?.loadDocx(arrayBuffer, parsed.name || 'modelo.docx');
+      await editor.loadDocx(arrayBuffer, parsed.name || 'modelo.docx');
       blockAutoNumberNextRef.current = null;
       setHasUnsavedChanges(true);
       showSuccessMessage(`Modelo padrão${parsed.name ? ` "${parsed.name}"` : ''} carregado`);
@@ -1850,7 +1912,15 @@ Regras:
       ]);
 
       setBlocks(blocksData);
-      setSavedPetitions(petitionsData);
+      const withClient = (petitionsData || []).filter((p) => Boolean(p.client_id));
+      const orphans = (petitionsData || []).filter((p) => !p.client_id);
+      setSavedPetitions(withClient);
+      // Limpar automaticamente documentos antigos sem vinculação
+      if (orphans.length) {
+        petitionEditorService.deleteOrphanPetitions().catch(() => {
+          // ignore
+        });
+      }
       setClients(clientsData);
     } catch (err) {
       console.error('Erro ao carregar dados:', err);
@@ -2154,10 +2224,18 @@ Regras:
 
                 <button
                   onClick={() => {
+                    // Abrir o editor primeiro para garantir que o Syncfusion esteja montado
+                    if (isLoadingPetitionRef.current) return;
+                    isLoadingPetitionRef.current = true;
+                    window.__autoSaving = true;
+                    newPetition();
                     setShowStartScreen(false);
                     window.setTimeout(() => {
-                      void loadDefaultTemplate();
-                    }, 150);
+                      void Promise.resolve(loadDefaultTemplate()).finally(() => {
+                        window.__autoSaving = false;
+                        isLoadingPetitionRef.current = false;
+                      });
+                    }, 200);
                   }}
                   disabled={!hasDefaultTemplate}
                   className="w-[160px] rounded border border-slate-300 hover:border-blue-500 hover:shadow-sm bg-white transition text-left disabled:opacity-60 disabled:hover:border-slate-300"
@@ -2203,8 +2281,9 @@ Regras:
               <div className="bg-white border border-slate-200 rounded">
                 <div className="grid grid-cols-12 px-3 py-2 text-[11px] text-slate-500 border-b border-slate-200">
                   <div className="col-span-5">Arquivo</div>
-                  <div className="col-span-4">Cliente</div>
+                  <div className="col-span-3">Cliente</div>
                   <div className="col-span-3 text-right">Modificado</div>
+                  <div className="col-span-1 text-right"></div>
                 </div>
 
                 {savedPetitions.length === 0 ? (
@@ -2212,19 +2291,55 @@ Regras:
                 ) : (
                   <div className="max-h-[360px] overflow-y-auto">
                     {savedPetitions.slice(0, 15).map((p) => (
-                      <button
+                      <div
                         key={p.id}
-                        onClick={() => { void loadPetition(p); }}
-                        className="w-full grid grid-cols-12 px-3 py-2 text-left hover:bg-slate-50 border-b border-slate-100 last:border-b-0 items-center"
+                        className="w-full grid grid-cols-12 px-3 py-2 text-left hover:bg-slate-50 border-b border-slate-100 last:border-b-0 items-center group"
                       >
-                        <div className="col-span-5">
+                        <button
+                          onClick={() => { void loadPetition(p); }}
+                          className="col-span-5 text-left"
+                        >
                           <div className="text-sm text-slate-800 truncate">{p.title || 'Sem título'}</div>
-                        </div>
-                        <div className="col-span-4 text-xs text-slate-600 truncate">{p.client_name || '—'}</div>
-                        <div className="col-span-3 text-right text-xs text-slate-500" data-tick={relativeTimeTick}>
+                        </button>
+                        <button
+                          onClick={() => { void loadPetition(p); }}
+                          className="col-span-3 text-xs text-slate-600 truncate text-left"
+                        >
+                          {p.client_name || '—'}
+                        </button>
+                        <button
+                          onClick={() => { void loadPetition(p); }}
+                          className="col-span-3 text-right text-xs text-slate-500"
+                          data-tick={relativeTimeTick}
+                        >
                           {formatRelativeTime(p.updated_at)}
+                        </button>
+                        <div className="col-span-1 text-right">
+                          <button
+                            onClick={async (e) => {
+                              e.stopPropagation();
+                              const confirmed = await confirmDelete({
+                                title: 'Excluir petição',
+                                entityName: p.title || 'Sem título',
+                                message: `Deseja excluir a petição "${p.title || 'Sem título'}"${p.client_name ? ` vinculada ao cliente ${p.client_name}` : ''}?`,
+                                confirmLabel: 'Excluir',
+                              });
+                              if (!confirmed) return;
+                              try {
+                                await petitionEditorService.deletePetition(p.id);
+                                setSavedPetitions((prev) => prev.filter((x) => x.id !== p.id));
+                              } catch (err) {
+                                console.error('Erro ao excluir petição:', err);
+                                setError('Erro ao excluir petição');
+                              }
+                            }}
+                            className="p-1 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded opacity-0 group-hover:opacity-100 transition-all"
+                            title="Excluir petição"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
                         </div>
-                      </button>
+                      </div>
                     ))}
                   </div>
                 )}

@@ -441,6 +441,15 @@ class PetitionEditorService {
     if (error) throw new Error(error.message);
   }
 
+  async deleteOrphanPetitions(): Promise<void> {
+    const { error } = await supabase
+      .from(this.petitionsTable)
+      .delete()
+      .is('client_id', null);
+
+    if (error) throw new Error(error.message);
+  }
+
   // ==================== EXPORTAÇÃO ====================
 
   generateDocxContent(content: string, title: string): string {

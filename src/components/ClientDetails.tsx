@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { ArrowLeft, User, Building2, Mail, Phone, MapPin, Calendar, FileText, Edit, MessageCircle, Briefcase, Scale, FileCheck, Plus, Clock, FolderPlus, Gavel, Loader2, ClipboardList, AlertCircle, PenTool } from 'lucide-react';
+import { ArrowLeft, User, Building2, Mail, Phone, MapPin, Calendar, FileText, Edit, MessageCircle, Briefcase, Scale, FileCheck, Plus, Clock, FolderPlus, Gavel, Loader2, ClipboardList, AlertCircle, PenTool, Trash2 } from 'lucide-react';
 import { events, SYSTEM_EVENTS } from '../utils/events';
 import type { Client } from '../types/client.types';
 import type { Process } from '../types/process.types';
@@ -7,6 +7,9 @@ import type { Requirement } from '../types/requirement.types';
 import type { SignatureRequestWithSigners } from '../types/signature.types';
 import { signatureService } from '../services/signature.service';
 import { pdfSignatureService } from '../services/pdfSignature.service';
+import { petitionEditorService } from '../services/petitionEditor.service';
+import { useDeleteConfirm } from '../contexts/DeleteConfirmContext';
+import type { SavedPetition } from '../types/petitionEditor.types';
 
 interface ClientDetailsProps {
   client: Client;
@@ -54,9 +57,12 @@ const formatPhone = (value: string) => {
 };
 
 const ClientDetails: React.FC<ClientDetailsProps> = ({ client, processes, requirements, relationsLoading, onBack, onEdit, onCreateProcess, onCreateRequirement, onCreateDeadline, missingFields = [], isOutdated = false }) => {
+  const { confirmDelete } = useDeleteConfirm();
   const [signatureRequests, setSignatureRequests] = useState<SignatureRequestWithSigners[]>([]);
   const [signatureLoading, setSignatureLoading] = useState(false);
   const [signatureError, setSignatureError] = useState<string | null>(null);
+  const [clientPetitions, setClientPetitions] = useState<SavedPetition[]>([]);
+  const [petitionsLoading, setPetitionsLoading] = useState(false);
 
   const formatDate = (dateString?: string) => {
     if (!dateString) return 'N/A';
@@ -121,6 +127,32 @@ const ClientDetails: React.FC<ClientDetailsProps> = ({ client, processes, requir
     };
   }, [client.id]);
 
+  useEffect(() => {
+    let isMounted = true;
+
+    const loadClientPetitions = async () => {
+      try {
+        setPetitionsLoading(true);
+        const allPetitions = await petitionEditorService.listPetitions();
+        if (!isMounted) return;
+        const filtered = allPetitions.filter((p) => p.client_id === client.id);
+        setClientPetitions(filtered);
+      } catch (error: any) {
+        console.error('Erro ao carregar petições do cliente:', error);
+        if (!isMounted) return;
+        setClientPetitions([]);
+      } finally {
+        if (!isMounted) return;
+        setPetitionsLoading(false);
+      }
+    };
+
+    void loadClientPetitions();
+    return () => {
+      isMounted = false;
+    };
+  }, [client.id]);
+
   const signedDocuments = useMemo(() => {
     return (signatureRequests ?? []).filter((request) => {
       const hasSignedPdf = (request.signers ?? []).some((s) => Boolean(s.signed_document_path));
@@ -128,6 +160,11 @@ const ClientDetails: React.FC<ClientDetailsProps> = ({ client, processes, requir
       return hasSignedPdf || isSigned;
     });
   }, [signatureRequests]);
+
+  const generatedDocuments = useMemo(() => {
+    const signedIds = new Set((signedDocuments ?? []).map((r) => r.id));
+    return (signatureRequests ?? []).filter((request) => !signedIds.has(request.id));
+  }, [signatureRequests, signedDocuments]);
 
   return (
     <div className="w-full rounded-2xl bg-white shadow-xl border border-slate-200 text-xs sm:text-sm">
@@ -266,7 +303,12 @@ const ClientDetails: React.FC<ClientDetailsProps> = ({ client, processes, requir
 
         <div className="space-y-4">
           <div className="rounded-2xl border border-slate-200 bg-white shadow-sm p-4 space-y-3">
-            <h3 className="text-slate-900 text-base font-semibold">Documentos/Contratos assinados</h3>
+            <div className="flex items-center justify-between gap-3">
+              <h3 className="text-slate-900 text-base font-semibold">Documentos/Contratos assinados</h3>
+              <span className="px-3 py-1 inline-flex text-xs font-semibold rounded-full bg-slate-100 text-slate-700">
+                Vinculado
+              </span>
+            </div>
             {signatureLoading ? (
               <div className="py-4 flex items-center text-slate-500 gap-2 text-sm">
                 <Loader2 className="w-4 h-4 animate-spin" />
@@ -276,55 +318,98 @@ const ClientDetails: React.FC<ClientDetailsProps> = ({ client, processes, requir
               <div className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-800">
                 {signatureError}
               </div>
-            ) : signedDocuments.length === 0 ? (
-              <p className="text-slate-500 text-sm">Nenhum documento assinado encontrado para este cliente.</p>
             ) : (
-              <div className="grid grid-cols-1 gap-3">
-                {signedDocuments.map((request) => {
-                  const signedSigner = (request.signers ?? []).find((s) => Boolean(s.signed_document_path)) ?? null;
-                  const signedAt = request.signed_at || signedSigner?.signed_at || null;
+              <div className="space-y-4">
+                <div className="space-y-2">
+                  <div className="text-xs font-semibold text-slate-700">Assinados</div>
+                  {signedDocuments.length === 0 ? (
+                    <div className="text-slate-500 text-sm">—</div>
+                  ) : (
+                    <div className="grid grid-cols-1 gap-3">
+                      {signedDocuments.map((request) => {
+                        const signedSigner = (request.signers ?? []).find((s) => Boolean(s.signed_document_path)) ?? null;
+                        const signedAt = request.signed_at || signedSigner?.signed_at || null;
 
-                  return (
-                    <div
-                      key={request.id}
-                      className="rounded-xl border border-slate-200 p-4 hover:bg-slate-50 transition"
-                    >
-                      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-                        <div className="min-w-0">
-                          <p className="text-sm font-semibold text-slate-900 truncate">{request.document_name || 'Documento'}</p>
-                          <p className="text-xs text-slate-500 mt-0.5">
-                            Assinado em: {signedAt ? formatDateTime(signedAt) : '—'}
-                          </p>
-                        </div>
-
-                        <div className="flex flex-wrap items-center gap-2">
-                          <span className="px-3 py-1 inline-flex items-center gap-1.5 text-xs font-semibold rounded-full bg-emerald-100 text-emerald-700">
-                            <FileCheck className="w-3.5 h-3.5" />
-                            Assinado
-                          </span>
-
-                          <button
-                            type="button"
-                            onClick={async () => {
-                              try {
-                                if (!signedSigner?.signed_document_path) return;
-                                const url = await pdfSignatureService.getSignedPdfUrl(signedSigner.signed_document_path);
-                                if (url) window.open(url, '_blank');
-                              } catch (e) {
-                                console.error('Erro ao abrir documento assinado:', e);
-                              }
-                            }}
-                            disabled={!signedSigner?.signed_document_path}
-                            className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg border border-slate-200 text-xs font-semibold text-slate-700 hover:bg-white disabled:opacity-50 disabled:cursor-not-allowed"
+                        return (
+                          <div
+                            key={request.id}
+                            className="rounded-xl border border-slate-200 p-4 hover:bg-slate-50 transition"
                           >
-                            <FileText className="w-4 h-4" />
-                            Ver assinado
-                          </button>
-                        </div>
-                      </div>
+                            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                              <div className="min-w-0">
+                                <p className="text-sm font-semibold text-slate-900 truncate">{request.document_name || 'Documento'}</p>
+                                <p className="text-xs text-slate-500 mt-0.5">
+                                  Assinado em: {signedAt ? formatDateTime(signedAt) : '—'}
+                                </p>
+                              </div>
+
+                              <div className="flex flex-wrap items-center gap-2">
+                                <span className="px-3 py-1 inline-flex items-center gap-1.5 text-xs font-semibold rounded-full bg-emerald-100 text-emerald-700">
+                                  <FileCheck className="w-3.5 h-3.5" />
+                                  Assinado
+                                </span>
+
+                                <button
+                                  type="button"
+                                  onClick={async () => {
+                                    try {
+                                      if (!signedSigner?.signed_document_path) return;
+                                      const url = await pdfSignatureService.getSignedPdfUrl(signedSigner.signed_document_path);
+                                      if (url) window.open(url, '_blank');
+                                    } catch (e) {
+                                      console.error('Erro ao abrir documento assinado:', e);
+                                    }
+                                  }}
+                                  disabled={!signedSigner?.signed_document_path}
+                                  className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg border border-slate-200 text-xs font-semibold text-slate-700 hover:bg-white disabled:opacity-50 disabled:cursor-not-allowed"
+                                >
+                                  <FileText className="w-4 h-4" />
+                                  Ver assinado
+                                </button>
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })}
                     </div>
-                  );
-                })}
+                  )}
+                </div>
+
+                <div className="space-y-2">
+                  <div className="text-xs font-semibold text-slate-700">Gerados</div>
+                  {generatedDocuments.length === 0 ? (
+                    <div className="text-slate-500 text-sm">—</div>
+                  ) : (
+                    <div className="grid grid-cols-1 gap-3">
+                      {generatedDocuments.map((request) => (
+                        <div
+                          key={request.id}
+                          className="rounded-xl border border-slate-200 p-4 hover:bg-slate-50 transition"
+                        >
+                          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                            <div className="min-w-0">
+                              <p className="text-sm font-semibold text-slate-900 truncate">{request.document_name || 'Documento'}</p>
+                              <p className="text-xs text-slate-500 mt-0.5">
+                                Gerado em: {request.created_at ? formatDateTime(request.created_at) : '—'}
+                              </p>
+                            </div>
+
+                            <div className="flex flex-wrap items-center gap-2">
+                              <span className="px-3 py-1 inline-flex items-center gap-1.5 text-xs font-semibold rounded-full bg-slate-100 text-slate-700">
+                                <Clock className="w-3.5 h-3.5" />
+                                Gerado
+                              </span>
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                {signedDocuments.length === 0 && (
+                  <p className="text-slate-500 text-sm">Nenhum documento assinado encontrado para este cliente.</p>
+                )}
               </div>
             )}
           </div>
@@ -378,6 +463,72 @@ const ClientDetails: React.FC<ClientDetailsProps> = ({ client, processes, requir
                       <span className="px-3 py-1 inline-flex text-xs font-semibold rounded-full bg-emerald-100 text-emerald-700">
                         {capitalizeSentence(requirement.status)}
                       </span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          <div className="rounded-2xl border border-slate-200 bg-white shadow-sm p-4 space-y-3">
+            <div className="flex items-center justify-between gap-3">
+              <h3 className="text-slate-900 text-base font-semibold">Petições vinculadas</h3>
+              <span className="px-3 py-1 inline-flex text-xs font-semibold rounded-full bg-amber-100 text-amber-700">
+                Editor
+              </span>
+            </div>
+            {petitionsLoading ? (
+              <div className="py-4 flex items-center text-slate-500 gap-2 text-sm">
+                <Loader2 className="w-4 h-4 animate-spin" />
+                Carregando petições...
+              </div>
+            ) : clientPetitions.length === 0 ? (
+              <p className="text-slate-500 text-sm">Nenhuma petição vinculada a este cliente.</p>
+            ) : (
+              <div className="grid grid-cols-1 gap-3">
+                {clientPetitions.map((petition) => (
+                  <div key={petition.id} className="rounded-xl border border-slate-200 p-4 hover:bg-slate-50 transition group">
+                    <div className="flex flex-wrap items-center justify-between gap-3">
+                      <div className="min-w-0 flex-1">
+                        <p className="text-sm font-semibold text-slate-900 truncate">{petition.title || 'Sem título'}</p>
+                        <p className="text-xs text-slate-500">
+                          Atualizado em: {petition.updated_at ? formatDateTime(petition.updated_at) : '—'}
+                        </p>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            events.emit(SYSTEM_EVENTS.PETITION_EDITOR_OPEN, { clientId: client.id, petitionId: petition.id });
+                          }}
+                          className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg border border-slate-200 text-xs font-semibold text-slate-700 hover:bg-white"
+                        >
+                          <PenTool className="w-4 h-4" />
+                          Abrir
+                        </button>
+                        <button
+                          type="button"
+                          onClick={async () => {
+                            const confirmed = await confirmDelete({
+                              title: 'Excluir petição',
+                              entityName: petition.title || 'Sem título',
+                              message: `Deseja excluir a petição "${petition.title || 'Sem título'}"?`,
+                              confirmLabel: 'Excluir',
+                            });
+                            if (!confirmed) return;
+                            try {
+                              await petitionEditorService.deletePetition(petition.id);
+                              setClientPetitions((prev) => prev.filter((x) => x.id !== petition.id));
+                            } catch (err) {
+                              console.error('Erro ao excluir petição:', err);
+                            }
+                          }}
+                          className="p-1.5 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded opacity-0 group-hover:opacity-100 transition-all"
+                          title="Excluir petição"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </div>
                     </div>
                   </div>
                 ))}

@@ -1,5 +1,29 @@
 # Changelog
 
+## 1.8.96
+- **Editor de Petições (Recentes)**: adicionado botão de excluir em cada item da lista de Recentes com confirmação via modal de cálculo.
+- **Clientes (Detalhes)**: adicionada seção "Petições vinculadas" com opção de abrir e excluir petições do cliente.
+
+## 1.8.95
+- **Editor de Petições (Documento padrão)**: melhoria na persistência; quando o navegador não consegue salvar (armazenamento cheio), o sistema avisa e mantém fallback em memória para a sessão.
+
+## 1.8.94
+- **Editor de Petições (Documento padrão)**: ao importar um arquivo Word, o documento passa a ser salvo como "Documento padrão", permitindo que "Novo → Documento padrão" carregue o template selecionado.
+
+## 1.8.93
+- **Clientes (Detalhes)**: seção "Documentos/Contratos assinados" agora exibe item "Vinculado" e organiza documentos em "Assinados" e "Gerados", com mensagem de vazio exibida abaixo.
+
+## 1.8.92
+- **Editor de Petições (Tela Inicial)**: corrigido o atalho "Novo → Documento padrão" para carregar o template cadastrado (aguarda editor estar pronto e evita falha silenciosa).
+
+## 1.8.91
+- **Editor de Petições (Tela Inicial)**: ajuste na exibição do nome do usuário para capitalização correta (ex.: "Pedro" em vez de "pedro").
+
+## 1.8.90
+- **Editor de Petições (Salvamento)**: salvamento (manual e automático) permitido apenas com cliente vinculado; documentos antigos sem vínculo são removidos automaticamente.
+- **Editor de Petições (Tela Inicial)**: botão "Documento padrão" em "Novo" volta a carregar corretamente o template.
+- **Editor de Petições (Tela Inicial)**: saudação passa a exibir o nome do usuário logado.
+
 ## 1.8.89
 - **Editor de Petições (Recentes)**: corrigido bug onde múltiplos cliques ao abrir um documento recente podiam carregar vazio e disparar salvamento automático em branco.
 - **Editor de Petições (Tela Inicial)**: renomeado atalho "Modelo" para "Documento padrão".
