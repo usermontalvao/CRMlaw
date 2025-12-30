@@ -1,7 +1,7 @@
 // Syncfusion Document Editor Component
 // Wrapper para o DocumentEditorContainerComponent com funcionalidades de petição
 
-import React, { useRef, useImperativeHandle, forwardRef, useEffect } from 'react';
+import React, { useRef, useImperativeHandle, forwardRef, useEffect, useState } from 'react';
 import type { MenuItemModel } from '@syncfusion/ej2-navigations';
 import {
   DocumentEditorContainerComponent,
@@ -86,6 +86,8 @@ export interface SyncfusionEditorRef {
   applyMinimalMargins: () => void;
   // Replace all occurrences of a text (best-effort, preserves formatting)
   replaceAll: (searchText: string, replaceText: string) => boolean;
+  // Force editor to refresh its layout and repaint
+  refresh: () => void;
 }
 
 interface SyncfusionEditorProps {
@@ -135,6 +137,7 @@ const SyncfusionEditor = forwardRef<SyncfusionEditorRef, SyncfusionEditorProps>(
     const contextMenuInitRef = useRef(false);
     const createdRef = useRef(false);
     const pendingActionsRef = useRef<(() => void)[]>([]);
+    const [isCreated, setIsCreated] = useState(false);
 
     const enqueueOrRun = (action: () => void) => {
       if (createdRef.current && containerRef.current?.documentEditor) {
@@ -268,33 +271,51 @@ const SyncfusionEditor = forwardRef<SyncfusionEditorRef, SyncfusionEditorProps>(
       getText: () => {
         const editor = containerRef.current?.documentEditor;
         if (!editor) return '';
-        // Select all and get selection text
         const selection = editor.selection;
         if (!selection) return '';
         selection.selectAll();
         const text = selection.text || '';
-        // Deselect
         selection.moveToDocumentStart();
         return text;
       },
 
       focus: () => {
         const editor = containerRef.current?.documentEditor;
-        if (editor) {
-          editor.focusIn();
-          // Force focus on the actual editable element to ensure keyboard input works
-          try {
-            const container = containerRef.current?.element;
-            if (container) {
-              // Find the actual contenteditable element inside Syncfusion
-              const editableEl = container.querySelector('[contenteditable="true"]') as HTMLElement;
-              if (editableEl) {
-                editableEl.focus();
-              }
-            }
-          } catch {
-            // ignore
+        if (!editor) return;
+        
+        try {
+          if ((editor as any).isReadOnly) {
+            (editor as any).isReadOnly = false;
           }
+
+          editor.focusIn();
+          
+          const element = containerRef.current?.element;
+          if (element) {
+            const editableEl = element.querySelector('[contenteditable="true"]') as HTMLElement;
+            if (editableEl) {
+              editableEl.focus();
+              const clickEvent = new MouseEvent('mousedown', {
+                view: window,
+                bubbles: true,
+                cancelable: true
+              });
+              editableEl.dispatchEvent(clickEvent);
+            }
+
+            const viewer = element.querySelector('.e-de-ctn') as HTMLElement | null;
+            if (viewer) {
+              const st = viewer.scrollTop;
+              viewer.scrollTop = st + 1;
+              setTimeout(() => { viewer.scrollTop = st; }, 10);
+            }
+          }
+
+          if ((editor as any).view && typeof (editor as any).view.updateLayout === 'function') {
+            (editor as any).view.updateLayout();
+          }
+        } catch {
+          // ignore
         }
       },
 
@@ -312,7 +333,6 @@ const SyncfusionEditor = forwardRef<SyncfusionEditorRef, SyncfusionEditorProps>(
       hasContent: () => {
         const editor = containerRef.current?.documentEditor;
         if (!editor) return false;
-        // Check if document has content by checking page count or selection
         try {
           const selection = editor.selection;
           if (!selection) return false;
@@ -338,7 +358,6 @@ const SyncfusionEditor = forwardRef<SyncfusionEditorRef, SyncfusionEditorProps>(
       },
 
       applyParagraphFormat: (firstLineIndent = 113.4, leftIndent = 0) => {
-        // firstLineIndent padrão: 4cm ≈ 113.4pt
         const editor = containerRef.current?.documentEditor;
         if (!editor) return;
         const paragraphFormat = editor.selection?.paragraphFormat;
@@ -350,16 +369,14 @@ const SyncfusionEditor = forwardRef<SyncfusionEditorRef, SyncfusionEditorProps>(
       },
 
       applyCitationFormat: () => {
-        // Citação: recuo esquerdo de 6cm ≈ 170pt, sem recuo de primeira linha
         const editor = containerRef.current?.documentEditor;
         if (!editor) return;
         const paragraphFormat = editor.selection?.paragraphFormat;
         if (paragraphFormat) {
           paragraphFormat.firstLineIndent = 0;
-          paragraphFormat.leftIndent = 170; // ~6cm
+          paragraphFormat.leftIndent = 170;
           paragraphFormat.textAlignment = 'Left';
         }
-        // Aplicar itálico
         const characterFormat = editor.selection?.characterFormat;
         if (characterFormat) {
           characterFormat.italic = true;
@@ -375,7 +392,6 @@ const SyncfusionEditor = forwardRef<SyncfusionEditorRef, SyncfusionEditorProps>(
             selection.copy();
             return true;
           }
-
           const internalEditor: any = editor?.editor;
           if (internalEditor && typeof internalEditor.copy === 'function') {
             internalEditor.copy();
@@ -395,7 +411,6 @@ const SyncfusionEditor = forwardRef<SyncfusionEditorRef, SyncfusionEditorProps>(
             selection.paste();
             return true;
           }
-
           const internalEditor: any = editor?.editor;
           if (internalEditor && typeof internalEditor.paste === 'function') {
             internalEditor.paste();
@@ -417,7 +432,6 @@ const SyncfusionEditor = forwardRef<SyncfusionEditorRef, SyncfusionEditorProps>(
             selection.moveToDocumentStart?.();
             return true;
           }
-
           const internalEditor: any = editor?.editor;
           if (internalEditor && typeof internalEditor.selectAll === 'function' && typeof internalEditor.copy === 'function') {
             internalEditor.selectAll();
@@ -425,7 +439,6 @@ const SyncfusionEditor = forwardRef<SyncfusionEditorRef, SyncfusionEditorProps>(
             selection?.moveToDocumentStart?.();
             return true;
           }
-
           return false;
         } catch {
           return false;
@@ -436,15 +449,11 @@ const SyncfusionEditor = forwardRef<SyncfusionEditorRef, SyncfusionEditorProps>(
         const editor: any = containerRef.current?.documentEditor as any;
         if (!editor) return '';
         try {
-          // Syncfusion: selection.sfdt returns the SFDT (string) of the selected content
           const selection = editor.selection;
           const sfdt = selection?.sfdt;
           if (typeof sfdt === 'string' && sfdt.trim()) return sfdt;
-
-          // Fallback: try to copy selection to internal clipboard and serialize
           if (selection && typeof selection.copy === 'function') {
             selection.copy();
-            // After copy, the internal clipboard may have SFDT
             const clipboardData = (editor as any).editorModule?.copiedData;
             if (clipboardData && typeof clipboardData === 'string') {
               return clipboardData;
@@ -462,8 +471,11 @@ const SyncfusionEditor = forwardRef<SyncfusionEditorRef, SyncfusionEditorProps>(
         try {
           const payload = (sfdt || '').trim();
           if (!payload) return false;
+          if (editor.editor && typeof editor.editor.insertSfdt === 'function') {
+            editor.editor.insertSfdt(payload);
+            return true;
+          }
           if (editor.editor && typeof editor.editor.paste === 'function') {
-            // Do NOT move cursor - paste at current position
             editor.editor.paste(payload);
             return true;
           }
@@ -477,7 +489,6 @@ const SyncfusionEditor = forwardRef<SyncfusionEditorRef, SyncfusionEditorProps>(
         const editor: any = containerRef.current?.documentEditor as any;
         if (!editor) return;
         try {
-          // Select all to apply section format to entire document
           editor.selection?.selectAll?.();
           const sectionFormat = editor.selection?.sectionFormat;
           if (sectionFormat) {
@@ -487,7 +498,6 @@ const SyncfusionEditor = forwardRef<SyncfusionEditorRef, SyncfusionEditorProps>(
             sectionFormat.rightMargin = 10;
           }
           editor.selection?.moveToDocumentStart?.();
-          // Fit to page width
           if (typeof editor.fitPage === 'function') {
             editor.fitPage('FitPageWidth');
           }
@@ -503,22 +513,40 @@ const SyncfusionEditor = forwardRef<SyncfusionEditorRef, SyncfusionEditorProps>(
           const s = (searchText || '').toString();
           const r = (replaceText ?? '').toString();
           if (!s.trim()) return false;
-
-          // Syncfusion API variants
           if (editor.search && typeof editor.search.replaceAll === 'function') {
             editor.search.replaceAll(s, r);
             return true;
           }
-
           const searchModule = (editor as any).searchModule;
           if (searchModule && typeof searchModule.replaceAll === 'function') {
             searchModule.replaceAll(s, r);
             return true;
           }
-
           return false;
         } catch {
           return false;
+        }
+      },
+
+      refresh: () => {
+        const editor: any = containerRef.current?.documentEditor as any;
+        if (!editor) return;
+        try {
+          if (typeof editor.resize === 'function') editor.resize();
+          if (editor.view && typeof editor.view.updateLayout === 'function') {
+            editor.view.updateLayout();
+          }
+          const element = containerRef.current?.element;
+          if (element) {
+            const viewer = element.querySelector('.e-de-ctn') as HTMLElement | null;
+            if (viewer) {
+              const st = viewer.scrollTop;
+              viewer.scrollTop = st + 1;
+              setTimeout(() => { viewer.scrollTop = st; }, 10);
+            }
+          }
+        } catch {
+          // ignore
         }
       },
     }));
@@ -631,6 +659,15 @@ const SyncfusionEditor = forwardRef<SyncfusionEditorRef, SyncfusionEditorProps>(
 
     const handleCreated = () => {
       createdRef.current = true;
+      setIsCreated(true);
+
+      // Garante que existe um documento inicializado (evita crashes do Ruler/Selection quando sectionFormat ainda não existe)
+      try {
+        const editor: any = containerRef.current?.documentEditor as any;
+        editor?.openBlank?.();
+      } catch {
+        // ignore
+      }
 
       // Ativar modo read-only quando necessário
       if (readOnly) {
@@ -990,8 +1027,8 @@ const SyncfusionEditor = forwardRef<SyncfusionEditorRef, SyncfusionEditorProps>(
         enableLocalPaste={false}
         created={handleCreated}
         documentEditorSettings={{
-          showRuler,
-          showNavigationPane,
+          showRuler: !!(showRuler && isCreated),
+          showNavigationPane: !!(showNavigationPane && isCreated),
         }}
         layoutType={layoutType}
         contentChange={handleContentChange}

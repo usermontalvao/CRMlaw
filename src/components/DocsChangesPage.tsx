@@ -46,6 +46,13 @@ import {
    ============================================================================ */
 
 const VERSION_CODENAMES: Record<string, { name: string; emoji: string }> = {
+  '1.8.83': { name: 'Café Ordenado', emoji: '🧭' },
+  '1.8.82': { name: 'Café Expresso', emoji: '🚀' },
+  '1.8.81': { name: 'Café Simples', emoji: '☕' },
+  '1.8.80': { name: 'Café Repaint', emoji: '🖋️' },
+  '1.8.79': { name: 'Café Fluido', emoji: '⚡' },
+  '1.8.78': { name: 'Café Numerado', emoji: '🔢' },
+  '1.8.77': { name: 'Café Blocos', emoji: '🧩' },
   '1.8.76': { name: 'Café Petição', emoji: '📄' },
   '1.3.66': { name: 'Café Notificado', emoji: '🔔' },
   '1.3.38': { name: 'Café Filtro', emoji: '🔎' },
@@ -459,6 +466,157 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
    ============================================================================ */
 
 const releases: ReleaseNote[] = [
+  {
+    version: '1.8.83',
+    date: '30/12/2025',
+    summary: 'Editor de Petições: correção de listagem de blocos, estabilidade do Syncfusion e inserção sem travar.',
+    modules: [
+      {
+        moduleId: 'sistema',
+        changes: [
+          {
+            type: 'fix',
+            title: 'Listagem de blocos sem erro 400',
+            description:
+              'Corrigida a ordenação no Supabase quando a coluna `order` é usada para ordenar os blocos, evitando falha 400 (Bad Request).',
+          },
+          {
+            type: 'fix',
+            title: 'Mitigação de crashes do ruler/selection',
+            description:
+              'O editor passa a inicializar com um documento válido e o ruler é habilitado somente após o componente estar pronto, reduzindo erros internos do Syncfusion.',
+          },
+          {
+            type: 'improvement',
+            title: 'Inserção de bloco mais leve (sem travar digitação)',
+            description:
+              'Placeholders do cliente são processados antes da inserção, evitando chamadas de substituição pesadas no editor principal e melhorando a fluidez após inserir blocos.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.8.82',
+    date: '30/12/2025',
+    summary: 'Editor de Petições: performance extrema e correção definitiva de travamento.',
+    modules: [
+      {
+        moduleId: 'sistema',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Performance ao inserir blocos',
+            description:
+              'Placeholders de dados do cliente agora são processados instantaneamente antes da inserção, eliminando o congelamento da interface.',
+          },
+          {
+            type: 'fix',
+            title: 'Repaint automático',
+            description: 'Corrigido bug onde o texto digitado só aparecia após rolar a página; agora o editor força a atualização visual imediata.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.8.81',
+    date: '30/12/2025',
+    summary: 'Editor de Petições: simplificação do foco após inserir bloco.',
+    modules: [
+      {
+        moduleId: 'sistema',
+        changes: [
+          {
+            type: 'fix',
+            title: 'Edição funciona após inserir bloco',
+            description:
+              'Simplificado o mecanismo de foco após inserir bloco (focusIn + moveToDocumentEnd) para resolver bug onde não era possível editar.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.8.80',
+    date: '30/12/2025',
+    summary: 'Editor de Petições: correção de repaint após inserir bloco.',
+    modules: [
+      {
+        moduleId: 'sistema',
+        changes: [
+          {
+            type: 'fix',
+            title: 'Texto digitado aparece imediatamente após inserir bloco',
+            description:
+              'Após inserir bloco, o foco do editor força atualização do viewer (repaint/scroll) para evitar que o texto digitado só apareça depois de rolar a página.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.8.79',
+    date: '30/12/2025',
+    summary: 'Editor de Petições: digitação fluida após inserir blocos.',
+    modules: [
+      {
+        moduleId: 'sistema',
+        changes: [
+          {
+            type: 'fix',
+            title: 'Digitação não trava após inserir bloco',
+            description:
+              'As substituições de placeholders (dados do cliente) após inserir bloco agora são executadas de forma assíncrona e fatiada para evitar congelamento do editor.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.8.78',
+    date: '30/12/2025',
+    summary: 'Editor de Petições: numeração automática e correção de digitação travada.',
+    modules: [
+      {
+        moduleId: 'sistema',
+        changes: [
+          {
+            type: 'feature',
+            title: 'Numeração automática dos blocos',
+            description: 'Ao inserir um bloco, agora é adicionado automaticamente um prefixo numérico (1 - , 2 - , etc.) antes do conteúdo.',
+          },
+          {
+            type: 'fix',
+            title: 'Digitação travada após inserir bloco',
+            description: 'Corrigido bug onde a digitação ficava lenta/travada após inserir um bloco. O foco agora é restaurado corretamente.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.8.77',
+    date: '30/12/2025',
+    summary: 'Editor de Petições: correções em blocos (numeração e foco após inserir).',
+    modules: [
+      {
+        moduleId: 'sistema',
+        changes: [
+          {
+            type: 'fix',
+            title: 'Numeração dos blocos restaurada',
+            description: 'A lista de blocos voltou a exibir a numeração/ordem para facilitar a organização.',
+          },
+          {
+            type: 'fix',
+            title: 'Edição após inserir bloco',
+            description: 'Após inserir um bloco, o foco retorna ao editor automaticamente para permitir continuar editando.',
+          },
+        ],
+      },
+    ],
+  },
   {
     version: '1.8.76',
     date: '29/12/2025',

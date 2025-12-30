@@ -1396,62 +1396,77 @@ Regras:
     const editor = editorRef.current;
     if (!editor) return;
 
+    // Numeração automática: incrementar contador e gerar prefixo
+    const currentNumber = blockAutoNumberNextRef.current ?? 1;
+    const numberPrefix = `${currentNumber} - `;
+    blockAutoNumberNextRef.current = currentNumber + 1;
+
     const sfdt = String(block.content || '').trim();
     const looksLikeSfdt = sfdt.startsWith('{') || sfdt.startsWith('[');
 
-    if (looksLikeSfdt && blockConvertEditorRef.current?.convertSfdtToFragment && editor.pasteSfdt) {
+    // Função para restaurar foco e garantir estado editável
+    const restoreFocus = () => {
       try {
-        const fragment = await blockConvertEditorRef.current.convertSfdtToFragment(sfdt);
+        editorRef.current?.refresh?.();
+        editorRef.current?.focus();
+      } catch {
+        // ignore
+      }
+    };
+
+    const applyClientPlaceholders = (input: string) => {
+      if (!selectedClient) return input;
+      const replacements: Array<[string, string]> = [
+        ['[[NOME_CLIENTE]]', selectedClient.full_name],
+        ['[[CPF]]', selectedClient.cpf_cnpj || ''],
+        ['[[RG]]', selectedClient.rg || ''],
+        ['[[NACIONALIDADE]]', selectedClient.nationality || ''],
+        ['[[ESTADO_CIVIL]]', MARITAL_STATUS_LABELS[selectedClient.marital_status || ''] || ''],
+        ['[[PROFISSAO]]', selectedClient.profession || ''],
+        ['[[ENDERECO]]', selectedClient.address_street || ''],
+        ['[[CIDADE]]', selectedClient.address_city || ''],
+        ['[[UF]]', selectedClient.address_state || ''],
+        ['[[CEP]]', selectedClient.address_zip_code || ''],
+        ['[[EMAIL]]', selectedClient.email || ''],
+        ['[[TELEFONE]]', selectedClient.phone || ''],
+      ];
+      let out = String(input ?? '');
+      for (const [from, to] of replacements) {
+        out = out.split(from).join(to ?? '');
+      }
+      return out;
+    };
+
+    try {
+      if (looksLikeSfdt && blockConvertEditorRef.current?.convertSfdtToFragment && editor.pasteSfdt) {
+        const processed = applyClientPlaceholders(sfdt);
+        const fragment = await blockConvertEditorRef.current.convertSfdtToFragment(processed);
         if (fragment && fragment.trim()) {
+          // Inserção síncrona para evitar perda de foco
+          editor.insertText(numberPrefix);
           const ok = editor.pasteSfdt(fragment);
           if (ok) {
-            if (selectedClient) {
-              editor.replaceAll?.('[[NOME_CLIENTE]]', selectedClient.full_name);
-              editor.replaceAll?.('[[CPF]]', selectedClient.cpf_cnpj || '');
-              editor.replaceAll?.('[[RG]]', selectedClient.rg || '');
-              editor.replaceAll?.('[[NACIONALIDADE]]', selectedClient.nationality || '');
-              editor.replaceAll?.('[[ESTADO_CIVIL]]', MARITAL_STATUS_LABELS[selectedClient.marital_status || ''] || '');
-              editor.replaceAll?.('[[PROFISSAO]]', selectedClient.profession || '');
-              editor.replaceAll?.('[[ENDERECO]]', selectedClient.address_street || '');
-              editor.replaceAll?.('[[CIDADE]]', selectedClient.address_city || '');
-              editor.replaceAll?.('[[UF]]', selectedClient.address_state || '');
-              editor.replaceAll?.('[[CEP]]', selectedClient.address_zip_code || '');
-              editor.replaceAll?.('[[EMAIL]]', selectedClient.email || '');
-              editor.replaceAll?.('[[TELEFONE]]', selectedClient.phone || '');
-            }
             setHasUnsavedChanges(true);
             showSuccessMessage('Bloco inserido');
+            restoreFocus();
             return;
           }
         }
-      } catch {
-        // fallback below
       }
-    }
 
-    // Fallback: inserir como texto puro
-    let content = sfdtToPlainText(block.content);
-    if (!content.trim() || content.trim().startsWith('{') || content.trim().startsWith('[')) {
-      content = 'Pré-visualização indisponível';
+      // Fallback: texto puro
+      let content = sfdtToPlainText(block.content);
+      if (!content.trim() || content.trim().startsWith('{') || content.trim().startsWith('[')) {
+        content = 'Pré-visualização indisponível';
+      }
+      editor.insertText(numberPrefix + applyClientPlaceholders(content));
+      setHasUnsavedChanges(true);
+      showSuccessMessage('Bloco inserido');
+      restoreFocus();
+    } catch (err) {
+      console.error('Erro ao inserir bloco:', err);
+      restoreFocus();
     }
-
-    if (selectedClient) {
-      content = content
-        .replace(/\[\[NOME_CLIENTE\]\]/gi, selectedClient.full_name)
-        .replace(/\[\[CPF\]\]/gi, selectedClient.cpf_cnpj || '')
-        .replace(/\[\[RG\]\]/gi, selectedClient.rg || '')
-        .replace(/\[\[NACIONALIDADE\]\]/gi, selectedClient.nationality || '')
-        .replace(/\[\[ESTADO_CIVIL\]\]/gi, MARITAL_STATUS_LABELS[selectedClient.marital_status || ''] || '')
-        .replace(/\[\[PROFISSAO\]\]/gi, selectedClient.profession || '')
-        .replace(/\[\[ENDERECO\]\]/gi, selectedClient.address_street || '')
-        .replace(/\[\[CIDADE\]\]/gi, selectedClient.address_city || '')
-        .replace(/\[\[UF\]\]/gi, selectedClient.address_state || '')
-        .replace(/\[\[CEP\]\]/gi, selectedClient.address_zip_code || '');
-    }
-
-    editor.insertText(content);
-    setHasUnsavedChanges(true);
-    showSuccessMessage('Bloco inserido');
   };
 
   // Deletar bloco
@@ -2441,6 +2456,9 @@ Regras:
                                 onClick={() => void insertBlock(block)}
                               >
                                 <div className="flex items-center gap-1">
+                                  <span className="text-[10px] font-semibold text-slate-500 tabular-nums min-w-[22px] text-right">
+                                    {Number.isFinite(Number((block as any).order)) ? Number((block as any).order) : '—'}
+                                  </span>
                                   <span className="flex-1 text-xs text-slate-700 truncate">{block.title}</span>
                                   {block.is_default && <Star className="w-2.5 h-2.5 text-amber-400" />}
                                   <button
@@ -2728,6 +2746,9 @@ Regras:
                       }}
                     >
                       <div className="flex items-center gap-2 mb-1">
+                        <span className="text-[11px] font-semibold text-slate-500 tabular-nums min-w-[28px] text-right">
+                          {Number.isFinite(Number((block as any).order)) ? Number((block as any).order) : '—'}
+                        </span>
                         <span className="text-sm font-medium text-slate-700">{block.title}</span>
                         <span className="text-[10px] px-1.5 py-0.5 bg-slate-100 text-slate-500 rounded">
                           {getCategoryLabel(String(block.category || 'outros'))}

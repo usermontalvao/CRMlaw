@@ -1,5 +1,31 @@
 # Changelog
 
+## 1.8.83
+- **Editor de Petições (Blocos)**: corrigido erro 400 ao listar blocos no Supabase (coluna `order` agora é referenciada corretamente na ordenação).
+- **Editor de Petições (Syncfusion)**: mitigados crashes/intermitências do ruler/selection quando o documento ainda não está inicializado.
+- **Editor de Petições (Blocos/Performance)**: placeholders do cliente passam a ser processados antes da inserção (sem `replaceAll` no editor principal), reduzindo travamento/lag após inserir bloco.
+
+## 1.8.82
+- **Editor de Petições (Performance)**: solução definitiva para o travamento de digitação após inserir bloco. Agora os dados do cliente (placeholders) são substituídos diretamente no código (SFDT) antes da colagem, eliminando 12 operações pesadas de substituição no editor que congelavam a interface.
+- **Editor de Petições (UI)**: reforçado estado editável e atualização de layout (repaint) no foco do editor.
+
+## 1.8.81
+- **Editor de Petições (Blocos)**: simplificado mecanismo de foco após inserir bloco para resolver bug de edição travada (focusIn + moveToDocumentEnd).
+
+## 1.8.80
+- **Editor de Petições (Blocos)**: foco do editor agora força atualização/repaint do viewer após inserir bloco, evitando precisar rolar a página para o texto digitado aparecer.
+
+## 1.8.79
+- **Editor de Petições (Blocos)**: corrigido travamento/atraso de digitação após inserir bloco, executando as substituições (placeholders do cliente) de forma assíncrona e fatiada.
+
+## 1.8.78
+- **Editor de Petições (Blocos)**: numeração automática (1 - , 2 - , etc.) agora é inserida antes do conteúdo do bloco.
+- **Editor de Petições (Blocos)**: corrigido bug de digitação travada/lenta após inserir bloco (foco melhorado com múltiplas tentativas).
+
+## 1.8.77
+- **Editor de Petições (Blocos)**: numeração/ordem dos blocos voltou a aparecer na lista.
+- **Editor de Petições (Blocos)**: após inserir um bloco, o foco retorna ao editor para permitir edição imediata.
+
 ## 1.8.76
 - **Editor de Petições (Toolbar)**: removido item `Break` da toolbar.
 

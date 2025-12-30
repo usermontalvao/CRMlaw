@@ -18,6 +18,8 @@ class PetitionEditorService {
   private petitionsTable = 'saved_petitions';
   private blockCategoriesTable = 'petition_block_categories';
 
+  private orderColumn = '"order"';
+
   private documentTypeSupported: boolean | null = null;
 
   private isMissingDocumentTypeColumn(error: any): boolean {
@@ -53,7 +55,7 @@ class PetitionEditorService {
       .select('*')
       .eq('document_type', documentType)
       .eq('is_active', true)
-      .order('order', { ascending: true });
+      .order(this.orderColumn, { ascending: true });
 
     if (error) {
       if (this.isMissingCategoriesTable(error)) return [];
@@ -111,7 +113,7 @@ class PetitionEditorService {
       let q = supabase
         .from(this.blocksTable)
         .select('*')
-        .order('order', { ascending: true });
+        .order(this.orderColumn, { ascending: true });
       if (documentType && withFilter && this.shouldUseDocumentType()) q = q.eq('document_type', documentType);
       return q;
     };
@@ -134,7 +136,7 @@ class PetitionEditorService {
         .from(this.blocksTable)
         .select('*')
         .eq('is_active', true)
-        .order('order', { ascending: true });
+        .order(this.orderColumn, { ascending: true });
       if (documentType && withFilter && this.shouldUseDocumentType()) q = q.eq('document_type', documentType);
       return q;
     };
@@ -158,7 +160,7 @@ class PetitionEditorService {
         .select('*')
         .eq('is_active', true)
         .eq('is_default', true)
-        .order('order', { ascending: true });
+        .order(this.orderColumn, { ascending: true });
       if (documentType && withFilter && this.shouldUseDocumentType()) q = q.eq('document_type', documentType);
       return q;
     };
@@ -182,7 +184,7 @@ class PetitionEditorService {
         .select('*')
         .eq('category', category)
         .eq('is_active', true)
-        .order('order', { ascending: true });
+        .order(this.orderColumn, { ascending: true });
       if (documentType && withFilter && this.shouldUseDocumentType()) q = q.eq('document_type', documentType);
       return q;
     };
