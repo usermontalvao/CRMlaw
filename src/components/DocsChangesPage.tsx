@@ -46,6 +46,7 @@ import {
    ============================================================================ */
 
 const VERSION_CODENAMES: Record<string, { name: string; emoji: string }> = {
+  '1.9.30': { name: 'Café Estável', emoji: '🧰' },
   '1.9.29': { name: 'Café Persistente', emoji: '💾' },
   '1.9.28': { name: 'Café Otimizado', emoji: '⚡' },
   '1.9.18': { name: 'Café Vinculado', emoji: '🔗' },
@@ -501,17 +502,55 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
 
 const releases: ReleaseNote[] = [
   {
+    version: '1.9.30',
+    date: '31/12/2025',
+    summary: 'Peticionamento: correções Supabase (evita 406 no modelo padrão e reduz 400 repetidos).',
+    modules: [
+      {
+        moduleId: 'sistema',
+        changes: [
+          {
+            type: 'fix',
+            title: 'Modelo padrão: leitura sem 406',
+            description: 'Leitura do modelo padrão usa maybeSingle() para evitar 406 quando não existe registro ainda.',
+          },
+          {
+            type: 'fix',
+            title: 'Supabase auth: getUser async',
+            description: 'Correção do getUser async no service (evita user_id vazio/undefined).',
+          },
+          {
+            type: 'fix',
+            title: 'Blocos: reduzir 400 repetidos',
+            description: 'Melhorada detecção de ausência da coluna document_type para reduzir erros 400 repetidos ao listar blocos.',
+          },
+        ],
+      },
+    ],
+  },
+  {
     version: '1.9.29',
     date: '31/12/2025',
     summary: 'Peticionamento: modelo padrão migrado do localStorage para Supabase (persistência e sincronização entre dispositivos).',
     modules: [
       {
-        name: 'Peticionamento',
-        icon: FileText,
+        moduleId: 'sistema',
         changes: [
-          'Modelo padrão agora é salvo no Supabase em vez do localStorage.',
-          'Criada tabela petition_default_templates com RLS por usuário.',
-          'Fallback para localStorage mantido em caso de falha.',
+          {
+            type: 'improvement',
+            title: 'Modelo padrão salvo no Supabase',
+            description: 'Modelo padrão agora é salvo no Supabase em vez do localStorage, sincronizando entre dispositivos.',
+          },
+          {
+            type: 'feature',
+            title: 'Tabela petition_default_templates',
+            description: 'Criada tabela petition_default_templates com RLS por usuário para armazenar o modelo padrão.',
+          },
+          {
+            type: 'improvement',
+            title: 'Fallback para localStorage',
+            description: 'Fallback para localStorage mantido em caso de falha no banco.',
+          },
         ],
       },
     ],
@@ -522,11 +561,18 @@ const releases: ReleaseNote[] = [
     summary: 'Peticionamento: otimização de consumo Supabase (throttle no instant-save e debounce no refresh via realtime).',
     modules: [
       {
-        name: 'Peticionamento',
-        icon: FileText,
+        moduleId: 'sistema',
         changes: [
-          'Salvamento instantâneo limitado (máx 1 save a cada 15s) para evitar múltiplos saves durante digitação.',
-          'Refresh das petições via realtime com debounce (1.5s) para reduzir leituras.',
+          {
+            type: 'improvement',
+            title: 'Throttle no salvamento instantâneo',
+            description: 'Salvamento instantâneo limitado (máx 1 save a cada 15s) para evitar múltiplos saves durante digitação.',
+          },
+          {
+            type: 'improvement',
+            title: 'Debounce no refresh via realtime',
+            description: 'Refresh das petições via realtime com debounce (1.5s) para reduzir leituras.',
+          },
         ],
       },
     ],

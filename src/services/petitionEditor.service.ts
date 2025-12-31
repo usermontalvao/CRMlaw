@@ -27,7 +27,18 @@ class PetitionEditorService {
     const details = String(error?.details || '').toLowerCase();
     // PostgREST pode retornar PGRST204 quando a coluna não existe
     if (String(error?.code || '').toUpperCase() === 'PGRST204') return true;
+    // Alguns cenários retornam 400 com mensagem de coluna inexistente
+    if (msg.includes('document_type') && msg.includes('column')) return true;
+    if (details.includes('document_type') && details.includes('column')) return true;
     return msg.includes('document_type') || details.includes('document_type');
+  }
+
+  private async requireUserId(): Promise<string> {
+    const { data, error } = await supabase.auth.getUser();
+    if (error) throw error;
+    const id = data.user?.id;
+    if (!id) throw new Error('Usuário não autenticado');
+    return id;
   }
 
   private shouldUseDocumentType(): boolean {
@@ -109,13 +120,11 @@ class PetitionEditorService {
   // ==================== MODELO PADRÃO ====================
 
   async saveDefaultTemplate(name: string, dataBase64: string): Promise<void> {
-    if (!supabase.auth.getUser()) {
-      throw new Error('Usuário não autenticado');
-    }
+    const userId = await this.requireUserId();
 
     const { error } = await supabase.from('petition_default_templates').upsert(
       {
-        user_id: (await supabase.auth.getUser()).data.user?.id,
+        user_id: userId,
         name,
         data_base64: dataBase64,
         updated_at: new Date().toISOString(),
@@ -127,17 +136,15 @@ class PetitionEditorService {
   }
 
   async getDefaultTemplate(): Promise<{ name: string; dataBase64: string } | null> {
-    if (!supabase.auth.getUser()) {
-      throw new Error('Usuário não autenticado');
-    }
+    const userId = await this.requireUserId();
 
     const { data, error } = await supabase
       .from('petition_default_templates')
       .select('name, data_base64')
-      .eq('user_id', (await supabase.auth.getUser()).data.user?.id)
-      .single();
+      .eq('user_id', userId)
+      .maybeSingle();
 
-    if (error && error.code !== 'PGRST116') throw error; // PGRST116 = no rows
+    if (error) throw error;
     if (!data) return null;
 
     return { name: data.name, dataBase64: data.data_base64 };

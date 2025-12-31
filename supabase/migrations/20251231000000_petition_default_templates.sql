@@ -15,6 +15,12 @@ CREATE TABLE IF NOT EXISTS petition_default_templates (
 -- RLS: Users can only access their own default template
 ALTER TABLE petition_default_templates ENABLE ROW LEVEL SECURITY;
 
+-- Reaplicação segura (evita erro 42710 em policies já existentes)
+DROP POLICY IF EXISTS "Users can view their own default template" ON petition_default_templates;
+DROP POLICY IF EXISTS "Users can insert their own default template" ON petition_default_templates;
+DROP POLICY IF EXISTS "Users can update their own default template" ON petition_default_templates;
+DROP POLICY IF EXISTS "Users can delete their own default template" ON petition_default_templates;
+
 CREATE POLICY "Users can view their own default template" ON petition_default_templates
   FOR SELECT USING (auth.uid() = user_id);
 
@@ -38,6 +44,8 @@ BEGIN
   RETURN NEW;
 END;
 $$ language 'plpgsql';
+
+DROP TRIGGER IF EXISTS update_petition_default_templates_updated_at ON petition_default_templates;
 
 CREATE TRIGGER update_petition_default_templates_updated_at
   BEFORE UPDATE ON petition_default_templates

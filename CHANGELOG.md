@@ -1,5 +1,8 @@
 # Changelog
 
+## 1.9.30
+- **Peticionamento (Supabase/Erros)**: corrigido acesso ao usuário no service (getUser async) e leitura do modelo padrão com `maybeSingle()` para evitar 406 quando não há registro; melhorada detecção de ausência da coluna `document_type` para evitar 400 repetidos.
+
 ## 1.9.29
 - **Peticionamento (Modelo Padrão)**: migrado do localStorage para Supabase; agora o modelo é salvo no banco e sincronizado entre dispositivos, com fallback para localStorage em caso de falha.
 - **Database**: adicionada tabela `petition_default_templates` com RLS para armazenar modelo padrão por usuário.
