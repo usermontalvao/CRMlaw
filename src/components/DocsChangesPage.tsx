@@ -46,6 +46,7 @@ import {
    ============================================================================ */
 
 const VERSION_CODENAMES: Record<string, { name: string; emoji: string }> = {
+  '1.9.28': { name: 'Café Otimizado', emoji: '⚡' },
   '1.9.18': { name: 'Café Vinculado', emoji: '🔗' },
   '1.9.17': { name: 'Café Integração', emoji: '🔗' },
   '1.9.16': { name: 'Café Indicadores', emoji: '🏷️' },
@@ -498,6 +499,21 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
    ============================================================================ */
 
 const releases: ReleaseNote[] = [
+  {
+    version: '1.9.28',
+    date: '31/12/2025',
+    summary: 'Peticionamento: otimização de consumo Supabase (throttle no instant-save e debounce no refresh via realtime).',
+    modules: [
+      {
+        name: 'Peticionamento',
+        icon: FileText,
+        changes: [
+          'Salvamento instantâneo limitado (máx 1 save a cada 15s) para evitar múltiplos saves durante digitação.',
+          'Refresh das petições via realtime com debounce (1.5s) para reduzir leituras.',
+        ],
+      },
+    ],
+  },
   {
     version: '1.9.18',
     date: '30/12/2025',

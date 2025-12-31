@@ -538,19 +538,45 @@ const PetitionEditorModule: React.FC<PetitionEditorModuleProps> = ({
   const [currentPetitionId, setCurrentPetitionId] = useState<string | null>(null);
   const [lastSaved, setLastSaved] = useState<Date | null>(null);
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
+  const [isOnline, setIsOnline] = useState(() => {
+    try {
+      return typeof navigator !== 'undefined' ? navigator.onLine : true;
+    } catch {
+      return true;
+    }
+  });
+  const [openingPetitionId, setOpeningPetitionId] = useState<string | null>(null);
+  const [pendingPetitionLoadKey, setPendingPetitionLoadKey] = useState(0);
   const editorRef = useRef<SyncfusionEditorRef>(null);
   const blockViewEditorRef = useRef<SyncfusionEditorRef>(null);
   const blockConvertEditorRef = useRef<SyncfusionEditorRef>(null);
   const blockAutoNumberNextRef = useRef<number | null>(null);
+  const contentChangeSeqRef = useRef(0);
   const defaultTemplateAutoAppliedRef = useRef(false);
-  const autoSaveTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const autoSaveTimerRef = useRef<number | null>(null);
   const autoCreateInFlightRef = useRef(false);
-  const savePetitionActionRef = useRef<() => void>(() => {});
+  const savePetitionActionRef = useRef<(() => Promise<void>) | null>(null);
+  const selectedClientIdRef = useRef<string | null>(null);
+  const hasUnsavedChangesRef = useRef(false);
+  const savingRef = useRef(false);
+  const isOnlineRef = useRef(true);
+  const autoSaveInFlightRef = useRef(false);
+  const autoSaveCountdownRef = useRef<number | null>(null);
+  const nextAutoSaveShownRef = useRef<number | null>(null);
+  const instantSaveTimerRef = useRef<number | null>(null);
+  const lastInstantSaveAtRef = useRef(0);
+  const realtimeRefreshTimerRef = useRef<number | null>(null);
 
   // Petições salvas
   const [savedPetitions, setSavedPetitions] = useState<SavedPetition[]>([]);
 
+  // Clientes
+  const [clients, setClients] = useState<Client[]>([]);
+  const [clientSearch, setClientSearch] = useState('');
+  const [selectedClient, setSelectedClient] = useState<Client | null>(null);
+
   const [relativeTimeTick, setRelativeTimeTick] = useState(0);
+  const [nextAutoSaveIn, setNextAutoSaveIn] = useState<number | null>(null);
 
   useEffect(() => {
     const id = window.setInterval(() => setRelativeTimeTick((t) => t + 1), 15000);
@@ -558,7 +584,113 @@ const PetitionEditorModule: React.FC<PetitionEditorModuleProps> = ({
   }, []);
 
   useEffect(() => {
+    selectedClientIdRef.current = selectedClient?.id ?? null;
+  }, [selectedClient?.id]);
+
+  useEffect(() => {
+    hasUnsavedChangesRef.current = hasUnsavedChanges;
+  }, [hasUnsavedChanges]);
+
+  useEffect(() => {
+    savingRef.current = saving;
+  }, [saving]);
+
+  useEffect(() => {
+    isOnlineRef.current = isOnline;
+  }, [isOnline]);
+
+  useEffect(() => {
+    const update = () => {
+      const next = (() => {
+        try {
+          return typeof navigator !== 'undefined' ? navigator.onLine : true;
+        } catch {
+          return true;
+        }
+      })();
+      setIsOnline(next);
+
+      if (!next) {
+        setError('Você está offline. O Peticionamento é 100% online: reconecte para editar/salvar.');
+      } else {
+        setError((prev) => (prev === 'Você está offline. O Peticionamento é 100% online: reconecte para editar/salvar.' ? null : prev));
+      }
+    };
+
+    window.addEventListener('online', update);
+    window.addEventListener('offline', update);
+    update();
+
+    return () => {
+      window.removeEventListener('online', update);
+      window.removeEventListener('offline', update);
+    };
+  }, []);
+
+  useEffect(() => {
+    const tryBackgroundSave = () => {
+      if (!isOnlineRef.current) return;
+      if (isLoadingPetitionRef.current) return;
+      if (!hasUnsavedChangesRef.current) return;
+      if (!selectedClientIdRef.current) return;
+      if (savingRef.current || autoSaveInFlightRef.current) return;
+
+      const action = savePetitionActionRef.current;
+      if (!action) return;
+
+      autoSaveInFlightRef.current = true;
+      (window as any).__autoSaving = true;
+      Promise.resolve(action()).finally(() => {
+        (window as any).__autoSaving = false;
+        autoSaveInFlightRef.current = false;
+      });
+    };
+
+    const onBeforeUnload = (e: BeforeUnloadEvent) => {
+      if (!hasUnsavedChangesRef.current) return;
+      e.preventDefault();
+      e.returnValue = '';
+    };
+
+    const onVisibilityChange = () => {
+      if (document.visibilityState === 'hidden') {
+        tryBackgroundSave();
+      }
+    };
+
+    const onPageHide = () => {
+      tryBackgroundSave();
+    };
+
+    window.addEventListener('beforeunload', onBeforeUnload);
+    document.addEventListener('visibilitychange', onVisibilityChange);
+    window.addEventListener('pagehide', onPageHide);
+
+    return () => {
+      window.removeEventListener('beforeunload', onBeforeUnload);
+      document.removeEventListener('visibilitychange', onVisibilityChange);
+      window.removeEventListener('pagehide', onPageHide);
+    };
+  }, []);
+
+  useEffect(() => {
     if (!user?.id) return;
+
+    const scheduleRefresh = () => {
+      if (realtimeRefreshTimerRef.current) {
+        window.clearTimeout(realtimeRefreshTimerRef.current);
+        realtimeRefreshTimerRef.current = null;
+      }
+
+      realtimeRefreshTimerRef.current = window.setTimeout(() => {
+        petitionEditorService
+          .listPetitions()
+          .then((petitionsData) => setSavedPetitions(petitionsData))
+          .catch(() => {
+            // ignore
+          });
+      }, 1500);
+    };
 
     const channel = supabase
       .channel(`petition-editor-saved-petitions-${user.id}`)
@@ -570,26 +702,86 @@ const PetitionEditorModule: React.FC<PetitionEditorModuleProps> = ({
           table: 'saved_petitions',
           filter: `created_by=eq.${user.id}`,
         },
-        () => {
-          petitionEditorService
-            .listPetitions()
-            .then((petitionsData) => setSavedPetitions(petitionsData))
-            .catch(() => {
-              // ignore
-            });
-        }
+        scheduleRefresh
       )
       .subscribe();
 
     return () => {
+      if (realtimeRefreshTimerRef.current) {
+        window.clearTimeout(realtimeRefreshTimerRef.current);
+        realtimeRefreshTimerRef.current = null;
+      }
       supabase.removeChannel(channel);
     };
   }, [user?.id]);
 
-  // Clientes
-  const [clients, setClients] = useState<Client[]>([]);
-  const [clientSearch, setClientSearch] = useState('');
-  const [selectedClient, setSelectedClient] = useState<Client | null>(null);
+  useEffect(() => {
+    if (autoSaveTimerRef.current) return;
+
+    autoSaveTimerRef.current = window.setInterval(() => {
+      if (!isOnlineRef.current) {
+        autoSaveCountdownRef.current = null;
+        if (nextAutoSaveShownRef.current !== null) {
+          nextAutoSaveShownRef.current = null;
+          setNextAutoSaveIn(null);
+        }
+        return;
+      }
+
+      const clientId = selectedClientIdRef.current;
+      const dirty = hasUnsavedChangesRef.current;
+
+      if (!clientId || !dirty) {
+        autoSaveCountdownRef.current = null;
+        if (nextAutoSaveShownRef.current !== null) {
+          nextAutoSaveShownRef.current = null;
+          setNextAutoSaveIn(null);
+        }
+        return;
+      }
+
+      if (autoSaveCountdownRef.current === null) {
+        autoSaveCountdownRef.current = 30;
+      } else {
+        autoSaveCountdownRef.current = Math.max(0, autoSaveCountdownRef.current - 1);
+      }
+
+      const remaining = autoSaveCountdownRef.current;
+      if (nextAutoSaveShownRef.current !== remaining) {
+        nextAutoSaveShownRef.current = remaining;
+        setNextAutoSaveIn(remaining);
+      }
+
+      if (remaining <= 0) {
+        if (savingRef.current || autoSaveInFlightRef.current) return;
+
+        const action = savePetitionActionRef.current;
+        if (!action) {
+          autoSaveCountdownRef.current = 30;
+          return;
+        }
+
+        autoSaveInFlightRef.current = true;
+        (window as any).__autoSaving = true;
+
+        Promise.resolve(action())
+          .catch(() => {})
+          .finally(() => {
+            (window as any).__autoSaving = false;
+            autoSaveInFlightRef.current = false;
+            autoSaveCountdownRef.current = hasUnsavedChangesRef.current ? 30 : null;
+            nextAutoSaveShownRef.current = null;
+          });
+      }
+    }, 1000);
+
+    return () => {
+      if (autoSaveTimerRef.current) {
+        window.clearInterval(autoSaveTimerRef.current);
+        autoSaveTimerRef.current = null;
+      }
+    };
+  }, []);
 
   const formatRelativeTime = (dateString?: string | null): string => {
     if (!dateString) return '—';
@@ -1225,9 +1417,18 @@ Regras:
 
   // Salvar petição
   const savePetition = async () => {
+    const startSeq = contentChangeSeqRef.current;
     // Regra: salvar apenas documentos vinculados a cliente
     if (!selectedClient?.id) {
       if (!window.__autoSaving) setError('Selecione um cliente antes de salvar a petição');
+      return;
+    }
+    if (!isOnlineRef.current) {
+      if (!window.__autoSaving) setError('Você está offline. O Peticionamento é 100% online: reconecte para editar/salvar.');
+      return;
+    }
+    if (isLoadingPetitionRef.current) {
+      if (!window.__autoSaving) setError('Aguarde o carregamento do documento antes de salvar');
       return;
     }
     if (saving) return;
@@ -1278,7 +1479,7 @@ Regras:
         });
       }
 
-      setHasUnsavedChanges(false);
+      setHasUnsavedChanges(contentChangeSeqRef.current !== startSeq);
       setLastSaved(new Date());
       // Não mostrar mensagem de sucesso em salvamento automático (apenas em salvamento manual)
       if (!window.__autoSaving) {
@@ -1304,6 +1505,7 @@ Regras:
   const loadPetition = async (petition: SavedPetition) => {
     if (isLoadingPetitionRef.current) return;
     isLoadingPetitionRef.current = true;
+    setOpeningPetitionId(petition.id);
 
     // Atualizar estados primeiro
     setCurrentPetitionId(petition.id);
@@ -1337,6 +1539,7 @@ Regras:
       } finally {
         window.__autoSaving = false;
         isLoadingPetitionRef.current = false;
+        setOpeningPetitionId(null);
       }
       return;
     }
@@ -1344,10 +1547,7 @@ Regras:
     // Guardar para carregar depois que o editor estiver pronto
     pendingPetitionRef.current = petition;
     setShowStartScreen(false);
-    window.setTimeout(() => {
-      window.__autoSaving = false;
-      isLoadingPetitionRef.current = false;
-    }, 500);
+    setPendingPetitionLoadKey((k) => k + 1);
   };
 
   // Carregar petição pendente quando o editor estiver pronto
@@ -1369,12 +1569,16 @@ Regras:
       } catch (err) {
         console.error('Erro ao carregar conteúdo:', err);
         setError('Erro ao carregar documento');
+      } finally {
+        window.__autoSaving = false;
+        isLoadingPetitionRef.current = false;
+        setOpeningPetitionId(null);
       }
     };
     
     // Pequeno delay para garantir que o editor está totalmente inicializado
     window.setTimeout(loadContent, 100);
-  });
+  }, [pendingPetitionLoadKey]);
 
   // Nova petição
   const newPetition = (options?: { keepClient?: boolean }) => {
@@ -1476,6 +1680,10 @@ Regras:
 
   // Inserir bloco no editor
   const insertBlock = async (block: PetitionBlock) => {
+    if (!isOnlineRef.current) {
+      setError('Você está offline. O Peticionamento é 100% online: reconecte para editar/salvar.');
+      return;
+    }
     const editor = editorRef.current;
     if (!editor) return;
 
@@ -1577,13 +1785,72 @@ Regras:
   // Handler de mudança de conteúdo do editor
   const handleContentChange = () => {
     if (isLoadingPetitionRef.current) return;
+    if (!isOnlineRef.current) {
+      setError('Você está offline. O Peticionamento é 100% online: reconecte para editar/salvar.');
+      return;
+    }
+    contentChangeSeqRef.current += 1;
     setHasUnsavedChanges(true);
-    // Salva automaticamente após qualquer alteração
-    (window as any).__autoSaving = true;
-    window.setTimeout(() => {
-      (window as any).__autoSaving = false;
-      savePetition();
-    }, 0);
+
+    autoSaveCountdownRef.current = 30;
+    nextAutoSaveShownRef.current = 30;
+    setNextAutoSaveIn(30);
+
+    if (!selectedClientIdRef.current) return;
+
+    if (instantSaveTimerRef.current) {
+      window.clearTimeout(instantSaveTimerRef.current);
+      instantSaveTimerRef.current = null;
+    }
+
+    instantSaveTimerRef.current = window.setTimeout(() => {
+      if (isLoadingPetitionRef.current) return;
+      if (!isOnlineRef.current) return;
+      if (!hasUnsavedChangesRef.current) return;
+      if (!selectedClientIdRef.current) return;
+      if (savingRef.current || autoSaveInFlightRef.current) return;
+
+      const MIN_INTERVAL_MS = 15000;
+      const now = Date.now();
+      const elapsed = now - lastInstantSaveAtRef.current;
+      if (elapsed < MIN_INTERVAL_MS) {
+        const remaining = MIN_INTERVAL_MS - elapsed;
+        if (instantSaveTimerRef.current) {
+          window.clearTimeout(instantSaveTimerRef.current);
+          instantSaveTimerRef.current = null;
+        }
+        instantSaveTimerRef.current = window.setTimeout(() => {
+          if (isLoadingPetitionRef.current) return;
+          if (!isOnlineRef.current) return;
+          if (!hasUnsavedChangesRef.current) return;
+          if (!selectedClientIdRef.current) return;
+          if (savingRef.current || autoSaveInFlightRef.current) return;
+
+          const action = savePetitionActionRef.current;
+          if (!action) return;
+
+          lastInstantSaveAtRef.current = Date.now();
+          autoSaveInFlightRef.current = true;
+          (window as any).__autoSaving = true;
+          Promise.resolve(action()).finally(() => {
+            (window as any).__autoSaving = false;
+            autoSaveInFlightRef.current = false;
+          });
+        }, remaining);
+        return;
+      }
+
+      const action = savePetitionActionRef.current;
+      if (!action) return;
+
+      lastInstantSaveAtRef.current = now;
+      autoSaveInFlightRef.current = true;
+      (window as any).__autoSaving = true;
+      Promise.resolve(action()).finally(() => {
+        (window as any).__autoSaving = false;
+        autoSaveInFlightRef.current = false;
+      });
+    }, 800);
   };
 
   // Salvar bloco (criar ou atualizar)
@@ -1689,6 +1956,10 @@ Regras:
   };
 
   const loadDefaultTemplate = async () => {
+    if (!isOnlineRef.current) {
+      setError('Você está offline. O Peticionamento é 100% online: reconecte para editar/salvar.');
+      return;
+    }
     try {
       const memory = defaultTemplateMemoryRef.current;
       const raw = memory ? null : window.localStorage.getItem(DEFAULT_TEMPLATE_STORAGE_KEY);
@@ -2133,6 +2404,10 @@ Regras:
 
   // Inserir qualificação do cliente
   const insertClientQualification = (client: Client) => {
+    if (!isOnlineRef.current) {
+      setError('Você está offline. O Peticionamento é 100% online: reconecte para editar/salvar.');
+      return;
+    }
     setSelectedClient(client);
     window.setTimeout(() => savePetition(), 0);
     const editor = editorRef.current;
@@ -2290,57 +2565,69 @@ Regras:
                   <div className="px-3 py-4 text-sm text-slate-500">Nenhuma petição recente</div>
                 ) : (
                   <div className="max-h-[360px] overflow-y-auto">
-                    {savedPetitions.slice(0, 15).map((p) => (
-                      <div
-                        key={p.id}
-                        className="w-full grid grid-cols-12 px-3 py-2 text-left hover:bg-slate-50 border-b border-slate-100 last:border-b-0 items-center group"
-                      >
-                        <button
-                          onClick={() => { void loadPetition(p); }}
-                          className="col-span-5 text-left"
+                    {savedPetitions.slice(0, 15).map((p) => {
+                      const isOpening = openingPetitionId === p.id;
+                      const isBusyOpening = openingPetitionId !== null;
+
+                      return (
+                        <div
+                          key={p.id}
+                          role="button"
+                          tabIndex={0}
+                          onClick={() => {
+                            if (isBusyOpening) return;
+                            void loadPetition(p);
+                          }}
+                          onKeyDown={(e) => {
+                            if (e.key !== 'Enter' && e.key !== ' ') return;
+                            if (isBusyOpening) return;
+                            e.preventDefault();
+                            void loadPetition(p);
+                          }}
+                          className={`w-full grid grid-cols-12 px-3 py-2 text-left border-b border-slate-100 last:border-b-0 items-center group ${
+                            isBusyOpening ? 'opacity-60 cursor-wait' : 'cursor-pointer hover:bg-slate-50'
+                          }`}
                         >
-                          <div className="text-sm text-slate-800 truncate">{p.title || 'Sem título'}</div>
-                        </button>
-                        <button
-                          onClick={() => { void loadPetition(p); }}
-                          className="col-span-3 text-xs text-slate-600 truncate text-left"
-                        >
-                          {p.client_name || '—'}
-                        </button>
-                        <button
-                          onClick={() => { void loadPetition(p); }}
-                          className="col-span-3 text-right text-xs text-slate-500"
-                          data-tick={relativeTimeTick}
-                        >
-                          {formatRelativeTime(p.updated_at)}
-                        </button>
-                        <div className="col-span-1 text-right">
-                          <button
-                            onClick={async (e) => {
-                              e.stopPropagation();
-                              const confirmed = await confirmDelete({
-                                title: 'Excluir petição',
-                                entityName: p.title || 'Sem título',
-                                message: `Deseja excluir a petição "${p.title || 'Sem título'}"${p.client_name ? ` vinculada ao cliente ${p.client_name}` : ''}?`,
-                                confirmLabel: 'Excluir',
-                              });
-                              if (!confirmed) return;
-                              try {
-                                await petitionEditorService.deletePetition(p.id);
-                                setSavedPetitions((prev) => prev.filter((x) => x.id !== p.id));
-                              } catch (err) {
-                                console.error('Erro ao excluir petição:', err);
-                                setError('Erro ao excluir petição');
-                              }
-                            }}
-                            className="p-1 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded opacity-0 group-hover:opacity-100 transition-all"
-                            title="Excluir petição"
-                          >
-                            <Trash2 className="w-3.5 h-3.5" />
-                          </button>
+                          <div className="col-span-5 text-left">
+                            <div className="text-sm text-slate-800 truncate flex items-center gap-2">
+                              {isOpening && <Loader2 className="w-3.5 h-3.5 animate-spin text-amber-600" />}
+                              <span>{isOpening ? 'Abrindo...' : (p.title || 'Sem título')}</span>
+                            </div>
+                          </div>
+                          <div className="col-span-3 text-xs text-slate-600 truncate text-left">{p.client_name || '—'}</div>
+                          <div className="col-span-3 text-right text-xs text-slate-500" data-tick={relativeTimeTick}>
+                            {formatRelativeTime(p.updated_at)}
+                          </div>
+                          <div className="col-span-1 text-right">
+                            <button
+                              onClick={async (e) => {
+                                e.stopPropagation();
+                                if (isBusyOpening) return;
+                                const confirmed = await confirmDelete({
+                                  title: 'Excluir petição',
+                                  entityName: p.title || 'Sem título',
+                                  message: `Deseja excluir a petição "${p.title || 'Sem título'}"${p.client_name ? ` vinculada ao cliente ${p.client_name}` : ''}?`,
+                                  confirmLabel: 'Excluir',
+                                });
+                                if (!confirmed) return;
+                                try {
+                                  await petitionEditorService.deletePetition(p.id);
+                                  setSavedPetitions((prev) => prev.filter((x) => x.id !== p.id));
+                                } catch (err) {
+                                  console.error('Erro ao excluir petição:', err);
+                                  setError('Erro ao excluir petição');
+                                }
+                              }}
+                              disabled={isBusyOpening}
+                              className="p-1 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded opacity-0 group-hover:opacity-100 transition-all disabled:opacity-30 disabled:hover:bg-transparent"
+                              title="Excluir petição"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
                         </div>
-                      </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 )}
               </div>
@@ -2394,7 +2681,7 @@ Regras:
           type="text"
           value={petitionTitle}
           onChange={(e) => { setPetitionTitle(e.target.value); setHasUnsavedChanges(true); window.setTimeout(() => savePetition(), 0); }}
-          className="flex-1 max-w-sm px-2 py-1 text-sm font-semibold border border-transparent hover:border-slate-200 focus:border-amber-400 rounded focus:outline-none"
+          className="w-[240px] sm:w-[320px] px-2 py-1 text-sm font-semibold border border-transparent hover:border-slate-200 focus:border-amber-400 rounded focus:outline-none"
           placeholder="Título da petição..."
         />
 
@@ -2413,13 +2700,10 @@ Regras:
 
         {/* Status de salvamento */}
         {lastSaved && (
-          <div className="flex items-center gap-1 text-xs text-slate-400">
+          <div className="flex items-center gap-1 text-xs text-slate-400 w-[170px] justify-end tabular-nums whitespace-nowrap">
             <Clock className="w-3.5 h-3.5" />
             <span title={lastSaved.toLocaleString('pt-BR')}>Atualizado {formatRelativeTime(lastSaved.toISOString())}</span>
           </div>
-        )}
-        {hasUnsavedChanges && (
-          <span className="text-xs text-amber-500 font-medium">• Não salvo</span>
         )}
 
         {/* Ações */}
@@ -2838,6 +3122,7 @@ Regras:
             ref={editorRef}
             id="petition-main-editor"
             height="100%"
+            readOnly={!isOnline}
             showPropertiesPane
             showNavigationPane={false}
             onContentChange={handleContentChange}

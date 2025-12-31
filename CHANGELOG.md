@@ -1,5 +1,27 @@
 # Changelog
 
+## 1.9.27
+- **Peticionamento (Otimização Supabase)**: salvamento instantâneo limitado (throttle) para evitar múltiplos saves durante digitação e refresh das petições via realtime com debounce para reduzir leituras.
+
+## 1.9.26
+- **Peticionamento (Header)**: removido indicador visual do auto-salvamento e estabilizado layout para não deslocar o chip do cliente quando o status "Atualizado" muda.
+- **Build**: restaurado `package.json` (arquivo estava vazio), evitando quebra do projeto.
+
+## 1.9.23
+- **Peticionamento (Histórico/Recentes)**: abrir documento com 1 clique e indicador de carregamento "Abrindo..." com bloqueio durante a abertura.
+
+## 1.9.22
+- **Peticionamento (Online-only)**: editor passa para modo leitura quando offline e bloqueia salvamentos/edições; adicionada proteção contra perda por navegação (alerta ao sair e salvamento best-effort ao ocultar/fechar a aba).
+
+## 1.9.21
+- **Peticionamento (Salvamento)**: adicionado salvamento instantâneo (debounce) e autosave contínuo, com proteção para não salvar durante carregamento e bloqueio de múltiplos cliques ao abrir petições (estado "Abrindo...").
+
+## 1.9.20
+- **Peticionamento (Auto-salvamento)**: corrigido bug onde o indicador ficava em "Auto-salvando em 30s" e não executava o salvamento automático (timer estabilizado com refs e execução via handler único).
+
+## 1.9.19
+- **Peticionamento (Auto-salvamento)**: implementado salvamento automático a cada 30 segundos quando há alterações não salvas e cliente selecionado. Indicador visual mostra contador regressivo ("Auto-salvando em Xs") e status em tempo real.
+
 ## 1.9.18
 - **Assinaturas ↔ Requerimentos**: correção do vínculo automático do requerimento criado via assinatura (persistência do `signature_id` até o momento do salvar), garantindo exibição do badge "Requerimento Criado".
 
