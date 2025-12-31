@@ -46,6 +46,7 @@ import {
    ============================================================================ */
 
 const VERSION_CODENAMES: Record<string, { name: string; emoji: string }> = {
+  '1.9.29': { name: 'Café Persistente', emoji: '💾' },
   '1.9.28': { name: 'Café Otimizado', emoji: '⚡' },
   '1.9.18': { name: 'Café Vinculado', emoji: '🔗' },
   '1.9.17': { name: 'Café Integração', emoji: '🔗' },
@@ -499,6 +500,22 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
    ============================================================================ */
 
 const releases: ReleaseNote[] = [
+  {
+    version: '1.9.29',
+    date: '31/12/2025',
+    summary: 'Peticionamento: modelo padrão migrado do localStorage para Supabase (persistência e sincronização entre dispositivos).',
+    modules: [
+      {
+        name: 'Peticionamento',
+        icon: FileText,
+        changes: [
+          'Modelo padrão agora é salvo no Supabase em vez do localStorage.',
+          'Criada tabela petition_default_templates com RLS por usuário.',
+          'Fallback para localStorage mantido em caso de falha.',
+        ],
+      },
+    ],
+  },
   {
     version: '1.9.28',
     date: '31/12/2025',

@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.9.29
+- **Peticionamento (Modelo Padrão)**: migrado do localStorage para Supabase; agora o modelo é salvo no banco e sincronizado entre dispositivos, com fallback para localStorage em caso de falha.
+- **Database**: adicionada tabela `petition_default_templates` com RLS para armazenar modelo padrão por usuário.
+
 ## 1.9.27
 - **Peticionamento (Otimização Supabase)**: salvamento instantâneo limitado (throttle) para evitar múltiplos saves durante digitação e refresh das petições via realtime com debounce para reduzir leituras.
 

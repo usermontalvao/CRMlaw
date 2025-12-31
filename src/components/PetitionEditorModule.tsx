@@ -1651,14 +1651,21 @@ Regras:
         setHasDefaultTemplate(true);
         setDefaultTemplateName(file.name);
 
+        // Salvar no Supabase
         try {
-          window.localStorage.setItem(
-            DEFAULT_TEMPLATE_STORAGE_KEY,
-            JSON.stringify({ name: file.name, dataBase64 })
-          );
-        } catch (storageErr) {
-          console.error('Erro ao salvar Documento padrão no storage:', storageErr);
-          setError('Não foi possível salvar o Documento padrão no navegador (armazenamento cheio).');
+          await petitionEditorService.saveDefaultTemplate(file.name, dataBase64);
+        } catch (dbErr) {
+          console.error('Erro ao salvar modelo padrão no banco:', dbErr);
+          // Fallback para localStorage se falhar
+          try {
+            window.localStorage.setItem(
+              DEFAULT_TEMPLATE_STORAGE_KEY,
+              JSON.stringify({ name: file.name, dataBase64 })
+            );
+          } catch (storageErr) {
+            console.error('Erro ao salvar Documento padrão no storage:', storageErr);
+            setError('Não foi possível salvar o Documento padrão no navegador (armazenamento cheio).');
+          }
         }
       } catch {
         // ignore
@@ -1911,21 +1918,40 @@ Regras:
   }, []);
 
   useEffect(() => {
-    try {
-      const raw = window.localStorage.getItem(DEFAULT_TEMPLATE_STORAGE_KEY);
-      if (!raw) {
-        setHasDefaultTemplate(false);
-        setDefaultTemplateName(null);
-        return;
+    const loadDefaultTemplateFromDB = async () => {
+      try {
+        const template = await petitionEditorService.getDefaultTemplate();
+        if (template) {
+          setHasDefaultTemplate(true);
+          setDefaultTemplateName(template.name);
+          defaultTemplateMemoryRef.current = { name: template.name, dataBase64: template.dataBase64 };
+        } else {
+          setHasDefaultTemplate(false);
+          setDefaultTemplateName(null);
+          defaultTemplateMemoryRef.current = null;
+        }
+      } catch (err) {
+        console.error('Erro ao carregar modelo padrão do banco:', err);
+        // Fallback para localStorage se falhar
+        try {
+          const raw = window.localStorage.getItem(DEFAULT_TEMPLATE_STORAGE_KEY);
+          if (!raw) {
+            setHasDefaultTemplate(false);
+            setDefaultTemplateName(null);
+            return;
+          }
+          const parsed = JSON.parse(raw) as { name?: string; dataBase64?: string };
+          const ok = Boolean(parsed?.dataBase64);
+          setHasDefaultTemplate(ok);
+          setDefaultTemplateName(parsed?.name ?? null);
+        } catch {
+          setHasDefaultTemplate(false);
+          setDefaultTemplateName(null);
+        }
       }
-      const parsed = JSON.parse(raw) as { name?: string; dataBase64?: string };
-      const ok = Boolean(parsed?.dataBase64);
-      setHasDefaultTemplate(ok);
-      setDefaultTemplateName(parsed?.name ?? null);
-    } catch {
-      setHasDefaultTemplate(false);
-      setDefaultTemplateName(null);
-    }
+    };
+
+    void loadDefaultTemplateFromDB();
   }, []);
 
   const arrayBufferToBase64 = (buffer: ArrayBuffer): string => {
@@ -1962,10 +1988,26 @@ Regras:
     }
     try {
       const memory = defaultTemplateMemoryRef.current;
-      const raw = memory ? null : window.localStorage.getItem(DEFAULT_TEMPLATE_STORAGE_KEY);
-      const parsed =
-        memory ??
-        (raw ? (JSON.parse(raw) as { name?: string; dataBase64?: string }) : null);
+      let parsed: { name: string; dataBase64: string } | null = memory;
+
+      // Se não tiver em memória, tentar do banco
+      if (!parsed) {
+        try {
+          const template = await petitionEditorService.getDefaultTemplate();
+          if (template) {
+            parsed = { name: template.name, dataBase64: template.dataBase64 };
+            defaultTemplateMemoryRef.current = parsed;
+          }
+        } catch (dbErr) {
+          console.error('Erro ao buscar modelo padrão do banco:', dbErr);
+          // Fallback para localStorage
+          const raw = window.localStorage.getItem(DEFAULT_TEMPLATE_STORAGE_KEY);
+          const fallback = raw ? (JSON.parse(raw) as { name?: string; dataBase64?: string }) : null;
+          if (fallback?.name && fallback.dataBase64) {
+            parsed = { name: fallback.name, dataBase64: fallback.dataBase64 };
+          }
+        }
+      }
 
       if (!parsed?.dataBase64) {
         setError('Nenhum modelo padrão definido');

@@ -106,6 +106,43 @@ class PetitionEditorService {
     }
   }
 
+  // ==================== MODELO PADRÃO ====================
+
+  async saveDefaultTemplate(name: string, dataBase64: string): Promise<void> {
+    if (!supabase.auth.getUser()) {
+      throw new Error('Usuário não autenticado');
+    }
+
+    const { error } = await supabase.from('petition_default_templates').upsert(
+      {
+        user_id: (await supabase.auth.getUser()).data.user?.id,
+        name,
+        data_base64: dataBase64,
+        updated_at: new Date().toISOString(),
+      },
+      { onConflict: 'user_id' }
+    );
+
+    if (error) throw error;
+  }
+
+  async getDefaultTemplate(): Promise<{ name: string; dataBase64: string } | null> {
+    if (!supabase.auth.getUser()) {
+      throw new Error('Usuário não autenticado');
+    }
+
+    const { data, error } = await supabase
+      .from('petition_default_templates')
+      .select('name, data_base64')
+      .eq('user_id', (await supabase.auth.getUser()).data.user?.id)
+      .single();
+
+    if (error && error.code !== 'PGRST116') throw error; // PGRST116 = no rows
+    if (!data) return null;
+
+    return { name: data.name, dataBase64: data.data_base64 };
+  }
+
   // ==================== BLOCOS ====================
 
   async listBlocks(documentType?: DocumentType): Promise<PetitionBlock[]> {
