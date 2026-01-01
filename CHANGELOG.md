@@ -1,5 +1,17 @@
 # Changelog
 
+## 1.9.42
+- **Peticionamento (Pré-visualização de Blocos)**: container do `docx-preview` agora permanece montado durante o carregamento (com overlay), evitando fallback e garantindo renderização correta por **parágrafos/páginas**.
+
+## 1.9.41
+- **Peticionamento (Pré-visualização de Blocos)**: ajustado CSS do `docx-preview` no modo *view* para restaurar **quebras de linha** e **espaçamento entre parágrafos**, evitando texto "colado".
+
+## 1.9.40
+- **Peticionamento (Pré-visualização de Blocos)**: visualização agora renderiza o conteúdo via **DOCX (gerado a partir do SFDT) + docx-preview**, garantindo exibição do documento no modo *view* sem travar na geração de PDF.
+
+## 1.9.39
+- **Peticionamento (Pré-visualização de Blocos)**: tentativa inicial de renderização via PDF gerado a partir do SFDT.
+
 ## 1.9.38
 - **Peticionamento (Editor de Blocos)**: botão de editar bloco reexibido na lista lateral (ícone lápis).
 - **Peticionamento (Editor de Blocos)**: reforço visual A4 no modal (largura total, folha centralizada, sombra/borda) e altura do editor ampliada para 520px.
@@ -1392,3 +1404,8 @@
 
 ## 1.0.92
 - Versão anterior.
+
+## Releases
+
+### 1.9.42
+- **Peticionamento (Pré-visualização de Blocos)**: container do `docx-preview` agora permanece montado durante o carregamento (com overlay), evitando fallback e garantindo renderização correta por **parágrafos/páginas**.

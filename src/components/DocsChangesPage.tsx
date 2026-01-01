@@ -46,7 +46,6 @@ import {
    ============================================================================ */
 
 const VERSION_CODENAMES: Record<string, { name: string; emoji: string }> = {
-  '1.9.38': { name: 'Café Visual', emoji: '👁️' },
   '1.9.30': { name: 'Café Estável', emoji: '🧰' },
   '1.9.29': { name: 'Café Persistente', emoji: '💾' },
   '1.9.28': { name: 'Café Otimizado', emoji: '⚡' },
@@ -503,32 +502,18 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
 
 const releases: ReleaseNote[] = [
   {
-    version: '1.9.38',
+    version: '1.9.42',
     date: '31/12/2025',
-    summary: 'Peticionamento: visualização de bloco com tags e exportar PDF.',
+    summary: 'Peticionamento: pré-visualização de blocos via DOCX com parágrafos/páginas (docx-preview).',
     modules: [
       {
-        moduleId: 'peticionamento',
+        moduleId: 'sistema',
         changes: [
           {
-            type: 'feature',
-            title: 'Visualização de bloco: exibir tags',
-            description: 'Modal de visualização de bloco agora exibe as tags do bloco.',
-          },
-          {
-            type: 'feature',
-            title: 'Visualização de bloco: exportar PDF',
-            description: 'Modal de visualização permite exportar o conteúdo como PDF.',
-          },
-          {
-            type: 'improvement',
-            title: 'Editor visual melhorado',
-            description: 'Editor no modo leitura com toolbar e painel de propriedades habilitados.',
-          },
-          {
-            type: 'improvement',
-            title: 'Layout em páginas',
-            description: 'Layout do editor ajustado para páginas com ajuste de largura.',
+            type: 'fix',
+            title: 'Pré-visualização de Blocos (view): docx-preview sempre montado',
+            description:
+              'Container do docx-preview permanece montado durante o carregamento (overlay), evitando fallback e garantindo renderização correta por parágrafos/páginas.',
           },
         ],
       },

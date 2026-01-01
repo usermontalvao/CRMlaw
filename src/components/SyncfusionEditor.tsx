@@ -54,6 +54,8 @@ export interface SyncfusionEditorRef {
   loadDocx: (arrayBuffer: ArrayBuffer, fileName?: string) => Promise<void>;
   // Export as DOCX blob
   exportDocx: (fileName?: string) => Promise<Blob>;
+  // Export as PDF blob
+  exportPdf: (fileName?: string) => Promise<Blob>;
   // Insert text at cursor
   insertText: (text: string) => void;
   // Get plain text content
@@ -266,6 +268,21 @@ const SyncfusionEditor = forwardRef<SyncfusionEditorRef, SyncfusionEditorProps>(
         return new Promise<Blob>((resolve, reject) => {
           try {
             editor.saveAsBlob('Docx').then((blob: Blob) => {
+              resolve(blob);
+            }).catch(reject);
+          } catch (err) {
+            reject(err);
+          }
+        });
+      },
+
+      exportPdf: async (fileName = 'documento.pdf') => {
+        const editor = containerRef.current?.documentEditor;
+        if (!editor) throw new Error('Editor não inicializado');
+
+        return new Promise<Blob>((resolve, reject) => {
+          try {
+            editor.saveAsBlob('Pdf' as any).then((blob: Blob) => {
               resolve(blob);
             }).catch(reject);
           } catch (err) {

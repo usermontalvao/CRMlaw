@@ -8,6 +8,7 @@ declare global {
 }
 import React, { useRef, useState, useEffect, useCallback, useMemo } from 'react';
 import { createPortal } from 'react-dom';
+import { renderAsync } from 'docx-preview';
 import {
   Plus,
   Save,
@@ -548,8 +549,9 @@ const PetitionEditorModule: React.FC<PetitionEditorModuleProps> = ({
   const [openingPetitionId, setOpeningPetitionId] = useState<string | null>(null);
   const [pendingPetitionLoadKey, setPendingPetitionLoadKey] = useState(0);
   const editorRef = useRef<SyncfusionEditorRef>(null);
-  const blockViewEditorRef = useRef<SyncfusionEditorRef>(null);
   const blockConvertEditorRef = useRef<SyncfusionEditorRef>(null);
+  const blockViewDocxTokenRef = useRef(0);
+  const blockViewDocxContainerRef = useRef<HTMLDivElement | null>(null);
   const blockAutoNumberNextRef = useRef<number | null>(null);
   const contentChangeSeqRef = useRef(0);
   const defaultTemplateAutoAppliedRef = useRef(false);
@@ -826,6 +828,8 @@ const PetitionEditorModule: React.FC<PetitionEditorModuleProps> = ({
   const [viewingBlock, setViewingBlock] = useState<PetitionBlock | null>(null);
   const [blockViewFallbackText, setBlockViewFallbackText] = useState('');
   const [blockViewUseFallback, setBlockViewUseFallback] = useState(false);
+  const [blockViewDocxLoading, setBlockViewDocxLoading] = useState(false);
+  const [blockViewDocxError, setBlockViewDocxError] = useState<string>('');
 
   // Modelo Word importado
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -920,51 +924,100 @@ const PetitionEditorModule: React.FC<PetitionEditorModuleProps> = ({
   };
 
   const openViewBlock = (block: PetitionBlock) => {
+    const token = (blockViewDocxTokenRef.current += 1);
     setViewingBlock(block);
     setShowBlockViewModal(true);
     setBlockViewUseFallback(false);
     setBlockViewFallbackText('');
+    setBlockViewDocxError('');
+    setBlockViewDocxLoading(true);
+    if (blockViewDocxContainerRef.current) blockViewDocxContainerRef.current.innerHTML = '';
 
     const sfdt = String(block.content || '').trim();
     const looksLikeSfdt = sfdt.startsWith('{') || sfdt.startsWith('[');
 
-    let cancelled = false;
     let tries = 0;
     const maxTries = 20;
 
     const tryLoad = () => {
-      if (cancelled) return;
-      const ed = blockViewEditorRef.current;
+      if (blockViewDocxTokenRef.current !== token) return;
+      const ed = blockConvertEditorRef.current;
+      const container = blockViewDocxContainerRef.current;
       if (!ed) {
         tries += 1;
         if (tries <= maxTries) window.setTimeout(tryLoad, 80);
         else {
+          if (blockViewDocxTokenRef.current !== token) return;
           setBlockViewUseFallback(true);
           setBlockViewFallbackText(sfdtToPlainText(sfdt));
+          setBlockViewDocxLoading(false);
+          setBlockViewDocxError('Não foi possível inicializar o conversor');
         }
         return;
       }
 
-      try {
-        if (looksLikeSfdt) {
-          ed.loadSfdt(sfdt);
-        } else {
-          ed.clear();
-          if (sfdt) ed.insertText(sfdt);
+      if (!container) {
+        tries += 1;
+        if (tries <= maxTries) window.setTimeout(tryLoad, 80);
+        else {
+          if (blockViewDocxTokenRef.current !== token) return;
+          setBlockViewUseFallback(true);
+          setBlockViewFallbackText(sfdtToPlainText(sfdt));
+          setBlockViewDocxLoading(false);
+          setBlockViewDocxError('Pré-visualização indisponível');
         }
-
-        // Evitar fallback para texto puro para preservar formatação
-        setBlockViewUseFallback(false);
-      } catch {
-        setBlockViewUseFallback(true);
-        setBlockViewFallbackText(sfdtToPlainText(sfdt));
+        return;
       }
+
+      (async () => {
+        try {
+          if (looksLikeSfdt) {
+            ed.loadSfdt(sfdt);
+          } else {
+            ed.clear();
+            if (sfdt) ed.insertText(sfdt);
+          }
+
+          await new Promise((r) => window.setTimeout(r, 80));
+          ed.refresh?.();
+          await new Promise((r) => window.setTimeout(r, 80));
+
+          const blob = await ed.exportDocx(`${block.title || 'bloco'}.docx`);
+          if (blockViewDocxTokenRef.current !== token) return;
+          const arrayBuffer = await blob.arrayBuffer();
+          if (blockViewDocxContainerRef.current) blockViewDocxContainerRef.current.innerHTML = '';
+          await renderAsync(arrayBuffer, container, undefined, {
+            className: 'docx-preview',
+            inWrapper: true,
+            ignoreWidth: false,
+            ignoreHeight: false,
+            ignoreFonts: false,
+            breakPages: true,
+            ignoreLastRenderedPageBreak: false,
+            experimental: false,
+            trimXmlDeclaration: true,
+            useBase64URL: true,
+            renderHeaders: true,
+            renderFooters: true,
+            renderFootnotes: true,
+            renderEndnotes: true,
+          } as any);
+
+          if (blockViewDocxTokenRef.current !== token) return;
+          setBlockViewDocxLoading(false);
+          setBlockViewDocxError('');
+          setBlockViewUseFallback(false);
+        } catch {
+          if (blockViewDocxTokenRef.current !== token) return;
+          setBlockViewDocxLoading(false);
+          setBlockViewDocxError('Falha ao renderizar pré-visualização');
+          setBlockViewUseFallback(true);
+          setBlockViewFallbackText(sfdtToPlainText(sfdt));
+        }
+      })();
     };
 
     window.setTimeout(tryLoad, 0);
-    window.setTimeout(() => {
-      cancelled = true;
-    }, 2500);
   };
 
   const generateBlockTags = async (title: string, contentSfdt: string): Promise<string[]> => {
@@ -2929,77 +2982,169 @@ Regras:
 
       {/* Modal: Visualizar Conteúdo do Bloco */}
       {showBlockViewModal && viewingBlock && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-6 bg-slate-900/40 backdrop-blur-sm">
-          <div className="bg-white rounded-2xl shadow-[0_24px_60px_rgba(15,23,42,0.12)] border border-slate-200 w-full max-w-3xl max-h-[95vh] overflow-hidden flex flex-col mx-auto transition-all duration-300 scale-in-center">
-            {/* Faixa Laranja do Tema */}
-            <div className="h-2 w-full shrink-0 bg-gradient-to-r from-orange-500 to-orange-600" />
-            
-            <div className="relative px-4 sm:px-6 py-4 sm:py-5 border-b border-slate-100 flex items-center justify-between bg-white">
+        <aside id="petition-editor-backdrop" className="fixed inset-0 z-[100] flex items-start justify-center p-2 sm:p-6 pt-8 bg-slate-900/40 backdrop-blur-sm overflow-y-auto">
+          <main id="block-editor-modal" className="bg-white rounded-2xl shadow-[0_24px_60px_rgba(15,23,42,0.12)] border border-slate-200 w-full max-w-7xl max-h-[92vh] my-2 overflow-hidden flex flex-col mx-auto transition-all duration-300">
+            <div className="h-1.5 w-full shrink-0 bg-orange-600" style={{ backgroundColor: '#ea580c' }} />
+
+            <header className="relative px-3 sm:px-4 py-2 sm:py-3 border-b border-slate-100 flex items-center justify-between sticky top-0 bg-white z-10">
               <div>
-                <div className="text-[10px] sm:text-[11px] font-bold uppercase tracking-[0.2em] text-slate-400 leading-none">Visualizar Conteúdo</div>
-                <h3 className="mt-2 text-base sm:text-lg font-bold text-slate-900 uppercase tracking-tight leading-tight">{viewingBlock.title}</h3>
+                <div className="text-[10px] font-bold uppercase tracking-[0.18em] text-slate-400 leading-none">Visualizar Bloco</div>
+                <h3 className="mt-1 text-sm sm:text-base font-bold text-slate-900 uppercase tracking-tight leading-tight">{viewingBlock.title}</h3>
               </div>
               <button
                 onClick={() => {
+                  blockViewDocxTokenRef.current += 1;
                   setShowBlockViewModal(false);
                   setViewingBlock(null);
                   setBlockViewFallbackText('');
                   setBlockViewUseFallback(false);
+                  setBlockViewDocxError('');
+                  setBlockViewDocxLoading(false);
+                  if (blockViewDocxContainerRef.current) blockViewDocxContainerRef.current.innerHTML = '';
                 }}
-                className="absolute top-2 sm:top-4 right-2 sm:right-4 p-2 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-xl transition-all duration-200 hover:rotate-90"
+                className="absolute top-1.5 sm:top-2 right-1.5 sm:right-2 p-1.5 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-lg transition-all duration-200 hover:rotate-90"
                 title="Fechar"
               >
-                <X className="w-5 h-5" />
+                <X className="w-4 h-4" />
               </button>
-            </div>
+            </header>
 
-            <div className="flex-1 overflow-y-auto p-4 sm:p-6 bg-slate-50/30">
-              <div className="border border-slate-200 rounded-2xl overflow-hidden bg-white shadow-sm" style={{ height: 520 }}>
-                {blockViewUseFallback ? (
-                  <div className="h-full w-full p-4 overflow-y-auto">
-                    <pre className="whitespace-pre-wrap text-sm text-slate-700 leading-relaxed">
-                      {(() => {
-                        const t = (blockViewFallbackText || '').trim();
-                        if (!t) return 'Pré-visualização indisponível';
-                        if (t.startsWith('{') || t.startsWith('[')) return 'Pré-visualização indisponível';
-                        return t;
-                      })()}
-                    </pre>
-                  </div>
-                ) : (
-                  <SyncfusionEditor
-                    ref={blockViewEditorRef}
-                    id="petition-block-viewer"
-                    height="520px"
+            <div className="p-4 space-y-4 overflow-y-auto">
+              <div className="grid grid-cols-3 gap-4">
+                <div className="col-span-2">
+                  <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Título do Bloco *</label>
+                  <input
+                    type="text"
+                    value={viewingBlock.title}
                     readOnly
-                    enableToolbar={false}
-                    showPropertiesPane={false}
-                    enableCustomContextMenu={false}
-                    showRuler={false}
-                    showNavigationPane={false}
-                    layoutType="Continuous"
-                    removeMargins
-                    pageFit="FitPageWidth"
+                    className="w-full px-3 py-2.5 text-sm border border-slate-200 rounded-lg bg-slate-50 font-medium text-slate-600"
                   />
-                )}
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Categoria</label>
+                  <select
+                    value={viewingBlock.category}
+                    disabled
+                    className="w-full px-3 py-2.5 text-sm border border-slate-200 rounded-lg bg-slate-50 font-medium text-slate-600 cursor-not-allowed"
+                  >
+                    <option value={viewingBlock.category}>{getCategoryLabel(String(viewingBlock.category || 'outros'))}</option>
+                  </select>
+                </div>
               </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">Conteúdo SFDT *</label>
+                <div className="border border-slate-200 rounded-2xl overflow-hidden bg-white shadow-inner">
+                  <div className="relative w-full h-[620px] overflow-auto bg-white petition-block-docx-preview">
+                    <div className="min-h-[620px] p-4">
+                      <div
+                        ref={(node) => {
+                          blockViewDocxContainerRef.current = node;
+                        }}
+                      />
+                    </div>
+
+                    {blockViewDocxLoading && (
+                      <div className="absolute inset-0 flex items-center justify-center bg-white/80">
+                        <div className="flex items-center gap-2 text-slate-500 text-sm font-medium">
+                          <Loader2 className="w-4 h-4 animate-spin" />
+                          <span>Carregando...</span>
+                        </div>
+                      </div>
+                    )}
+
+                    {!blockViewDocxLoading && blockViewDocxError && (
+                      <div className="absolute inset-0 flex items-center justify-center bg-white/80">
+                        <div className="text-slate-500 text-sm font-medium">{blockViewDocxError}</div>
+                      </div>
+                    )}
+
+                    {!blockViewDocxLoading && !blockViewDocxError && blockViewUseFallback && (
+                      <div className="absolute inset-0 bg-white">
+                        <div className="h-full w-full p-4 overflow-y-auto">
+                          <pre className="whitespace-pre-wrap text-sm text-slate-700 leading-relaxed">
+                            {(() => {
+                              const t = (blockViewFallbackText || '').trim();
+                              if (!t) return 'Pré-visualização indisponível';
+                              if (t.startsWith('{') || t.startsWith('[')) return 'Pré-visualização indisponível';
+                              return t;
+                            })()}
+                          </pre>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+                <div className="mt-2 p-2.5 bg-slate-50 rounded-lg border border-slate-100">
+                  <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest block mb-1">Variáveis disponíveis</span>
+                  <p className="text-[11px] text-slate-500 leading-relaxed">
+                    [[NOME_CLIENTE]], [[CPF]], [[RG]], [[NACIONALIDADE]], [[ESTADO_CIVIL]], [[PROFISSAO]], [[ENDERECO]], [[CIDADE]], [[UF]], [[CEP]], [[EMAIL]], [[TELEFONE]]
+                  </p>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-3 gap-4">
+                <div className="col-span-3 sm:col-span-2 space-y-2">
+                  <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider">Tags</label>
+                  {(() => {
+                    const tags = getBlockTagsForUI(viewingBlock);
+                    if (tags.length === 0) {
+                      return <p className="text-[11px] text-slate-400">Nenhuma tag cadastrada</p>;
+                    }
+                    return (
+                      <div className="flex flex-wrap gap-2">
+                        {tags.map((tag) => (
+                          <span
+                            key={tag}
+                            className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-semibold rounded-full bg-amber-100 text-amber-800 border border-amber-200"
+                          >
+                            {tag}
+                          </span>
+                        ))}
+                      </div>
+                    );
+                  })()}
+                  <p className="text-[11px] text-slate-400">Tags usadas para facilitar a busca de blocos.</p>
+                </div>
+              </div>
+
+              <label className="group flex items-center gap-4 cursor-pointer p-3 bg-amber-50/50 rounded-xl border border-amber-100">
+                <div className="relative flex items-center">
+                  <input
+                    type="checkbox"
+                    checked={viewingBlock.is_default}
+                    disabled
+                    className="peer w-5 h-5 text-amber-600 rounded-lg border-amber-300 focus:ring-amber-500 transition-all cursor-pointer appearance-none border-2 checked:bg-amber-500 opacity-60"
+                  />
+                  <CheckCircle2 className="w-3 h-3 text-white absolute left-1 opacity-0 peer-checked:opacity-100 transition-opacity pointer-events-none" />
+                </div>
+                <div>
+                  <span className="text-sm font-bold text-amber-900 uppercase tracking-tight">Incluir por padrão</span>
+                  <p className="text-xs text-amber-700/70 font-medium">Este bloco será inserido automaticamente ao criar uma nova petição</p>
+                </div>
+              </label>
             </div>
 
-            <div className="px-6 py-4 border-t border-slate-100 flex justify-end bg-slate-50/50">
+            <footer className="px-4 py-3 border-t border-slate-100 flex justify-end bg-slate-50">
               <button
                 onClick={() => {
+                  blockViewDocxTokenRef.current += 1;
                   setShowBlockViewModal(false);
                   setViewingBlock(null);
                   setBlockViewFallbackText('');
                   setBlockViewUseFallback(false);
+                  setBlockViewDocxError('');
+                  setBlockViewDocxLoading(false);
+                  if (blockViewDocxContainerRef.current) blockViewDocxContainerRef.current.innerHTML = '';
                 }}
                 className="px-8 py-2.5 text-sm font-bold text-slate-600 hover:bg-slate-200 bg-white border border-slate-200 rounded-xl transition-all duration-200 shadow-sm"
               >
                 Fechar
               </button>
-            </div>
-          </div>
-        </div>
+            </footer>
+          </main>
+        </aside>
       )}
 
       {/* Desativado para não ocupar espaço no topo */}
@@ -3855,6 +4000,28 @@ const petitionModalStyles = `
   main#block-editor-modal {
     background-color: #ffffff !important;
     color: #0f172a !important;
+  }
+
+  /* docx-preview (view do bloco) - restaurar espaçamento de parágrafos e quebras */
+  .petition-block-docx-preview .docx-wrapper,
+  .petition-block-docx-preview .docx-wrapper * {
+    box-sizing: border-box;
+  }
+  .petition-block-docx-preview .docx-wrapper > section.docx {
+    background: #ffffff !important;
+    margin: 16px auto !important;
+    box-shadow: 0 12px 40px rgba(15, 23, 42, 0.16) !important;
+    border: 1px solid #e2e8f0 !important;
+  }
+  .petition-block-docx-preview .docx-wrapper p {
+    display: block !important;
+    white-space: normal !important;
+    margin: 0 0 12pt 0 !important;
+  }
+  .petition-block-docx-preview .docx-wrapper br {
+    display: block !important;
+    content: '' !important;
+    margin-top: 12pt !important;
   }
 `;
 
