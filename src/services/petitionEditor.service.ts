@@ -33,6 +33,23 @@ class PetitionEditorService {
     return msg.includes('document_type') || details.includes('document_type');
   }
 
+  private isMissingOrderColumn(error: any): boolean {
+    const msg = String(error?.message || '').toLowerCase();
+    const details = String(error?.details || '').toLowerCase();
+    const code = String(error?.code || '').toUpperCase();
+    
+    // PostgREST pode retornar PGRST204 quando a coluna não existe
+    if (code === 'PGRST204') return msg.includes('order') || details.includes('order');
+    
+    // Alguns cenários retornam 400 com mensagem de coluna inexistente
+    if (msg.includes('order') && msg.includes('column')) return true;
+    if (details.includes('order') && details.includes('column')) return true;
+    
+    // Verificar se a mensagem menciona a coluna order especificamente
+    return msg.includes('"order"') || details.includes('"order"') || 
+           msg.includes('column "order"') || details.includes('column "order"');
+  }
+
   private async requireUserId(): Promise<string> {
     const { data, error } = await supabase.auth.getUser();
     if (error) throw error;
@@ -153,47 +170,107 @@ class PetitionEditorService {
   // ==================== BLOCOS ====================
 
   async listBlocks(documentType?: DocumentType): Promise<PetitionBlock[]> {
-    const run = async (withFilter: boolean) => {
+    const run = async (withOrder: boolean, withFilter: boolean) => {
       let q = supabase
         .from(this.blocksTable)
-        .select('*')
-        .order(this.orderColumn, { ascending: true });
-      if (documentType && withFilter && this.shouldUseDocumentType()) q = q.eq('document_type', documentType);
+        .select('*');
+      
+      if (withOrder) {
+        q = q.order(this.orderColumn, { ascending: true });
+      } else {
+        // Fallback: ordenar por created_at se order não existir
+        q = q.order('created_at', { ascending: true });
+      }
+      
+      if (documentType && withFilter && this.shouldUseDocumentType()) {
+        q = q.eq('document_type', documentType);
+      }
       return q;
     };
 
-    const { data, error } = await run(true);
+    // Tentar primeiro com order e document_type
+    const { data, error } = await run(true, true);
     if (!error) return data ?? [];
+    
+    // Se erro for relacionado à coluna order, tentar sem order
+    if (this.isMissingOrderColumn(error)) {
+      const retry = await run(false, true);
+      const { data: data2, error: error2 } = await retry;
+      if (!error2) return data2 ?? [];
+      
+      // Se ainda falhar e for relacionado a document_type, tentar sem document_type
+      if (documentType && this.isMissingDocumentTypeColumn(error2)) {
+        this.markDocumentTypeUnsupported();
+        const retry2 = await run(false, false);
+        const { data: data3, error: error3 } = await retry2;
+        if (!error3) return data3 ?? [];
+        throw new Error(error3.message);
+      }
+      throw new Error(error2.message);
+    }
+    
+    // Se erro for relacionado a document_type, tentar sem document_type
     if (documentType && this.isMissingDocumentTypeColumn(error)) {
       this.markDocumentTypeUnsupported();
-      const retry = await run(false);
+      const retry = await run(true, false);
       const { data: data2, error: error2 } = await retry;
-      if (error2) throw new Error(error2.message);
-      return data2 ?? [];
+      if (!error2) return data2 ?? [];
+      throw new Error(error2.message);
     }
+    
     throw new Error(error.message);
   }
 
   async listActiveBlocks(documentType?: DocumentType): Promise<PetitionBlock[]> {
-    const run = async (withFilter: boolean) => {
+    const run = async (withOrder: boolean, withFilter: boolean) => {
       let q = supabase
         .from(this.blocksTable)
         .select('*')
-        .eq('is_active', true)
-        .order(this.orderColumn, { ascending: true });
-      if (documentType && withFilter && this.shouldUseDocumentType()) q = q.eq('document_type', documentType);
+        .eq('is_active', true);
+      
+      if (withOrder) {
+        q = q.order(this.orderColumn, { ascending: true });
+      } else {
+        // Fallback: ordenar por created_at se order não existir
+        q = q.order('created_at', { ascending: true });
+      }
+      
+      if (documentType && withFilter && this.shouldUseDocumentType()) {
+        q = q.eq('document_type', documentType);
+      }
       return q;
     };
 
-    const { data, error } = await run(true);
+    // Tentar primeiro com order e document_type
+    const { data, error } = await run(true, true);
     if (!error) return data ?? [];
+    
+    // Se erro for relacionado à coluna order, tentar sem order
+    if (this.isMissingOrderColumn(error)) {
+      const retry = await run(false, true);
+      const { data: data2, error: error2 } = await retry;
+      if (!error2) return data2 ?? [];
+      
+      // Se ainda falhar e for relacionado a document_type, tentar sem document_type
+      if (documentType && this.isMissingDocumentTypeColumn(error2)) {
+        this.markDocumentTypeUnsupported();
+        const retry2 = await run(false, false);
+        const { data: data3, error: error3 } = await retry2;
+        if (!error3) return data3 ?? [];
+        throw new Error(error3.message);
+      }
+      throw new Error(error2.message);
+    }
+    
+    // Se erro for relacionado a document_type, tentar sem document_type
     if (documentType && this.isMissingDocumentTypeColumn(error)) {
       this.markDocumentTypeUnsupported();
-      const retry = await run(false);
+      const retry = await run(true, false);
       const { data: data2, error: error2 } = await retry;
-      if (error2) throw new Error(error2.message);
-      return data2 ?? [];
+      if (!error2) return data2 ?? [];
+      throw new Error(error2.message);
     }
+    
     throw new Error(error.message);
   }
 

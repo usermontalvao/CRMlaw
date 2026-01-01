@@ -164,7 +164,12 @@ const SyncfusionEditor = forwardRef<SyncfusionEditorRef, SyncfusionEditorProps>(
       getSfdt: () => {
         const editor = containerRef.current?.documentEditor;
         if (!editor) return '';
-        return editor.serialize();
+        try {
+          return editor.serialize();
+        } catch (err) {
+          console.error('Error serializing SFDT:', err);
+          return '';
+        }
       },
 
       loadSfdt: (sfdt: string) => {
@@ -174,6 +179,13 @@ const SyncfusionEditor = forwardRef<SyncfusionEditorRef, SyncfusionEditorProps>(
           if (!editor) return;
           try {
             editor.open(sfdt);
+            // Após abrir, forçar layout
+            setTimeout(() => {
+              if (typeof (editor as any).resize === 'function') (editor as any).resize();
+              if (pageFit && typeof editor.fitPage === 'function') {
+                editor.fitPage(pageFit as any);
+              }
+            }, 50);
           } catch (err) {
             console.error('Erro ao carregar SFDT:', err);
           }
@@ -492,14 +504,30 @@ const SyncfusionEditor = forwardRef<SyncfusionEditorRef, SyncfusionEditorProps>(
           editor.selection?.selectAll?.();
           const sectionFormat = editor.selection?.sectionFormat;
           if (sectionFormat) {
-            sectionFormat.topMargin = 10;
-            sectionFormat.bottomMargin = 10;
-            sectionFormat.leftMargin = 10;
-            sectionFormat.rightMargin = 10;
+            if (removeMargins) {
+              // Editor de blocos: forçar dimensões A4 e margens mínimas para visual realista dentro do modal
+              sectionFormat.pageWidth = 595.3; // 210mm
+              sectionFormat.pageHeight = 841.9; // 297mm
+              sectionFormat.topMargin = 10;
+              sectionFormat.bottomMargin = 10;
+              sectionFormat.leftMargin = 18;
+              sectionFormat.rightMargin = 18;
+            } else {
+              // Editor principal: A4 com margens maiores para edição completa
+              sectionFormat.pageWidth = 595.3;
+              sectionFormat.pageHeight = 841.9;
+              sectionFormat.topMargin = 15;
+              sectionFormat.bottomMargin = 15;
+              sectionFormat.leftMargin = 25;
+              sectionFormat.rightMargin = 25;
+            }
           }
           editor.selection?.moveToDocumentStart?.();
           if (typeof editor.fitPage === 'function') {
             editor.fitPage('FitPageWidth');
+          }
+          if (typeof editor.resize === 'function') {
+            editor.resize();
           }
         } catch {
           // ignore
@@ -665,21 +693,32 @@ const SyncfusionEditor = forwardRef<SyncfusionEditorRef, SyncfusionEditorProps>(
       try {
         const editor: any = containerRef.current?.documentEditor as any;
         editor?.openBlank?.();
+        
+        // Forçar resize inicial
+        setTimeout(() => {
+          if (typeof editor?.resize === 'function') editor.resize();
+          if (pageFit && typeof editor?.fitPage === 'function') {
+            editor.fitPage(pageFit as any);
+          }
+        }, 100);
       } catch {
         // ignore
       }
 
-      // Ativar modo read-only quando necessário
-      if (readOnly) {
-        try {
+      // Adicionar ResizeObserver para garantir que o editor se ajuste ao container
+      const rootEl = containerRef.current?.element;
+      if (rootEl && typeof ResizeObserver !== 'undefined') {
+        const observer = new ResizeObserver(() => {
           const editor: any = containerRef.current?.documentEditor as any;
-          if (editor) {
-            editor.isReadOnly = true;
-            editor.showSelectionPane = false;
+          if (editor && typeof editor.resize === 'function') {
+            editor.resize();
+            if (pageFit && typeof editor.fitPage === 'function') {
+              editor.fitPage(pageFit as any);
+            }
           }
-        } catch {
-          // ignore
-        }
+        });
+        observer.observe(rootEl);
+        // Guardar no ref para limpar depois se necessário, mas como o componente é desmontado, o DOM limpa
       }
 
       // Alguns builds do Syncfusion iniciam o contextMenu alguns ticks depois

@@ -1,5 +1,34 @@
 # Changelog
 
+## 1.9.38
+- **Peticionamento (Editor de Blocos)**: botão de editar bloco reexibido na lista lateral (ícone lápis).
+- **Peticionamento (Editor de Blocos)**: reforço visual A4 no modal (largura total, folha centralizada, sombra/borda) e altura do editor ampliada para 520px.
+- **Peticionamento (Syncfusion)**: margens mínimas com dimensões A4 aplicadas ao editor do modal para manter proporção real de página.
+
+## 1.9.36
+- **Peticionamento (Editor de Blocos)**: restauradas declarações de estado/refs do modal de blocos (corrige build e exibição do editor).
+- **Peticionamento (Syncfusion)**: corrigido ajuste de layout que usava `pageWidth` como string, evitando falha silenciosa na inicialização do editor.
+
+## 1.9.35
+- **Peticionamento (Editor de Blocos)**: corrigido problema de largura reduzida do editor SFDT no modal. Removido layout grid que limitava a largura e adicionados CSS mais fortes para garantir 100% de ocupação do espaço disponível.
+
+## 1.9.34
+- **Peticionamento (Editor de Blocos)**: corrigido problema de largura reduzida do editor SFDT no modal. Agora o editor ocupa 100% da largura disponível, eliminando o espaço em branco à direita.
+
+## 1.9.33
+- **Peticionamento (Editor de Blocos)**: corrigido carregamento do conteúdo SFDT no modal de edição de blocos. Agora o conteúdo é carregado automaticamente quando o modal abre.
+- **Peticionamento (Pré-visualização)**: melhorada extração de texto SFDT com suporte a quebras de parágrafo e fallback mais robusto.
+
+## 1.9.32
+- **Peticionamento (Tags Inteligentes)**: reformulada lógica de sugestão para ser estritamente baseada em termos jurídicos. O sistema agora ignora palavras aleatórias e foca em uma base de dados de mais de 100 termos e expressões jurídicas (ex: "nexo causal", "estabilidade gestante", "litispendencia").
+- **Peticionamento (Sincronização)**: implementada detecção de mudanças no editor de blocos em tempo real, permitindo que as sugestões de tags se adaptem instantaneamente ao texto que está sendo digitado.
+
+## 1.9.31
+- **Peticionamento (Tags Inteligentes)**: sistema de sugestão de tags agora é 100% dinâmico, analisando o título e conteúdo do bloco em tempo real para sugerir termos jurídicos relevantes.
+- **Peticionamento (Editor de Blocos)**: corrigido problema onde o conteúdo aparecia espremido/com wrap excessivo nos modais; implementado `ResizeObserver` e ajuste automático de margens para garantir 100% de largura.
+- **Peticionamento (Pré-visualização)**: melhorada a extração de texto de arquivos SFDT (Syncfusion) para evitar a mensagem "Pré-visualização indisponível".
+- **Database**: migration para garantir a existência da coluna `order` na tabela `petition_blocks`, resolvendo erros 400 na API.
+
 ## 1.9.30
 - **Peticionamento (Supabase/Erros)**: corrigido acesso ao usuário no service (getUser async) e leitura do modelo padrão com `maybeSingle()` para evitar 406 quando não há registro; melhorada detecção de ausência da coluna `document_type` para evitar 400 repetidos.
 

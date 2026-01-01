@@ -46,6 +46,7 @@ import {
    ============================================================================ */
 
 const VERSION_CODENAMES: Record<string, { name: string; emoji: string }> = {
+  '1.9.38': { name: 'Café Visual', emoji: '👁️' },
   '1.9.30': { name: 'Café Estável', emoji: '🧰' },
   '1.9.29': { name: 'Café Persistente', emoji: '💾' },
   '1.9.28': { name: 'Café Otimizado', emoji: '⚡' },
@@ -501,6 +502,38 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
    ============================================================================ */
 
 const releases: ReleaseNote[] = [
+  {
+    version: '1.9.38',
+    date: '31/12/2025',
+    summary: 'Peticionamento: visualização de bloco com tags e exportar PDF.',
+    modules: [
+      {
+        moduleId: 'peticionamento',
+        changes: [
+          {
+            type: 'feature',
+            title: 'Visualização de bloco: exibir tags',
+            description: 'Modal de visualização de bloco agora exibe as tags do bloco.',
+          },
+          {
+            type: 'feature',
+            title: 'Visualização de bloco: exportar PDF',
+            description: 'Modal de visualização permite exportar o conteúdo como PDF.',
+          },
+          {
+            type: 'improvement',
+            title: 'Editor visual melhorado',
+            description: 'Editor no modo leitura com toolbar e painel de propriedades habilitados.',
+          },
+          {
+            type: 'improvement',
+            title: 'Layout em páginas',
+            description: 'Layout do editor ajustado para páginas com ajuste de largura.',
+          },
+        ],
+      },
+    ],
+  },
   {
     version: '1.9.30',
     date: '31/12/2025',
