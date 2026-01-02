@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.9.45
+- **Peticionamento (Blocos)**: removida a **numeração automática** na listagem de blocos.
+
+## 1.9.44
+- **Peticionamento (Busca de Blocos)**: resultados agora exibem **todas as tags** e uma **porcentagem de match**; ao clicar em um item, abre o **View do bloco** com a opção **Adicionar no documento** (não insere automaticamente).
+
+## 1.9.43
+- **Peticionamento (Busca de Blocos)**: busca refinada no modal (ignora stopwords como "de/da/do", suporta frase exata com aspas e aplica filtro/ranking mais estrito priorizando título/tags, reduzindo resultados genéricos).
+
 ## 1.9.42
 - **Peticionamento (Pré-visualização de Blocos)**: container do `docx-preview` agora permanece montado durante o carregamento (com overlay), evitando fallback e garantindo renderização correta por **parágrafos/páginas**.
 

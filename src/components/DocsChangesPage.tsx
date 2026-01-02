@@ -502,18 +502,78 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
 
 const releases: ReleaseNote[] = [
   {
-    version: '1.9.42',
-    date: '31/12/2025',
-    summary: 'Peticionamento: pré-visualização de blocos via DOCX com parágrafos/páginas (docx-preview).',
+    version: '1.9.46',
+    date: '01/01/2026',
+    summary: 'Peticionamento: removida numeração automática na inserção de blocos.',
     modules: [
       {
         moduleId: 'sistema',
         changes: [
           {
-            type: 'fix',
-            title: 'Pré-visualização de Blocos (view): docx-preview sempre montado',
-            description:
-              'Container do docx-preview permanece montado durante o carregamento (overlay), evitando fallback e garantindo renderização correta por parágrafos/páginas.',
+            type: 'improvement',
+            title: 'Removida numeração automática na inserção de blocos',
+            description: 'Blocos não são mais numerados automaticamente ao serem inseridos no documento (não aparece "1 -", "2 -", etc.).',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.45',
+    date: '01/01/2026',
+    summary: 'Peticionamento: removida numeração automática na listagem de blocos.',
+    modules: [
+      {
+        moduleId: 'sistema',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Removida numeração automática na listagem de blocos',
+            description: 'Não é mais exibido número de ordem ao lado dos blocos na sidebar e na busca.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.44',
+    date: '01/01/2026',
+    summary: 'Peticionamento: refinamento da busca de blocos (UI e fluxo).',
+    modules: [
+      {
+        moduleId: 'sistema',
+        changes: [
+          {
+            type: 'feature',
+            title: 'Busca de blocos: exibir todas as tags e porcentagem de match',
+            description: 'Resultados da busca agora mostram todas as tags (sem truncar) e uma porcentagem de relevância baseada no score do ranking.',
+          },
+          {
+            type: 'feature',
+            title: 'Busca de blocos: fluxo de visualização antes de inserir',
+            description: 'Ao clicar em um resultado da busca, abre o modal "Visualizar Bloco" com botão "Adicionar no documento" em vez de inserir diretamente.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.43',
+    date: '01/01/2026',
+    summary: 'Peticionamento: refinamento da busca de blocos (lógica e ranking).',
+    modules: [
+      {
+        moduleId: 'sistema',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Busca refinada: stopwords, frase exata e AND',
+            description: 'Ignora stopwords (de/da/do), suporta busca por frase exata com aspas e exige todos os termos (AND).',
+          },
+          {
+            type: 'improvement',
+            title: 'Ranking mais estrito: prioriza título e tags',
+            description: 'Aumenta peso de título e tags, reduz peso de conteúdo e eleva threshold mínimo para diminuir resultados genéricos.',
           },
         ],
       },

@@ -123,10 +123,76 @@ const normalizeTag = (input: string) => {
 };
 
 const parseSearchTerms = (q: string) => {
-  return String(q || '')
-    .split(',')
-    .map((s) => normalizeTag(s))
-    .filter(Boolean);
+  const stop = new Set([
+    'a',
+    'o',
+    'os',
+    'as',
+    'de',
+    'da',
+    'do',
+    'das',
+    'dos',
+    'e',
+    'em',
+    'no',
+    'na',
+    'nos',
+    'nas',
+    'por',
+    'para',
+    'com',
+    'sem',
+    'ao',
+    'aos',
+    'um',
+    'uma',
+  ]);
+
+  const input = String(q || '');
+  if (!input.trim()) return [];
+
+  const phrases: string[] = [];
+  const re = /\"([^\"]+)\"/g;
+  let remainder = input;
+  let match: RegExpExecArray | null;
+  while ((match = re.exec(input)) !== null) {
+    const phrase = normalizeTag(match[1] || '')
+      .replace(/[^a-z0-9\s]/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+    if (phrase) phrases.push(phrase);
+  }
+  remainder = remainder.replace(re, ' ');
+
+  const tokens = remainder
+    .replace(/[\n\r\t,]+/g, ' ')
+    .split(' ')
+    .map((s) =>
+      normalizeTag(s)
+        .replace(/[^a-z0-9\s]/g, ' ')
+        .replace(/\s+/g, ' ')
+        .trim(),
+    )
+    .filter(Boolean)
+    .filter((t) => !stop.has(t))
+    .filter((t) => t.length >= 2 || /^\d+$/.test(t));
+
+  const out = [...phrases, ...tokens];
+  const seen = new Set<string>();
+  return out.filter((t) => {
+    const key = normalizeTag(t);
+    if (!key) return false;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+};
+
+type BlockSearchResult = {
+  block: PetitionBlock;
+  score: number;
+  matchPct: number;
 };
 
 const dedupeTags = (tags: string[]) => {
@@ -552,7 +618,6 @@ const PetitionEditorModule: React.FC<PetitionEditorModuleProps> = ({
   const blockConvertEditorRef = useRef<SyncfusionEditorRef>(null);
   const blockViewDocxTokenRef = useRef(0);
   const blockViewDocxContainerRef = useRef<HTMLDivElement | null>(null);
-  const blockAutoNumberNextRef = useRef<number | null>(null);
   const contentChangeSeqRef = useRef(0);
   const defaultTemplateAutoAppliedRef = useRef(false);
   const autoSaveTimerRef = useRef<number | null>(null);
@@ -826,10 +891,11 @@ const PetitionEditorModule: React.FC<PetitionEditorModuleProps> = ({
 
   const [showBlockViewModal, setShowBlockViewModal] = useState(false);
   const [viewingBlock, setViewingBlock] = useState<PetitionBlock | null>(null);
+  const [viewingBlockMatchPct, setViewingBlockMatchPct] = useState<number | null>(null);
   const [blockViewFallbackText, setBlockViewFallbackText] = useState('');
   const [blockViewUseFallback, setBlockViewUseFallback] = useState(false);
   const [blockViewDocxLoading, setBlockViewDocxLoading] = useState(false);
-  const [blockViewDocxError, setBlockViewDocxError] = useState<string>('');
+  const [blockViewDocxError, setBlockViewDocxError] = useState('');
 
   // Modelo Word importado
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -923,9 +989,10 @@ const PetitionEditorModule: React.FC<PetitionEditorModuleProps> = ({
     setShowBlockModal(true);
   };
 
-  const openViewBlock = (block: PetitionBlock) => {
+  const openViewBlock = (block: PetitionBlock, matchPct?: number) => {
     const token = (blockViewDocxTokenRef.current += 1);
     setViewingBlock(block);
+    setViewingBlockMatchPct(typeof matchPct === 'number' ? matchPct : null);
     setShowBlockViewModal(true);
     setBlockViewUseFallback(false);
     setBlockViewFallbackText('');
@@ -1556,7 +1623,6 @@ Regras:
     setCurrentPetitionId(petition.id);
     setPetitionTitle(petition.title || '');
     setLastSaved(petition.updated_at ? new Date(petition.updated_at) : null);
-    blockAutoNumberNextRef.current = null;
 
     // Carregar cliente se houver
     if (petition.client_id) {
@@ -1635,7 +1701,6 @@ Regras:
     setCurrentPetitionId(null);
     setPetitionTitle('');
     setLastSaved(null);
-    blockAutoNumberNextRef.current = null;
 
     if (!options?.keepClient) {
       setSelectedClient(null);
@@ -1673,6 +1738,15 @@ Regras:
       console.error('Erro ao exportar:', err);
       setError('Erro ao exportar documento');
     }
+  };
+
+  const arrayBufferToBase64 = (buffer: ArrayBuffer): string => {
+    const bytes = new Uint8Array(buffer);
+    let binary = '';
+    for (let i = 0; i < bytes.length; i += 1) {
+      binary += String.fromCharCode(bytes[i]);
+    }
+    return window.btoa(binary);
   };
 
   // Importar template Word
@@ -1714,11 +1788,12 @@ Regras:
         }
       } catch {
         // ignore
+      } finally {
+        // Limpar input para permitir reimportar o mesmo arquivo
+        if (fileInputRef.current) {
+          fileInputRef.current.value = '';
+        }
       }
-
-      blockAutoNumberNextRef.current = null;
-      setHasUnsavedChanges(true);
-      showSuccessMessage(`Arquivo "${file.name}" importado`);
     } catch (err) {
       console.error('Erro ao importar:', err);
       setError('Erro ao importar arquivo');
@@ -1738,15 +1813,6 @@ Regras:
     }
     const editor = editorRef.current;
     if (!editor) return;
-
-    // Numeração automática: incrementar contador e gerar prefixo (exceto cabeçalho)
-    const isCabecalho = block.category === 'cabecalho';
-    let numberPrefix = '';
-    if (!isCabecalho) {
-      const currentNumber = blockAutoNumberNextRef.current ?? 1;
-      numberPrefix = `${currentNumber} - `;
-      blockAutoNumberNextRef.current = currentNumber + 1;
-    }
 
     const sfdt = String(block.content || '').trim();
     const looksLikeSfdt = sfdt.startsWith('{') || sfdt.startsWith('[');
@@ -1790,7 +1856,6 @@ Regras:
         const fragment = await blockConvertEditorRef.current.convertSfdtToFragment(processed);
         if (fragment && fragment.trim()) {
           // Inserção síncrona para evitar perda de foco
-          if (numberPrefix) editor.insertText(numberPrefix);
           const ok = editor.pasteSfdt(fragment);
           if (ok) {
             setHasUnsavedChanges(true);
@@ -1806,11 +1871,7 @@ Regras:
       if (!content.trim() || content.trim().startsWith('{') || content.trim().startsWith('[')) {
         content = 'Pré-visualização indisponível';
       }
-      if (numberPrefix) {
-        editor.insertText(numberPrefix + applyClientPlaceholders(content));
-      } else {
-        editor.insertText(applyClientPlaceholders(content));
-      }
+      editor.insertText(applyClientPlaceholders(content));
       setHasUnsavedChanges(true);
       showSuccessMessage('Bloco inserido');
       restoreFocus();
@@ -2070,15 +2131,6 @@ Regras:
     void loadDefaultTemplateFromDB();
   }, []);
 
-  const arrayBufferToBase64 = (buffer: ArrayBuffer): string => {
-    const bytes = new Uint8Array(buffer);
-    let binary = '';
-    for (let i = 0; i < bytes.length; i += 1) {
-      binary += String.fromCharCode(bytes[i]!);
-    }
-    return window.btoa(binary);
-  };
-
   const base64ToArrayBuffer = (base64: string): ArrayBuffer => {
     const binary = window.atob(base64);
     const bytes = new Uint8Array(binary.length);
@@ -2138,7 +2190,6 @@ Regras:
 
       const arrayBuffer = base64ToArrayBuffer(parsed.dataBase64);
       await editor.loadDocx(arrayBuffer, parsed.name || 'modelo.docx');
-      blockAutoNumberNextRef.current = null;
       setHasUnsavedChanges(true);
       showSuccessMessage(`Modelo padrão${parsed.name ? ` "${parsed.name}"` : ''} carregado`);
     } catch (err) {
@@ -2280,13 +2331,66 @@ Regras:
     return v0[lb];
   };
 
+  const scoreSingleTermInText = (termRaw: string, textRaw: string, weightExact: number, weightFuzzy: number) => {
+    const term = normalizeSearchText(termRaw);
+    if (!term) return 0;
+    const text = normalizeSearchText(textRaw);
+    if (!text) return 0;
+    const words = text.split(' ').filter(Boolean);
+    if (words.length === 0) return 0;
+
+    if (words.join(' ').includes(term)) return weightExact;
+
+    let best = 0;
+    const maxDist = term.length <= 4 ? 1 : 2;
+    for (const w of words) {
+      if (!w) continue;
+      if (w === term) return weightExact;
+      const d = levenshteinLimited(term, w, maxDist);
+      if (d <= maxDist) {
+        const local = weightFuzzy * (1 - d / (maxDist + 1));
+        if (local > best) best = local;
+      }
+    }
+    return best;
+  };
+
   const fuzzyScore = (queryRaw: string, titleRaw: string, contentRaw: string): number => {
     const query = normalizeSearchText(queryRaw);
     if (!query) return 0;
     const title = normalizeSearchText(titleRaw);
     const content = normalizeSearchText(contentRaw);
 
-    const terms = query.split(' ').filter(Boolean);
+    const stop = new Set([
+      'a',
+      'o',
+      'os',
+      'as',
+      'de',
+      'da',
+      'do',
+      'das',
+      'dos',
+      'e',
+      'em',
+      'no',
+      'na',
+      'nos',
+      'nas',
+      'por',
+      'para',
+      'com',
+      'sem',
+      'ao',
+      'aos',
+      'um',
+      'uma',
+    ]);
+    const terms = query
+      .split(' ')
+      .map((t) => t.trim())
+      .filter(Boolean)
+      .filter((t) => !stop.has(t));
     if (terms.length === 0) return 0;
 
     const titleWords = title.split(' ').filter(Boolean);
@@ -2489,7 +2593,7 @@ Regras:
   const searchFilteredBlocks = useMemo(() => {
     const active = blocks.filter(b => b.is_active && ((b.document_type || 'petition') as string) === selectedDocumentType);
     const q = (blockSearchQuery || '').trim();
-    if (!q) return active;
+    if (!q) return active.map((b) => ({ block: b, score: 0, matchPct: 0 } as BlockSearchResult));
 
     const terms = parseSearchTerms(q);
 
@@ -2497,15 +2601,50 @@ Regras:
       .map((b) => {
         const plain = sfdtToPlainText(b.content);
         const tagsText = getBlockTagsForUI(b).join(' ');
-        const haystack = `${b.title}\n${tagsText}\n${plain}`;
-        const score = terms.length
-          ? terms.reduce((acc, t) => acc + fuzzyScore(t, b.title, haystack), 0) / terms.length
-          : fuzzyScore(q, b.title, haystack);
-        return { block: b, score };
+        const titleRaw = b.title;
+        const titleN = normalizeSearchText(titleRaw);
+        const tagsN = normalizeSearchText(tagsText);
+        const contentN = normalizeSearchText(plain);
+        const qN = normalizeSearchText(q);
+
+        const scores = terms.map((t) => {
+          const token = String(t || '').trim();
+          if (!token) return 0;
+
+          if (token.includes(' ')) {
+            const phrase = normalizeSearchText(token);
+            if (!phrase) return 0;
+            if (titleN.includes(phrase)) return 1.0;
+            if (tagsN.includes(phrase)) return 0.95;
+            if (contentN.includes(phrase)) return 0.6;
+            return 0;
+          }
+
+          const sTitle = scoreSingleTermInText(token, titleRaw, 1.0, 0.75);
+          const sTags = scoreSingleTermInText(token, tagsText, 0.9, 0.6);
+          const sContent = scoreSingleTermInText(token, plain, 0.55, 0.3);
+          return Math.max(sTitle, sTags, sContent);
+        });
+
+        const baseMin = terms.length <= 1 ? 0.2 : 0.35;
+        const passed = scores.every((s, idx) => {
+          const token = terms[idx] || '';
+          if (terms.length >= 2 && String(token).length <= 3) return s >= 0.8;
+          return s >= baseMin;
+        });
+
+        if (!passed) return null;
+
+        let score = scores.reduce((acc, v) => acc + v, 0) / Math.max(scores.length, 1);
+        if (qN && titleN.includes(qN)) score += 0.25;
+        if (qN && tagsN.includes(qN)) score += 0.15;
+        if (score > 1.5) score = 1.5;
+        const matchPct = Math.round(Math.max(0, Math.min(1, score / 1.5)) * 100);
+        return { block: b, score, matchPct } as BlockSearchResult;
       })
-      .filter((x) => x.score > 0.15)
+      .filter((x): x is BlockSearchResult => Boolean(x) && x.score > 0.25)
       .sort((a, b) => b.score - a.score)
-      .map((x) => x.block);
+      .map((x) => x);
 
     return ranked;
   }, [blocks, blockSearchQuery, selectedDocumentType]);
@@ -2989,13 +3128,21 @@ Regras:
             <header className="relative px-3 sm:px-4 py-2 sm:py-3 border-b border-slate-100 flex items-center justify-between sticky top-0 bg-white z-10">
               <div>
                 <div className="text-[10px] font-bold uppercase tracking-[0.18em] text-slate-400 leading-none">Visualizar Bloco</div>
-                <h3 className="mt-1 text-sm sm:text-base font-bold text-slate-900 uppercase tracking-tight leading-tight">{viewingBlock.title}</h3>
+                <div className="mt-1 flex items-center gap-2">
+                  <h3 className="text-sm sm:text-base font-bold text-slate-900 uppercase tracking-tight leading-tight">{viewingBlock.title}</h3>
+                  {typeof viewingBlockMatchPct === 'number' && (
+                    <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 border border-emerald-200 font-bold">
+                      {viewingBlockMatchPct}%
+                    </span>
+                  )}
+                </div>
               </div>
               <button
                 onClick={() => {
                   blockViewDocxTokenRef.current += 1;
                   setShowBlockViewModal(false);
                   setViewingBlock(null);
+                  setViewingBlockMatchPct(null);
                   setBlockViewFallbackText('');
                   setBlockViewUseFallback(false);
                   setBlockViewDocxError('');
@@ -3126,12 +3273,35 @@ Regras:
               </label>
             </div>
 
-            <footer className="px-4 py-3 border-t border-slate-100 flex justify-end bg-slate-50">
+            <footer className="px-4 py-3 border-t border-slate-100 flex items-center justify-between bg-slate-50 gap-2">
+              <button
+                onClick={async () => {
+                  if (!isOnlineRef.current) {
+                    setError('Você está offline. O Peticionamento é 100% online: reconecte para editar/salvar.');
+                    return;
+                  }
+                  await insertBlock(viewingBlock);
+                  blockViewDocxTokenRef.current += 1;
+                  setShowBlockViewModal(false);
+                  setViewingBlock(null);
+                  setViewingBlockMatchPct(null);
+                  setBlockViewFallbackText('');
+                  setBlockViewUseFallback(false);
+                  setBlockViewDocxError('');
+                  setBlockViewDocxLoading(false);
+                  if (blockViewDocxContainerRef.current) blockViewDocxContainerRef.current.innerHTML = '';
+                }}
+                className="px-6 py-2.5 text-xs sm:text-sm font-bold rounded-xl transition-all shadow-md flex items-center justify-center gap-2 uppercase tracking-wider petition-btn-emerald"
+              >
+                <Plus className="w-4 h-4" />
+                <span>Adicionar no documento</span>
+              </button>
               <button
                 onClick={() => {
                   blockViewDocxTokenRef.current += 1;
                   setShowBlockViewModal(false);
                   setViewingBlock(null);
+                  setViewingBlockMatchPct(null);
                   setBlockViewFallbackText('');
                   setBlockViewUseFallback(false);
                   setBlockViewDocxError('');
@@ -3250,9 +3420,6 @@ Regras:
                                 onClick={() => void insertBlock(block)}
                               >
                                 <div className="flex items-center gap-1">
-                                  <span className="text-[10px] font-semibold text-slate-500 tabular-nums min-w-[22px] text-right">
-                                    {Number.isFinite(Number((block as any).order)) ? Number((block as any).order) : '—'}
-                                  </span>
                                   <span className="flex-1 text-xs text-slate-700 truncate">{block.title}</span>
                                   {block.is_default && <Star className="w-2.5 h-2.5 text-amber-400" />}
                                   <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-all">
@@ -3534,31 +3701,37 @@ Regras:
                     <p className="text-sm">Nenhum bloco encontrado</p>
                   </div>
                 ) : (
-                  searchFilteredBlocks.map((block: PetitionBlock) => (
+                  searchFilteredBlocks.map((item: BlockSearchResult) => {
+                    const b = item.block;
+                    const matchPct = item.matchPct;
+                    const showMatchPct = Boolean((blockSearchQuery || '').trim());
+                    return (
                     <div
-                      key={block.id}
+                      key={b.id}
                       className="px-4 py-3 border-b border-slate-100 hover:bg-amber-50 cursor-pointer transition-colors"
                       onClick={() => {
-                        void insertBlock(block);
+                        openViewBlock(b, showMatchPct ? matchPct : undefined);
                         setShowBlockSearchModal(false);
                       }}
                     >
                       <div className="flex items-center gap-2 mb-1">
-                        <span className="text-[11px] font-semibold text-slate-500 tabular-nums min-w-[28px] text-right">
-                          {Number.isFinite(Number((block as any).order)) ? Number((block as any).order) : '—'}
-                        </span>
-                        <span className="text-sm font-medium text-slate-700">{block.title}</span>
+                        <span className="text-sm font-medium text-slate-700">{b.title}</span>
                         <span className="text-[10px] px-1.5 py-0.5 bg-slate-100 text-slate-500 rounded">
-                          {getCategoryLabel(String(block.category || 'outros'))}
+                          {getCategoryLabel(String(b.category || 'outros'))}
                         </span>
-                        {block.is_default && <Star className="w-3 h-3 text-amber-400" />}
+                        {showMatchPct && (
+                          <span className="ml-auto text-[10px] px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 border border-emerald-200 font-bold">
+                            {matchPct}%
+                          </span>
+                        )}
+                        {b.is_default && <Star className="w-3 h-3 text-amber-400" />}
                       </div>
                       {(() => {
-                        const tags = getBlockTagsForUI(block);
+                        const tags = getBlockTagsForUI(b);
                         if (!tags.length) return null;
                         return (
                           <div className="flex flex-wrap gap-1 mb-1">
-                            {tags.slice(0, 4).map((t) => (
+                            {tags.map((t) => (
                               <span
                                 key={t}
                                 className="text-[10px] px-2 py-0.5 rounded-full bg-amber-100 text-amber-800"
@@ -3571,7 +3744,7 @@ Regras:
                       })()}
                       <p className="text-xs text-slate-500 line-clamp-2">
                         {(() => {
-                          const plain = sfdtToPlainText(block.content);
+                          const plain = sfdtToPlainText(b.content);
                           const t = (plain || '').trim();
                           if (!t) return '—';
                           if (t.startsWith('{') || t.startsWith('[')) return 'Pré-visualização indisponível';
@@ -3579,7 +3752,8 @@ Regras:
                         })()}
                       </p>
                     </div>
-                  ))
+                    );
+                  })
                 )}
               </div>
             </div>
