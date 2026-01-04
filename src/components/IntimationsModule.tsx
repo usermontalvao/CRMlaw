@@ -38,7 +38,6 @@ import { calendarService } from '../services/calendar.service';
 import { profileService } from '../services/profile.service';
 import { settingsService, type DjenConfig } from '../services/settings.service';
 import { userNotificationService } from '../services/userNotification.service';
-import { aiService } from '../services/ai.service';
 import { intimationAnalysisService } from '../services/intimationAnalysis.service';
 import { useToastContext } from '../contexts/ToastContext';
 import { useAuth } from '../contexts/AuthContext';
@@ -159,8 +158,6 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
 
   // IA Analysis
   const [aiAnalysis, setAiAnalysis] = useState<Map<string, IntimationAnalysis>>(new Map());
-  const [analyzingIds, setAnalyzingIds] = useState<Set<string>>(new Set());
-  const [aiEnabled, setAiEnabled] = useState(false);
 
   // Estados de navegação e interface
   const [showSettingsMenu, setShowSettingsMenu] = useState(false);
@@ -247,95 +244,6 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
     };
   }, []);
 
-  // Verificar se IA está habilitada
-  useEffect(() => {
-    setAiEnabled(aiService.isEnabled());
-  }, []);
-
-  // Analisar intimação com IA (definido antes para evitar erro de referência)
-  const handleAnalyzeWithAI = async (intimation: DjenComunicacaoLocal, silent: boolean = false) => {
-    if (!aiService.isEnabled()) {
-      if (!silent) {
-        toast.warning('IA não configurada', 'Configure VITE_OPENAI_API_KEY no arquivo .env');
-      }
-      console.log('⚠️ IA não habilitada - verifique VITE_OPENAI_API_KEY');
-      return;
-    }
-
-    console.log(`🤖 Iniciando análise de IA para intimação ${intimation.id.substring(0, 8)}...`);
-    setAnalyzingIds(prev => new Set(prev).add(intimation.id));
-
-    try {
-      const analysis = await aiService.analyzeIntimation(
-        intimation.texto,
-        intimation.numero_processo,
-        intimation.data_disponibilizacao,
-        intimation.tipo_documento || undefined,
-        intimation.tipo_comunicacao || undefined
-      );
-
-      console.log(`✅ Análise concluída - Urgência: ${analysis.urgency}, Prazo: ${analysis.deadline?.days || 'N/A'} dias`);
-
-      // Atualizar estado local
-      setAiAnalysis(prev => new Map(prev).set(intimation.id, analysis));
-      
-      // Salvar análise no banco de dados
-      try {
-        await intimationAnalysisService.saveAnalysis(
-          intimation.id,
-          analysis,
-          currentUserProfile?.id
-        );
-        console.log(`💾 Análise salva no banco de dados para intimação ${intimation.id.substring(0, 8)}`);
-      } catch (saveErr: any) {
-        console.error(`❌ Erro ao salvar análise no banco para intimação ${intimation.id.substring(0, 8)}:`, saveErr);
-        // Não bloqueia o fluxo se falhar ao salvar
-      }
-
-      // 🔔 Criar notificação apenas para intimações URGENTES
-      if (user?.id && (analysis.urgency === 'alta' || analysis.urgency === 'critica')) {
-        try {
-          const prazoInfo = analysis.deadline?.days 
-            ? `Prazo: ${analysis.deadline.days} dia(s)` 
-            : 'Prazo não identificado';
-          
-          console.log(`🔔 Criando notificação urgente para user_id: ${user.id}`);
-          
-          const notification = await userNotificationService.createNotification({
-            title: '⚠️ Intimação Urgente',
-            message: `${prazoInfo} • Processo ${intimation.numero_processo_mascara || intimation.numero_processo}`,
-            type: 'intimation_new',
-            user_id: user.id,
-            intimation_id: intimation.id,
-            metadata: {
-              urgency: analysis.urgency,
-              deadline_days: analysis.deadline?.days,
-              tribunal: intimation.sigla_tribunal,
-            },
-          });
-          console.log(`✅ Notificação criada: ${notification.id}`);
-        } catch (notifErr: any) {
-          console.error('❌ Erro ao criar notificação:', notifErr?.message || notifErr);
-        }
-      }
-      
-      if (!silent) {
-        setExpandedIntimationIds(prev => new Set(prev).add(intimation.id));
-        toast.success('Análise concluída', `Intimação analisada com urgência ${analysis.urgency}`);
-      }
-    } catch (err: any) {
-      console.error(`❌ Erro ao analisar intimação ${intimation.id.substring(0, 8)} com IA:`, err);
-      if (!silent) {
-        toast.error('Erro ao analisar', err.message || 'Não foi possível analisar a intimação');
-      }
-    } finally {
-      setAnalyzingIds(prev => {
-        const newSet = new Set(prev);
-        newSet.delete(intimation.id);
-        return newSet;
-      });
-    }
-  };
 
   const handleDeleteSelected = async () => {
     setShowClearMenu(false);
@@ -376,49 +284,6 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
     }
   };
 
-  // Analisar automaticamente intimações não lidas
-  const autoAnalyzeNewIntimations = async (intimationsList: DjenComunicacaoLocal[]) => {
-    console.log(`🔍 Verificando análise automática para ${intimationsList.length} intimações...`);
-    console.log(`🤖 IA habilitada: ${aiService.isEnabled()}`);
-    
-    if (!aiService.isEnabled()) {
-      console.log('⚠️ IA não habilitada - pulando análise automática');
-      return;
-    }
-
-    const toAnalyze = intimationsList.filter(
-      (intimation) => !intimation.lida && !aiAnalysis.has(intimation.id)
-    );
-
-    console.log(`📊 Intimações sem análise: ${toAnalyze.length} de ${intimationsList.length}`);
-
-    if (toAnalyze.length === 0) {
-      console.log('✅ Todas as intimações já foram analisadas');
-      return;
-    }
-
-    console.log(`🤖 Iniciando análise automática de ${toAnalyze.length} intimação(ões)...`);
-
-    // Analisar em lotes de 3 para não sobrecarregar
-    const batch = toAnalyze.slice(0, 3);
-
-    for (const intimation of batch) {
-      console.log(`🔄 Analisando intimação ${intimation.id.substring(0, 8)}...`);
-      await handleAnalyzeWithAI(intimation, true);
-      // Delay menor para análise mais rápida
-      await new Promise(resolve => setTimeout(resolve, 1500));
-    }
-
-    console.log(`✅ Análise automática concluída: ${batch.length} intimação(ões) processadas`);
-    
-    // Se ainda há mais para analisar, agendar próximo lote
-    if (toAnalyze.length > 3) {
-      console.log(`⏳ Agendando análise de mais ${toAnalyze.length - 3} intimações em 10 segundos...`);
-      setTimeout(() => {
-        autoAnalyzeNewIntimations(toAnalyze.slice(3));
-      }, 10000);
-    }
-  };
 
   // Vinculação automática: se nome da parte = nome do cliente, vincula automaticamente
   const autoLinkIntimations = useCallback(async (intimationsData: DjenComunicacaoLocal[], clientsData: Client[]) => {
@@ -468,7 +333,7 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
   }, []);
 
   // Recarregar apenas intimações (sem flash/reload)
-  const reloadIntimations = useCallback(async (runAutoAnalysis: boolean = false) => {
+  const reloadIntimations = useCallback(async () => {
     try {
       const intimationsData = await djenLocalService.listComunicacoes();
       
@@ -508,17 +373,13 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
         }
       }
 
-      // Analisar automaticamente intimações não lidas (se solicitado)
-      if (runAutoAnalysis && intimationsData.length > 0) {
-        setTimeout(() => autoAnalyzeNewIntimations(intimationsData), 1000);
-      }
     } catch (err: any) {
       console.error('Erro ao recarregar intimações:', err);
       toast.error('Erro ao atualizar', 'Não foi possível recarregar as intimações');
     }
   }, [clients, autoLinkIntimations]);
 
-  const loadData = useCallback(async (runAutoAnalysis: boolean = false) => {
+  const loadData = useCallback(async () => {
     try {
       setLoading(true);
       const [intimationsData, clientsData, processesData, membersData, userProfile, djenSettings] = await Promise.all([
@@ -569,10 +430,6 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
         }
       }
 
-      // Analisar automaticamente intimações não lidas (se solicitado)
-      if (runAutoAnalysis && intimationsData.length > 0) {
-        setTimeout(() => autoAnalyzeNewIntimations(intimationsData), 1000);
-      }
     } catch (err: any) {
       toast.error('Erro ao carregar dados', err.message);
     } finally {
@@ -584,7 +441,7 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
 
   // Carregar dados (sem análise automática - agora feita pelo cron)
   useEffect(() => {
-    loadData(false);
+    loadData();
     fetchSyncLogs();
   }, [loadData, fetchSyncLogs]);
 
@@ -619,7 +476,7 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
               realtimeFlushTimerRef.current = null;
 
               // Recarrega e dispara análise automática de IA
-              await reloadIntimations(true);
+              await reloadIntimations();
 
               toast.info(
                 'Novas intimações',
@@ -748,17 +605,15 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
           // Não bloqueia o fluxo se falhar
         }
 
-        // Recarregar apenas intimações (sem flash) e analisar automaticamente
+        // Recarregar apenas intimações (sem flash)
         const totalSaved = savedFromAdvocate + savedFromProcesses;
-        // BUG FIX: Sempre tentar analisar, não apenas quando há novas
-        // Pode haver intimações antigas sem análise
-        await reloadIntimations(true);
+        await reloadIntimations();
 
         if (mode === 'manual') {
           if (totalSaved > 0) {
             toast.success(
               'Sincronização concluída',
-              `${totalSaved} nova(s) intimação(ões) importada(s). ${aiEnabled ? '🤖 IA analisando...' : ''}`,
+              `${totalSaved} nova(s) intimação(ões) importada(s).`,
             );
           } else {
             toast.info('Sincronização concluída', 'Nenhuma intimação nova encontrada');
@@ -776,7 +631,7 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
         setSyncing(false);
       }
     },
-    [processes, clients, currentUserProfile, aiEnabled, reloadIntimations, fetchSyncLogs, toast]
+    [processes, clients, currentUserProfile, reloadIntimations, fetchSyncLogs, toast]
   );
 
   const getLastSyncDate = useCallback((): Date | null => {
@@ -1874,22 +1729,6 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
                         </div>
                         {/* Botões de ação - ocultos em mobile quando não expandido */}
                         <div className={`flex items-center gap-1.5 sm:gap-2 flex-shrink-0 ${!isExpanded ? 'hidden sm:flex' : 'flex'}`}>
-                          {aiEnabled && !aiAnalysis.has(intimation.id) && (
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                handleAnalyzeWithAI(intimation);
-                              }}
-                              disabled={analyzingIds.has(intimation.id)}
-                              className="inline-flex items-center gap-1 px-2 py-1 text-xs font-medium text-purple-600 hover:text-purple-700 border border-purple-200 rounded hover:bg-purple-50 transition disabled:opacity-50"
-                            >
-                              {analyzingIds.has(intimation.id) ? (
-                                <Loader2 className="w-3 h-3 animate-spin" />
-                              ) : (
-                                <Sparkles className="w-3 h-3" />
-                              )}
-                            </button>
-                          )}
                           {!intimation.lida && (
                             <button
                               onClick={(e) => {
@@ -2343,25 +2182,6 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
                 {/* Botões de ação - Ocultos em mobile quando não expandido */}
                 {!selectionMode && (
                   <div className={`flex flex-col gap-1.5 sm:gap-2 ${!isExpanded ? 'hidden sm:flex' : 'flex'}`}>
-                    {aiEnabled && !aiAnalysis.has(intimation.id) && (
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          handleAnalyzeWithAI(intimation);
-                        }}
-                        disabled={analyzingIds.has(intimation.id)}
-                        className="inline-flex items-center justify-center gap-1 sm:gap-1.5 px-2 sm:px-3 py-1 sm:py-1.5 text-[10px] sm:text-xs font-medium text-purple-600 hover:text-purple-700 border border-purple-200 rounded-lg hover:bg-purple-50 transition disabled:opacity-50 disabled:cursor-not-allowed"
-                      >
-                        {analyzingIds.has(intimation.id) ? (
-                          <Loader2 className="w-3 h-3 sm:w-3.5 sm:h-3.5 animate-spin" />
-                        ) : (
-                          <>
-                            <Sparkles className="w-3 h-3 sm:w-3.5 sm:h-3.5" />
-                            <span className="hidden sm:inline">Analisar IA</span>
-                          </>
-                        )}
-                      </button>
-                    )}
                     <button
                       onClick={(e) => {
                         e.stopPropagation();

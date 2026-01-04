@@ -46,6 +46,7 @@ import {
    ============================================================================ */
 
 const VERSION_CODENAMES: Record<string, { name: string; emoji: string }> = {
+  '1.9.52': { name: 'Café Telefone', emoji: '📞' },
   '1.9.30': { name: 'Café Estável', emoji: '🧰' },
   '1.9.29': { name: 'Café Persistente', emoji: '💾' },
   '1.9.28': { name: 'Café Otimizado', emoji: '⚡' },
@@ -501,6 +502,23 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
    ============================================================================ */
 
 const releases: ReleaseNote[] = [
+  {
+    version: '1.9.52',
+    date: '04/01/2026',
+    summary: 'Preencher: validação de telefone/WhatsApp agora exige 11 dígitos.',
+    modules: [
+      {
+        moduleId: 'sistema',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Validação de telefone/WhatsApp no formulário público',
+            description: 'O campo de telefone/WhatsApp na página /preencher agora exige exatamente 11 dígitos (DDD + 9) e não permite avançar com 10 dígitos.',
+          },
+        ],
+      },
+    ],
+  },
   {
     version: '1.9.46',
     date: '01/01/2026',

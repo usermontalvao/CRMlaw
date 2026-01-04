@@ -64,7 +64,7 @@ const formatCep = (value: string) => {
 const hasMinDigitsForField = (field: FieldDef, rawValue: string): boolean => {
   const digits = (rawValue || '').replace(/\D/g, '');
   if (field.type === 'cpf') return digits.length === 11 || digits.length === 14;
-  if (field.type === 'phone') return digits.length === 10 || digits.length === 11;
+  if (field.type === 'phone') return digits.length === 11;
   if (field.type === 'cep') return digits.length === 8;
   return true;
 };

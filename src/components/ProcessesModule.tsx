@@ -36,6 +36,7 @@ import { processTimelineService, type TimelineEvent } from '../services/processT
 import { deadlineService } from '../services/deadline.service';
 import { userNotificationService } from '../services/userNotification.service';
 import { ProcessTimeline } from './ProcessTimeline';
+import { ProcessTimelineInline } from './ProcessTimelineInline';
 import { ClientSearchSelect } from './ClientSearchSelect';
 import { useAuth } from '../contexts/AuthContext';
 import { useDeleteConfirm } from '../contexts/DeleteConfirmContext';
@@ -339,8 +340,19 @@ const ProcessesModule: React.FC<ProcessesModuleProps> = ({ forceCreate, entityId
   const [timelineProcessCode, setTimelineProcessCode] = useState<string | null>(null);
   const [timelineProcessId, setTimelineProcessId] = useState<string | null>(null);
   const [timelineClientName, setTimelineClientName] = useState<string | null>(null);
+  const [expandedTimelineProcessId, setExpandedTimelineProcessId] = useState<string | null>(null);
+  
+  // Alerta: processos arquivados com prazos pendentes
+  const [archivedWithDeadlines, setArchivedWithDeadlines] = useState<Array<{
+    processId: string;
+    processCode: string;
+    clientName: string;
+    deadlineCount: number;
+  }>>([]);
 
   const clientMap = useMemo(() => new Map(clients.map((client) => [client.id, client])), [clients]);
+
+  const allClientsMap = useMemo(() => new Map(allClients.map((client) => [client.id, client])), [allClients]);
 
   const memberMap = useMemo(() => new Map(members.map((member) => [member.id, member])), [members]);
 
@@ -369,8 +381,6 @@ const ProcessesModule: React.FC<ProcessesModuleProps> = ({ forceCreate, entityId
     if (!selectedProcessForView) return [] as ProcessNote[];
     return parseNotes(selectedProcessForView.notes);
   }, [selectedProcessForView]);
-
-  const allClientsMap = useMemo(() => new Map(allClients.map((c) => [c.id, c])), [allClients]);
 
   const filteredProcesses = useMemo(() => {
     const term = searchTerm.trim().toLowerCase();
@@ -421,6 +431,53 @@ const ProcessesModule: React.FC<ProcessesModuleProps> = ({ forceCreate, entityId
 
     fetchProcesses();
   }, []);
+
+  // Verificar processos arquivados com prazos pendentes
+  useEffect(() => {
+    const checkArchivedWithDeadlines = async () => {
+      try {
+        const archivedProcesses = processes.filter(p => p.status === 'arquivado');
+        if (archivedProcesses.length === 0) {
+          setArchivedWithDeadlines([]);
+          return;
+        }
+
+        const alerts: Array<{
+          processId: string;
+          processCode: string;
+          clientName: string;
+          deadlineCount: number;
+        }> = [];
+
+        for (const process of archivedProcesses) {
+          const deadlines = await deadlineService.listDeadlines({ process_id: process.id });
+          const pendingDeadlines = deadlines.filter(d => d.status === 'pendente');
+          
+          if (pendingDeadlines.length > 0) {
+            const client = allClientsMap.get(process.client_id);
+            alerts.push({
+              processId: process.id,
+              processCode: process.process_code || 'Sem número',
+              clientName: client?.full_name || 'Cliente não encontrado',
+              deadlineCount: pendingDeadlines.length,
+            });
+          }
+        }
+
+        setArchivedWithDeadlines(alerts);
+        
+        if (alerts.length > 0) {
+          console.log(`⚠️ ${alerts.length} processo(s) arquivado(s) com prazos pendentes`);
+        }
+      } catch (err) {
+        console.error('Erro ao verificar processos arquivados com prazos:', err);
+      }
+    };
+
+    if (processes.length > 0 && allClients.length > 0) {
+      checkArchivedWithDeadlines();
+    }
+  }, [processes, allClients, allClientsMap]);
 
   const fetchDjenCronLogs = useCallback(async () => {
     try {
@@ -2080,6 +2137,59 @@ const ProcessesModule: React.FC<ProcessesModuleProps> = ({ forceCreate, entityId
         </div>
       </div>
 
+      {/* Alerta: Processos arquivados com prazos pendentes */}
+      {archivedWithDeadlines.length > 0 && (
+        <div className="bg-gradient-to-r from-red-50 to-orange-50 border border-red-200 rounded-xl p-4 shadow-sm">
+          <div className="flex items-start gap-3">
+            <div className="flex-shrink-0 w-10 h-10 rounded-full bg-red-100 flex items-center justify-center">
+              <AlertTriangle className="w-5 h-5 text-red-600" />
+            </div>
+            <div className="flex-1 min-w-0">
+              <h3 className="text-sm font-bold text-red-800 flex items-center gap-2">
+                ⚠️ Atenção: Processos arquivados com prazos pendentes
+                <span className="px-2 py-0.5 bg-red-600 text-white text-xs font-bold rounded-full">
+                  {archivedWithDeadlines.length}
+                </span>
+              </h3>
+              <p className="text-xs text-red-700 mt-1 mb-3">
+                Os seguintes processos foram arquivados mas ainda possuem prazos pendentes. Verifique se os prazos devem ser concluídos ou cancelados.
+              </p>
+              <div className="space-y-2">
+                {archivedWithDeadlines.map((alert) => (
+                  <div
+                    key={alert.processId}
+                    className="flex items-center justify-between gap-3 bg-white/70 rounded-lg px-3 py-2 border border-red-100"
+                  >
+                    <div className="flex-1 min-w-0">
+                      <p className="text-xs font-semibold text-slate-800 truncate">
+                        {alert.clientName}
+                      </p>
+                      <p className="text-[10px] font-mono text-slate-500 truncate">
+                        {alert.processCode}
+                      </p>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <span className="px-2 py-1 bg-red-100 text-red-700 text-[10px] font-bold rounded">
+                        {alert.deadlineCount} prazo{alert.deadlineCount > 1 ? 's' : ''}
+                      </span>
+                      <button
+                        onClick={() => {
+                          const process = processes.find(p => p.id === alert.processId);
+                          if (process) handleViewProcess(process);
+                        }}
+                        className="px-2 py-1 bg-blue-100 text-blue-700 text-[10px] font-medium rounded hover:bg-blue-200 transition"
+                      >
+                        Ver
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2 sm:gap-3">
         <button
           onClick={() => setStatusFilter('todos')}
@@ -2533,6 +2643,23 @@ const ProcessesModule: React.FC<ProcessesModuleProps> = ({ forceCreate, entityId
                               </select>
                               {isUpdating && <Loader2 className="w-3 h-3 animate-spin text-amber-600" />}
                             </div>
+
+                            {/* Timeline Inline Expansível */}
+                            {process.process_code && (
+                              <ProcessTimelineInline
+                                processCode={process.process_code}
+                                processId={process.id}
+                                isExpanded={expandedTimelineProcessId === process.id}
+                                onToggle={() => {
+                                  setExpandedTimelineProcessId(
+                                    expandedTimelineProcessId === process.id ? null : process.id
+                                  );
+                                }}
+                                onOpenFullTimeline={() => {
+                                  handleOpenTimeline(process);
+                                }}
+                              />
+                            )}
                           </div>
                         );
                       })}
@@ -2566,15 +2693,6 @@ const ProcessesModule: React.FC<ProcessesModuleProps> = ({ forceCreate, entityId
                         <span className="text-xs text-gray-600">{formatDate(process.distributed_at)}</span>
                       </div>
                       <div className="flex items-center gap-2">
-                        {process.process_code && (
-                          <button
-                            onClick={() => handleOpenTimeline(process)}
-                            className="px-3 py-2 bg-orange-50 text-orange-600 rounded-lg hover:bg-orange-100 transition-colors"
-                            title="Linha do Tempo"
-                          >
-                            <Clock className="w-4 h-4" />
-                          </button>
-                        )}
                         <button
                           onClick={() => handleViewProcess(process)}
                           className="flex-1 inline-flex items-center justify-center gap-2 px-3 py-2 bg-blue-50 text-blue-700 rounded-lg hover:bg-blue-100 transition-colors text-sm font-medium"
@@ -2593,6 +2711,23 @@ const ProcessesModule: React.FC<ProcessesModuleProps> = ({ forceCreate, entityId
                           <Trash2 className="w-4 h-4" />
                         </button>
                       </div>
+
+                      {/* Timeline Inline Expansível - Mobile */}
+                      {process.process_code && (
+                        <ProcessTimelineInline
+                          processCode={process.process_code}
+                          processId={process.id}
+                          isExpanded={expandedTimelineProcessId === process.id}
+                          onToggle={() => {
+                            setExpandedTimelineProcessId(
+                              expandedTimelineProcessId === process.id ? null : process.id
+                            );
+                          }}
+                          onOpenFullTimeline={() => {
+                            handleOpenTimeline(process);
+                          }}
+                        />
+                      )}
                     </div>
                   );
                 })}
@@ -2611,64 +2746,92 @@ const ProcessesModule: React.FC<ProcessesModuleProps> = ({ forceCreate, entityId
                   <tbody className="bg-white divide-y divide-gray-200">
                     {filteredProcesses.map((process) => {
                       const client = clientMap.get(process.client_id);
+                      const isTimelineExpanded = expandedTimelineProcessId === process.id;
                       return (
-                        <tr key={process.id} className="hover:bg-gray-50 transition-colors cursor-pointer" onClick={() => process.process_code && handleOpenTimeline(process)}>
-                          <td className="px-6 py-4 whitespace-nowrap">
-                            <div className="flex items-center gap-3">
-                              <div
-                                className={`flex-shrink-0 h-10 w-10 rounded-full flex items-center justify-center ${client?.client_type === 'pessoa_fisica' ? 'bg-blue-100 text-blue-600' : 'bg-purple-100 text-purple-600'}`}
-                              >
-                                {client?.client_type === 'pessoa_fisica' ? <User className="w-5 h-5" /> : <Building2 className="w-5 h-5" />}
-                              </div>
-                              <div>
-                                <div className="text-sm font-medium text-gray-900">{client?.full_name || 'Cliente removido'}</div>
-                                <div className="flex flex-wrap gap-2 mt-1 text-xs text-gray-500">
-                                  <span className="inline-flex items-center gap-1">
-                                    Área: <span className="font-medium">{PRACTICE_AREAS.find((area) => area.key === process.practice_area)?.label ?? process.practice_area}</span>
-                                  </span>
-                                  {process.responsible_lawyer && (
+                        <React.Fragment key={process.id}>
+                          <tr 
+                            className={`hover:bg-gray-50 transition-colors cursor-pointer ${isTimelineExpanded ? 'bg-orange-50/50' : ''}`} 
+                            onClick={() => {
+                              if (process.process_code) {
+                                setExpandedTimelineProcessId(isTimelineExpanded ? null : process.id);
+                              }
+                            }}
+                          >
+                            <td className="px-6 py-4 whitespace-nowrap">
+                              <div className="flex items-center gap-3">
+                                <div
+                                  className={`flex-shrink-0 h-10 w-10 rounded-full flex items-center justify-center ${client?.client_type === 'pessoa_fisica' ? 'bg-blue-100 text-blue-600' : 'bg-purple-100 text-purple-600'}`}
+                                >
+                                  {client?.client_type === 'pessoa_fisica' ? <User className="w-5 h-5" /> : <Building2 className="w-5 h-5" />}
+                                </div>
+                                <div>
+                                  <div className="text-sm font-medium text-gray-900">{client?.full_name || 'Cliente removido'}</div>
+                                  <div className="flex flex-wrap gap-2 mt-1 text-xs text-gray-500">
                                     <span className="inline-flex items-center gap-1">
-                                      Advogado: <span className="font-medium">{process.responsible_lawyer}</span>
+                                      Área: <span className="font-medium">{PRACTICE_AREAS.find((area) => area.key === process.practice_area)?.label ?? process.practice_area}</span>
                                     </span>
-                                  )}
+                                    {process.responsible_lawyer && (
+                                      <span className="inline-flex items-center gap-1">
+                                        Advogado: <span className="font-medium">{process.responsible_lawyer}</span>
+                                      </span>
+                                    )}
+                                  </div>
                                 </div>
                               </div>
-                            </div>
-                          </td>
-                          <td className="px-6 py-4 whitespace-nowrap">
-                            <div className="flex items-center gap-2">
-                              <div className="text-sm font-mono text-gray-900">{process.process_code}</div>
-                              {process.djen_has_data && (
-                                <span className="px-2 py-0.5 text-xs font-medium bg-green-100 text-green-800 rounded-full" title="Dados sincronizados com DJEN">
-                                  ✓ DJEN
-                                </span>
-                              )}
-                            </div>
-                            {process.court && <div className="text-xs text-gray-500 mt-1">{process.court}</div>}
-                          </td>
-                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{formatDate(process.distributed_at)}</td>
-                          <td className="px-6 py-4 whitespace-nowrap">
-                            <span className={`px-3 py-1 inline-flex text-xs leading-5 font-semibold rounded-full ${getStatusBadge(process.status)}`}>{getStatusLabel(process.status)}</span>
-                          </td>
-                          <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium" onClick={(e) => e.stopPropagation()}>
-                            <div className="flex items-center justify-end gap-2">
-                              {process.process_code && (
-                                <button onClick={() => handleOpenTimeline(process)} className="text-orange-500 hover:text-orange-700 transition-colors" title="Linha do Tempo">
-                                  <Clock className="w-5 h-5" />
+                            </td>
+                            <td className="px-6 py-4 whitespace-nowrap">
+                              <div className="flex items-center gap-2">
+                                <div className="text-sm font-mono text-gray-900">{process.process_code}</div>
+                                {process.djen_has_data && (
+                                  <span className="px-2 py-0.5 text-xs font-medium bg-green-100 text-green-800 rounded-full" title="Dados sincronizados com DJEN">
+                                    ✓ DJEN
+                                  </span>
+                                )}
+                              </div>
+                              {process.court && <div className="text-xs text-gray-500 mt-1">{process.court}</div>}
+                            </td>
+                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{formatDate(process.distributed_at)}</td>
+                            <td className="px-6 py-4 whitespace-nowrap">
+                              <span className={`px-3 py-1 inline-flex text-xs leading-5 font-semibold rounded-full ${getStatusBadge(process.status)}`}>{getStatusLabel(process.status)}</span>
+                            </td>
+                            <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium" onClick={(e) => e.stopPropagation()}>
+                              <div className="flex items-center justify-end gap-2">
+                                {process.process_code && (
+                                  <button 
+                                    onClick={() => setExpandedTimelineProcessId(isTimelineExpanded ? null : process.id)} 
+                                    className={`transition-colors ${isTimelineExpanded ? 'text-orange-600' : 'text-orange-400 hover:text-orange-600'}`} 
+                                    title={isTimelineExpanded ? 'Recolher Timeline' : 'Expandir Timeline'}
+                                  >
+                                    {isTimelineExpanded ? <ChevronUp className="w-5 h-5" /> : <ChevronDown className="w-5 h-5" />}
+                                  </button>
+                                )}
+                                <button onClick={() => handleViewProcess(process)} className="text-blue-600 hover:text-blue-900 transition-colors" title="Ver detalhes">
+                                  <Eye className="w-5 h-5" />
                                 </button>
-                              )}
-                              <button onClick={() => handleViewProcess(process)} className="text-blue-600 hover:text-blue-900 transition-colors" title="Ver detalhes">
-                                <Eye className="w-5 h-5" />
-                              </button>
-                              <button onClick={() => handleOpenModal(process)} className="text-amber-600 hover:text-amber-900 transition-colors" title="Editar">
-                                <Edit2 className="w-5 h-5" />
-                              </button>
-                              <button onClick={() => handleDeleteProcess(process.id)} className="text-red-600 hover:text-red-900 transition-colors" title="Excluir">
-                                <Trash2 className="w-5 h-5" />
-                              </button>
-                            </div>
-                          </td>
-                        </tr>
+                                <button onClick={() => handleOpenModal(process)} className="text-amber-600 hover:text-amber-900 transition-colors" title="Editar">
+                                  <Edit2 className="w-5 h-5" />
+                                </button>
+                                <button onClick={() => handleDeleteProcess(process.id)} className="text-red-600 hover:text-red-900 transition-colors" title="Excluir">
+                                  <Trash2 className="w-5 h-5" />
+                                </button>
+                              </div>
+                            </td>
+                          </tr>
+                          {/* Timeline Inline Expansível - Desktop */}
+                          {isTimelineExpanded && process.process_code && (
+                            <tr className="bg-gradient-to-r from-orange-50 to-amber-50">
+                              <td colSpan={5} className="px-6 py-4">
+                                <ProcessTimelineInline
+                                  processCode={process.process_code}
+                                  processId={process.id}
+                                  isExpanded={true}
+                                  onToggle={() => setExpandedTimelineProcessId(null)}
+                                  onOpenFullTimeline={() => handleOpenTimeline(process)}
+                                />
+                              </td>
+                            </tr>
+                          )}
+                        </React.Fragment>
                       );
                     })}
                   </tbody>

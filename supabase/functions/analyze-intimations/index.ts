@@ -14,6 +14,12 @@ interface AnalysisResult {
   summary?: string;
 }
 
+function shouldRequireAction(analysis: AnalysisResult): boolean {
+  const days = analysis.deadline?.days;
+  if (typeof days === 'number' && days > 0) return true;
+  return analysis.urgency === 'alta' || analysis.urgency === 'critica';
+}
+
 function addDays(baseIso: string, days: number): string {
   const base = new Date(baseIso);
   return new Date(base.getTime() + days * 24 * 60 * 60 * 1000).toISOString();
@@ -293,6 +299,20 @@ Deno.serve(async (req: Request) => {
       const baseDateIso = (intimation.data_disponibilizacao || intimation.created_at || analyzedAt) as string;
       const deadlineDueDate = deadlineDays ? addDays(baseDateIso, deadlineDays) : null;
 
+      const actionRequired = shouldRequireAction(analysis);
+
+      // Formato compatível com o frontend (ProcessTimelineService.fetchTimelineFromDatabase)
+      const timelineAiAnalysis = {
+        summary: analysis.summary ?? null,
+        urgency: analysis.urgency,
+        action_required: actionRequired,
+        key_points: [],
+        deadline_days: deadlineDays,
+        deadline_due_date: deadlineDueDate,
+        analyzed_at: analyzedAt,
+        model_used: modelUsed,
+      };
+
       // Salvar análise no banco (somente colunas existentes na tabela)
       const { error: saveError } = await supabase.from("intimation_ai_analysis").insert({
         intimation_id: intimation.id,
@@ -309,6 +329,19 @@ Deno.serve(async (req: Request) => {
       if (saveError) {
         console.error(`❌ Erro ao salvar análise (${intimation.id.substring(0, 8)}): ${saveError.message}`);
         continue;
+      }
+
+      // Também persistir no registro principal para evitar re-análise ao abrir a timeline
+      const { error: updateCommError } = await supabase
+        .from('djen_comunicacoes')
+        .update({
+          ai_analysis: timelineAiAnalysis,
+          updated_at: analyzedAt,
+        })
+        .eq('id', intimation.id);
+
+      if (updateCommError) {
+        console.error(`⚠️ Falha ao atualizar djen_comunicacoes.ai_analysis (${intimation.id.substring(0, 8)}): ${updateCommError.message}`);
       }
 
       analyzed++;

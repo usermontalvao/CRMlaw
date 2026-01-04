@@ -1,5 +1,26 @@
 # Changelog
 
+## 1.9.51
+- **Processos (Timeline Profissional)**: redesign completo da linha do tempo inline com cards individuais, layout limpo e espaçado, ícones maiores, melhor hierarquia visual, badges refinados e botão de detalhes mais claro.
+
+## 1.9.52
+- **Preencher (Validação Telefone/WhatsApp)**: o campo de telefone/WhatsApp agora exige **11 dígitos** (DDD + 9) e não permite avançar com 10 dígitos.
+
+## 1.9.50
+- **Intimações (IA via Cron)**: desativada a análise de IA no frontend; o módulo agora apenas exibe análises **salvas no banco** (geradas via Edge/Cron), evitando consumo repetido ao abrir.
+
+## 1.9.49
+- **Processos (IA Persistente)**: Edge Function `analyze-intimations` agora salva a análise também em `djen_comunicacoes.ai_analysis`, permitindo que a timeline consuma a análise do banco e reanalise **apenas** quando chegar nova movimentação.
+
+## 1.9.48
+- **Processos (Timeline Inline)**: melhorias na linha do tempo no card: exibe **data completa + hora**, **órgão/tribunal**, permite **expandir detalhes** e inclui **botão de atualizar**; layout refinado e classes Tailwind ajustadas para evitar falhas de build.
+
+## 1.9.47
+- **Processos (Edge Function)**: nova Edge Function `update-process-status` para atualização automática de status dos processos via cron, sem necessidade de abrir o navegador.
+- **Processos (Timeline Inline)**: linha do tempo agora é exibida diretamente no card do processo (expansível/recolhível), sem necessidade de abrir modal.
+- **Processos (Alerta Inteligente)**: sistema detecta e alerta quando um processo arquivado ainda possui prazos pendentes, exibindo notificação visual no módulo.
+- **Processos (Timeline Desktop)**: ao clicar na linha da tabela, a timeline expande abaixo da linha ao invés de abrir modal.
+
 ## 1.9.45
 - **Peticionamento (Blocos)**: removida a **numeração automática** na listagem de blocos.
 
