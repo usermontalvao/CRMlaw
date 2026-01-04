@@ -1749,25 +1749,7 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
     try {
       setSignLoading(true);
       await signatureService.signDocument(signingSigner.id, { signature_image: signatureData, facial_image: facialData });
-      
-      // 🔔 Criar notificação de assinatura
-      if (user?.id && detailsRequest) {
-        try {
-          await userNotificationService.createNotification({
-            title: '✍️ Documento Assinado',
-            message: `${signingSigner.name} assinou o documento "${detailsRequest.document_name}"`,
-            type: 'process_updated',
-            user_id: user.id,
-            metadata: {
-              signer_name: signingSigner.name,
-              signer_email: signingSigner.email,
-              document_name: detailsRequest.document_name,
-              signature_type: 'digital',
-            },
-          });
-        } catch {}
-      }
-      
+      // Notificação já é criada automaticamente pelo signatureService quando todos assinarem
       toast.success('Assinado!'); setSignModalOpen(false); loadData();
       if (detailsRequest) openDetails(detailsRequest);
     } catch (error: any) { toast.error(error.message || 'Erro'); } finally { setSignLoading(false); }

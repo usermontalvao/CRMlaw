@@ -1,10 +1,29 @@
 # Changelog
 
-## 1.9.51
-- **Processos (Timeline Profissional)**: redesign completo da linha do tempo inline com cards individuais, layout limpo e espaçado, ícones maiores, melhor hierarquia visual, badges refinados e botão de detalhes mais claro.
+## 1.9.58
+- **Assinatura (PDF)**: atualizado o texto da **validade jurídica** (MP 2.200-2/2001) na página de registro de assinatura do PDF, com redação mais completa e formal.
+
+## 1.9.57
+- **Assinatura (OTP por E-mail)**: padronizadas as cores do fluxo (botões e destaques) para o **tema laranja** do projeto.
+
+## 1.9.56
+- **Assinatura (OTP por E-mail)**: melhorado o **template do e-mail** (layout mais compatível com clientes como Gmail/Outlook) e padronizado para as **cores do projeto**.
+- **Assinatura (OTP por E-mail)**: melhorias visuais no modal de autenticação (animações/feedback de envio e validação).
+
+## 1.9.55
+- **Assinatura (OTP por E-mail)**: ajustadas as Edge Functions para **não retornarem status HTTP de erro** (sempre `200` com `{ success: false, error }`), evitando o erro genérico "Edge Function returned a non-2xx status code" no frontend.
+
+## 1.9.54
+- **Assinatura (OTP por E-mail)**: corrigida a etapa **“Continuar com E-mail”** que ficava em branco no modal; incluída a renderização da etapa `email_otp`.
+
+## 1.9.53
+- **Assinatura (Código por E-mail)**: adicionado novo método de autenticação por **código via e-mail (OTP)** usando SMTP (Hostinger), com Edge Functions `email-send-otp` / `email-verify-otp` e persistência em `signature_email_otps`.
 
 ## 1.9.52
 - **Preencher (Validação Telefone/WhatsApp)**: o campo de telefone/WhatsApp agora exige **11 dígitos** (DDD + 9) e não permite avançar com 10 dígitos.
+
+## 1.9.51
+- **Processos (Timeline Profissional)**: redesign completo da linha do tempo inline com cards individuais, layout limpo e espaçado, ícones maiores, melhor hierarquia visual, badges refinados e botão de detalhes mais claro.
 
 ## 1.9.50
 - **Intimações (IA via Cron)**: desativada a análise de IA no frontend; o módulo agora apenas exibe análises **salvas no banco** (geradas via Edge/Cron), evitando consumo repetido ao abrir.

@@ -493,6 +493,17 @@ class SignatureService {
     return { expires_at: data?.expires_at ?? null };
   }
 
+  async sendEmailOtp(params: { token: string; email: string }): Promise<{ expires_at?: string | null }> {
+    const { token, email } = params;
+    const { data, error } = await supabase.functions.invoke('email-send-otp', {
+      body: { token, email },
+    });
+
+    if (error) throw new Error(error.message);
+    if (!data?.success) throw new Error(data?.error || 'Não foi possível enviar o código.');
+    return { expires_at: data?.expires_at ?? null };
+  }
+
   async verifyPhoneOtp(params: { token: string; code: string }): Promise<{ phone?: string | null }> {
     const { token, code } = params;
     const { data, error } = await supabase.functions.invoke('smsdev-verify-otp', {
@@ -502,6 +513,17 @@ class SignatureService {
     if (error) throw new Error(error.message);
     if (!data?.success) throw new Error(data?.error || 'Código inválido.');
     return { phone: data?.phone ?? null };
+  }
+
+  async verifyEmailOtp(params: { token: string; code: string }): Promise<{ email?: string | null }> {
+    const { token, code } = params;
+    const { data, error } = await supabase.functions.invoke('email-verify-otp', {
+      body: { token, code },
+    });
+
+    if (error) throw new Error(error.message);
+    if (!data?.success) throw new Error(data?.error || 'Código inválido.');
+    return { email: data?.email ?? null };
   }
 
   async markSignerAsViewed(signerId: string, ipAddress?: string, userAgent?: string): Promise<void> {
@@ -762,14 +784,15 @@ class SignatureService {
       const signedCount = signers?.filter(s => s.status === 'signed').length || 0;
       const allSigned = totalSigners > 0 && signedCount === totalSigners;
 
-      // Montar título e mensagem
-      const title = allSigned 
-        ? '✅ Documento Totalmente Assinado!'
-        : '✍️ Nova Assinatura Recebida';
-      
-      const message = allSigned
-        ? `"${request.document_name}" foi assinado por todos (${signedCount}/${totalSigners})`
-        : `${signer.name} assinou "${request.document_name}" (${signedCount}/${totalSigners})`;
+      // Criar notificação APENAS quando todos assinarem (documento completo)
+      if (!allSigned) {
+        console.log(`⏭️ Assinatura parcial (${signedCount}/${totalSigners}) - notificação não criada`);
+        return;
+      }
+
+      // Montar título e mensagem para documento totalmente assinado
+      const title = '✅ Documento Totalmente Assinado!';
+      const message = `"${request.document_name}" foi assinado por todos (${signedCount}/${totalSigners})`;
 
       // Criar notificação
       await supabase.from('user_notifications').insert({
@@ -780,7 +803,7 @@ class SignatureService {
         read: false,
         created_at: new Date().toISOString(),
         metadata: {
-          signature_type: allSigned ? 'completed' : 'partial',
+          signature_type: 'completed',
           signer_name: signer.name,
           signer_email: signer.email,
           document_name: request.document_name,
@@ -790,7 +813,7 @@ class SignatureService {
         },
       });
 
-      console.log(`🔔 Notificação de assinatura criada: ${title}`);
+      console.log(`🔔 Notificação de documento completo criada: ${title}`);
     } catch (err) {
       console.error('Erro ao criar notificação de assinatura:', err);
     }

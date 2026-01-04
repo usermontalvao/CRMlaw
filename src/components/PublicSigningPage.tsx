@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { AlertCircle, Camera, CheckCircle, ChevronLeft, Clock, Copy, Download, ExternalLink, FileText, Loader2, Lock, MapPin, PenTool, RotateCcw, Scale, Share2, User, X, Shield, AlertTriangle } from 'lucide-react';
+import { AlertCircle, Camera, CheckCircle, ChevronLeft, Clock, Copy, Download, ExternalLink, FileText, Loader2, Lock, MapPin, PenTool, RotateCcw, Scale, Share2, User, X, Shield, AlertTriangle, Mail } from 'lucide-react';
 import { signatureService } from '../services/signature.service';
 import { pdfSignatureService } from '@/services/pdfSignature.service';
 import { googleAuthService, type GoogleUser } from '../services/googleAuth.service';
@@ -14,7 +14,7 @@ interface PublicSigningPageProps {
 }
 
 type SigningStep = 'loading' | 'success' | 'error' | 'already_signed';
-type ModalStep = 'google_auth' | 'phone_otp' | 'data' | 'signature' | 'location' | 'facial' | 'confirm';
+type ModalStep = 'google_auth' | 'phone_otp' | 'email_otp' | 'data' | 'signature' | 'location' | 'facial' | 'confirm';
 
 interface SignerData {
   name: string;
@@ -327,6 +327,17 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
   const [phoneOtpVerified, setPhoneOtpVerified] = useState(false);
   const [phoneOtpLoading, setPhoneOtpLoading] = useState(false);
   const [phoneOtpError, setPhoneOtpError] = useState<string | null>(null);
+
+  // Email OTP
+  const [emailToVerify, setEmailToVerify] = useState('');
+  const [emailOtp, setEmailOtp] = useState('');
+  const [emailOtpSent, setEmailOtpSent] = useState(false);
+  const [emailOtpExpiresAt, setEmailOtpExpiresAt] = useState<string | null>(null);
+  const [emailOtpVerified, setEmailOtpVerified] = useState(false);
+  const [emailOtpLoading, setEmailOtpLoading] = useState(false);
+  const [emailOtpError, setEmailOtpError] = useState<string | null>(null);
+  const [verifiedEmail, setVerifiedEmail] = useState<string | null>(null);
+  const [showEmailAnimation, setShowEmailAnimation] = useState(false);
 
   useEffect(() => {
     loadSignerData();
@@ -762,6 +773,56 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
     }
   };
 
+  const handleSendEmailOtp = async () => {
+    try {
+      setEmailOtpLoading(true);
+      setEmailOtpError(null);
+      setShowEmailAnimation(true);
+
+      const email = (emailToVerify || '').trim();
+      if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+        throw new Error('Informe um e-mail válido');
+      }
+
+      const res = await signatureService.sendEmailOtp({ token, email });
+      setEmailOtpSent(true);
+      setEmailOtpExpiresAt(res.expires_at ?? null);
+      toast.success('Código enviado por e-mail');
+      
+      // Manter animação por 1.5s antes de esconder
+      setTimeout(() => setShowEmailAnimation(false), 1500);
+    } catch (e: any) {
+      setEmailOtpError(e?.message || 'Não foi possível enviar o código');
+      setShowEmailAnimation(false);
+    } finally {
+      setEmailOtpLoading(false);
+    }
+  };
+
+  const handleVerifyEmailOtp = async () => {
+    try {
+      setEmailOtpLoading(true);
+      setEmailOtpError(null);
+
+      const code = emailOtp.replace(/\D/g, '');
+      if (code.length < 4) {
+        throw new Error('Informe o código recebido');
+      }
+
+      const res = await signatureService.verifyEmailOtp({ token, code });
+      setEmailOtpVerified(true);
+      if (res.email) {
+        setVerifiedEmail(res.email);
+      }
+      toast.success('E-mail verificado com sucesso!');
+      setModalStep(allowSkipSignerDataStep && isSignerDataComplete(signerData) ? 'signature' : 'data');
+    } catch (e: any) {
+      setEmailOtpError(e?.message || 'Código inválido');
+    } finally {
+      setEmailOtpLoading(false);
+    }
+  };
+
   const finalizeGoogleUser = (user: GoogleUser) => {
     setGoogleUser(user);
 
@@ -1179,8 +1240,8 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
         signer_cpf: signerData.cpf || undefined,
         signer_phone: signerData.phone || undefined,
         // Dados de autenticação
-        auth_provider: googleUser ? 'google' : 'phone',
-        auth_email: googleUser?.email || undefined,
+        auth_provider: googleUser ? 'google' : (emailOtpVerified ? 'email_link' : 'phone'),
+        auth_email: googleUser?.email || (emailOtpVerified ? (verifiedEmail || emailToVerify || undefined) : undefined),
         auth_google_sub: googleUser?.sub || undefined,
         auth_google_picture: googleUser?.picture || undefined,
       };
@@ -1416,6 +1477,16 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
     setPhoneOtpVerified(false);
     setPhoneOtpLoading(false);
     setPhoneOtpError(null);
+
+    setEmailToVerify('');
+    setEmailOtp('');
+    setEmailOtpSent(false);
+    setEmailOtpExpiresAt(null);
+    setEmailOtpVerified(false);
+    setEmailOtpLoading(false);
+    setEmailOtpError(null);
+    setVerifiedEmail(null);
+    setShowEmailAnimation(false);
   };
 
   const handleSendPhoneOtp = async () => {
@@ -1490,6 +1561,15 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
     setPhoneOtpVerified(false);
     setPhoneOtpLoading(false);
     setPhoneOtpError(null);
+
+    setEmailToVerify('');
+    setEmailOtp('');
+    setEmailOtpSent(false);
+    setEmailOtpExpiresAt(null);
+    setEmailOtpVerified(false);
+    setEmailOtpLoading(false);
+    setEmailOtpError(null);
+    setVerifiedEmail(null);
 
     setIsSignModalOpen(true);
   };
@@ -2227,7 +2307,7 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
                 </div>
                  <div>
                    <div className="text-white font-semibold">Assinar Documento</div>
-                   <div className="text-xs" style={{ color: 'rgba(255,237,213,1)' }}>Etapa {(modalStep === 'google_auth' || modalStep === 'phone_otp') ? '1' : modalStep === 'data' ? '2' : modalStep === 'signature' ? '3' : modalStep === 'facial' ? '4' : '5'} de 5</div>
+                   <div className="text-xs" style={{ color: 'rgba(255,237,213,1)' }}>Etapa {(modalStep === 'google_auth' || modalStep === 'phone_otp' || modalStep === 'email_otp') ? '1' : modalStep === 'data' ? '2' : modalStep === 'signature' ? '3' : modalStep === 'facial' ? '4' : '5'} de 5</div>
                  </div>
               </div>
               <button onClick={closeSignModal} className="p-2 rounded-lg" style={{ color: 'rgba(255,255,255,0.8)' }}>
@@ -2239,7 +2319,7 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
             <div className="flex-shrink-0 h-1.5 bg-slate-200">
               <div 
                 className="h-full bg-orange-500 transition-all duration-300"
-                style={{ width: (modalStep === 'google_auth' || modalStep === 'phone_otp') ? '20%' : modalStep === 'data' ? '40%' : modalStep === 'signature' ? '60%' : modalStep === 'location' ? '80%' : '100%' }}
+                style={{ width: (modalStep === 'google_auth' || modalStep === 'phone_otp' || modalStep === 'email_otp') ? '20%' : modalStep === 'data' ? '40%' : modalStep === 'signature' ? '60%' : modalStep === 'location' ? '80%' : '100%' }}
               />
             </div>
 
@@ -2307,6 +2387,15 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
                             OU
                           </div>
                         </div>
+
+                        <button
+                          type="button"
+                          onClick={() => setModalStep('email_otp')}
+                          className="w-full bg-white border border-slate-200 hover:bg-slate-50 text-slate-800 font-semibold py-3.5 px-4 rounded-xl flex items-center justify-center gap-3 shadow-lg shadow-slate-900/5 transition-all duration-200 active:scale-[0.98]"
+                        >
+                          <Mail className="w-5 h-5" />
+                          Continuar com E-mail
+                        </button>
 
                         <button
                           type="button"
@@ -2409,6 +2498,127 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
                         className="w-full py-4 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-bold text-lg shadow-lg shadow-emerald-500/30 disabled:opacity-50 transition"
                       >
                         {phoneOtpLoading ? 'Validando…' : 'Validar e continuar'}
+                      </button>
+                    )}
+
+                    <button
+                      type="button"
+                      onClick={() => setModalStep('google_auth')}
+                      className="w-full py-3 bg-white border border-orange-200 rounded-xl font-semibold text-orange-700 hover:bg-orange-50 transition"
+                    >
+                      Voltar
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {modalStep === 'email_otp' && (
+                <div className="space-y-5">
+                  <div className="text-center">
+                    <h2 className="text-xl font-bold text-slate-800">Verifique seu e-mail</h2>
+                    <p className="text-slate-500 text-sm mt-2">
+                      Enviaremos um código por e-mail para confirmar sua identidade.
+                    </p>
+                  </div>
+
+                  {emailOtpError && (
+                    <div className="p-3 bg-red-50 border border-red-200 rounded-xl text-left text-sm text-red-700">
+                      {emailOtpError}
+                    </div>
+                  )}
+
+                  <div className="space-y-3">
+                    <div>
+                      <label className="block text-sm font-medium text-slate-700 mb-1.5">E-mail *</label>
+                      <input
+                        type="email"
+                        inputMode="email"
+                        value={emailToVerify}
+                        onChange={(e) => setEmailToVerify(e.target.value)}
+                        placeholder="seuemail@exemplo.com"
+                        className="w-full px-4 py-3 border border-slate-200 rounded-xl text-base focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500"
+                      />
+                    </div>
+
+                    {/* Animação de e-mail sendo enviado */}
+                    {showEmailAnimation && (
+                      <div className="flex justify-center py-4">
+                        <div className="relative">
+                          <div className="w-12 h-12 bg-orange-100 rounded-full flex items-center justify-center">
+                            <Mail className="w-6 h-6 text-orange-600" />
+                          </div>
+                          <div className="absolute -top-1 -right-1">
+                            <div className="w-3 h-3 bg-orange-500 rounded-full animate-ping"></div>
+                          </div>
+                          <div className="absolute top-1/2 -translate-y-1/2 left-full ml-2">
+                            <div className="flex items-center gap-1">
+                              <div className="w-2 h-2 bg-orange-400 rounded-full animate-pulse"></div>
+                              <div className="w-2 h-2 bg-orange-300 rounded-full animate-pulse" style={{ animationDelay: '0.2s' }}></div>
+                              <div className="w-2 h-2 bg-orange-200 rounded-full animate-pulse" style={{ animationDelay: '0.4s' }}></div>
+                            </div>
+                          </div>
+                          <div className="text-center mt-2">
+                            <p className="text-xs text-orange-600 font-medium">Enviando...</p>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+
+                    <button
+                      type="button"
+                      onClick={handleSendEmailOtp}
+                      disabled={emailOtpLoading}
+                      className="w-full py-3 bg-orange-600 hover:bg-orange-700 text-white rounded-xl font-semibold transition disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                    >
+                      {emailOtpLoading ? (
+                        <>
+                          <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                          Enviando…
+                        </>
+                      ) : (
+                        <>
+                          {emailOtpSent ? 'Reenviar código' : 'Enviar código'}
+                        </>
+                      )}
+                    </button>
+
+                    {emailOtpSent && (
+                      <div>
+                        <label className="block text-sm font-medium text-slate-700 mb-1.5">Código do e-mail *</label>
+                        <input
+                          type="text"
+                          inputMode="numeric"
+                          maxLength={6}
+                          value={emailOtp}
+                          onChange={(e) => setEmailOtp(e.target.value)}
+                          placeholder="000000"
+                          className="w-full px-4 py-3 border border-slate-200 rounded-xl text-base focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 tracking-widest text-center"
+                        />
+                        {emailOtpExpiresAt && (
+                          <div className="text-xs text-slate-500 mt-2">
+                            Válido até: {formatDate(emailOtpExpiresAt)}
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="space-y-3">
+                    {emailOtpSent && (
+                      <button
+                        type="button"
+                        onClick={handleVerifyEmailOtp}
+                        disabled={emailOtpLoading || emailOtp.replace(/\D/g, '').length < 4}
+                        className="w-full py-4 bg-orange-600 hover:bg-orange-700 text-white rounded-xl font-bold text-lg shadow-lg shadow-orange-500/30 disabled:opacity-50 disabled:cursor-not-allowed transition flex items-center justify-center gap-2"
+                      >
+                        {emailOtpLoading ? (
+                          <>
+                            <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                            Validando…
+                          </>
+                        ) : (
+                          'Validar e continuar'
+                        )}
                       </button>
                     )}
 

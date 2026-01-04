@@ -633,27 +633,35 @@ class PdfSignatureService {
     page2.drawText('VALIDADE JURIDICA (MP 2.200-2/2001)', { x: lm, y: legalY, size: 11, font: helveticaBold, color: rgb(0.15, 0.4, 0.85) });
     legalY -= 18;
 
-    page2.drawText('A Medida Provisoria 2.200-2, de 27 de Julho de 2001, trata da validade juridica', { x: lm, y: legalY, size: 7.5, font: helvetica, color: rgb(0.3, 0.3, 0.3) });
+    page2.drawText('A Medida Provisoria n 2.200-2, de 27 de julho de 2001, dispoe sobre a validade', { x: lm, y: legalY, size: 7.5, font: helvetica, color: rgb(0.3, 0.3, 0.3) });
     legalY -= 11;
-    page2.drawText('da Assinatura Eletronica no Brasil e reconhece a utilizacao de outros meios de', { x: lm, y: legalY, size: 7.5, font: helvetica, color: rgb(0.3, 0.3, 0.3) });
+    page2.drawText('juridica dos documentos eletronicos no Brasil e institui a Infraestrutura de Chaves', { x: lm, y: legalY, size: 7.5, font: helvetica, color: rgb(0.3, 0.3, 0.3) });
     legalY -= 11;
-    page2.drawText('comprovacao de autoria e integridade, desde que admitidos pelas partes como validos.', { x: lm, y: legalY, size: 7.5, font: helvetica, color: rgb(0.3, 0.3, 0.3) });
+    page2.drawText('Publicas Brasileira (ICP-Brasil), reconhecendo, igualmente, a utilizacao de outros', { x: lm, y: legalY, size: 7.5, font: helvetica, color: rgb(0.3, 0.3, 0.3) });
+    legalY -= 11;
+    page2.drawText('meios de comprovacao da autoria e da integridade de documentos em meio eletronico,', { x: lm, y: legalY, size: 7.5, font: helvetica, color: rgb(0.3, 0.3, 0.3) });
+    legalY -= 11;
+    page2.drawText('desde que admitidos pelas partes como validos.', { x: lm, y: legalY, size: 7.5, font: helvetica, color: rgb(0.3, 0.3, 0.3) });
     legalY -= 14;
 
     page2.drawText('Trecho (MP 2.200-2/2001, Art. 2):', { x: lm, y: legalY, size: 8, font: helveticaBold, color: rgb(0.2, 0.2, 0.2) });
     legalY -= 12;
-    page2.drawText('"Art. 2 O disposto nesta Medida Provisoria nao obsta a utilizacao de outro meio', { x: lm, y: legalY, size: 6.6, font: helvetica, color: rgb(0.35, 0.35, 0.35) });
+    page2.drawText('"Art. 2 O disposto nesta Medida Provisoria nao obsta a utilizacao de outro meio de', { x: lm, y: legalY, size: 6.6, font: helvetica, color: rgb(0.35, 0.35, 0.35) });
     legalY -= 10;
-    page2.drawText('de comprovacao da autoria e integridade de documentos em forma eletronica, inclusive', { x: lm, y: legalY, size: 6.6, font: helvetica, color: rgb(0.35, 0.35, 0.35) });
+    page2.drawText('comprovacao da autoria e integridade de documentos em forma eletronica, inclusive os', { x: lm, y: legalY, size: 6.6, font: helvetica, color: rgb(0.35, 0.35, 0.35) });
     legalY -= 10;
-    page2.drawText('os que utilizem certificados nao emitidos pela ICP-Brasil, desde que admitido pelas', { x: lm, y: legalY, size: 6.6, font: helvetica, color: rgb(0.35, 0.35, 0.35) });
+    page2.drawText('que utilizem certificados nao emitidos pela ICP-Brasil, desde que admitido pelas', { x: lm, y: legalY, size: 6.6, font: helvetica, color: rgb(0.35, 0.35, 0.35) });
     legalY -= 10;
     page2.drawText('partes como valido ou aceito pela pessoa a quem for oposto o documento"', { x: lm, y: legalY, size: 6.6, font: helvetica, color: rgb(0.35, 0.35, 0.35) });
     legalY -= 14;
 
-    page2.drawText('Em sintese: a assinatura digital/eletronica possui validade juridica equivalente a', { x: lm, y: legalY, size: 7.5, font: helvetica, color: rgb(0.3, 0.3, 0.3) });
+    page2.drawText('Dessa forma, a assinatura eletronica ou digital aposta neste documento possui plena', { x: lm, y: legalY, size: 7.5, font: helvetica, color: rgb(0.3, 0.3, 0.3) });
     legalY -= 11;
-    page2.drawText('um documento assinado em papel, desde que as partes admitam sua validade ao assinar.', { x: lm, y: legalY, size: 7.5, font: helvetica, color: rgb(0.3, 0.3, 0.3) });
+    page2.drawText('validade juridica, produzindo os mesmos efeitos legais de um documento assinado', { x: lm, y: legalY, size: 7.5, font: helvetica, color: rgb(0.3, 0.3, 0.3) });
+    legalY -= 11;
+    page2.drawText('fisicamente, desde que as partes reconhecam e aceitem sua validade, o que ocorre', { x: lm, y: legalY, size: 7.5, font: helvetica, color: rgb(0.3, 0.3, 0.3) });
+    legalY -= 11;
+    page2.drawText('mediante a manifestacao de vontade expressa ao realizar a assinatura eletronica.', { x: lm, y: legalY, size: 7.5, font: helvetica, color: rgb(0.3, 0.3, 0.3) });
 
     legalY -= 25;
     page2.drawLine({ start: { x: lm, y: legalY }, end: { x: width - lm, y: legalY }, thickness: 0.5, color: rgb(0.85, 0.85, 0.85) });

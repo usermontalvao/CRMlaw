@@ -46,6 +46,12 @@ import {
    ============================================================================ */
 
 const VERSION_CODENAMES: Record<string, { name: string; emoji: string }> = {
+  '1.9.58': { name: 'Café Jurídico', emoji: '⚖️' },
+  '1.9.57': { name: 'Café Tema Laranja', emoji: '🟠' },
+  '1.9.56': { name: 'Café Laranja', emoji: '🟧' },
+  '1.9.55': { name: 'Café Status 200', emoji: '✅' },
+  '1.9.54': { name: 'Café OTP', emoji: '🔐' },
+  '1.9.53': { name: 'Café E-mail', emoji: '✉️' },
   '1.9.52': { name: 'Café Telefone', emoji: '📞' },
   '1.9.30': { name: 'Café Estável', emoji: '🧰' },
   '1.9.29': { name: 'Café Persistente', emoji: '💾' },
@@ -502,6 +508,113 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
    ============================================================================ */
 
 const releases: ReleaseNote[] = [
+  {
+    version: '1.9.58',
+    date: '04/01/2026',
+    summary: 'Assinatura: texto da validade jurídica (MP 2.200-2/2001) atualizado no PDF.',
+    modules: [
+      {
+        moduleId: 'sistema',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'PDF assinado: texto da validade jurídica mais completo e formal',
+            description: 'Atualizado o texto da fundamentação legal (MP 2.200-2/2001) na página de registro de assinatura do PDF, com redação mais completa que menciona a ICP-Brasil e detalha melhor os efeitos jurídicos da assinatura eletrônica.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.57',
+    date: '04/01/2026',
+    summary: 'Assinatura: cores do OTP por e-mail padronizadas para o tema laranja.',
+    modules: [
+      {
+        moduleId: 'sistema',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Assinatura pública: tema laranja no fluxo de OTP por e-mail',
+            description: 'Padronizadas as cores do fluxo de verificação por e-mail (botões e destaques) para o tema laranja do projeto, mantendo consistência visual.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.56',
+    date: '04/01/2026',
+    summary: 'Assinatura: template do e-mail OTP padronizado e melhorias visuais no envio por e-mail.',
+    modules: [
+      {
+        moduleId: 'sistema',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'OTP por e-mail: template compatível e nas cores do projeto',
+            description: 'E-mail de verificação foi atualizado para um layout mais compatível (Gmail/Outlook) e padronizado com o tema laranja do projeto.',
+          },
+          {
+            type: 'improvement',
+            title: 'Assinatura pública: feedback visual no envio/validação do OTP por e-mail',
+            description: 'Adicionadas animações de envio/validação e ajustes na ordem dos botões de autenticação para melhorar a experiência do usuário.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.55',
+    date: '04/01/2026',
+    summary: 'Assinatura: Edge Functions de e-mail OTP sem non-2xx no invoke.',
+    modules: [
+      {
+        moduleId: 'sistema',
+        changes: [
+          {
+            type: 'fix',
+            title: 'OTP por e-mail: respostas com status 200 e erro no payload',
+            description: 'Ajustadas as Edge Functions email-send-otp/email-verify-otp para retornarem sempre status HTTP 200 com { success: false, error }, evitando o erro genérico "Edge Function returned a non-2xx status code" no frontend e exibindo a mensagem real.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.54',
+    date: '04/01/2026',
+    summary: 'Assinatura: correção da etapa “Continuar com E-mail” (modal em branco).',
+    modules: [
+      {
+        moduleId: 'sistema',
+        changes: [
+          {
+            type: 'fix',
+            title: 'Assinatura pública: etapa de OTP por e-mail renderizando corretamente',
+            description: 'Corrigida a etapa “Continuar com E-mail” que ficava em branco no modal, adicionando a renderização da etapa email_otp (envio e validação do código).',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.53',
+    date: '04/01/2026',
+    summary: 'Assinatura: autenticação por código via e-mail (OTP).',
+    modules: [
+      {
+        moduleId: 'sistema',
+        changes: [
+          {
+            type: 'feature',
+            title: 'Código por e-mail na assinatura pública',
+            description: 'Novo método de autenticação por código via e-mail (OTP) no fluxo de assinatura, com Edge Functions email-send-otp/email-verify-otp e persistência em signature_email_otps.',
+          },
+        ],
+      },
+    ],
+  },
   {
     version: '1.9.52',
     date: '04/01/2026',

@@ -2642,9 +2642,8 @@ Regras:
         const matchPct = Math.round(Math.max(0, Math.min(1, score / 1.5)) * 100);
         return { block: b, score, matchPct } as BlockSearchResult;
       })
-      .filter((x): x is BlockSearchResult => Boolean(x) && x.score > 0.25)
-      .sort((a, b) => b.score - a.score)
-      .map((x) => x);
+      .filter((x): x is BlockSearchResult => Boolean(x) && x !== null && x.score > 0.25)
+      .sort((a, b) => b.score - a.score);
 
     return ranked;
   }, [blocks, blockSearchQuery, selectedDocumentType]);
