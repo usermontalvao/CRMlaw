@@ -696,8 +696,7 @@ class SignatureService {
     // Verificar se todos os signatários assinaram
     await this.checkAndUpdateRequestStatus(signer.signature_request_id);
 
-    // Criar notificação realtime para o criador do documento
-    await this.createSignatureNotification(signer.signature_request_id, data);
+    // Notificação é criada automaticamente pelo trigger do banco de dados (notify_on_signature)
 
     return data;
   }

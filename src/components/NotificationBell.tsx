@@ -61,6 +61,7 @@ export const NotificationBell: React.FC<NotificationBellProps> = ({ onNavigateTo
   const prevCountRef = useRef(0);
   const [popupNotifications, setPopupNotifications] = useState<UserNotification[]>([]);
   const processedNotificationIds = useRef<Set<string>>(new Set());
+  const processedNotificationKeys = useRef<Set<string>>(new Set());
 
   useEffect(() => {
     pushNotifications.initialize().catch(() => {});
@@ -72,6 +73,37 @@ export const NotificationBell: React.FC<NotificationBellProps> = ({ onNavigateTo
   const isSignatureNotification = (notification: UserNotification) => {
     return notification.type === 'process_updated' && Boolean(notification.metadata?.signature_type);
   };
+
+  const getNotificationDedupeKey = useCallback((notification: UserNotification) => {
+    const signatureType = notification.metadata?.signature_type;
+    const requestId = notification.metadata?.request_id;
+    if (notification.type === 'process_updated' && signatureType === 'completed' && requestId) {
+      return `signature_completed:${String(requestId)}`;
+    }
+    return `id:${notification.id}`;
+  }, []);
+
+  const dedupeNotifications = useCallback((items: UserNotification[]) => {
+    const map = new Map<string, UserNotification>();
+    for (const n of items) {
+      const key = getNotificationDedupeKey(n);
+      const existing = map.get(key);
+      if (!existing) {
+        map.set(key, n);
+        continue;
+      }
+      const existingTs = new Date((existing as any).created_at ?? 0).getTime();
+      const nextTs = new Date((n as any).created_at ?? 0).getTime();
+      if (Number.isFinite(nextTs) && nextTs >= existingTs) {
+        map.set(key, n);
+      }
+    }
+    return Array.from(map.values()).sort((a, b) => {
+      const aTs = new Date((a as any).created_at ?? 0).getTime();
+      const bTs = new Date((b as any).created_at ?? 0).getTime();
+      return bTs - aTs;
+    });
+  }, [getNotificationDedupeKey]);
 
   const getSignatureBadge = (notification: UserNotification) => {
     const signatureType = notification.metadata?.signature_type;
@@ -100,20 +132,21 @@ export const NotificationBell: React.FC<NotificationBellProps> = ({ onNavigateTo
     try {
       setLoading(true);
       const data = await userNotificationService.listNotifications(user.id);
-      
+      const normalized = dedupeNotifications(data).slice(0, 50);
+
       // Tocar som se há novas notificações
-      if (data.filter(n => !n.read).length > prevCountRef.current && soundEnabled) {
+      if (normalized.filter(n => !n.read).length > prevCountRef.current && soundEnabled) {
         playSound();
       }
-      prevCountRef.current = data.filter(n => !n.read).length;
-      
-      setNotifications(data.slice(0, 50)); // Limitar a 50
+      prevCountRef.current = normalized.filter(n => !n.read).length;
+
+      setNotifications(normalized); // Limitar a 50
     } catch (err) {
       console.error('Erro ao carregar notificações:', err);
     } finally {
       setLoading(false);
     }
-  }, [user?.id, soundEnabled]);
+  }, [user?.id, soundEnabled, dedupeNotifications]);
 
   // Tocar som
   const playSound = () => {
@@ -229,10 +262,12 @@ export const NotificationBell: React.FC<NotificationBellProps> = ({ onNavigateTo
       };
     }
 
+    const dedupeKey = getNotificationDedupeKey(notification);
+
     await pushNotifications.showNotification({
       title: notification.title,
       body: notification.message,
-      tag: `user-notification-${notification.id}`,
+      tag: `user-notification-${dedupeKey}`,
       data,
       requireInteraction: signature || isUrgent,
       icon: '/icon-192x192.png',
@@ -279,6 +314,8 @@ export const NotificationBell: React.FC<NotificationBellProps> = ({ onNavigateTo
         },
         (payload) => {
           const newNotification = payload.new as UserNotification;
+
+          const dedupeKey = getNotificationDedupeKey(newNotification);
           
           // Evitar processar a mesma notificação duas vezes (StrictMode)
           if (processedNotificationIds.current.has(newNotification.id)) {
@@ -286,21 +323,26 @@ export const NotificationBell: React.FC<NotificationBellProps> = ({ onNavigateTo
             return;
           }
           processedNotificationIds.current.add(newNotification.id);
+
+          if (processedNotificationKeys.current.has(dedupeKey)) {
+            console.log('⏭️ Notificação já processada (dedupeKey), ignorando:', dedupeKey);
+            return;
+          }
+          processedNotificationKeys.current.add(dedupeKey);
           
           console.log('🔔 Nova notificação recebida via Realtime:', newNotification.id, newNotification.title);
           
           // Adicionar no topo da lista
           setNotifications(prev => {
-            // Evitar duplicatas na lista
-            if (prev.some(n => n.id === newNotification.id)) return prev;
-            return [newNotification, ...prev].slice(0, 50);
+            const next = dedupeNotifications([newNotification, ...prev]);
+            return next.slice(0, 50);
           });
           
           // Mostrar popup na tela (estilo Facebook/Instagram)
           console.log('🎯 Adicionando popup para notificação:', newNotification.id);
           setPopupNotifications(prev => {
-            // Evitar duplicatas no popup
-            if (prev.some(n => n.id === newNotification.id)) return prev;
+            const already = prev.some((n) => getNotificationDedupeKey(n) === dedupeKey);
+            if (already) return prev;
             const updated = [...prev, newNotification].slice(-MAX_POPUPS);
             console.log('📦 Popups ativos:', updated.length);
             return updated;

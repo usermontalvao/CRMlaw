@@ -46,6 +46,7 @@ import {
    ============================================================================ */
 
 const VERSION_CODENAMES: Record<string, { name: string; emoji: string }> = {
+  '1.9.59': { name: 'Café Notificado', emoji: '🔔' },
   '1.9.58': { name: 'Café Jurídico', emoji: '⚖️' },
   '1.9.57': { name: 'Café Tema Laranja', emoji: '🟠' },
   '1.9.56': { name: 'Café Laranja', emoji: '🟧' },
@@ -508,6 +509,28 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
    ============================================================================ */
 
 const releases: ReleaseNote[] = [
+  {
+    version: '1.9.59',
+    date: '04/01/2026',
+    summary: 'Notificações: assinatura sem duplicar (apenas 1 popup/notificação) e correção de build.',
+    modules: [
+      {
+        moduleId: 'sistema',
+        changes: [
+          {
+            type: 'fix',
+            title: 'Assinatura: evitar duplicação de notificação/popup',
+            description: 'Implementado dedupe no NotificationBell (por request_id em assinatura concluída) e idempotência no trigger do banco para impedir inserções duplicadas.',
+          },
+          {
+            type: 'fix',
+            title: 'Build: correção de erro TS18047 no PetitionEditorModule',
+            description: 'Ajustado filtro para tratar valores null e evitar falha de compilação no TypeScript.',
+          },
+        ],
+      },
+    ],
+  },
   {
     version: '1.9.58',
     date: '04/01/2026',

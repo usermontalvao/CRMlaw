@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.9.59
+- **Notificações (Assinatura)**: corrigida duplicação de notificações/popups de assinatura; agora a assinatura gera **apenas 1 notificação** (documento totalmente assinado), com dedupe por `request_id`.
+- **Database (Trigger)**: trigger `notify_on_signature` tornado **idempotente** para evitar inserts duplicados ao concluir assinatura.
+- **Build**: corrigido erro TypeScript (`TS18047: x is possibly 'null'`) no `PetitionEditorModule.tsx`.
+
 ## 1.9.58
 - **Assinatura (PDF)**: atualizado o texto da **validade jurídica** (MP 2.200-2/2001) na página de registro de assinatura do PDF, com redação mais completa e formal.
 
