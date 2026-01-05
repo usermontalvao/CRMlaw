@@ -21,6 +21,7 @@ import {
   FileText,
   AlertTriangle,
   ChevronDown,
+  ChevronRight,
   ChevronUp,
   Sparkles,
 } from 'lucide-react';
@@ -111,23 +112,6 @@ type ProcessNote = {
   author_avatar?: string | null;
   parent_id?: string | null;
   replies?: ProcessNote[];
-};
-
-const formatDateTime = (value: string) => {
-  try {
-    const parsed = new Date(value);
-    if (Number.isNaN(parsed.getTime())) return 'Data inválida';
-    return parsed.toLocaleString('pt-BR', {
-      day: '2-digit',
-      month: '2-digit',
-      year: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit',
-    });
-  } catch (error) {
-    console.error('Erro ao formatar data/hora:', value, error);
-    return 'Data inválida';
-  }
 };
 
 const generateId = () => {
@@ -341,6 +325,10 @@ const ProcessesModule: React.FC<ProcessesModuleProps> = ({ forceCreate, entityId
   const [timelineProcessId, setTimelineProcessId] = useState<string | null>(null);
   const [timelineClientName, setTimelineClientName] = useState<string | null>(null);
   const [expandedTimelineProcessId, setExpandedTimelineProcessId] = useState<string | null>(null);
+
+  const [showStageMapModal, setShowStageMapModal] = useState(false);
+  const [stageMapSelectedStatus, setStageMapSelectedStatus] = useState<ProcessStatus | null>(null);
+  const [stageMapSearch, setStageMapSearch] = useState('');
   
   // Alerta: processos arquivados com prazos pendentes
   const [archivedWithDeadlines, setArchivedWithDeadlines] = useState<Array<{
@@ -1052,6 +1040,7 @@ const ProcessesModule: React.FC<ProcessesModuleProps> = ({ forceCreate, entityId
     setShowTimelineModal(true);
   };
 
+
   const handleBackToList = () => {
     setSelectedProcessForView(null);
     setViewMode('list');
@@ -1666,6 +1655,29 @@ const ProcessesModule: React.FC<ProcessesModuleProps> = ({ forceCreate, entityId
 
     return grouped;
   }, [filteredProcesses]);
+
+  const filteredStageMapProcesses = useMemo(() => {
+    const base = stageMapSelectedStatus ? processesByStatus[stageMapSelectedStatus] || [] : [];
+    const q = stageMapSearch.trim().toLowerCase();
+    if (!q) return base;
+
+    return base.filter((process) => {
+      const client = allClientsMap.get(process.client_id);
+      const practiceAreaLabel = PRACTICE_AREAS.find((area) => area.key === process.practice_area)?.label ?? process.practice_area;
+      const composite = [
+        process.process_code,
+        process.court,
+        process.responsible_lawyer,
+        client?.full_name,
+        practiceAreaLabel,
+        process.notes,
+      ]
+        .filter(Boolean)
+        .join(' ')
+        .toLowerCase();
+      return composite.includes(q);
+    });
+  }, [stageMapSelectedStatus, stageMapSearch, processesByStatus, allClientsMap]);
 
   const pendingDjenCount = useMemo(() => {
     return processes.filter((p) => !p.djen_synced || (p.djen_synced && !p.djen_has_data)).length;
@@ -2491,6 +2503,18 @@ const ProcessesModule: React.FC<ProcessesModuleProps> = ({ forceCreate, entityId
 
           <div className="flex items-center gap-1.5 sm:gap-2 flex-wrap justify-end">
             <button
+              onClick={() => {
+                setStageMapSelectedStatus(null);
+                setStageMapSearch('');
+                setShowStageMapModal(true);
+              }}
+              className="flex items-center gap-1 sm:gap-1.5 px-2 sm:px-3 py-2 border border-slate-200 hover:bg-slate-50 text-slate-700 rounded-lg text-xs font-medium transition-all"
+              title="Mapa de Fases"
+            >
+              <Clock className="w-3.5 h-3.5" />
+              <span className="hidden sm:inline">Mapa de Fases</span>
+            </button>
+            <button
               onClick={handleSyncAllDjen}
               disabled={syncingDjen || pendingDjenCount === 0}
               className={`relative flex items-center gap-1 sm:gap-1.5 px-2 sm:px-3 py-2 rounded-lg text-xs font-medium transition-all ${pendingDjenCount > 0 ? 'bg-blue-600 hover:bg-blue-700 text-white' : 'border border-slate-200 text-slate-400'}`}
@@ -2844,6 +2868,138 @@ const ProcessesModule: React.FC<ProcessesModuleProps> = ({ forceCreate, entityId
 
       {processModal}
       {detailsModal}
+
+      {showStageMapModal && createPortal(
+        <div className="fixed inset-0 z-[80] flex items-center justify-center px-4 py-6">
+          <div
+            className="absolute inset-0 bg-slate-900/70 backdrop-blur-sm"
+            onClick={() => setShowStageMapModal(false)}
+          />
+          <div className="relative z-10 w-full max-w-5xl">
+            <div className="bg-white rounded-2xl shadow-2xl border border-slate-200 overflow-hidden">
+              <div className="flex items-center justify-between px-5 py-4 bg-gradient-to-r from-slate-50 to-slate-100 border-b border-slate-200">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-orange-500 to-amber-500 flex items-center justify-center">
+                    <Clock className="w-5 h-5 text-white" />
+                  </div>
+                  <div>
+                    <div className="text-lg font-bold text-slate-900">Mapa de Fases</div>
+                    <div className="text-xs text-slate-600">Clique em uma fase para ver os processos</div>
+                  </div>
+                </div>
+                <button
+                  onClick={() => setShowStageMapModal(false)}
+                  className="p-2 rounded-lg hover:bg-slate-200/60 text-slate-500 hover:text-slate-700 transition"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+
+              <div className="p-4 border-b border-slate-100 bg-white">
+                <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
+                  {STATUS_OPTIONS.map((statusOption) => {
+                    const count = (processesByStatus[statusOption.key] || []).length;
+                    const isActive = stageMapSelectedStatus === statusOption.key;
+                    return (
+                      <button
+                        key={statusOption.key}
+                        type="button"
+                        onClick={() => setStageMapSelectedStatus(statusOption.key)}
+                        className={`text-left border rounded-xl px-3 py-3 transition ${isActive ? 'border-amber-500 bg-amber-50' : 'border-slate-200 hover:bg-slate-50'}`}
+                      >
+                        <div className="flex items-center justify-between gap-2">
+                          <div className="text-xs font-semibold text-slate-900">{statusOption.label}</div>
+                          <div className={`text-[10px] px-2 py-0.5 rounded-full font-bold ${statusOption.badge}`}>{count}</div>
+                        </div>
+                        <div className="mt-1 text-[11px] text-slate-600">Clique para ver processos</div>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              <div className="max-h-[75vh] overflow-y-auto">
+                {!stageMapSelectedStatus ? (
+                  <div className="py-14 text-center text-slate-500">Selecione uma fase acima.</div>
+                ) : (
+                  <div>
+                    <div className="p-4 border-b border-slate-100 bg-white">
+                      <div className="flex flex-col sm:flex-row gap-2 sm:items-center">
+                        <div className="relative flex-1">
+                          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                          <input
+                            value={stageMapSearch}
+                            onChange={(e) => setStageMapSearch(e.target.value)}
+                            placeholder="Buscar processos nesta fase..."
+                            className="w-full pl-9 pr-3 py-2 bg-white border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500"
+                            autoFocus
+                          />
+                        </div>
+                        <div className="text-xs font-medium text-slate-600 px-3 py-2 rounded-lg bg-slate-50 border border-slate-200">
+                          {getStatusLabel(stageMapSelectedStatus)}: {filteredStageMapProcesses.length}
+                        </div>
+                      </div>
+                    </div>
+
+                    {filteredStageMapProcesses.length === 0 ? (
+                      <div className="py-14 text-center text-slate-500">Nenhum processo nesta fase.</div>
+                    ) : (
+                      <div className="divide-y divide-slate-100">
+                        {filteredStageMapProcesses.slice(0, 200).map((process) => {
+                          const client = clientMap.get(process.client_id);
+                          return (
+                            <div
+                              key={process.id}
+                              className="px-5 py-4 hover:bg-slate-50 transition cursor-pointer"
+                              onClick={() => {
+                                setShowStageMapModal(false);
+                                handleViewProcess(process);
+                              }}
+                            >
+                              <div className="flex items-start justify-between gap-3">
+                                <div className="min-w-0 flex-1">
+                                  <div className="flex items-center gap-2 flex-wrap">
+                                    <span className="text-xs font-semibold text-slate-900 font-mono truncate">{process.process_code}</span>
+                                    {client?.full_name && (
+                                      <span className="text-[10px] px-2 py-0.5 rounded-full bg-orange-50 text-orange-700 font-semibold truncate">{client.full_name}</span>
+                                    )}
+                                    <span className={`text-[10px] px-2 py-0.5 rounded-full font-semibold ${getStatusBadge(process.status)}`}>{getStatusLabel(process.status)}</span>
+                                  </div>
+                                  {process.court && <div className="mt-1 text-[11px] text-slate-500 line-clamp-2">{process.court}</div>}
+                                </div>
+
+                                <div className="flex items-center gap-2 flex-shrink-0" onClick={(e) => e.stopPropagation()}>
+                                  {process.process_code && (
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        setShowStageMapModal(false);
+                                        handleOpenTimeline(process);
+                                      }}
+                                      className="px-3 py-2 rounded-lg text-xs font-semibold bg-amber-50 text-amber-800 hover:bg-amber-100 transition"
+                                    >
+                                      Ver timeline
+                                    </button>
+                                  )}
+                                  <ChevronRight className="w-5 h-5 text-slate-300" />
+                                </div>
+                              </div>
+                            </div>
+                          );
+                        })}
+                        {filteredStageMapProcesses.length > 200 && (
+                          <div className="px-5 py-3 text-[11px] text-slate-500">Mostrando 200 itens. Use a busca para refinar.</div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>,
+        document.body
+      )}
 
       {/* Timeline Modal */}
       {showTimelineModal && timelineProcessCode && createPortal(

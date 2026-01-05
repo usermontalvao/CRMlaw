@@ -46,6 +46,8 @@ import {
    ============================================================================ */
 
 const VERSION_CODENAMES: Record<string, { name: string; emoji: string }> = {
+  '1.9.61': { name: 'Café Mapa', emoji: '🗺️' },
+  '1.9.60': { name: 'Café Timeline', emoji: '🕒' },
   '1.9.59': { name: 'Café Notificado', emoji: '🔔' },
   '1.9.58': { name: 'Café Jurídico', emoji: '⚖️' },
   '1.9.57': { name: 'Café Tema Laranja', emoji: '🟠' },
@@ -509,6 +511,40 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
    ============================================================================ */
 
 const releases: ReleaseNote[] = [
+  {
+    version: '1.9.61',
+    date: '04/01/2026',
+    summary: 'Processos: Mapa de Fases (visão por etapas) para listar processos por fase com um clique.',
+    modules: [
+      {
+        moduleId: 'processos',
+        changes: [
+          {
+            type: 'feature',
+            title: 'Mapa de Fases (Conciliação, Instrução, etc.)',
+            description: 'Novo modal “Mapa de Fases” no módulo de Processos: cards por etapa com contagem. Ao clicar, mostra os processos daquela fase com busca e atalhos para abrir o processo ou a timeline completa.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.60',
+    date: '04/01/2026',
+    summary: 'Processos: Linha do Tempo Geral para buscar movimentações/publicações do DJEN.',
+    modules: [
+      {
+        moduleId: 'processos',
+        changes: [
+          {
+            type: 'feature',
+            title: 'Linha do Tempo Geral (feed unificado) com busca',
+            description: 'Novo modal “Timeline Geral” no módulo de Processos: lista as publicações do DJEN sincronizadas no banco e permite buscar por cliente/número/órgão/texto, com atalhos para abrir o processo ou a timeline completa.',
+          },
+        ],
+      },
+    ],
+  },
   {
     version: '1.9.59',
     date: '04/01/2026',

@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.9.61
+- **Processos (Mapa de Fases)**: adicionada visão em formato de **mapa** por etapas (ex.: Conciliação, Instrução, etc.). Ao clicar em uma fase, o sistema lista os processos daquela etapa com busca e atalhos para abrir detalhes/timeline.
+
+## 1.9.60
+- **Processos (Timeline Geral)**: adicionada **Linha do Tempo Geral** (feed unificado) para buscar publicações/movimentações dos processos sincronizadas do DJEN, com busca por cliente/número/órgão/texto e atalho para abrir o processo ou a timeline completa.
+
 ## 1.9.59
 - **Notificações (Assinatura)**: corrigida duplicação de notificações/popups de assinatura; agora a assinatura gera **apenas 1 notificação** (documento totalmente assinado), com dedupe por `request_id`.
 - **Database (Trigger)**: trigger `notify_on_signature` tornado **idempotente** para evitar inserts duplicados ao concluir assinatura.
