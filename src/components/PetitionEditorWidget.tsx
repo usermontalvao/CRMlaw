@@ -162,15 +162,15 @@ const PetitionEditorWidget: React.FC = () => {
       {isMinimized && (
         <button
           onClick={handleMaximize}
-          className="fixed bottom-6 right-6 z-[9999] flex items-center gap-2 px-4 py-3 bg-gradient-to-r from-amber-500 to-orange-500 text-white rounded-full shadow-2xl hover:shadow-amber-500/30 hover:scale-105 transition-all duration-200 group"
+          className="fixed bottom-6 right-6 z-[9999] flex flex-col items-center justify-center w-16 h-16 bg-gradient-to-br from-orange-600 via-orange-500 to-amber-500 text-white rounded-full shadow-[0_20px_60px_rgba(234,88,12,0.45)] hover:shadow-[0_25px_70px_rgba(234,88,12,0.6)] hover:scale-110 transition-all duration-300 group"
           title="Abrir Editor de Petições"
         >
-          <FileText className="w-5 h-5" />
-          <span className="font-semibold text-sm">Editor de Petições</span>
+          <span className="absolute -inset-3 rounded-full bg-gradient-to-br from-orange-500/30 to-amber-500/20 blur-2xl opacity-80 group-hover:opacity-100 transition-opacity" aria-hidden />
+          <FileText className="w-5 h-5 relative z-10" />
+          <span className="text-[9px] font-bold mt-0.5 leading-none">Editor</span>
           {hasUnsavedChanges && (
-            <span className="absolute -top-1 -right-1 w-3 h-3 bg-red-500 rounded-full animate-pulse" title="Alterações não salvas" />
+            <span className="absolute -top-1.5 -right-1.5 w-4 h-4 bg-red-500 rounded-full ring-2 ring-white animate-pulse" title="Alterações não salvas" />
           )}
-          <Maximize2 className="w-4 h-4 opacity-0 group-hover:opacity-100 transition-opacity" />
         </button>
       )}
     </>,

@@ -46,6 +46,32 @@ import {
    ============================================================================ */
 
 const VERSION_CODENAMES: Record<string, { name: string; emoji: string }> = {
+  '1.9.87': { name: 'Café Carregando Laranja', emoji: '🟠' },
+  '1.9.86': { name: 'Café Procurando', emoji: '🔎' },
+  '1.9.85': { name: 'Café Laranja Total', emoji: '🟧' },
+  '1.9.84': { name: 'Café Olhar Lateral', emoji: '👁️' },
+  '1.9.83': { name: 'Café Editável', emoji: '✏️' },
+  '1.9.82': { name: 'Café Mobile Bloqueado', emoji: '📵' },
+  '1.9.81': { name: 'Café Compacto', emoji: '📎' },
+  '1.9.80': { name: 'Café Identificado', emoji: '🏷️' },
+  '1.9.79': { name: 'Café Glow Ajustado', emoji: '✨' },
+  '1.9.78': { name: 'Café Ícone Puro', emoji: '🔘' },
+  '1.9.77': { name: 'Café Widget Premium', emoji: '✨' },
+  '1.9.76': { name: 'Café Inserção Direta', emoji: '✅' },
+  '1.9.75': { name: 'Café Modal Persistente', emoji: '🧩' },
+  '1.9.74': { name: 'Café Destaque', emoji: '🟠' },
+  '1.9.73': { name: 'Café Ordem Fixa', emoji: '📌' },
+  '1.9.72': { name: 'Café Contexto', emoji: '🟧' },
+  '1.9.71': { name: 'Café Tipografado', emoji: '🔤' },
+  '1.9.70': { name: 'Café Reciclado', emoji: '♻️' },
+  '1.9.69': { name: 'Café Tag Express', emoji: '🏷️' },
+  '1.9.68': { name: 'Café Fraseado', emoji: '✂️' },
+  '1.9.67': { name: 'Café Fuzzy', emoji: '🔎' },
+  '1.9.66': { name: 'Café Tolerante', emoji: '🧠' },
+  '1.9.65': { name: 'Café Preview', emoji: '📝' },
+  '1.9.64': { name: 'Café Amplo', emoji: '📏' },
+  '1.9.63': { name: 'Café Tagueado', emoji: '🏷️' },
+  '1.9.62': { name: 'Café Turbo', emoji: '⚡' },
   '1.9.61': { name: 'Café Mapa', emoji: '🗺️' },
   '1.9.60': { name: 'Café Timeline', emoji: '🕒' },
   '1.9.59': { name: 'Café Notificado', emoji: '🔔' },
@@ -511,6 +537,475 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
    ============================================================================ */
 
 const releases: ReleaseNote[] = [
+  {
+    version: '1.9.89',
+    date: '05/01/2026',
+    summary: 'Assinatura Pública: corrigido erro de RLS (401) e CORS/preflight ao assinar documento.',
+    modules: [
+      {
+        moduleId: 'assinatura',
+        changes: [
+          {
+            type: 'fix',
+            title: 'Edge Function para assinatura pública',
+            description: 'Criada Edge Function public-sign-document com service role para evitar erros de RLS em páginas públicas sem sessão autenticada.',
+          },
+          {
+            type: 'fix',
+            title: 'CORS/preflight corrigido',
+            description: 'Adicionados headers Access-Control-Allow-Methods e resposta OPTIONS com HTTP 200. Deploy com verify_jwt=false.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.87',
+    date: '05/01/2026',
+    summary: 'Petições: loading “Carregando...” em Recentes e botão laranja no Visualizar Bloco.',
+    modules: [
+      {
+        moduleId: 'peticoes',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Recentes: texto do loading atualizado',
+            description: 'O indicador de carregamento em Recentes agora exibe “Carregando...” enquanto busca as petições salvas.',
+          },
+          {
+            type: 'improvement',
+            title: 'Visualizar Bloco: “Adicionar no documento” no tema do sistema',
+            description: 'O botão “Adicionar no documento” no modal Visualizar Bloco foi ajustado para seguir o tema laranja do sistema.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.86',
+    date: '05/01/2026',
+    summary: 'Petições: loading “Procurando...” em Recentes.',
+    modules: [
+      {
+        moduleId: 'peticoes',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Recentes: indicador de carregamento',
+            description: 'Ao abrir o Editor de Petições, a seção Recentes agora exibe “Procurando...” até concluir a busca das petições salvas.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.85',
+    date: '04/01/2026',
+    summary: 'Petições: botão Editar com tema laranja no Visualizar Bloco.',
+    modules: [
+      {
+        moduleId: 'peticoes',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Visualizar Bloco: botão Editar no tema do sistema',
+            description: 'O botão Editar no modal Visualizar Bloco foi ajustado para seguir o tema laranja do sistema.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.84',
+    date: '04/01/2026',
+    summary: 'Petições: clique na sidebar abre Visualizar Bloco.',
+    modules: [
+      {
+        moduleId: 'peticoes',
+        changes: [
+          {
+            type: 'fix',
+            title: 'Blocos: clique na sidebar abre Visualizar',
+            description: 'Ao clicar em um bloco na sidebar, o sistema agora abre o modal Visualizar Bloco (em vez de inserir diretamente no documento).',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.83',
+    date: '04/01/2026',
+    summary: 'Petições: botão Editar no Visualizar Bloco.',
+    modules: [
+      {
+        moduleId: 'peticoes',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Blocos: botão Editar no Visualizar Bloco',
+            description: 'O modal Visualizar Bloco agora possui um botão Editar para abrir o editor do bloco diretamente.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.82',
+    date: '04/01/2026',
+    summary: 'Petições: bloqueio de acesso no mobile.',
+    modules: [
+      {
+        moduleId: 'peticoes',
+        changes: [
+          {
+            type: 'fix',
+            title: 'Mobile: Petições indisponível',
+            description: 'Em dispositivos móveis, o atalho de Petições no menu exibe uma mensagem de indisponibilidade em vez de abrir o editor. O widget minimizado também fica oculto.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.81',
+    date: '04/01/2026',
+    summary: 'Widget: ajustes de tamanho no modo minimizado.',
+    modules: [
+      {
+        moduleId: 'peticoes',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Widget: ícone menor e layout mais compacto',
+            description: 'Ajustado tamanho do ícone e do botão do widget minimizado para ficar mais equilibrado.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.80',
+    date: '04/01/2026',
+    summary: 'Widget: identificação no modo minimizado.',
+    modules: [
+      {
+        moduleId: 'peticoes',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Widget: label “Editor” no modo minimizado',
+            description: 'O widget minimizado agora exibe um pequeno label “Editor” para ficar mais claro do que se trata.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.79',
+    date: '04/01/2026',
+    summary: 'Widget: refinamentos visuais.',
+    modules: [
+      {
+        moduleId: 'peticoes',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Widget: sombra e glow refinados',
+            description: 'Refinamentos no visual do widget minimizado (sombra, glow e tamanhos) para um aspecto mais limpo.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.78',
+    date: '04/01/2026',
+    summary: 'Editor de Petições: widget minimizado só com ícone.',
+    modules: [
+      {
+        moduleId: 'peticoes',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Widget: modo minimalista (ícone apenas)',
+            description: 'O botão flutuante do Editor de Petições (minimizado) agora usa apenas o ícone, ocupando menos espaço visual.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.77',
+    date: '04/01/2026',
+    summary: 'Editor de Petições: widget minimizado com visual premium.',
+    modules: [
+      {
+        moduleId: 'peticoes',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Widget: botão minimizado mais bonito e chamativo',
+            description: 'O botão flutuante do Editor de Petições (quando minimizado) foi redesenhado para ficar mais moderno, com melhor contraste, sombra e microinterações.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.76',
+    date: '04/01/2026',
+    summary: 'Petições: ao adicionar bloco, fechar modal de busca.',
+    modules: [
+      {
+        moduleId: 'peticoes',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Blocos: fechar busca ao adicionar no documento',
+            description: 'No Visualizar Bloco, ao clicar em “Adicionar no documento”, o sistema agora fecha automaticamente o modal de busca de blocos.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.75',
+    date: '04/01/2026',
+    summary: 'Petições: Visualizar Bloco sem fechar a busca.',
+    modules: [
+      {
+        moduleId: 'peticoes',
+        changes: [
+          {
+            type: 'fix',
+            title: 'Blocos: fechar Visualizar não fecha a busca',
+            description: 'Ao abrir o Visualizar Bloco a partir da lista de busca, o modal de busca permanece aberto em segundo plano. Ao fechar o Visualizar, você volta para a busca automaticamente.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.74',
+    date: '04/01/2026',
+    summary: 'Petições: destacar “Inserir bloco” no menu de contexto.',
+    modules: [
+      {
+        moduleId: 'peticoes',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Editor: “Inserir bloco” em laranja forte por padrão',
+            description: 'No clique direito do editor, o item “Inserir bloco” agora aparece destacado com laranja forte por padrão para facilitar o acesso rápido.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.73',
+    date: '04/01/2026',
+    summary: 'Petições: menu de contexto com ordem preservada (Adicionar bloco sempre visível).',
+    modules: [
+      {
+        moduleId: 'peticoes',
+        changes: [
+          {
+            type: 'fix',
+            title: 'Editor: “Adicionar bloco” visível (desabilita sem seleção)',
+            description: 'No clique direito, “Adicionar bloco” agora permanece visível e é desabilitado quando não há texto selecionado, mantendo a ordem dos itens do menu conforme esperado.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.72',
+    date: '04/01/2026',
+    summary: 'Petições: menu de contexto reordenado + hover laranja.',
+    modules: [
+      {
+        moduleId: 'peticoes',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Editor: ordem do menu de contexto + destaque no hover',
+            description: 'No clique direito do editor, a ordem ficou: Inserir bloco (1º), Adicionar bloco (2º), Buscar empresa (3º). Também foi aplicado um hover laranja para facilitar a visualização.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.71',
+    date: '04/01/2026',
+    summary: 'Petições: capturar e salvar fonte automaticamente ao carregar documento.',
+    modules: [
+      {
+        moduleId: 'peticoes',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Editor: fonte padrão automática do documento carregado',
+            description: 'Ao importar um DOCX ou abrir uma petição salva (SFDT), o editor agora captura a fonte (família e tamanho) do início do documento e salva como padrão, mantendo a consistência nas próximas inserções/digitação.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.70',
+    date: '04/01/2026',
+    summary: 'Petições: opção de atualizar bloco existente ao cadastrar novo bloco.',
+    modules: [
+      {
+        moduleId: 'peticoes',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Cadastro de Bloco: atualizar bloco existente',
+            description: 'No modal de “Novo Bloco”, você pode marcar “Atualizar bloco existente”, escolher o bloco alvo e salvar como atualização, evitando duplicidade quando o conteúdo é repetido.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.69',
+    date: '04/01/2026',
+    summary: 'Petições: tags automáticas por palavra no cadastro de bloco.',
+    modules: [
+      {
+        moduleId: 'peticoes',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Cadastro de Bloco: tags automáticas por espaço (sem conectores)',
+            description: 'Ao adicionar tags no cadastro do bloco, a frase agora é quebrada automaticamente por espaço e conectores (de/da/do/etc.) são ignorados; funciona via Enter/Adicionar, sem botão extra.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.68',
+    date: '04/01/2026',
+    summary: 'Petições: quebra automática de frases em tags ao cadastrar bloco.',
+    modules: [
+      {
+        moduleId: 'peticoes',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Cadastro de Bloco: “Quebrar frases” em tags',
+            description: 'Ao cadastrar um bloco, o campo de tags agora permite colar uma frase e clicar em “Quebrar frases” para criar várias tags automaticamente, separando por conectivos e palavras-chave comuns.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.67',
+    date: '04/01/2026',
+    summary: 'Petições: busca fuzzy mais forte no “Adicionar Bloco”.',
+    modules: [
+      {
+        moduleId: 'peticoes',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Adicionar Bloco: tolerância a typos “pesados”',
+            description: 'A busca do “Adicionar Bloco” foi refinada para manter sugestões mesmo com múltiplos termos errados e digitação bem fora do padrão, usando fuzzy mais forte e ranking pelos melhores termos.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.66',
+    date: '04/01/2026',
+    summary: 'Petições: busca tolerante a erros no “Adicionar Bloco”.',
+    modules: [
+      {
+        moduleId: 'peticoes',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Adicionar Bloco: tolerância a termo errado/extra',
+            description: 'A busca do “Adicionar Bloco” foi refinada para ignorar ruídos comuns (termos muito curtos e conectivos) e manter resultados mesmo com um termo digitado errado/extra em buscas com vários termos.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.65',
+    date: '04/01/2026',
+    summary: 'Petições: prévia maior do conteúdo no “Adicionar Bloco”.',
+    modules: [
+      {
+        moduleId: 'peticoes',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Adicionar Bloco: mais conteúdo na prévia',
+            description: 'A lista de resultados do “Adicionar Bloco” agora mostra mais linhas/caracteres do texto e permite rolagem, facilitando avaliar o bloco antes de inserir.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.64',
+    date: '04/01/2026',
+    summary: 'Petições: modal “Adicionar Bloco” mais amplo e tags mais legíveis.',
+    modules: [
+      {
+        moduleId: 'peticoes',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Adicionar Bloco: modal mais largo + tags aprimoradas',
+            description: 'Melhorias visuais no modal “Adicionar Bloco”: layout mais amplo e apresentação das tags em chips mais legíveis (com truncamento e indicador +N).',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.63',
+    date: '04/01/2026',
+    summary: 'Petições: busca por blocos com relevância melhor (tags com prioridade).',
+    modules: [
+      {
+        moduleId: 'peticoes',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Adicionar Bloco: ranking priorizando tags (com conteúdo no score)',
+            description: 'A busca do “Adicionar Bloco” foi ajustada para priorizar correspondências em tags, mantendo título e conteúdo como sinais importantes para ordenar melhor os resultados.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.62',
+    date: '04/01/2026',
+    summary: 'Petições: busca de blocos mais rápida no “Adicionar Bloco”.',
+    modules: [
+      {
+        moduleId: 'peticoes',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Adicionar Bloco: busca otimizada (mais rápida)',
+            description: 'Melhorada a performance da busca de blocos com debounce e indexação/cache do texto dos blocos (reduz processamento do SFDT a cada tecla), deixando o modal “Adicionar Bloco” e a lista da sidebar mais responsivos.',
+          },
+        ],
+      },
+    ],
+  },
   {
     version: '1.9.61',
     date: '04/01/2026',

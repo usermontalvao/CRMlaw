@@ -617,6 +617,51 @@ class SignatureService {
 
   // ==================== SIGNING ====================
 
+  /**
+   * Assina documento via Edge Function (para uso público sem sessão autenticada)
+   * Esta é a forma recomendada para a página pública de assinatura
+   */
+  async signDocumentPublic(
+    publicToken: string,
+    payload: SignDocumentDTO,
+    ipAddress?: string,
+    userAgent?: string
+  ): Promise<Signer> {
+    const { data, error } = await supabase.functions.invoke('public-sign-document', {
+      body: {
+        token: publicToken,
+        signature_image: payload.signature_image,
+        facial_image: payload.facial_image,
+        document_image: payload.document_image,
+        geolocation: payload.geolocation,
+        signer_name: payload.signer_name,
+        signer_cpf: payload.signer_cpf,
+        signer_phone: payload.signer_phone,
+        auth_provider: payload.auth_provider,
+        auth_email: payload.auth_email,
+        auth_google_sub: payload.auth_google_sub,
+        auth_google_picture: payload.auth_google_picture,
+        ip_address: ipAddress,
+        user_agent: userAgent,
+      },
+    });
+
+    if (error) {
+      console.error('[signDocumentPublic] Edge function error:', error);
+      throw new Error(error.message || 'Erro ao assinar documento');
+    }
+
+    if (!data?.success) {
+      throw new Error(data?.error || 'Erro ao assinar documento');
+    }
+
+    return data.signer as Signer;
+  }
+
+  /**
+   * Assina documento diretamente (requer sessão autenticada)
+   * Use signDocumentPublic para a página pública de assinatura
+   */
   async signDocument(
     signerId: string,
     payload: SignDocumentDTO,

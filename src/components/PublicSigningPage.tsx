@@ -1246,8 +1246,9 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
         auth_google_picture: googleUser?.picture || undefined,
       };
 
-      const result = await signatureService.signDocument(
-        signer.id, 
+      // Usar signDocumentPublic (Edge Function) para evitar erros de RLS em página pública
+      const result = await signatureService.signDocumentPublic(
+        token, 
         payload,
         ipAddress,
         userAgent

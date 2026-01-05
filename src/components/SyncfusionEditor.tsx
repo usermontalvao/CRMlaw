@@ -66,6 +66,9 @@ export interface SyncfusionEditorRef {
   focus: () => void;
   // Toggle bold on current selection / next inserted text
   setBold: (bold: boolean) => void;
+  getCurrentFont: () => { fontFamily?: string; fontSize?: number };
+  applyCurrentFont: (fontFamily?: string, fontSize?: number) => void;
+  moveToDocumentStart: () => void;
   // Check if editor has content
   hasContent: () => boolean;
   // Clear editor
@@ -359,6 +362,45 @@ const SyncfusionEditor = forwardRef<SyncfusionEditorRef, SyncfusionEditorProps>(
         }
       },
 
+      getCurrentFont: () => {
+        const editor: any = containerRef.current?.documentEditor as any;
+        if (!editor) return {};
+        try {
+          const characterFormat: any = editor.selection?.characterFormat;
+          const fontFamily = characterFormat?.fontFamily;
+          const fontSize = characterFormat?.fontSize;
+          return {
+            fontFamily: typeof fontFamily === 'string' ? fontFamily : undefined,
+            fontSize: typeof fontSize === 'number' ? fontSize : undefined,
+          };
+        } catch {
+          return {};
+        }
+      },
+
+      applyCurrentFont: (fontFamily?: string, fontSize?: number) => {
+        const editor: any = containerRef.current?.documentEditor as any;
+        if (!editor) return;
+        try {
+          const characterFormat: any = editor.selection?.characterFormat;
+          if (!characterFormat) return;
+          if (fontFamily) characterFormat.fontFamily = fontFamily;
+          if (typeof fontSize === 'number' && Number.isFinite(fontSize) && fontSize > 0) characterFormat.fontSize = fontSize;
+        } catch {
+          // ignore
+        }
+      },
+
+      moveToDocumentStart: () => {
+        const editor: any = containerRef.current?.documentEditor as any;
+        if (!editor) return;
+        try {
+          editor.selection?.moveToDocumentStart?.();
+        } catch {
+          // ignore
+        }
+      },
+
       hasContent: () => {
         const editor = containerRef.current?.documentEditor;
         if (!editor) return false;
@@ -640,14 +682,14 @@ const SyncfusionEditor = forwardRef<SyncfusionEditorRef, SyncfusionEditorProps>(
           iconCss: 'e-icons e-de-ctnr-open',
         },
         {
+          text: 'Adicionar bloco...',
+          id: 'crm_add_block',
+          iconCss: 'e-icons e-de-ctnr-save',
+        },
+        {
           text: 'Buscar empresa...',
           id: 'crm_company_lookup',
           iconCss: 'e-icons e-de-ctnr-find',
-        },
-        {
-          text: 'Cadastrar seleção como bloco...',
-          id: 'crm_create_block_from_selection',
-          iconCss: 'e-icons e-de-ctnr-save',
         },
       ];
 
@@ -665,15 +707,17 @@ const SyncfusionEditor = forwardRef<SyncfusionEditorRef, SyncfusionEditorProps>(
           return;
         }
 
-        if (clickedId === `${prefix}crm_company_lookup`) {
-          onRequestCompanyLookup?.();
+        if (clickedId === `${prefix}crm_add_block`) {
+          const selectedText = String(editor?.selection?.text || '');
+          const hasSelection = !editor?.selection?.isEmpty && /\S/.test(selectedText);
+          if (!hasSelection) return;
+          const selectedSfdt = String(editor?.selection?.sfdt || '');
+          onRequestCreateBlockFromSelection?.(selectedText, selectedSfdt);
           return;
         }
 
-        if (clickedId === `${prefix}crm_create_block_from_selection`) {
-          const selectedText = String(editor?.selection?.text || '');
-          const selectedSfdt = String(editor?.selection?.sfdt || '');
-          onRequestCreateBlockFromSelection?.(selectedText, selectedSfdt);
+        if (clickedId === `${prefix}crm_company_lookup`) {
+          onRequestCompanyLookup?.();
           return;
         }
 
@@ -685,7 +729,7 @@ const SyncfusionEditor = forwardRef<SyncfusionEditorRef, SyncfusionEditorProps>(
         if (typeof prevBeforeOpen === 'function') prevBeforeOpen(args);
         try {
           const ids: string[] = (args?.ids || []) as string[];
-          const targetId = ids.find((x) => String(x).includes('crm_create_block_from_selection'));
+          const targetId = ids.find((x) => String(x).includes('crm_add_block'));
           if (!targetId) return;
 
           const itemEl = document.getElementById(targetId);
@@ -693,7 +737,14 @@ const SyncfusionEditor = forwardRef<SyncfusionEditorRef, SyncfusionEditorProps>(
 
           const selectedText = String(editor?.selection?.text || '');
           const hasSelection = !editor?.selection?.isEmpty && /\S/.test(selectedText);
-          itemEl.style.display = hasSelection ? 'block' : 'none';
+          itemEl.style.display = 'block';
+          if (hasSelection) {
+            itemEl.classList.remove('e-disabled');
+            (itemEl as any).setAttribute?.('aria-disabled', 'false');
+          } else {
+            itemEl.classList.add('e-disabled');
+            (itemEl as any).setAttribute?.('aria-disabled', 'true');
+          }
         } catch {
           // ignore
         }
@@ -786,6 +837,54 @@ const SyncfusionEditor = forwardRef<SyncfusionEditorRef, SyncfusionEditorProps>(
       const container = containerRef.current;
       const rootEl = (container as any)?.element as HTMLElement | undefined;
       if (!rootEl) return;
+
+      const styleId = 'crm-syncfusion-contextmenu-hover-style';
+      try {
+        if (!document.getElementById(styleId)) {
+          const style = document.createElement('style');
+          style.id = styleId;
+          style.textContent = `
+            .e-contextmenu-container li[id*="crm_insert_block"],
+            .e-contextmenu-wrapper li[id*="crm_insert_block"] {
+              background-color: #f97316 !important;
+            }
+
+            .e-contextmenu-container li[id*="crm_insert_block"] .e-menu-text,
+            .e-contextmenu-wrapper li[id*="crm_insert_block"] .e-menu-text {
+              color: #ffffff !important;
+              font-weight: 600 !important;
+            }
+
+            .e-contextmenu-container li[id*="crm_insert_block"] .e-menu-icon,
+            .e-contextmenu-wrapper li[id*="crm_insert_block"] .e-menu-icon {
+              color: #ffffff !important;
+            }
+
+            .e-contextmenu-container li[id*="crm_insert_block"]:hover,
+            .e-contextmenu-wrapper li[id*="crm_insert_block"]:hover {
+              background-color: #ea580c !important;
+            }
+
+            .e-contextmenu-container .e-menu-item:hover,
+            .e-contextmenu-wrapper .e-menu-item:hover {
+              background-color: #ffedd5 !important;
+            }
+
+            .e-contextmenu-container .e-menu-item:hover .e-menu-text,
+            .e-contextmenu-wrapper .e-menu-item:hover .e-menu-text {
+              color: #9a3412 !important;
+            }
+
+            .e-contextmenu-container .e-menu-item:hover .e-menu-icon,
+            .e-contextmenu-wrapper .e-menu-item:hover .e-menu-icon {
+              color: #9a3412 !important;
+            }
+          `;
+          document.head.appendChild(style);
+        }
+      } catch {
+        // ignore
+      }
 
       let isPinned = false;
       try {

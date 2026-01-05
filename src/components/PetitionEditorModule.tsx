@@ -56,6 +56,17 @@ import { useDeleteConfirm } from '../contexts/DeleteConfirmContext';
 import { supabase } from '../config/supabase';
 import SyncfusionEditor, { SyncfusionEditorRef } from './SyncfusionEditor';
 
+const useDebouncedValue = <T,>(value: T, delayMs: number): T => {
+  const [debounced, setDebounced] = useState(value);
+
+  useEffect(() => {
+    const t = window.setTimeout(() => setDebounced(value), delayMs);
+    return () => window.clearTimeout(t);
+  }, [value, delayMs]);
+
+  return debounced;
+};
+
 const sfdtToPlainText = (value: string) => {
   const raw = String(value ?? '');
   const trimmed = raw.trim();
@@ -291,6 +302,7 @@ const MARITAL_STATUS_LABELS: Record<string, string> = {
 
 const SIDEBAR_WIDTH_STORAGE_KEY = 'petition-editor-sidebar-width';
 const DEFAULT_TEMPLATE_STORAGE_KEY = 'petition-editor-default-template-docx-v1';
+const DEFAULT_FONT_STORAGE_KEY = 'petition-editor-default-font-v1';
 
 // CSS para o editor - Layout responsivo para 100% zoom
 const EDITOR_STYLES = `
@@ -594,6 +606,7 @@ const PetitionEditorModule: React.FC<PetitionEditorModuleProps> = ({
   // Blocos
   const [blocks, setBlocks] = useState<PetitionBlock[]>([]);
   const [blockSearch, setBlockSearch] = useState('');
+  const blockSearchDebounced = useDebouncedValue(blockSearch, 220);
   const [selectedDocumentType, setSelectedDocumentType] = useState<DocumentType>('petition');
   const [blockCategories, setBlockCategories] = useState<PetitionBlockCategory[]>([]);
   const [showCategoryModal, setShowCategoryModal] = useState(false);
@@ -616,6 +629,21 @@ const PetitionEditorModule: React.FC<PetitionEditorModuleProps> = ({
   const [pendingPetitionLoadKey, setPendingPetitionLoadKey] = useState(0);
   const editorRef = useRef<SyncfusionEditorRef>(null);
   const blockConvertEditorRef = useRef<SyncfusionEditorRef>(null);
+
+  const [defaultDocFont, setDefaultDocFont] = useState<{ fontFamily?: string; fontSize?: number } | null>(() => {
+    try {
+      const raw = window.localStorage.getItem(DEFAULT_FONT_STORAGE_KEY);
+      if (!raw) return null;
+      const parsed = JSON.parse(raw) as { fontFamily?: string; fontSize?: number };
+      const fontFamily = typeof parsed?.fontFamily === 'string' ? parsed.fontFamily : undefined;
+      const fontSize = typeof parsed?.fontSize === 'number' ? parsed.fontSize : undefined;
+      if (!fontFamily && !fontSize) return null;
+      return { fontFamily, fontSize };
+    } catch {
+      return null;
+    }
+  });
+  const defaultDocFontRef = useRef<{ fontFamily?: string; fontSize?: number } | null>(null);
   const blockViewDocxTokenRef = useRef(0);
   const blockViewDocxContainerRef = useRef<HTMLDivElement | null>(null);
   const contentChangeSeqRef = useRef(0);
@@ -636,6 +664,7 @@ const PetitionEditorModule: React.FC<PetitionEditorModuleProps> = ({
 
   // Petições salvas
   const [savedPetitions, setSavedPetitions] = useState<SavedPetition[]>([]);
+  const [savedPetitionsLoading, setSavedPetitionsLoading] = useState(true);
 
   // Clientes
   const [clients, setClients] = useState<Client[]>([]);
@@ -649,6 +678,39 @@ const PetitionEditorModule: React.FC<PetitionEditorModuleProps> = ({
     const id = window.setInterval(() => setRelativeTimeTick((t) => t + 1), 15000);
     return () => window.clearInterval(id);
   }, []);
+
+  useEffect(() => {
+    defaultDocFontRef.current = defaultDocFont;
+  }, [defaultDocFont]);
+
+  const saveDefaultDocFont = (font: { fontFamily?: string; fontSize?: number } | null) => {
+    setDefaultDocFont(font);
+    try {
+      if (!font) {
+        window.localStorage.removeItem(DEFAULT_FONT_STORAGE_KEY);
+        return;
+      }
+      window.localStorage.setItem(DEFAULT_FONT_STORAGE_KEY, JSON.stringify(font));
+    } catch {
+      // ignore
+    }
+  };
+
+  const captureAndApplyDocFontSoon = (editor: SyncfusionEditorRef) => {
+    window.setTimeout(() => {
+      try {
+        editor.moveToDocumentStart?.();
+        const f = editor.getCurrentFont?.() || {};
+        const fontFamily = typeof f.fontFamily === 'string' && f.fontFamily.trim() ? f.fontFamily.trim() : undefined;
+        const fontSize = typeof f.fontSize === 'number' && Number.isFinite(f.fontSize) && f.fontSize > 0 ? f.fontSize : undefined;
+        if (!fontFamily && !fontSize) return;
+        saveDefaultDocFont({ fontFamily, fontSize });
+        editor.applyCurrentFont?.(fontFamily, fontSize);
+      } catch {
+        // ignore
+      }
+    }, 180);
+  };
 
   useEffect(() => {
     selectedClientIdRef.current = selectedClient?.id ?? null;
@@ -750,12 +812,14 @@ const PetitionEditorModule: React.FC<PetitionEditorModuleProps> = ({
       }
 
       realtimeRefreshTimerRef.current = window.setTimeout(() => {
+        setSavedPetitionsLoading(true);
         petitionEditorService
           .listPetitions()
           .then((petitionsData) => setSavedPetitions(petitionsData))
           .catch(() => {
             // ignore
-          });
+          })
+          .finally(() => setSavedPetitionsLoading(false));
       }, 1500);
     };
 
@@ -870,6 +934,8 @@ const PetitionEditorModule: React.FC<PetitionEditorModuleProps> = ({
   // Modal de bloco
   const [showBlockModal, setShowBlockModal] = useState(false);
   const [editingBlock, setEditingBlock] = useState<PetitionBlock | null>(null);
+  const [updateExistingBlockMode, setUpdateExistingBlockMode] = useState(false);
+  const [updateExistingBlockId, setUpdateExistingBlockId] = useState('');
   const [blockFormData, setBlockFormData] = useState<CreatePetitionBlockDTO>({
     title: '',
     content: '',
@@ -885,9 +951,72 @@ const PetitionEditorModule: React.FC<PetitionEditorModuleProps> = ({
   const blockModalInitDoneRef = useRef(false);
   const [blockTagInput, setBlockTagInput] = useState('');
 
+  const addTagsFromText = (rawText: string) => {
+    const text = String(rawText || '').trim();
+    if (!text) return;
+
+    const ignore = new Set([
+      'a',
+      'as',
+      'ao',
+      'aos',
+      'à',
+      'às',
+      'com',
+      'da',
+      'das',
+      'de',
+      'do',
+      'dos',
+      'e',
+      'em',
+      'na',
+      'nas',
+      'no',
+      'nos',
+      'para',
+      'por',
+      'sem',
+      'uma',
+      'um',
+    ]);
+
+    const parts = text
+      .split(/\s+/g)
+      .map((t) => t.trim())
+      .filter(Boolean)
+      .map((t) => t.replace(/[^0-9a-zA-Z\u00C0-\u017F_-]/g, ''))
+      .map((t) => t.trim())
+      .filter(Boolean)
+      .map((t) => t.toLowerCase())
+      .filter((t) => t.length >= 3)
+      .filter((t) => {
+        const n = normalizeSearchText(t);
+        if (!n) return false;
+        if (ignore.has(n)) return false;
+        return true;
+      });
+
+    if (parts.length === 0) {
+      setBlockTagInput('');
+      return;
+    }
+
+    setBlockFormData((prev) => {
+      const existing = Array.isArray(prev.tags) ? prev.tags : [];
+      const next = existing.slice();
+      for (const p of parts) {
+        if (!next.includes(p)) next.push(p);
+      }
+      return { ...prev, tags: next };
+    });
+    setBlockTagInput('');
+  };
+
   // Modal de busca de bloco
   const [showBlockSearchModal, setShowBlockSearchModal] = useState(false);
   const [blockSearchQuery, setBlockSearchQuery] = useState('');
+  const blockSearchQueryDebounced = useDebouncedValue(blockSearchQuery, 260);
 
   const [showBlockViewModal, setShowBlockViewModal] = useState(false);
   const [viewingBlock, setViewingBlock] = useState<PetitionBlock | null>(null);
@@ -918,6 +1047,8 @@ const PetitionEditorModule: React.FC<PetitionEditorModuleProps> = ({
 
     if (block) {
       setEditingBlock(block);
+      setUpdateExistingBlockMode(false);
+      setUpdateExistingBlockId('');
       setBlockFormData({
         title: block.title,
         content: block.content,
@@ -929,6 +1060,8 @@ const PetitionEditorModule: React.FC<PetitionEditorModuleProps> = ({
       });
     } else {
       setEditingBlock(null);
+      setUpdateExistingBlockMode(false);
+      setUpdateExistingBlockId('');
       setBlockFormData({
         title: '',
         content: '',
@@ -969,6 +1102,8 @@ const PetitionEditorModule: React.FC<PetitionEditorModuleProps> = ({
     setError(null);
     setSuccess(null);
     setEditingBlock(null);
+    setUpdateExistingBlockMode(false);
+    setUpdateExistingBlockId('');
     blockModalInitDoneRef.current = false;
 
     setBlockFormData({
@@ -1153,11 +1288,11 @@ Regras:
     }
   };
 
-  const getBlockTagsForUI = (block: PetitionBlock) => {
+  const getBlockTagsForUI = (block: PetitionBlock, plainOverride?: string) => {
     const existing = Array.isArray(block.tags) ? block.tags.map((t) => String(t)).filter(Boolean) : [];
     if (existing.length) return existing;
 
-    const plain = sfdtToPlainText(block.content);
+    const plain = typeof plainOverride === 'string' ? plainOverride : sfdtToPlainText(block.content);
     const baseText = `${block.title}\n${plain}`.trim();
     const n = normalizeTag(baseText);
     const phraseTags = getPhraseTagsFromText(baseText);
@@ -1643,6 +1778,7 @@ Regras:
     if (editor && petition.content) {
       try {
         await editor.loadSfdt(petition.content);
+        captureAndApplyDocFontSoon(editor);
         setShowStartScreen(false);
       } catch (err) {
         console.error('Erro ao carregar conteúdo:', err);
@@ -1675,6 +1811,7 @@ Regras:
       try {
         if (petition.content) {
           await editor.loadSfdt(petition.content);
+          captureAndApplyDocFontSoon(editor);
           showSuccessMessage('Documento carregado');
         }
       } catch (err) {
@@ -1696,6 +1833,10 @@ Regras:
     const editor = editorRef.current;
     if (editor) {
       editor.clear();
+      const f = defaultDocFontRef.current;
+      if (f) {
+        editor.applyCurrentFont?.(f.fontFamily, f.fontSize);
+      }
     }
 
     setCurrentPetitionId(null);
@@ -1763,6 +1904,7 @@ Regras:
 
       const arrayBuffer = await file.arrayBuffer();
       await editor.loadDocx(arrayBuffer, file.name);
+      captureAndApplyDocFontSoon(editor);
 
       try {
         const dataBase64 = arrayBufferToBase64(arrayBuffer);
@@ -1973,6 +2115,12 @@ Regras:
       return;
     }
 
+    const targetUpdateId = editingBlock?.id || (updateExistingBlockMode ? updateExistingBlockId : '');
+    if (!editingBlock && updateExistingBlockMode && !targetUpdateId) {
+      setError('Selecione o bloco que será atualizado');
+      return;
+    }
+
     try {
       setSaving(true);
       setError(null);
@@ -1982,8 +2130,13 @@ Regras:
         content = blockEditorRef.current.getSfdt() || '';
       }
 
-      if (editingBlock) {
-        const updated = await petitionEditorService.updateBlock(editingBlock.id, {
+      if (targetUpdateId) {
+        if (!editingBlock && updateExistingBlockMode) {
+          const ok = window.confirm('Atualizar bloco existente? Isso substituirá título, conteúdo e tags do bloco selecionado.');
+          if (!ok) return;
+        }
+
+        const updated = await petitionEditorService.updateBlock(targetUpdateId, {
           title: blockFormData.title,
           content,
           category: blockFormData.category,
@@ -2010,6 +2163,8 @@ Regras:
 
       setShowBlockModal(false);
       setEditingBlock(null);
+      setUpdateExistingBlockMode(false);
+      setUpdateExistingBlockId('');
     } catch (err) {
       console.error('Erro ao salvar bloco:', err);
       setError('Erro ao salvar bloco');
@@ -2017,6 +2172,13 @@ Regras:
       setSaving(false);
     }
   };
+
+  const updatableBlocks = useMemo(() => {
+    return (blocks || [])
+      .filter((b) => b.is_active && ((b.document_type || 'petition') as string) === selectedDocumentType)
+      .slice()
+      .sort((a, b) => String(a.title || '').localeCompare(String(b.title || ''), 'pt-BR'));
+  }, [blocks, selectedDocumentType]);
 
   // Carregar dados
   useEffect(() => {
@@ -2190,6 +2352,7 @@ Regras:
 
       const arrayBuffer = base64ToArrayBuffer(parsed.dataBase64);
       await editor.loadDocx(arrayBuffer, parsed.name || 'modelo.docx');
+      captureAndApplyDocFontSoon(editor);
       setHasUnsavedChanges(true);
       showSuccessMessage(`Modelo padrão${parsed.name ? ` "${parsed.name}"` : ''} carregado`);
     } catch (err) {
@@ -2437,6 +2600,7 @@ Regras:
     try {
       setLoading(true);
       setError(null);
+      setSavedPetitionsLoading(true);
 
       const [blocksData, petitionsData, clientsData] = await Promise.all([
         petitionEditorService.listBlocks(selectedDocumentType),
@@ -2460,6 +2624,7 @@ Regras:
       setError('Erro ao carregar dados. Tente novamente.');
     } finally {
       setLoading(false);
+      setSavedPetitionsLoading(false);
     }
   };
 
@@ -2556,18 +2721,50 @@ Regras:
     }
   }, [loading, isFloatingWidget, initialClientId, initialPetitionId, clients, savedPetitions]);
 
+  const blockIndexMap = useMemo(() => {
+    const map = new Map<
+      string,
+      {
+        plain: string;
+        titleN: string;
+        tagsText: string;
+        tagsN: string;
+        contentN: string;
+        hayForSidebar: string;
+        tags: string[];
+      }
+    >();
+
+    for (const b of blocks) {
+      const plain = sfdtToPlainText(b.content);
+      const tags = getBlockTagsForUI(b, plain);
+      const tagsText = tags.join(' ');
+      map.set(b.id, {
+        plain,
+        titleN: normalizeSearchText(b.title),
+        tagsText,
+        tagsN: normalizeSearchText(tagsText),
+        contentN: normalizeSearchText(plain),
+        hayForSidebar: normalizeTag(`${b.title}\n${tagsText}\n${plain}`),
+        tags,
+      });
+    }
+
+    return map;
+  }, [blocks]);
+
   // Filtrar blocos
   const filteredBlocks = useMemo(() => {
-    return blocks.filter(block => {
+    const terms = parseSearchTerms(blockSearchDebounced);
+    return blocks.filter((block) => {
       const dt = (block.document_type || 'petition') as string;
       if (dt !== selectedDocumentType) return false;
-      const tagsText = getBlockTagsForUI(block).join(' ');
-      const terms = parseSearchTerms(blockSearch);
-      const hay = normalizeTag(`${block.title}\n${tagsText}\n${sfdtToPlainText(block.content)}`);
+      if (!block.is_active) return false;
+      const hay = blockIndexMap.get(block.id)?.hayForSidebar || '';
       const matchesSearch = terms.length === 0 || terms.every((t) => hay.includes(t));
-      return matchesSearch && block.is_active;
+      return matchesSearch;
     });
-  }, [blocks, blockSearch, selectedDocumentType]);
+  }, [blocks, blockSearchDebounced, selectedDocumentType, blockIndexMap]);
 
   // Agrupar por categoria
   const blocksByCategory = useMemo(() => {
@@ -2592,61 +2789,136 @@ Regras:
   // Filtrar blocos para modal de busca
   const searchFilteredBlocks = useMemo(() => {
     const active = blocks.filter(b => b.is_active && ((b.document_type || 'petition') as string) === selectedDocumentType);
-    const q = (blockSearchQuery || '').trim();
+    const q = (blockSearchQueryDebounced || '').trim();
     if (!q) return active.map((b) => ({ block: b, score: 0, matchPct: 0 } as BlockSearchResult));
 
     const terms = parseSearchTerms(q);
+    const ignored = new Set([
+      'a',
+      'as',
+      'ao',
+      'aos',
+      'à',
+      'às',
+      'com',
+      'da',
+      'das',
+      'de',
+      'do',
+      'dos',
+      'e',
+      'em',
+      'na',
+      'nas',
+      'no',
+      'nos',
+      'para',
+      'por',
+      'sem',
+      'uma',
+      'um',
+    ]);
+    const termsN = terms
+      .map((t) => normalizeSearchText(String(t || '')))
+      .filter(Boolean)
+      .filter((t) => {
+        const token = String(t || '');
+        if (!token) return false;
+        if (token.length <= 2) return false;
+        if (ignored.has(token)) return false;
+        return true;
+      });
+    const qN = normalizeSearchText(q);
+
+    if (termsN.length === 0) return active.map((b) => ({ block: b, score: 0, matchPct: 0 } as BlockSearchResult));
+
+    const meaningfulTerms = termsN.filter((t) => String(t || '').length >= 4);
+
+    const scoreTermInNormalizedText = (
+      term: string,
+      text: string,
+      weightExact: number,
+      weightFuzzy: number,
+      wordsOverride?: string[],
+    ) => {
+      if (!term || !text) return 0;
+      if (text.includes(term)) return weightExact;
+      const words = Array.isArray(wordsOverride) ? wordsOverride : text.split(' ').filter(Boolean);
+      if (words.length === 0) return 0;
+      let best = 0;
+      const termLen = term.length;
+      const termPrefix = termLen >= 6 ? term.slice(0, 4) : '';
+      const maxDist = termLen <= 4 ? 1 : termLen <= 7 ? 2 : 3;
+      for (const w of words) {
+        if (!w) continue;
+        if (w === term) return weightExact;
+        if (termPrefix && w.startsWith(termPrefix)) {
+          const local = weightFuzzy * 0.92;
+          if (local > best) best = local;
+        }
+        const d = levenshteinLimited(term, w, maxDist);
+        if (d <= maxDist) {
+          const local = weightFuzzy * (1 - d / (maxDist + 1));
+          if (local > best) best = local;
+        }
+      }
+      return best;
+    };
 
     const ranked = active
       .map((b) => {
-        const plain = sfdtToPlainText(b.content);
-        const tagsText = getBlockTagsForUI(b).join(' ');
-        const titleRaw = b.title;
-        const titleN = normalizeSearchText(titleRaw);
-        const tagsN = normalizeSearchText(tagsText);
-        const contentN = normalizeSearchText(plain);
-        const qN = normalizeSearchText(q);
+        const idx = blockIndexMap.get(b.id);
+        const plain = idx?.plain ?? sfdtToPlainText(b.content);
+        const titleN = idx?.titleN ?? normalizeSearchText(b.title);
+        const tagsText = idx?.tagsText ?? getBlockTagsForUI(b, plain).join(' ');
+        const tagsN = idx?.tagsN ?? normalizeSearchText(tagsText);
+        const contentN = idx?.contentN ?? normalizeSearchText(plain);
 
-        const scores = terms.map((t) => {
-          const token = String(t || '').trim();
-          if (!token) return 0;
+        const titleWords = titleN.split(' ').filter(Boolean);
+        const tagsWords = tagsN.split(' ').filter(Boolean);
+        const contentWords = contentN.split(' ').filter(Boolean);
 
-          if (token.includes(' ')) {
-            const phrase = normalizeSearchText(token);
-            if (!phrase) return 0;
-            if (titleN.includes(phrase)) return 1.0;
-            if (tagsN.includes(phrase)) return 0.95;
-            if (contentN.includes(phrase)) return 0.6;
+        const scores = termsN.map((term) => {
+          if (!term) return 0;
+
+          if (term.includes(' ')) {
+            if (tagsN.includes(term)) return 1.15;
+            if (titleN.includes(term)) return 1.0;
+            if (contentN.includes(term)) return 0.7;
             return 0;
           }
 
-          const sTitle = scoreSingleTermInText(token, titleRaw, 1.0, 0.75);
-          const sTags = scoreSingleTermInText(token, tagsText, 0.9, 0.6);
-          const sContent = scoreSingleTermInText(token, plain, 0.55, 0.3);
-          return Math.max(sTitle, sTags, sContent);
+          const sTags = scoreTermInNormalizedText(term, tagsN, 1.2, 0.95, tagsWords);
+          const sTitle = scoreTermInNormalizedText(term, titleN, 1.0, 0.75, titleWords);
+          const sContent = scoreTermInNormalizedText(term, contentN, 0.7, 0.55, contentWords);
+          return Math.max(sTags, sTitle * 0.95, sContent * 0.85);
         });
 
-        const baseMin = terms.length <= 1 ? 0.2 : 0.35;
-        const passed = scores.every((s, idx) => {
-          const token = terms[idx] || '';
-          if (terms.length >= 2 && String(token).length <= 3) return s >= 0.8;
-          return s >= baseMin;
-        });
+        const sorted = scores.slice().sort((a, b) => b - a);
+        const best = sorted[0] ?? 0;
+        const topK = Math.min(sorted.length, sorted.length >= 3 ? 3 : sorted.length);
+        const base = sorted.slice(0, topK).reduce((acc, v) => acc + v, 0) / Math.max(1, topK);
 
-        if (!passed) return null;
+        if (best < 0.5 && base < 0.45) return null;
 
-        let score = scores.reduce((acc, v) => acc + v, 0) / Math.max(scores.length, 1);
-        if (qN && titleN.includes(qN)) score += 0.25;
-        if (qN && tagsN.includes(qN)) score += 0.15;
-        if (score > 1.5) score = 1.5;
-        const matchPct = Math.round(Math.max(0, Math.min(1, score / 1.5)) * 100);
+        const tagsAllTerms = meaningfulTerms.length > 0 && meaningfulTerms.every((t) => tagsN.includes(t));
+        const contentAllTerms = meaningfulTerms.length > 0 && meaningfulTerms.every((t) => contentN.includes(t));
+
+        let score = base;
+        if (tagsAllTerms) score += 0.35;
+        if (contentAllTerms) score += 0.12;
+        if (qN && tagsN.includes(qN)) score += 0.25;
+        if (qN && titleN.includes(qN)) score += 0.15;
+        if (qN && contentN.includes(qN)) score += 0.05;
+        if (score > 1.8) score = 1.8;
+        const matchPct = Math.round(Math.max(0, Math.min(1, score / 1.8)) * 100);
         return { block: b, score, matchPct } as BlockSearchResult;
       })
       .filter((x): x is BlockSearchResult => Boolean(x) && x !== null && x.score > 0.25)
       .sort((a, b) => b.score - a.score);
 
     return ranked;
-  }, [blocks, blockSearchQuery, selectedDocumentType]);
+  }, [blocks, blockSearchQueryDebounced, selectedDocumentType, blockIndexMap]);
 
   const toggleCategory = (category: string) => {
     setExpandedCategories(prev => {
@@ -2857,7 +3129,12 @@ Regras:
                   <div className="col-span-1 text-right"></div>
                 </div>
 
-                {savedPetitions.length === 0 ? (
+                {savedPetitionsLoading ? (
+                  <div className="px-3 py-6 text-sm text-slate-500 flex items-center gap-2">
+                    <Loader2 className="w-4 h-4 animate-spin text-amber-600" />
+                    <span>Carregando...</span>
+                  </div>
+                ) : savedPetitions.length === 0 ? (
                   <div className="px-3 py-4 text-sm text-slate-500">Nenhuma petição recente</div>
                 ) : (
                   <div className="max-h-[360px] overflow-y-auto">
@@ -3120,7 +3397,7 @@ Regras:
 
       {/* Modal: Visualizar Conteúdo do Bloco */}
       {showBlockViewModal && viewingBlock && (
-        <aside id="petition-editor-backdrop" className="fixed inset-0 z-[100] flex items-start justify-center p-2 sm:p-6 pt-8 bg-slate-900/40 backdrop-blur-sm overflow-y-auto">
+        <aside id="petition-editor-backdrop" className="fixed inset-0 z-[110] flex items-start justify-center p-2 sm:p-6 pt-8 bg-slate-900/40 backdrop-blur-sm overflow-y-auto">
           <main id="block-editor-modal" className="bg-white rounded-2xl shadow-[0_24px_60px_rgba(15,23,42,0.12)] border border-slate-200 w-full max-w-7xl max-h-[92vh] my-2 overflow-hidden flex flex-col mx-auto transition-all duration-300">
             <div className="h-1.5 w-full shrink-0 bg-orange-600" style={{ backgroundColor: '#ea580c' }} />
 
@@ -3243,7 +3520,7 @@ Regras:
                         {tags.map((tag) => (
                           <span
                             key={tag}
-                            className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-semibold rounded-full bg-amber-100 text-amber-800 border border-amber-200"
+                            className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-semibold rounded bg-amber-700 text-white border border-amber-600 max-w-[260px] truncate"
                           >
                             {tag}
                           </span>
@@ -3273,28 +3550,51 @@ Regras:
             </div>
 
             <footer className="px-4 py-3 border-t border-slate-100 flex items-center justify-between bg-slate-50 gap-2">
-              <button
-                onClick={async () => {
-                  if (!isOnlineRef.current) {
-                    setError('Você está offline. O Peticionamento é 100% online: reconecte para editar/salvar.');
-                    return;
-                  }
-                  await insertBlock(viewingBlock);
-                  blockViewDocxTokenRef.current += 1;
-                  setShowBlockViewModal(false);
-                  setViewingBlock(null);
-                  setViewingBlockMatchPct(null);
-                  setBlockViewFallbackText('');
-                  setBlockViewUseFallback(false);
-                  setBlockViewDocxError('');
-                  setBlockViewDocxLoading(false);
-                  if (blockViewDocxContainerRef.current) blockViewDocxContainerRef.current.innerHTML = '';
-                }}
-                className="px-6 py-2.5 text-xs sm:text-sm font-bold rounded-xl transition-all shadow-md flex items-center justify-center gap-2 uppercase tracking-wider petition-btn-emerald"
-              >
-                <Plus className="w-4 h-4" />
-                <span>Adicionar no documento</span>
-              </button>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => {
+                    // Abrir modal de edição com o bloco atual
+                    if (viewingBlock) {
+                      openBlockModal(viewingBlock);
+                      setShowBlockViewModal(false);
+                      setViewingBlock(null);
+                      setViewingBlockMatchPct(null);
+                      setBlockViewFallbackText('');
+                      setBlockViewUseFallback(false);
+                      setBlockViewDocxError('');
+                      setBlockViewDocxLoading(false);
+                      if (blockViewDocxContainerRef.current) blockViewDocxContainerRef.current.innerHTML = '';
+                    }
+                  }}
+                  className="px-4 py-2.5 text-xs sm:text-sm font-bold rounded-xl transition-all shadow-md flex items-center justify-center gap-2 uppercase tracking-wider petition-btn-orange"
+                >
+                  <Edit3 className="w-4 h-4" />
+                  <span>Editar</span>
+                </button>
+                <button
+                  onClick={async () => {
+                    if (!isOnlineRef.current) {
+                      setError('Você está offline. O Peticionamento é 100% online: reconecte para editar/salvar.');
+                      return;
+                    }
+                    await insertBlock(viewingBlock);
+                    setShowBlockSearchModal(false);
+                    blockViewDocxTokenRef.current += 1;
+                    setShowBlockViewModal(false);
+                    setViewingBlock(null);
+                    setViewingBlockMatchPct(null);
+                    setBlockViewFallbackText('');
+                    setBlockViewUseFallback(false);
+                    setBlockViewDocxError('');
+                    setBlockViewDocxLoading(false);
+                    if (blockViewDocxContainerRef.current) blockViewDocxContainerRef.current.innerHTML = '';
+                  }}
+                  className="px-6 py-2.5 text-xs sm:text-sm font-bold rounded-xl transition-all shadow-md flex items-center justify-center gap-2 uppercase tracking-wider petition-btn-orange"
+                >
+                  <Plus className="w-4 h-4" />
+                  <span>Adicionar no documento</span>
+                </button>
+              </div>
               <button
                 onClick={() => {
                   blockViewDocxTokenRef.current += 1;
@@ -3416,7 +3716,7 @@ Regras:
                               <div
                                 key={block.id}
                                 className="group px-2 py-2 hover:bg-amber-50 rounded cursor-pointer transition-colors"
-                                onClick={() => void insertBlock(block)}
+                                onClick={() => openViewBlock(block)}
                               >
                                 <div className="flex items-center gap-1">
                                   <span className="flex-1 text-xs text-slate-700 truncate">{block.title}</span>
@@ -3448,13 +3748,20 @@ Regras:
                                 {(() => {
                                   const tags = getBlockTagsForUI(block);
                                   if (!tags.length) return null;
+                                  const visible = tags.slice(0, 5);
+                                  const remaining = tags.length - visible.length;
                                   return (
                                     <div className="flex flex-wrap gap-1 mt-1">
-                                      {tags.slice(0, 3).map((t) => (
-                                        <span key={t} className="text-[9px] px-2 py-0.5 rounded-full bg-amber-100 text-amber-800">
+                                      {visible.map((t) => (
+                                        <span key={t} className="inline-flex items-center px-2.5 py-1 rounded bg-amber-700 text-white border border-amber-600 text-[9px] font-semibold max-w-[140px] truncate">
                                           {t}
                                         </span>
                                       ))}
+                                      {remaining > 0 && (
+                                        <span className="inline-flex items-center px-2.5 py-1 rounded bg-amber-600 text-amber-100 border border-amber-500 text-[9px] font-bold">
+                                          +{remaining}
+                                        </span>
+                                      )}
                                     </div>
                                   );
                                 })()}
@@ -3663,7 +3970,7 @@ Regras:
       {/* Modal de Busca de Bloco */}
       {showBlockSearchModal && (
         <aside id="petition-search-backdrop" className="fixed inset-0 z-[100] flex items-start justify-center p-2 sm:p-6 pt-12 bg-slate-900/40 backdrop-blur-sm overflow-y-auto">
-          <main id="block-search-modal" className="bg-white rounded-2xl shadow-[0_24px_60px_rgba(15,23,42,0.12)] border border-slate-200 w-full max-w-lg my-4 overflow-hidden flex flex-col mx-auto transition-all duration-300">
+          <main id="block-search-modal" className="bg-white rounded-2xl shadow-[0_24px_60px_rgba(15,23,42,0.12)] border border-slate-200 w-full max-w-3xl my-4 overflow-hidden flex flex-col mx-auto transition-all duration-300">
             <div className="h-2 w-full shrink-0 bg-orange-600" style={{ backgroundColor: '#ea580c' }} />
 
             <header className="relative px-4 sm:px-6 py-4 sm:py-5 border-b border-slate-100 flex items-center justify-between sticky top-0 bg-white z-10">
@@ -3694,66 +4001,74 @@ Regras:
               </div>
 
               <div className="mt-4 border border-slate-200 rounded-lg overflow-hidden">
-                {searchFilteredBlocks.length === 0 ? (
-                  <div className="p-6 text-center text-slate-400">
-                    <FileText className="w-10 h-10 mx-auto mb-2" />
-                    <p className="text-sm">Nenhum bloco encontrado</p>
-                  </div>
-                ) : (
-                  searchFilteredBlocks.map((item: BlockSearchResult) => {
-                    const b = item.block;
-                    const matchPct = item.matchPct;
-                    const showMatchPct = Boolean((blockSearchQuery || '').trim());
-                    return (
-                    <div
-                      key={b.id}
-                      className="px-4 py-3 border-b border-slate-100 hover:bg-amber-50 cursor-pointer transition-colors"
-                      onClick={() => {
-                        openViewBlock(b, showMatchPct ? matchPct : undefined);
-                        setShowBlockSearchModal(false);
-                      }}
-                    >
-                      <div className="flex items-center gap-2 mb-1">
-                        <span className="text-sm font-medium text-slate-700">{b.title}</span>
-                        <span className="text-[10px] px-1.5 py-0.5 bg-slate-100 text-slate-500 rounded">
-                          {getCategoryLabel(String(b.category || 'outros'))}
-                        </span>
-                        {showMatchPct && (
-                          <span className="ml-auto text-[10px] px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 border border-emerald-200 font-bold">
-                            {matchPct}%
-                          </span>
-                        )}
-                        {b.is_default && <Star className="w-3 h-3 text-amber-400" />}
-                      </div>
-                      {(() => {
-                        const tags = getBlockTagsForUI(b);
-                        if (!tags.length) return null;
-                        return (
-                          <div className="flex flex-wrap gap-1 mb-1">
-                            {tags.map((t) => (
-                              <span
-                                key={t}
-                                className="text-[10px] px-2 py-0.5 rounded-full bg-amber-100 text-amber-800"
-                              >
-                                {t}
-                              </span>
-                            ))}
-                          </div>
-                        );
-                      })()}
-                      <p className="text-xs text-slate-500 line-clamp-2">
-                        {(() => {
-                          const plain = sfdtToPlainText(b.content);
-                          const t = (plain || '').trim();
-                          if (!t) return '—';
-                          if (t.startsWith('{') || t.startsWith('[')) return 'Pré-visualização indisponível';
-                          return t.length > 150 ? `${t.substring(0, 150)}...` : t;
-                        })()}
-                      </p>
+                <div className="max-h-[65vh] overflow-y-auto">
+                  {searchFilteredBlocks.length === 0 ? (
+                    <div className="p-6 text-center text-slate-400">
+                      <FileText className="w-10 h-10 mx-auto mb-2" />
+                      <p className="text-sm">Nenhum bloco encontrado</p>
                     </div>
-                    );
-                  })
-                )}
+                  ) : (
+                    searchFilteredBlocks.map((item: BlockSearchResult) => {
+                      const b = item.block;
+                      const matchPct = item.matchPct;
+                      const showMatchPct = Boolean((blockSearchQuery || '').trim());
+                      return (
+                      <div
+                        key={b.id}
+                        className="px-4 py-3 border-b border-slate-100 hover:bg-amber-50 cursor-pointer transition-colors"
+                        onClick={() => {
+                          openViewBlock(b, showMatchPct ? matchPct : undefined);
+                        }}
+                      >
+                        <div className="flex items-center gap-2 mb-1">
+                          <span className="text-sm font-medium text-slate-700">{b.title}</span>
+                          <span className="text-[10px] px-1.5 py-0.5 bg-slate-100 text-slate-500 rounded">
+                            {getCategoryLabel(String(b.category || 'outros'))}
+                          </span>
+                          {showMatchPct && (
+                            <span className="ml-auto text-[10px] px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 border border-emerald-200 font-bold">
+                              {matchPct}%
+                            </span>
+                          )}
+                          {b.is_default && <Star className="w-3 h-3 text-amber-400" />}
+                        </div>
+                        {(() => {
+                          const tags = blockIndexMap.get(b.id)?.tags ?? getBlockTagsForUI(b);
+                          if (!tags.length) return null;
+                          const visible = tags.slice(0, 6);
+                          const remaining = tags.length - visible.length;
+                          return (
+                            <div className="flex flex-wrap gap-1.5 mb-1">
+                              {visible.map((t) => (
+                                <span
+                                  key={t}
+                                  className="inline-flex items-center px-2.5 py-1 rounded bg-amber-700 text-white border border-amber-600 text-[10px] font-semibold max-w-[180px] truncate"
+                                >
+                                  {t}
+                                </span>
+                              ))}
+                              {remaining > 0 && (
+                                <span className="inline-flex items-center px-2.5 py-1 rounded bg-amber-600 text-amber-100 border border-amber-500 text-[10px] font-bold">
+                                  +{remaining}
+                                </span>
+                              )}
+                            </div>
+                          );
+                        })()}
+                        <p className="text-xs text-slate-500 line-clamp-4">
+                          {(() => {
+                            const plain = blockIndexMap.get(b.id)?.plain ?? sfdtToPlainText(b.content);
+                            const t = (plain || '').trim();
+                            if (!t) return '—';
+                            if (t.startsWith('{') || t.startsWith('[')) return 'Pré-visualização indisponível';
+                            return t.length > 280 ? `${t.substring(0, 280)}...` : t;
+                          })()}
+                        </p>
+                      </div>
+                      );
+                    })
+                  )}
+                </div>
               </div>
             </div>
           </main>
@@ -3983,6 +4298,45 @@ Regras:
                     ))}
                   </select>
                 </div>
+
+                {!editingBlock && (
+                  <div className="col-span-3">
+                    <label className="group flex items-start gap-3 cursor-pointer p-3 bg-slate-50 rounded-xl border border-slate-200 hover:bg-slate-100 transition-all">
+                      <input
+                        type="checkbox"
+                        checked={updateExistingBlockMode}
+                        onChange={(e) => {
+                          const checked = e.target.checked;
+                          setUpdateExistingBlockMode(checked);
+                          if (!checked) setUpdateExistingBlockId('');
+                        }}
+                        className="mt-0.5 w-5 h-5 text-amber-600 rounded-lg border-amber-300 focus:ring-amber-500 transition-all cursor-pointer appearance-none border-2 checked:bg-amber-500"
+                      />
+                      <div className="min-w-0">
+                        <div className="text-xs font-extrabold text-slate-700 uppercase tracking-wider">Atualizar bloco existente</div>
+                        <div className="text-[11px] text-slate-500">Em vez de criar um novo bloco, substitui o conteúdo do bloco selecionado.</div>
+                      </div>
+                    </label>
+
+                    {updateExistingBlockMode && (
+                      <div className="mt-2 grid grid-cols-3 gap-4">
+                        <div className="col-span-3 sm:col-span-2">
+                          <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Bloco alvo</label>
+                          <select
+                            value={updateExistingBlockId}
+                            onChange={(e) => setUpdateExistingBlockId(e.target.value)}
+                            className="w-full px-3 py-2.5 text-sm border border-slate-200 rounded-lg focus:ring-2 focus:ring-amber-500/20 focus:border-amber-400 transition-all bg-slate-50 font-medium cursor-pointer"
+                          >
+                            <option value="">Selecione o bloco que será atualizado</option>
+                            {updatableBlocks.map((b) => (
+                              <option key={b.id} value={b.id}>{b.title}</option>
+                            ))}
+                          </select>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
 
               <div>
@@ -4021,24 +4375,16 @@ Regras:
                       onKeyDown={(e) => {
                         if (e.key === 'Enter') {
                           e.preventDefault();
-                          const tag = blockTagInput.trim();
-                          if (!tag) return;
-                          const tags = Array.from(new Set([...(blockFormData.tags || []), tag]));
-                          setBlockFormData({ ...blockFormData, tags });
-                          setBlockTagInput('');
+                          addTagsFromText(blockTagInput);
                         }
                       }}
-                      placeholder="Digite a tag e pressione Enter"
+                      placeholder="Digite palavras e clique Adicionar (ou Enter)"
                       className="flex-1 px-3 py-2.5 text-sm border border-slate-200 rounded-lg focus:ring-2 focus:ring-amber-500/20 focus:border-amber-400 transition-all font-medium bg-slate-50"
                     />
                     <button
                       type="button"
                       onClick={() => {
-                        const tag = blockTagInput.trim();
-                        if (!tag) return;
-                        const tags = Array.from(new Set([...(blockFormData.tags || []), tag]));
-                        setBlockFormData({ ...blockFormData, tags });
-                        setBlockTagInput('');
+                        addTagsFromText(blockTagInput);
                       }}
                       className="px-3 py-2.5 text-sm font-bold rounded-lg transition-all shadow-md petition-btn-emerald"
                     >
@@ -4068,7 +4414,7 @@ Regras:
                       ))}
                     </div>
                   )}
-                  <p className="text-[11px] text-slate-400">Adicione uma tag por vez. Use para facilitar a busca.</p>
+                  <p className="text-[11px] text-slate-400">Ao adicionar, a frase é quebrada por espaço. Conectores (de/da/do/etc.) não são salvos.</p>
                 </div>
               </div>
 
@@ -4118,7 +4464,7 @@ Regras:
                   ) : (
                     <>
                       <Save className="w-4 h-4" />
-                      <span>{editingBlock ? 'Atualizar Bloco' : 'Criar Bloco'}</span>
+                      <span>{editingBlock || updateExistingBlockMode ? 'Atualizar Bloco' : 'Criar Bloco'}</span>
                     </>
                   )}
                 </button>

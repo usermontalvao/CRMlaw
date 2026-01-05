@@ -1,5 +1,91 @@
 # Changelog
 
+## 1.9.89
+- **Assinatura Pública**: corrigido bloqueio de CORS/preflight ao chamar Edge Function `public-sign-document` (headers `Access-Control-Allow-Methods` e resposta `OPTIONS` com HTTP 200). Observação: a função deve ser deployada com `--no-verify-jwt` para funcionar sem sessão.
+
+## 1.9.88
+- **Assinatura Pública**: corrigido erro de RLS (401) ao assinar documento em página pública. Criada Edge Function `public-sign-document` que executa com service role, evitando problemas de permissão quando não há sessão autenticada.
+
+## 1.9.87
+- **Petições (Recentes)**: texto do loading ajustado para **"Carregando..."**.
+- **Petições (Blocos)**: botão **"Adicionar no documento"** no **Visualizar Bloco** ajustado para o **tema laranja** do sistema.
+
+## 1.9.86
+- **Petições (Recentes)**: adicionado loading **"Procurando..."** enquanto carrega a lista de petições salvas.
+
+## 1.9.85
+- **Petições (Blocos)**: botão **Editar** no **Visualizar Bloco** agora segue o **tema laranja** do sistema.
+
+## 1.9.84
+- **Petições (Blocos)**: clique no bloco na **sidebar** agora abre **Visualizar Bloco** (em vez de inserir direto).
+
+## 1.9.83
+- **Petições (Blocos)**: adicionado botão **Editar** no modal **Visualizar Bloco**.
+
+## 1.9.82
+- **Petições (Mobile)**: item **Petições** no menu mobile agora mostra aviso de indisponibilidade em vez de abrir o editor.
+- **Editor de Petições (Widget)**: widget minimizado oculto no mobile.
+
+## 1.9.81
+- **Editor de Petições (Widget)**: ajustes de tamanho/legibilidade no modo minimizado (ícone e texto menores).
+
+## 1.9.80
+- **Editor de Petições (Widget)**: modo minimizado com label "Editor" para facilitar identificação.
+
+## 1.9.79
+- **Editor de Petições (Widget)**: refinamento visual do botão minimizado (tamanho, sombra e glow).
+
+## 1.9.78
+- **Editor de Petições (Widget)**: botão minimizado agora é **minimalista** (só ícone, sem texto) para ocupar menos espaço visual.
+
+## 1.9.77
+- **Editor de Petições (Widget)**: botão minimizado redesenhado com **visual mais moderno** (destaque, sombra, borda e microinterações) para facilitar encontrar e reabrir o editor.
+
+## 1.9.76
+- **Petições (Blocos)**: ao clicar em **“Adicionar no documento”** no Visualizar Bloco, o sistema agora **fecha automaticamente o modal de busca**.
+
+## 1.9.75
+- **Petições (Blocos)**: ao abrir **Visualizar Bloco** a partir da busca, o modal de busca agora **permanece aberto**. Fechar o Visualizar Bloco **não fecha** a busca.
+
+## 1.9.74
+- **Petições (Editor)**: item **“Inserir bloco”** do menu de contexto agora aparece com **destaque laranja forte por padrão**.
+
+## 1.9.73
+- **Petições (Editor)**: ajuste no menu de contexto para **manter “Adicionar bloco” sempre visível**, ficando **desabilitado quando não houver seleção** (preserva a ordem dos itens).
+
+## 1.9.72
+- **Petições (Editor)**: menu de contexto (clique direito) com **ordem ajustada**: **Inserir bloco** (1º), **Adicionar bloco** (2º), **Buscar empresa** (3º). Também foi adicionado **hover laranja** nos itens.
+
+## 1.9.71
+- **Petições (Editor)**: ao **carregar/importar um documento (DOCX/SFDT)** o sistema agora **captura e salva automaticamente a fonte (nome e tamanho)** como padrão, mantendo consistência de formatação nas próximas inserções/digitação.
+
+## 1.9.70
+- **Petições (Cadastro de Bloco)**: nova opção **"Atualizar bloco existente"** ao criar um bloco, permitindo escolher um bloco alvo e salvar como atualização (evita duplicar blocos repetidos).
+
+## 1.9.69
+- **Petições (Cadastro de Bloco)**: tags agora são **quebradas automaticamente por espaço** ao clicar **Adicionar/Enter** e conectores (de/da/do/etc.) são ignorados, sem precisar clicar em botão extra.
+
+## 1.9.68
+- **Petições (Cadastro de Bloco)**: campo de tags agora **quebra frases automaticamente** (botão “Quebrar frases”) para criar várias tags de uma vez, facilitando cadastrar blocos com múltiplos temas.
+
+## 1.9.67
+- **Petições (Adicionar Bloco)**: busca com **fuzzy mais forte** (tolerância a múltiplos erros/typos) e ordenação baseada nos melhores termos, para continuar sugerindo blocos mesmo com digitação bem errada.
+
+## 1.9.66
+- **Petições (Adicionar Bloco)**: busca mais **tolerante** a termos digitados errado/extra (ignora palavras muito curtas e conectivos comuns e permite 1 termo falhar quando a busca tem vários termos), evitando “Nenhum bloco encontrado” por ruído.
+
+## 1.9.65
+- **Petições (Adicionar Bloco)**: resultados com **prévia maior do conteúdo** (mais linhas/caracteres) e lista com **scroll**, facilitando explorar o texto antes de inserir.
+
+## 1.9.64
+- **Petições (Adicionar Bloco)**: modal **mais largo** e tags com visual melhor (chips mais legíveis, truncamento e indicador `+N`).
+
+## 1.9.63
+- **Petições (Adicionar Bloco)**: ajuste de **relevância** na busca priorizando **tags** (sem deixar de considerar o **conteúdo** e o **título**) para resultados mais assertivos.
+
+## 1.9.62
+- **Petições (Adicionar Bloco)**: busca e listagem de blocos **mais rápida** com debounce e indexação/cache de texto (evita reprocessar SFDT a cada tecla), melhorando a responsividade do modal de busca e da sidebar.
+
 ## 1.9.61
 - **Processos (Mapa de Fases)**: adicionada visão em formato de **mapa** por etapas (ex.: Conciliação, Instrução, etc.). Ao clicar em uma fase, o sistema lista os processos daquela etapa com busca e atalhos para abrir detalhes/timeline.
 
