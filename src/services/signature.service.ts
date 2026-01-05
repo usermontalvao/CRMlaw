@@ -455,6 +455,7 @@ class SignatureService {
     request: SignatureRequest;
     creator?: { name: string; email: string };
     fields: SignatureField[];
+    auth_config?: { google: boolean; email: boolean; phone: boolean };
   } | null> {
     const { data, error } = await supabase.rpc('get_public_signing_bundle', {
       p_token: token,
@@ -479,6 +480,7 @@ class SignatureService {
       request: data.request as SignatureRequest,
       creator,
       fields: (data.fields ?? []) as SignatureField[],
+      auth_config: (data.auth_config ?? undefined) as any,
     };
   }
 

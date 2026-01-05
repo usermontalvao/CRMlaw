@@ -16,6 +16,8 @@ interface PublicSigningPageProps {
 type SigningStep = 'loading' | 'success' | 'error' | 'already_signed';
 type ModalStep = 'google_auth' | 'phone_otp' | 'email_otp' | 'data' | 'signature' | 'location' | 'facial' | 'confirm';
 
+type PublicAuthConfig = { google: boolean; email: boolean; phone: boolean };
+
 interface SignerData {
   name: string;
   cpf: string;
@@ -249,6 +251,8 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
   const [docxLoading, setDocxLoading] = useState(false);
   const [pdfFrameLoaded, setPdfFrameLoaded] = useState(false);
   const [docxRendered, setDocxRendered] = useState(false);
+
+  const [authConfig, setAuthConfig] = useState<PublicAuthConfig>({ google: true, email: true, phone: true });
   const docxContainerRef = useRef<HTMLDivElement>(null);
   const [queuedOpenSignModal, setQueuedOpenSignModal] = useState(false);
   
@@ -899,6 +903,15 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
       setSigner(data.signer);
       setRequest(data.request);
       setSignatureFields(data.fields ?? []);
+      if (data.auth_config) {
+        setAuthConfig({
+          google: !!data.auth_config.google,
+          email: !!data.auth_config.email,
+          phone: !!data.auth_config.phone,
+        });
+      } else {
+        setAuthConfig({ google: true, email: true, phone: true });
+      }
       setAllowSkipSignerDataStep(isTemplateFillSigner((data.signer as any)?.email ?? null));
       setSignerData({
         name: data.signer.name || '',
@@ -985,35 +998,51 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
         const viewedKey = `public_signing_viewed_${data.signer.id}`;
         const alreadyLogged = typeof window !== 'undefined' ? window.sessionStorage.getItem(viewedKey) : null;
         if (!alreadyLogged) {
-        const userAgent = navigator.userAgent;
-        let ipAddress: string | undefined;
-        try {
-          const ipResponse = await fetch('https://api.ipify.org?format=json');
-          const ipData = await ipResponse.json();
-          ipAddress = ipData.ip;
-        } catch (e) {
-          // Não bloquear o fluxo
-        }
+          const userAgent = navigator.userAgent;
+          let ipAddress: string | undefined;
+          try {
+            const ipResponse = await fetch('https://api.ipify.org?format=json');
+            const ipData = await ipResponse.json();
+            ipAddress = ipData.ip;
+          } catch (e) {
+            // Não bloquear o fluxo
+          }
 
           await signatureService.markSignerAsViewed(data.signer.id, ipAddress, userAgent);
-          try { window.sessionStorage.setItem(viewedKey, String(Date.now())); } catch { /* noop */ }
+          try {
+            window.sessionStorage.setItem(viewedKey, String(Date.now()));
+          } catch {
+            // noop
+          }
         }
-        // Atualizar signer local com viewed_at
-        setSigner(prev => prev ? { ...prev, viewed_at: new Date().toISOString() } : prev);
-        // Página carregada (layout Autentique)
         setStep('success');
       }
-    } catch (err: any) {
-      console.error(err);
-      setError(err.message || 'Erro ao carregar dados da assinatura.');
+    } catch (e: any) {
+      console.error('Erro ao carregar dados do signatário:', e);
+      setError(e?.message || 'Erro ao carregar dados do signatário.');
       setStep('error');
     }
   };
 
-  const pageReady = useMemo(() => !!request && !!signer, [request, signer]);
+  const getFirstAuthStep = (cfg: PublicAuthConfig): ModalStep => {
+    if (cfg.google) return 'google_auth';
+    if (cfg.email) return 'email_otp';
+    if (cfg.phone) return 'phone_otp';
+    return 'data';
+  };
 
-  
-  // ========== CANVAS SIGNATURE ==========
+  useEffect(() => {
+    if (!isSignModalOpen) return;
+
+    const authStepDisabled =
+      (modalStep === 'google_auth' && !authConfig.google) ||
+      (modalStep === 'email_otp' && !authConfig.email) ||
+      (modalStep === 'phone_otp' && !authConfig.phone);
+
+    if (!authStepDisabled) return;
+    setModalStep(getFirstAuthStep(authConfig));
+  }, [isSignModalOpen, modalStep, authConfig]);
+
   const initCanvas = () => {
     const canvas = canvasRef.current;
     if (!canvas) return;
@@ -1467,7 +1496,7 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
 
   const closeSignModal = () => {
     setIsSignModalOpen(false);
-    setModalStep('google_auth');
+    setModalStep(getFirstAuthStep(authConfig));
     setGoogleUser(null);
     setGoogleAuthError(null);
     setGoogleAuthLoading(false);
@@ -1549,7 +1578,7 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
       toast.info('Carregando documento… Abriremos a assinatura assim que estiver pronto.');
       return;
     }
-    setModalStep('google_auth');
+    setModalStep(getFirstAuthStep(authConfig));
     setSignatureData(null);
     setFacialData(null);
     setHasSignature(false);
@@ -2368,47 +2397,54 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
                       </div>
 
                       <div className={`space-y-3 ${googleAuthLoading ? 'opacity-70 pointer-events-none' : ''}`}>
-                        {/* Botão Google - renderizado diretamente pelo Google Identity */}
-                        <div className="w-full">
-                          <div className="flex justify-end mb-1">
-                            <div
-                              className="pointer-events-none rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-bold text-amber-700 border border-amber-200"
-                            >
-                              Recomendado
+                        {authConfig.google && (
+                          <div className="w-full">
+                            <div className="flex justify-end mb-1">
+                              <div
+                                className="pointer-events-none rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-bold text-amber-700 border border-amber-200"
+                              >
+                                Recomendado
+                              </div>
+                            </div>
+                            <div ref={googleButtonRef} className="flex justify-center" />
+                          </div>
+                        )}
+
+                        {authConfig.google && (authConfig.email || authConfig.phone) && (
+                          <div className="relative py-2 flex items-center justify-center">
+                            <div className="absolute inset-0 flex items-center">
+                              <div className="w-full border-t border-slate-200" />
+                            </div>
+                            <div className="relative bg-white px-4 text-xs font-semibold text-slate-400 uppercase tracking-wider">
+                              OU
                             </div>
                           </div>
-                          <div ref={googleButtonRef} className="flex justify-center" />
-                        </div>
+                        )}
 
-                        <div className="relative py-2 flex items-center justify-center">
-                          <div className="absolute inset-0 flex items-center">
-                            <div className="w-full border-t border-slate-200" />
-                          </div>
-                          <div className="relative bg-white px-4 text-xs font-semibold text-slate-400 uppercase tracking-wider">
-                            OU
-                          </div>
-                        </div>
+                        {authConfig.email && (
+                          <button
+                            type="button"
+                            onClick={() => setModalStep('email_otp')}
+                            className="w-full bg-white border border-slate-200 hover:bg-slate-50 text-slate-800 font-semibold py-3.5 px-4 rounded-xl flex items-center justify-center gap-3 shadow-lg shadow-slate-900/5 transition-all duration-200 active:scale-[0.98]"
+                          >
+                            <Mail className="w-5 h-5" />
+                            Continuar com E-mail
+                          </button>
+                        )}
 
-                        <button
-                          type="button"
-                          onClick={() => setModalStep('email_otp')}
-                          className="w-full bg-white border border-slate-200 hover:bg-slate-50 text-slate-800 font-semibold py-3.5 px-4 rounded-xl flex items-center justify-center gap-3 shadow-lg shadow-slate-900/5 transition-all duration-200 active:scale-[0.98]"
-                        >
-                          <Mail className="w-5 h-5" />
-                          Continuar com E-mail
-                        </button>
-
-                        <button
-                          type="button"
-                          onClick={() => setModalStep('phone_otp')}
-                          className="w-full bg-slate-800 hover:bg-slate-700 text-white font-semibold py-3.5 px-4 rounded-xl flex items-center justify-center gap-3 shadow-lg shadow-slate-900/20 transition-all duration-200 active:scale-[0.98]"
-                        >
-                          <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                            <rect x="5" y="2" width="14" height="20" rx="2" stroke="currentColor" strokeWidth="2"/>
-                            <line x1="9" y1="18" x2="15" y2="18" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/>
-                          </svg>
-                          Continuar com Telefone
-                        </button>
+                        {authConfig.phone && (
+                          <button
+                            type="button"
+                            onClick={() => setModalStep('phone_otp')}
+                            className="w-full bg-slate-800 hover:bg-slate-700 text-white font-semibold py-3.5 px-4 rounded-xl flex items-center justify-center gap-3 shadow-lg shadow-slate-900/20 transition-all duration-200 active:scale-[0.98]"
+                          >
+                            <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                              <rect x="5" y="2" width="14" height="20" rx="2" stroke="currentColor" strokeWidth="2" />
+                              <line x1="9" y1="18" x2="15" y2="18" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+                            </svg>
+                            Continuar com Telefone
+                          </button>
+                        )}
 
                         <div className="pt-4 text-center">
                           <button

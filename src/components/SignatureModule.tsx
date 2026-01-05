@@ -5,7 +5,7 @@ import { renderAsync } from 'docx-preview';
 import {
   FileText, Upload, Plus, Trash2, X, Check, Clock, CheckCircle, Send, Copy,
   User, Mail, Loader2, ChevronLeft, Eye, EyeOff, Filter, Search, MousePointer2,
-  Type, Hash, Calendar, PenTool, Users, Download, AlertTriangle, ExternalLink, ChevronRight, ZoomIn, ZoomOut, Shield, Lightbulb, Pencil, Maximize2, Minimize2, LayoutList, LayoutGrid,
+  Type, Hash, Calendar, PenTool, Users, Download, AlertTriangle, ExternalLink, ChevronRight, ZoomIn, ZoomOut, Shield, Lightbulb, Pencil, Maximize2, Minimize2, LayoutList, LayoutGrid, Globe,
 } from 'lucide-react';
 import { useToastContext } from '../contexts/ToastContext';
 import { useAuth } from '../contexts/AuthContext';
@@ -16,6 +16,7 @@ import { pdfSignatureService } from '../services/pdfSignature.service';
 import { supabase } from '../config/supabase';
 import { documentTemplateService } from '../services/documentTemplate.service';
 import { signatureFieldsService } from '../services/signatureFields.service';
+import { settingsService } from '../services/settings.service';
 import { useDeleteConfirm } from '../contexts/DeleteConfirmContext';
 import { userNotificationService } from '../services/userNotification.service';
 import type { ProcessPracticeArea } from '../types/process.types';
@@ -77,6 +78,16 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
   const { user } = useAuth();
   const { navigateTo } = useNavigation();
   const { confirmDelete } = useDeleteConfirm();
+
+  const [showPublicAuthSettings, setShowPublicAuthSettings] = useState(false);
+  const [publicAuthLoading, setPublicAuthLoading] = useState(false);
+  const [publicAuthSaving, setPublicAuthSaving] = useState(false);
+  const [publicAuthConfig, setPublicAuthConfig] = useState<{ google: boolean; email: boolean; phone: boolean }>({
+    google: true,
+    email: true,
+    phone: true,
+  });
+  const publicAuthSaveTimerRef = useRef<number | null>(null);
 
   const [loading, setLoading] = useState(true);
   const [requests, setRequests] = useState<SignatureRequestWithSigners[]>([]);
@@ -224,6 +235,72 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
   }, [toast]);
 
   useEffect(() => { loadData(); }, [loadData]);
+
+  useEffect(() => {
+    let cancelled = false;
+    const run = async () => {
+      try {
+        setPublicAuthLoading(true);
+        const [g, e, p] = await Promise.all([
+          settingsService.getSetting<boolean>('public_signature_auth_google'),
+          settingsService.getSetting<boolean>('public_signature_auth_email'),
+          settingsService.getSetting<boolean>('public_signature_auth_phone'),
+        ]);
+
+        if (cancelled) return;
+        setPublicAuthConfig({
+          google: g ?? true,
+          email: e ?? true,
+          phone: p ?? true,
+        });
+      } catch (err) {
+        if (!cancelled) {
+          console.warn('Não foi possível carregar configuração de autenticação pública:', err);
+        }
+      } finally {
+        if (!cancelled) setPublicAuthLoading(false);
+      }
+    };
+    void run();
+    return () => {
+      cancelled = true;
+      if (publicAuthSaveTimerRef.current) {
+        window.clearTimeout(publicAuthSaveTimerRef.current);
+        publicAuthSaveTimerRef.current = null;
+      }
+    };
+  }, []);
+
+  const savePublicAuthConfig = async (config: { google: boolean; email: boolean; phone: boolean }) => {
+    if (!config.google && !config.email && !config.phone) {
+      toast.error('Ative pelo menos um método de autenticação.');
+      return;
+    }
+
+    try {
+      setPublicAuthSaving(true);
+      await Promise.all([
+        settingsService.updateSetting('public_signature_auth_google', config.google, user?.email || undefined),
+        settingsService.updateSetting('public_signature_auth_email', config.email, user?.email || undefined),
+        settingsService.updateSetting('public_signature_auth_phone', config.phone, user?.email || undefined),
+      ]);
+    } catch (err: any) {
+      console.error(err);
+      toast.error(err?.message || 'Erro ao salvar configurações');
+    } finally {
+      setPublicAuthSaving(false);
+    }
+  };
+
+  const queueSavePublicAuthConfig = (config: { google: boolean; email: boolean; phone: boolean }) => {
+    if (publicAuthSaveTimerRef.current) {
+      window.clearTimeout(publicAuthSaveTimerRef.current);
+    }
+    publicAuthSaveTimerRef.current = window.setTimeout(() => {
+      publicAuthSaveTimerRef.current = null;
+      void savePublicAuthConfig(config);
+    }, 500);
+  };
 
   const loadDocumentPreview = async (doc: ViewerDocument) => {
     try {
@@ -2516,92 +2593,6 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
           </div>
         </div>
 
-        <div className="px-4 py-3 sm:px-6 bg-slate-50 border-b border-slate-200">
-          <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-4">
-            <div className="rounded-xl bg-white border border-slate-200 p-2.5">
-              <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
-                <FileText className="h-4 w-4 text-orange-600" />
-                Total
-              </div>
-              <div className="mt-0.5 text-xl font-semibold text-slate-900">{totalRequestsCount}</div>
-            </div>
-            <div className="rounded-xl bg-white border border-slate-200 p-2.5">
-              <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
-                <Clock className="h-4 w-4 text-amber-600" />
-                Pendentes
-              </div>
-              <div className="mt-0.5 text-xl font-semibold text-slate-900">{pendingRequestsCount}</div>
-            </div>
-            <div className="rounded-xl bg-white border border-slate-200 p-2.5">
-              <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
-                <CheckCircle className="h-4 w-4 text-emerald-600" />
-                Concluídos
-              </div>
-              <div className="mt-0.5 text-xl font-semibold text-slate-900">{signedRequestsCount}</div>
-            </div>
-            <div className="rounded-xl bg-white border border-slate-200 p-2.5">
-              <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
-                <Users className="h-4 w-4 text-purple-600" />
-                Assinantes
-              </div>
-              <div className="mt-0.5 text-xl font-semibold text-slate-900">
-                {requests.reduce((acc, r) => acc + (r.signers?.length || 0), 0)}
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <div className="px-4 py-3 sm:px-6 bg-white">
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-            <div className="w-full sm:w-auto">
-              <div className="rounded-2xl border border-slate-200 bg-slate-50/70 p-2 sm:p-2.5">
-                <div className="grid grid-cols-3 gap-2">
-              <button
-                onClick={() => setFilterStatus('all')}
-                className={`inline-flex items-center justify-center gap-1 rounded-xl px-2 sm:px-3 py-1.5 text-[10px] sm:text-[11px] font-semibold shadow-sm whitespace-nowrap transition ${
-                  filterStatus === 'all'
-                    ? 'bg-slate-900 text-white shadow-slate-900/20'
-                    : 'bg-white border border-slate-200 text-slate-700 hover:bg-slate-50'
-                }`}
-              >
-                <FileText className="h-4 w-4" />
-                Todos ({totalRequestsCount})
-              </button>
-              <button
-                onClick={() => setFilterStatus('pending')}
-                className={`inline-flex items-center justify-center gap-1 rounded-xl px-2 sm:px-3 py-1.5 text-[10px] sm:text-[11px] font-semibold shadow-sm whitespace-nowrap transition ${
-                  filterStatus === 'pending'
-                    ? 'bg-amber-500 text-white shadow-amber-500/25'
-                    : 'bg-white border border-slate-200 text-slate-700 hover:bg-slate-50'
-                }`}
-              >
-                <Clock className="h-4 w-4" />
-                Pendentes ({pendingRequestsCount})
-              </button>
-              <button
-                onClick={() => setFilterStatus('signed')}
-                className={`inline-flex items-center justify-center gap-1 rounded-xl px-2 sm:px-3 py-1.5 text-[10px] sm:text-[11px] font-semibold shadow-sm whitespace-nowrap transition ${
-                  filterStatus === 'signed'
-                    ? 'bg-emerald-600 text-white shadow-emerald-600/20'
-                    : 'bg-white border border-slate-200 text-slate-700 hover:bg-slate-50'
-                }`}
-              >
-                <CheckCircle className="h-4 w-4" />
-                Concluídos ({signedRequestsCount})
-              </button>
-                </div>
-              </div>
-            </div>
-
-            <div className="text-[11px] text-slate-500">
-              {filterStatus === 'all'
-                ? 'Mostrando todos os documentos'
-                : filterStatus === 'pending'
-                  ? 'Mostrando apenas pendentes'
-                  : 'Mostrando apenas concluídos'}
-            </div>
-          </div>
-        </div>
 
         {selectionMode && selectedRequestIds.size > 0 && (
           <div className="mt-3 pt-3 border-t border-slate-200 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
@@ -2639,69 +2630,126 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
         )}
       </div>
 
-      {/* Toolbar */}
-      <div className="rounded-2xl border border-slate-200 bg-white p-3 sm:p-4">
-        <div className="flex flex-col gap-2.5 sm:flex-row sm:items-center">
-          <div className="relative flex-1">
+      {/* Toolbar compacta e limpa */}
+      <div className="rounded-xl border border-slate-200 bg-white px-4 py-3">
+        <div className="flex items-center justify-between gap-4">
+          {/* Lado esquerdo: Filtros de status como tabs */}
+          <div className="flex items-center gap-1 rounded-lg bg-slate-100 p-1">
+            <button
+              type="button"
+              onClick={() => setFilterStatus('all')}
+              className={`rounded-md px-3 py-1.5 text-xs font-medium transition ${
+                filterStatus === 'all'
+                  ? 'bg-white text-slate-900 shadow-sm'
+                  : 'text-slate-600 hover:text-slate-900'
+              }`}
+            >
+              Todos <span className="text-slate-400">{requests.length}</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setFilterStatus('pending')}
+              className={`rounded-md px-3 py-1.5 text-xs font-medium transition ${
+                filterStatus === 'pending'
+                  ? 'bg-white text-slate-900 shadow-sm'
+                  : 'text-slate-600 hover:text-slate-900'
+              }`}
+            >
+              Pendentes <span className="text-amber-500">{requests.filter(r => r.status === 'pending').length}</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setFilterStatus('signed')}
+              className={`rounded-md px-3 py-1.5 text-xs font-medium transition ${
+                filterStatus === 'signed'
+                  ? 'bg-white text-slate-900 shadow-sm'
+                  : 'text-slate-600 hover:text-slate-900'
+              }`}
+            >
+              Concluídos <span className="text-emerald-500">{requests.filter(r => r.status === 'signed').length}</span>
+            </button>
+            <button
+              type="button"
+              className="rounded-md px-3 py-1.5 text-xs font-medium text-slate-600 border-l border-slate-300 pl-2 ml-1"
+            >
+              Assinantes <span className="text-blue-500">{requests.reduce((acc, r) => acc + (r.signers?.length || 0), 0)}</span>
+            </button>
+          </div>
+
+          {/* Centro: Busca */}
+          <div className="relative flex-1 max-w-md">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
             <input
               type="text"
-              placeholder="Buscar por nome do documento ou cliente..."
+              placeholder="Buscar documentos..."
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
-              className="w-full rounded-lg border border-slate-200 bg-white pl-10 pr-4 py-2 text-sm text-slate-900 transition hover:border-slate-300 focus:border-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-900/10"
+              className="w-full rounded-lg border border-slate-200 bg-slate-50 pl-10 pr-4 py-2 text-sm text-slate-900 placeholder:text-slate-400 transition focus:bg-white focus:border-slate-300 focus:outline-none focus:ring-2 focus:ring-slate-900/5"
             />
           </div>
 
+          {/* Lado direito: Ações */}
           <div className="flex items-center gap-2">
+            {/* Assinatura Pública */}
+            <button
+              type="button"
+              onClick={() => setShowPublicAuthSettings((v) => !v)}
+              className={`inline-flex items-center gap-1.5 rounded-lg border px-3 py-2 text-xs font-medium transition ${
+                showPublicAuthSettings
+                  ? 'border-orange-200 bg-orange-50 text-orange-700'
+                  : 'border-slate-200 text-slate-600 hover:bg-slate-50'
+              }`}
+            >
+              <Globe className="w-3.5 h-3.5" />
+              Público
+              {publicAuthSaving && <Loader2 className="w-3 h-3 animate-spin" />}
+            </button>
+
             <button
               type="button"
               onClick={() => setShowFilters((v) => !v)}
-              className={`inline-flex items-center gap-2 rounded-lg border px-3 py-2 text-sm font-medium transition ${
+              className={`inline-flex items-center gap-1.5 rounded-lg border px-3 py-2 text-xs font-medium transition ${
                 showFilters
                   ? 'border-slate-900 bg-slate-900 text-white'
-                  : 'border-slate-200 text-slate-700 hover:bg-slate-50'
+                  : 'border-slate-200 text-slate-600 hover:bg-slate-50'
               }`}
             >
-              <Filter className="w-4 h-4" />
+              <Filter className="w-3.5 h-3.5" />
               Filtros
             </button>
 
             <button
               type="button"
               onClick={toggleSelectionMode}
-              className={`inline-flex items-center gap-2 rounded-lg border px-3 py-2 text-sm font-medium transition ${
+              className={`inline-flex items-center gap-1.5 rounded-lg border px-3 py-2 text-xs font-medium transition ${
                 selectionMode
                   ? 'border-indigo-600 bg-indigo-600 text-white'
-                  : 'border-slate-200 text-slate-700 hover:bg-slate-50'
+                  : 'border-slate-200 text-slate-600 hover:bg-slate-50'
               }`}
             >
-              <Check className="w-4 h-4" />
-              Selecionar
+              <Check className="w-3.5 h-3.5" />
             </button>
 
-            <div className="flex items-center rounded-lg border border-slate-200 bg-white overflow-hidden">
+            <div className="flex items-center rounded-lg border border-slate-200 overflow-hidden">
               <button
                 type="button"
                 onClick={() => setViewMode('list')}
-                className={`px-3 py-2 text-sm font-medium transition ${
+                className={`p-2 transition ${
                   viewMode === 'list'
                     ? 'bg-slate-900 text-white'
-                    : 'text-slate-600 hover:bg-slate-50'
+                    : 'bg-white text-slate-500 hover:bg-slate-50'
                 }`}
-                aria-pressed={viewMode === 'list'}
               >
                 <LayoutList className="w-4 h-4" />
               </button>
               <button
                 type="button"
                 onClick={() => setViewMode('grid')}
-                className={`px-3 py-2 text-sm font-medium transition ${
+                className={`p-2 transition ${
                   viewMode === 'grid'
                     ? 'bg-slate-900 text-white'
-                    : 'text-slate-600 hover:bg-slate-50'
+                    : 'bg-white text-slate-500 hover:bg-slate-50'
                 }`}
-                aria-pressed={viewMode === 'grid'}
               >
                 <LayoutGrid className="w-4 h-4" />
               </button>
@@ -2709,66 +2757,106 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
           </div>
         </div>
 
-        {/* Filters Panel */}
+        {/* Painel: Configuração de autenticação pública */}
+        {showPublicAuthSettings && (
+          <div className="mt-3 pt-3 border-t border-slate-100 flex items-center gap-4">
+            <span className="text-xs font-medium text-slate-500">Autenticação pública:</span>
+            {(
+              [
+                { key: 'google', label: 'Google', icon: '🔵' },
+                { key: 'email', label: 'E-mail', icon: '✉️' },
+                { key: 'phone', label: 'Telefone', icon: '📱' },
+              ] as const
+            ).map((item) => (
+              <label
+                key={item.key}
+                className="inline-flex items-center gap-2 cursor-pointer select-none"
+              >
+                <button
+                  type="button"
+                  disabled={publicAuthLoading}
+                  onClick={() =>
+                    setPublicAuthConfig((prev) => {
+                      const next = { ...prev, [item.key]: !prev[item.key] };
+                      if (!next.google && !next.email && !next.phone) {
+                        toast.error('Ative pelo menos um método.');
+                        return prev;
+                      }
+                      queueSavePublicAuthConfig(next);
+                      return next;
+                    })
+                  }
+                  className={`relative w-8 h-5 rounded-full transition ${
+                    publicAuthConfig[item.key] ? 'bg-orange-500' : 'bg-slate-300'
+                  } disabled:opacity-50`}
+                >
+                  <div
+                    className={`absolute top-0.5 left-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform ${
+                      publicAuthConfig[item.key] ? 'translate-x-3' : 'translate-x-0'
+                    }`}
+                  />
+                </button>
+                <span className="text-xs text-slate-700">{item.label}</span>
+              </label>
+            ))}
+          </div>
+        )}
+
+        {/* Painel: Filtros avançados */}
         {showFilters && (
-          <div className="mt-3 pt-3 border-t border-slate-200">
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-6 gap-3 items-end">
-              <div>
-                <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500">Período</label>
+          <div className="mt-3 pt-3 border-t border-slate-100">
+            <div className="flex flex-wrap items-end gap-3">
+              <div className="flex-1 min-w-[120px]">
+                <label className="mb-1 block text-xs font-medium text-slate-500">Período</label>
                 <select
                   value={filterPeriod}
                   onChange={(e) => setFilterPeriod(e.target.value as any)}
-                  className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 transition hover:border-slate-300 focus:border-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-900/10"
+                  className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs text-slate-900 focus:outline-none focus:ring-2 focus:ring-slate-900/5"
                 >
-                  <option value="all">Todos os períodos</option>
-                  <option value="7d">Últimos 7 dias</option>
-                  <option value="30d">Últimos 30 dias</option>
-                  <option value="90d">Últimos 90 dias</option>
+                  <option value="all">Todos</option>
+                  <option value="7d">7 dias</option>
+                  <option value="30d">30 dias</option>
+                  <option value="90d">90 dias</option>
                 </select>
               </div>
-
-              <div>
-                <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500">Mês</label>
+              <div className="flex-1 min-w-[120px]">
+                <label className="mb-1 block text-xs font-medium text-slate-500">Mês</label>
                 <input
                   type="month"
                   value={filterMonth}
                   onChange={(e) => setFilterMonth(e.target.value)}
-                  className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 transition hover:border-slate-300 focus:border-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-900/10"
+                  className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs text-slate-900 focus:outline-none focus:ring-2 focus:ring-slate-900/5"
                 />
               </div>
-
-              <div>
-                <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500">Data (de)</label>
+              <div className="flex-1 min-w-[120px]">
+                <label className="mb-1 block text-xs font-medium text-slate-500">De</label>
                 <input
                   type="date"
                   value={filterDateFrom}
                   onChange={(e) => setFilterDateFrom(e.target.value)}
-                  className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 transition hover:border-slate-300 focus:border-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-900/10"
+                  className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs text-slate-900 focus:outline-none focus:ring-2 focus:ring-slate-900/5"
                 />
               </div>
-
-              <div>
-                <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500">Data (até)</label>
+              <div className="flex-1 min-w-[120px]">
+                <label className="mb-1 block text-xs font-medium text-slate-500">Até</label>
                 <input
                   type="date"
                   value={filterDateTo}
                   onChange={(e) => setFilterDateTo(e.target.value)}
-                  className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 transition hover:border-slate-300 focus:border-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-900/10"
+                  className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs text-slate-900 focus:outline-none focus:ring-2 focus:ring-slate-900/5"
                 />
               </div>
-
-              <div>
-                <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500">Ordenação</label>
+              <div className="flex-1 min-w-[120px]">
+                <label className="mb-1 block text-xs font-medium text-slate-500">Ordem</label>
                 <select
                   value={sortOrder}
                   onChange={(e) => setSortOrder(e.target.value as any)}
-                  className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 transition hover:border-slate-300 focus:border-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-900/10"
+                  className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs text-slate-900 focus:outline-none focus:ring-2 focus:ring-slate-900/5"
                 >
-                  <option value="newest">Mais recentes primeiro</option>
-                  <option value="oldest">Mais antigos primeiro</option>
+                  <option value="newest">Recentes</option>
+                  <option value="oldest">Antigos</option>
                 </select>
               </div>
-
               <button
                 type="button"
                 onClick={() => {
@@ -2778,9 +2866,43 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
                   setFilterDateTo('');
                   setSortOrder('newest');
                 }}
-                className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50"
+                className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-medium text-slate-600 hover:bg-slate-50 transition"
               >
-                Limpar filtros
+                Limpar
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* Barra de seleção em massa */}
+        {selectionMode && selectedRequestIds.size > 0 && (
+          <div className="mt-3 pt-3 border-t border-slate-100 flex items-center justify-between">
+            <span className="text-xs text-slate-600">
+              <span className="font-semibold text-slate-900">{selectedRequestIds.size}</span> de {filteredRequests.length} selecionado(s)
+            </span>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={selectAllFilteredRequests}
+                className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-600 hover:bg-slate-50 transition"
+              >
+                Selecionar todos
+              </button>
+              <button
+                type="button"
+                onClick={clearSelectedRequests}
+                className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-600 hover:bg-slate-50 transition"
+              >
+                Limpar
+              </button>
+              <button
+                type="button"
+                onClick={() => void deleteSelectedRequests()}
+                disabled={bulkDeleteLoading}
+                className="inline-flex items-center gap-1.5 rounded-lg bg-red-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-red-700 transition disabled:opacity-50"
+              >
+                {bulkDeleteLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Trash2 className="w-3.5 h-3.5" />}
+                Excluir
               </button>
             </div>
           </div>

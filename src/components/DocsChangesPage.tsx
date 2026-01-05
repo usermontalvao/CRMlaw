@@ -46,6 +46,7 @@ import {
    ============================================================================ */
 
 const VERSION_CODENAMES: Record<string, { name: string; emoji: string }> = {
+  '1.9.91': { name: 'Café Assinatura Controlada', emoji: '🔐' },
   '1.9.90': { name: 'Café Compilando', emoji: '🔧' },
   '1.9.87': { name: 'Café Carregando Laranja', emoji: '🟠' },
   '1.9.86': { name: 'Café Procurando', emoji: '🔎' },
@@ -538,6 +539,60 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
    ============================================================================ */
 
 const releases: ReleaseNote[] = [
+  {
+    version: '1.9.93',
+    date: '05/01/2026',
+    summary: 'Assinaturas (ADM): redesign completo da toolbar com layout mais limpo e intuitivo.',
+    modules: [
+      {
+        moduleId: 'assinatura',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Redesign da toolbar de assinaturas',
+            description:
+              'Filtros de status em formato de tabs, busca centralizada, botões de ação agrupados à direita, painel de autenticação pública com ícone Globe e toggles inline. Layout mais limpo e funcional.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.92',
+    date: '05/01/2026',
+    summary: 'Assinatura Pública: painel de autenticação mais compacto e auto-salvamento no ADM.',
+    modules: [
+      {
+        moduleId: 'assinatura',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Configuração de autenticação pública compacta e sem botão Salvar',
+            description:
+              'O painel de Modos de autenticação da assinatura pública no módulo Assinaturas (ADM) foi compactado e agora salva automaticamente ao alternar Google, E-mail (OTP) e Telefone (OTP), liberando mais espaço para a lista de documentos.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.91',
+    date: '05/01/2026',
+    summary: 'Assinatura Pública: opção no ADM para ativar/desativar Google/E-mail/Telefone.',
+    modules: [
+      {
+        moduleId: 'assinatura',
+        changes: [
+          {
+            type: 'feature',
+            title: 'Controle de métodos de autenticação da assinatura pública',
+            description:
+              'Adicionada configuração no módulo de Assinatura (ADM) para ativar/desativar os modos Google, E-mail (OTP) e Telefone (OTP). A página pública passa a respeitar a configuração e remove opções desativadas automaticamente.',
+          },
+        ],
+      },
+    ],
+  },
   {
     version: '1.9.90',
     date: '05/01/2026',

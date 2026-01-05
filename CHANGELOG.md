@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.9.93
+- **Assinaturas (ADM)**: redesign completo da toolbar — filtros de status em formato de **tabs**, busca centralizada, botões de ação agrupados à direita, painel de **autenticação pública** com ícone Globe e toggles inline, layout mais limpo e intuitivo.
+
+## 1.9.92
+- **Assinatura Pública**: painel de **modos de autenticação** no ADM ficou mais compacto e agora **salva automaticamente** ao alternar **Google**, **E-mail (OTP)** e **Telefone (OTP)**, liberando mais espaço na listagem de documentos.
+
+## 1.9.91
+- **Assinatura Pública**: adicionada opção no módulo de Assinatura (ADM) para ativar/desativar os modos de autenticação **Google**, **E-mail (OTP)** e **Telefone (OTP)**. A página pública passa a respeitar essa configuração e remove automaticamente opções desativadas.
+
 ## 1.9.90
 - **Build**: corrigido erro de compilação `formatDateTime` não definido em ProcessesModule.tsx. Adicionada função local `formatDateTime` para exibir data/hora nas notas do processo.
 
