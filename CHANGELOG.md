@@ -1,5 +1,8 @@
 # Changelog
 
+## 1.9.90
+- **Build**: corrigido erro de compilação `formatDateTime` não definido em ProcessesModule.tsx. Adicionada função local `formatDateTime` para exibir data/hora nas notas do processo.
+
 ## 1.9.89
 - **Assinatura Pública**: corrigido bloqueio de CORS/preflight ao chamar Edge Function `public-sign-document` (headers `Access-Control-Allow-Methods` e resposta `OPTIONS` com HTTP 200). Observação: a função deve ser deployada com `--no-verify-jwt` para funcionar sem sessão.
 

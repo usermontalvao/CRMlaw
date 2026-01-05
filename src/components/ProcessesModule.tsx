@@ -102,6 +102,18 @@ const formatDate = (value?: string | null) => {
   }
 };
 
+const formatDateTime = (value?: string | null) => {
+  if (!value) return 'Pendente';
+  try {
+    const parsed = new Date(value);
+    if (Number.isNaN(parsed.getTime())) return 'Data inválida';
+    return parsed.toLocaleString('pt-BR');
+  } catch (error) {
+    console.error('Erro ao formatar data/hora:', value, error);
+    return 'Data inválida';
+  }
+};
+
 type ProcessNote = {
   id: string;
   text: string;

@@ -46,6 +46,7 @@ import {
    ============================================================================ */
 
 const VERSION_CODENAMES: Record<string, { name: string; emoji: string }> = {
+  '1.9.90': { name: 'Café Compilando', emoji: '🔧' },
   '1.9.87': { name: 'Café Carregando Laranja', emoji: '🟠' },
   '1.9.86': { name: 'Café Procurando', emoji: '🔎' },
   '1.9.85': { name: 'Café Laranja Total', emoji: '🟧' },
@@ -537,6 +538,23 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
    ============================================================================ */
 
 const releases: ReleaseNote[] = [
+  {
+    version: '1.9.90',
+    date: '05/01/2026',
+    summary: 'Build: corrigido erro de compilação formatDateTime em ProcessesModule.',
+    modules: [
+      {
+        moduleId: 'processos',
+        changes: [
+          {
+            type: 'fix',
+            title: 'Função formatDateTime adicionada',
+            description: 'Corrigido erro de compilação "Cannot find name formatDateTime" em ProcessesModule.tsx. Adicionada função local formatDateTime para exibir data/hora nas notas do processo.',
+          },
+        ],
+      },
+    ],
+  },
   {
     version: '1.9.89',
     date: '05/01/2026',
