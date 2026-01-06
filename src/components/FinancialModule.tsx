@@ -4073,7 +4073,7 @@ ${clientAddress ? `<div class="flex"><span class="text-subtle-light dark:text-su
                                     <div className="rounded-lg border border-white/70 bg-white/80 px-3 py-2 dark:bg-white/5 dark:border-white/10">
                                       <span className="text-[10px] uppercase tracking-wide text-slate-400 dark:text-slate-500">Honorários</span>
                                       <p className="text-xs font-semibold text-slate-900 dark:text-white">
-                                        {formatCurrency(selectedAgreement.fee_value / selectedAgreement.installments_count)}
+                                        {formatCurrency(selectedAgreement.fee_type === 'fixed' ? selectedAgreement.fee_value : selectedAgreement.fee_value / selectedAgreement.installments_count)}
                                       </p>
                                     </div>
                                   </>
@@ -4091,18 +4091,22 @@ ${clientAddress ? `<div class="flex"><span class="text-subtle-light dark:text-su
                                         {formatCurrency(selectedAgreement.total_value / installmentsCount)}
                                       </p>
                                     </div>
-                                    <div className="rounded-lg border border-white/70 bg-white/80 px-3 py-2 dark:bg-white/5 dark:border-white/10">
-                                      <span className="text-[10px] uppercase tracking-wide text-slate-400 dark:text-slate-500">Valor cliente</span>
-                                      <p className="text-xs font-semibold text-slate-900 dark:text-white">
-                                        {formatCurrency(clientInstallmentValue)}
-                                      </p>
-                                    </div>
-                                    <div className="rounded-lg border border-white/70 bg-white/80 px-3 py-2 dark:bg-white/5 dark:border-white/10">
-                                      <span className="text-[10px] uppercase tracking-wide text-slate-400 dark:text-slate-500">Honorários</span>
-                                      <p className="text-xs font-semibold text-slate-900 dark:text-white">
-                                        {formatCurrency(selectedAgreement.fee_value / installmentsCount)}
-                                      </p>
-                                    </div>
+                                    {selectedAgreement.fee_type === 'percentage' && (
+                                      <div className="rounded-lg border border-white/70 bg-white/80 px-3 py-2 dark:bg-white/5 dark:border-white/10">
+                                        <span className="text-[10px] uppercase tracking-wide text-slate-400 dark:text-slate-500">Valor cliente</span>
+                                        <p className="text-xs font-semibold text-slate-900 dark:text-white">
+                                          {formatCurrency(clientInstallmentValue)}
+                                        </p>
+                                      </div>
+                                    )}
+                                    {selectedAgreement.fee_type === 'percentage' && (
+                                      <div className="rounded-lg border border-white/70 bg-white/80 px-3 py-2 dark:bg-white/5 dark:border-white/10">
+                                        <span className="text-[10px] uppercase tracking-wide text-slate-400 dark:text-slate-500">Honorários</span>
+                                        <p className="text-xs font-semibold text-slate-900 dark:text-white">
+                                          {formatCurrency(selectedAgreement.fee_value / installmentsCount)}
+                                        </p>
+                                      </div>
+                                    )}
                                   </>
                                 )}
                               </div>

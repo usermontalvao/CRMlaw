@@ -540,6 +540,24 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
 
 const releases: ReleaseNote[] = [
   {
+    version: '1.9.94',
+    date: '05/01/2026',
+    summary: 'Financeiro (Acordos): corrigido exibição de honorários fixos nas parcelas.',
+    modules: [
+      {
+        moduleId: 'financeiro',
+        changes: [
+          {
+            type: 'fix',
+            title: 'Honorários fixos nas parcelas',
+            description:
+              'Quando honorários são fixos, agora mostra o valor total (não dividido por parcelas) e oculta "Valor Cliente" por parcela, pois não se aplica nesse contexto.',
+          },
+        ],
+      },
+    ],
+  },
+  {
     version: '1.9.93',
     date: '05/01/2026',
     summary: 'Assinaturas (ADM): redesign completo da toolbar com layout mais limpo e intuitivo.',

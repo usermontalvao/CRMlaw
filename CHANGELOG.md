@@ -1,5 +1,8 @@
 # Changelog
 
+## 1.9.94
+- **Financeiro (Acordos)**: corrigido exibição de honorários nas parcelas — quando honorários são **fixos**, agora mostra o valor total (não dividido) e oculta "Valor Cliente" por parcela, pois não se aplica nesse contexto.
+
 ## 1.9.93
 - **Assinaturas (ADM)**: redesign completo da toolbar — filtros de status em formato de **tabs**, busca centralizada, botões de ação agrupados à direita, painel de **autenticação pública** com ícone Globe e toggles inline, layout mais limpo e intuitivo.
 
