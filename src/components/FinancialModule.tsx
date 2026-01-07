@@ -3826,10 +3826,12 @@ ${clientAddress ? `<div class="flex"><span class="text-subtle-light dark:text-su
                         <span className="text-gray-500 dark:text-gray-400">Honorários ({selectedAgreement.fee_type === 'percentage' ? `${selectedAgreement.fee_percentage}%` : 'Fixo'})</span>
                         <span className="font-medium text-gray-800 dark:text-gray-200">{formatCurrency(agreementSummary?.feeValue || selectedAgreement.fee_value)}</span>
                       </div>
-                      <div className="flex justify-between">
-                        <span className="text-gray-500 dark:text-gray-400">Valor Líquido Cliente</span>
-                        <span className="font-medium text-gray-800 dark:text-gray-200">{formatCurrency(agreementSummary?.netValue || selectedAgreement.net_value)}</span>
-                      </div>
+                      {selectedAgreement.fee_type === 'percentage' && (
+                        <div className="flex justify-between">
+                          <span className="text-gray-500 dark:text-gray-400">Valor Líquido Cliente</span>
+                          <span className="font-medium text-gray-800 dark:text-gray-200">{formatCurrency(agreementSummary?.netValue || selectedAgreement.net_value)}</span>
+                        </div>
+                      )}
                       <div className="flex justify-between">
                         <span className="text-gray-500 dark:text-gray-400">Data do Acordo</span>
                         <span className="font-medium text-gray-800 dark:text-gray-200">{new Date(selectedAgreement.agreement_date).toLocaleDateString('pt-BR')}</span>

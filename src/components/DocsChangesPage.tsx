@@ -540,6 +540,24 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
 
 const releases: ReleaseNote[] = [
   {
+    version: '1.9.95',
+    date: '06/01/2026',
+    summary: 'Financeiro (Acordos): resumo do acordo ajustado para honorários fixos.',
+    modules: [
+      {
+        moduleId: 'financeiro',
+        changes: [
+          {
+            type: 'fix',
+            title: 'Resumo do acordo sem valor líquido (fixo)',
+            description:
+              'Quando o tipo de honorário é fixo, o Resumo do Acordo não exibe mais "Valor Líquido Cliente", pois não se aplica nesse contexto.',
+          },
+        ],
+      },
+    ],
+  },
+  {
     version: '1.9.94',
     date: '05/01/2026',
     summary: 'Financeiro (Acordos): corrigido exibição de honorários fixos nas parcelas.',

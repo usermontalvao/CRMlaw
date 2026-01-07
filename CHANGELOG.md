@@ -1,5 +1,8 @@
 # Changelog
 
+## 1.9.95
+- **Financeiro (Acordos)**: no **Resumo do Acordo**, removido **"Valor Líquido Cliente"** quando o tipo de honorário é **fixo**, pois não se aplica nesse contexto.
+
 ## 1.9.94
 - **Financeiro (Acordos)**: corrigido exibição de honorários nas parcelas — quando honorários são **fixos**, agora mostra o valor total (não dividido) e oculta "Valor Cliente" por parcela, pois não se aplica nesse contexto.
 
