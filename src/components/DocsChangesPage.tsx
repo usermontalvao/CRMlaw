@@ -46,6 +46,9 @@ import {
    ============================================================================ */
 
 const VERSION_CODENAMES: Record<string, { name: string; emoji: string }> = {
+  '1.9.115': { name: 'Café Tipo Legível', emoji: '🏷️' },
+  '1.9.114': { name: 'Café Data Sem Fuso', emoji: '📅' },
+  '1.9.113': { name: 'Café Anexos Completos', emoji: '📎' },
   '1.9.112': { name: 'Café Rascunho Local', emoji: '💾' },
   '1.9.111': { name: 'Café CEP Confirmado', emoji: '📍' },
   '1.9.91': { name: 'Café Assinatura Controlada', emoji: '🔐' },
@@ -541,6 +544,60 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
    ============================================================================ */
 
 const releases: ReleaseNote[] = [
+  {
+    version: '1.9.115',
+    date: '08/01/2026',
+    summary: 'Agenda: campo Tipo do evento agora exibe rótulo amigável (ex.: Audiência).',
+    modules: [
+      {
+        moduleId: 'agenda',
+        changes: [
+          {
+            type: 'fix',
+            title: 'Tipo do evento com rótulo PT-BR',
+            description:
+              'No modal de detalhes do evento, o campo Tipo não exibe mais o valor técnico (ex.: hearing). Agora exibe o rótulo amigável (ex.: Audiência).',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.114',
+    date: '08/01/2026',
+    summary: 'Processos: datas de audiência/distribuição não voltam mais 1 dia (timezone).',
+    modules: [
+      {
+        moduleId: 'processos',
+        changes: [
+          {
+            type: 'fix',
+            title: 'Data de audiência/distribuição consistente',
+            description:
+              'Corrigido problema onde datas no formato YYYY-MM-DD/ISO eram interpretadas em UTC e exibidas com -1 dia em alguns fusos. Agora datas date-only são formatadas sem conversão de fuso.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.113',
+    date: '07/01/2026',
+    summary: 'Documentos: geração agora inclui anexos do template (ZIP para Word, PDF mesclado).',
+    modules: [
+      {
+        moduleId: 'documentos',
+        changes: [
+          {
+            type: 'fix',
+            title: 'Geração de documentos com anexos',
+            description:
+              'Corrigido problema onde apenas o documento principal era gerado. Agora os anexos (template_files) são processados e incluídos: Word baixa como ZIP, PDF mescla todos em um único arquivo.',
+          },
+        ],
+      },
+    ],
+  },
   {
     version: '1.9.112',
     date: '07/01/2026',

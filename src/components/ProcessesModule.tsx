@@ -93,7 +93,14 @@ const emptyForm = {
 const formatDate = (value?: string | null) => {
   if (!value) return 'Pendente';
   try {
-    const parsed = new Date(value);
+    const raw = String(value).trim();
+    const datePart = raw.includes('T') ? raw.split('T')[0] : raw;
+    if (/^\d{4}-\d{2}-\d{2}$/.test(datePart)) {
+      const [yyyy, mm, dd] = datePart.split('-');
+      return `${dd}/${mm}/${yyyy}`;
+    }
+
+    const parsed = new Date(raw);
     if (Number.isNaN(parsed.getTime())) return 'Data inválida';
     return parsed.toLocaleDateString('pt-BR');
   } catch (error) {

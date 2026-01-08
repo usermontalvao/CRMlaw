@@ -26,16 +26,35 @@ export const formatCurrencyShort = (value: number): string => {
  * Formata uma data para o padrão brasileiro
  */
 export const formatDate = (date: Date | string): string => {
-  const d = typeof date === 'string' ? new Date(date) : date;
-  return d.toLocaleDateString('pt-BR');
+  if (typeof date === 'string') {
+    const raw = date.trim();
+    const datePart = raw.includes('T') ? raw.split('T')[0] : raw;
+    if (/^\d{4}-\d{2}-\d{2}$/.test(datePart)) {
+      const [yyyy, mm, dd] = datePart.split('-');
+      return `${dd}/${mm}/${yyyy}`;
+    }
+    const d = new Date(raw);
+    return d.toLocaleDateString('pt-BR');
+  }
+
+  return date.toLocaleDateString('pt-BR');
 };
 
 /**
  * Formata uma data com hora
  */
 export const formatDateTime = (date: Date | string): string => {
-  const d = typeof date === 'string' ? new Date(date) : date;
-  return d.toLocaleString('pt-BR');
+  if (typeof date === 'string') {
+    const raw = date.trim();
+    const datePart = raw.includes('T') ? raw.split('T')[0] : raw;
+    if (/^\d{4}-\d{2}-\d{2}$/.test(datePart)) {
+      return formatDate(datePart);
+    }
+    const d = new Date(raw);
+    return d.toLocaleString('pt-BR');
+  }
+
+  return date.toLocaleString('pt-BR');
 };
 
 /**
@@ -50,7 +69,20 @@ export const formatTime = (date: Date | string): string => {
  * Formata data por extenso
  */
 export const formatDateLong = (date: Date | string): string => {
-  const d = typeof date === 'string' ? new Date(date) : date;
+  let d: Date;
+  if (typeof date === 'string') {
+    const raw = date.trim();
+    const datePart = raw.includes('T') ? raw.split('T')[0] : raw;
+    if (/^\d{4}-\d{2}-\d{2}$/.test(datePart)) {
+      const [yyyy, mm, dd] = datePart.split('-').map((x) => Number(x));
+      d = new Date(yyyy, mm - 1, dd);
+    } else {
+      d = new Date(raw);
+    }
+  } else {
+    d = date;
+  }
+
   return d.toLocaleDateString('pt-BR', {
     weekday: 'long',
     day: 'numeric',

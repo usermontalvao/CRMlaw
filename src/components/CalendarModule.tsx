@@ -32,6 +32,15 @@ declare global {
 
 type EventType = 'deadline' | 'hearing' | 'requirement' | 'payment' | 'meeting' | 'pericia';
 
+const EVENT_TYPE_LABELS: Record<EventType, string> = {
+  deadline: 'Prazo',
+  hearing: 'Audiência',
+  requirement: 'Requerimento',
+  payment: 'Pagamento',
+  meeting: 'Reunião',
+  pericia: 'Perícia',
+};
+
 type DeletionLogEntry = {
   id: string;
   title: string;
@@ -1711,7 +1720,9 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({
               {selectedEvent.extendedProps.type && (
                 <div className="flex items-center gap-2">
                   <span className="font-semibold text-zinc-700 dark:text-zinc-300">Tipo:</span>
-                  <span className="text-zinc-600 dark:text-zinc-400 capitalize">{selectedEvent.extendedProps.type}</span>
+                  <span className="text-zinc-600 dark:text-zinc-400">
+                    {EVENT_TYPE_LABELS[selectedEvent.extendedProps.type as EventType] ?? selectedEvent.extendedProps.type}
+                  </span>
                 </div>
               )}
 

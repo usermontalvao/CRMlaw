@@ -1,5 +1,18 @@
 # Changelog
 
+## 1.9.115
+- **Agenda (Eventos)**: corrigido campo **Tipo** no modal de evento — em vez de exibir o valor técnico (`hearing`), agora exibe **Audiência** (e demais tipos com rótulo amigável).
+
+## 1.9.114
+- **Processos (Audiência/Distribuição)**: corrigida inconsistência de data exibindo **-1 dia** em "Detalhes do Processo" (erro de timezone ao interpretar strings `YYYY-MM-DD`/ISO). Agora a UI formata datas *date-only* sem conversão de fuso, garantindo que a data salva e a data exibida sejam iguais.
+
+## 1.9.113
+- **Documentos (Geração)**: corrigido problema onde apenas o documento principal era gerado, **sem os anexos**. Agora ao gerar um documento de um modelo que possui anexos (template_files), todos os anexos são processados (variáveis substituídas) e incluídos:
+  - **Baixar Word**: se houver anexos, baixa um **ZIP** com o documento principal + anexos
+  - **Baixar PDF**: se houver anexos, **mescla todos** em um único PDF
+  - **Enviar para Assinatura**: anexos já eram enviados corretamente (sem alteração)
+  - Modal de opções agora exibe a lista de anexos incluídos
+
 ## 1.9.112
 - **Assinatura (Kit Consumidor / Preencher)**: agora o preenchimento do formulário público é **salvo automaticamente em cache local (localStorage)** por token — se a página recarregar/cair, o cliente não perde as informações. O cache é limpo automaticamente após enviar e gerar o link de assinatura.
 

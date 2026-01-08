@@ -283,6 +283,7 @@ const DocumentsModule: React.FC<DocumentsModuleProps> = ({ onNavigateToModule })
   const [showDocOptionsModal, setShowDocOptionsModal] = useState(false);
   const [generatedDocBlob, setGeneratedDocBlob] = useState<Blob | null>(null);
   const [generatedDocName, setGeneratedDocName] = useState('');
+  const [generatedAttachments, setGeneratedAttachments] = useState<Array<{ blob: Blob; name: string }>>([]);
 
   // Estados para modal de link de assinatura
   const [showSignatureLinkModal, setShowSignatureLinkModal] = useState(false);
@@ -1099,11 +1100,63 @@ const DocumentsModule: React.FC<DocumentsModuleProps> = ({ onNavigateToModule })
 
       const fileName = `${selectedTemplate.name.replace(/\s+/g, '-')}-${removeDiacritics(selectedClient.full_name).replace(/\s+/g, '-')}`;
 
-      // Salvar blob e mostrar modal de opções
+      // Processar anexos do template (template_files)
+      const attachments: Array<{ blob: Blob; name: string }> = [];
+      try {
+        const templateFiles = await documentTemplateService.listTemplateFiles(selectedTemplate.id);
+        const placeholders = buildPlaceholderMap(selectedClient);
+        
+        for (const templateFile of templateFiles) {
+          try {
+            const fileBlob = await documentTemplateService.downloadTemplateFileById(templateFile.id);
+            
+            const isDocx = templateFile.file_name.toLowerCase().endsWith('.docx') || 
+                           templateFile.mime_type === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+            
+            let processedBlob: Blob;
+            
+            if (isDocx) {
+              const arrayBuffer = await fileBlob.arrayBuffer();
+              const zip = new PizZip(arrayBuffer);
+              const doc = new Docxtemplater(zip, {
+                paragraphLoop: true,
+                linebreaks: true,
+                delimiters: { start: '[[', end: ']]' },
+                nullGetter: (part: any) => {
+                  const key = typeof part?.value === 'string' ? part.value.trim() : '';
+                  if (/^ASSINATURA(_\d+)?$/i.test(key)) return `[[${key}]]`;
+                  return '';
+                },
+              });
+              
+              doc.render(placeholders);
+              
+              processedBlob = doc.getZip().generate({
+                type: 'blob',
+                mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+              });
+            } else {
+              processedBlob = fileBlob;
+            }
+            
+            attachments.push({ blob: processedBlob, name: templateFile.file_name });
+            console.log(`📎 Anexo processado: ${templateFile.file_name}`);
+          } catch (err) {
+            console.warn(`Erro ao processar anexo ${templateFile.file_name}:`, err);
+          }
+        }
+      } catch (err) {
+        console.warn('Erro ao carregar anexos do template:', err);
+      }
+
+      // Salvar blob, anexos e mostrar modal de opções
       setGeneratedDocBlob(result.blob);
       setGeneratedDocName(fileName);
+      setGeneratedAttachments(attachments);
       setShowDocOptionsModal(true);
-      setGenerationSuccess('Documento gerado! Escolha uma opção.');
+      
+      const attachmentMsg = attachments.length > 0 ? ` (+ ${attachments.length} anexo${attachments.length > 1 ? 's' : ''})` : '';
+      setGenerationSuccess(`Documento gerado${attachmentMsg}! Escolha uma opção.`);
     } catch (err: any) {
       console.error(err);
       setGenerationError(err.message || 'Erro ao gerar documento.');
@@ -1112,10 +1165,30 @@ const DocumentsModule: React.FC<DocumentsModuleProps> = ({ onNavigateToModule })
     }
   };
 
-  // Baixar como Word
-  const handleDownloadWord = () => {
-    if (generatedDocBlob) {
+  // Baixar como Word (ZIP se houver anexos)
+  const handleDownloadWord = async () => {
+    if (!generatedDocBlob) return;
+    
+    if (generatedAttachments.length === 0) {
+      // Sem anexos: baixar apenas o documento principal
       saveAs(generatedDocBlob, `${generatedDocName}.docx`);
+    } else {
+      // Com anexos: criar ZIP com todos os arquivos
+      const zip = new PizZip();
+      
+      // Adicionar documento principal
+      const mainDocBuffer = await generatedDocBlob.arrayBuffer();
+      zip.file(`${generatedDocName}.docx`, mainDocBuffer);
+      
+      // Adicionar anexos
+      for (const attachment of generatedAttachments) {
+        const attachBuffer = await attachment.blob.arrayBuffer();
+        zip.file(attachment.name, attachBuffer);
+      }
+      
+      // Gerar e baixar ZIP
+      const zipBlob = zip.generate({ type: 'blob', mimeType: 'application/zip' });
+      saveAs(zipBlob, `${generatedDocName}.zip`);
     }
   };
 
@@ -1224,16 +1297,25 @@ const DocumentsModule: React.FC<DocumentsModuleProps> = ({ onNavigateToModule })
     return new Blob([new Uint8Array(mergedBytes)], { type: 'application/pdf' });
   };
 
-  // Baixar como PDF
+  // Baixar como PDF (mescla anexos em um único PDF)
   const handleDownloadPdf = async () => {
     if (!generatedDocBlob) return;
     
     try {
-      const pdfBlob = await convertDocxToPdf(generatedDocBlob);
-      saveAs(pdfBlob, `${generatedDocName}.pdf`);
+      if (generatedAttachments.length === 0) {
+        // Sem anexos: converter apenas o documento principal
+        const pdfBlob = await convertDocxToPdf(generatedDocBlob);
+        saveAs(pdfBlob, `${generatedDocName}.pdf`);
+      } else {
+        // Com anexos: converter e mesclar todos em um único PDF
+        const attachmentBlobs = generatedAttachments.map(a => a.blob);
+        const mergedPdfBlob = await convertAndMergeDocxToPdf(generatedDocBlob, attachmentBlobs);
+        saveAs(mergedPdfBlob, `${generatedDocName}.pdf`);
+      }
     } catch (err) {
       console.error('Erro ao gerar PDF:', err);
-      saveAs(generatedDocBlob, `${generatedDocName}.docx`);
+      // Fallback: baixar como Word (ZIP se houver anexos)
+      await handleDownloadWord();
       alert('Erro ao converter para PDF. Arquivo salvo como Word.');
     }
   };
@@ -1337,6 +1419,7 @@ const DocumentsModule: React.FC<DocumentsModuleProps> = ({ onNavigateToModule })
       // Limpar estados
       setGeneratedDocBlob(null);
       setGeneratedDocName('');
+      setGeneratedAttachments([]);
       
     } catch (err: any) {
       console.error('Erro ao criar solicitação de assinatura:', err);
@@ -2529,7 +2612,12 @@ const DocumentsModule: React.FC<DocumentsModuleProps> = ({ onNavigateToModule })
           </div>
 
           <div className="flex-1 overflow-y-auto bg-white dark:bg-zinc-900 p-5 sm:p-6">
-            <p className="text-sm text-slate-500 dark:text-slate-400 mb-4 break-all">{generatedDocName}</p>
+            <p className="text-sm text-slate-500 dark:text-slate-400 mb-2 break-all">{generatedDocName}</p>
+            {generatedAttachments.length > 0 && (
+              <p className="text-xs text-emerald-600 dark:text-emerald-400 mb-4">
+                + {generatedAttachments.length} anexo{generatedAttachments.length > 1 ? 's' : ''}: {generatedAttachments.map(a => a.name).join(', ')}
+              </p>
+            )}
             
             <div className="space-y-3">
               <button
