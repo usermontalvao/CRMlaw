@@ -169,6 +169,49 @@ const extractDocxPlaceholders = async (signedUrl: string): Promise<string[]> => 
   return Array.from(found);
 };
 
+type PublicTemplateFillDraft = {
+  v: 1;
+  values: Record<string, string>;
+  signerName: string;
+  stepIndex: number;
+  cepConfirmed: boolean | null;
+  hasQuadra: boolean | null;
+};
+
+const getDraftStorageKey = (token: string) => `public-template-fill-draft-v1:${token}`;
+
+const readDraft = (token: string): PublicTemplateFillDraft | null => {
+  if (typeof window === 'undefined') return null;
+  try {
+    const raw = window.localStorage.getItem(getDraftStorageKey(token));
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as PublicTemplateFillDraft;
+    if (!parsed || parsed.v !== 1) return null;
+    if (!parsed.values || typeof parsed.values !== 'object') return null;
+    return parsed;
+  } catch {
+    return null;
+  }
+};
+
+const writeDraft = (token: string, draft: PublicTemplateFillDraft) => {
+  if (typeof window === 'undefined') return;
+  try {
+    window.localStorage.setItem(getDraftStorageKey(token), JSON.stringify(draft));
+  } catch {
+    // ignore
+  }
+};
+
+const clearDraft = (token: string) => {
+  if (typeof window === 'undefined') return;
+  try {
+    window.localStorage.removeItem(getDraftStorageKey(token));
+  } catch {
+    // ignore
+  }
+};
+
 const PublicTemplateFillPage: React.FC<PublicTemplateFillPageProps> = ({ token }) => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -193,6 +236,7 @@ const PublicTemplateFillPage: React.FC<PublicTemplateFillPageProps> = ({ token }
   const [stepIndex, setStepIndex] = useState(0);
   const [stepError, setStepError] = useState<string | null>(null);
   const activeInputRef = useRef<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement | null>(null);
+  const saveDraftTimeoutRef = useRef<number | null>(null);
 
   useEffect(() => {
     (async () => {
@@ -201,7 +245,13 @@ const PublicTemplateFillPage: React.FC<PublicTemplateFillPageProps> = ({ token }
         setError(null);
         const b = await templateFillService.getBundle(token);
         setBundle(b);
-        setValues(b.prefill ?? {});
+        const d = readDraft(token);
+        const prefill = b.prefill ?? {};
+        setValues({ ...prefill, ...(d?.values ?? {}) });
+        setSignerName(d?.signerName ?? '');
+        setStepIndex(typeof d?.stepIndex === 'number' ? d.stepIndex : 0);
+        setCepConfirmed(d?.cepConfirmed ?? null);
+        setHasQuadra(d?.hasQuadra ?? null);
 
         const ph = await extractDocxPlaceholders(b.mainFile.signed_url);
         setPlaceholders(ph);
@@ -212,6 +262,37 @@ const PublicTemplateFillPage: React.FC<PublicTemplateFillPageProps> = ({ token }
       }
     })();
   }, [token]);
+
+  useEffect(() => {
+    if (!token) return;
+    if (loading) return;
+    if (result) return;
+
+    if (saveDraftTimeoutRef.current) {
+      window.clearTimeout(saveDraftTimeoutRef.current);
+      saveDraftTimeoutRef.current = null;
+    }
+
+    saveDraftTimeoutRef.current = window.setTimeout(() => {
+      const draft: PublicTemplateFillDraft = {
+        v: 1,
+        values,
+        signerName,
+        stepIndex,
+        cepConfirmed,
+        hasQuadra,
+      };
+      writeDraft(token, draft);
+      saveDraftTimeoutRef.current = null;
+    }, 250);
+
+    return () => {
+      if (saveDraftTimeoutRef.current) {
+        window.clearTimeout(saveDraftTimeoutRef.current);
+        saveDraftTimeoutRef.current = null;
+      }
+    };
+  }, [token, loading, result, values, signerName, stepIndex, cepConfirmed, hasQuadra]);
 
   const fields = useMemo((): FieldDef[] => {
     if (!bundle) return [];
@@ -480,6 +561,10 @@ const PublicTemplateFillPage: React.FC<PublicTemplateFillPageProps> = ({ token }
   const activeStep = steps[safeStepIndex];
 
   useEffect(() => {
+    if (stepIndex !== safeStepIndex) setStepIndex(safeStepIndex);
+  }, [safeStepIndex, stepIndex]);
+
+  useEffect(() => {
     if (!activeStep) return;
     if (activeStep.kind !== 'cep') return;
     if (cepLookupLoading || cepLookupError) return;
@@ -705,6 +790,7 @@ const PublicTemplateFillPage: React.FC<PublicTemplateFillPageProps> = ({ token }
         values: payloadValues,
       });
 
+      clearDraft(token);
       setResult({ signerToken: res.signer_token, requestId: res.signature_request_id });
     } catch (e: any) {
       setError(e?.message || 'Erro ao enviar');

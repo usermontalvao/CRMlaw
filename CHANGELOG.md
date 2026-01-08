@@ -1,5 +1,8 @@
 # Changelog
 
+## 1.9.112
+- **Assinatura (Kit Consumidor / Preencher)**: agora o preenchimento do formulário público é **salvo automaticamente em cache local (localStorage)** por token — se a página recarregar/cair, o cliente não perde as informações. O cache é limpo automaticamente após enviar e gerar o link de assinatura.
+
 ## 1.9.111
 - **Assinatura (Kit Consumidor / Preencher)**: corrigido loop de validação de endereço — quando o CEP é reconhecido e confirmado pelo usuário, os campos **Endereço** e **Bairro** (preenchidos pelo ViaCEP) não são mais considerados "faltantes". Agora o formulário avança corretamente para o próximo passo.
 

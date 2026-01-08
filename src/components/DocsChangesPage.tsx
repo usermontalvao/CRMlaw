@@ -46,6 +46,7 @@ import {
    ============================================================================ */
 
 const VERSION_CODENAMES: Record<string, { name: string; emoji: string }> = {
+  '1.9.112': { name: 'Café Rascunho Local', emoji: '💾' },
   '1.9.111': { name: 'Café CEP Confirmado', emoji: '📍' },
   '1.9.91': { name: 'Café Assinatura Controlada', emoji: '🔐' },
   '1.9.90': { name: 'Café Compilando', emoji: '🔧' },
@@ -540,6 +541,24 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
    ============================================================================ */
 
 const releases: ReleaseNote[] = [
+  {
+    version: '1.9.112',
+    date: '07/01/2026',
+    summary: 'Assinatura Pública (Kit Consumidor): preenchimento agora é salvo automaticamente no cache local (localStorage).',
+    modules: [
+      {
+        moduleId: 'assinatura-publica',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Rascunho automático no formulário público',
+            description:
+              'O formulário /preencher/:token salva automaticamente os dados no navegador e restaura ao recarregar. O cache é limpo após a geração do link de assinatura.',
+          },
+        ],
+      },
+    ],
+  },
   {
     version: '1.9.111',
     date: '07/01/2026',
