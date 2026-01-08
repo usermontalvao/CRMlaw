@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Scale,
   Users,
@@ -11,8 +11,14 @@ import {
   Briefcase,
   AlarmClock,
   PiggyBank,
+  FileSignature,
+  FileText,
+  MessageCircle,
+  CheckSquare,
 } from 'lucide-react';
 import type { ModuleName } from '../../contexts/NavigationContext';
+import { supabase } from '../../config/supabase';
+import { useAuth } from '../../contexts/AuthContext';
 
 interface SidebarProps {
   activeModule: ModuleName;
@@ -25,19 +31,24 @@ interface NavItem {
   id: ModuleName;
   label: string;
   icon: React.ReactNode;
+  moduleKey: string; // chave para verificar permissão
 }
 
 const navItems: NavItem[] = [
-  { id: 'dashboard', label: 'Dashboard', icon: <Layers className="w-5 h-5 mb-1.5" /> },
-  { id: 'leads', label: 'Leads', icon: <Target className="w-5 h-5 mb-1.5" /> },
-  { id: 'clientes', label: 'Clientes', icon: <Users className="w-5 h-5 mb-1.5" /> },
-  { id: 'documentos', label: 'Documentos', icon: <Library className="w-5 h-5 mb-1.5" /> },
-  { id: 'processos', label: 'Processos', icon: <Scale className="w-5 h-5 mb-1.5" /> },
-  { id: 'requerimentos', label: 'Requerimentos', icon: <Briefcase className="w-5 h-5 mb-1.5" /> },
-  { id: 'prazos', label: 'Prazos', icon: <AlarmClock className="w-5 h-5 mb-1.5" /> },
-  { id: 'intimacoes', label: 'Intimações', icon: <Bell className="w-5 h-5 mb-1.5" /> },
-  { id: 'financeiro', label: 'Financeiro', icon: <PiggyBank className="w-5 h-5 mb-1.5" /> },
-  { id: 'agenda', label: 'Agenda', icon: <Calendar className="w-5 h-5 mb-1.5" /> },
+  { id: 'dashboard', label: 'Dashboard', icon: <Layers className="w-5 h-5 mb-1.5" />, moduleKey: 'dashboard' },
+  { id: 'leads', label: 'Leads', icon: <Target className="w-5 h-5 mb-1.5" />, moduleKey: 'leads' },
+  { id: 'clientes', label: 'Clientes', icon: <Users className="w-5 h-5 mb-1.5" />, moduleKey: 'clientes' },
+  { id: 'documentos', label: 'Documentos', icon: <Library className="w-5 h-5 mb-1.5" />, moduleKey: 'documentos' },
+  { id: 'assinaturas', label: 'Assinaturas', icon: <FileSignature className="w-5 h-5 mb-1.5" />, moduleKey: 'assinaturas' },
+  { id: 'processos', label: 'Processos', icon: <Scale className="w-5 h-5 mb-1.5" />, moduleKey: 'processos' },
+  { id: 'requerimentos', label: 'Requerimentos', icon: <Briefcase className="w-5 h-5 mb-1.5" />, moduleKey: 'requerimentos' },
+  { id: 'prazos', label: 'Prazos', icon: <AlarmClock className="w-5 h-5 mb-1.5" />, moduleKey: 'prazos' },
+  { id: 'intimacoes', label: 'Intimações', icon: <Bell className="w-5 h-5 mb-1.5" />, moduleKey: 'intimacoes' },
+  { id: 'financeiro', label: 'Financeiro', icon: <PiggyBank className="w-5 h-5 mb-1.5" />, moduleKey: 'financeiro' },
+  { id: 'agenda', label: 'Agenda', icon: <Calendar className="w-5 h-5 mb-1.5" />, moduleKey: 'agenda' },
+  { id: 'tarefas', label: 'Tarefas', icon: <CheckSquare className="w-5 h-5 mb-1.5" />, moduleKey: 'tarefas' },
+  { id: 'peticoes', label: 'Petições', icon: <FileText className="w-5 h-5 mb-1.5" />, moduleKey: 'peticoes' },
+  { id: 'chat', label: 'Chat', icon: <MessageCircle className="w-5 h-5 mb-1.5" />, moduleKey: 'chat' },
 ];
 
 const NavButton: React.FC<{
@@ -64,6 +75,81 @@ export const Sidebar: React.FC<SidebarProps> = ({
   onOpenProfile,
   logoUrl,
 }) => {
+  const { user } = useAuth();
+  const [userRole, setUserRole] = useState<string>('');
+  const [permissions, setPermissions] = useState<Record<string, boolean>>({});
+  const [loading, setLoading] = useState(true);
+
+  const normalizeRole = (role: string) =>
+    role
+      .toLowerCase()
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '');
+
+  useEffect(() => {
+    const loadPermissions = async () => {
+      if (!user?.id) {
+        setLoading(false);
+        return;
+      }
+
+      try {
+        // Carregar cargo do usuário
+        const { data: profile } = await supabase
+          .from('profiles')
+          .select('role')
+          .eq('user_id', user.id)
+          .single();
+
+        const role = profile?.role || '';
+        setUserRole(role);
+        const normalizedRole = normalizeRole(role);
+
+        // Administrador tem acesso a tudo
+        if (normalizedRole === 'administrador') {
+          const allPerms: Record<string, boolean> = {};
+          navItems.forEach((item) => {
+            allPerms[item.moduleKey] = true;
+          });
+          setPermissions(allPerms);
+          setLoading(false);
+          return;
+        }
+
+        // Carregar permissões do cargo
+        const { data: rolePerms } = await supabase
+          .from('role_permissions')
+          .select('module, can_view, can_create, can_edit, can_delete')
+          .eq('role', normalizedRole);
+
+        const perms: Record<string, boolean> = {};
+        rolePerms?.forEach((perm) => {
+          // Se tem pelo menos uma permissão no módulo, mostra no menu
+          const hasAnyPermission = perm.can_view || perm.can_create || perm.can_edit || perm.can_delete;
+          perms[perm.module] = hasAnyPermission;
+        });
+
+        setPermissions(perms);
+      } catch (err) {
+        console.error('Erro ao carregar permissões:', err);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    loadPermissions();
+  }, [user?.id]);
+
+  // Filtrar itens do menu baseado em permissões
+  const visibleItems = loading
+    ? [] // Não mostrar nada enquanto carrega
+    : navItems.filter((item) => {
+        // Dashboard sempre visível
+        if (item.moduleKey === 'dashboard') return true;
+        // Mostrar se tem pelo menos uma permissão
+        return permissions[item.moduleKey] === true;
+      });
+
   return (
     <aside className="hidden md:flex fixed left-0 top-0 h-screen w-20 bg-slate-900 flex-col items-center py-4 z-40">
       {/* Logo */}
@@ -79,7 +165,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
       {/* Navigation */}
       <nav className="flex-1 py-2 flex flex-col items-stretch gap-1 overflow-y-auto scrollbar-hide">
-        {navItems.map((item) => (
+        {visibleItems.map((item) => (
           <NavButton
             key={item.id}
             item={item}

@@ -9,6 +9,7 @@ export interface Profile {
   name: string;
   role: string;
   email: string;
+  cpf?: string | null;
   phone?: string | null;
   oab?: string | null;
   lawyer_full_name?: string | null;
@@ -25,6 +26,7 @@ export interface UpdateProfileInput {
   name: string;
   email: string;
   role: string;
+  cpf?: string | null;
   phone?: string | null;
   oab?: string | null;
   lawyer_full_name?: string | null;
@@ -48,21 +50,40 @@ class ProfileService {
   }
 
   async upsertProfile(userId: string, payload: UpdateProfileInput): Promise<Profile> {
-    const { data, error } = await supabase
-      .from(this.tableName)
-      .upsert(
-        {
-          user_id: userId,
-          ...payload,
-          updated_at: new Date().toISOString(),
-        },
-        { onConflict: 'user_id' },
-      )
-      .select()
-      .single();
+    const attempt = async (attemptPayload: UpdateProfileInput) => {
+      const { data, error } = await supabase
+        .from(this.tableName)
+        .upsert(
+          {
+            user_id: userId,
+            ...attemptPayload,
+            updated_at: new Date().toISOString(),
+          },
+          { onConflict: 'user_id' },
+        )
+        .select()
+        .single();
 
-    if (error) throw new Error(error.message);
-    return data;
+      if (error) throw new Error(error.message);
+      return data;
+    };
+
+    try {
+      return await attempt(payload);
+    } catch (err: any) {
+      const message = String(err?.message || err || '');
+      const shouldRetryWithoutCpf =
+        message.includes("Could not find the 'cpf' column") ||
+        message.includes('Could not find the \"cpf\" column') ||
+        message.includes('cpf') && message.includes('schema cache');
+
+      if (!shouldRetryWithoutCpf || payload.cpf === undefined) {
+        throw err;
+      }
+
+      const { cpf: _cpf, ...payloadWithoutCpf } = payload as any;
+      return await attempt(payloadWithoutCpf);
+    }
   }
 
   async listMembers(): Promise<Profile[]> {

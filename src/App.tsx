@@ -1,10 +1,9 @@
-import { BrandLogo } from './components/ui/BrandLogo';
 import { useEffect, useState, useMemo, lazy, Suspense, useRef } from 'react';
 import { useNavigation } from './contexts/NavigationContext';
 import {
-  LucideIcon,
   Users,
   Calendar,
+  MessageCircle,
   X,
   Bell,
   LogOut,
@@ -19,21 +18,15 @@ import {
   CheckSquare,
   PiggyBank,
   Search,
-  Home,
   FileText,
-  Activity,
   Settings,
   Moon,
   Scale,
   Sun,
-  UploadCloud,
-  User,
   PenTool,
 } from 'lucide-react';
 import Login from './components/Login';
 import OfflinePage from './components/OfflinePage';
-import AppLayout from './components/layout/AppLayout';
-import Header from './components/layout/Header';
 import { NotificationBell } from './components/NotificationBell';
 import SessionWarning from './components/SessionWarning';
 import TermsPrivacyPage from './components/TermsPrivacyPage';
@@ -50,6 +43,8 @@ const RequirementsModule = lazy(() => import('./components/RequirementsModule'))
 const DeadlinesModule = lazy(() => import('./components/DeadlinesModule'));
 const CalendarModule = lazy(() => import('./components/CalendarModule'));
 const TasksModule = lazy(() => import('./components/TasksModule'));
+const ChatModule = lazy(() => import('./components/ChatModule'));
+const UserManagementModule = lazy(() => import('./components/UserManagementModule'));
 const NotificationsModuleNew = lazy(() => import('./components/NotificationsModuleNew'));
 const FinancialModule = lazy(() => import('./components/FinancialModule'));
 const SignatureModule = lazy(() => import('./components/SignatureModule'));
@@ -79,6 +74,8 @@ import { taskService } from './services/task.service';
 import { djenLocalService } from './services/djenLocal.service';
 import { supabase } from './config/supabase';
 import { clientService } from './services/client.service';
+import { formatCPF } from './utils/formatters';
+import { usePermissions } from './hooks/usePermissions';
 import type { Lead } from './types/lead.types';
 import type { CreateClientDTO } from './types/client.types';
 import type { NotificationItem } from './types/notification.types';
@@ -90,6 +87,7 @@ const MainApp: React.FC = () => {
   const { theme, toggleTheme } = useTheme();
   const [isMobileNavOpen, setIsMobileNavOpen] = useState(false);
   const [isOnline, setIsOnline] = useState(navigator.onLine);
+  const { canView, canCreate, canEdit, canDelete, loading: permissionsLoading, isAdmin } = usePermissions();
 
   useEffect(() => {
     if (!('serviceWorker' in navigator)) return;
@@ -175,11 +173,23 @@ const MainApp: React.FC = () => {
 
   const GENERIC_AVATAR = 'https://www.gravatar.com/avatar/?d=mp&s=300';
 
+  const sanitizeRole = (role: any): UserRole => {
+    const value = String(role || '').toLowerCase();
+    if (value === 'administrador') return 'Administrador';
+    if (value === 'advogado') return 'Advogado';
+    if (value === 'auxiliar') return 'Auxiliar';
+    if (value === 'secretaria' || value === 'secretária') return 'Secretária';
+    if (value === 'financeiro') return 'Financeiro';
+    if (value === 'estagiario' || value === 'estagiário') return 'Estagiário';
+    return 'Auxiliar';
+  };
+
   const [profile, setProfile] = useState<AppProfile>({
     name: 'Usuário',
     email: '',
     avatarUrl: GENERIC_AVATAR,
-    role: 'Advogado',
+    role: 'Auxiliar',
+    cpf: '',
     oab: '',
     phone: '',
     bio: '',
@@ -202,6 +212,16 @@ const MainApp: React.FC = () => {
   const canAccessConfig = ['admin', 'administrador', 'advogado'].includes(
     (profile.role || '').toLowerCase(),
   );
+
+  const hasAnyModulePermission = (moduleKey: string) => {
+    if (isAdmin) return true;
+    return (
+      canView(moduleKey) ||
+      canCreate(moduleKey) ||
+      canEdit(moduleKey) ||
+      canDelete(moduleKey)
+    );
+  };
 
   useEffect(() => {
     if (!profileMenuOpen) return;
@@ -252,19 +272,26 @@ const MainApp: React.FC = () => {
 
   const PROFILE_CACHE_KEY = 'crm-profile-cache';
   const NOTIFICATIONS_CACHE_KEY = 'crm-notifications-cache';
+  const LAST_LOGIN_CPF_KEY = 'crm-last-login-cpf';
 
   useEffect(() => {
     if (!user) return;
 
     const loadProfile = async () => {
       const cacheAvailable = typeof window !== 'undefined';
+      const lastLoginCpf = cacheAvailable ? sessionStorage.getItem(LAST_LOGIN_CPF_KEY) : null;
+      const lastLoginCpfDigits = lastLoginCpf ? lastLoginCpf.replace(/\D/g, '') : null;
 
       if (cacheAvailable) {
         const cachedProfile = sessionStorage.getItem(PROFILE_CACHE_KEY);
         if (cachedProfile) {
           try {
             const parsed = JSON.parse(cachedProfile);
-            setProfile(parsed);
+            setProfile({
+              ...parsed,
+              role: sanitizeRole(parsed?.role),
+              cpf: parsed?.cpf || '',
+            });
           } catch (error) {
             sessionStorage.removeItem(PROFILE_CACHE_KEY);
           }
@@ -277,10 +304,57 @@ const MainApp: React.FC = () => {
           const data = await profileService.getProfile(user.id);
 
           if (data) {
+            const effectiveEmail = (data.email || user.email || '').trim();
+            let effectiveCpf = data.cpf ? formatCPF(String(data.cpf)) : '';
+
+            if (!effectiveCpf) {
+              try {
+                let clientCpfCnpj: string | null = null;
+                if (lastLoginCpfDigits) {
+                  const clientByCpf = await clientService.getClientByCpfCnpj(lastLoginCpfDigits);
+                  clientCpfCnpj = clientByCpf?.cpf_cnpj || null;
+                }
+
+                if (!clientCpfCnpj && effectiveEmail) {
+                  const clientByEmail = await clientService.getClientByEmail(effectiveEmail);
+                  clientCpfCnpj = clientByEmail?.cpf_cnpj || null;
+                }
+
+                if (clientCpfCnpj) {
+                  effectiveCpf = formatCPF(String(clientCpfCnpj));
+                } else if (lastLoginCpfDigits && lastLoginCpfDigits.length === 11) {
+                  effectiveCpf = formatCPF(lastLoginCpfDigits);
+                } else if (lastLoginCpf) {
+                  effectiveCpf = String(lastLoginCpf);
+                }
+
+                if (!data.cpf && effectiveCpf) {
+                  await profileService.upsertProfile(user.id, {
+                    name: data.name || 'Área Jurídica',
+                    email: effectiveEmail,
+                    role: sanitizeRole(data.role),
+                    cpf: effectiveCpf,
+                    phone: data.phone || null,
+                    oab: data.oab || null,
+                    lawyer_full_name: data.lawyer_full_name || null,
+                    bio: data.bio || null,
+                    avatar_url: data.avatar_url || GENERIC_AVATAR,
+                  });
+
+                  if (cacheAvailable) {
+                    sessionStorage.removeItem(LAST_LOGIN_CPF_KEY);
+                  }
+                }
+              } catch {
+                // Se falhar, apenas não preenche automaticamente.
+              }
+            }
+
             const normalized = {
               name: data.name || 'Área Jurídica',
-              email: data.email || user.email || '',
-              role: (data.role as UserRole) || 'Advogado',
+              email: effectiveEmail,
+              role: sanitizeRole(data.role),
+              cpf: effectiveCpf,
               oab: data.oab || '',
               phone: data.phone || '',
               bio: data.bio || '',
@@ -292,11 +366,36 @@ const MainApp: React.FC = () => {
               sessionStorage.setItem(PROFILE_CACHE_KEY, JSON.stringify(normalized));
             }
           } else {
+            let effectiveCpf = '';
+            try {
+              const emailForClient = (user.email || '').trim();
+              if (lastLoginCpfDigits) {
+                const clientByCpf = await clientService.getClientByCpfCnpj(lastLoginCpfDigits);
+                if (clientByCpf?.cpf_cnpj) {
+                  effectiveCpf = formatCPF(String(clientByCpf.cpf_cnpj));
+                }
+              }
+
+              if (!effectiveCpf && emailForClient) {
+                const clientByEmail = await clientService.getClientByEmail(emailForClient);
+                if (clientByEmail?.cpf_cnpj) {
+                  effectiveCpf = formatCPF(String(clientByEmail.cpf_cnpj));
+                }
+              }
+
+              if (!effectiveCpf && lastLoginCpfDigits && lastLoginCpfDigits.length === 11) {
+                effectiveCpf = formatCPF(lastLoginCpfDigits);
+              }
+            } catch {
+              // ignore
+            }
+
             const fallback = {
               name: user.user_metadata.full_name || user.email?.split('@')[0] || 'Usuário',
               email: user.email || '',
               avatarUrl: GENERIC_AVATAR,
-              role: 'Advogado' as UserRole,
+              role: 'Auxiliar' as UserRole,
+              cpf: effectiveCpf,
               phone: '',
               oab: '',
               bio: '',
@@ -306,6 +405,7 @@ const MainApp: React.FC = () => {
               name: fallback.name,
               email: fallback.email,
               role: fallback.role,
+              cpf: fallback.cpf,
               phone: fallback.phone,
               oab: fallback.oab,
               lawyer_full_name: fallback.lawyerFullName,
@@ -315,6 +415,7 @@ const MainApp: React.FC = () => {
             setProfile(fallback);
             if (cacheAvailable) {
               sessionStorage.setItem(PROFILE_CACHE_KEY, JSON.stringify(fallback));
+              sessionStorage.removeItem(LAST_LOGIN_CPF_KEY);
             }
           }
         } catch (error: any) {
@@ -345,7 +446,8 @@ const MainApp: React.FC = () => {
           name: 'Usuário',
           email: '',
           avatarUrl: GENERIC_AVATAR,
-          role: 'Advogado' as UserRole,
+          role: 'Auxiliar' as UserRole,
+          cpf: '',
           oab: '',
           phone: '',
           bio: '',
@@ -383,7 +485,8 @@ const MainApp: React.FC = () => {
           name: 'Usuário',
           email: '',
           avatarUrl: GENERIC_AVATAR,
-          role: 'Advogado',
+          role: 'Auxiliar',
+          cpf: '',
           oab: '',
           phone: '',
           bio: '',
@@ -603,7 +706,17 @@ const MainApp: React.FC = () => {
   };
 
   const handleProfileUpdate = (updatedProfile: any) => {
-    setProfile(updatedProfile);
+    const normalized: AppProfile = {
+      ...updatedProfile,
+      role: sanitizeRole(updatedProfile?.role),
+      cpf: updatedProfile?.cpf || '',
+    };
+
+    setProfile(normalized);
+
+    if (typeof window !== 'undefined') {
+      sessionStorage.setItem(PROFILE_CACHE_KEY, JSON.stringify(normalized));
+    }
     setProfileBanner('Perfil atualizado com sucesso!');
     setTimeout(() => setProfileBanner(null), 3000);
   };
@@ -789,128 +902,164 @@ const MainApp: React.FC = () => {
             <span className="text-[9px] mt-1">Dashboard</span>
           </button>
 
-          <button
-            onClick={() => { setClientPrefill(null); setIsMobileNavOpen(false); navigateTo('leads'); }}
-            className={`relative flex flex-col items-center py-2.5 px-1 rounded-lg transition-colors ${
-              activeModule === 'leads' ? 'text-amber-500' : 'text-slate-400 hover:text-white hover:bg-slate-800/50'
-            }`}
-          >
-            {activeModule === 'leads' && <div className="absolute left-0 top-1/2 -translate-y-1/2 w-0.5 h-6 bg-amber-500 rounded-r" />}
-            <Target className="w-5 h-5" />
-            <span className="text-[9px] mt-1">Leads</span>
-          </button>
+          {!permissionsLoading && hasAnyModulePermission('leads') && (
+            <button
+              onClick={() => { setClientPrefill(null); setIsMobileNavOpen(false); navigateTo('leads'); }}
+              className={`relative flex flex-col items-center py-2.5 px-1 rounded-lg transition-colors ${
+                activeModule === 'leads' ? 'text-amber-500' : 'text-slate-400 hover:text-white hover:bg-slate-800/50'
+              }`}
+            >
+              {activeModule === 'leads' && <div className="absolute left-0 top-1/2 -translate-y-1/2 w-0.5 h-6 bg-amber-500 rounded-r" />}
+              <Target className="w-5 h-5" />
+              <span className="text-[9px] mt-1">Leads</span>
+            </button>
+          )}
 
-          <button
-            onClick={() => { setClientPrefill(null); setIsMobileNavOpen(false); navigateTo('clientes'); }}
-            className={`relative flex flex-col items-center py-2.5 px-1 rounded-lg transition-colors ${
-              activeModule === 'clientes' ? 'text-amber-500' : 'text-slate-400 hover:text-white hover:bg-slate-800/50'
-            }`}
-          >
-            {activeModule === 'clientes' && <div className="absolute left-0 top-1/2 -translate-y-1/2 w-0.5 h-6 bg-amber-500 rounded-r" />}
-            <Users className="w-5 h-5" />
-            <span className="text-[9px] mt-1">Clientes</span>
-          </button>
+          {!permissionsLoading && hasAnyModulePermission('clientes') && (
+            <button
+              onClick={() => { setClientPrefill(null); setIsMobileNavOpen(false); navigateTo('clientes'); }}
+              className={`relative flex flex-col items-center py-2.5 px-1 rounded-lg transition-colors ${
+                activeModule === 'clientes' ? 'text-amber-500' : 'text-slate-400 hover:text-white hover:bg-slate-800/50'
+              }`}
+            >
+              {activeModule === 'clientes' && <div className="absolute left-0 top-1/2 -translate-y-1/2 w-0.5 h-6 bg-amber-500 rounded-r" />}
+              <Users className="w-5 h-5" />
+              <span className="text-[9px] mt-1">Clientes</span>
+            </button>
+          )}
 
-          <button
-            onClick={() => { setClientPrefill(null); setIsMobileNavOpen(false); navigateTo('documentos'); }}
-            className={`relative flex flex-col items-center py-2.5 px-1 rounded-lg transition-colors ${
-              activeModule === 'documentos' ? 'text-amber-500' : 'text-slate-400 hover:text-white hover:bg-slate-800/50'
-            }`}
-          >
-            {activeModule === 'documentos' && <div className="absolute left-0 top-1/2 -translate-y-1/2 w-0.5 h-6 bg-amber-500 rounded-r" />}
-            <Library className="w-5 h-5" />
-            <span className="text-[9px] mt-1">Documentos</span>
-          </button>
+          {!permissionsLoading && hasAnyModulePermission('documentos') && (
+            <button
+              onClick={() => { setClientPrefill(null); setIsMobileNavOpen(false); navigateTo('documentos'); }}
+              className={`relative flex flex-col items-center py-2.5 px-1 rounded-lg transition-colors ${
+                activeModule === 'documentos' ? 'text-amber-500' : 'text-slate-400 hover:text-white hover:bg-slate-800/50'
+              }`}
+            >
+              {activeModule === 'documentos' && <div className="absolute left-0 top-1/2 -translate-y-1/2 w-0.5 h-6 bg-amber-500 rounded-r" />}
+              <Library className="w-5 h-5" />
+              <span className="text-[9px] mt-1">Documentos</span>
+            </button>
+          )}
 
-          <button
-            onClick={() => { setClientPrefill(null); setIsMobileNavOpen(false); navigateTo('assinaturas'); }}
-            className={`relative flex flex-col items-center py-2.5 px-1 rounded-lg transition-colors ${
-              activeModule === 'assinaturas' ? 'text-amber-500' : 'text-slate-400 hover:text-white hover:bg-slate-800/50'
-            }`}
-          >
-            {activeModule === 'assinaturas' && <div className="absolute left-0 top-1/2 -translate-y-1/2 w-0.5 h-6 bg-amber-500 rounded-r" />}
-            <PenTool className="w-5 h-5" />
-            <span className="text-[9px] mt-1">Assinaturas</span>
-          </button>
+          {!permissionsLoading && hasAnyModulePermission('assinaturas') && (
+            <button
+              onClick={() => { setClientPrefill(null); setIsMobileNavOpen(false); navigateTo('assinaturas'); }}
+              className={`relative flex flex-col items-center py-2.5 px-1 rounded-lg transition-colors ${
+                activeModule === 'assinaturas' ? 'text-amber-500' : 'text-slate-400 hover:text-white hover:bg-slate-800/50'
+              }`}
+            >
+              {activeModule === 'assinaturas' && <div className="absolute left-0 top-1/2 -translate-y-1/2 w-0.5 h-6 bg-amber-500 rounded-r" />}
+              <PenTool className="w-5 h-5" />
+              <span className="text-[9px] mt-1">Assinaturas</span>
+            </button>
+          )}
 
-          <button
-            onClick={() => { setClientPrefill(null); setIsMobileNavOpen(false); navigateTo('processos'); }}
-            className={`relative flex flex-col items-center py-2.5 px-1 rounded-lg transition-colors ${
-              activeModule === 'processos' ? 'text-amber-500' : 'text-slate-400 hover:text-white hover:bg-slate-800/50'
-            }`}
-          >
-            {activeModule === 'processos' && <div className="absolute left-0 top-1/2 -translate-y-1/2 w-0.5 h-6 bg-amber-500 rounded-r" />}
-            <Scale className="w-5 h-5" />
-            <span className="text-[9px] mt-1">Processos</span>
-          </button>
+          {!permissionsLoading && hasAnyModulePermission('processos') && (
+            <button
+              onClick={() => { setClientPrefill(null); setIsMobileNavOpen(false); navigateTo('processos'); }}
+              className={`relative flex flex-col items-center py-2.5 px-1 rounded-lg transition-colors ${
+                activeModule === 'processos' ? 'text-amber-500' : 'text-slate-400 hover:text-white hover:bg-slate-800/50'
+              }`}
+            >
+              {activeModule === 'processos' && <div className="absolute left-0 top-1/2 -translate-y-1/2 w-0.5 h-6 bg-amber-500 rounded-r" />}
+              <Scale className="w-5 h-5" />
+              <span className="text-[9px] mt-1">Processos</span>
+            </button>
+          )}
 
-          <button
-            onClick={() => { setClientPrefill(null); setIsMobileNavOpen(false); navigateTo('requerimentos'); }}
-            className={`relative flex flex-col items-center py-2.5 px-1 rounded-lg transition-colors ${
-              activeModule === 'requerimentos' ? 'text-amber-500' : 'text-slate-400 hover:text-white hover:bg-slate-800/50'
-            }`}
-          >
-            {activeModule === 'requerimentos' && <div className="absolute left-0 top-1/2 -translate-y-1/2 w-0.5 h-6 bg-amber-500 rounded-r" />}
-            <Briefcase className="w-5 h-5" />
-            <span className="text-[9px] mt-1">Requerimentos</span>
-          </button>
+          {!permissionsLoading && hasAnyModulePermission('requerimentos') && (
+            <button
+              onClick={() => { setClientPrefill(null); setIsMobileNavOpen(false); navigateTo('requerimentos'); }}
+              className={`relative flex flex-col items-center py-2.5 px-1 rounded-lg transition-colors ${
+                activeModule === 'requerimentos' ? 'text-amber-500' : 'text-slate-400 hover:text-white hover:bg-slate-800/50'
+              }`}
+            >
+              {activeModule === 'requerimentos' && <div className="absolute left-0 top-1/2 -translate-y-1/2 w-0.5 h-6 bg-amber-500 rounded-r" />}
+              <Briefcase className="w-5 h-5" />
+              <span className="text-[9px] mt-1">Requerimentos</span>
+            </button>
+          )}
 
-          <button
-            onClick={() => { setClientPrefill(null); setIsMobileNavOpen(false); navigateTo('prazos'); }}
-            className={`relative flex flex-col items-center py-2.5 px-1 rounded-lg transition-colors ${
-              activeModule === 'prazos' ? 'text-amber-500' : 'text-slate-400 hover:text-white hover:bg-slate-800/50'
-            }`}
-          >
-            {activeModule === 'prazos' && <div className="absolute left-0 top-1/2 -translate-y-1/2 w-0.5 h-6 bg-amber-500 rounded-r" />}
-            <AlarmClock className="w-5 h-5" />
-            <span className="text-[9px] mt-1">Prazos</span>
-          </button>
+          {!permissionsLoading && hasAnyModulePermission('prazos') && (
+            <button
+              onClick={() => { setClientPrefill(null); setIsMobileNavOpen(false); navigateTo('prazos'); }}
+              className={`relative flex flex-col items-center py-2.5 px-1 rounded-lg transition-colors ${
+                activeModule === 'prazos' ? 'text-amber-500' : 'text-slate-400 hover:text-white hover:bg-slate-800/50'
+              }`}
+            >
+              {activeModule === 'prazos' && <div className="absolute left-0 top-1/2 -translate-y-1/2 w-0.5 h-6 bg-amber-500 rounded-r" />}
+              <AlarmClock className="w-5 h-5" />
+              <span className="text-[9px] mt-1">Prazos</span>
+            </button>
+          )}
 
-          <button
-            onClick={() => { setClientPrefill(null); setIsMobileNavOpen(false); navigateTo('intimacoes'); }}
-            className={`relative flex flex-col items-center py-2.5 px-1 rounded-lg transition-colors ${
-              activeModule === 'intimacoes' ? 'text-amber-500' : 'text-slate-400 hover:text-white hover:bg-slate-800/50'
-            }`}
-          >
-            {activeModule === 'intimacoes' && <div className="absolute left-0 top-1/2 -translate-y-1/2 w-0.5 h-6 bg-amber-500 rounded-r" />}
-            <Bell className="w-5 h-5" />
-            <span className="text-[9px] mt-1">Intimações</span>
-          </button>
+          {!permissionsLoading && hasAnyModulePermission('intimacoes') && (
+            <button
+              onClick={() => { setClientPrefill(null); setIsMobileNavOpen(false); navigateTo('intimacoes'); }}
+              className={`relative flex flex-col items-center py-2.5 px-1 rounded-lg transition-colors ${
+                activeModule === 'intimacoes' ? 'text-amber-500' : 'text-slate-400 hover:text-white hover:bg-slate-800/50'
+              }`}
+            >
+              {activeModule === 'intimacoes' && <div className="absolute left-0 top-1/2 -translate-y-1/2 w-0.5 h-6 bg-amber-500 rounded-r" />}
+              <Bell className="w-5 h-5" />
+              <span className="text-[9px] mt-1">Intimações</span>
+            </button>
+          )}
 
-          <button
-            onClick={() => { setClientPrefill(null); setIsMobileNavOpen(false); navigateTo('financeiro'); }}
-            className={`relative flex flex-col items-center py-2.5 px-1 rounded-lg transition-colors ${
-              activeModule === 'financeiro' ? 'text-amber-500' : 'text-slate-400 hover:text-white hover:bg-slate-800/50'
-            }`}
-          >
-            {activeModule === 'financeiro' && <div className="absolute left-0 top-1/2 -translate-y-1/2 w-0.5 h-6 bg-amber-500 rounded-r" />}
-            <PiggyBank className="w-5 h-5" />
-            <span className="text-[9px] mt-1">Financeiro</span>
-          </button>
+          {!permissionsLoading && hasAnyModulePermission('financeiro') && (
+            <button
+              onClick={() => { setClientPrefill(null); setIsMobileNavOpen(false); navigateTo('financeiro'); }}
+              className={`relative flex flex-col items-center py-2.5 px-1 rounded-lg transition-colors ${
+                activeModule === 'financeiro' ? 'text-amber-500' : 'text-slate-400 hover:text-white hover:bg-slate-800/50'
+              }`}
+            >
+              {activeModule === 'financeiro' && <div className="absolute left-0 top-1/2 -translate-y-1/2 w-0.5 h-6 bg-amber-500 rounded-r" />}
+              <PiggyBank className="w-5 h-5" />
+              <span className="text-[9px] mt-1">Financeiro</span>
+            </button>
+          )}
 
-          <button
-            onClick={() => { setClientPrefill(null); setIsMobileNavOpen(false); navigateTo('agenda'); }}
-            className={`relative flex flex-col items-center py-2.5 px-1 rounded-lg transition-colors ${
-              activeModule === 'agenda' ? 'text-amber-500' : 'text-slate-400 hover:text-white hover:bg-slate-800/50'
-            }`}
-          >
-            {activeModule === 'agenda' && <div className="absolute left-0 top-1/2 -translate-y-1/2 w-0.5 h-6 bg-amber-500 rounded-r" />}
-            <Calendar className="w-5 h-5" />
-            <span className="text-[9px] mt-1">Agenda</span>
-          </button>
+          {!permissionsLoading && hasAnyModulePermission('agenda') && (
+            <button
+              onClick={() => { setClientPrefill(null); setIsMobileNavOpen(false); navigateTo('agenda'); }}
+              className={`relative flex flex-col items-center py-2.5 px-1 rounded-lg transition-colors ${
+                activeModule === 'agenda' ? 'text-amber-500' : 'text-slate-400 hover:text-white hover:bg-slate-800/50'
+              }`}
+            >
+              {activeModule === 'agenda' && <div className="absolute left-0 top-1/2 -translate-y-1/2 w-0.5 h-6 bg-amber-500 rounded-r" />}
+              <Calendar className="w-5 h-5" />
+              <span className="text-[9px] mt-1">Agenda</span>
+            </button>
+          )}
+
+          {!permissionsLoading && hasAnyModulePermission('chat') && (
+            <button
+              onClick={() => { setClientPrefill(null); setIsMobileNavOpen(false); navigateTo('chat'); }}
+              className={`relative flex flex-col items-center py-2.5 px-1 rounded-lg transition-colors ${
+                activeModule === 'chat' ? 'text-amber-500' : 'text-slate-400 hover:text-white hover:bg-slate-800/50'
+              }`}
+              title="Chat"
+            >
+              {activeModule === 'chat' && <div className="absolute left-0 top-1/2 -translate-y-1/2 w-0.5 h-6 bg-amber-500 rounded-r" />}
+              <MessageCircle className="w-5 h-5" />
+              <span className="text-[9px] mt-1">Chat</span>
+            </button>
+          )}
 
           {/* Editor de Petições - Widget flutuante (remover este bloco para desativar) */}
-          <button
-            onClick={() => { 
-              setIsMobileNavOpen(false); 
-              events.emit(SYSTEM_EVENTS.PETITION_EDITOR_OPEN);
-            }}
-            className="relative flex flex-col items-center py-2.5 px-1 rounded-lg transition-colors text-slate-400 hover:text-white hover:bg-slate-800/50"
-            title="Abrir Editor de Petições (Widget Flutuante)"
-          >
-            <FileText className="w-5 h-5" />
-            <span className="text-[9px] mt-1">Petições</span>
-          </button>
+          {!permissionsLoading && hasAnyModulePermission('peticoes') && (
+            <button
+              onClick={() => { 
+                setIsMobileNavOpen(false); 
+                events.emit(SYSTEM_EVENTS.PETITION_EDITOR_OPEN);
+              }}
+              className="relative flex flex-col items-center py-2.5 px-1 rounded-lg transition-colors text-slate-400 hover:text-white hover:bg-slate-800/50"
+              title="Abrir Editor de Petições (Widget Flutuante)"
+            >
+              <FileText className="w-5 h-5" />
+              <span className="text-[9px] mt-1">Petições</span>
+            </button>
+          )}
 
           <div className="my-2 mx-2 h-px bg-slate-800" />
 
@@ -948,6 +1097,7 @@ const MainApp: React.FC = () => {
                     {activeModule === 'intimacoes' && 'Diário de Justiça Eletrônico'}
                     {activeModule === 'financeiro' && 'Gestão Financeira'}
                     {activeModule === 'agenda' && 'Agenda'}
+                    {activeModule === 'chat' && 'Chat da Equipe'}
                     {activeModule === 'tarefas' && 'Tarefas'}
                     {activeModule === 'documentos' && 'Documentos'}
                     {activeModule === 'assinaturas' && 'Assinatura Digital'}
@@ -963,6 +1113,7 @@ const MainApp: React.FC = () => {
                     {activeModule === 'intimacoes' && 'Consulte comunicações processuais do DJEN'}
                     {activeModule === 'financeiro' && 'Acompanhe acordos, parcelas e honorários do escritório'}
                     {activeModule === 'agenda' && 'Organize compromissos e prazos'}
+                    {activeModule === 'chat' && 'Converse com a equipe em tempo real'}
                     {activeModule === 'tarefas' && 'Gerencie suas tarefas e lembretes'}
                     {activeModule === 'documentos' && 'Crie modelos e gere documentos personalizados'}
                     {activeModule === 'assinaturas' && 'Assine documentos com biometria facial e assinatura digital'}
@@ -1246,6 +1397,7 @@ const MainApp: React.FC = () => {
                 onPendingTasksChange={setPendingTasksCount}
               />
             )}
+            {activeModule === 'chat' && <ChatModule />}
             {activeModule === 'notificacoes' && <NotificationsModuleNew onNavigateToModule={handleNavigateToModule} />}
             {activeModule === 'financeiro' && <FinancialModule />}
             {activeModule === 'assinaturas' && (

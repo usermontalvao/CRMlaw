@@ -14,6 +14,8 @@ export type ModuleName =
   | 'assinaturas'
   | 'tarefas'
   | 'notificacoes'
+  | 'chat'
+  | 'usuarios'
   | 'monitor'
   | 'login'
   | 'cron'

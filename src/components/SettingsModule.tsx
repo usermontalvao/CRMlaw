@@ -27,6 +27,7 @@ import {
 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { profileService, type Profile } from '../services/profile.service';
+import UserManagementModule from './UserManagementModule';
 import {
   settingsService,
   type AuditLogEntry,
@@ -54,7 +55,7 @@ type SettingsSection =
 
 const ROLES = [
   {
-    key: 'admin',
+    key: 'administrador',
     label: 'Administrador',
     description: 'Acesso total ao sistema',
     tone: 'bg-red-100 text-red-800',
@@ -70,9 +71,9 @@ const ROLES = [
   {
     key: 'auxiliar',
     label: 'Auxiliar',
-    description: 'Suporte administrativo, acesso moderado',
+    description: 'Suporte administrativo',
     tone: 'bg-emerald-100 text-emerald-800',
-    icon: Users,
+    icon: Shield,
   },
   {
     key: 'secretaria',
@@ -84,7 +85,7 @@ const ROLES = [
   {
     key: 'financeiro',
     label: 'Financeiro',
-    description: 'Controle total do módulo financeiro',
+    description: 'Controle do módulo financeiro',
     tone: 'bg-amber-100 text-amber-800',
     icon: ShieldCheck,
   },
@@ -107,8 +108,11 @@ const MODULES = [
   { key: 'intimacoes', label: 'Intimações' },
   { key: 'financeiro', label: 'Financeiro' },
   { key: 'documentos', label: 'Documentos' },
+  { key: 'assinaturas', label: 'Assinaturas' },
   { key: 'agenda', label: 'Agenda' },
   { key: 'tarefas', label: 'Tarefas' },
+  { key: 'peticoes', label: 'Petições' },
+  { key: 'chat', label: 'Chat' },
   { key: 'configuracoes', label: 'Configurações' },
 ];
 
@@ -179,6 +183,7 @@ const SettingsModule: React.FC = () => {
     name: '',
     email: '',
     role: 'advogado',
+    cpf: '',
     phone: '',
     oab: '',
     lawyer_full_name: '',
@@ -198,17 +203,42 @@ const SettingsModule: React.FC = () => {
   const [auditLog, setAuditLog] = useState<AuditLogEntry[]>([]);
   const [auditLoading, setAuditLoading] = useState(false);
 
-  const allowedRoles = ['admin', 'administrador', 'advogado', 'auxiliar'];
+  const normalizeRoleKey = (role?: string | null) => {
+    if (!role) return '';
+    const normalized = role
+      .toLowerCase()
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '');
+
+    if (normalized === 'administrador' || normalized === 'admin') return 'admin';
+    if (normalized === 'socio') return 'admin';
+    return normalized;
+  };
+
+  const allowedRoles = ['admin', 'advogado', 'auxiliar'];
+
+  const formatCpf = useCallback((value: string) => {
+    const digits = String(value || '').replace(/\D/g, '').slice(0, 11);
+    const p1 = digits.slice(0, 3);
+    const p2 = digits.slice(3, 6);
+    const p3 = digits.slice(6, 9);
+    const p4 = digits.slice(9, 11);
+
+    if (digits.length <= 3) return p1;
+    if (digits.length <= 6) return `${p1}.${p2}`;
+    if (digits.length <= 9) return `${p1}.${p2}.${p3}`;
+    return `${p1}.${p2}.${p3}-${p4}`;
+  }, []);
 
   const hasConfigAccess = useMemo(() => {
-    const role = currentProfile?.role?.toLowerCase();
-    return role ? allowedRoles.includes(role) : false;
+    const roleKey = normalizeRoleKey(currentProfile?.role);
+    return roleKey ? allowedRoles.includes(roleKey) : false;
   }, [currentProfile]);
 
   const isAdmin = useMemo(() => {
-    const role = currentProfile?.role?.toLowerCase();
     // Advogado tem os mesmos poderes de admin no sistema
-    return role === 'admin' || role === 'administrador' || role === 'advogado';
+    const roleKey = normalizeRoleKey(currentProfile?.role);
+    return roleKey === 'admin' || roleKey === 'advogado';
   }, [currentProfile]);
 
   const setFeedback = (type: 'error' | 'success', message: string) => {
@@ -357,6 +387,7 @@ const SettingsModule: React.FC = () => {
         name: userData.name,
         email: userData.email,
         role: userData.role?.toLowerCase() || 'advogado',
+        cpf: userData.cpf || '',
         phone: userData.phone || '',
         oab: userData.oab || '',
         lawyer_full_name: userData.lawyer_full_name || '',
@@ -369,6 +400,7 @@ const SettingsModule: React.FC = () => {
         name: '',
         email: '',
         role: 'advogado',
+        cpf: '',
         phone: '',
         oab: '',
         lawyer_full_name: '',
@@ -406,6 +438,7 @@ const SettingsModule: React.FC = () => {
           name: userFormData.name,
           email: userFormData.email,
           role: userFormData.role,
+          cpf: userFormData.cpf || undefined,
           phone: userFormData.phone || undefined,
           oab: userFormData.oab || undefined,
           lawyer_full_name: userFormData.lawyer_full_name || undefined,
@@ -679,116 +712,7 @@ const SettingsModule: React.FC = () => {
                   </div>
                 )}
 
-                {activeSection === 'users' && (
-                  <div className="p-6 space-y-6">
-                    <header className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-                      <div className="flex items-center gap-3">
-                        <span className="w-12 h-12 rounded-xl bg-purple-50 flex items-center justify-center">
-                          <Users className="w-5 h-5 text-purple-600" />
-                        </span>
-                        <div>
-                          <h2 className="text-lg font-semibold text-slate-900">Equipe cadastrada</h2>
-                          <p className="text-sm text-slate-500">
-                            {users.length} membro{users.length === 1 ? '' : 's'} ativos no CRM
-                          </p>
-                        </div>
-                      </div>
-                      <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
-                        <div className="relative">
-                          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
-                          <input
-                            type="text"
-                            className="pl-9 pr-3 py-2 rounded-lg border border-slate-200 text-sm focus:border-purple-500 focus:ring-2 focus:ring-purple-500/10"
-                            placeholder="Buscar por nome, email ou papel"
-                            value={userSearch}
-                            onChange={(e) => setUserSearch(e.target.value)}
-                          />
-                        </div>
-                        <button
-                          onClick={() => loadUsers()}
-                          className="inline-flex items-center gap-2 rounded-lg border border-slate-200 px-3 py-2 text-sm font-medium text-slate-600 hover:bg-slate-50"
-                        >
-                          <RefreshCw className="w-4 h-4" />
-                          Atualizar
-                        </button>
-                        <button
-                          onClick={() => window.open('https://supabase.com/dashboard/project/uajwkqipbyxzvwjpitxl/auth/users', '_blank')}
-                          className="inline-flex items-center gap-2 rounded-lg bg-purple-600 px-3 py-2 text-sm font-medium text-white hover:bg-purple-700"
-                        >
-                          <Plus className="w-4 h-4" />
-                          Convidar Usuário
-                        </button>
-                      </div>
-                    </header>
-
-                    {usersLoading ? (
-                      <div className="py-12 text-center">
-                        <Loader2 className="w-8 h-8 text-purple-600 animate-spin mx-auto" />
-                        <p className="text-sm text-slate-500 mt-2">Carregando usuários...</p>
-                      </div>
-                    ) : (
-                      <div className="space-y-4">
-                        {filteredUsers.length === 0 && (
-                          <div className="rounded-lg border border-slate-200 bg-slate-50 p-6 text-center text-sm text-slate-500">
-                            Nenhum usuário encontrado.
-                          </div>
-                        )}
-                        {filteredUsers.map((userProfile) => (
-                          <div
-                            key={userProfile.id}
-                            className="flex flex-col gap-4 rounded-xl border border-slate-200 p-4 shadow-sm md:flex-row md:items-center"
-                          >
-                            <div className="flex items-center gap-3 flex-1">
-                              <img
-                                src={userProfile.avatar_url || 'https://api.dicebear.com/7.x/initials/svg?seed=' + userProfile.name}
-                                alt={userProfile.name}
-                                className="h-14 w-14 rounded-full object-cover border border-slate-200"
-                              />
-                              <div>
-                                <p className="text-sm font-semibold text-slate-900">{userProfile.name}</p>
-                                <p className="text-xs text-slate-500">{userProfile.email}</p>
-                                <div className="mt-1 flex flex-wrap gap-2 text-[11px] text-slate-400">
-                                  {userProfile.phone && <span>📞 {userProfile.phone}</span>}
-                                  {userProfile.oab && <span>OAB {userProfile.oab}</span>}
-                                  {userProfile.role && (
-                                    <span className="inline-flex items-center gap-1 rounded-full bg-slate-100 px-2 py-0.5 font-medium text-slate-600">
-                                      {userProfile.role}
-                                    </span>
-                                  )}
-                                </div>
-                              </div>
-                            </div>
-                            <div className="flex items-center gap-2">
-                              <button
-                                onClick={() => openUserModal(userProfile)}
-                                className="inline-flex items-center gap-2 rounded-lg border border-slate-200 px-3 py-2 text-sm font-medium text-slate-600 hover:bg-slate-50"
-                              >
-                                <Edit2 className="w-4 h-4" />
-                                Editar
-                              </button>
-                              <button
-                                onClick={() => setDeleteTarget(userProfile)}
-                                className="inline-flex items-center gap-2 rounded-lg border border-red-200 px-3 py-2 text-sm font-medium text-red-600 hover:bg-red-50"
-                                disabled={userProfile.user_id === user?.id}
-                              >
-                                <Trash2 className="w-4 h-4" />
-                                Remover
-                              </button>
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-
-                    <div className="rounded-lg border border-blue-100 bg-blue-50 p-4 text-sm text-blue-700">
-                      <p className="font-semibold">Para adicionar um novo colaborador</p>
-                      <p>
-                        Utilize o painel do Supabase (Authentication → Users) para enviar um convite por email. Após o primeiro acesso,
-                        o usuário aparecerá aqui para ajustes de papel, dados e foto.
-                      </p>
-                    </div>
-                  </div>
-                )}
+                {activeSection === 'users' && <UserManagementModule />}
 
                 {activeSection === 'roles' && (
                   <div className="p-6 space-y-6">
@@ -837,7 +761,7 @@ const SettingsModule: React.FC = () => {
                           <tbody className="divide-y divide-slate-100">
                             {MODULES.map((module) => {
                               const rolePerm = rolePermissions.find((perm) => perm.module === module.key);
-                              const disabled = selectedRole === 'admin';
+                              const disabled = selectedRole === 'administrador';
                               return (
                                 <tr key={module.key} className="hover:bg-slate-50">
                                   <td className="px-3 py-2 font-medium text-slate-700">{module.label}</td>
@@ -864,7 +788,7 @@ const SettingsModule: React.FC = () => {
                       </div>
                     )}
 
-                    {selectedRole === 'admin' && (
+                    {selectedRole === 'administrador' && (
                       <div className="rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-700">
                         Administradores possuem todas as permissões e não podem ser limitados.
                       </div>
@@ -1501,6 +1425,17 @@ const SettingsModule: React.FC = () => {
                       </option>
                     ))}
                   </select>
+                </div>
+                <div>
+                  <label className="text-xs font-semibold text-slate-500">CPF</label>
+                  <input
+                    type="text"
+                    className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
+                    value={userFormData.cpf}
+                    onChange={(e) => setUserFormData((prev) => ({ ...prev, cpf: formatCpf(e.target.value) }))}
+                    placeholder="000.000.000-00"
+                    maxLength={14}
+                  />
                 </div>
                 <div>
                   <label className="text-xs font-semibold text-slate-500">Telefone</label>

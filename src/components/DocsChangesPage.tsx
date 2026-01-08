@@ -46,6 +46,20 @@ import {
    ============================================================================ */
 
 const VERSION_CODENAMES: Record<string, { name: string; emoji: string }> = {
+  '1.9.136': { name: 'Café CPF do Login', emoji: '🧾' },
+  '1.9.135': { name: 'Café CPF Persistente', emoji: '💾' },
+  '1.9.134': { name: 'Café CPF Resiliente', emoji: '🧯' },
+  '1.9.133': { name: 'Café CPF Mascarado', emoji: '🆔' },
+  '1.9.132': { name: 'Café CPF no Perfil', emoji: '🪪' },
+  '1.9.131': { name: 'Café Perfil Consistente', emoji: '🪪' },
+  '1.9.130': { name: 'Café Permissões Corrigidas', emoji: '🔐' },
+  '1.9.129': { name: 'Café Menu Inteligente', emoji: '🧭' },
+  '1.9.128': { name: 'Café Editar Cargo', emoji: '✏️' },
+  '1.9.127': { name: 'Café Cargos Unificados', emoji: '🎭' },
+  '1.9.126': { name: 'Café Advogado Criador', emoji: '⚖️' },
+  '1.9.125': { name: 'Café Gestão de Usuários', emoji: '👥' },
+  '1.9.124': { name: 'Café Chat Realtime', emoji: '💬' },
+  '1.9.123': { name: 'Café Intimação Desaparecida', emoji: '🔍' },
   '1.9.115': { name: 'Café Tipo Legível', emoji: '🏷️' },
   '1.9.114': { name: 'Café Data Sem Fuso', emoji: '📅' },
   '1.9.113': { name: 'Café Anexos Completos', emoji: '📎' },
@@ -544,6 +558,337 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
    ============================================================================ */
 
 const releases: ReleaseNote[] = [
+  {
+    version: '1.9.139',
+    date: '08/01/2026',
+    summary: 'Login via CPF: agora tenta localizar o usuário em profiles.cpf e mostra mensagem clara quando o client não possui e-mail.',
+    modules: [
+      {
+        moduleId: 'sistema',
+        changes: [
+          {
+            type: 'fix',
+            title: 'Login via CPF sem depender de clients.email',
+            description: 'Ao digitar CPF no login, o sistema busca primeiro o usuário em profiles (cpf com e sem máscara) para obter o e-mail e autenticar. Se o CPF existir apenas em clients sem e-mail, exibe orientação para cadastrar/vincular o e-mail.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.138',
+    date: '08/01/2026',
+    summary: 'CPF no Perfil: CPF do client (clients.cpf_cnpj) agora é aplicado no estado/cache do perfil imediatamente e persistido em profiles.cpf.',
+    modules: [
+      {
+        moduleId: 'sistema',
+        changes: [
+          {
+            type: 'fix',
+            title: 'CPF do client aparece no Perfil',
+            description: 'Ao carregar o perfil, o sistema busca o CPF em clients.cpf_cnpj (por CPF do login ou por e-mail) e preenche o campo CPF no Perfil imediatamente, além de persistir em profiles.cpf quando estiver vazio.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.137',
+    date: '08/01/2026',
+    summary: 'CPF sincronizado com clients: ao fazer login via CPF, o sistema busca o CPF da tabela clients.cpf_cnpj e grava em profiles.cpf.',
+    modules: [
+      {
+        moduleId: 'sistema',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'CPF do client vira CPF do perfil',
+            description: 'Quando o login é feito via CPF, o sistema busca o CPF em clients.cpf_cnpj e o salva em profiles.cpf, garantindo que o Perfil exiba o CPF correto.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.136',
+    date: '08/01/2026',
+    summary: 'CPF do login: ao autenticar com CPF, o sistema preenche profiles.cpf automaticamente quando estiver vazio.',
+    modules: [
+      {
+        moduleId: 'sistema',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'CPF do login vira CPF do perfil',
+            description: 'Quando o login é feito via CPF, o sistema usa esse CPF como fallback e grava em profiles.cpf (se ainda estiver vazio), mantendo o Perfil preenchido automaticamente.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.135',
+    date: '08/01/2026',
+    summary: 'CPF persistente: perfil carrega e mantém CPF corretamente no app (API + cache).',
+    modules: [
+      {
+        moduleId: 'sistema',
+        changes: [
+          {
+            type: 'fix',
+            title: 'CPF no cache do Perfil',
+            description: 'O App passou a incluir cpf no mapping do perfil (carregado do Supabase) e no cache (sessionStorage), evitando o CPF “sumir” ao reabrir o Perfil.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.134',
+    date: '08/01/2026',
+    summary: 'CPF resiliente: salva Perfil mesmo quando a coluna cpf ainda não existe no schema cache do Supabase.',
+    modules: [
+      {
+        moduleId: 'sistema',
+        changes: [
+          {
+            type: 'fix',
+            title: 'Salvar Perfil sem quebrar quando coluna cpf ainda não existe',
+            description: 'Se o Supabase retornar erro de schema cache para a coluna cpf, o sistema faz fallback e salva o restante do perfil sem cpf (até a migration ser aplicada).',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.133',
+    date: '08/01/2026',
+    summary: 'CPF com máscara: campos de CPF agora formatam automaticamente para 000.000.000-00.',
+    modules: [
+      {
+        moduleId: 'sistema',
+        changes: [
+          {
+            type: 'feature',
+            title: 'Campo CPF no Perfil',
+            description: 'Adicionado campo CPF na aba "Dados Pessoais" do modal de perfil, com máscara 000.000.000-00 e persistência no banco.',
+          },
+          {
+            type: 'feature',
+            title: 'CPF no cadastro de usuários',
+            description: 'Modal de criar/editar usuário em Configurações agora inclui campo CPF, alinhado com o perfil.',
+          },
+          {
+            type: 'improvement',
+            title: 'Máscara automática do CPF',
+            description: 'Ao digitar, o sistema aplica automaticamente o formato 000.000.000-00 no Perfil e em Configurações → Usuários.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.131',
+    date: '08/01/2026',
+    summary: 'Perfil e permissões: cargo consistente, abas por cargo e menu filtrado por permissões reais.',
+    modules: [
+      {
+        moduleId: 'sistema',
+        changes: [
+          {
+            type: 'fix',
+            title: 'Cargo correto no Perfil (sem cair em Advogado)',
+            description: 'O Perfil agora respeita o cargo salvo em profiles.role (Financeiro/Secretária etc.), sem default incorreto por cache/fallback.',
+          },
+          {
+            type: 'fix',
+            title: 'Aba Profissional restrita a Advogados',
+            description: 'Campos de advogado (OAB e nome para documentos) não aparecem para cargos não-Advogado.',
+          },
+          {
+            type: 'fix',
+            title: 'Estatísticas por permissão',
+            description: 'Aba de Estatísticas exibe apenas seções dos módulos que o cargo pode visualizar.',
+          },
+          {
+            type: 'fix',
+            title: 'Menu do App filtrado por permissões',
+            description: 'Sidebar minimalista do App agora oculta módulos com 0 permissões (view/create/edit/delete).',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.130',
+    date: '08/01/2026',
+    summary: 'Correção de permissões: módulos novos adicionados e filtro de menu corrigido.',
+    modules: [
+      {
+        moduleId: 'sistema',
+        changes: [
+          {
+            type: 'fix',
+            title: 'Filtro de permissões corrigido',
+            description: 'Menu agora aguarda carregamento das permissões antes de exibir módulos. Módulos sem permissão não aparecem.',
+          },
+          {
+            type: 'feature',
+            title: 'Novos módulos nas permissões',
+            description: 'Adicionados módulos: Assinaturas, Petições, Chat, Tarefas ao sistema de permissões.',
+          },
+          {
+            type: 'improvement',
+            title: 'Sincronização de módulos',
+            description: 'Lista de módulos sincronizada entre Sidebar, MobileSidebar e Configurações → Permissões.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.129',
+    date: '08/01/2026',
+    summary: 'Menu inteligente: módulos ocultos se usuário não tem nenhuma permissão. Exclusão de usuário remove do Auth.',
+    modules: [
+      {
+        moduleId: 'sistema',
+        changes: [
+          {
+            type: 'feature',
+            title: 'Menu baseado em permissões',
+            description: 'Módulos sem nenhuma permissão (view/create/edit/delete) não aparecem no menu lateral para o usuário.',
+          },
+          {
+            type: 'fix',
+            title: 'Exclusão completa de usuário',
+            description: 'Ao excluir usuário pelo painel, agora também é removido do Supabase Auth (não apenas soft delete).',
+          },
+          {
+            type: 'security',
+            title: 'Edge Function delete-user',
+            description: 'Criada Edge Function para deletar usuários de forma segura via admin API.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.128',
+    date: '08/01/2026',
+    summary: 'Edição de cargo de usuários e hook de permissões para módulos.',
+    modules: [
+      {
+        moduleId: 'sistema',
+        changes: [
+          {
+            type: 'feature',
+            title: 'Editar cargo de usuário',
+            description: 'Agora é possível editar o cargo de usuários existentes diretamente na lista de usuários.',
+          },
+          {
+            type: 'feature',
+            title: 'Hook usePermissions',
+            description: 'Criado hook usePermissions para verificar permissões de usuário por módulo (view, create, edit, delete).',
+          },
+          {
+            type: 'fix',
+            title: 'Seu cargo atualizado para Administrador',
+            description: 'Corrigido cargo do usuário principal para Administrador no banco de dados.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.127',
+    date: '08/01/2026',
+    summary: 'Cargos unificados: Administrador, Advogado, Auxiliar, Secretária, Financeiro, Estagiário.',
+    modules: [
+      {
+        moduleId: 'sistema',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Cargos padronizados em todo o sistema',
+            description: 'Lista de cargos unificada entre criação de usuários e permissões: Administrador, Advogado, Auxiliar, Secretária, Financeiro, Estagiário.',
+          },
+          {
+            type: 'fix',
+            title: 'Banco de dados atualizado',
+            description: 'Tabela role_permissions atualizada para usar "administrador" em vez de "admin".',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.126',
+    date: '08/01/2026',
+    summary: 'Advogados agora podem criar Sócio, Advogado, Auxiliar e Estagiário. Apenas Administradores criam Administradores.',
+    modules: [
+      {
+        moduleId: 'sistema',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Advogado pode criar mais cargos',
+            description: 'Advogados agora podem criar usuários com cargo Sócio, Advogado, Auxiliar e Estagiário. Apenas Administradores podem criar Administradores.',
+          },
+          {
+            type: 'fix',
+            title: 'Filtro de cargos no modal de criação',
+            description: 'Corrigido filtro que mostrava apenas Auxiliar/Estagiário para Advogados. Agora exibe todos os cargos permitidos.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.125',
+    date: '08/01/2026',
+    summary: 'Configurações: gestão de usuários/cargos ajustada e criação de colaboradores sem auto-cadastro.',
+    modules: [
+      {
+        moduleId: 'sistema',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Gestão de usuários dentro de Configurações',
+            description: 'O gerenciamento de colaboradores foi centralizado em Configurações → Usuários, removendo fluxo de auto-cadastro no login.',
+          },
+          {
+            type: 'fix',
+            title: 'Cargos e permissões alinhados ao padrão do sistema',
+            description: 'Padronizados cargos e validações (Administrador/Advogado/Auxiliar/Estagiário/Sócio) com normalização de acentos e compatibilidade com role_permissions.',
+          },
+          {
+            type: 'security',
+            title: 'Criação de colaborador via Edge Function',
+            description: 'Criação de novos colaboradores passa a ser feita via Edge Function (admin) para não trocar a sessão do usuário logado e manter regras de permissão na origem.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.124',
+    date: '08/01/2026',
+    summary: 'Chat: novo módulo de chat em tempo real entre equipes (Supabase Realtime).',
+    modules: [
+      {
+        moduleId: 'sistema',
+        changes: [
+          {
+            type: 'feature',
+            title: 'Chat realtime entre equipes',
+            description:
+              'Implementado módulo de Chat com salas e mensagens em tempo real via Supabase Realtime (postgres_changes), com tabelas chat_rooms/chat_room_members/chat_messages e RLS para controle de acesso.',
+          },
+        ],
+      },
+    ],
+  },
   {
     version: '1.9.123',
     date: '08/01/2026',

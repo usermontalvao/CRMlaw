@@ -36,6 +36,8 @@ const moduleLabels: Record<ModuleName, { title: string; description: string }> =
   cron: { title: 'Cron', description: '' },
   configuracoes: { title: 'Configurações', description: 'Configure seu perfil e preferências' },
   peticoes: { title: 'Editor de Petições', description: 'Crie petições trabalhistas com blocos reutilizáveis' },
+  chat: { title: 'Chat', description: 'Comunicação interna e com clientes' },
+  usuarios: { title: 'Usuários', description: 'Gerencie usuários e permissões' },
 };
 
 export const Header: React.FC<HeaderProps> = ({

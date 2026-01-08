@@ -458,12 +458,27 @@ const Login: React.FC<LoginProps> = ({ onLogin, onResetPassword }) => {
     [theme]
   );
 
+  const LAST_LOGIN_CPF_KEY = 'crm-last-login-cpf';
+
+  const formatCpf = useCallback((value: string) => {
+    const digits = String(value || '').replace(/\D/g, '').slice(0, 11);
+    const p1 = digits.slice(0, 3);
+    const p2 = digits.slice(3, 6);
+    const p3 = digits.slice(6, 9);
+    const p4 = digits.slice(9, 11);
+
+    if (digits.length <= 3) return p1;
+    if (digits.length <= 6) return `${p1}.${p2}`;
+    if (digits.length <= 9) return `${p1}.${p2}.${p3}`;
+    return `${p1}.${p2}.${p3}-${p4}`;
+  }, []);
+
   useEffect(() => {
     const frame = requestAnimationFrame(() => setMounted(true));
     return () => cancelAnimationFrame(frame);
   }, []);
 
-  const loadIdentifierProfile = useCallback(async (identifier: string): Promise<boolean> => {
+  const loadIdentifierProfile = useCallback(async (identifier: string): Promise<{ found: boolean; message?: string }> => {
     setIdentifierLoading(true);
 
     try {
@@ -471,6 +486,9 @@ const Login: React.FC<LoginProps> = ({ onLogin, onResetPassword }) => {
 
       // 1) Se for e-mail, buscamos direto em profiles
       if (trimmed.includes('@')) {
+        if (typeof window !== 'undefined') {
+          sessionStorage.removeItem(LAST_LOGIN_CPF_KEY);
+        }
         const { data, error } = await supabase
           .from('profiles')
           .select('name, avatar_url, email')
@@ -480,14 +498,14 @@ const Login: React.FC<LoginProps> = ({ onLogin, onResetPassword }) => {
           console.error('Erro ao buscar perfil para login:', error.message);
           setIdentifierProfileName(null);
           setIdentifierProfileAvatar(null);
-          return false;
+          return { found: false };
         }
 
         const profile = data && data.length > 0 ? data[0] : null;
         if (!profile) {
           setIdentifierProfileName(null);
           setIdentifierProfileAvatar(null);
-          return false;
+          return { found: false };
         }
 
         // Garantimos que o e-mail do estado é o mesmo do perfil
@@ -497,23 +515,76 @@ const Login: React.FC<LoginProps> = ({ onLogin, onResetPassword }) => {
 
         setIdentifierProfileName(profile.name ?? null);
         setIdentifierProfileAvatar(profile.avatar_url ?? null);
-        return true;
+        return { found: true };
       }
 
       // 2) Se não for e-mail, tratamos como CPF/CNPJ: buscamos em clients.cpf_cnpj
       const numericId = trimmed.replace(/\D/g, '');
       if (!numericId) {
+        if (typeof window !== 'undefined') {
+          sessionStorage.removeItem(LAST_LOGIN_CPF_KEY);
+        }
         setIdentifierProfileName(null);
         setIdentifierProfileAvatar(null);
-        return false;
+        return { found: false };
+      }
+
+      if (typeof window !== 'undefined') {
+        if (numericId.length === 11) {
+          sessionStorage.setItem(LAST_LOGIN_CPF_KEY, formatCpf(numericId));
+        } else {
+          sessionStorage.removeItem(LAST_LOGIN_CPF_KEY);
+        }
+      }
+
+      if (numericId.length === 11) {
+        try {
+          const maskedCpf = formatCpf(numericId);
+          const { data: profileByMaskedCpf, error: profileByMaskedCpfError } = await supabase
+            .from('profiles')
+            .select('name, avatar_url, email')
+            .eq('cpf', maskedCpf)
+            .maybeSingle();
+
+          if (!profileByMaskedCpfError && profileByMaskedCpf?.email) {
+            setIdentifierProfileName(profileByMaskedCpf.name ?? profileByMaskedCpf.email);
+            setIdentifierProfileAvatar(profileByMaskedCpf.avatar_url ?? null);
+            setEmail(profileByMaskedCpf.email);
+            return { found: true };
+          }
+
+          const { data: profileByRawCpf, error: profileByRawCpfError } = await supabase
+            .from('profiles')
+            .select('name, avatar_url, email')
+            .eq('cpf', numericId)
+            .maybeSingle();
+
+          if (!profileByRawCpfError && profileByRawCpf?.email) {
+            setIdentifierProfileName(profileByRawCpf.name ?? profileByRawCpf.email);
+            setIdentifierProfileAvatar(profileByRawCpf.avatar_url ?? null);
+            setEmail(profileByRawCpf.email);
+            return { found: true };
+          }
+        } catch (profileLookupError) {
+          console.error('Erro ao buscar perfil por CPF para login:', profileLookupError);
+        }
       }
 
       try {
         const client = await clientService.getClientByCpfCnpj(numericId);
-        if (!client || !client.email) {
+        if (!client) {
           setIdentifierProfileName(null);
           setIdentifierProfileAvatar(null);
-          return false;
+          return { found: false };
+        }
+
+        if (!client.email) {
+          setIdentifierProfileName(client.full_name || null);
+          setIdentifierProfileAvatar(null);
+          return {
+            found: false,
+            message: 'CPF encontrado, mas este cadastro não possui e-mail. Cadastre um e-mail para este CPF (ou vincule o usuário no sistema) para conseguir entrar.',
+          };
         }
 
         // Usamos o nome do cliente e o e-mail associado como identidade de login
@@ -532,22 +603,22 @@ const Login: React.FC<LoginProps> = ({ onLogin, onResetPassword }) => {
           setIdentifierProfileAvatar(profileFromClientEmail.avatar_url);
         }
 
-        return true;
+        return { found: true };
       } catch (clientError) {
         console.error('Erro ao buscar cliente por CPF/CNPJ para login:', clientError);
         setIdentifierProfileName(null);
         setIdentifierProfileAvatar(null);
-        return false;
+        return { found: false };
       }
     } catch (e) {
       console.error('Erro inesperado ao buscar identificador para login:', e);
       setIdentifierProfileName(null);
       setIdentifierProfileAvatar(null);
-      return false;
+      return { found: false };
     } finally {
       setIdentifierLoading(false);
     }
-  }, [email]);
+  }, [email, formatCpf]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -561,9 +632,9 @@ const Login: React.FC<LoginProps> = ({ onLogin, onResetPassword }) => {
       setResetMessage(null);
 
       // Verifica se existe perfil para este identificador
-      const found = await loadIdentifierProfile(email.trim());
-      if (!found) {
-        setError('Usuário não encontrado. Verifique o e-mail informado.');
+      const result = await loadIdentifierProfile(email.trim());
+      if (!result.found) {
+        setError(result.message || 'Usuário não encontrado. Verifique o e-mail informado.');
         setIdentifierConfirmed(false);
         return;
       }

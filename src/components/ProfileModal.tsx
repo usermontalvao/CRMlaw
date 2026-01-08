@@ -36,8 +36,9 @@ import { settingsService } from '../services/settings.service';
 import { djenSyncStatusService, type DjenSyncLog } from '../services/djenSyncStatus.service';
 import { djenLocalService } from '../services/djenLocal.service';
 import { supabase } from '../config/supabase';
+import { usePermissions } from '../hooks/usePermissions';
 
-export type UserRole = 'Advogado' | 'Auxiliar' | 'Estagiário' | 'Administrador' | 'Sócio';
+export type UserRole = 'Administrador' | 'Advogado' | 'Auxiliar' | 'Secretária' | 'Financeiro' | 'Estagiário';
 type ActiveTab = 'dados' | 'profissional' | 'sobre' | 'security' | 'stats';
 
 export interface AppProfile {
@@ -45,6 +46,7 @@ export interface AppProfile {
   email?: string;
   avatarUrl?: string;
   role?: UserRole;
+  cpf?: string;
   oab?: string;
   phone?: string;
   bio?: string;
@@ -63,6 +65,7 @@ interface ProfileFormData {
   email: string;
   avatarUrl: string;
   role: UserRole;
+  cpf: string;
   oab: string;
   phone: string;
   bio: string;
@@ -115,6 +118,27 @@ export default function ProfileModal({
   onProfileUpdate,
 }: ProfileModalProps) {
   const { user } = useAuth();
+  const { canView, loading: permissionsLoading } = usePermissions();
+
+  const formatCpf = useCallback((value: string) => {
+    const digits = String(value || '').replace(/\D/g, '').slice(0, 11);
+    const p1 = digits.slice(0, 3);
+    const p2 = digits.slice(3, 6);
+    const p3 = digits.slice(6, 9);
+    const p4 = digits.slice(9, 11);
+
+    if (digits.length <= 3) return p1;
+    if (digits.length <= 6) return `${p1}.${p2}`;
+    if (digits.length <= 9) return `${p1}.${p2}.${p3}`;
+    return `${p1}.${p2}.${p3}-${p4}`;
+  }, []);
+
+  const normalizeRole = useCallback((role: string) => {
+    return role
+      .toLowerCase()
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '');
+  }, []);
 
   const [activeTab, setActiveTab] = useState<ActiveTab>('dados');
   const [saving, setSaving] = useState(false);
@@ -124,7 +148,8 @@ export default function ProfileModal({
     name: initialProfile.name || 'Usuário',
     email: initialProfile.email || '',
     avatarUrl: initialProfile.avatarUrl || GENERIC_AVATAR,
-    role: (initialProfile.role as UserRole) || 'Advogado',
+    role: (initialProfile.role as UserRole) || 'Auxiliar',
+    cpf: initialProfile.cpf || '',
     oab: initialProfile.oab || '',
     phone: initialProfile.phone || '',
     bio: initialProfile.bio || '',
@@ -281,7 +306,8 @@ export default function ProfileModal({
       name: initialProfile.name || 'Usuário',
       email: initialProfile.email || '',
       avatarUrl: initialProfile.avatarUrl || GENERIC_AVATAR,
-      role: (initialProfile.role as UserRole) || 'Advogado',
+      role: (initialProfile.role as UserRole) || 'Auxiliar',
+      cpf: initialProfile.cpf || '',
       oab: initialProfile.oab || '',
       phone: initialProfile.phone || '',
       bio: initialProfile.bio || '',
@@ -289,55 +315,61 @@ export default function ProfileModal({
     });
   }, [initialProfile]);
 
-  const loadStats = useCallback(async () => {
-    if (!user) {
-      console.log('loadStats: user não disponível');
-      return;
+  const canSeeProfessionalTab = normalizeRole(profileForm.role) === 'advogado';
+
+  useEffect(() => {
+    if (activeTab === 'profissional' && !canSeeProfessionalTab) {
+      setActiveTab('dados');
     }
+  }, [activeTab, canSeeProfessionalTab]);
+
+  const loadStats = useCallback(async () => {
+    if (!user) return;
+    if (permissionsLoading) return;
 
     try {
-      console.log('loadStats: carregando estatísticas para user', user.id);
+      const canSeeClients = canView('clientes');
+      const canSeeCases = canView('processos');
+      const canSeeTasks = canView('tarefas');
+      const canSeeIntimacoes = canView('intimacoes');
+
       const [clients, cases, tasks, intimacoes] = await Promise.all([
-        clientService.listClients().catch((err: any) => {
-          console.error('Erro ao carregar clientes:', err);
-          return [];
-        }),
-        caseService.listCases().catch((err: any) => {
-          console.error('Erro ao carregar casos:', err);
-          return [];
-        }),
-        taskService.listTasks().catch((err: any) => {
-          console.error('Erro ao carregar tarefas:', err);
-          return [];
-        }),
-        djenLocalService.listComunicacoes().catch((err: any) => {
-          console.error('Erro ao carregar intimações:', err);
-          return [];
-        }),
+        canSeeClients
+          ? clientService.listClients().catch((err: any) => {
+              console.error('Erro ao carregar clientes:', err);
+              return [];
+            })
+          : Promise.resolve([]),
+        canSeeCases
+          ? caseService.listCases().catch((err: any) => {
+              console.error('Erro ao carregar casos:', err);
+              return [];
+            })
+          : Promise.resolve([]),
+        canSeeTasks
+          ? taskService.listTasks().catch((err: any) => {
+              console.error('Erro ao carregar tarefas:', err);
+              return [];
+            })
+          : Promise.resolve([]),
+        canSeeIntimacoes
+          ? djenLocalService.listComunicacoes().catch((err: any) => {
+              console.error('Erro ao carregar intimações:', err);
+              return [];
+            })
+          : Promise.resolve([]),
       ]);
 
       // Carregar dados adicionais via Supabase
-      const { data: requirements, error: reqError } = await supabase
-        .from('requirements')
-        .select('*');
-      
-      const { data: deadlines, error: deadError } = await supabase
-        .from('deadlines')
-        .select('*');
-      
-      const { data: events, error: eventError } = await supabase
-        .from('calendar_events')
-        .select('*');
+      const canSeeRequirements = canView('requerimentos');
+      const canSeeDeadlines = canView('prazos');
+      const canSeeAgenda = canView('agenda');
 
-      console.log('loadStats: dados carregados', { 
-        clients: clients.length, 
-        cases: cases.length, 
-        tasks: tasks.length,
-        requirements: requirements?.length || 0,
-        deadlines: deadlines?.length || 0,
-        events: events?.length || 0,
-        intimacoes: intimacoes.length
-      });
+      const [{ data: requirements }, { data: deadlines }, { data: events }] = await Promise.all([
+        canSeeRequirements ? supabase.from('requirements').select('*') : Promise.resolve({ data: [] as any[] }),
+        canSeeDeadlines ? supabase.from('deadlines').select('*') : Promise.resolve({ data: [] as any[] }),
+        canSeeAgenda ? supabase.from('calendar_events').select('*') : Promise.resolve({ data: [] as any[] }),
+      ]);
       
       const today = new Date();
       const thisMonth = new Date(today.getFullYear(), today.getMonth(), 1);
@@ -366,21 +398,24 @@ export default function ProfileModal({
         totalIntimacoes: intimacoes.length,
         unreadIntimacoes: intimacoes.filter((i: any) => !i.lida).length,
       };
-      
-      console.log('loadStats: stats calculados', newStats);
       setStats(newStats);
     } catch (error) {
       console.error('Erro ao carregar estatísticas:', error);
     }
-  }, [user]);
+  }, [user, canView, permissionsLoading]);
 
   useEffect(() => {
     if (isOpen) {
       resetProfileFormFromProps();
-      loadStats();
       setMessage(null);
     }
-  }, [isOpen, resetProfileFormFromProps, loadStats]);
+  }, [isOpen, resetProfileFormFromProps]);
+
+  useEffect(() => {
+    if (isOpen && !permissionsLoading) {
+      loadStats();
+    }
+  }, [isOpen, permissionsLoading, loadStats]);
 
   const handleProfileChange = (field: keyof ProfileFormData, value: string) => {
     setProfileForm(prev => ({ ...prev, [field]: value }));
@@ -427,6 +462,7 @@ export default function ProfileModal({
         name: profileForm.name.trim(),
         email: profileForm.email || user.email || '',
         role: profileForm.role,
+        cpf: profileForm.cpf || null,
         phone: profileForm.phone || null,
         oab: profileForm.oab || null,
         lawyer_full_name: profileForm.lawyerFullName || null,
@@ -441,6 +477,7 @@ export default function ProfileModal({
         email: payload.email,
         avatarUrl: payload.avatar_url,
         role: payload.role,
+        cpf: payload.cpf ?? undefined,
         oab: payload.oab ?? undefined,
         phone: payload.phone ?? undefined,
         bio: payload.bio ?? undefined,
@@ -528,7 +565,7 @@ export default function ProfileModal({
             <nav className="flex space-x-8 px-8" aria-label="Tabs">
               {[
                 { id: 'dados', label: 'Dados Pessoais', icon: User },
-                { id: 'profissional', label: 'Profissional', icon: Briefcase },
+                ...(canSeeProfessionalTab ? [{ id: 'profissional', label: 'Profissional', icon: Briefcase }] : []),
                 { id: 'sobre', label: 'Sobre Você', icon: Award },
                 { id: 'security', label: 'Segurança', icon: Shield },
                 { id: 'stats', label: 'Estatísticas', icon: TrendingUp },
@@ -621,19 +658,16 @@ export default function ProfileModal({
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                   <div>
                     <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
-                      Cargo
+                      CPF
                     </label>
-                    <select
-                      value={profileForm.role}
-                      onChange={(e) => handleProfileChange('role', e.target.value as UserRole)}
-                      className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 transition-all"
-                    >
-                      <option value="Advogado">Advogado</option>
-                      <option value="Auxiliar">Auxiliar</option>
-                      <option value="Estagiário">Estagiário</option>
-                      <option value="Administrador">Administrador</option>
-                      <option value="Sócio">Sócio</option>
-                    </select>
+                    <input
+                      type="text"
+                      value={profileForm.cpf}
+                      onChange={(e) => handleProfileChange('cpf', formatCpf(e.target.value))}
+                      className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 transition-all"
+                      placeholder="000.000.000-00"
+                      maxLength={14}
+                    />
                   </div>
                   <div>
                     <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
@@ -646,6 +680,27 @@ export default function ProfileModal({
                       className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 transition-all"
                       placeholder="(00) 00000-0000"
                     />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
+                      Cargo
+                    </label>
+                    <select
+                      value={profileForm.role}
+                      onChange={(e) => handleProfileChange('role', e.target.value as UserRole)}
+                      className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 transition-all"
+                      disabled
+                    >
+                      <option value="Administrador">Administrador</option>
+                      <option value="Advogado">Advogado</option>
+                      <option value="Auxiliar">Auxiliar</option>
+                      <option value="Secretária">Secretária</option>
+                      <option value="Financeiro">Financeiro</option>
+                      <option value="Estagiário">Estagiário</option>
+                    </select>
                   </div>
                 </div>
 
@@ -671,7 +726,7 @@ export default function ProfileModal({
               </form>
             )}
 
-            {activeTab === 'profissional' && (
+            {activeTab === 'profissional' && canSeeProfessionalTab && (
               <form onSubmit={handleSaveProfile} className="space-y-6">
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                   <div>
@@ -837,70 +892,85 @@ export default function ProfileModal({
 
             {activeTab === 'stats' && (
               <div className="space-y-8">
+                {permissionsLoading && (
+                  <div className="text-sm text-slate-500">Carregando permissões...</div>
+                )}
+
                 {/* Cards Principais */}
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
-                  <div className="bg-white border border-slate-200 rounded-xl p-6 shadow-sm">
-                    <div className="flex items-center justify-between mb-4">
-                      <div className="p-2 bg-blue-100 rounded-lg">
-                        <Users className="w-6 h-6 text-blue-600" />
+                  {canView('clientes') && (
+                    <div className="bg-white border border-slate-200 rounded-xl p-6 shadow-sm">
+                      <div className="flex items-center justify-between mb-4">
+                        <div className="p-2 bg-blue-100 rounded-lg">
+                          <Users className="w-6 h-6 text-blue-600" />
+                        </div>
+                        <span className="text-2xl font-bold text-slate-900">{stats.totalClients}</span>
                       </div>
-                      <span className="text-2xl font-bold text-slate-900">{stats.totalClients}</span>
+                      <p className="text-sm text-slate-600">Clientes Ativos</p>
                     </div>
-                    <p className="text-sm text-slate-600">Clientes Ativos</p>
-                  </div>
+                  )}
 
-                  <div className="bg-white border border-slate-200 rounded-xl p-6 shadow-sm">
-                    <div className="flex items-center justify-between mb-4">
-                      <div className="p-2 bg-emerald-100 rounded-lg">
-                        <Briefcase className="w-6 h-6 text-emerald-600" />
+                  {canView('processos') && (
+                    <div className="bg-white border border-slate-200 rounded-xl p-6 shadow-sm">
+                      <div className="flex items-center justify-between mb-4">
+                        <div className="p-2 bg-emerald-100 rounded-lg">
+                          <Briefcase className="w-6 h-6 text-emerald-600" />
+                        </div>
+                        <span className="text-2xl font-bold text-slate-900">{stats.totalCases}</span>
                       </div>
-                      <span className="text-2xl font-bold text-slate-900">{stats.totalCases}</span>
+                      <p className="text-sm text-slate-600">Processos Ativos</p>
                     </div>
-                    <p className="text-sm text-slate-600">Processos Ativos</p>
-                  </div>
+                  )}
 
-                  <div className="bg-white border border-slate-200 rounded-xl p-6 shadow-sm">
-                    <div className="flex items-center justify-between mb-4">
-                      <div className="p-2 bg-purple-100 rounded-lg">
-                        <CheckCircle className="w-6 h-6 text-purple-600" />
+                  {canView('tarefas') && (
+                    <>
+                      <div className="bg-white border border-slate-200 rounded-xl p-6 shadow-sm">
+                        <div className="flex items-center justify-between mb-4">
+                          <div className="p-2 bg-purple-100 rounded-lg">
+                            <CheckCircle className="w-6 h-6 text-purple-600" />
+                          </div>
+                          <span className="text-2xl font-bold text-slate-900">{stats.completedTasks}</span>
+                        </div>
+                        <p className="text-sm text-slate-600">Tarefas Concluídas</p>
                       </div>
-                      <span className="text-2xl font-bold text-slate-900">{stats.completedTasks}</span>
-                    </div>
-                    <p className="text-sm text-slate-600">Tarefas Concluídas</p>
-                  </div>
 
-                  <div className="bg-white border border-slate-200 rounded-xl p-6 shadow-sm">
-                    <div className="flex items-center justify-between mb-4">
-                      <div className="p-2 bg-orange-100 rounded-lg">
-                        <Activity className="w-6 h-6 text-orange-600" />
+                      <div className="bg-white border border-slate-200 rounded-xl p-6 shadow-sm">
+                        <div className="flex items-center justify-between mb-4">
+                          <div className="p-2 bg-orange-100 rounded-lg">
+                            <Activity className="w-6 h-6 text-orange-600" />
+                          </div>
+                          <span className="text-2xl font-bold text-slate-900">{stats.totalTasks}</span>
+                        </div>
+                        <p className="text-sm text-slate-600">Total de Tarefas</p>
                       </div>
-                      <span className="text-2xl font-bold text-slate-900">{stats.totalTasks}</span>
-                    </div>
-                    <p className="text-sm text-slate-600">Total de Tarefas</p>
-                  </div>
+                    </>
+                  )}
                 </div>
 
                 {/* Produtividade */}
-                <div className="bg-gradient-to-r from-orange-50 to-amber-50 border border-orange-200 rounded-xl p-6">
-                  <h3 className="text-lg font-semibold text-slate-900 mb-4">Produtividade</h3>
-                  <div className="space-y-3">
-                    <div className="flex justify-between items-center">
-                      <span className="text-sm text-slate-600">Taxa de Conclusão</span>
-                      <span className="text-lg font-bold text-orange-600">{completionRate}%</span>
-                    </div>
-                    <div className="w-full bg-orange-200 rounded-full h-2">
-                      <div 
-                        className="bg-orange-500 h-2 rounded-full transition-all duration-300"
-                        style={{ width: `${completionRate}%` }}
-                      />
+                {canView('tarefas') && (
+                  <div className="bg-gradient-to-r from-orange-50 to-amber-50 border border-orange-200 rounded-xl p-6">
+                    <h3 className="text-lg font-semibold text-slate-900 mb-4">Produtividade</h3>
+                    <div className="space-y-3">
+                      <div className="flex justify-between items-center">
+                        <span className="text-sm text-slate-600">Taxa de Conclusão</span>
+                        <span className="text-lg font-bold text-orange-600">{completionRate}%</span>
+                      </div>
+                      <div className="w-full bg-orange-200 rounded-full h-2">
+                        <div 
+                          className="bg-orange-500 h-2 rounded-full transition-all duration-300"
+                          style={{ width: `${completionRate}%` }}
+                        />
+                      </div>
                     </div>
                   </div>
-                </div>
+                )}
 
                 {/* Requerimentos */}
-                <div>
-                  <h3 className="text-lg font-semibold text-slate-900 mb-4">Requerimentos</h3>
-                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                {canView('requerimentos') && (
+                  <div>
+                    <h3 className="text-lg font-semibold text-slate-900 mb-4">Requerimentos</h3>
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                     <div className="bg-white border border-slate-200 rounded-xl p-4">
                       <div className="flex items-center justify-between mb-2">
                         <span className="text-2xl font-bold text-slate-900">{stats.totalRequirements}</span>
@@ -922,78 +992,85 @@ export default function ProfileModal({
                       </div>
                       <p className="text-xs text-slate-600">Deferidos</p>
                     </div>
+                    </div>
                   </div>
-                </div>
+                )}
 
                 {/* Prazos */}
-                <div>
-                  <h3 className="text-lg font-semibold text-slate-900 mb-4">Prazos</h3>
-                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                    <div className="bg-white border border-slate-200 rounded-xl p-4">
-                      <div className="flex items-center justify-between mb-2">
-                        <span className="text-2xl font-bold text-slate-900">{stats.totalDeadlines}</span>
-                        <Calendar className="w-4 h-4 text-slate-600" />
+                {canView('prazos') && (
+                  <div>
+                    <h3 className="text-lg font-semibold text-slate-900 mb-4">Prazos</h3>
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                      <div className="bg-white border border-slate-200 rounded-xl p-4">
+                        <div className="flex items-center justify-between mb-2">
+                          <span className="text-2xl font-bold text-slate-900">{stats.totalDeadlines}</span>
+                          <Calendar className="w-4 h-4 text-slate-600" />
+                        </div>
+                        <p className="text-xs text-slate-600">Total</p>
                       </div>
-                      <p className="text-xs text-slate-600">Total</p>
-                    </div>
-                    <div className="bg-red-50 border border-red-200 rounded-xl p-4">
-                      <div className="flex items-center justify-between mb-2">
-                        <span className="text-2xl font-bold text-red-600">{stats.overdueDeadlines}</span>
-                        <Clock className="w-4 h-4 text-red-600" />
+                      <div className="bg-red-50 border border-red-200 rounded-xl p-4">
+                        <div className="flex items-center justify-between mb-2">
+                          <span className="text-2xl font-bold text-red-600">{stats.overdueDeadlines}</span>
+                          <Clock className="w-4 h-4 text-red-600" />
+                        </div>
+                        <p className="text-xs text-red-600">Vencidos</p>
                       </div>
-                      <p className="text-xs text-red-600">Vencidos</p>
-                    </div>
-                    <div className="bg-yellow-50 border border-yellow-200 rounded-xl p-4">
-                      <div className="flex items-center justify-between mb-2">
-                        <span className="text-2xl font-bold text-yellow-600">{stats.upcomingDeadlines}</span>
-                        <CalendarDays className="w-4 h-4 text-yellow-600" />
+                      <div className="bg-yellow-50 border border-yellow-200 rounded-xl p-4">
+                        <div className="flex items-center justify-between mb-2">
+                          <span className="text-2xl font-bold text-yellow-600">{stats.upcomingDeadlines}</span>
+                          <CalendarDays className="w-4 h-4 text-yellow-600" />
+                        </div>
+                        <p className="text-xs text-yellow-600">Próxima Semana</p>
                       </div>
-                      <p className="text-xs text-yellow-600">Próxima Semana</p>
                     </div>
                   </div>
-                </div>
+                )}
 
                 {/* Agenda */}
-                <div>
-                  <h3 className="text-lg font-semibold text-slate-900 mb-4">Agenda</h3>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                    <div className="bg-white border border-slate-200 rounded-xl p-4">
-                      <div className="flex items-center justify-between mb-2">
-                        <span className="text-2xl font-bold text-slate-900">{stats.totalEvents}</span>
-                        <Calendar className="w-4 h-4 text-blue-600" />
+                {canView('agenda') && (
+                  <div>
+                    <h3 className="text-lg font-semibold text-slate-900 mb-4">Agenda</h3>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                      <div className="bg-white border border-slate-200 rounded-xl p-4">
+                        <div className="flex items-center justify-between mb-2">
+                          <span className="text-2xl font-bold text-slate-900">{stats.totalEvents}</span>
+                          <Calendar className="w-4 h-4 text-blue-600" />
+                        </div>
+                        <p className="text-xs text-slate-600">Total de Eventos</p>
                       </div>
-                      <p className="text-xs text-slate-600">Total de Eventos</p>
-                    </div>
-                    <div className="bg-blue-50 border border-blue-200 rounded-xl p-4">
-                      <div className="flex items-center justify-between mb-2">
-                        <span className="text-2xl font-bold text-blue-600">{stats.eventsThisMonth}</span>
-                        <CalendarDays className="w-4 h-4 text-blue-600" />
+                      <div className="bg-blue-50 border border-blue-200 rounded-xl p-4">
+                        <div className="flex items-center justify-between mb-2">
+                          <span className="text-2xl font-bold text-blue-600">{stats.eventsThisMonth}</span>
+                          <CalendarDays className="w-4 h-4 text-blue-600" />
+                        </div>
+                        <p className="text-xs text-blue-600">Este Mês</p>
                       </div>
-                      <p className="text-xs text-blue-600">Este Mês</p>
                     </div>
                   </div>
-                </div>
+                )}
 
                 {/* Intimações DJEN */}
-                <div>
-                  <h3 className="text-lg font-semibold text-slate-900 mb-4">Intimações DJEN</h3>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                    <div className="bg-white border border-slate-200 rounded-xl p-4">
-                      <div className="flex items-center justify-between mb-2">
-                        <span className="text-2xl font-bold text-slate-900">{stats.totalIntimacoes}</span>
-                        <Bell className="w-4 h-4 text-slate-600" />
+                {canView('intimacoes') && (
+                  <div>
+                    <h3 className="text-lg font-semibold text-slate-900 mb-4">Intimações DJEN</h3>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                      <div className="bg-white border border-slate-200 rounded-xl p-4">
+                        <div className="flex items-center justify-between mb-2">
+                          <span className="text-2xl font-bold text-slate-900">{stats.totalIntimacoes}</span>
+                          <Bell className="w-4 h-4 text-slate-600" />
+                        </div>
+                        <p className="text-xs text-slate-600">Total</p>
                       </div>
-                      <p className="text-xs text-slate-600">Total</p>
-                    </div>
-                    <div className="bg-red-50 border border-red-200 rounded-xl p-4">
-                      <div className="flex items-center justify-between mb-2">
-                        <span className="text-2xl font-bold text-red-600">{stats.unreadIntimacoes}</span>
-                        <Bell className="w-4 h-4 text-red-600" />
+                      <div className="bg-red-50 border border-red-200 rounded-xl p-4">
+                        <div className="flex items-center justify-between mb-2">
+                          <span className="text-2xl font-bold text-red-600">{stats.unreadIntimacoes}</span>
+                          <Bell className="w-4 h-4 text-red-600" />
+                        </div>
+                        <p className="text-xs text-red-600">Não Lidas</p>
                       </div>
-                      <p className="text-xs text-red-600">Não Lidas</p>
                     </div>
                   </div>
-                </div>
+                )}
               </div>
             )}
           </div>

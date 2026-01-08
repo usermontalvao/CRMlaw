@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Scale,
   Users,
@@ -12,8 +12,14 @@ import {
   Briefcase,
   AlarmClock,
   PiggyBank,
+  FileSignature,
+  FileText,
+  MessageCircle,
+  CheckSquare,
 } from 'lucide-react';
 import type { ModuleName } from '../../contexts/NavigationContext';
+import { supabase } from '../../config/supabase';
+import { useAuth } from '../../contexts/AuthContext';
 
 interface MobileSidebarProps {
   isOpen: boolean;
@@ -28,19 +34,24 @@ interface NavItem {
   id: ModuleName;
   label: string;
   icon: React.ReactNode;
+  moduleKey: string;
 }
 
 const navItems: NavItem[] = [
-  { id: 'dashboard', label: 'Dashboard', icon: <Layers className="w-5 h-5" /> },
-  { id: 'leads', label: 'Leads', icon: <Target className="w-5 h-5" /> },
-  { id: 'clientes', label: 'Clientes', icon: <Users className="w-5 h-5" /> },
-  { id: 'documentos', label: 'Documentos', icon: <Library className="w-5 h-5" /> },
-  { id: 'processos', label: 'Processos', icon: <Scale className="w-5 h-5" /> },
-  { id: 'requerimentos', label: 'Requerimentos', icon: <Briefcase className="w-5 h-5" /> },
-  { id: 'prazos', label: 'Prazos', icon: <AlarmClock className="w-5 h-5" /> },
-  { id: 'intimacoes', label: 'Intimações', icon: <Bell className="w-5 h-5" /> },
-  { id: 'financeiro', label: 'Financeiro', icon: <PiggyBank className="w-5 h-5" /> },
-  { id: 'agenda', label: 'Agenda', icon: <Calendar className="w-5 h-5" /> },
+  { id: 'dashboard', label: 'Dashboard', icon: <Layers className="w-5 h-5" />, moduleKey: 'dashboard' },
+  { id: 'leads', label: 'Leads', icon: <Target className="w-5 h-5" />, moduleKey: 'leads' },
+  { id: 'clientes', label: 'Clientes', icon: <Users className="w-5 h-5" />, moduleKey: 'clientes' },
+  { id: 'documentos', label: 'Documentos', icon: <Library className="w-5 h-5" />, moduleKey: 'documentos' },
+  { id: 'assinaturas', label: 'Assinaturas', icon: <FileSignature className="w-5 h-5" />, moduleKey: 'assinaturas' },
+  { id: 'processos', label: 'Processos', icon: <Scale className="w-5 h-5" />, moduleKey: 'processos' },
+  { id: 'requerimentos', label: 'Requerimentos', icon: <Briefcase className="w-5 h-5" />, moduleKey: 'requerimentos' },
+  { id: 'prazos', label: 'Prazos', icon: <AlarmClock className="w-5 h-5" />, moduleKey: 'prazos' },
+  { id: 'intimacoes', label: 'Intimações', icon: <Bell className="w-5 h-5" />, moduleKey: 'intimacoes' },
+  { id: 'financeiro', label: 'Financeiro', icon: <PiggyBank className="w-5 h-5" />, moduleKey: 'financeiro' },
+  { id: 'agenda', label: 'Agenda', icon: <Calendar className="w-5 h-5" />, moduleKey: 'agenda' },
+  { id: 'tarefas', label: 'Tarefas', icon: <CheckSquare className="w-5 h-5" />, moduleKey: 'tarefas' },
+  { id: 'peticoes', label: 'Petições', icon: <FileText className="w-5 h-5" />, moduleKey: 'peticoes' },
+  { id: 'chat', label: 'Chat', icon: <MessageCircle className="w-5 h-5" />, moduleKey: 'chat' },
 ];
 
 export const MobileSidebar: React.FC<MobileSidebarProps> = ({
@@ -51,6 +62,67 @@ export const MobileSidebar: React.FC<MobileSidebarProps> = ({
   onOpenProfile,
   logoUrl,
 }) => {
+  const { user } = useAuth();
+  const [permissions, setPermissions] = useState<Record<string, boolean>>({});
+  const [loading, setLoading] = useState(true);
+
+  const normalizeRole = (role: string) =>
+    role
+      .toLowerCase()
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '');
+
+  useEffect(() => {
+    const loadPermissions = async () => {
+      if (!user?.id) return;
+
+      try {
+        const { data: profile } = await supabase
+          .from('profiles')
+          .select('role')
+          .eq('user_id', user.id)
+          .single();
+
+        const normalizedRole = normalizeRole(profile?.role || '');
+
+        if (normalizedRole === 'administrador') {
+          const allPerms: Record<string, boolean> = {};
+          navItems.forEach((item) => {
+            allPerms[item.moduleKey] = true;
+          });
+          setPermissions(allPerms);
+          return;
+        }
+
+        const { data: rolePerms } = await supabase
+          .from('role_permissions')
+          .select('module, can_view, can_create, can_edit, can_delete')
+          .eq('role', normalizedRole);
+
+        const perms: Record<string, boolean> = {};
+        rolePerms?.forEach((perm) => {
+          const hasAnyPermission = perm.can_view || perm.can_create || perm.can_edit || perm.can_delete;
+          perms[perm.module] = hasAnyPermission;
+        });
+
+        setPermissions(perms);
+      } catch (err) {
+        console.error('Erro ao carregar permissões:', err);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    loadPermissions();
+  }, [user?.id]);
+
+  const visibleItems = loading
+    ? []
+    : navItems.filter((item) => {
+        if (item.moduleKey === 'dashboard') return true;
+        return permissions[item.moduleKey] === true;
+      });
+
   if (!isOpen) return null;
 
   const handleNavigate = (module: ModuleName) => {
@@ -91,7 +163,7 @@ export const MobileSidebar: React.FC<MobileSidebarProps> = ({
         {/* Navigation */}
         <nav className="flex-1 py-4 px-3 overflow-y-auto">
           <div className="space-y-1">
-            {navItems.map((item) => (
+            {visibleItems.map((item) => (
               <button
                 key={item.id}
                 onClick={() => handleNavigate(item.id)}

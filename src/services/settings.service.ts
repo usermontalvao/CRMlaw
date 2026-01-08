@@ -364,7 +364,7 @@ class SettingsService {
       .upsert({
         role: role.toLowerCase(),
         module,
-        can_view: permissions.can_view ?? current?.can_view ?? true,
+        can_view: permissions.can_view ?? current?.can_view ?? false,
         can_create: permissions.can_create ?? current?.can_create ?? false,
         can_edit: permissions.can_edit ?? current?.can_edit ?? false,
         can_delete: permissions.can_delete ?? current?.can_delete ?? false,
@@ -581,6 +581,7 @@ class SettingsService {
   async updateUserProfile(userId: string, profile: {
     name?: string;
     email?: string;
+    cpf?: string;
     phone?: string;
     oab?: string;
     role?: string;
@@ -588,14 +589,33 @@ class SettingsService {
     avatar_url?: string;
     bio?: string;
   }, userName?: string): Promise<void> {
-    const { error } = await supabase
-      .from('profiles')
-      .update({ ...profile, updated_at: new Date().toISOString() })
-      .eq('user_id', userId);
+    const attempt = async (attemptProfile: typeof profile) => {
+      const { error } = await supabase
+        .from('profiles')
+        .update({ ...attemptProfile, updated_at: new Date().toISOString() })
+        .eq('user_id', userId);
 
-    if (error) {
-      console.error('Erro ao atualizar perfil:', error);
-      throw new Error(error.message);
+      if (error) {
+        console.error('Erro ao atualizar perfil:', error);
+        throw new Error(error.message);
+      }
+    };
+
+    try {
+      await attempt(profile);
+    } catch (err: any) {
+      const message = String(err?.message || err || '');
+      const shouldRetryWithoutCpf =
+        message.includes("Could not find the 'cpf' column") ||
+        message.includes('Could not find the "cpf" column') ||
+        (message.includes('cpf') && message.includes('schema cache'));
+
+      if (!shouldRetryWithoutCpf || profile.cpf === undefined) {
+        throw err;
+      }
+
+      const { cpf: _cpf, ...profileWithoutCpf } = profile as any;
+      await attempt(profileWithoutCpf);
     }
 
     // Registrar auditoria

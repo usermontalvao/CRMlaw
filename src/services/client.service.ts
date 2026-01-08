@@ -104,6 +104,34 @@ export class ClientService {
   }
 
   /**
+   * Busca um cliente por e-mail
+   */
+  async getClientByEmail(email: string): Promise<Client | null> {
+    try {
+      const normalizedEmail = email.trim();
+      if (!normalizedEmail) {
+        return null;
+      }
+
+      const { data, error } = await supabase
+        .from(this.tableName)
+        .select('*')
+        .ilike('email', normalizedEmail)
+        .maybeSingle();
+
+      if (error) {
+        console.error('Erro ao buscar cliente por e-mail:', error);
+        throw new Error(`Erro ao buscar cliente: ${error.message}`);
+      }
+
+      return data ?? null;
+    } catch (error) {
+      console.error('Erro ao buscar cliente por e-mail:', error);
+      throw error;
+    }
+  }
+
+  /**
    * Cria um novo cliente
    */
   async createClient(clientData: CreateClientDTO): Promise<Client> {
