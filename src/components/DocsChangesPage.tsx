@@ -545,6 +545,23 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
 
 const releases: ReleaseNote[] = [
   {
+    version: '1.9.123',
+    date: '08/01/2026',
+    summary: 'Central de Notificações: investigado motivo de intimações "sumidas" (limpeza automática de 30 dias ou ações manuais no módulo de Intimações).',
+    modules: [
+      {
+        moduleId: 'intimacoes',
+        changes: [
+          {
+            type: 'fix',
+            title: 'Intimações antigas removidas automaticamente',
+            description: 'Investigado e documentado que intimações com mais de 30 dias são removidas automaticamente pelo módulo de Intimações (cleanOldIntimations). A Central apenas lista; não deleta.',
+          },
+        ],
+      },
+    ],
+  },
+  {
     version: '1.9.115',
     date: '08/01/2026',
     summary: 'Agenda: campo Tipo do evento agora exibe rótulo amigável (ex.: Audiência).',

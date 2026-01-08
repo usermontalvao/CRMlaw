@@ -1,5 +1,27 @@
 # Changelog
 
+## 1.9.122
+- **Central de Notificações**: agregadas pendências do **Financeiro** (parcelas vencidas) com filtro por tipo e navegação para o módulo.
+
+## 1.9.121
+- **Central de Notificações**: agora agrega também **Assinaturas pendentes** e **notificações do sistema (user_notifications)**, permitindo navegação direta para os módulos relacionados.
+- **Central de Notificações (DJEN)**: marcar intimações como lidas na Central passa a ser **somente local**, sem alterar o status crítico no módulo/serviço de Intimações.
+
+## 1.9.120
+- **Central de Notificações**: correção de JSX (remoção de fechamento extra) após ajustes de padronização visual.
+
+## 1.9.119
+- **Central de Notificações**: correção de estrutura/JSX após a padronização do layout (evita falhas de renderização/compilação).
+
+## 1.9.118
+- **Central de Notificações**: padronização do layout para ficar consistente com os demais módulos (header/toolbar em cards padrão do sistema, espaçamentos e estilos de inputs/botões).
+
+## 1.9.117
+- **Central de Notificações**: refinamento visual inspirado em portais institucionais (header com gradiente + cards com blur, filtros mais consistentes), destaque melhor para **não lidas/urgentes**, e **paginação funcional** com contagem real de itens.
+
+## 1.9.116
+- **Central de Notificações**: reorganização completa do layout (header/estatísticas/filtros/lista) com visual mais limpo e consistente, melhoria de legibilidade no dark mode e correção de navegação ao clicar (agora direciona para **Intimações** e **Agenda** corretamente).
+
 ## 1.9.115
 - **Agenda (Eventos)**: corrigido campo **Tipo** no modal de evento — em vez de exibir o valor técnico (`hearing`), agora exibe **Audiência** (e demais tipos com rótulo amigável).
 
