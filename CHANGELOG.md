@@ -1,5 +1,53 @@
 # Changelog
 
+## 1.9.111
+- **Assinatura (Kit Consumidor / Preencher)**: corrigido loop de validação de endereço — quando o CEP é reconhecido e confirmado pelo usuário, os campos **Endereço** e **Bairro** (preenchidos pelo ViaCEP) não são mais considerados "faltantes". Agora o formulário avança corretamente para o próximo passo.
+
+## 1.9.110
+- **Assinatura (Kit Consumidor / Preencher)**: corrigido fluxo de validação do formulário público — quando houver campos obrigatórios faltando, o sistema volta para a primeira etapa pendente (evitando ficar preso em **"Gerando documento..."**). Melhorias na validação de **CEP/endereço**.
+
+## 1.9.109
+- **Peticionamento (Modelo Padrão do Modelo)**: corrigido o salvamento/visualização do **documento padrão** da Petição Padrão — após vincular, a UI agora sincroniza a lista de modelos (incluindo o seletor hierárquico Área → Modelos).
+
+## 1.9.108
+- **Peticionamento (Blocos por Modelo)**: no modal **"Novo/Editar Bloco"**, adicionado campo **"Modelo (Petição Padrão)"** para cadastrar o bloco diretamente em um modelo específico. Ao criar/editar dentro do contexto de um modelo, o vínculo é aplicado automaticamente e a listagem é recarregada conforme o escopo.
+
+## 1.9.107
+- **Peticionamento (Seletor Área/Modelo)**: seletor do topo agora é **hierárquico** (Área → Modelos) com subníveis e permite **entrar direto em um modelo**. Lista de modelos passa a atualizar automaticamente ao criar/editar/excluir (sem precisar recarregar a página).
+
+## 1.9.106
+- **Peticionamento (Modelos / Petições Padrões)**: adicionada navegação por **Modelos** na sidebar de **Blocos** — ao selecionar um modelo (ex.: Previdenciário → Auxílio-acidente), a listagem passa a exibir **somente os blocos do modelo**, com opção de voltar para a visão por **Área**.
+
+## 1.9.105
+- **Peticionamento (Biblioteca de Textos)**: ao usar **Escopo: Global** no modal **"Adicionar Bloco"**, cada resultado agora exibe a **Área Jurídica de origem** (badge), facilitando identificar de onde o bloco está sendo puxado.
+
+## 1.9.104
+- **Peticionamento (Biblioteca de Textos)**: melhorado o **UI/UX** do modal **"Adicionar Bloco"** — seletor de **Escopo** reposicionado para **acima da busca** e redesenhado como um controle segmentado mais limpo.
+
+## 1.9.103
+- **Peticionamento (Biblioteca de Textos)**: no modal **"Adicionar Bloco"**, adicionada opção de **busca global** com seletor de escopo (**Petição / Área / Global**) e carregamento automático conforme o escopo.
+
+## 1.9.102
+- **Peticionamento (Petições Padrões)**: ao atualizar a página, o editor agora **mantém a Área Jurídica e Petição Padrão selecionadas** (persistência em cache local). Corrigido também o fluxo de **vincular documento pré-pronto (SFDT)** na petição padrão, atualizando imediatamente a lista/seleção.
+
+## 1.9.101
+- **Peticionamento (Petições Padrões)**: novo sistema de **Petições Padrões** por área jurídica — permite criar tipos de petição (ex: Auxílio-acidente, BPC, Aposentadoria) e vincular blocos específicos a cada tipo. Seletor de petição padrão no header do editor. Filtro de blocos por escopo: **Petição** (blocos do tipo selecionado), **Área** (blocos da área jurídica) ou **Global** (todos os blocos). Possibilidade de vincular um **documento pré-pronto (SFDT)** que será carregado automaticamente ao selecionar o tipo.
+
+## 1.9.100
+- **Peticionamento (Categorias de Blocos)**: corrigido erro **400** ao salvar "Configurar categorias" (upsert não envia mais `id` inválido/indefinido).
+
+## 1.9.99
+- **Peticionamento (Editor Syncfusion)**: interface do editor (toolbar/menus) agora em **português (pt-BR)**.
+
+## 1.9.98
+- **Peticionamento (Áreas Jurídicas)**: blocos antigos foram **vinculados ao Trabalhista** (migração de backfill) e a listagem agora é **filtrada estritamente pela área selecionada** (ex.: ao escolher **Cível**, não exibe blocos de Trabalhista).
+
+## 1.9.97
+- **Peticionamento (Áreas Jurídicas)**: novo sistema de **cadastro de Áreas Jurídicas** (Trabalhista, Cível, Penal, etc.) — permite criar, editar e gerenciar áreas livremente. Seletor de área no header do editor com cor de identificação. Blocos existentes permanecem intactos (sem área = disponíveis para todas).
+
+## 1.9.96
+- **Peticionamento (Offline)**: ao ficar **sem conexão**, o editor agora exibe uma **tela de bloqueio (overlay)** informando que o peticionamento é 100% online, impedindo edições até reconectar (com ações "Verificar conexão" e "Recarregar").
+
 ## 1.9.95
 - **Financeiro (Acordos)**: no **Resumo do Acordo**, removido **"Valor Líquido Cliente"** quando o tipo de honorário é **fixo**, pois não se aplica nesse contexto.
 

@@ -516,12 +516,17 @@ const PublicTemplateFillPage: React.FC<PublicTemplateFillPageProps> = ({ token }
     }
 
     if (activeStep.kind === 'cep') {
-      const v = (values[activeStep.field.placeholder] ?? '').trim();
-      if (activeStep.field.required && !v) return 'Preencha este campo para continuar.';
+      const raw = (values[activeStep.field.placeholder] ?? '').trim();
+      const digits = raw.replace(/\D/g, '');
+      if (activeStep.field.required && !raw) return 'Preencha este campo para continuar.';
+      if (activeStep.field.required && digits.length !== 8) return 'Preencha o CEP corretamente para continuar.';
+      if (cepLookupLoading) return 'Aguarde a busca do CEP para continuar.';
+      if (cepLookupError) return cepLookupError;
       return null;
     }
 
     if (activeStep.kind === 'address_confirm') {
+      if (!addressPreview.trim()) return 'Não foi possível localizar o endereço. Volte e informe um CEP válido.';
       if (cepConfirmed !== true) return 'Confirme o endereço para continuar.';
       return null;
     }
@@ -606,11 +611,47 @@ const PublicTemplateFillPage: React.FC<PublicTemplateFillPageProps> = ({ token }
   const submitNow = async () => {
     if (!bundle) return;
 
+    const findFirstMissingStepIndex = (missingFields: FieldDef[], missingSignerName: boolean): number => {
+      if (missingSignerName) {
+        const idx = steps.findIndex((s) => s.kind === 'signer');
+        if (idx >= 0) return idx;
+      }
+
+      for (const f of missingFields) {
+        const k = normalizeKey(f.placeholder);
+
+        // Para campos de endereço, ir para o passo específico (não voltar pro CEP)
+        if (k === 'NUMERO') {
+          const idx = steps.findIndex((s) => s.kind === 'address_number');
+          if (idx >= 0) return idx;
+        }
+        if (k === 'COMPLEMENTO') {
+          const idx = steps.findIndex((s) => s.kind === 'address_quadra');
+          if (idx >= 0) return idx;
+        }
+        // CEP, ENDERECO, BAIRRO são preenchidos automaticamente pelo ViaCEP
+        // Se ainda estiverem faltando, voltar para o CEP
+        if (k === 'CEP' || k === 'ENDERECO' || k === 'BAIRRO') {
+          const idx = steps.findIndex((s) => s.kind === 'cep');
+          if (idx >= 0) return idx;
+        }
+
+        // Campo normal
+        const idx = steps.findIndex((s) => s.kind === 'field' && s.field.placeholder === f.placeholder);
+        if (idx >= 0) return idx;
+      }
+      return 0;
+    };
+
     const missing = fields.filter((f) => {
       if (!f.required) return false;
       const k = normalizeKey(f.placeholder);
+      // Cidade e Estado são preenchidos automaticamente pelo ViaCEP e não são obrigatórios
       if (k === 'CIDADE' || k === 'ESTADO') return false;
+      // Complemento/Quadra só é obrigatório se o usuário disse que tem quadra
       if (k === 'COMPLEMENTO' && hasQuadra === false) return false;
+      // Endereço e Bairro são preenchidos pelo ViaCEP - se o CEP foi confirmado, não exigir
+      if ((k === 'ENDERECO' || k === 'BAIRRO') && cepConfirmed === true) return false;
       const v = (values[f.placeholder] || '').trim();
       if (!v) return true;
       if (!hasMinDigitsForField(f, v)) return true;
@@ -622,7 +663,10 @@ const PublicTemplateFillPage: React.FC<PublicTemplateFillPageProps> = ({ token }
     const emailToSend = identityPlaceholders.email ? (values[identityPlaceholders.email] || '').trim() : '';
 
     if (!nameToSend || missing.length > 0) {
+      const idx = findFirstMissingStepIndex(missing, !nameToSend);
+      setStepError(null);
       setError('Preencha os campos obrigatórios.');
+      setStepIndex(idx);
       return;
     }
 

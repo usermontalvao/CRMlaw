@@ -3,6 +3,8 @@
 
 import React, { useRef, useImperativeHandle, forwardRef, useEffect, useState } from 'react';
 import type { MenuItemModel } from '@syncfusion/ej2-navigations';
+import { L10n, setCulture } from '@syncfusion/ej2-base';
+import * as EJ2_PT_LOCALE from '@syncfusion/ej2-locale/src/pt.json';
 import {
   DocumentEditorContainerComponent,
   Toolbar,
@@ -10,6 +12,10 @@ import {
 
 // Inject required modules
 DocumentEditorContainerComponent.Inject(Toolbar);
+
+const PT_BR_LOCALE: any = (EJ2_PT_LOCALE as any).default || EJ2_PT_LOCALE;
+L10n.load({ 'pt-BR': PT_BR_LOCALE });
+setCulture('pt-BR');
 
 // Toolbar items completa similar ao Word
 const TOOLBAR_ITEMS = [

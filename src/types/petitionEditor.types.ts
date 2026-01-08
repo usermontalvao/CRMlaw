@@ -1,9 +1,84 @@
-// Tipos para o Editor de Petições Trabalhistas
+// Tipos para o Editor de Petições
 // Módulo isolado - pode ser removido sem afetar outros módulos
 
 export type BlockCategory = string;
 
 export type DocumentType = 'petition' | 'contestation' | 'impugnation' | 'appeal';
+
+// Área Jurídica (Trabalhista, Cível, Penal, etc.)
+export interface LegalArea {
+  id: string;
+  name: string;
+  description?: string | null;
+  color: string;
+  icon: string;
+  order: number;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CreateLegalAreaDTO {
+  name: string;
+  description?: string | null;
+  color?: string;
+  icon?: string;
+  order?: number;
+  is_active?: boolean;
+}
+
+export interface UpdateLegalAreaDTO {
+  name?: string;
+  description?: string | null;
+  color?: string;
+  icon?: string;
+  order?: number;
+  is_active?: boolean;
+}
+
+// Petição Padrão (Tipo de Petição por Área/Assunto)
+// Ex: Previdenciário → Auxílio-acidente, BPC, Aposentadoria
+export interface PetitionStandardType {
+  id: string;
+  legal_area_id: string;
+  name: string;
+  description?: string | null;
+  default_document?: string | null; // SFDT base64 do documento pré-pronto
+  default_document_name?: string | null;
+  order: number;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CreatePetitionStandardTypeDTO {
+  legal_area_id: string;
+  name: string;
+  description?: string | null;
+  default_document?: string | null;
+  default_document_name?: string | null;
+  order?: number;
+  is_active?: boolean;
+}
+
+export interface UpdatePetitionStandardTypeDTO {
+  name?: string;
+  description?: string | null;
+  default_document?: string | null;
+  default_document_name?: string | null;
+  order?: number;
+  is_active?: boolean;
+}
+
+// Vínculo entre Petição Padrão e Blocos
+export interface PetitionStandardTypeBlock {
+  id: string;
+  standard_type_id: string;
+  block_id: string;
+  order: number;
+  is_default_visible: boolean;
+  created_at: string;
+}
 
 export interface PetitionBlockCategory {
   id: string;
@@ -12,6 +87,7 @@ export interface PetitionBlockCategory {
   label: string;
   order: number;
   is_active: boolean;
+  legal_area_id?: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -25,6 +101,7 @@ export interface PetitionBlock {
   content: string; // Conteúdo em formato SFDT (Syncfusion)
   category: BlockCategory;
   document_type?: DocumentType;
+  legal_area_id?: string | null; // NULL = disponível para todas as áreas
   order: number;
   is_default: boolean; // Se aparece por padrão em novas petições
   is_active: boolean;
@@ -38,6 +115,7 @@ export interface CreatePetitionBlockDTO {
   content: string; // SFDT
   category: BlockCategory;
   document_type?: DocumentType;
+  legal_area_id?: string | null;
   order?: number;
   is_default?: boolean;
   is_active?: boolean;
@@ -49,6 +127,7 @@ export interface UpdatePetitionBlockDTO {
   content?: string; // SFDT
   category?: BlockCategory;
   document_type?: DocumentType;
+  legal_area_id?: string | null;
   order?: number;
   is_default?: boolean;
   is_active?: boolean;

@@ -1,6 +1,6 @@
 {
   "name": "crm",
-  "version": "1.9.95",
+  "version": "1.9.111",
   "main": "dist/index.js",
   "scripts": {
     "start": "vite",
@@ -33,6 +33,7 @@
     "@fullcalendar/timegrid": "^6.1.19",
     "@supabase/supabase-js": "^2.58.0",
     "@syncfusion/ej2-base": "^32.1.19",
+    "@syncfusion/ej2-locale": "^32.1.19",
     "@syncfusion/ej2-react-documenteditor": "^32.1.19",
     "@types/react": "^19.2.0",
     "@types/react-dom": "^19.2.0",

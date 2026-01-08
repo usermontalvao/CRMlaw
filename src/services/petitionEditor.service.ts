@@ -1,4 +1,4 @@
-// Service para Editor de Petições Trabalhistas
+// Service para Editor de Petições
 // Módulo isolado - pode ser removido sem afetar outros módulos
 
 import { supabase } from '../config/supabase';
@@ -11,12 +11,22 @@ import type {
   CreateSavedPetitionDTO,
   UpdateSavedPetitionDTO,
   DocumentType,
+  LegalArea,
+  CreateLegalAreaDTO,
+  UpdateLegalAreaDTO,
+  PetitionStandardType,
+  CreatePetitionStandardTypeDTO,
+  UpdatePetitionStandardTypeDTO,
+  PetitionStandardTypeBlock,
 } from '../types/petitionEditor.types';
 
 class PetitionEditorService {
   private blocksTable = 'petition_blocks';
   private petitionsTable = 'saved_petitions';
   private blockCategoriesTable = 'petition_block_categories';
+  private legalAreasTable = 'legal_areas';
+  private standardTypesTable = 'petition_standard_types';
+  private standardTypeBlocksTable = 'petition_standard_type_blocks';
 
   private orderColumn = '"order"';
 
@@ -99,7 +109,6 @@ class PetitionEditorService {
   ): Promise<void> {
     // Upsert active
     const payload = categories.map((c) => ({
-      id: c.id,
       document_type: documentType,
       key: c.key,
       label: c.label,
@@ -113,7 +122,16 @@ class PetitionEditorService {
 
     if (error) {
       if (this.isMissingCategoriesTable(error)) return;
-      throw new Error(error.message);
+      throw new Error(
+        [
+          error.message,
+          error.code ? `code=${error.code}` : '',
+          error.details ? `details=${error.details}` : '',
+          error.hint ? `hint=${error.hint}` : '',
+        ]
+          .filter(Boolean)
+          .join(' | ')
+      );
     }
 
     // Deactivate removed keys
@@ -465,6 +483,29 @@ class PetitionEditorService {
     if (error) throw new Error(error.message);
   }
 
+  async getBlockStandardTypeId(blockId: string): Promise<string | null> {
+    const { data, error } = await supabase
+      .from(this.standardTypeBlocksTable)
+      .select('standard_type_id')
+      .eq('block_id', blockId)
+      .order(this.orderColumn, { ascending: true })
+      .limit(1);
+
+    if (error) throw new Error(error.message);
+    const id = data?.[0]?.standard_type_id;
+    return id ? String(id) : null;
+  }
+
+  async setBlockStandardType(blockId: string, standardTypeId: string | null): Promise<void> {
+    const { error: delError } = await supabase
+      .from(this.standardTypeBlocksTable)
+      .delete()
+      .eq('block_id', blockId);
+    if (delError) throw new Error(delError.message);
+    if (!standardTypeId) return;
+    await this.addBlockToStandardType(standardTypeId, blockId, true);
+  }
+
   async reorderBlocks(blockIds: string[]): Promise<void> {
     for (let i = 0; i < blockIds.length; i++) {
       await supabase
@@ -626,6 +667,349 @@ class PetitionEditorService {
 ${content}
 </body>
 </html>`;
+  }
+
+  // ==================== ÁREAS JURÍDICAS ====================
+
+  async listLegalAreas(includeInactive = false): Promise<LegalArea[]> {
+    let query = supabase
+      .from(this.legalAreasTable)
+      .select('*')
+      .order(this.orderColumn, { ascending: true });
+
+    if (!includeInactive) {
+      query = query.eq('is_active', true);
+    }
+
+    const { data, error } = await query;
+
+    if (error) {
+      // Se a tabela não existir, retornar array vazio
+      const code = String(error?.code || '').toUpperCase();
+      if (code === '42P01' || code === 'PGRST204') return [];
+      throw new Error(error.message);
+    }
+    return data ?? [];
+  }
+
+  async getLegalArea(id: string): Promise<LegalArea | null> {
+    const { data, error } = await supabase
+      .from(this.legalAreasTable)
+      .select('*')
+      .eq('id', id)
+      .single();
+
+    if (error) {
+      if (error.code === 'PGRST116') return null; // not found
+      throw new Error(error.message);
+    }
+    return data;
+  }
+
+  async createLegalArea(dto: CreateLegalAreaDTO): Promise<LegalArea> {
+    // Obter próxima ordem
+    const areas = await this.listLegalAreas(true);
+    const maxOrder = areas.reduce((max, a) => Math.max(max, a.order ?? 0), -1);
+
+    const payload = {
+      name: dto.name,
+      description: dto.description ?? null,
+      color: dto.color ?? '#f97316',
+      icon: dto.icon ?? 'scale',
+      order: dto.order ?? maxOrder + 1,
+      is_active: dto.is_active ?? true,
+    };
+
+    const { data, error } = await supabase
+      .from(this.legalAreasTable)
+      .insert(payload)
+      .select()
+      .single();
+
+    if (error) throw new Error(error.message);
+    return data;
+  }
+
+  async updateLegalArea(id: string, dto: UpdateLegalAreaDTO): Promise<LegalArea> {
+    const payload: Record<string, any> = {};
+    if (dto.name !== undefined) payload.name = dto.name;
+    if (dto.description !== undefined) payload.description = dto.description;
+    if (dto.color !== undefined) payload.color = dto.color;
+    if (dto.icon !== undefined) payload.icon = dto.icon;
+    if (dto.order !== undefined) payload.order = dto.order;
+    if (dto.is_active !== undefined) payload.is_active = dto.is_active;
+
+    const { data, error } = await supabase
+      .from(this.legalAreasTable)
+      .update(payload)
+      .eq('id', id)
+      .select()
+      .single();
+
+    if (error) throw new Error(error.message);
+    return data;
+  }
+
+  async deleteLegalArea(id: string): Promise<void> {
+    // Soft delete - apenas desativa
+    const { error } = await supabase
+      .from(this.legalAreasTable)
+      .update({ is_active: false })
+      .eq('id', id);
+
+    if (error) throw new Error(error.message);
+  }
+
+  async reorderLegalAreas(orderedIds: string[]): Promise<void> {
+    // Atualizar ordem de cada área
+    for (let i = 0; i < orderedIds.length; i++) {
+      const { error } = await supabase
+        .from(this.legalAreasTable)
+        .update({ order: i })
+        .eq('id', orderedIds[i]);
+
+      if (error) throw new Error(error.message);
+    }
+  }
+
+  // ==================== BLOCOS POR ÁREA ====================
+
+  async listBlocksByLegalArea(legalAreaId: string | null, documentType?: DocumentType): Promise<PetitionBlock[]> {
+    // Regra: blocos são separados por área.
+    // Se legalAreaId for string => retorna apenas blocos daquela área.
+    // Se legalAreaId for null => retorna apenas blocos sem área.
+    const run = async (withFilter: boolean) => {
+      let q = supabase
+        .from(this.blocksTable)
+        .select('*')
+        .eq('is_active', true)
+        .order(this.orderColumn, { ascending: true });
+
+      if (legalAreaId) q = q.eq('legal_area_id', legalAreaId);
+      else q = q.is('legal_area_id', null);
+
+      if (documentType && withFilter && this.shouldUseDocumentType()) {
+        q = q.eq('document_type', documentType);
+      }
+      return q;
+    };
+
+    const { data, error } = await run(true);
+    if (!error) return data ?? [];
+
+    // Se coluna não existir, fazer fallback para listagem normal
+    if (this.isMissingLegalAreaColumn(error)) {
+      return this.listBlocks(documentType);
+    }
+
+    if (documentType && this.isMissingDocumentTypeColumn(error)) {
+      this.markDocumentTypeUnsupported();
+      const retry = await run(false);
+      const { data: data2, error: error2 } = await retry;
+      if (error2) throw new Error(error2.message);
+      return data2 ?? [];
+    }
+
+    throw new Error(error.message);
+  }
+
+  private isMissingLegalAreaColumn(error: any): boolean {
+    const msg = String(error?.message || '').toLowerCase();
+    const details = String(error?.details || '').toLowerCase();
+    return msg.includes('legal_area_id') || details.includes('legal_area_id');
+  }
+
+  // ==================== PETIÇÕES PADRÕES (STANDARD TYPES) ====================
+
+  async listStandardTypes(legalAreaId?: string | null, includeInactive = false): Promise<PetitionStandardType[]> {
+    let query = supabase
+      .from(this.standardTypesTable)
+      .select('*')
+      .order(this.orderColumn, { ascending: true });
+
+    if (!includeInactive) {
+      query = query.eq('is_active', true);
+    }
+
+    if (legalAreaId) {
+      query = query.eq('legal_area_id', legalAreaId);
+    }
+
+    const { data, error } = await query;
+    if (error) throw new Error(error.message);
+    return data ?? [];
+  }
+
+  async getStandardType(id: string): Promise<PetitionStandardType | null> {
+    const { data, error } = await supabase
+      .from(this.standardTypesTable)
+      .select('*')
+      .eq('id', id)
+      .single();
+
+    if (error) {
+      if (error.code === 'PGRST116') return null;
+      throw new Error(error.message);
+    }
+    return data;
+  }
+
+  async createStandardType(payload: CreatePetitionStandardTypeDTO): Promise<PetitionStandardType> {
+    // Get max order for this area
+    const { data: maxData } = await supabase
+      .from(this.standardTypesTable)
+      .select('order')
+      .eq('legal_area_id', payload.legal_area_id)
+      .order('order', { ascending: false })
+      .limit(1);
+
+    const maxOrder = maxData?.[0]?.order ?? -1;
+
+    const { data, error } = await supabase
+      .from(this.standardTypesTable)
+      .insert({
+        ...payload,
+        order: payload.order ?? maxOrder + 1,
+        is_active: payload.is_active ?? true,
+      })
+      .select()
+      .single();
+
+    if (error) throw new Error(error.message);
+    return data;
+  }
+
+  async updateStandardType(id: string, payload: UpdatePetitionStandardTypeDTO): Promise<PetitionStandardType> {
+    const { data, error } = await supabase
+      .from(this.standardTypesTable)
+      .update(payload)
+      .eq('id', id)
+      .select()
+      .single();
+
+    if (error) throw new Error(error.message);
+    return data;
+  }
+
+  async deleteStandardType(id: string): Promise<void> {
+    const { error } = await supabase
+      .from(this.standardTypesTable)
+      .delete()
+      .eq('id', id);
+
+    if (error) throw new Error(error.message);
+  }
+
+  // ==================== VÍNCULO PETIÇÃO PADRÃO → BLOCOS ====================
+
+  async listStandardTypeBlocks(standardTypeId: string): Promise<PetitionStandardTypeBlock[]> {
+    const { data, error } = await supabase
+      .from(this.standardTypeBlocksTable)
+      .select('*')
+      .eq('standard_type_id', standardTypeId)
+      .order(this.orderColumn, { ascending: true });
+
+    if (error) throw new Error(error.message);
+    return data ?? [];
+  }
+
+  async listBlocksByStandardType(standardTypeId: string): Promise<PetitionBlock[]> {
+    // Buscar IDs dos blocos vinculados ao tipo
+    const { data: links, error: linksError } = await supabase
+      .from(this.standardTypeBlocksTable)
+      .select('block_id, "order"')
+      .eq('standard_type_id', standardTypeId)
+      .order(this.orderColumn, { ascending: true });
+
+    if (linksError) throw new Error(linksError.message);
+    if (!links || links.length === 0) return [];
+
+    const blockIds = links.map((l) => l.block_id);
+
+    const { data: blocks, error: blocksError } = await supabase
+      .from(this.blocksTable)
+      .select('*')
+      .in('id', blockIds)
+      .eq('is_active', true);
+
+    if (blocksError) throw new Error(blocksError.message);
+
+    // Ordenar conforme a ordem do vínculo
+    const orderMap = new Map(links.map((l) => [l.block_id, l.order]));
+    return (blocks ?? []).sort((a, b) => (orderMap.get(a.id) ?? 0) - (orderMap.get(b.id) ?? 0));
+  }
+
+  async addBlockToStandardType(standardTypeId: string, blockId: string, isDefaultVisible = true): Promise<PetitionStandardTypeBlock> {
+    // Get max order
+    const { data: maxData } = await supabase
+      .from(this.standardTypeBlocksTable)
+      .select('order')
+      .eq('standard_type_id', standardTypeId)
+      .order('order', { ascending: false })
+      .limit(1);
+
+    const maxOrder = maxData?.[0]?.order ?? -1;
+
+    const { data, error } = await supabase
+      .from(this.standardTypeBlocksTable)
+      .insert({
+        standard_type_id: standardTypeId,
+        block_id: blockId,
+        order: maxOrder + 1,
+        is_default_visible: isDefaultVisible,
+      })
+      .select()
+      .single();
+
+    if (error) {
+      const anyErr: any = error as any;
+      if (anyErr?.code === '23505') {
+        const { data: existing, error: existingError } = await supabase
+          .from(this.standardTypeBlocksTable)
+          .select('*')
+          .eq('standard_type_id', standardTypeId)
+          .eq('block_id', blockId)
+          .single();
+        if (existingError) throw new Error(existingError.message);
+        return existing;
+      }
+      throw new Error(error.message);
+    }
+    return data;
+  }
+
+  async removeBlockFromStandardType(standardTypeId: string, blockId: string): Promise<void> {
+    const { error } = await supabase
+      .from(this.standardTypeBlocksTable)
+      .delete()
+      .eq('standard_type_id', standardTypeId)
+      .eq('block_id', blockId);
+
+    if (error) throw new Error(error.message);
+  }
+
+  async setStandardTypeBlocks(standardTypeId: string, blockIds: string[]): Promise<void> {
+    // Remove all existing links
+    await supabase
+      .from(this.standardTypeBlocksTable)
+      .delete()
+      .eq('standard_type_id', standardTypeId);
+
+    // Insert new links
+    if (blockIds.length === 0) return;
+
+    const payload = blockIds.map((blockId, index) => ({
+      standard_type_id: standardTypeId,
+      block_id: blockId,
+      order: index,
+      is_default_visible: true,
+    }));
+
+    const { error } = await supabase
+      .from(this.standardTypeBlocksTable)
+      .insert(payload);
+
+    if (error) throw new Error(error.message);
   }
 }
 

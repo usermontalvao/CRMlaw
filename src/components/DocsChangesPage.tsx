@@ -46,6 +46,7 @@ import {
    ============================================================================ */
 
 const VERSION_CODENAMES: Record<string, { name: string; emoji: string }> = {
+  '1.9.111': { name: 'Café CEP Confirmado', emoji: '📍' },
   '1.9.91': { name: 'Café Assinatura Controlada', emoji: '🔐' },
   '1.9.90': { name: 'Café Compilando', emoji: '🔧' },
   '1.9.87': { name: 'Café Carregando Laranja', emoji: '🟠' },
@@ -539,6 +540,24 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
    ============================================================================ */
 
 const releases: ReleaseNote[] = [
+  {
+    version: '1.9.111',
+    date: '07/01/2026',
+    summary: 'Assinatura Pública (Kit Consumidor): correção no fluxo de validação de endereço após confirmação do CEP.',
+    modules: [
+      {
+        moduleId: 'assinatura-publica',
+        changes: [
+          {
+            type: 'fix',
+            title: 'CEP reconhecido não volta em loop',
+            description:
+              'Ao confirmar o endereço, Endereço/Bairro (preenchidos automaticamente pelo ViaCEP) não são mais considerados campos faltantes, evitando retorno indevido para o passo do CEP.',
+          },
+        ],
+      },
+    ],
+  },
   {
     version: '1.9.95',
     date: '06/01/2026',

@@ -38,6 +38,8 @@ import {
   Settings,
   PanelLeftClose,
   PanelLeftOpen,
+  Scale,
+  Pencil,
 } from 'lucide-react';
 import { saveAs } from 'file-saver';
 import { petitionEditorService } from '../services/petitionEditor.service';
@@ -49,6 +51,8 @@ import type {
   BlockCategory,
   DocumentType,
   PetitionBlockCategory,
+  LegalArea,
+  PetitionStandardType,
 } from '../types/petitionEditor.types';
 import type { Client } from '../types/client.types';
 import { useAuth } from '../contexts/AuthContext';
@@ -303,6 +307,9 @@ const MARITAL_STATUS_LABELS: Record<string, string> = {
 const SIDEBAR_WIDTH_STORAGE_KEY = 'petition-editor-sidebar-width';
 const DEFAULT_TEMPLATE_STORAGE_KEY = 'petition-editor-default-template-docx-v1';
 const DEFAULT_FONT_STORAGE_KEY = 'petition-editor-default-font-v1';
+const SELECTED_LEGAL_AREA_STORAGE_KEY = 'petition-editor-selected-legal-area-v1';
+const SELECTED_STANDARD_TYPE_STORAGE_KEY_PREFIX = 'petition-editor-selected-standard-type-v1:';
+const BLOCK_FILTER_SCOPE_STORAGE_KEY = 'petition-editor-block-filter-scope-v1';
 
 // CSS para o editor - Layout responsivo para 100% zoom
 const EDITOR_STYLES = `
@@ -603,6 +610,47 @@ const PetitionEditorModule: React.FC<PetitionEditorModuleProps> = ({
   const sidebarResizeStartXRef = useRef(0);
   const sidebarResizeStartWidthRef = useRef(288);
 
+  // Áreas Jurídicas
+  const [legalAreas, setLegalAreas] = useState<LegalArea[]>([]);
+  const [selectedLegalAreaId, setSelectedLegalAreaId] = useState<string | null>(() => {
+    try {
+      const v = window.localStorage.getItem(SELECTED_LEGAL_AREA_STORAGE_KEY);
+      return v || null;
+    } catch {
+      return null;
+    }
+  });
+  const [showLegalAreaModal, setShowLegalAreaModal] = useState(false);
+  const [editingLegalArea, setEditingLegalArea] = useState<LegalArea | null>(null);
+  const [legalAreaFormData, setLegalAreaFormData] = useState({ name: '', description: '', color: '#f97316', icon: 'scale' });
+
+  // Petições Padrões (Standard Types)
+  const [standardTypes, setStandardTypes] = useState<PetitionStandardType[]>([]);
+  const [standardTypesByArea, setStandardTypesByArea] = useState<Record<string, PetitionStandardType[]>>({});
+  const [selectedStandardTypeId, setSelectedStandardTypeId] = useState<string | null>(() => {
+    try {
+      const areaId = window.localStorage.getItem(SELECTED_LEGAL_AREA_STORAGE_KEY);
+      if (!areaId) return null;
+      const v = window.localStorage.getItem(`${SELECTED_STANDARD_TYPE_STORAGE_KEY_PREFIX}${areaId}`);
+      return v || null;
+    } catch {
+      return null;
+    }
+  });
+  const [showStandardTypeModal, setShowStandardTypeModal] = useState(false);
+  const [editingStandardType, setEditingStandardType] = useState<PetitionStandardType | null>(null);
+  const [standardTypeFormData, setStandardTypeFormData] = useState({ name: '', description: '' });
+  // Escopo de filtro de blocos: 'type' = petição padrão, 'area' = área jurídica, 'global' = todos
+  const [blockFilterScope, setBlockFilterScope] = useState<'type' | 'area' | 'global'>(() => {
+    try {
+      const v = window.localStorage.getItem(BLOCK_FILTER_SCOPE_STORAGE_KEY);
+      if (v === 'type' || v === 'area' || v === 'global') return v;
+      return 'area';
+    } catch {
+      return 'area';
+    }
+  });
+
   // Blocos
   const [blocks, setBlocks] = useState<PetitionBlock[]>([]);
   const [blockSearch, setBlockSearch] = useState('');
@@ -625,6 +673,17 @@ const PetitionEditorModule: React.FC<PetitionEditorModuleProps> = ({
       return true;
     }
   });
+
+  const handleRetryConnection = useCallback(() => {
+    const next = (() => {
+      try {
+        return typeof navigator !== 'undefined' ? navigator.onLine : true;
+      } catch {
+        return true;
+      }
+    })();
+    setIsOnline(next);
+  }, []);
   const [openingPetitionId, setOpeningPetitionId] = useState<string | null>(null);
   const [pendingPetitionLoadKey, setPendingPetitionLoadKey] = useState(0);
   const editorRef = useRef<SyncfusionEditorRef>(null);
@@ -936,11 +995,14 @@ const PetitionEditorModule: React.FC<PetitionEditorModuleProps> = ({
   const [editingBlock, setEditingBlock] = useState<PetitionBlock | null>(null);
   const [updateExistingBlockMode, setUpdateExistingBlockMode] = useState(false);
   const [updateExistingBlockId, setUpdateExistingBlockId] = useState('');
+  const [blockStandardTypeId, setBlockStandardTypeId] = useState<string | null>(null);
+  const [blockStandardTypeLoading, setBlockStandardTypeLoading] = useState(false);
   const [blockFormData, setBlockFormData] = useState<CreatePetitionBlockDTO>({
     title: '',
     content: '',
     category: 'outros',
     document_type: 'petition',
+    legal_area_id: null,
     is_default: false,
     is_active: true,
     tags: [],
@@ -1017,6 +1079,12 @@ const PetitionEditorModule: React.FC<PetitionEditorModuleProps> = ({
   const [showBlockSearchModal, setShowBlockSearchModal] = useState(false);
   const [blockSearchQuery, setBlockSearchQuery] = useState('');
   const blockSearchQueryDebounced = useDebouncedValue(blockSearchQuery, 260);
+  const [blockSearchScope, setBlockSearchScope] = useState<'type' | 'area' | 'global'>(() => {
+    if (selectedStandardTypeId) return 'type';
+    return 'area';
+  });
+  const [blockSearchBlocks, setBlockSearchBlocks] = useState<PetitionBlock[]>([]);
+  const [blockSearchLoading, setBlockSearchLoading] = useState(false);
 
   const [showBlockViewModal, setShowBlockViewModal] = useState(false);
   const [viewingBlock, setViewingBlock] = useState<PetitionBlock | null>(null);
@@ -1025,6 +1093,49 @@ const PetitionEditorModule: React.FC<PetitionEditorModuleProps> = ({
   const [blockViewUseFallback, setBlockViewUseFallback] = useState(false);
   const [blockViewDocxLoading, setBlockViewDocxLoading] = useState(false);
   const [blockViewDocxError, setBlockViewDocxError] = useState('');
+
+  useEffect(() => {
+    if (!showBlockSearchModal) return;
+    if (selectedStandardTypeId && blockSearchScope !== 'type') return;
+    if (!selectedStandardTypeId && blockSearchScope === 'type') {
+      setBlockSearchScope('area');
+    }
+  }, [showBlockSearchModal, selectedStandardTypeId, blockSearchScope]);
+
+  useEffect(() => {
+    if (!showBlockSearchModal) return;
+    let cancelled = false;
+    const load = async () => {
+      try {
+        setBlockSearchLoading(true);
+        let data: PetitionBlock[] = [];
+
+        if (blockSearchScope === 'type' && selectedStandardTypeId) {
+          data = await petitionEditorService.listBlocksByStandardType(selectedStandardTypeId);
+        } else if (blockSearchScope === 'global') {
+          data = await petitionEditorService.listBlocks(selectedDocumentType);
+        } else {
+          data = await petitionEditorService.listBlocksByLegalArea(selectedLegalAreaId, selectedDocumentType);
+        }
+
+        const filtered = (data || []).filter(
+          (b) =>
+            Boolean(b?.is_active) &&
+            String((b.document_type || 'petition') as any) === String(selectedDocumentType)
+        );
+
+        if (!cancelled) setBlockSearchBlocks(filtered);
+      } catch {
+        if (!cancelled) setBlockSearchBlocks([]);
+      } finally {
+        if (!cancelled) setBlockSearchLoading(false);
+      }
+    };
+    void load();
+    return () => {
+      cancelled = true;
+    };
+  }, [showBlockSearchModal, blockSearchScope, selectedStandardTypeId, selectedLegalAreaId, selectedDocumentType]);
 
   // Modelo Word importado
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -1044,16 +1155,19 @@ const PetitionEditorModule: React.FC<PetitionEditorModuleProps> = ({
     setSuccess(null);
     setSelectionToCreateBlock(null);
     blockModalInitDoneRef.current = false;
+    setBlockStandardTypeLoading(false);
 
     if (block) {
       setEditingBlock(block);
       setUpdateExistingBlockMode(false);
       setUpdateExistingBlockId('');
+      setBlockStandardTypeId(null);
       setBlockFormData({
         title: block.title,
         content: block.content,
         category: block.category,
         document_type: (block.document_type || selectedDocumentType) as any,
+        legal_area_id: (block.legal_area_id ?? selectedLegalAreaId) as any,
         is_default: block.is_default,
         is_active: block.is_active,
         tags: block.tags || [],
@@ -1062,11 +1176,13 @@ const PetitionEditorModule: React.FC<PetitionEditorModuleProps> = ({
       setEditingBlock(null);
       setUpdateExistingBlockMode(false);
       setUpdateExistingBlockId('');
+      setBlockStandardTypeId(selectedStandardTypeId || null);
       setBlockFormData({
         title: '',
-        content: '',
+        content: selectionToCreateBlock?.sfdt || '',
         category: 'outros',
         document_type: selectedDocumentType,
+        legal_area_id: selectedLegalAreaId,
         is_default: false,
         is_active: true,
         tags: [],
@@ -1098,6 +1214,207 @@ const PetitionEditorModule: React.FC<PetitionEditorModuleProps> = ({
     setCategoryDraft(base);
   };
 
+  // ==================== ÁREAS JURÍDICAS ====================
+
+  const openLegalAreaModal = (area?: LegalArea) => {
+    setError(null);
+    setSuccess(null);
+    if (area) {
+      setEditingLegalArea(area);
+      setLegalAreaFormData({
+        name: area.name,
+        description: area.description || '',
+        color: area.color || '#f97316',
+        icon: area.icon || 'scale',
+      });
+    } else {
+      setEditingLegalArea(null);
+      setLegalAreaFormData({ name: '', description: '', color: '#f97316', icon: 'scale' });
+    }
+    setShowLegalAreaModal(true);
+  };
+
+  const handleSaveLegalArea = async () => {
+    if (!legalAreaFormData.name.trim()) {
+      setError('Nome da área é obrigatório');
+      return;
+    }
+
+    try {
+      setSaving(true);
+      if (editingLegalArea) {
+        await petitionEditorService.updateLegalArea(editingLegalArea.id, {
+          name: legalAreaFormData.name.trim(),
+          description: legalAreaFormData.description.trim() || null,
+          color: legalAreaFormData.color,
+          icon: legalAreaFormData.icon,
+        });
+        showSuccessMessage('Área atualizada com sucesso');
+      } else {
+        const newArea = await petitionEditorService.createLegalArea({
+          name: legalAreaFormData.name.trim(),
+          description: legalAreaFormData.description.trim() || null,
+          color: legalAreaFormData.color,
+          icon: legalAreaFormData.icon,
+        });
+        // Selecionar a nova área
+        setSelectedLegalAreaId(newArea.id);
+        showSuccessMessage('Área criada com sucesso');
+      }
+      // Recarregar áreas
+      const areas = await petitionEditorService.listLegalAreas();
+      setLegalAreas(areas);
+      setShowLegalAreaModal(false);
+    } catch (err) {
+      console.error('Erro ao salvar área:', err);
+      setError('Erro ao salvar área jurídica');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleDeleteLegalArea = async (areaId: string) => {
+    try {
+      await petitionEditorService.deleteLegalArea(areaId);
+      const areas = await petitionEditorService.listLegalAreas();
+      setLegalAreas(areas);
+      // Se a área deletada era a selecionada, selecionar outra
+      if (selectedLegalAreaId === areaId) {
+        setSelectedLegalAreaId(areas.length > 0 ? areas[0].id : null);
+      }
+      showSuccessMessage('Área desativada com sucesso');
+    } catch (err) {
+      console.error('Erro ao deletar área:', err);
+      setError('Erro ao desativar área jurídica');
+    }
+  };
+
+  // ==================== PETIÇÕES PADRÕES ====================
+
+  const openStandardTypeModal = (type?: PetitionStandardType) => {
+    if (type) {
+      setEditingStandardType(type);
+      setStandardTypeFormData({ name: type.name, description: type.description || '' });
+    } else {
+      setEditingStandardType(null);
+      setStandardTypeFormData({ name: '', description: '' });
+    }
+    setShowStandardTypeModal(true);
+  };
+
+  const handleSaveStandardType = async () => {
+    if (!standardTypeFormData.name.trim()) {
+      setError('Nome da petição padrão é obrigatório');
+      return;
+    }
+    if (!selectedLegalAreaId) {
+      setError('Selecione uma área jurídica primeiro');
+      return;
+    }
+
+    try {
+      setSaving(true);
+      if (editingStandardType) {
+        await petitionEditorService.updateStandardType(editingStandardType.id, {
+          name: standardTypeFormData.name.trim(),
+          description: standardTypeFormData.description.trim() || null,
+        });
+        showSuccessMessage('Petição padrão atualizada');
+      } else {
+        const newType = await petitionEditorService.createStandardType({
+          legal_area_id: selectedLegalAreaId,
+          name: standardTypeFormData.name.trim(),
+          description: standardTypeFormData.description.trim() || null,
+        });
+        setSelectedStandardTypeId(newType.id);
+        showSuccessMessage('Petição padrão criada');
+      }
+      // Recarregar tipos
+      const types = await petitionEditorService.listStandardTypes(selectedLegalAreaId);
+      setStandardTypes(types);
+      if (selectedLegalAreaId) {
+        setStandardTypesByArea((prev) => ({ ...prev, [selectedLegalAreaId]: types }));
+      }
+      setShowStandardTypeModal(false);
+    } catch (err) {
+      console.error('Erro ao salvar petição padrão:', err);
+      setError('Erro ao salvar petição padrão');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleDeleteStandardType = async (typeId: string) => {
+    try {
+      await petitionEditorService.deleteStandardType(typeId);
+      const types = await petitionEditorService.listStandardTypes(selectedLegalAreaId);
+      setStandardTypes(types);
+      if (selectedLegalAreaId) {
+        setStandardTypesByArea((prev) => ({ ...prev, [selectedLegalAreaId]: types }));
+      }
+      if (selectedStandardTypeId === typeId) {
+        setSelectedStandardTypeId(null);
+        setBlockFilterScope('area');
+      }
+      showSuccessMessage('Petição padrão removida');
+    } catch (err) {
+      console.error('Erro ao deletar petição padrão:', err);
+      setError('Erro ao remover petição padrão');
+    }
+  };
+
+  const handleSetDefaultDocument = async (typeId: string) => {
+    if (!editorRef.current) return;
+    try {
+      setSaving(true);
+      const sfdt = editorRef.current.getSfdt();
+      const updated = await petitionEditorService.updateStandardType(typeId, {
+        default_document: sfdt,
+        default_document_name: petitionTitle || 'Documento Padrão',
+      });
+      setStandardTypes((prev) => prev.map((t) => (t.id === updated.id ? updated : t)));
+      setStandardTypesByArea((prev) => {
+        const areaId = String(updated.legal_area_id || '');
+        if (!areaId) return prev;
+        const current = prev[areaId] ?? [];
+        const next = current.some((t) => t.id === updated.id)
+          ? current.map((t) => (t.id === updated.id ? updated : t))
+          : [...current, updated];
+        return { ...prev, [areaId]: next };
+      });
+      setEditingStandardType((prev) => (prev && prev.id === updated.id ? updated : prev));
+      showSuccessMessage('Documento padrão vinculado');
+    } catch (err) {
+      console.error('Erro ao vincular documento:', err);
+      setError('Erro ao vincular documento padrão');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleLinkBlockToStandardType = async (blockId: string) => {
+    if (!selectedStandardTypeId) return;
+    try {
+      await petitionEditorService.addBlockToStandardType(selectedStandardTypeId, blockId);
+      showSuccessMessage('Bloco vinculado à petição padrão');
+    } catch (err) {
+      console.error('Erro ao vincular bloco:', err);
+      setError('Erro ao vincular bloco');
+    }
+  };
+
+  const selectedLegalArea = useMemo(() => {
+    return legalAreas.find((a) => a.id === selectedLegalAreaId) || null;
+  }, [legalAreas, selectedLegalAreaId]);
+
+  // Título dinâmico baseado na área selecionada
+  const getDefaultPetitionTitle = useCallback(() => {
+    if (selectedLegalArea) {
+      return `Nova Petição ${selectedLegalArea.name}`;
+    }
+    return 'Nova Petição';
+  }, [selectedLegalArea]);
+
   const openCreateBlockFromSelection = (selectedText: string, selectedSfdt: string) => {
     setError(null);
     setSuccess(null);
@@ -1111,6 +1428,7 @@ const PetitionEditorModule: React.FC<PetitionEditorModuleProps> = ({
       content: selectedSfdt || '',
       category: 'outros',
       document_type: selectedDocumentType,
+      legal_area_id: selectedLegalAreaId,
       is_default: false,
       is_active: true,
       tags: [],
@@ -2125,6 +2443,10 @@ Regras:
       setSaving(true);
       setError(null);
 
+      const effectiveStandardTypeId = (blockFilterScope === 'type' && selectedStandardTypeId)
+        ? selectedStandardTypeId
+        : blockStandardTypeId;
+
       let content = blockFormData.content;
       if (blockEditorRef.current) {
         content = blockEditorRef.current.getSfdt() || '';
@@ -2140,24 +2462,50 @@ Regras:
           title: blockFormData.title,
           content,
           category: blockFormData.category,
-          document_type: blockFormData.document_type,
+          document_type: (blockFormData.document_type || selectedDocumentType) as any,
+          legal_area_id: (blockFormData.legal_area_id ?? selectedLegalAreaId) as any,
           is_default: blockFormData.is_default,
           is_active: blockFormData.is_active,
           tags: blockFormData.tags,
-        });
-        setBlocks((prev) => prev.map((b) => (b.id === updated.id ? updated : b)));
+        } as any);
+        await petitionEditorService.setBlockStandardType(updated.id, effectiveStandardTypeId);
+
+        // Atualizar lista conforme escopo atual
+        if (blockFilterScope === 'type' && selectedStandardTypeId) {
+          const blocksData = await petitionEditorService.listBlocksByStandardType(selectedStandardTypeId);
+          setBlocks(blocksData);
+        } else if (blockFilterScope === 'global') {
+          const blocksData = await petitionEditorService.listBlocks(selectedDocumentType);
+          setBlocks(blocksData);
+        } else {
+          const blocksData = await petitionEditorService.listBlocksByLegalArea(selectedLegalAreaId, selectedDocumentType);
+          setBlocks(blocksData);
+        }
         showSuccessMessage('Bloco atualizado');
       } else {
         const created = await petitionEditorService.createBlock({
           title: blockFormData.title,
           content,
           category: blockFormData.category,
-          document_type: blockFormData.document_type,
+          document_type: (blockFormData.document_type || selectedDocumentType) as any,
+          legal_area_id: (blockFormData.legal_area_id ?? selectedLegalAreaId) as any,
           is_default: blockFormData.is_default,
           is_active: blockFormData.is_active,
           tags: blockFormData.tags,
-        });
-        setBlocks((prev) => [...prev, created]);
+        } as any);
+        await petitionEditorService.setBlockStandardType(created.id, effectiveStandardTypeId);
+
+        // Atualizar lista conforme escopo atual
+        if (blockFilterScope === 'type' && selectedStandardTypeId) {
+          const blocksData = await petitionEditorService.listBlocksByStandardType(selectedStandardTypeId);
+          setBlocks(blocksData);
+        } else if (blockFilterScope === 'global') {
+          const blocksData = await petitionEditorService.listBlocks(selectedDocumentType);
+          setBlocks(blocksData);
+        } else {
+          const blocksData = await petitionEditorService.listBlocksByLegalArea(selectedLegalAreaId, selectedDocumentType);
+          setBlocks(blocksData);
+        }
         showSuccessMessage('Bloco criado');
       }
 
@@ -2255,6 +2603,39 @@ Regras:
       cancelled = true;
     };
   }, [showBlockModal, blockFormData.content, editingBlock?.id]);
+
+  useEffect(() => {
+    if (!showBlockModal) return;
+
+    // Se estiver criando dentro de um modelo, manter como padrão
+    if (!editingBlock && !updateExistingBlockMode && selectedStandardTypeId) {
+      setBlockStandardTypeId(selectedStandardTypeId);
+      return;
+    }
+  }, [showBlockModal, editingBlock, updateExistingBlockMode, selectedStandardTypeId]);
+
+  useEffect(() => {
+    if (!showBlockModal) return;
+    const targetId = editingBlock?.id || (updateExistingBlockMode ? updateExistingBlockId : '');
+    if (!targetId) return;
+
+    let cancelled = false;
+    const load = async () => {
+      try {
+        setBlockStandardTypeLoading(true);
+        const stdId = await petitionEditorService.getBlockStandardTypeId(targetId);
+        if (!cancelled) setBlockStandardTypeId(stdId);
+      } catch {
+        if (!cancelled) setBlockStandardTypeId(null);
+      } finally {
+        if (!cancelled) setBlockStandardTypeLoading(false);
+      }
+    };
+    void load();
+    return () => {
+      cancelled = true;
+    };
+  }, [showBlockModal, editingBlock?.id, updateExistingBlockMode, updateExistingBlockId]);
 
   useEffect(() => {
     const loadDefaultTemplateFromDB = async () => {
@@ -2441,10 +2822,17 @@ Regras:
         savePetitionActionRef.current?.();
       }
 
-      // Atalho: Alt + Space abre busca de blocos
+      // Alt+Space abre modal de busca de bloco (atalho)
       if (e.altKey && e.code === 'Space') {
         e.preventDefault();
         setBlockSearchQuery('');
+        setBlockSearchScope(
+          blockFilterScope === 'type'
+            ? selectedStandardTypeId
+              ? 'type'
+              : 'area'
+            : blockFilterScope
+        );
         setShowBlockSearchModal(true);
       }
     };
@@ -2602,12 +2990,52 @@ Regras:
       setError(null);
       setSavedPetitionsLoading(true);
 
-      const [blocksData, petitionsData, clientsData] = await Promise.all([
-        petitionEditorService.listBlocks(selectedDocumentType),
+      const [petitionsData, clientsData, areasData] = await Promise.all([
         petitionEditorService.listPetitions(),
         loadClients(),
+        petitionEditorService.listLegalAreas(),
       ]);
 
+      const preferredAreaId = selectedLegalAreaId && areasData.some((a) => a.id === selectedLegalAreaId) ? selectedLegalAreaId : null;
+      const nextAreaId = preferredAreaId || areasData[0]?.id || null;
+      setLegalAreas(areasData);
+      if (!preferredAreaId && nextAreaId) setSelectedLegalAreaId(nextAreaId);
+      if (nextAreaId) {
+        try {
+          window.localStorage.setItem(SELECTED_LEGAL_AREA_STORAGE_KEY, nextAreaId);
+        } catch {
+          // ignore
+        }
+      }
+
+      // Carregar Petições Padrões (todas as áreas para navegação hierárquica no header)
+      const allTypes = await petitionEditorService.listStandardTypes(null);
+      const byArea: Record<string, PetitionStandardType[]> = {};
+      for (const t of allTypes || []) {
+        const key = String(t.legal_area_id || '');
+        if (!key) continue;
+        if (!byArea[key]) byArea[key] = [];
+        byArea[key].push(t);
+      }
+      setStandardTypesByArea(byArea);
+
+      // Tipos da área selecionada
+      const typesData = nextAreaId ? byArea[nextAreaId] ?? [] : [];
+      setStandardTypes(typesData);
+      if (nextAreaId) {
+        try {
+          const storedTypeId = window.localStorage.getItem(`${SELECTED_STANDARD_TYPE_STORAGE_KEY_PREFIX}${nextAreaId}`);
+          if (storedTypeId && typesData.some((t) => t.id === storedTypeId)) {
+            setSelectedStandardTypeId(storedTypeId);
+          } else {
+            setSelectedStandardTypeId(null);
+          }
+        } catch {
+          setSelectedStandardTypeId(null);
+        }
+      }
+
+      const blocksData = await petitionEditorService.listBlocksByLegalArea(nextAreaId, selectedDocumentType);
       setBlocks(blocksData);
       const withClient = (petitionsData || []).filter((p) => Boolean(p.client_id));
       const orphans = (petitionsData || []).filter((p) => !p.client_id);
@@ -2629,11 +3057,48 @@ Regras:
   };
 
   useEffect(() => {
-    // Recarregar blocos quando trocar o tipo do documento
+    // Recarregar blocos e petições padrões quando trocar área ou tipo de documento
     let cancelled = false;
     const reload = async () => {
       try {
-        const blocksData = await petitionEditorService.listBlocks(selectedDocumentType);
+        // Carregar petições padrões da área
+        if (selectedLegalAreaId) {
+          const typesData = await petitionEditorService.listStandardTypes(selectedLegalAreaId);
+          if (!cancelled) {
+            setStandardTypes(typesData);
+            setStandardTypesByArea((prev) => ({ ...prev, [selectedLegalAreaId]: typesData }));
+            if (!selectedStandardTypeId) {
+              try {
+                const storedTypeId = window.localStorage.getItem(`${SELECTED_STANDARD_TYPE_STORAGE_KEY_PREFIX}${selectedLegalAreaId}`);
+                if (storedTypeId && typesData.find((t) => t.id === storedTypeId)) {
+                  setSelectedStandardTypeId(storedTypeId);
+                }
+              } catch {
+                // ignore
+              }
+            }
+            // Se tinha um tipo selecionado que não existe mais na nova área, limpar
+            if (selectedStandardTypeId && !typesData.find((t) => t.id === selectedStandardTypeId)) {
+              setSelectedStandardTypeId(null);
+              setBlockFilterScope('area');
+            }
+          }
+        } else {
+          if (!cancelled) {
+            setStandardTypes([]);
+            setSelectedStandardTypeId(null);
+          }
+        }
+
+        // Carregar blocos baseado no escopo
+        let blocksData: PetitionBlock[] = [];
+        if (blockFilterScope === 'type' && selectedStandardTypeId) {
+          blocksData = await petitionEditorService.listBlocksByStandardType(selectedStandardTypeId);
+        } else if (blockFilterScope === 'global') {
+          blocksData = await petitionEditorService.listBlocks(selectedDocumentType);
+        } else {
+          blocksData = await petitionEditorService.listBlocksByLegalArea(selectedLegalAreaId, selectedDocumentType);
+        }
         if (!cancelled) setBlocks(blocksData);
       } catch {
         // ignore
@@ -2643,7 +3108,38 @@ Regras:
     return () => {
       cancelled = true;
     };
-  }, [selectedDocumentType]);
+  }, [selectedDocumentType, selectedLegalAreaId, selectedStandardTypeId, blockFilterScope]);
+
+  useEffect(() => {
+    if (!selectedLegalAreaId) return;
+    try {
+      window.localStorage.setItem(SELECTED_LEGAL_AREA_STORAGE_KEY, selectedLegalAreaId);
+    } catch {
+      // ignore
+    }
+  }, [selectedLegalAreaId]);
+
+  useEffect(() => {
+    if (!selectedLegalAreaId) return;
+    try {
+      const key = `${SELECTED_STANDARD_TYPE_STORAGE_KEY_PREFIX}${selectedLegalAreaId}`;
+      if (selectedStandardTypeId) {
+        window.localStorage.setItem(key, selectedStandardTypeId);
+      } else {
+        window.localStorage.removeItem(key);
+      }
+    } catch {
+      // ignore
+    }
+  }, [selectedLegalAreaId, selectedStandardTypeId]);
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(BLOCK_FILTER_SCOPE_STORAGE_KEY, blockFilterScope);
+    } catch {
+      // ignore
+    }
+  }, [blockFilterScope]);
 
   useEffect(() => {
     let cancelled = false;
@@ -2788,7 +3284,9 @@ Regras:
 
   // Filtrar blocos para modal de busca
   const searchFilteredBlocks = useMemo(() => {
-    const active = blocks.filter(b => b.is_active && ((b.document_type || 'petition') as string) === selectedDocumentType);
+    const active = (blockSearchBlocks || []).filter(
+      (b) => Boolean(b.is_active) && String((b.document_type || 'petition') as any) === String(selectedDocumentType)
+    );
     const q = (blockSearchQueryDebounced || '').trim();
     if (!q) return active.map((b) => ({ block: b, score: 0, matchPct: 0 } as BlockSearchResult));
 
@@ -2918,7 +3416,7 @@ Regras:
       .sort((a, b) => b.score - a.score);
 
     return ranked;
-  }, [blocks, blockSearchQueryDebounced, selectedDocumentType, blockIndexMap]);
+  }, [blockSearchBlocks, blockSearchQueryDebounced, selectedDocumentType, blockIndexMap]);
 
   const toggleCategory = (category: string) => {
     setExpandedCategories(prev => {
@@ -3257,6 +3755,110 @@ Regras:
           className="w-[240px] sm:w-[320px] px-2 py-1 text-sm font-semibold border border-transparent hover:border-slate-200 focus:border-amber-400 rounded focus:outline-none"
           placeholder="Título da petição..."
         />
+
+        {/* Seletor de Área Jurídica */}
+        {legalAreas.length > 0 && (
+          <div className="flex items-center gap-1">
+            <select
+              value={selectedStandardTypeId ? `type:${selectedStandardTypeId}` : `area:${selectedLegalAreaId || ''}`}
+              onChange={(e) => {
+                const raw = e.target.value;
+                if (raw.startsWith('type:')) {
+                  const typeId = raw.replace('type:', '').trim();
+                  const foundType = Object.values(standardTypesByArea).flat().find((t) => t.id === typeId) || null;
+                  const areaId = foundType?.legal_area_id || null;
+                  if (areaId) {
+                    setSelectedLegalAreaId(areaId);
+                    try {
+                      window.localStorage.setItem(SELECTED_LEGAL_AREA_STORAGE_KEY, areaId);
+                    } catch {
+                      // ignore
+                    }
+                    setStandardTypes(standardTypesByArea[areaId] ?? []);
+                  }
+
+                  setSelectedStandardTypeId(typeId);
+                  setBlockFilterScope('type');
+                  if (areaId) {
+                    try {
+                      window.localStorage.setItem(`${SELECTED_STANDARD_TYPE_STORAGE_KEY_PREFIX}${areaId}`, typeId);
+                    } catch {
+                      // ignore
+                    }
+                  }
+                  if (foundType?.default_document && editorRef.current) {
+                    editorRef.current.loadSfdt(foundType.default_document);
+                    if (foundType.default_document_name) {
+                      setPetitionTitle(foundType.default_document_name);
+                    }
+                  }
+                  return;
+                }
+
+                const newAreaId = raw.replace('area:', '').trim() || null;
+                setSelectedLegalAreaId(newAreaId);
+                setSelectedStandardTypeId(null);
+                setBlockFilterScope('area');
+                if (newAreaId) {
+                  try {
+                    window.localStorage.setItem(SELECTED_LEGAL_AREA_STORAGE_KEY, newAreaId);
+                    window.localStorage.removeItem(`${SELECTED_STANDARD_TYPE_STORAGE_KEY_PREFIX}${newAreaId}`);
+                  } catch {
+                    // ignore
+                  }
+                }
+                setStandardTypes(newAreaId ? (standardTypesByArea[newAreaId] ?? []) : []);
+
+                // Atualizar título se estiver vazio ou for o padrão
+                const area = legalAreas.find((a) => a.id === newAreaId);
+                if (area && (!petitionTitle || petitionTitle.startsWith('Nova Petição'))) {
+                  setPetitionTitle(`Nova Petição ${area.name}`);
+                }
+              }}
+              className="px-2 py-1 text-xs border border-slate-200 rounded bg-white hover:border-amber-400 focus:border-amber-400 focus:outline-none"
+              style={{ 
+                borderLeftColor: selectedLegalArea?.color || '#e2e8f0',
+                borderLeftWidth: '3px'
+              }}
+            >
+              {legalAreas.map((area) => (
+                <optgroup key={area.id} label={area.name}>
+                  <option value={`area:${area.id}`}>Todos da área</option>
+                  {(standardTypesByArea[area.id] ?? []).map((t) => (
+                    <option key={t.id} value={`type:${t.id}`}>
+                      {t.name}
+                    </option>
+                  ))}
+                </optgroup>
+              ))}
+            </select>
+            <button
+              onClick={() => openLegalAreaModal()}
+              className="p-1 text-slate-400 hover:text-amber-600 hover:bg-amber-50 rounded transition-colors"
+              title="Gerenciar áreas jurídicas"
+            >
+              <Settings className="w-3.5 h-3.5" />
+            </button>
+            <button
+              onClick={() => openStandardTypeModal()}
+              className="p-1 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded transition-colors"
+              title="Gerenciar modelos (petições padrões)"
+            >
+              <FileText className="w-3.5 h-3.5" />
+            </button>
+          </div>
+        )}
+
+        {/* Botão para criar primeira área se não existir nenhuma */}
+        {legalAreas.length === 0 && (
+          <button
+            onClick={() => openLegalAreaModal()}
+            className="px-2 py-1 text-xs text-amber-600 hover:bg-amber-50 border border-amber-200 rounded transition-colors flex items-center gap-1"
+          >
+            <Plus className="w-3.5 h-3.5" />
+            Criar Área Jurídica
+          </button>
+        )}
 
         {/* Cliente selecionado */}
         {selectedClient && (
@@ -3694,6 +4296,118 @@ Regras:
                   </button>
                 </div>
 
+                {/* Filtro de escopo de blocos */}
+                <div className="px-2 py-1.5 border-b border-slate-100 flex items-center gap-1 bg-slate-50/50">
+                  <span className="text-[10px] text-slate-400 uppercase tracking-wider">Exibir:</span>
+                  <div className="flex-1 flex gap-0.5">
+                    {selectedStandardTypeId && (
+                      <button
+                        onClick={() => setBlockFilterScope('type')}
+                        className={`flex-1 px-1.5 py-1 text-[10px] rounded transition-colors ${
+                          blockFilterScope === 'type'
+                            ? 'bg-blue-500 text-white'
+                            : 'bg-white text-slate-600 hover:bg-blue-50 border border-slate-200'
+                        }`}
+                        title="Blocos vinculados à petição padrão selecionada"
+                      >
+                        Petição
+                      </button>
+                    )}
+                    <button
+                      onClick={() => setBlockFilterScope('area')}
+                      className={`flex-1 px-1.5 py-1 text-[10px] rounded transition-colors ${
+                        blockFilterScope === 'area'
+                          ? 'bg-amber-500 text-white'
+                          : 'bg-white text-slate-600 hover:bg-amber-50 border border-slate-200'
+                      }`}
+                      title="Blocos da área jurídica selecionada"
+                    >
+                      Área
+                    </button>
+                    <button
+                      onClick={() => setBlockFilterScope('global')}
+                      className={`flex-1 px-1.5 py-1 text-[10px] rounded transition-colors ${
+                        blockFilterScope === 'global'
+                          ? 'bg-slate-600 text-white'
+                          : 'bg-white text-slate-600 hover:bg-slate-100 border border-slate-200'
+                      }`}
+                      title="Todos os blocos (consulta global)"
+                    >
+                      Global
+                    </button>
+                  </div>
+                </div>
+
+                {standardTypes.length > 0 && selectedLegalAreaId && (
+                  <div className="px-2 py-2 border-b border-slate-100">
+                    <div className="flex items-center justify-between mb-2">
+                      <div className="flex items-center gap-1">
+                        <FolderOpen className="w-3.5 h-3.5 text-slate-400" />
+                        <span className="text-[10px] text-slate-400 uppercase tracking-wider">Modelos</span>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => openStandardTypeModal()}
+                        className="p-1 border border-slate-200 text-slate-500 rounded hover:bg-slate-50"
+                        title="Gerenciar modelos"
+                      >
+                        <Settings className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+
+                    <div className="flex flex-col gap-1">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setSelectedStandardTypeId(null);
+                          setBlockFilterScope('area');
+                        }}
+                        className={`w-full px-2 py-1.5 text-left text-xs rounded border transition-colors ${
+                          !selectedStandardTypeId
+                            ? 'bg-amber-50 border-amber-200 text-amber-800'
+                            : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-50'
+                        }`}
+                        title="Ver todos os blocos da área"
+                      >
+                        <span className="font-semibold">Área</span>
+                        {selectedLegalArea?.name ? <span className="text-slate-400"> — {selectedLegalArea.name}</span> : null}
+                      </button>
+
+                      <div className="max-h-36 overflow-y-auto pr-0.5">
+                        {standardTypes.map((t) => {
+                          const active = selectedStandardTypeId === t.id;
+                          return (
+                            <button
+                              key={t.id}
+                              type="button"
+                              onClick={() => {
+                                setSelectedStandardTypeId(t.id);
+                                setBlockFilterScope('type');
+                                if (t.default_document && editorRef.current) {
+                                  editorRef.current.loadSfdt(t.default_document);
+                                  if (t.default_document_name) setPetitionTitle(t.default_document_name);
+                                }
+                              }}
+                              className={`w-full px-2 py-1.5 mt-1 text-left text-xs rounded border transition-colors ${
+                                active
+                                  ? 'bg-blue-50 border-blue-200 text-blue-800'
+                                  : 'bg-white border-slate-200 text-slate-700 hover:bg-blue-50/40'
+                              }`}
+                              title={t.description ? t.description : t.name}
+                            >
+                              <div className="flex items-center gap-1">
+                                <FileText className="w-3.5 h-3.5 text-slate-400" />
+                                <span className="font-semibold truncate">{t.name}</span>
+                                {active && <ChevronLeft className="w-3.5 h-3.5 ml-auto text-blue-400" />}
+                              </div>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  </div>
+                )}
+
                 <div className="flex-1 overflow-y-auto">
                   {sidebarCategoryKeys.map((category) => {
                     const items = (blocksByCategory as any)[category] || [];
@@ -3843,7 +4557,7 @@ Regras:
         )}
 
         {/* Área do Editor Syncfusion */}
-        <div className="syncfusion-editor-wrapper">
+        <div className="syncfusion-editor-wrapper relative">
           <SyncfusionEditor
             ref={editorRef}
             id="petition-main-editor"
@@ -3854,6 +4568,13 @@ Regras:
             onContentChange={handleContentChange}
             onRequestInsertBlock={() => {
               setBlockSearchQuery('');
+              setBlockSearchScope(
+                blockFilterScope === 'type'
+                  ? selectedStandardTypeId
+                    ? 'type'
+                    : 'area'
+                  : blockFilterScope
+              );
               setShowBlockSearchModal(true);
             }}
             onRequestCompanyLookup={() => {
@@ -3863,6 +4584,49 @@ Regras:
               openCreateBlockFromSelection(selectedText || '', selectedSfdt || '');
             }}
           />
+
+          {!isOnline && (
+            <div className="absolute inset-0 z-[50] flex items-center justify-center bg-slate-900/60 backdrop-blur-sm">
+              <div className="w-full max-w-md mx-4 bg-white rounded-2xl border border-slate-200 shadow-[0_24px_60px_rgba(15,23,42,0.25)] overflow-hidden">
+                <div className="h-2 w-full bg-orange-600" style={{ backgroundColor: '#ea580c' }} />
+                <div className="p-5">
+                  <div className="flex items-start gap-3">
+                    <div className="w-10 h-10 rounded-2xl bg-orange-100 flex items-center justify-center flex-shrink-0">
+                      <AlertCircle className="w-5 h-5 text-orange-700" />
+                    </div>
+                    <div className="min-w-0">
+                      <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-400">Sem conexão</div>
+                      <div className="mt-1 text-base font-bold text-slate-900">Você está offline</div>
+                      <p className="mt-2 text-sm text-slate-600 leading-relaxed">
+                        O Peticionamento é <span className="font-semibold">100% online</span> e precisa de conexão com o banco.
+                        Reconecte para continuar editando e salvando.
+                      </p>
+                      <p className="mt-2 text-[12px] text-slate-500">
+                        Dica: verifique sua internet/VPN e tente novamente.
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="mt-4 flex gap-2">
+                    <button
+                      type="button"
+                      onClick={handleRetryConnection}
+                      className="flex-1 px-4 py-2.5 text-sm font-bold rounded-xl transition-all shadow-md petition-btn-orange"
+                    >
+                      Verificar conexão
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => window.location.reload()}
+                      className="px-4 py-2.5 text-sm font-bold rounded-xl transition-all shadow-md petition-btn-slate"
+                    >
+                      Recarregar
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
         </div>
 
         <div style={{ position: 'fixed', left: -10000, top: -10000, width: 1, height: 1, overflow: 'hidden' }}>
@@ -3988,7 +4752,52 @@ Regras:
             </header>
 
             <div className="px-6 py-6">
-              <div className="relative">
+              <div className="flex items-center justify-between gap-3">
+                <div className="text-[10px] font-bold uppercase tracking-[0.2em] text-slate-400">Escopo</div>
+                <div className="flex-1" />
+                <div className="inline-flex items-center p-1 rounded-2xl border border-slate-200 bg-slate-50 shadow-sm">
+                  {selectedStandardTypeId && (
+                    <button
+                      type="button"
+                      onClick={() => setBlockSearchScope('type')}
+                      className={`px-3 py-1.5 text-[11px] font-bold rounded-xl transition-all ${
+                        blockSearchScope === 'type'
+                          ? 'bg-gradient-to-r from-blue-500 to-blue-600 text-white shadow'
+                          : 'text-slate-600 hover:bg-white'
+                      }`}
+                      title="Buscar apenas nos blocos vinculados à Petição Padrão"
+                    >
+                      Petição
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => setBlockSearchScope('area')}
+                    className={`px-3 py-1.5 text-[11px] font-bold rounded-xl transition-all ${
+                      blockSearchScope === 'area'
+                        ? 'bg-gradient-to-r from-amber-500 to-orange-500 text-white shadow'
+                        : 'text-slate-600 hover:bg-white'
+                    }`}
+                    title="Buscar nos blocos da Área Jurídica selecionada"
+                  >
+                    Área
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setBlockSearchScope('global')}
+                    className={`px-3 py-1.5 text-[11px] font-bold rounded-xl transition-all ${
+                      blockSearchScope === 'global'
+                        ? 'bg-gradient-to-r from-slate-600 to-slate-700 text-white shadow'
+                        : 'text-slate-600 hover:bg-white'
+                    }`}
+                    title="Buscar em todos os blocos (consulta global)"
+                  >
+                    Global
+                  </button>
+                </div>
+              </div>
+
+              <div className="relative mt-4">
                 <Search className="w-5 h-5 text-slate-400 absolute left-4 top-1/2 -translate-y-1/2" />
                 <input
                   type="text"
@@ -4002,7 +4811,12 @@ Regras:
 
               <div className="mt-4 border border-slate-200 rounded-lg overflow-hidden">
                 <div className="max-h-[65vh] overflow-y-auto">
-                  {searchFilteredBlocks.length === 0 ? (
+                  {blockSearchLoading ? (
+                    <div className="p-6 text-center text-slate-400">
+                      <Loader2 className="w-8 h-8 mx-auto mb-2 animate-spin" />
+                      <p className="text-sm">Carregando blocos...</p>
+                    </div>
+                  ) : searchFilteredBlocks.length === 0 ? (
                     <div className="p-6 text-center text-slate-400">
                       <FileText className="w-10 h-10 mx-auto mb-2" />
                       <p className="text-sm">Nenhum bloco encontrado</p>
@@ -4012,6 +4826,7 @@ Regras:
                       const b = item.block;
                       const matchPct = item.matchPct;
                       const showMatchPct = Boolean((blockSearchQuery || '').trim());
+                      const area = b.legal_area_id ? legalAreas.find((a) => a.id === b.legal_area_id) : null;
                       return (
                       <div
                         key={b.id}
@@ -4025,6 +4840,19 @@ Regras:
                           <span className="text-[10px] px-1.5 py-0.5 bg-slate-100 text-slate-500 rounded">
                             {getCategoryLabel(String(b.category || 'outros'))}
                           </span>
+                          {blockSearchScope === 'global' && (
+                            <span
+                              className="text-[10px] px-1.5 py-0.5 rounded border font-bold"
+                              style={{
+                                backgroundColor: (area?.color ? `${area.color}20` : '#e2e8f0'),
+                                borderColor: area?.color || '#cbd5e1',
+                                color: area?.color || '#475569',
+                              }}
+                              title={area?.name ? `Área Jurídica: ${area.name}` : 'Área Jurídica: Sem área'}
+                            >
+                              {area?.name || 'Sem área'}
+                            </span>
+                          )}
                           {showMatchPct && (
                             <span className="ml-auto text-[10px] px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 border border-emerald-200 font-bold">
                               {matchPct}%
@@ -4254,6 +5082,296 @@ Regras:
         </aside>
       )}
 
+      {/* Modal de Áreas Jurídicas */}
+      {showLegalAreaModal && (
+        <aside id="legal-area-backdrop" className="fixed inset-0 z-[120] flex items-start justify-center p-2 sm:p-6 pt-12 bg-slate-900/40 backdrop-blur-sm overflow-y-auto">
+          <main id="legal-area-modal" className="bg-white rounded-2xl shadow-[0_24px_60px_rgba(15,23,42,0.12)] border border-slate-200 w-full max-w-lg my-4 overflow-hidden flex flex-col mx-auto transition-all duration-300">
+            <div className="h-2 w-full shrink-0" style={{ backgroundColor: editingLegalArea?.color || legalAreaFormData.color || '#f97316' }} />
+
+            <header className="relative px-4 sm:px-6 py-4 sm:py-5 border-b border-slate-100 flex items-center justify-between sticky top-0 bg-white z-10">
+              <div>
+                <div className="text-[10px] sm:text-[11px] font-bold uppercase tracking-[0.2em] text-slate-400 leading-none">Áreas Jurídicas</div>
+                <h3 className="mt-2 text-base sm:text-lg font-bold text-slate-900 uppercase tracking-tight leading-tight">
+                  {editingLegalArea ? 'Editar Área' : 'Nova Área Jurídica'}
+                </h3>
+              </div>
+              <button
+                onClick={() => setShowLegalAreaModal(false)}
+                className="absolute top-2 sm:top-4 right-2 sm:right-4 p-2 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-xl transition-all duration-200 hover:rotate-90"
+                title="Fechar"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </header>
+
+            <div className="p-6 space-y-4">
+              <div>
+                <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Nome da Área *</label>
+                <input
+                  type="text"
+                  value={legalAreaFormData.name}
+                  onChange={(e) => setLegalAreaFormData({ ...legalAreaFormData, name: e.target.value })}
+                  placeholder="Ex: Trabalhista, Cível, Penal..."
+                  className="w-full px-4 py-3 text-sm border border-slate-200 rounded-xl focus:ring-2 focus:ring-amber-500/20 focus:border-amber-400 transition-all font-medium bg-slate-50"
+                  autoFocus
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Descrição (opcional)</label>
+                <textarea
+                  value={legalAreaFormData.description}
+                  onChange={(e) => setLegalAreaFormData({ ...legalAreaFormData, description: e.target.value })}
+                  placeholder="Ex: Direito do Trabalho - CLT, Justiça do Trabalho"
+                  rows={2}
+                  className="w-full px-4 py-3 text-sm border border-slate-200 rounded-xl focus:ring-2 focus:ring-amber-500/20 focus:border-amber-400 transition-all font-medium bg-slate-50 resize-none"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Cor de Identificação</label>
+                <div className="flex items-center gap-3">
+                  <input
+                    type="color"
+                    value={legalAreaFormData.color}
+                    onChange={(e) => setLegalAreaFormData({ ...legalAreaFormData, color: e.target.value })}
+                    className="w-12 h-10 rounded-lg border border-slate-200 cursor-pointer"
+                  />
+                  <div className="flex gap-2">
+                    {['#f97316', '#3b82f6', '#ef4444', '#10b981', '#8b5cf6', '#ec4899', '#f59e0b', '#06b6d4'].map((color) => (
+                      <button
+                        key={color}
+                        type="button"
+                        onClick={() => setLegalAreaFormData({ ...legalAreaFormData, color })}
+                        className={`w-8 h-8 rounded-lg border-2 transition-all ${legalAreaFormData.color === color ? 'border-slate-900 scale-110' : 'border-transparent hover:scale-105'}`}
+                        style={{ backgroundColor: color }}
+                      />
+                    ))}
+                  </div>
+                </div>
+              </div>
+
+              {/* Lista de áreas existentes */}
+              {legalAreas.length > 0 && !editingLegalArea && (
+                <div className="pt-4 border-t border-slate-200">
+                  <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-3">Áreas Cadastradas</label>
+                  <div className="space-y-2 max-h-48 overflow-y-auto">
+                    {legalAreas.map((area) => (
+                      <div
+                        key={area.id}
+                        className="flex items-center justify-between p-3 bg-slate-50 rounded-xl border border-slate-200"
+                      >
+                        <div className="flex items-center gap-3">
+                          <div className="w-3 h-8 rounded" style={{ backgroundColor: area.color }} />
+                          <div>
+                            <div className="text-sm font-semibold text-slate-700">{area.name}</div>
+                            {area.description && (
+                              <div className="text-xs text-slate-500">{area.description}</div>
+                            )}
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-1">
+                          <button
+                            type="button"
+                            onClick={() => openLegalAreaModal(area)}
+                            className="p-1.5 text-slate-400 hover:text-amber-600 hover:bg-amber-50 rounded-lg transition-colors"
+                            title="Editar"
+                          >
+                            <Edit3 className="w-4 h-4" />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              if (confirm(`Desativar a área "${area.name}"? Os blocos vinculados a ela ficarão disponíveis para todas as áreas.`)) {
+                                handleDeleteLegalArea(area.id);
+                              }
+                            }}
+                            className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                            title="Desativar"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+
+            <footer className="px-6 py-5 border-t border-slate-100 flex justify-end gap-3 bg-slate-50">
+              <button
+                type="button"
+                onClick={() => setShowLegalAreaModal(false)}
+                className="px-6 py-2.5 text-sm font-bold rounded-xl transition-all shadow-md petition-btn-slate"
+              >
+                <span>Cancelar</span>
+              </button>
+              <button
+                type="button"
+                onClick={handleSaveLegalArea}
+                disabled={saving || !legalAreaFormData.name.trim()}
+                className="font-bold px-8 py-2.5 rounded-xl transition-all shadow-md flex items-center gap-2 petition-btn-orange disabled:opacity-50"
+              >
+                {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+                <span>{editingLegalArea ? 'Atualizar' : 'Criar Área'}</span>
+              </button>
+            </footer>
+          </main>
+        </aside>
+      )}
+
+      {/* Modal de Petições Padrões */}
+      {showStandardTypeModal && (
+        <aside className="fixed inset-0 z-[120] flex items-start justify-center p-2 sm:p-6 pt-12 bg-slate-900/40 backdrop-blur-sm overflow-y-auto">
+          <main className="bg-white rounded-2xl shadow-[0_24px_60px_rgba(15,23,42,0.12)] border border-slate-200 w-full max-w-lg my-4 overflow-hidden flex flex-col mx-auto transition-all duration-300">
+            <div className="h-2 w-full shrink-0 bg-blue-500" />
+            <header className="relative px-6 py-5 border-b border-slate-100">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-blue-500 to-blue-600 flex items-center justify-center shadow-lg">
+                  <FileText className="w-5 h-5 text-white" />
+                </div>
+                <h3 className="text-lg font-bold text-slate-900">
+                  {editingStandardType ? 'Editar Petição Padrão' : 'Nova Petição Padrão'}
+                </h3>
+              </div>
+              <button
+                onClick={() => setShowStandardTypeModal(false)}
+                className="absolute top-4 right-4 p-2 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-xl transition-all duration-200 hover:rotate-90"
+                title="Fechar"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </header>
+
+            <div className="p-6 space-y-5">
+              <div>
+                <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Nome *</label>
+                <input
+                  type="text"
+                  value={standardTypeFormData.name}
+                  onChange={(e) => setStandardTypeFormData({ ...standardTypeFormData, name: e.target.value })}
+                  placeholder="Ex: Auxílio-acidente, BPC, Aposentadoria..."
+                  className="w-full px-4 py-3 text-sm border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400 transition-all font-medium bg-slate-50"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Descrição</label>
+                <textarea
+                  value={standardTypeFormData.description}
+                  onChange={(e) => setStandardTypeFormData({ ...standardTypeFormData, description: e.target.value })}
+                  placeholder="Descrição opcional..."
+                  rows={2}
+                  className="w-full px-4 py-3 text-sm border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400 transition-all font-medium bg-slate-50 resize-none"
+                />
+              </div>
+
+              {/* Área vinculada */}
+              <div className="p-3 bg-slate-50 rounded-xl border border-slate-200">
+                <div className="flex items-center gap-2 text-xs text-slate-500">
+                  <Scale className="w-4 h-4" />
+                  <span>Área Jurídica:</span>
+                  <span className="font-bold text-slate-700">{selectedLegalArea?.name || 'Nenhuma'}</span>
+                </div>
+              </div>
+
+              {/* Documento padrão vinculado */}
+              {editingStandardType && (
+                <div className="p-3 bg-blue-50 rounded-xl border border-blue-200">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2 text-xs text-blue-600">
+                      <FileText className="w-4 h-4" />
+                      <span>Documento padrão:</span>
+                      <span className="font-bold">
+                        {editingStandardType.default_document_name || 'Nenhum vinculado'}
+                      </span>
+                    </div>
+                    <button
+                      onClick={() => handleSetDefaultDocument(editingStandardType.id)}
+                      disabled={saving}
+                      className="px-2 py-1 text-[10px] bg-blue-500 text-white rounded hover:bg-blue-600 transition-colors disabled:opacity-50"
+                      title="Vincular o documento atual do editor como padrão"
+                    >
+                      {saving ? 'Salvando...' : 'Vincular Atual'}
+                    </button>
+                  </div>
+                  <p className="mt-1 text-[10px] text-blue-500">
+                    Ao selecionar esta petição padrão, o documento vinculado será carregado automaticamente.
+                  </p>
+                </div>
+              )}
+
+              {/* Lista de petições padrões cadastradas */}
+              <div className="pt-4 border-t border-slate-200">
+                <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-3">
+                  Petições Padrões de "{selectedLegalArea?.name}"
+                </label>
+                <div className="space-y-2 max-h-48 overflow-y-auto">
+                  {standardTypes.length === 0 ? (
+                    <p className="text-xs text-slate-400 text-center py-4">Nenhuma petição padrão cadastrada</p>
+                  ) : (
+                    standardTypes.map((type) => (
+                      <div
+                        key={type.id}
+                        className="flex items-center justify-between p-3 bg-slate-50 rounded-xl border border-slate-200"
+                      >
+                        <div className="flex items-center gap-2">
+                          <FileText className="w-4 h-4 text-blue-500" />
+                          <div>
+                            <span className="text-sm font-medium text-slate-700">{type.name}</span>
+                            {type.default_document_name && (
+                              <span className="ml-2 text-[10px] text-blue-500 bg-blue-50 px-1.5 py-0.5 rounded">
+                                {type.default_document_name}
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-1">
+                          <button
+                            onClick={() => openStandardTypeModal(type)}
+                            className="p-1.5 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
+                            title="Editar"
+                          >
+                            <Pencil className="w-3.5 h-3.5" />
+                          </button>
+                          <button
+                            onClick={() => handleDeleteStandardType(type.id)}
+                            className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                            title="Excluir"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      </div>
+                    ))
+                  )}
+                </div>
+              </div>
+            </div>
+
+            <footer className="px-6 py-5 border-t border-slate-100 flex justify-end gap-3 bg-slate-50">
+              <button
+                type="button"
+                onClick={() => setShowStandardTypeModal(false)}
+                className="px-6 py-2.5 text-sm font-bold rounded-xl transition-all shadow-md petition-btn-slate"
+              >
+                <span>Cancelar</span>
+              </button>
+              <button
+                type="button"
+                onClick={handleSaveStandardType}
+                disabled={saving || !standardTypeFormData.name.trim()}
+                className="font-bold px-8 py-2.5 rounded-xl transition-all shadow-md flex items-center gap-2 bg-blue-500 text-white hover:bg-blue-600 disabled:opacity-50"
+              >
+                {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+                <span>{editingStandardType ? 'Atualizar' : 'Criar'}</span>
+              </button>
+            </footer>
+          </main>
+        </aside>
+      )}
+
       {showBlockModal && (
         <aside id="petition-editor-backdrop" className="fixed inset-0 z-[100] flex items-start justify-center p-2 sm:p-6 pt-8 bg-slate-900/40 backdrop-blur-sm overflow-y-auto">
           <main id="block-editor-modal" className="bg-white rounded-2xl shadow-[0_24px_60px_rgba(15,23,42,0.12)] border border-slate-200 w-full max-w-7xl max-h-[92vh] my-2 overflow-hidden flex flex-col mx-auto transition-all duration-300">
@@ -4298,6 +5416,80 @@ Regras:
                     ))}
                   </select>
                 </div>
+
+                {legalAreas.length > 0 && (
+                  <div className="col-span-3">
+                    <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Área Jurídica</label>
+                    <select
+                      value={(blockFormData.legal_area_id ?? selectedLegalAreaId ?? '') as any}
+                      onChange={(e) => {
+                        const v = e.target.value || null;
+                        setBlockFormData({ ...blockFormData, legal_area_id: v as any });
+                        if (v && blockStandardTypeId) {
+                          const types = standardTypesByArea[String(v)] ?? [];
+                          if (!types.some((t) => t.id === blockStandardTypeId)) {
+                            setBlockStandardTypeId(null);
+                          }
+                        }
+                      }}
+                      className="w-full px-3 py-2.5 text-sm border border-slate-200 rounded-lg focus:ring-2 focus:ring-amber-500/20 focus:border-amber-400 transition-all bg-slate-50 font-medium cursor-pointer"
+                    >
+                      {legalAreas.map((area) => (
+                        <option key={area.id} value={area.id}>
+                          {area.name}
+                        </option>
+                      ))}
+                    </select>
+                    <div className="mt-1 text-[11px] text-slate-500">
+                      Dica: blocos ficam visíveis apenas na área selecionada.
+                    </div>
+                  </div>
+                )}
+
+                {legalAreas.length > 0 && (standardTypesByArea[String(blockFormData.legal_area_id ?? selectedLegalAreaId ?? '')] ?? []).length > 0 && (
+                  <div className="col-span-3">
+                    <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Modelo (Petição Padrão)</label>
+                    <div className="relative">
+                      <select
+                        value={(blockFilterScope === 'type' && selectedStandardTypeId ? selectedStandardTypeId : (blockStandardTypeId || '')) as any}
+                        onChange={(e) => {
+                          if (blockFilterScope === 'type' && selectedStandardTypeId) return;
+                          const v = e.target.value || null;
+                          setBlockStandardTypeId(v as any);
+
+                          // Garantir área compatível com o modelo
+                          const found = Object.values(standardTypesByArea).flat().find((t) => t.id === v) || null;
+                          if (found?.legal_area_id) {
+                            setBlockFormData((prev) => ({ ...prev, legal_area_id: found.legal_area_id as any }));
+                          }
+                        }}
+                        disabled={blockStandardTypeLoading || (blockFilterScope === 'type' && Boolean(selectedStandardTypeId))}
+                        className="w-full px-3 py-2.5 text-sm border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400 transition-all bg-slate-50 font-medium cursor-pointer disabled:opacity-70 disabled:cursor-not-allowed"
+                      >
+                        <option value="">Sem modelo (apenas área)</option>
+                        {(standardTypesByArea[String(blockFormData.legal_area_id ?? selectedLegalAreaId ?? '')] ?? []).map((t) => (
+                          <option key={t.id} value={t.id}>
+                            {t.name}
+                          </option>
+                        ))}
+                      </select>
+                      {blockStandardTypeLoading && (
+                        <div className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400">
+                          <Loader2 className="w-4 h-4 animate-spin" />
+                        </div>
+                      )}
+                    </div>
+                    {blockFilterScope === 'type' && selectedStandardTypeId ? (
+                      <div className="mt-1 text-[11px] text-blue-600">
+                        Este bloco será cadastrado no modelo selecionado.
+                      </div>
+                    ) : (
+                      <div className="mt-1 text-[11px] text-slate-500">
+                        Opcional: vincule este bloco a um modelo específico para aparecer somente dentro dele.
+                      </div>
+                    )}
+                  </div>
+                )}
 
                 {!editingBlock && (
                   <div className="col-span-3">
