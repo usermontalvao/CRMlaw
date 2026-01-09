@@ -559,6 +559,74 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
 
 const releases: ReleaseNote[] = [
   {
+    version: '1.9.195',
+    date: '09/01/2026',
+    summary: 'Chat: avatar do remetente em imagens mais confiável no launcher.',
+    modules: [
+      {
+        moduleId: 'chat',
+        changes: [
+          {
+            type: 'fix',
+            title: 'Detecção de imagem por mimeType',
+            description: 'Ajustada a lógica do launcher para identificar mensagens de imagem pelo mimeType do anexo, garantindo que o avatar do remetente apareça mesmo quando o preview não bate exatamente.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.194',
+    date: '09/01/2026',
+    summary: 'Chat: launcher mostra avatar do remetente em notificações de imagem.',
+    modules: [
+      {
+        moduleId: 'chat',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Avatar do remetente (imagem)',
+            description: 'Quando chega uma mensagem de imagem, o launcher do widget exibe o avatar de quem enviou a foto no canto direito, facilitando identificar o remetente sem abrir o chat.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.193',
+    date: '09/01/2026',
+    summary: 'Chat: widget flutuante com badge de não-lidas persistente no refresh.',
+    modules: [
+      {
+        moduleId: 'chat',
+        changes: [
+          {
+            type: 'fix',
+            title: 'Badge de não-lidas após refresh',
+            description: 'Adicionada persistência local e reidratação do contador de não-lidas do widget, com merge com os dados do banco para evitar o badge sumir ao atualizar a página.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.192',
+    date: '09/01/2026',
+    summary: 'Petições/Chat: launcher combinado com Editor na mesma cor de Mensagens.',
+    modules: [
+      {
+        moduleId: 'chat',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Divisor laranja (Editor sem fundo laranja)',
+            description: 'Ajustado o launcher combinado para o segmento "Editor" usar o mesmo fundo do botão "Mensagens", mantendo apenas o divisor laranja entre eles.',
+          },
+        ],
+      },
+    ],
+  },
+  {
     version: '1.9.191',
     date: '09/01/2026',
     summary: 'Petições/Chat: launcher combinado Mensagens + Editor sem sobreposição.',

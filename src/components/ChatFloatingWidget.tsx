@@ -11,6 +11,10 @@ import { events, SYSTEM_EVENTS } from '../utils/events';
 
 const WIDGET_OPEN_KEY = 'chat-floating-widget-open';
 
+const WIDGET_NOTIFY_COUNT_KEY = 'chat-floating-widget-notify-count';
+const WIDGET_ROOM_UNREAD_KEY = 'chat-floating-widget-room-unread';
+const WIDGET_LAST_IMAGE_SENDER_KEY = 'chat-floating-widget-last-image-sender';
+
 const PETITION_EDITOR_WIDGET_STATE_KEY = 'petition-editor-widget-state';
 const PETITION_EDITOR_WIDGET_STATE_EVENT = 'crm:petition_editor_widget_state';
 
@@ -300,6 +304,9 @@ const ChatFloatingWidget: React.FC = () => {
   const [unreadCount, setUnreadCount] = useState(0);
   const [notifyCount, setNotifyCount] = useState(0);
   const [roomUnreadCounts, setRoomUnreadCounts] = useState<Map<string, number>>(new Map());
+  const [lastUnreadImageSender, setLastUnreadImageSender] = useState<{ name: string; avatarUrl?: string | null } | null>(
+    null
+  );
 
   const [toast, setToast] = useState<{
     id: string;
@@ -549,6 +556,44 @@ const ChatFloatingWidget: React.FC = () => {
   }, []);
 
   useEffect(() => {
+    try {
+      const rawNotify = localStorage.getItem(WIDGET_NOTIFY_COUNT_KEY);
+      const rawRoom = localStorage.getItem(WIDGET_ROOM_UNREAD_KEY);
+      const rawLastImage = localStorage.getItem(WIDGET_LAST_IMAGE_SENDER_KEY);
+
+      if (rawNotify) {
+        const parsed = Number(rawNotify);
+        if (!Number.isNaN(parsed) && parsed > 0) {
+          setNotifyCount(parsed);
+        }
+      }
+
+      if (rawRoom) {
+        const obj = JSON.parse(rawRoom) as Record<string, number>;
+        const next = new Map<string, number>();
+        Object.entries(obj || {}).forEach(([roomId, count]) => {
+          const n = Number(count);
+          if (!Number.isNaN(n) && n > 0) {
+            next.set(String(roomId), n);
+          }
+        });
+        if (next.size > 0) {
+          setRoomUnreadCounts(next);
+        }
+      }
+
+      if (rawLastImage) {
+        const parsed = JSON.parse(rawLastImage) as { name?: string; avatarUrl?: string | null };
+        if (parsed?.name) {
+          setLastUnreadImageSender({ name: String(parsed.name), avatarUrl: parsed.avatarUrl ?? null });
+        }
+      }
+    } catch {
+      // ignore
+    }
+  }, []);
+
+  useEffect(() => {
     openRef.current = open;
     try {
       localStorage.setItem(WIDGET_OPEN_KEY, open ? '1' : '0');
@@ -556,6 +601,41 @@ const ChatFloatingWidget: React.FC = () => {
       // ignore
     }
   }, [open]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(WIDGET_NOTIFY_COUNT_KEY, String(notifyCount || 0));
+    } catch {
+      // ignore
+    }
+  }, [notifyCount]);
+
+  useEffect(() => {
+    try {
+      const obj: Record<string, number> = {};
+      roomUnreadCounts.forEach((count, roomId) => {
+        const n = Number(count);
+        if (!Number.isNaN(n) && n > 0) {
+          obj[String(roomId)] = n;
+        }
+      });
+      localStorage.setItem(WIDGET_ROOM_UNREAD_KEY, JSON.stringify(obj));
+    } catch {
+      // ignore
+    }
+  }, [roomUnreadCounts]);
+
+  useEffect(() => {
+    try {
+      if (!lastUnreadImageSender) {
+        localStorage.removeItem(WIDGET_LAST_IMAGE_SENDER_KEY);
+      } else {
+        localStorage.setItem(WIDGET_LAST_IMAGE_SENDER_KEY, JSON.stringify(lastUnreadImageSender));
+      }
+    } catch {
+      // ignore
+    }
+  }, [lastUnreadImageSender]);
 
   useEffect(() => {
     selectedRoomIdRef.current = selectedRoomId;
@@ -790,6 +870,13 @@ const ChatFloatingWidget: React.FC = () => {
             const profile = membersByUserIdRef.current.get(msg.user_id);
             const senderName = profile?.name || 'Nova mensagem';
             const avatarUrl = profile?.avatar_url;
+            const preview = getPreview(msg.content);
+            const attachment = parseAttachment(msg.content);
+            const isImageAttachment = !!attachment && String(attachment.mimeType || '').startsWith('image/');
+
+            if (isImageAttachment) {
+              setLastUnreadImageSender({ name: senderName, avatarUrl });
+            }
             setToast({
               id: msg.id,
               roomId: msg.room_id,
@@ -798,7 +885,7 @@ const ChatFloatingWidget: React.FC = () => {
               avatarUrl,
               senderRole: profile?.role,
               senderOab: profile?.oab,
-              preview: getPreview(msg.content),
+              preview,
             });
 
             if (!profile) {
@@ -815,6 +902,10 @@ const ChatFloatingWidget: React.FC = () => {
                     senderOab: p.oab,
                   };
                 });
+
+                if (isImageAttachment) {
+                  setLastUnreadImageSender({ name: p.name || senderName, avatarUrl: p.avatar_url });
+                }
               });
             }
 
@@ -1232,6 +1323,7 @@ const ChatFloatingWidget: React.FC = () => {
             if (next) {
               setNotifyCount(0);
               setToast(null);
+              setLastUnreadImageSender(null);
               ensureAudioContext();
             } else {
               setSelectedRoomId(null);
@@ -1259,7 +1351,7 @@ const ChatFloatingWidget: React.FC = () => {
             <>
               <div className="w-[3px] bg-gradient-to-b from-orange-400 via-orange-500 to-amber-400" aria-hidden />
               <div
-                className="relative flex items-center gap-2 px-4 h-12 bg-gradient-to-br from-orange-600 via-orange-500 to-amber-500 text-white"
+                className="relative flex items-center gap-2 px-4 h-12 text-white"
                 role="button"
                 tabIndex={0}
                 onClick={(e) => {
@@ -1285,6 +1377,22 @@ const ChatFloatingWidget: React.FC = () => {
                 )}
               </div>
             </>
+          )}
+
+          {lastUnreadImageSender && badgeCount > 0 && (
+            <div className="flex items-center pr-3 h-12">
+              {lastUnreadImageSender.avatarUrl ? (
+                <img
+                  src={lastUnreadImageSender.avatarUrl}
+                  alt={lastUnreadImageSender.name}
+                  className="w-7 h-7 rounded-full object-cover ring-1 ring-white/20"
+                />
+              ) : (
+                <div className="w-7 h-7 rounded-full bg-white/10 ring-1 ring-white/20 flex items-center justify-center text-[10px] font-bold">
+                  {lastUnreadImageSender.name.substring(0, 1).toUpperCase()}
+                </div>
+              )}
+            </div>
           )}
         </div>
       </button>

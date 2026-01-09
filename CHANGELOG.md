@@ -1,5 +1,17 @@
 # Changelog
 
+## 1.9.195
+- **Chat**: widget flutuante: avatar do remetente em imagens agora é detectado por **mimeType** (não depende só do preview).
+
+## 1.9.194
+- **Chat**: widget flutuante: launcher exibe **avatar de quem enviou a imagem** na notificação.
+
+## 1.9.193
+- **Chat**: widget flutuante: badge de **não lidas** agora é reidratado no refresh (persistência local + merge com banco).
+
+## 1.9.192
+- **Petições/Chat**: launcher combinado: segmento **Editor** com a mesma cor de **Mensagens**, mantendo apenas o **divisor laranja**.
+
 ## 1.9.191
 - **Petições/Chat**: editor minimizado: botão **não sobrepõe** o chat; launcher combinado **Mensagens + Editor** com divisória laranja.
 
