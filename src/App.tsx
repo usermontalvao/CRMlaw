@@ -59,6 +59,7 @@ const DocsPage = lazy(() => import('./components/DocsPage'));
 const PetitionEditorModule = lazy(() => import('./components/PetitionEditorModule'));
 // Widget flutuante do Editor de Petições
 const PetitionEditorWidget = lazy(() => import('./components/PetitionEditorWidget'));
+const ChatFloatingWidget = lazy(() => import('./components/ChatFloatingWidget'));
 import { useNotifications } from './hooks/useNotifications';
 import { usePresence } from './hooks/usePresence';
 import { pushNotifications } from './utils/pushNotifications';
@@ -1074,8 +1075,8 @@ const MainApp: React.FC = () => {
       </aside>
 
         {/* Main Content Area */}
-      <div className="md:ml-20 ml-0 transition-all duration-300">
-        <header className="bg-white border-b border-gray-200 sticky top-0 z-30 transition-colors duration-300">
+      <div className="md:ml-20 ml-0 transition-all duration-300 min-h-screen flex flex-col">
+        <header className="bg-white border-b border-gray-200 sticky top-0 z-30 transition-colors duration-300 flex-shrink-0">
           <div className="px-3 sm:px-4 lg:px-8 py-3 sm:py-4">
             <div className="flex items-center justify-between gap-2 sm:gap-4">
               <div className="flex items-center gap-2 sm:gap-3 min-w-0 flex-1">
@@ -1297,7 +1298,7 @@ const MainApp: React.FC = () => {
         </header>
 
         {/* Main Content */}
-        <main className={`px-3 sm:px-4 lg:px-6 xl:px-8 space-y-4 sm:space-y-6 ${activeModule === 'agenda' ? 'py-0' : 'py-4 sm:py-6'}`}>
+        <main className={`${activeModule === 'chat' ? 'px-0 py-0 space-y-0 overflow-hidden' : 'px-3 sm:px-4 lg:px-6 xl:px-8 space-y-4 sm:space-y-6'} flex-1 min-h-0 ${activeModule === 'agenda' ? 'py-0' : activeModule === 'chat' ? 'py-0' : 'py-4 sm:py-6'}`}>
           {profileBanner && (
             <div className="bg-emerald-50 border border-emerald-200 text-emerald-700 px-4 py-3 rounded-lg text-sm flex justify-between items-center">
               <span>{profileBanner}</span>
@@ -1416,17 +1417,19 @@ const MainApp: React.FC = () => {
           </Suspense>
         </main>
 
-        <div className="px-3 sm:px-4 lg:px-6 xl:px-8 py-6">
-          <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 border-t border-slate-200 pt-4 text-xs text-slate-500">
-            <div className="flex items-center gap-2">
-              <span>© {new Date().getFullYear()} jurius.com.br</span>
+        {activeModule !== 'chat' && (
+          <div className="px-3 sm:px-4 lg:px-6 xl:px-8 py-6">
+            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 border-t border-slate-200 pt-4 text-xs text-slate-500">
+              <div className="flex items-center gap-2">
+                <span>© {new Date().getFullYear()} jurius.com.br</span>
+              </div>
+              <span>v{__APP_VERSION__}</span>
+              <a href="#/docs" className="font-semibold text-orange-700 hover:text-orange-600 transition">
+                Alterações
+              </a>
             </div>
-            <span>v{__APP_VERSION__}</span>
-            <a href="#/docs" className="font-semibold text-orange-700 hover:text-orange-600 transition">
-              Alterações
-            </a>
           </div>
-        </div>
+        )}
 
         {/* Profile Modal */}
         <ProfileModal 
@@ -1443,7 +1446,11 @@ const MainApp: React.FC = () => {
       <Suspense fallback={null}>
         <PetitionEditorWidget />
       </Suspense>
-      </div>
+
+      <Suspense fallback={null}>
+        <ChatFloatingWidget />
+      </Suspense>
+    </div>
     </CacheProvider>
   );
 };

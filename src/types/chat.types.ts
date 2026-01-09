@@ -9,6 +9,7 @@ export interface ChatRoom {
   created_by: string | null;
   created_at: string;
   last_message_at: string | null;
+  last_message_preview: string | null;
 }
 
 export interface ChatRoomMember {

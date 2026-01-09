@@ -559,6 +559,948 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
 
 const releases: ReleaseNote[] = [
   {
+    version: '1.9.186',
+    date: '08/01/2026',
+    summary: 'Chat: widget flutuante com abertura de anexos (PDF) no mini-chat.',
+    modules: [
+      {
+        moduleId: 'chat',
+        changes: [
+          {
+            type: 'fix',
+            title: 'Abrir PDF/anexos no widget',
+            description: 'Ajustado o mini-chat do widget para renderizar link assinado em anexos (ex.: PDF), permitindo abrir o arquivo em nova aba.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.185',
+    date: '08/01/2026',
+    summary: 'Chat: correção de mensagens/anexos que sumiam após envio.',
+    modules: [
+      {
+        moduleId: 'chat',
+        changes: [
+          {
+            type: 'fix',
+            title: 'Mensagens/anexos sumindo',
+            description: 'Corrigida a listagem de mensagens para sempre buscar as últimas N mensagens, evitando que mensagens/anexos recém-enviados sumissem após recarregar (limit).',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.184',
+    date: '08/01/2026',
+    summary: 'Chat: widget flutuante com layout refinado do header e badge verificado.',
+    modules: [
+      {
+        moduleId: 'chat',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Design do widget flutuante',
+            description: 'Ajustado o layout do header (avatar + nome + verificado) e o toast de notificação para melhor alinhamento visual; badge verificado refinado (admin gold / advogado azul).',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.183',
+    date: '08/01/2026',
+    summary: 'Chat: widget flutuante com badge de não lidas consistente.',
+    modules: [
+      {
+        moduleId: 'chat',
+        changes: [
+          {
+            type: 'fix',
+            title: 'Badge de não lidas (widget flutuante)',
+            description: 'Corrigida inconsistência entre o total de não lidas e o badge por conversa no widget flutuante, unificando o cálculo pelo mapa de não lidas por sala e evitando sobrescrita por carregamento do banco.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.182',
+    date: '08/01/2026',
+    summary: 'Chat: correção de visto por último quando last_seen_at é nulo.',
+    modules: [
+      {
+        moduleId: 'chat',
+        changes: [
+          {
+            type: 'fix',
+            title: 'Status / visto por último',
+            description: 'Ajustado o módulo Chat para não chamar formatLastSeen quando last_seen_at está nulo, evitando erro e exibindo Offline corretamente.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.181',
+    date: '08/01/2026',
+    summary: 'Chat: imagens com zoom (lightbox) no módulo e no widget flutuante.',
+    modules: [
+      {
+        moduleId: 'chat',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Zoom de imagens no chat',
+            description: 'Adicionado lightbox para ampliar imagens ao clicar no preview, tanto no módulo Chat quanto no mini-chat do widget flutuante.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.180',
+    date: '08/01/2026',
+    summary: 'Chat: widget flutuante com badges de verificado (admin/advogado).',
+    modules: [
+      {
+        moduleId: 'chat',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Badges de verificado no widget',
+            description: 'Adicionado badge de verificado no widget flutuante: Administrador (gold) e Advogado (azul).',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.179',
+    date: '08/01/2026',
+    summary: 'Chat: widget flutuante com status Online/Offline mais confiável.',
+    modules: [
+      {
+        moduleId: 'chat',
+        changes: [
+          {
+            type: 'fix',
+            title: 'Status Online/Offline no widget flutuante',
+            description: 'Corrigido o status Online/Offline no widget flutuante usando Presence em tempo real, evitando casos de "falso offline" por dados desatualizados no perfil.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.178',
+    date: '08/01/2026',
+    summary: 'Chat: mini-chat do widget com envio de áudio, anexos e emojis.',
+    modules: [
+      {
+        moduleId: 'chat',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Ações do mini-chat (widget flutuante)',
+            description: 'Adicionado ao mini-chat do widget flutuante: envio de áudio (gravação), envio de anexos (upload) e seletor de emojis.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.177',
+    date: '08/01/2026',
+    summary: 'Chat: widget flutuante com altura do mini-chat ajustada.',
+    modules: [
+      {
+        moduleId: 'chat',
+        changes: [
+          {
+            type: 'fix',
+            title: 'Altura do widget flutuante',
+            description: 'Reduzida a altura máxima do painel do widget/mini-chat para evitar ocupar muito espaço na tela.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.176',
+    date: '08/01/2026',
+    summary: 'Chat: widget flutuante com indicador de não lido por conversa.',
+    modules: [
+      {
+        moduleId: 'chat',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Não lido por conversa no widget',
+            description: 'Adicionado badge de não lidas por conversa na lista do widget flutuante e limpeza automática ao abrir a conversa no widget.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.175',
+    date: '08/01/2026',
+    summary: 'Chat: widget flutuante com toast/áudio corrigidos.',
+    modules: [
+      {
+        moduleId: 'chat',
+        changes: [
+          {
+            type: 'fix',
+            title: 'Toast de notificação do widget',
+            description: 'Corrigida a renderização do toast de notificação (avatar + preview) para ocorrer no container do widget (e não dentro do componente Avatar), garantindo funcionamento correto junto com o som de notificação.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.174',
+    date: '08/01/2026',
+    summary: 'Chat: widget flutuante com toast/áudio de notificação ajustados.',
+    modules: [
+      {
+        moduleId: 'chat',
+        changes: [
+          {
+            type: 'fix',
+            title: 'Toast e som de notificação',
+            description: 'Corrigido o posicionamento/renderização do toast de notificação (avatar/nome/preview) e ajustado o som para ser habilitado após a primeira interação do usuário, garantindo funcionamento consistente no navegador.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.173',
+    date: '08/01/2026',
+    summary: 'Chat: widget flutuante com notificação por som e toast com avatar/preview.',
+    modules: [
+      {
+        moduleId: 'chat',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Notificação do widget flutuante',
+            description: 'Adicionado som e toast de notificação (avatar + preview) ao receber novas mensagens no widget flutuante.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.172',
+    date: '08/01/2026',
+    summary: 'Chat: widget flutuante (mini-chat) com notificação mais confiável.',
+    modules: [
+      {
+        moduleId: 'chat',
+        changes: [
+          {
+            type: 'fix',
+            title: 'Notificação do widget flutuante (subscription)',
+            description: 'Ajustado o widget flutuante para manter a subscription de mensagens estável e usar refs para estado atual, evitando perda de eventos ao abrir/fechar e garantindo que o badge notifique novas mensagens.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.171',
+    date: '08/01/2026',
+    summary: 'Chat: widget flutuante (mini-chat) com notificação/badge corrigida.',
+    modules: [
+      {
+        moduleId: 'chat',
+        changes: [
+          {
+            type: 'fix',
+            title: 'Notificação do widget flutuante',
+            description: 'Ajustado o widget flutuante para exibir badge de novas mensagens de forma consistente (inclui contador local de notificações) e marcar como lida a conversa quando aberta pelo widget.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.170',
+    date: '08/01/2026',
+    summary: 'Chat: widget flutuante (mini-chat) com preview de foto/anexo e correções de scroll.',
+    modules: [
+      {
+        moduleId: 'chat',
+        changes: [
+          {
+            type: 'fix',
+            title: 'Mini-chat (widget flutuante)',
+            description: 'Corrigido o mini-chat do widget flutuante para renderizar preview de imagem/áudio (anexos) via signed URL, eliminar scroll horizontal e abrir/manter a conversa no final ao carregar/receber novas mensagens.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.169',
+    date: '08/01/2026',
+    summary: 'Chat: widget flutuante de Mensagens agora é um mini-chat (abre conversa dentro do widget).',
+    modules: [
+      {
+        moduleId: 'chat',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Mini-chat no widget flutuante',
+            description: 'O widget flutuante agora permite abrir conversas diretamente dentro dele (sem navegar para o módulo Chat), com lista de mensagens em tempo real e input para enviar mensagens.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.168',
+    date: '08/01/2026',
+    summary: 'Chat: widget flutuante de Mensagens com botão fixo ao abrir painel.',
+    modules: [
+      {
+        moduleId: 'chat',
+        changes: [
+          {
+            type: 'fix',
+            title: 'Botão fixo do widget flutuante',
+            description: 'Corrigido o posicionamento para manter o botão do widget ancorado no canto (não desloca para a esquerda ao abrir o painel).',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.167',
+    date: '08/01/2026',
+    summary: 'Chat: widget flutuante de Mensagens fora do módulo Chat.',
+    modules: [
+      {
+        moduleId: 'chat',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Widget flutuante de Mensagens',
+            description: 'Adicionado widget flutuante para acessar mensagens fora do módulo Chat: botão com badge de não-lidas, painel com lista de conversas e atalho para abrir o Chat diretamente na conversa selecionada.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.166',
+    date: '08/01/2026',
+    summary: 'Chat: correção do indicador "digitando..." em tempo real.',
+    modules: [
+      {
+        moduleId: 'chat',
+        changes: [
+          {
+            type: 'fix',
+            title: 'Indicador "digitando..."',
+            description: 'Corrigido o envio de status de digitação para reutilizar o mesmo Realtime Presence channel do chat (evita criar channel novo a cada tecla), fazendo o header mostrar "X está digitando..." corretamente.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.165',
+    date: '08/01/2026',
+    summary: 'Chat: correção de policies (RLS) do bucket anexos_chat e preview de imagens nas mensagens.',
+    modules: [
+      {
+        moduleId: 'chat',
+        changes: [
+          {
+            type: 'fix',
+            title: 'Upload de anexos/áudio (RLS)',
+            description: 'Ajustadas as policies do Supabase Storage (storage.objects) para permitir upload no bucket anexos_chat por usuários autenticados, eliminando erro "new row violates row-level security policy" ao enviar anexos/áudio.',
+          },
+          {
+            type: 'improvement',
+            title: 'Preview de imagem no chat',
+            description: 'Ao enviar imagens (mimeType image/*), o chat agora exibe o preview inline via signed URL (mantendo a validade/expiração de 6 meses na UI).',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.164',
+    date: '08/01/2026',
+    summary: 'Chat: envio de mensagens de áudio via MediaRecorder API, armazenadas no bucket anexos_chat com validade de 6 meses.',
+    modules: [
+      {
+        moduleId: 'chat',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Mensagens de áudio',
+            description: 'Implementado envio de mensagens de áudio usando MediaRecorder API. Botão de microfone com timer de gravação. Áudios armazenados no bucket anexos_chat com validade de 6 meses. Player de áudio nativo nas mensagens.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.163',
+    date: '08/01/2026',
+    summary: 'Chat: indicador "digitando..." em tempo real e "visto por último" no header.',
+    modules: [
+      {
+        moduleId: 'chat',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Indicador "digitando..."',
+            description: 'Implementado indicador de digitação em tempo real usando Supabase Realtime Presence. Quando alguém está digitando, aparece "X está digitando..." no header do chat.',
+          },
+          {
+            type: 'improvement',
+            title: 'Visto por último',
+            description: 'Adicionado display de "visto por último" no header do chat quando o usuário está offline. Formato inteligente: "Visto há 5 min", "Visto há 2h", "Visto ontem", etc.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.162',
+    date: '08/01/2026',
+    summary: 'Chat: e-mail substituído por badge de função (role) no header, lista de contatos e drawer.',
+    modules: [
+      {
+        moduleId: 'chat',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Badge de função em vez de e-mail',
+            description: 'Substituído e-mail por badge de função (role) no header do chat, na lista de contatos do modal Nova Conversa e no drawer de informações.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.161',
+    date: '08/01/2026',
+    summary: 'Chat: anexos (bucket anexos_chat) + emoji e expiração de 6 meses para downloads.',
+    modules: [
+      {
+        moduleId: 'chat',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Anexos no chat',
+            description: 'Adicionado envio de arquivos para o bucket anexos_chat e exibição no chat com card e botão de download (link temporário).',
+          },
+          {
+            type: 'fix',
+            title: 'Validade de anexos (6 meses)',
+            description: 'Anexos expiram após 6 meses: UI indica expiração e o botão de download fica indisponível.',
+          },
+          {
+            type: 'improvement',
+            title: 'Seletor de emojis',
+            description: 'Adicionado popover de emojis para inserir rapidamente no campo de mensagem mantendo o cursor.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.160',
+    date: '08/01/2026',
+    summary: 'Chat: modal Nova Conversa padronizado (estilo CRM) e remoção de tons residuais que deixavam o layout “bege”.',
+    modules: [
+      {
+        moduleId: 'chat',
+        changes: [
+          {
+            type: 'fix',
+            title: 'Modal Nova Conversa (padrão CRM)',
+            description: 'Modal refeito no mesmo padrão visual dos modais do sistema: overlay, header com hierarquia, botão X com contraste correto e corpo com scroll interno.',
+          },
+          {
+            type: 'fix',
+            title: 'Remoção de “bege”/amber residual',
+            description: 'Removidos estilos amber que estavam impactando spinner e hover da lista, mantendo o tema indigo/slate consistente no chat.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.159',
+    date: '08/01/2026',
+    summary: 'Chat: esquema de cores profissional (indigo/slate) aplicado em todo o módulo.',
+    modules: [
+      {
+        moduleId: 'chat',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Cores profissionais aplicadas',
+            description: 'Todas as cores do chat foram alteradas para um esquema profissional usando indigo (azul roxo) e slate (cinza azulado), substituindo o amarelo/laranja.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.158',
+    date: '08/01/2026',
+    summary: 'Chat: cores do sistema (laranja/amber), tradução completa para português, modal redesenhado e melhorias de UX.',
+    modules: [
+      {
+        moduleId: 'chat',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Cores do sistema aplicadas',
+            description: 'Todas as cores do chat foram alteradas de teal/verde para amber/laranja, seguindo o padrão visual do sistema.',
+          },
+          {
+            type: 'improvement',
+            title: 'Tradução completa para português',
+            description: 'Todos os textos em inglês foram traduzidos: "No new messages" → "Nenhuma mensagem ainda", "Type a message" → "Digite uma mensagem", "Today" → "Hoje", etc.',
+          },
+          {
+            type: 'improvement',
+            title: 'Modal Nova Conversa redesenhado',
+            description: 'Modal agora segue o padrão do sistema com faixa laranja no topo, botão X visível e cores consistentes.',
+          },
+          {
+            type: 'improvement',
+            title: 'Botão de som adicionado',
+            description: 'Substituído o botão de 3 pontos (sem função) por um toggle de notificação sonora (sino).',
+          },
+          {
+            type: 'fix',
+            title: 'Altura ajustada',
+            description: 'Altura do chat ajustada para calc(100vh - 7rem) eliminando scroll residual.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.157',
+    date: '08/01/2026',
+    summary: 'Chat: correção definitiva da altura usando calc(100vh - 5rem).',
+    modules: [
+      {
+        moduleId: 'chat',
+        changes: [
+          {
+            type: 'fix',
+            title: 'Altura do chat corrigida',
+            description: 'Container do chat agora usa height: calc(100vh - 5rem) via style inline, garantindo que ocupe exatamente a viewport disponível sem gerar scroll no body.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.155',
+    date: '08/01/2026',
+    summary: 'Chat: correção definitiva da altura (overflow) usando calc(100vh - 14rem).',
+    modules: [
+      {
+        moduleId: 'chat',
+        changes: [
+          {
+            type: 'fix',
+            title: 'Altura do chat corrigida',
+            description: 'Alterado de h-full para h-[calc(100vh-14rem)] para garantir que o chat ocupe a altura correta dentro do container do App, compensando header, footer, padding do main (py-4 sm:py-6) e banners, eliminando overflow e bugs de scroll.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.154',
+    date: '08/01/2026',
+    summary: 'Chat: correções de altura/overflow e ajustes de cores (modal/drawer) para melhor contraste.',
+    modules: [
+      {
+        moduleId: 'chat',
+        changes: [
+          {
+            type: 'fix',
+            title: 'Altura/overflow do chat',
+            description: 'Ajustado layout flex com min-h-0 para eliminar bugs de altura e garantir scroll correto em sidebar e mensagens.',
+          },
+          {
+            type: 'improvement',
+            title: 'Cores do modal/drawer (botão X visível)',
+            description: 'Botões de fechar (X) no modal e drawer foram padronizados na cor do CRM (#208b8b) com texto branco, melhorando contraste e acessibilidade.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.153',
+    date: '08/01/2026',
+    summary: 'Chat: ajustes de UX (layout, modal nova conversa, drawer de informações e fundo consistente).',
+    modules: [
+      {
+        moduleId: 'chat',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Posicionamento do chat',
+            description: 'Removida centralização e altura fixa, fazendo o chat ocupar corretamente a área do módulo.',
+          },
+          {
+            type: 'improvement',
+            title: 'Fundo consistente do chat',
+            description: 'Padronizado overlay do background para evitar variações de cor durante o scroll.',
+          },
+          {
+            type: 'improvement',
+            title: 'Informações do contato no header',
+            description: 'Clique no avatar/nome do header abre drawer lateral com dados do outro usuário (DM).',
+          },
+          {
+            type: 'improvement',
+            title: 'Nova Conversa (modal)',
+            description: 'Modal redesenhado para ficar no padrão visual do chat e com busca separada.',
+          },
+          {
+            type: 'improvement',
+            title: 'Remover aviso de criptografia',
+            description: 'Removido o banner “Messages are end-to-end encrypted for client confidentiality.”',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.152',
+    date: '08/01/2026',
+    summary: 'Chat: ajuste final de UI para ficar idêntico ao template (scrollbar custom).',
+    modules: [
+      {
+        moduleId: 'chat',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Scrollbar do chat igual ao template',
+            description: 'Adicionado CSS global da classe custom-scrollbar (incluindo dark mode) para reproduzir exatamente o comportamento visual do HTML no ChatModule.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.151',
+    date: '08/01/2026',
+    summary: 'Chat: UI idêntica ao template HTML enviado (estilo WhatsApp) com as cores do CRM e suporte a dark mode.',
+    modules: [
+      {
+        moduleId: 'chat',
+        changes: [
+          {
+            type: 'feature',
+            title: 'Layout igual ao template (WhatsApp-like)',
+            description: 'Refeito o layout para bater com o HTML: header da sidebar, busca, lista com item ativo (barra esquerda), área do chat com background estilo papel, bubbles e footer com input e botões.',
+          },
+          {
+            type: 'improvement',
+            title: 'Paleta do CRM + dark mode',
+            description: 'Aplicadas as cores do sistema (primary #208b8b) e classes dark para manter o mesmo visual do template em tema escuro.',
+          },
+          {
+            type: 'improvement',
+            title: 'Avatares e estados visuais',
+            description: 'Avatar atualizado para suportar classes específicas do template (ring, offset) e estados como offline (grayscale/opacity).',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.150',
+    date: '08/01/2026',
+    summary: 'Chat: corrigido preview de conversas (não fica mais "Nenhuma mensagem ainda" quando já existe mensagem).',
+    modules: [
+      {
+        moduleId: 'chat',
+        changes: [
+          {
+            type: 'fix',
+            title: 'Preview da última mensagem na lista de conversas',
+            description: 'Quando last_message_at existe e last_message_preview vem vazio, o sistema busca a última mensagem real e preenche o preview. Também adicionada assinatura realtime global para atualizar previews em conversas não selecionadas.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.149',
+    date: '08/01/2026',
+    summary: 'Chat: UI/UX completamente reformulada com fotos de perfil reais, chat individual visível e design profissional.',
+    modules: [
+      {
+        moduleId: 'chat',
+        changes: [
+          {
+            type: 'feature',
+            title: 'Fotos de perfil reais',
+            description: 'Componente Avatar que exibe foto do usuário (avatar_url) ou iniciais com gradiente. Indicador de status online/offline.',
+          },
+          {
+            type: 'feature',
+            title: 'Chat individual visível',
+            description: 'DMs agora mostram corretamente o nome e foto do outro usuário. Busca de membros por sala para identificar o contato.',
+          },
+          {
+            type: 'improvement',
+            title: 'UI/UX profissional',
+            description: 'Design limpo com sidebar de conversas, área de mensagens com balões estilo WhatsApp, indicador de leitura (check duplo), input moderno.',
+          },
+          {
+            type: 'improvement',
+            title: 'Modal de nova conversa melhorado',
+            description: 'Lista de usuários com foto, nome, email e indicador de presença. Busca integrada.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.148',
+    date: '08/01/2026',
+    summary: 'Chat: redesign completo seguindo template HTML com sidebar esquerda (navegação), sidebar de conversas, área principal e sidebar direita com detalhes do contato.',
+    modules: [
+      {
+        moduleId: 'chat',
+        changes: [
+          {
+            type: 'feature',
+            title: 'Redesign completo do Chat',
+            description: 'Sidebar esquerda com navegação (Dashboard, Chat, Users, Files, Settings), sidebar de conversas com filtros (All, Leads, Team, Unread), área principal de chat e sidebar direita com detalhes do contato.',
+          },
+          {
+            type: 'feature',
+            title: 'Sidebar direita com informações do contato',
+            description: 'Seção About com avatar, nome e cargo; Contact Information (email, telefone, localização); Active Deals com progresso; Shared Files; Tags coloridas.',
+          },
+          {
+            type: 'improvement',
+            title: 'Cores e design profissional',
+            description: 'Paleta de cores teal (#208b8b), fundo claro (#fdfdfd), bordas sutis (#e2e8f0), avatares com gradiente, indicadores de presença.',
+          },
+          {
+            type: 'improvement',
+            title: 'Filtros de conversas',
+            description: 'Botões All, Leads, Team e Unread para filtrar conversas na sidebar.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.147',
+    date: '08/01/2026',
+    summary: 'Chat: UI estilo WhatsApp com sidebar de conversas individuais/DMs, preview da última mensagem, avatares, timestamps e badges de não lidas.',
+    modules: [
+      {
+        moduleId: 'chat',
+        changes: [
+          {
+            type: 'feature',
+            title: 'UI estilo WhatsApp',
+            description: 'Sidebar com conversas individuais/DMs, preview da última mensagem, avatares (iniciais com gradiente), timestamps (agora, 5min, 2h, ontem, etc.) e badges de não lidas.',
+          },
+          {
+            type: 'feature',
+            title: 'Modal de nova conversa',
+            description: 'Modal para iniciar conversas privadas/DMs clicando em usuários, com busca e indicador de presença.',
+          },
+          {
+            type: 'improvement',
+            title: 'Preview da última mensagem',
+            description: 'Adicionado campo last_message_preview no tipo ChatRoom para mostrar preview das conversas na sidebar.',
+          },
+          {
+            type: 'improvement',
+            title: 'Header com ações de chamada',
+            description: 'Header da conversa agora mostra ícones de chamada de voz, vídeo e mais opções (estilo WhatsApp).',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.146',
+    date: '08/01/2026',
+    summary: 'Chat: correção definitiva do RLS via MCP e reativação completa de salas privadas/membros/não-lidas; som de notificação via WebAudio (sem mp3).',
+    modules: [
+      {
+        moduleId: 'chat',
+        changes: [
+          {
+            type: 'fix',
+            title: 'Corrigir RLS (erro 42P17) via MCP',
+            description: 'Policies de chat_rooms/chat_room_members/chat_messages foram recriadas sem recursão, eliminando o erro "infinite recursion detected".',
+          },
+          {
+            type: 'improvement',
+            title: 'Reativar fluxo completo de membros e não-lidas',
+            description: 'Reativados listRooms (públicas + privadas do usuário), markAsRead e getUnreadCount, e inserção de membros em DMs.',
+          },
+          {
+            type: 'fix',
+            title: 'Som de notificação sem arquivo mp3',
+            description: 'Removida dependência do /notification.mp3 (erro 416). Agora usa beep via WebAudio.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.145',
+    date: '08/01/2026',
+    summary: 'Correção crítica no Chat: remover completamente uso de chat_room_members para evitar erro RLS.',
+    modules: [
+      {
+        moduleId: 'chat',
+        changes: [
+          {
+            type: 'fix',
+            title: 'Remover completamente chat_room_members',
+            description: 'listRooms agora busca apenas salas públicas, markAsRead e getUnreadCount desabilitados para evitar recursão infinita nas políticas RLS.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.144',
+    date: '08/01/2026',
+    summary: 'Correção no Chat: remover inserção de membros do createDirectMessage para evitar erro RLS.',
+    modules: [
+      {
+        moduleId: 'chat',
+        changes: [
+          {
+            type: 'fix',
+            title: 'Remover inserção de membros do createDirectMessage',
+            description: 'A inserção em chat_room_members causa recursão nas políticas RLS. Agora cria apenas a sala DM.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.143',
+    date: '08/01/2026',
+    summary: 'Correção no Chat: simplificar createDirectMessage para evitar erro RLS de recursão infinita.',
+    modules: [
+      {
+        moduleId: 'chat',
+        changes: [
+          {
+            type: 'fix',
+            title: 'Simplificar createDirectMessage',
+            description: 'Removida verificação de DM existente que causava recursão nas políticas RLS. Agora cria nova sala DM diretamente.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.142',
+    date: '08/01/2026',
+    summary: 'Correção no Chat: remover avatar_url do schema pois a coluna não existe na tabela chat_rooms.',
+    modules: [
+      {
+        moduleId: 'chat',
+        changes: [
+          {
+            type: 'fix',
+            title: 'Remover avatar_url do ChatRoom',
+            description: 'A coluna avatar_url não existe na tabela chat_rooms no Supabase. Removido do tipo e do código para evitar erro de schema cache.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.141',
+    date: '08/01/2026',
+    summary: 'Correções no Chat: erro RLS ao criar DM, avatares nas salas de conversa.',
+    modules: [
+      {
+        moduleId: 'chat',
+        changes: [
+          {
+            type: 'fix',
+            title: 'Corrigir erro de RLS (infinite recursion) ao criar DM',
+            description: 'O createDirectMessage agora busca membros separadamente para evitar recursão nas políticas RLS do Supabase.',
+          },
+          {
+            type: 'feature',
+            title: 'Avatares nas salas de conversa',
+            description: 'Salas DM agora mostram a foto do usuário (avatar_url) ou iniciais com gradiente como fallback.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.140',
+    date: '08/01/2026',
+    summary: 'Chat Corporativo completo: criar salas, DM, broadcast, notificações com som, lista de usuários online.',
+    modules: [
+      {
+        moduleId: 'chat',
+        changes: [
+          {
+            type: 'feature',
+            title: 'Criar salas de equipe e conversas privadas',
+            description: 'Modal para criar novas salas com seleção de membros, tipo (equipe/DM) e descrição.',
+          },
+          {
+            type: 'feature',
+            title: 'Enviar mensagem para todos',
+            description: 'Botão "Enviar para todos" para broadcast na sala geral.',
+          },
+          {
+            type: 'feature',
+            title: 'Lista de usuários online',
+            description: 'Exibe todos os usuários com status de presença; clique para iniciar DM.',
+          },
+          {
+            type: 'feature',
+            title: 'Sistema de notificações',
+            description: 'Badge com contador de não lidas, painel de notificações recentes, som de notificação (toggle) e notificações nativas do navegador.',
+          },
+          {
+            type: 'improvement',
+            title: 'Realtime completo',
+            description: 'Mensagens em tempo real via Supabase Realtime, marcação automática de lido ao abrir sala.',
+          },
+        ],
+      },
+    ],
+  },
+  {
     version: '1.9.139',
     date: '08/01/2026',
     summary: 'Login via CPF: agora tenta localizar o usuário em profiles.cpf e mostra mensagem clara quando o client não possui e-mail.',

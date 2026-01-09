@@ -1,5 +1,110 @@
 # Changelog
 
+## 1.9.186
+- **Chat**: widget flutuante: anexos (ex.: **PDF**) agora abrem via link assinado no mini-chat.
+
+## 1.9.185
+- **Chat**: corrigido bug onde imagem/mensagem recém-enviada **sumia** após alguns segundos (listagem agora traz as **últimas** mensagens).
+
+## 1.9.184
+- **Chat**: widget flutuante: ajuste de **design/layout** (alinhamento do nome + badge verificado e toast).
+
+## 1.9.183
+- **Chat**: widget flutuante: corrigida inconsistência do **badge de não lidas** (total vs por conversa).
+
+## 1.9.182
+- **Chat**: correção de status "visto por último" (evita erro quando `last_seen_at` é nulo).
+
+## 1.9.181
+- **Chat**: imagens/anexos: clique no preview para **ampliar** (lightbox) no módulo Chat e no mini-chat do widget.
+
+## 1.9.180
+- **Chat**: widget flutuante: badge **verificado** (Administrador **gold** e Advogado **azul**).
+
+## 1.9.179
+- **Chat**: widget flutuante: correção de status **Online/Offline** (evita "falso offline") usando Presence em tempo real.
+
+## 1.9.178
+- **Chat**: widget flutuante (mini-chat): adicionado envio de **áudio**, **anexos** e **emojis**.
+
+## 1.9.177
+- **Chat**: widget flutuante: ajustada **altura** do painel/mini-chat para não ficar muito alto.
+
+## 1.9.176
+- **Chat**: widget flutuante: indicador de **não lido por conversa** (badge na lista) e limpeza ao abrir.
+
+## 1.9.175
+- **Chat**: widget flutuante: correção do **toast** (avatar/preview) para renderizar no local correto e notificação com **som**.
+
+## 1.9.174
+- **Chat**: widget flutuante: corrigido **toast** (avatar/nome/preview) e melhora do **som** de notificação após primeira interação do usuário.
+
+## 1.9.173
+- **Chat**: widget flutuante: **som** e **toast** de notificação (avatar + preview) ao receber novas mensagens.
+
+## 1.9.172
+- **Chat**: widget flutuante (mini-chat): corrigida **notificação** mantendo subscription de mensagens estável (evita perder eventos ao abrir/fechar).
+
+## 1.9.171
+- **Chat**: widget flutuante (mini-chat): corrigida **notificação/badge** ao receber novas mensagens e ajuste para **marcar como lido** ao abrir a conversa pelo widget.
+
+## 1.9.170
+- **Chat**: widget flutuante (mini-chat): **preview de foto/anexo**, correção de **scroll lateral** e conversa abrindo **no final**.
+
+## 1.9.169
+- **Chat**: widget flutuante de Mensagens agora é um **mini-chat** (abre conversa dentro do widget com mensagens e envio).
+
+## 1.9.168
+- **Chat**: widget flutuante de Mensagens com **botão fixo** (não desloca para a esquerda ao abrir o painel).
+
+## 1.9.167
+- **Chat**: novo **widget flutuante de Mensagens** fora do módulo Chat (badge de não-lidas + lista rápida) com atalho para abrir conversas.
+
+## 1.9.166
+- **Chat**: corrigido indicador **"digitando..."** (Presence) reutilizando o mesmo channel em vez de criar um novo a cada digitação.
+
+## 1.9.165
+- **Chat**: corrigidas policies (RLS) do Supabase Storage para permitir upload no bucket `anexos_chat` (anexos e áudio).
+- **Chat**: mensagens de **imagem** agora mostram **preview** no chat (via signed URL).
+
+## 1.9.164
+- **Chat**: envio de **mensagens de áudio** via MediaRecorder API.
+- **Chat**: áudios armazenados no bucket `anexos_chat` com validade de 6 meses.
+- **Chat**: player de áudio nativo nas mensagens com controls.
+
+## 1.9.163
+- **Chat**: indicador **"digitando..."** em tempo real via Supabase Presence.
+- **Chat**: mostrar **"visto por último"** no header quando usuário está offline.
+
+## 1.9.162
+- **Chat**: e-mail substituído por **badge de função (role)** no header, lista de contatos e drawer.
+
+## 1.9.161
+- **Chat**: suporte a **anexos** (upload no bucket `anexos_chat`) com download por link temporário.
+- **Chat**: anexos com **validade de 6 meses** (após expirar, download fica indisponível).
+- **Chat**: botão de **emoji** para inserir rapidamente no campo de mensagem.
+
+## 1.9.160
+- **Chat**: modal **Nova Conversa** padronizado no estilo do CRM (header, botão X visível e layout mais limpo).
+- **Chat**: removidos tons `amber` residuais no modal (evita fundo “bege” nos itens e spinner alinhado ao tema).
+
+## 1.9.159
+- **Chat**: esquema de cores profissional (indigo/slate) aplicado em todo o módulo.
+
+## 1.9.158
+- **Chat**: cores do sistema (laranja/amber) aplicadas em todo o módulo.
+- **Chat**: tradução completa para português (todos os textos em inglês removidos).
+- **Chat**: modal **Nova Conversa** redesenhado com faixa laranja e botão X visível.
+- **Chat**: botão de 3 pontos removido, substituído por toggle de notificação sonora.
+- **Chat**: altura ajustada para `calc(100vh - 7rem)` eliminando scroll residual.
+
+## 1.9.157
+- **Chat**: correção definitiva da altura usando `calc(100vh - 5rem)` para ocupar exatamente a viewport disponível sem gerar scroll no body.
+
+## 1.9.156
+- **Chat**: módulo agora ocupa **altura total** (layout em tela cheia) e o rodapé (©/versão/Alterações) foi removido **apenas** no Chat.
+- **Chat**: modal **Nova Conversa** redesenhado com visual mais profissional (header com gradiente, busca aprimorada e lista de contatos mais elegante).
+
 ## 1.9.122
 - **Central de Notificações**: agregadas pendências do **Financeiro** (parcelas vencidas) com filtro por tipo e navegação para o módulo.
 
