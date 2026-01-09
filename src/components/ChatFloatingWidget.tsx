@@ -1,14 +1,18 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { ArrowLeft, BadgeCheck, ExternalLink, Maximize2, MessageCircle, Mic, Paperclip, Send, Smile, Square, X } from 'lucide-react';
+import { ArrowLeft, BadgeCheck, ExternalLink, FileText, Maximize2, MessageCircle, Mic, Paperclip, Send, Smile, Square, X } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { useNavigation } from '../contexts/NavigationContext';
 import { chatService } from '../services/chat.service';
 import { profileService, type Profile } from '../services/profile.service';
 import type { ChatMessage, ChatRoom } from '../types/chat.types';
 import { supabase } from '../config/supabase';
+import { events, SYSTEM_EVENTS } from '../utils/events';
 
 const WIDGET_OPEN_KEY = 'chat-floating-widget-open';
+
+const PETITION_EDITOR_WIDGET_STATE_KEY = 'petition-editor-widget-state';
+const PETITION_EDITOR_WIDGET_STATE_EVENT = 'crm:petition_editor_widget_state';
 
 const ATTACHMENT_PREFIX = '__anexo__:';
 const ATTACHMENT_BUCKET = 'anexos_chat';
@@ -307,6 +311,9 @@ const ChatFloatingWidget: React.FC = () => {
     senderOab?: string | null;
     preview: string;
   } | null>(null);
+
+  const [petitionEditorMinimized, setPetitionEditorMinimized] = useState(false);
+  const [petitionEditorHasUnsavedChanges, setPetitionEditorHasUnsavedChanges] = useState(false);
 
   const [onlineUserIds, setOnlineUserIds] = useState<Set<string>>(() => new Set());
 
@@ -687,6 +694,9 @@ const ChatFloatingWidget: React.FC = () => {
       setMessageText('');
       pinnedToBottomRef.current = true;
       scrollToBottom('smooth');
+      requestAnimationFrame(() => {
+        messageInputRef.current?.focus();
+      });
     } finally {
       setSendingMessage(false);
     }
@@ -850,6 +860,39 @@ const ChatFloatingWidget: React.FC = () => {
     return () => unsubscribe();
   }, [user, loadRooms, loadUnread, playNotificationSound]);
 
+  useEffect(() => {
+    const readEditorState = () => {
+      try {
+        const raw = localStorage.getItem(PETITION_EDITOR_WIDGET_STATE_KEY);
+        if (!raw) {
+          setPetitionEditorMinimized(false);
+          setPetitionEditorHasUnsavedChanges(false);
+          return;
+        }
+        const parsed = JSON.parse(raw);
+        const nextState = String(parsed?.state ?? 'closed');
+        setPetitionEditorMinimized(nextState === 'minimized');
+      } catch {
+        setPetitionEditorMinimized(false);
+        setPetitionEditorHasUnsavedChanges(false);
+      }
+    };
+
+    readEditorState();
+
+    const onState = (ev: Event) => {
+      const detail = (ev as CustomEvent)?.detail;
+      const nextState = String(detail?.state ?? 'closed');
+      setPetitionEditorMinimized(nextState === 'minimized');
+      setPetitionEditorHasUnsavedChanges(!!detail?.hasUnsavedChanges);
+    };
+
+    window.addEventListener(PETITION_EDITOR_WIDGET_STATE_EVENT, onState as EventListener);
+    return () => {
+      window.removeEventListener(PETITION_EDITOR_WIDGET_STATE_EVENT, onState as EventListener);
+    };
+  }, []);
+
   const visible = !!user && currentModule !== 'chat';
   if (!visible) return null;
 
@@ -877,7 +920,7 @@ const ChatFloatingWidget: React.FC = () => {
   return createPortal(
     <div className="fixed bottom-5 right-5 z-[9999] flex flex-col items-end" style={{ isolation: 'isolate' }}>
       {open && (
-        <div className="mb-3 w-[360px] max-w-[calc(100vw-24px)] rounded-2xl bg-[#111827]/95 text-white shadow-[0_30px_80px_rgba(0,0,0,0.55)] ring-1 ring-white/10 overflow-hidden flex flex-col" style={{ maxHeight: '460px' }}>
+        <div className="mb-3 w-[360px] max-w-[calc(100vw-24px)] rounded-2xl bg-[#111827]/95 text-white shadow-[0_30px_80px_rgba(0,0,0,0.55)] ring-1 ring-white/10 overflow-hidden flex flex-col h-[460px] max-h-[calc(100vh-120px)]">
           <div className="px-4 py-3 border-b border-white/10 flex items-center justify-between shrink-0">
             <div className="flex items-center gap-2 min-w-0 flex-1">
               {selectedRoomId ? (
@@ -897,8 +940,8 @@ const ChatFloatingWidget: React.FC = () => {
                       online={selectedRoom?.is_public ? undefined : headerOnline}
                     />
                   )}
-                  <div className="min-w-0 flex items-center gap-1.5">
-                    <span className="text-sm font-bold truncate">{displayName}</span>
+                  <div className="flex-1 min-w-0 flex items-center gap-1.5">
+                    <span className="text-sm font-bold truncate max-w-[180px]">{displayName}</span>
                     {headerVerified && <VerifiedBadge variant={headerVerified} />}
                   </div>
                 </>
@@ -1018,8 +1061,7 @@ const ChatFloatingWidget: React.FC = () => {
                   const distance = el.scrollHeight - el.scrollTop - el.clientHeight;
                   pinnedToBottomRef.current = distance < 80;
                 }}
-                className="flex-1 overflow-y-auto overflow-x-hidden p-4 space-y-3"
-                style={{ maxHeight: '280px' }}
+                className="flex-1 overflow-y-auto overflow-x-hidden p-4 space-y-3 min-h-[200px]"
               >
                 {loadingMessages ? (
                   <div className="text-sm text-white/70">Carregando mensagens...</div>
@@ -1182,6 +1224,7 @@ const ChatFloatingWidget: React.FC = () => {
       )}
 
       <button
+        data-chat-floating-widget-launcher="1"
         type="button"
         onClick={() => {
           setOpen((prev) => {
@@ -1196,18 +1239,54 @@ const ChatFloatingWidget: React.FC = () => {
             return next;
           });
         }}
-        className="flex items-center gap-3 px-4 h-12 rounded-full bg-[#111827]/95 text-white shadow-[0_20px_60px_rgba(0,0,0,0.5)] ring-1 ring-white/10 hover:bg-[#0f172a] transition"
-        title="Mensagens"
+        className="rounded-full overflow-hidden shadow-[0_20px_60px_rgba(0,0,0,0.5)] ring-1 ring-white/10"
+        title="Mensagens / Editor"
       >
-        <div className="relative">
-          <MessageCircle className="w-5 h-5" />
-          {badgeCount > 0 && (
-            <span className="absolute -top-2 -right-2 min-w-5 h-5 px-1.5 rounded-full bg-red-500 text-white text-[11px] font-bold flex items-center justify-center">
-              {badgeCount}
-            </span>
+        <div className="flex items-stretch bg-[#111827]/95 text-white hover:bg-[#0f172a] transition">
+          <div className="flex items-center gap-3 px-4 h-12">
+            <div className="relative">
+              <MessageCircle className="w-5 h-5" />
+              {badgeCount > 0 && (
+                <span className="absolute -top-2 -right-2 min-w-5 h-5 px-1.5 rounded-full bg-red-500 text-white text-[11px] font-bold flex items-center justify-center">
+                  {badgeCount}
+                </span>
+              )}
+            </div>
+            <span className="text-sm font-semibold">Mensagens</span>
+          </div>
+
+          {petitionEditorMinimized && (
+            <>
+              <div className="w-[3px] bg-gradient-to-b from-orange-400 via-orange-500 to-amber-400" aria-hidden />
+              <div
+                className="relative flex items-center gap-2 px-4 h-12 bg-gradient-to-br from-orange-600 via-orange-500 to-amber-500 text-white"
+                role="button"
+                tabIndex={0}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  events.emit(SYSTEM_EVENTS.PETITION_EDITOR_MAXIMIZE);
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    events.emit(SYSTEM_EVENTS.PETITION_EDITOR_MAXIMIZE);
+                  }
+                }}
+                title="Abrir Editor"
+              >
+                <FileText className="w-4 h-4" />
+                <span className="text-sm font-semibold">Editor</span>
+                {petitionEditorHasUnsavedChanges && (
+                  <span
+                    className="absolute -top-1 -right-1 w-3.5 h-3.5 bg-red-500 rounded-full ring-2 ring-white animate-pulse"
+                    title="Alterações não salvas"
+                  />
+                )}
+              </div>
+            </>
           )}
         </div>
-        <span className="text-sm font-semibold">Mensagens</span>
       </button>
     </div>,
     document.body

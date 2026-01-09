@@ -559,6 +559,91 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
 
 const releases: ReleaseNote[] = [
   {
+    version: '1.9.191',
+    date: '09/01/2026',
+    summary: 'Petições/Chat: launcher combinado Mensagens + Editor sem sobreposição.',
+    modules: [
+      {
+        moduleId: 'chat',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Botão combinado Mensagens + Editor (minimizado)',
+            description: 'Quando o editor de petições está minimizado, o launcher do chat passa a exibir um segmento "Editor" com divisória laranja, evitando sobreposição entre botões e mantendo o chat disponível na tela de edição.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.190',
+    date: '09/01/2026',
+    summary: 'Chat: widget flutuante com modal sem contração durante carregamento.',
+    modules: [
+      {
+        moduleId: 'chat',
+        changes: [
+          {
+            type: 'fix',
+            title: 'Altura fixa do modal do widget',
+            description: 'Fixada a altura do modal do widget (com limite por viewport) para evitar contrair/expandir quando alterna entre "Carregando mensagens..." e o conteúdo do chat.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.189',
+    date: '09/01/2026',
+    summary: 'Chat: widget flutuante sem contração ao carregar mensagens.',
+    modules: [
+      {
+        moduleId: 'chat',
+        changes: [
+          {
+            type: 'fix',
+            title: 'Remover maxHeight fixo do container',
+            description: 'Removido o maxHeight fixo (280px) do container de mensagens e adicionado min-h-[200px] para evitar contração visual ao carregar mensagens no mini-chat do widget.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.188',
+    date: '09/01/2026',
+    summary: 'Chat: widget flutuante com foco automático no input.',
+    modules: [
+      {
+        moduleId: 'chat',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Foco automático após enviar mensagem',
+            description: 'Ajustado o mini-chat do widget para manter o foco no input após enviar mensagem, permitindo continuar digitando sem precisar clicar novamente.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.187',
+    date: '09/01/2026',
+    summary: 'Chat: widget flutuante com header de largura fixa.',
+    modules: [
+      {
+        moduleId: 'chat',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Header do widget sem encolhimento',
+            description: 'Ajustado o header do mini-chat para manter largura fixa, evitando encolhimento visual ao truncar nomes longos.',
+          },
+        ],
+      },
+    ],
+  },
+  {
     version: '1.9.186',
     date: '08/01/2026',
     summary: 'Chat: widget flutuante com abertura de anexos (PDF) no mini-chat.',

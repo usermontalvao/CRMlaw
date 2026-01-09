@@ -1,5 +1,20 @@
 # Changelog
 
+## 1.9.191
+- **Petições/Chat**: editor minimizado: botão **não sobrepõe** o chat; launcher combinado **Mensagens + Editor** com divisória laranja.
+
+## 1.9.190
+- **Chat**: widget flutuante: modal com **altura fixa** (sem contrair/expandir) durante o carregamento.
+
+## 1.9.189
+- **Chat**: widget flutuante: removido **maxHeight fixo** do container de mensagens para evitar contração ao carregar.
+
+## 1.9.188
+- **Chat**: widget flutuante: input mantém **foco automático** após enviar mensagem.
+
+## 1.9.187
+- **Chat**: widget flutuante: header com **largura fixa** para evitar encolhimento ao truncar nomes longos.
+
 ## 1.9.186
 - **Chat**: widget flutuante: anexos (ex.: **PDF**) agora abrem via link assinado no mini-chat.
 

@@ -16,6 +16,8 @@ const PetitionEditorModule = lazy(() => import('./PetitionEditorModule'));
 const WIDGET_STATE_KEY = 'petition-editor-widget-state';
 const WIDGET_CLIENT_KEY = 'petition-editor-widget-client';
 
+const PETITION_EDITOR_WIDGET_STATE_EVENT = 'crm:petition_editor_widget_state';
+
 export interface PetitionEditorOpenPayload {
   clientId?: string;
   client?: Client;
@@ -35,6 +37,7 @@ const PetitionEditorWidget: React.FC = () => {
   const [widgetState, setWidgetState] = useState<WidgetState>('closed');
   const [pendingPayload, setPendingPayload] = useState<PetitionEditorOpenPayload | null>(null);
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
+  const [hasChatLauncher, setHasChatLauncher] = useState(false);
 
   // Restaurar estado do localStorage ao montar
   useEffect(() => {
@@ -73,6 +76,37 @@ const PetitionEditorWidget: React.FC = () => {
       console.warn('Erro ao salvar estado do widget:', e);
     }
   }, [widgetState, pendingPayload]);
+
+  useEffect(() => {
+    try {
+      const ev = new CustomEvent(PETITION_EDITOR_WIDGET_STATE_EVENT, {
+        detail: {
+          state: widgetState,
+          hasUnsavedChanges,
+          clientId: pendingPayload?.clientId,
+          petitionId: pendingPayload?.petitionId,
+        },
+      });
+      window.dispatchEvent(ev);
+    } catch {
+      // ignore
+    }
+  }, [widgetState, hasUnsavedChanges, pendingPayload?.clientId, pendingPayload?.petitionId]);
+
+  useEffect(() => {
+    const update = () => {
+      setHasChatLauncher(!!document.querySelector('[data-chat-floating-widget-launcher="1"]'));
+    };
+
+    update();
+
+    const obs = new MutationObserver(() => update());
+    obs.observe(document.body, { childList: true, subtree: true, attributes: true });
+
+    return () => {
+      obs.disconnect();
+    };
+  }, []);
 
   // Handlers para eventos
   const handleOpen = useCallback((payload?: PetitionEditorOpenPayload) => {
@@ -160,18 +194,20 @@ const PetitionEditorWidget: React.FC = () => {
       </div>
 
       {isMinimized && (
-        <button
-          onClick={handleMaximize}
-          className="fixed bottom-6 right-6 z-[9999] flex flex-col items-center justify-center w-16 h-16 bg-gradient-to-br from-orange-600 via-orange-500 to-amber-500 text-white rounded-full shadow-[0_20px_60px_rgba(234,88,12,0.45)] hover:shadow-[0_25px_70px_rgba(234,88,12,0.6)] hover:scale-110 transition-all duration-300 group"
-          title="Abrir Editor de Petições"
-        >
-          <span className="absolute -inset-3 rounded-full bg-gradient-to-br from-orange-500/30 to-amber-500/20 blur-2xl opacity-80 group-hover:opacity-100 transition-opacity" aria-hidden />
-          <FileText className="w-5 h-5 relative z-10" />
-          <span className="text-[9px] font-bold mt-0.5 leading-none">Editor</span>
-          {hasUnsavedChanges && (
-            <span className="absolute -top-1.5 -right-1.5 w-4 h-4 bg-red-500 rounded-full ring-2 ring-white animate-pulse" title="Alterações não salvas" />
-          )}
-        </button>
+        !hasChatLauncher && (
+          <button
+            onClick={handleMaximize}
+            className="fixed bottom-6 right-6 z-[9999] flex flex-col items-center justify-center w-16 h-16 bg-gradient-to-br from-orange-600 via-orange-500 to-amber-500 text-white rounded-full shadow-[0_20px_60px_rgba(234,88,12,0.45)] hover:shadow-[0_25px_70px_rgba(234,88,12,0.6)] hover:scale-110 transition-all duration-300 group"
+            title="Abrir Editor de Petições"
+          >
+            <span className="absolute -inset-3 rounded-full bg-gradient-to-br from-orange-500/30 to-amber-500/20 blur-2xl opacity-80 group-hover:opacity-100 transition-opacity" aria-hidden />
+            <FileText className="w-5 h-5 relative z-10" />
+            <span className="text-[9px] font-bold mt-0.5 leading-none">Editor</span>
+            {hasUnsavedChanges && (
+              <span className="absolute -top-1.5 -right-1.5 w-4 h-4 bg-red-500 rounded-full ring-2 ring-white animate-pulse" title="Alterações não salvas" />
+            )}
+          </button>
+        )
       )}
     </>,
     document.body
