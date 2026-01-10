@@ -20,6 +20,7 @@ import {
 } from 'lucide-react';
 import { useToastContext } from '../contexts/ToastContext';
 import { useAuth } from '../contexts/AuthContext';
+import usePermissions from '../hooks/usePermissions';
 import { djenLocalService } from '../services/djenLocal.service';
 import { deadlineService } from '../services/deadline.service';
 import { calendarService } from '../services/calendar.service';
@@ -51,6 +52,7 @@ interface NotificationsModuleProps {
 const NotificationsModuleNew: React.FC<NotificationsModuleProps> = ({ onNavigateToModule }) => {
   const toast = useToastContext();
   const { user } = useAuth();
+  const { userRole, loading: permissionsLoading } = usePermissions();
   const [loading, setLoading] = useState(false);
   const [intimations, setIntimations] = useState<DjenComunicacaoLocal[]>([]);
   const [deadlines, setDeadlines] = useState<Deadline[]>([]);
@@ -59,6 +61,25 @@ const NotificationsModuleNew: React.FC<NotificationsModuleProps> = ({ onNavigate
   const [userNotifications, setUserNotifications] = useState<UserNotification[]>([]);
   const [overdueInstallments, setOverdueInstallments] = useState<(Installment & { agreement?: Agreement })[]>([]);
   const [readNotifications, setReadNotifications] = useState<Set<string>>(new Set());
+
+  const normalizeRoleKey = (role?: string | null) => {
+    if (!role) return '';
+    return role
+      .toLowerCase()
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '');
+  };
+
+  const canSeeIntimacoes = !permissionsLoading && ['administrador', 'admin', 'advogado'].includes(normalizeRoleKey(userRole));
+
+  const isIntimationUserNotification = (n: UserNotification) => {
+    if (n.type === 'intimation_new') return true;
+    if (n.intimation_id) return true;
+    const originalType = String(n.metadata?.original_type ?? '');
+    if (originalType === 'intimation_urgent') return true;
+    if (originalType.includes('intimation')) return true;
+    return false;
+  };
   
   // Filtros
   const [searchTerm, setSearchTerm] = useState('');
@@ -74,7 +95,7 @@ const NotificationsModuleNew: React.FC<NotificationsModuleProps> = ({ onNavigate
     try {
       setLoading(true);
       const [intimationsData, deadlinesData, appointmentsData] = await Promise.all([
-        djenLocalService.listComunicacoes(),
+        canSeeIntimacoes ? djenLocalService.listComunicacoes() : Promise.resolve([] as DjenComunicacaoLocal[]),
         deadlineService.listDeadlines(),
         calendarService.listEvents(),
       ]);
@@ -105,7 +126,8 @@ const NotificationsModuleNew: React.FC<NotificationsModuleProps> = ({ onNavigate
       try {
         if (user?.id) {
           const notif = await userNotificationService.listNotifications(user.id, false);
-          setUserNotifications(notif || []);
+          const filtered = canSeeIntimacoes ? (notif || []) : (notif || []).filter((n) => !isIntimationUserNotification(n));
+          setUserNotifications(filtered);
         } else {
           setUserNotifications([]);
         }
@@ -121,10 +143,11 @@ const NotificationsModuleNew: React.FC<NotificationsModuleProps> = ({ onNavigate
   };
 
   useEffect(() => {
+    if (permissionsLoading) return;
     loadNotifications();
     const readIds = localStorage.getItem('read_notifications');
     if (readIds) setReadNotifications(new Set(JSON.parse(readIds)));
-  }, []);
+  }, [permissionsLoading]);
 
   useEffect(() => {
     setPage(1);

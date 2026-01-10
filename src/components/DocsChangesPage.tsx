@@ -559,6 +559,57 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
 
 const releases: ReleaseNote[] = [
   {
+    version: '1.9.198',
+    date: '09/01/2026',
+    summary: 'Chat: corrigido crash de hooks no widget flutuante.',
+    modules: [
+      {
+        moduleId: 'chat',
+        changes: [
+          {
+            type: 'fix',
+            title: 'Correção do erro de hooks no ChatFloatingWidget',
+            description: 'Removido cenário onde hooks eram pulados por retorno antecipado, evitando o erro "Rendered fewer hooks than expected".',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.197',
+    date: '09/01/2026',
+    summary: 'Notificações: intimações agora são restritas por cargo (Admin/Advogado).',
+    modules: [
+      {
+        moduleId: 'notificacoes',
+        changes: [
+          {
+            type: 'fix',
+            title: 'Restrição de intimações por cargo',
+            description: 'Ajustado o filtro de notificações de intimações para permitir apenas cargos Administrador e Advogado, impedindo visualização, contagem e popups para os demais perfis.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.196',
+    date: '09/01/2026',
+    summary: 'Notificações: intimações agora respeitam permissões por perfil.',
+    modules: [
+      {
+        moduleId: 'notificacoes',
+        changes: [
+          {
+            type: 'fix',
+            title: 'Permissões de intimações (sino e módulo)',
+            description: 'Ajustado o sino e o módulo de notificações para filtrar eventos de intimações quando o usuário não possui permissão de visualização do módulo "intimacoes", evitando contagem, som e popups indevidos (ex.: perfil Auxiliar).',
+          },
+        ],
+      },
+    ],
+  },
+  {
     version: '1.9.195',
     date: '09/01/2026',
     summary: 'Chat: avatar do remetente em imagens mais confiável no launcher.',

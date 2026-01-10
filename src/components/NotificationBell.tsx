@@ -19,6 +19,7 @@ import {
 } from 'lucide-react';
 import { userNotificationService } from '../services/userNotification.service';
 import { useAuth } from '../contexts/AuthContext';
+import usePermissions from '../hooks/usePermissions';
 import { supabase } from '../config/supabase';
 import { pushNotifications } from '../utils/pushNotifications';
 import type { UserNotification } from '../types/user-notification.types';
@@ -50,6 +51,7 @@ const playNotificationSound = () => {
 
 export const NotificationBell: React.FC<NotificationBellProps> = ({ onNavigateToModule }) => {
   const { user } = useAuth();
+  const { userRole, loading: permissionsLoading } = usePermissions();
   const [isOpen, setIsOpen] = useState(false);
   const [loading, setLoading] = useState(false);
   const [notifications, setNotifications] = useState<UserNotification[]>([]);
@@ -65,6 +67,25 @@ export const NotificationBell: React.FC<NotificationBellProps> = ({ onNavigateTo
 
   useEffect(() => {
     pushNotifications.initialize().catch(() => {});
+  }, []);
+
+  const normalizeRoleKey = useCallback((role?: string | null) => {
+    if (!role) return '';
+    return role
+      .toLowerCase()
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '');
+  }, []);
+
+  const canSeeIntimacoes = !permissionsLoading && ['administrador', 'admin', 'advogado'].includes(normalizeRoleKey(userRole));
+
+  const isIntimationNotification = useCallback((notification: UserNotification) => {
+    if (notification.type === 'intimation_new') return true;
+    if (notification.intimation_id) return true;
+    const originalType = String(notification.metadata?.original_type ?? '');
+    if (originalType === 'intimation_urgent') return true;
+    if (originalType.includes('intimation')) return true;
+    return false;
   }, []);
 
   const unreadNotifications = notifications.filter(n => !n.read);
@@ -133,20 +154,21 @@ export const NotificationBell: React.FC<NotificationBellProps> = ({ onNavigateTo
       setLoading(true);
       const data = await userNotificationService.listNotifications(user.id);
       const normalized = dedupeNotifications(data).slice(0, 50);
+      const filtered = canSeeIntimacoes ? normalized : normalized.filter((n) => !isIntimationNotification(n));
 
       // Tocar som se há novas notificações
-      if (normalized.filter(n => !n.read).length > prevCountRef.current && soundEnabled) {
+      if (filtered.filter(n => !n.read).length > prevCountRef.current && soundEnabled) {
         playSound();
       }
-      prevCountRef.current = normalized.filter(n => !n.read).length;
+      prevCountRef.current = filtered.filter(n => !n.read).length;
 
-      setNotifications(normalized); // Limitar a 50
+      setNotifications(filtered); // Limitar a 50
     } catch (err) {
       console.error('Erro ao carregar notificações:', err);
     } finally {
       setLoading(false);
     }
-  }, [user?.id, soundEnabled, dedupeNotifications]);
+  }, [user?.id, soundEnabled, dedupeNotifications, canSeeIntimacoes, isIntimationNotification]);
 
   // Tocar som
   const playSound = () => {
@@ -315,6 +337,10 @@ export const NotificationBell: React.FC<NotificationBellProps> = ({ onNavigateTo
         (payload) => {
           const newNotification = payload.new as UserNotification;
 
+          if (!canSeeIntimacoes && isIntimationNotification(newNotification)) {
+            return;
+          }
+
           const dedupeKey = getNotificationDedupeKey(newNotification);
           
           // Evitar processar a mesma notificação duas vezes (StrictMode)
@@ -363,7 +389,7 @@ export const NotificationBell: React.FC<NotificationBellProps> = ({ onNavigateTo
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [user?.id, soundEnabled]);
+  }, [user?.id, soundEnabled, canSeeIntimacoes, isIntimationNotification]);
 
   // Ícone por tipo e urgência
   const getIcon = (notification: UserNotification) => {

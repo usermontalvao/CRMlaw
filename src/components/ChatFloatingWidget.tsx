@@ -984,14 +984,6 @@ const ChatFloatingWidget: React.FC = () => {
     };
   }, []);
 
-  const visible = !!user && currentModule !== 'chat';
-  if (!visible) return null;
-
-  const selectedRoom = selectedRoomId ? rooms.find((r) => r.id === selectedRoomId) : null;
-  const otherUser = selectedRoom ? getOtherUserForRoom(selectedRoom) : null;
-  const displayName = otherUser?.name || selectedRoom?.name || '';
-  const avatarUrl = otherUser?.avatar_url;
-  const headerOnline = otherUser ? onlineUserIds.has(otherUser.user_id) : false;
   const totalUnreadFromRooms = useMemo(() => {
     let total = 0;
     roomUnreadCounts.forEach((v) => {
@@ -1000,13 +992,22 @@ const ChatFloatingWidget: React.FC = () => {
     return total;
   }, [roomUnreadCounts]);
 
-  const badgeCount = Math.max(totalUnreadFromRooms, notifyCount);
-  const showToast = !!toast && (!open || !selectedRoomId || toast.roomId !== selectedRoomId);
-  const headerVerified = getVerifiedVariant(otherUser);
   const toastVerified = useMemo(() => {
     if (!toast) return null;
     return getVerifiedVariant({ role: toast.senderRole || '', oab: toast.senderOab ?? null });
   }, [toast]);
+
+  const visible = !!user && currentModule !== 'chat';
+  if (!visible) return null;
+
+  const selectedRoom = selectedRoomId ? rooms.find((r) => r.id === selectedRoomId) : null;
+  const otherUser = selectedRoom ? getOtherUserForRoom(selectedRoom) : null;
+  const displayName = otherUser?.name || selectedRoom?.name || '';
+  const avatarUrl = otherUser?.avatar_url;
+  const headerOnline = otherUser ? onlineUserIds.has(otherUser.user_id) : false;
+  const badgeCount = Math.max(totalUnreadFromRooms, notifyCount);
+  const showToast = !!toast && (!open || !selectedRoomId || toast.roomId !== selectedRoomId);
+  const headerVerified = getVerifiedVariant(otherUser);
 
   return createPortal(
     <div className="fixed bottom-5 right-5 z-[9999] flex flex-col items-end" style={{ isolation: 'isolate' }}>

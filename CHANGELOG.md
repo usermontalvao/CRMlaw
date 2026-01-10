@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.9.198
+- **Chat**: corrigido crash "Rendered fewer hooks than expected" no widget flutuante.
+
+## 1.9.197
+- **Notificações**: intimações liberadas apenas para cargos **Administrador** e **Advogado** (demais perfis não veem/contam/recebem).
+
+## 1.9.196
+- **Notificações**: intimações agora respeitam permissões (perfis sem `intimacoes` não veem/contam/recebem popup no sino).
+
 ## 1.9.195
 - **Chat**: widget flutuante: avatar do remetente em imagens agora é detectado por **mimeType** (não depende só do preview).
 
