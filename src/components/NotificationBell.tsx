@@ -241,6 +241,15 @@ export const NotificationBell: React.FC<NotificationBellProps> = ({ onNavigateTo
     } else if (notification.type === 'appointment_assigned' || notification.type === 'appointment_reminder') {
       console.log('➡️ Navegando para agenda');
       onNavigateToModule('agenda');
+    } else if (notification.type === 'feed_like' || notification.type === 'feed_comment' || notification.type === 'mention') {
+      // Notificação de feed: navegar para dashboard e scroll até o post
+      const postId = notification.metadata?.post_id;
+      console.log('➡️ Navegando para dashboard, post_id:', postId);
+      if (postId) {
+        onNavigateToModule('dashboard', { scrollToPost: postId });
+      } else {
+        onNavigateToModule('dashboard');
+      }
     } else if (notification.process_id) {
       console.log('➡️ Navegando para processos');
       onNavigateToModule('processos');

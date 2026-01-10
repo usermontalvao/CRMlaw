@@ -1,5 +1,192 @@
 # Changelog
 
+## 1.9.284
+- **Dashboard**: Adicionado widget "Prazos Urgentes" na sidebar direita (abaixo do Saúde Financeira). Exibe prazos com vencimento em até 3 dias, com indicação de atrasado/dias restantes.
+- **Dashboard**: Barra de indicadores substituída por métricas reais: Clientes, Processos, Requerimentos, Prazos, Tarefas (sem percentuais fictícios).
+- **App**: Renomeado "Dashboard" para "Feed" no menu lateral e no título do header.
+
+## 1.9.283
+- **UserProfilePage**: Comentários agora aparecem inline abaixo do post (igual ao Dashboard), sem abrir modal. Inclui ação "Responder" que preenche o input com @nome e atualiza contador após comentar.
+
+## 1.9.282
+- **NotificationBell**: Corrigido clique em notificações de feed (curtida/comentário/menção) para navegar até o post com scroll automático.
+- **Dashboard**: Imagens agora exibidas estilo Instagram - ocupam toda a largura do post, sem thumbnails pequenos. Grid para múltiplas imagens com overlay "+N" para mais de 4.
+- **Dashboard**: Adicionado botão "Responder" em comentários que preenche o input com @nome do autor.
+- **Dashboard**: Avatar e nome do comentário agora são clicáveis para navegar ao perfil.
+
+## 1.9.281
+- **Dashboard**: Corrigido import de `UserPlus` que causava erro de referência.
+- **Migration**: Criada migration `20250110_add_feed_notification_types.sql` para adicionar tipos `feed_like` e `feed_comment` ao enum `user_notification_type` no banco de dados.
+
+## 1.9.280
+- **Dashboard**: Notificações automáticas para o autor do post quando alguém curtir ou comentar. Tipos `feed_like` e `feed_comment` adicionados.
+- **NotificationPanel**: Categorias `feed_like` (ícone coração vermelho) e `feed_comment` (ícone balão azul) para exibição das notificações de feed.
+
+## 1.9.279
+- **Dashboard**: Barra de estatísticas compacta horizontal (ATIVOS, HORAS, LEADS, URGENTE, RECEBIDO) substituindo os cards grandes. Ocupa menos altura e mostra mais informações.
+
+## 1.9.278
+- **Dashboard**: Comentários agora aparecem inline abaixo do post (estilo Facebook/Instagram) em vez de modal. Input para comentar com placeholder "Comente como [nome]...".
+- **Dashboard**: Galeria de imagens reduzida para estilo Instagram (menor, fundo escuro, sem header/footer grandes).
+- **Dashboard**: Agenda Jurídica agora traduz tipos de evento (payment→Pagamento, hearing→Audiência, deadline→Prazo, meeting→Reunião, task→Tarefa).
+- **Dashboard**: Avatar com novo tamanho 'xs' para comentários compactos.
+
+## 1.9.277
+- **Dashboard & UserProfilePage**: Sistema completo de comentários implementado. Modal de comentários agora exibe os comentários com conteúdo, nome do autor, data/hora e avatar. Input para criar novos comentários com Enter para enviar. Contadores de comentários atualizados em tempo real após criar comentário.
+- **NotificationPanel**: Adicionadas categorias 'feed' e 'mention' ao categoryConfig para suporte a notificações de feed/menções.
+
+## 1.9.276
+- **Dashboard**: Alinhado feed 100% com UserProfilePage. Botão "Comentar" agora abre modal com lista de quem comentou (igual ao perfil). Adicionados contadores clicáveis de curtidas/comentários. Modal de interação (curtidas/comentários) implementado no Dashboard.
+
+## 1.9.275
+- **NotificationsModuleNew & Dashboard**: Corrigido navegação de notificação de menção/postagem. Clique na notificação agora abre o Dashboard e rola suavemente até o post correto com destaque visual (ring-2 ring-blue-500).
+
+## 1.9.274
+- **UserProfilePage & Dashboard**: Implementado modal de galeria de imagens com fundo claro do tema (bg-slate-100/95) para visualização de anexos. Clique na imagem abre galeria com navegação anterior/próxima e contador de imagens.
+
+## 1.9.273
+- **UserProfilePage**: Corrigido botão "Comentar" para abrir modal com a lista de quem comentou.
+
+## 1.9.272
+- **UserProfilePage**: Badges/tags com visual mais suave e preview Financeiro agora exibe detalhes reais do acordo (cliente, descrição, total, parcelas e status) quando houver referência financeira.
+
+## 1.9.271
+- **UserProfilePage**: Implementado modal para mostrar quem curtiu e quem comentou (clique nos contadores para ver lista de usuários com avatar e nome).
+
+## 1.9.270
+- **UserProfilePage**: Cards de posts na aba "Atividade" ajustados para um visual mais minimalista (menos sombra/padding e previews em caixa leve com barra lateral).
+
+## 1.9.269
+- **UserProfilePage**: Removida a seção "Performance/Avaliação" (4.9 avaliações) do perfil.
+
+## 1.9.268
+- **UserProfilePage**: Adicionadas ações do post (curtir/comentar) e carregamento de `liked_by_me` no perfil, igual ao feed.
+
+## 1.9.267
+- **UserProfilePage**: Box de criação de post do perfil agora é idêntico ao Dashboard (barra Mencionar/Tag/Foto/Emoji/Enquete, anexos, dropdowns e criador de enquete).
+
+## 1.9.266
+- **UserProfilePage**: Corrigido header do post para ficar idêntico ao Dashboard: nome clicável para abrir perfil, menu de ações (editar/excluir) para autor, e uso de availableTags.
+
+## 1.9.265
+- **UserProfilePage**: Posts na aba "Atividade" agora exibem badges de tags e cards de preview (`preview_data`) iguais ao feed (inclui cartão rosa de Assinatura).
+- **UserProfilePage/App**: Navegação dos cards de preview no perfil agora abre o módulo correspondente com parâmetros.
+
+## 1.9.264
+- **UserProfilePage**: Botão "Mensagem" agora abre o Chat flutuante direto na conversa (DM) com o usuário do perfil.
+- **UserProfilePage**: Botão "Editar Perfil" agora abre a aba "Dados Pessoais".
+- **UserProfilePage**: Removido botão "Compartilhar perfil".
+- **ChatFloatingWidget**: Suporte ao evento `CHAT_WIDGET_OPEN_DM` para abrir/criar DM via evento global.
+
+## 1.9.263
+- **UserProfilePage**: Adicionada funcionalidade de criar posts diretamente do perfil (igual ao feed).
+- **UserProfilePage**: Box de criação de post com avatar, textarea e botão publicar (visível apenas no próprio perfil).
+
+## 1.9.262
+- **UserProfilePage**: Tab "Estatísticas" agora exibe dados reais do sistema (clientes, processos, tarefas, compromissos, intimações).
+- **UserProfilePage**: Estatísticas divididas em "Feed & Engajamento" e "Dados do Escritório".
+- **App**: Clique no perfil do usuário agora abre a página de perfil (UserProfilePage) em vez do modal (ProfileModal).
+- **App**: Menu mobile também navega para a página de perfil.
+
+## 1.9.261
+- **UserProfilePage**: Adicionadas tabs de configurações (Dados Pessoais, Segurança, Estatísticas) visíveis apenas para o próprio perfil.
+- **UserProfilePage**: Tab "Dados Pessoais" com formulário completo (nome, email, CPF, telefone, OAB, biografia).
+- **UserProfilePage**: Tab "Segurança" com alteração de senha e detalhes da conta.
+- **UserProfilePage**: Tab "Estatísticas" com cards coloridos (publicações, curtidas, comentários, avaliação).
+- **UserProfilePage**: Tabs com ícones e design responsivo (overflow-x-auto para mobile).
+
+## 1.9.260
+- **UserProfilePage**: Adicionado modal de seleção de capas predefinidas (10 opções jurídicas).
+- **UserProfilePage**: Botão "Editar capa" agora abre modal com preview das capas disponíveis.
+- **UserProfilePage**: Indicador visual (CheckCircle) para a capa atualmente selecionada.
+- **UserProfilePage**: Corrigido problema de src vazio em anexos de imagem.
+
+## 1.9.259
+- **UserProfilePage**: Removida a exibição da OAB no header (abaixo do nome) para evitar quebra/ruído visual; OAB permanece apenas no card de contato.
+
+## 1.9.258
+- **UserProfilePage**: Design premium com capa gradiente azul/índigo.
+- **UserProfilePage**: Foto de perfil quadrada (128px) com borda, sombra e botão de edição integrado.
+- **UserProfilePage**: Sidebar com seção "Contato Profissional" (cargo, OAB, e-mail, telefone, localização) com ícones coloridos.
+- **UserProfilePage**: Sidebar com seção "Performance" (publicações, curtidas, avaliação) com gráficos circulares.
+- **UserProfilePage**: Tabs redesenhadas com estilo minimalista (Atividade, Sobre).
+- **UserProfilePage**: Layout responsivo com grid 12 colunas (sidebar 4, main 8).
+- **UserProfilePage**: Suporte a dark mode completo.
+
+## 1.9.257
+- **Perfil**: Título "Perfil do Usuário" agora aparece no header/nav.
+- **Perfil**: Foto de perfil maior (w-32/40 em vez de w-28/36).
+- **Perfil**: Cards de posts com sombra mais visível (shadow-md + hover:shadow-lg).
+
+## 1.9.256
+- **Perfil**: Capa com máscara/overlay reforçado para melhor contraste.
+- **Perfil**: Avatar agora usa imagem inteira (sem corte) dentro do círculo.
+- **Perfil**: Cards de Informações/Estatísticas mais compactos e com menos arredondamento.
+
+## 1.9.255
+- **Perfil**: Banners jurídicos (biblioteca, tribunal, escritório, etc) disponíveis.
+- **Perfil**: Banner padrão jurídico exibido quando usuário não selecionou nenhum.
+- **Perfil**: Estética melhorada com avatar maior com borda branca, capa maior com overlay, cards com headers coloridos e ícones em círculos coloridos.
+- **Perfil**: Adicionado campo CPF nas informações do perfil.
+
+## 1.9.254
+- **Feed**: Adicionado card de preview indigo para `#Documento` no post.
+
+## 1.9.253
+- **Feed**: Clique na menção `@nome` agora navega para a página de perfil da pessoa mencionada.
+- **Perfil**: Layout mais compacto (capa menor, avatar menor, nome menor).
+
+## 1.9.252
+- **Feed**: Adicionadas tags `#Assinatura` e `#Requerimento` com busca, preview e cards coloridos.
+- **Feed**: Foto anexada no post agora exibe em tamanho maior (max-h-80) em vez de miniatura 28x28.
+- **Feed**: Cards de preview agora passam `selectedId` para navegação direta ao registro específico.
+
+## 1.9.251
+- **Feed**: `#Petição` agora busca na tabela `saved_petitions` (petições salvas/recentes) em vez de `petition_documents` (templates).
+
+## 1.9.250
+- **Feed**: `#Petição` agora exibe `title` (nome amigável) em vez de `file_name` (arquivo .html), com fallback para nome sem extensão.
+- **Feed**: Adicionado card de preview cyan para `#Petição` no post (igual aos outros cards de preview).
+
+## 1.9.249
+- **Feed**: `#Petição` agora exibe o nome correto (prioriza `file_name`, fallback para `title`) e a busca considera `file_name` ou `title`.
+
+## 1.9.248
+- **Feed**: `#Petição` — adicionada policy de SELECT em `petition_documents` (RLS) para permitir listagem no frontend.
+- **Feed**: Melhorado diagnóstico de erros — logs do Supabase para `#Petição` e `#Documento` (evita falha silenciosa).
+
+## 1.9.247
+- **Feed**: Criada tag `#Petição` para buscar petições na tabela `petition_documents` (3 registros).
+
+## 1.9.246
+- **Feed**: Corrigido tag `#Documento` para usar tabela `generated_petition_documents` (onde há registros) em vez de `generated_documents` (vazia).
+
+## 1.9.245
+- **Feed**: Adicionado campo de busca no dropdown de registros da tag `#Cliente`.
+
+## 1.9.244
+- **Feed**: Tradução de `event_type` no `#Agenda` (hearing → audiência, meeting → reunião, etc.).
+
+## 1.9.243
+- **Feed**: Corrigido "Invalid Date" no dropdown do `#Prazo` (formatação segura para `due_date`).
+- **Feed**: Tag `#Audiência` ajustada para `#Agenda` (calendário de compromissos).
+
+## 1.9.242
+- **Feed**: Referências financeiras (`#financeiro`) agora são azuis e clicáveis para abrir o modal do acordo.
+
+## 1.9.241
+- **Feed**: Corrigido erro 400 no `#financeiro` — coluna `total_amount` não existe, corrigido para `total_value`.
+
+## 1.9.240
+- **Feed**: Corrigido erro 400 no autocomplete/preview da tag `#financeiro` removendo embed PostgREST e buscando clientes em batch.
+
+## 1.9.239
+- **Feed**: Corrigido erro 400 ao carregar registros da tag `#financeiro` (embed PostgREST agreements → clients ajustado para o constraint correto).
+
+## 1.9.238
+- **Enquete**: Seleção de participantes agora usa checkboxes (1 a 1) em vez de select multiple.
+- **Enquete**: Design melhorado — removido roxo, agora usa azul/cinza mais bonito.
+
 ## 1.9.237
 - **Notificações**: Criação de notificações agora usa RPC `create_user_notification` (bypass RLS) para corrigir erro 403 ao notificar menções.
 
@@ -1993,6 +2180,11 @@
 - Versão anterior.
 
 ## Releases
+
+### 1.9.284
+- **Dashboard**: Adicionado widget "Prazos Urgentes" na sidebar direita (abaixo do Saúde Financeira). Exibe prazos com vencimento em até 3 dias, com indicação de atrasado/dias restantes.
+- **Dashboard**: Barra de indicadores substituída por métricas reais: Clientes, Processos, Requerimentos, Prazos, Tarefas (sem percentuais fictícios).
+- **App**: Renomeado "Dashboard" para "Feed" no menu lateral e no título do header.
 
 ### 1.9.42
 - **Peticionamento (Pré-visualização de Blocos)**: container do `docx-preview` agora permanece montado durante o carregamento (com overlay), evitando fallback e garantindo renderização correta por **parágrafos/páginas**.

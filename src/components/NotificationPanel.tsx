@@ -1,4 +1,4 @@
-import { X, AlarmClock, Gavel, Newspaper, BellRing, CheckCircle, Inbox } from 'lucide-react';
+import { X, AlarmClock, Gavel, Newspaper, BellRing, CheckCircle, Inbox, Heart, MessageCircle } from 'lucide-react';
 import { useMemo } from 'react';
 import type { NotificationItem } from '../types/notification.types';
 
@@ -37,6 +37,26 @@ const categoryConfig = {
     label: 'Sistema',
     icon: Inbox,
     color: 'text-slate-600 bg-slate-100',
+  },
+  feed: {
+    label: 'Feed',
+    icon: BellRing,
+    color: 'text-blue-600 bg-blue-100',
+  },
+  mention: {
+    label: 'Menção',
+    icon: BellRing,
+    color: 'text-purple-600 bg-purple-100',
+  },
+  feed_like: {
+    label: 'Curtida',
+    icon: Heart,
+    color: 'text-red-600 bg-red-100',
+  },
+  feed_comment: {
+    label: 'Comentário',
+    icon: MessageCircle,
+    color: 'text-blue-600 bg-blue-100',
   },
 } as const;
 

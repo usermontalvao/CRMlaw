@@ -559,6 +559,453 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
 
 const releases: ReleaseNote[] = [
   {
+    version: '1.9.284',
+    date: '10/01/2026',
+    summary: 'Dashboard: widget de prazos urgentes, métricas reais e renomeação para Feed.',
+    modules: [
+      {
+        moduleId: 'dashboard',
+        changes: [
+          {
+            type: 'feature',
+            title: 'Widget Prazos Urgentes',
+            description: 'Adicionado widget na sidebar direita exibindo prazos com vencimento em até 3 dias, com indicação de atrasado/dias restantes.',
+          },
+          {
+            type: 'improvement',
+            title: 'Métricas reais',
+            description: 'Barra de indicadores substituída por métricas reais: Clientes, Processos, Requerimentos, Prazos, Tarefas (sem percentuais fictícios).',
+          },
+          {
+            type: 'change',
+            title: 'Renomeação para Feed',
+            description: '"Dashboard" renomeado para "Feed" no menu lateral e no título do header.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.257',
+    date: '10/01/2026',
+    summary: 'Perfil: título no header, foto maior e cards de posts mais visíveis.',
+    modules: [
+      {
+        moduleId: 'configuracoes',
+        changes: [
+          {
+            type: 'fix',
+            title: 'Título no header/nav',
+            description: 'Agora aparece "Perfil do Usuário" no header quando estiver na página de perfil.',
+          },
+          {
+            type: 'improvement',
+            title: 'Foto de perfil maior',
+            description: 'Avatar aumentado de w-28/36 para w-32/40 para melhor visualização.',
+          },
+          {
+            type: 'improvement',
+            title: 'Cards de posts mais visíveis',
+            description: 'Posts agora têm sombra mais forte (shadow-md) e efeito hover (shadow-lg).',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.256',
+    date: '10/01/2026',
+    summary: 'Perfil: máscara na capa, avatar sem corte e cards mais compactos.',
+    modules: [
+      {
+        moduleId: 'configuracoes',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Máscara na imagem de capa',
+            description: 'Capa do perfil agora tem overlay reforçado para melhorar contraste/legibilidade.',
+          },
+          {
+            type: 'fix',
+            title: 'Foto de perfil sem corte',
+            description: 'Avatar agora exibe a imagem inteira dentro do círculo (sem recorte).',
+          },
+          {
+            type: 'improvement',
+            title: 'Cards mais compactos',
+            description: 'Cards de Informações/Estatísticas ficaram menores e com menos arredondamento.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.255',
+    date: '10/01/2026',
+    summary: 'Perfil: banners jurídicos, banner padrão, estética melhorada e campo CPF.',
+    modules: [
+      {
+        moduleId: 'configuracoes',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Banners com temas jurídicos',
+            description: 'Imagens de banners jurídicos: biblioteca, tribunal, escritório de advocacia, documentos, etc.',
+          },
+          {
+            type: 'improvement',
+            title: 'Banner padrão jurídico',
+            description: 'Quando o usuário não selecionou nenhum banner, exibe automaticamente uma imagem de biblioteca jurídica.',
+          },
+          {
+            type: 'improvement',
+            title: 'Estética do perfil melhorada',
+            description: 'Avatar maior com borda branca e ring, capa maior com overlay escuro, cards com headers coloridos, ícones em círculos coloridos.',
+          },
+          {
+            type: 'feature',
+            title: 'Campo CPF no perfil',
+            description: 'Adicionado campo CPF nas informações do perfil do usuário.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.254',
+    date: '10/01/2026',
+    summary: 'Feed: adicionado card de preview para #Documento.',
+    modules: [
+      {
+        moduleId: 'feed',
+        changes: [
+          {
+            type: 'fix',
+            title: 'Card de preview para #Documento',
+            description: 'Adicionado card indigo com ícone FileText para exibir preview de documentos no post.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.253',
+    date: '10/01/2026',
+    summary: 'Feed: clique em @menção navega para perfil + layout do perfil mais compacto.',
+    modules: [
+      {
+        moduleId: 'feed',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Clique em @menção navega para perfil',
+            description: 'Ao clicar no nome mencionado (@nome) no post, o sistema navega para a página de perfil da pessoa.',
+          },
+        ],
+      },
+      {
+        moduleId: 'configuracoes',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Layout do perfil mais compacto',
+            description: 'Reduzida altura da capa (h-32/40/48), tamanho do avatar (xl) e tamanho do nome (xl/2xl).',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.252',
+    date: '10/01/2026',
+    summary: 'Feed: novas tags #Assinatura e #Requerimento, foto maior no post, navegação direta ao registro.',
+    modules: [
+      {
+        moduleId: 'feed',
+        changes: [
+          {
+            type: 'feature',
+            title: 'Tags #Assinatura e #Requerimento',
+            description: 'Novas tags para mencionar assinaturas (pink) e requerimentos (orange) com busca, preview e cards coloridos.',
+          },
+          {
+            type: 'improvement',
+            title: 'Foto maior no post',
+            description: 'Imagens anexadas agora exibem em tamanho maior (max-h-80) em vez de miniatura 28x28.',
+          },
+          {
+            type: 'improvement',
+            title: 'Navegação direta ao registro',
+            description: 'Clicar no card de preview agora passa selectedId para abrir diretamente o registro específico no módulo.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.251',
+    date: '10/01/2026',
+    summary: 'Feed: #Petição agora busca na tabela saved_petitions (petições salvas/recentes).',
+    modules: [
+      {
+        moduleId: 'feed',
+        changes: [
+          {
+            type: 'fix',
+            title: 'Tabela correta para #Petição',
+            description: 'Tag #Petição agora busca na tabela saved_petitions (onde estão "Sem título", "PETIÇÃO CONSUMIDOR", etc.) em vez de petition_documents (templates).',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.250',
+    date: '10/01/2026',
+    summary: 'Feed: #Petição exibe nome amigável (title) e card de preview cyan.',
+    modules: [
+      {
+        moduleId: 'feed',
+        changes: [
+          {
+            type: 'fix',
+            title: 'Nome correto em #Petição',
+            description: 'Invertida prioridade: agora exibe title (nome amigável) em vez de file_name (.html), com fallback para nome sem extensão.',
+          },
+          {
+            type: 'improvement',
+            title: 'Card de preview para #Petição',
+            description: 'Adicionado card cyan com ícone ScrollText no post ao usar a tag #Petição.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.249',
+    date: '10/01/2026',
+    summary: 'Feed: #Petição exibe nome correto (file_name/title) e busca em ambos os campos.',
+    modules: [
+      {
+        moduleId: 'feed',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Nome correto em #Petição',
+            description: 'A listagem e o texto inserido agora priorizam file_name (nome do arquivo), com fallback para title e "Sem título" quando vazio.',
+          },
+          {
+            type: 'improvement',
+            title: 'Busca por file_name ou title',
+            description: 'O filtro de busca da tag #Petição agora pesquisa em file_name e title.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.248',
+    date: '10/01/2026',
+    summary: 'Feed: correção de permissões (RLS) para listar #Petição + logs de erro nas tags de documentos.',
+    modules: [
+      {
+        moduleId: 'feed',
+        changes: [
+          {
+            type: 'fix',
+            title: 'Permissão de leitura em petition_documents',
+            description: 'Adicionada policy de SELECT (RLS) na tabela petition_documents para permitir listagem no frontend ao usar a tag #Petição.',
+          },
+          {
+            type: 'improvement',
+            title: 'Logs de erro do Supabase',
+            description: 'Adicionados logs de error nas queries do Supabase para as tags #Petição e #Documento, evitando falhas silenciosas.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.247',
+    date: '10/01/2026',
+    summary: 'Feed: criada tag #Petição para buscar petições na tabela petition_documents.',
+    modules: [
+      {
+        moduleId: 'feed',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Nova tag #Petição',
+            description: 'Adicionada tag #Petição para buscar petições na tabela petition_documents (3 registros). A tag #Documento continua buscando documentos gerados em generated_petition_documents.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.246',
+    date: '10/01/2026',
+    summary: 'Feed: corrigido tag #Documento para usar tabela generated_petition_documents.',
+    modules: [
+      {
+        moduleId: 'feed',
+        changes: [
+          {
+            type: 'fix',
+            title: 'Tabela de documentos',
+            description: 'Tag #Documento agora busca na tabela generated_petition_documents (14 registros) em vez de generated_documents (vazia).',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.245',
+    date: '10/01/2026',
+    summary: 'Feed: adicionado campo de busca no dropdown de registros da tag #Cliente.',
+    modules: [
+      {
+        moduleId: 'feed',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Busca em registros de tag',
+            description: 'Adicionado campo de busca no dropdown de registros da tag #Cliente para filtrar clientes por nome.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.244',
+    date: '10/01/2026',
+    summary: 'Feed: tradução de event_type no #Agenda (hearing → audiência).',
+    modules: [
+      {
+        moduleId: 'feed',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Tradução de event_type',
+            description: 'Mapeamento de tradução para event_type no #Agenda: hearing → audiência, meeting → reunião, appointment → compromisso, deadline → prazo, reminder → lembrete, task → tarefa, other → outro.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.243',
+    date: '10/01/2026',
+    summary: 'Feed: corrigido Invalid Date no #Prazo e tag Audiência ajustada para Agenda.',
+    modules: [
+      {
+        moduleId: 'feed',
+        changes: [
+          {
+            type: 'fix',
+            title: 'Invalid Date no #Prazo',
+            description: 'Formatação segura para deadlines.due_date (timestamptz) evitando exibir Invalid Date no dropdown da tag #Prazo.',
+          },
+          {
+            type: 'fix',
+            title: 'Tag Audiência → Agenda',
+            description: 'Tag no composer ajustada de Audiência para Agenda para refletir compromissos do calendário (calendar_events).',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.242',
+    date: '10/01/2026',
+    summary: 'Feed: referências financeiras azuis e clicáveis para abrir modal do acordo.',
+    modules: [
+      {
+        moduleId: 'feed',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Referências financeiras clicáveis',
+            description: 'Referências financeiras (#financeiro) agora são azuis e clicáveis para abrir o modal do acordo financeiro.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.241',
+    date: '10/01/2026',
+    summary: 'Feed: corrigido nome da coluna total_amount → total_value na query do #financeiro.',
+    modules: [
+      {
+        moduleId: 'feed',
+        changes: [
+          {
+            type: 'fix',
+            title: 'Tag #financeiro (coluna incorreta)',
+            description: 'Corrigido nome da coluna de total_amount para total_value conforme estrutura real da tabela agreements.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.240',
+    date: '10/01/2026',
+    summary: 'Feed: correção definitiva do erro 400 no autocomplete/preview do #financeiro.',
+    modules: [
+      {
+        moduleId: 'feed',
+        changes: [
+          {
+            type: 'fix',
+            title: 'Tag #financeiro (autocomplete/preview)',
+            description: 'Removido embed PostgREST de agreements → clients e substituído por busca em batch de clientes via client_id, evitando erro 400 no autocomplete/preview.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.239',
+    date: '10/01/2026',
+    summary: 'Feed: corrigido erro 400 ao carregar registros da tag #financeiro.',
+    modules: [
+      {
+        moduleId: 'feed',
+        changes: [
+          {
+            type: 'fix',
+            title: 'Tag #financeiro (preview de registros)',
+            description: 'Corrigido embed PostgREST em agreements → clients usando o constraint correto, evitando erro 400 ao carregar sugestões/preview da tag #financeiro.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.238',
+    date: '10/01/2026',
+    summary: 'Enquete: checkboxes para selecionar participantes 1 a 1 e design melhorado (sem roxo).',
+    modules: [
+      {
+        moduleId: 'feed',
+        changes: [
+          {
+            type: 'fix',
+            title: 'Seleção de participantes da enquete',
+            description: 'Substituído select multiple por checkboxes individuais para selecionar participantes 1 a 1.',
+          },
+          {
+            type: 'improvement',
+            title: 'Design da enquete melhorado',
+            description: 'Removido roxo do design, agora usa azul/cinza mais bonito e moderno.',
+          },
+        ],
+      },
+    ],
+  },
+  {
     version: '1.9.237',
     date: '10/01/2026',
     summary: 'Notificações: RPC create_user_notification para corrigir erro 403 ao notificar menções.',

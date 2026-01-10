@@ -54,6 +54,10 @@ import {
   Shield,
   Scale,
   Award,
+  ScrollText,
+  ChevronLeft,
+  ChevronRight,
+  UserPlus,
 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { useDeleteConfirm } from '../contexts/DeleteConfirmContext';
@@ -79,9 +83,13 @@ import type { FinancialStats } from '../types/financial.types';
 import type { Requirement } from '../types/requirement.types';
 import { events, SYSTEM_EVENTS } from '../utils/events';
 import { FinancialCard } from './dashboard/FinancialCard';
+import { FinancialModal } from './FinancialModal';
+import { supabase } from '../config/supabase';
+import { userNotificationService } from '../services/userNotification.service';
 
 interface DashboardProps {
   onNavigateToModule?: (moduleKey: string, params?: Record<string, string>) => void;
+  params?: Record<string, string>;
 }
 
 // Cache keys e configuração
@@ -106,12 +114,13 @@ interface DashboardCache {
 }
 
 // Componente de Avatar
-const Avatar: React.FC<{ src?: string | null; name: string; size?: 'sm' | 'md' | 'lg' | 'xl' }> = ({
+const Avatar: React.FC<{ src?: string | null; name: string; size?: 'xs' | 'sm' | 'md' | 'lg' | 'xl' }> = ({
   src,
   name,
   size = 'md',
 }) => {
   const sizeClasses = {
+    xs: 'w-6 h-6 text-[10px]',
     sm: 'w-8 h-8 text-xs',
     md: 'w-10 h-10 text-sm',
     lg: 'w-14 h-14 text-base',
@@ -415,7 +424,7 @@ const SortableWidget: React.FC<{
   );
 };
 
-const Dashboard: React.FC<DashboardProps> = ({ onNavigateToModule }) => {
+const Dashboard: React.FC<DashboardProps> = ({ onNavigateToModule, params }) => {
   const { user } = useAuth();
   const { confirmDelete } = useDeleteConfirm();
   const [loading, setLoading] = useState(true);
@@ -504,6 +513,14 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToModule }) => {
   const [showTagDropdownInline, setShowTagDropdownInline] = useState(false);
   const [inlineMentionQuery, setInlineMentionQuery] = useState('');
   const [inlineTagQuery, setInlineTagQuery] = useState('');
+  
+  // Estado para comentários inline (expandidos abaixo do post)
+  const [expandedComments, setExpandedComments] = useState<Record<string, {
+    comments: Array<{ user_id: string; name: string; avatar_url?: string; content: string; created_at: string }>;
+    loading: boolean;
+    newComment: string;
+    submitting: boolean;
+  }>>({});
 
   // Available tags (definido antes dos filtros inline que dependem dele)
   const availableTags = [
@@ -511,8 +528,11 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToModule }) => {
     { id: 'processo', label: 'Processo', icon: Gavel, color: 'bg-purple-100 text-purple-700' },
     { id: 'prazo', label: 'Prazo', icon: Clock, color: 'bg-red-100 text-red-700' },
     { id: 'cliente', label: 'Cliente', icon: Users, color: 'bg-blue-100 text-blue-700' },
-    { id: 'audiencia', label: 'Audiência', icon: Calendar, color: 'bg-amber-100 text-amber-700' },
+    { id: 'agenda', label: 'Agenda', icon: Calendar, color: 'bg-amber-100 text-amber-700' },
     { id: 'documento', label: 'Documento', icon: FileText, color: 'bg-indigo-100 text-indigo-700' },
+    { id: 'peticao', label: 'Petição', icon: ScrollText, color: 'bg-cyan-100 text-cyan-700' },
+    { id: 'assinatura', label: 'Assinatura', icon: Pencil, color: 'bg-pink-100 text-pink-700' },
+    { id: 'requerimento', label: 'Requerimento', icon: Briefcase, color: 'bg-orange-100 text-orange-700' },
   ];
 
   // Filtrar perfis para menção (composer)
@@ -643,6 +663,10 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToModule }) => {
   const [pollParticipants, setPollParticipants] = useState<string[]>([]);
   const [postPolls, setPostPolls] = useState<Map<string, FeedPoll>>(new Map());
   
+  // Modal do acordo financeiro
+  const [showFinancialModal, setShowFinancialModal] = useState(false);
+  const [selectedFinancialAgreementId, setSelectedFinancialAgreementId] = useState<string | null>(null);
+  
   // Entity selection state (para tags integradas)
   const [showEntityDropdown, setShowEntityDropdown] = useState(false);
   const [entitySearchTag, setEntitySearchTag] = useState<string | null>(null);
@@ -655,11 +679,28 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToModule }) => {
   const [tagRecords, setTagRecords] = useState<TagRecord[]>([]);
   const [loadingTagRecords, setLoadingTagRecords] = useState(false);
   const [selectedTagForRecords, setSelectedTagForRecords] = useState<string | null>(null);
+  const [tagRecordSearch, setTagRecordSearch] = useState('');
   
   // Widget order state
   const [leftWidgets, setLeftWidgets] = useState<string[]>(['agenda', 'tarefas', 'djen', 'confeccao']);
-  const [rightWidgets, setRightWidgets] = useState<string[]>(['financeiro', 'navegacao']);
+  const [rightWidgets, setRightWidgets] = useState<string[]>(['financeiro', 'prazos', 'navegacao']);
   const [preferencesLoaded, setPreferencesLoaded] = useState(false);
+  const [imageGalleryModal, setImageGalleryModal] = useState<{
+    open: boolean;
+    images: Array<{ url: string; fileName: string }>;
+    currentIndex: number;
+  }>({ open: false, images: [], currentIndex: 0 });
+  
+  // Modal de interação (curtidas/comentários)
+  const [interactionModal, setInteractionModal] = useState<{
+    open: boolean;
+    type: 'likes' | 'comments';
+    postId: string | null;
+    users: Array<{ user_id: string; name: string; avatar_url?: string; content?: string; created_at?: string }>;
+    loading: boolean;
+    newComment: string;
+    submitting: boolean;
+  }>({ open: false, type: 'likes', postId: null, users: [], loading: false, newComment: '', submitting: false });
 
   // Drag and drop sensors
   const sensors = useSensors(
@@ -1020,14 +1061,15 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToModule }) => {
   };
 
   // Carregar registros reais para uma tag
-  const loadTagRecords = useCallback(async (tagId: string) => {
+  const loadTagRecords = useCallback(async (tagId: string, search = '') => {
     setLoadingTagRecords(true);
     setSelectedTagForRecords(tagId);
+    setTagRecordSearch(search);
     try {
-      const records = await feedPostsService.getRecordsForTag(tagId, '', 10);
+      const records = await feedPostsService.getRecordsForTag(tagId, search, 10);
       setTagRecords(records);
     } catch (error) {
-      console.error('Erro ao carregar registros:', error);
+      console.error('Erro ao carregar registros da tag:', error);
       setTagRecords([]);
     } finally {
       setLoadingTagRecords(false);
@@ -1047,6 +1089,14 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToModule }) => {
       setSelectedTags(prev => [...prev, selectedTagForRecords]);
     }
     
+    // Adicionar referência da entidade para tornar clicável
+    if (selectedTagForRecords === 'financeiro') {
+      setSelectedEntities(prev => [
+        ...prev.filter(e => !(e.type === 'financial' && e.id === record.id)),
+        { type: 'financial', id: record.id, name: record.label }
+      ]);
+    }
+    
     // Adicionar dados de preview
     setPreviewData(prev => ({ ...prev, ...record.previewData }));
     
@@ -1061,7 +1111,16 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToModule }) => {
   const closeTagRecordsDropdown = useCallback(() => {
     setSelectedTagForRecords(null);
     setTagRecords([]);
+    setTagRecordSearch('');
   }, []);
+
+  // Handler para busca em registros de tag
+  const handleTagRecordSearch = useCallback((search: string) => {
+    setTagRecordSearch(search);
+    if (selectedTagForRecords) {
+      loadTagRecords(selectedTagForRecords, search);
+    }
+  }, [selectedTagForRecords, loadTagRecords]);
 
   // Carregar posts do feed
   const loadFeedPosts = useCallback(async () => {
@@ -1094,7 +1153,7 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToModule }) => {
       return;
     }
     try {
-      const results = await feedPostsService.searchEntities(tag, search, 5);
+      const results = await feedPostsService.searchEntitiesForTag(tag, search, 5);
       setEntityResults(results);
     } catch (error) {
       console.error('Erro ao buscar entidades:', error);
@@ -1296,6 +1355,22 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToModule }) => {
         await feedPostsService.unlikePost(postId);
       } else {
         await feedPostsService.likePost(postId);
+        
+        // Notificar o autor do post (se não for o próprio usuário)
+        const post = feedPosts.find(p => p.id === postId);
+        if (post && post.author_id !== user?.id && currentProfile?.name) {
+          try {
+            await userNotificationService.createNotification({
+              user_id: post.author_id,
+              type: 'feed_like',
+              title: `${currentProfile.name} curtiu sua publicação`,
+              message: post.content.substring(0, 100) + (post.content.length > 100 ? '...' : ''),
+              metadata: { post_id: postId }
+            });
+          } catch (notifError) {
+            console.error('Erro ao criar notificação de curtida:', notifError);
+          }
+        }
       }
       // Atualizar estado local
       setFeedPosts(prev => prev.map(p => {
@@ -1311,7 +1386,7 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToModule }) => {
     } catch (error) {
       console.error('Erro ao dar/remover like:', error);
     }
-  }, []);
+  }, [feedPosts, user?.id, currentProfile?.name]);
 
   // Salvar edição de post
   const handleSaveEdit = useCallback(async (postId: string) => {
@@ -1354,22 +1429,269 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToModule }) => {
     }
   }, [confirmDelete]);
 
-  // Renderizar conteúdo com menções em azul
-  const renderContentWithMentions = useCallback((content: string) => {
+  // Handler para abrir modal do acordo financeiro
+  const handleOpenFinancialModal = useCallback((agreementId: string) => {
+    setSelectedFinancialAgreementId(agreementId);
+    setShowFinancialModal(true);
+  }, []);
+
+  // Handler para fechar modal do acordo financeiro
+  const handleCloseFinancialModal = useCallback(() => {
+    setShowFinancialModal(false);
+    setSelectedFinancialAgreementId(null);
+  }, []);
+
+  // Abrir galeria de imagens
+  const openImageGallery = useCallback((attachments: any[], startIndex: number = 0) => {
+    const images = attachments
+      .filter((a: any) => a.kind === 'image' && a.signedUrl && a.signedUrl.trim() !== '')
+      .map((a: any) => ({ url: a.signedUrl, fileName: a.fileName }));
+    if (images.length > 0) {
+      setImageGalleryModal({ open: true, images, currentIndex: startIndex });
+    }
+  }, []);
+
+  // Fechar galeria de imagens
+  const closeImageGallery = useCallback(() => {
+    setImageGalleryModal({ open: false, images: [], currentIndex: 0 });
+  }, []);
+
+  // Navegar para imagem anterior
+  const prevImage = useCallback(() => {
+    setImageGalleryModal(prev => ({
+      ...prev,
+      currentIndex: prev.currentIndex > 0 ? prev.currentIndex - 1 : prev.images.length - 1,
+    }));
+  }, []);
+
+  // Navegar para próxima imagem
+  const nextImage = useCallback(() => {
+    setImageGalleryModal(prev => ({
+      ...prev,
+      currentIndex: (prev.currentIndex + 1) % prev.images.length,
+    }));
+  }, []);
+
+  // Buscar quem curtiu
+  const fetchLikes = useCallback(async (postId: string) => {
+    setInteractionModal(prev => ({ ...prev, loading: true, users: [] }));
+    try {
+      const { data: likes, error } = await supabase
+        .from('feed_post_likes')
+        .select('user_id')
+        .eq('post_id', postId);
+
+      if (error) throw error;
+
+      if (!likes || likes.length === 0) {
+        setInteractionModal(prev => ({ ...prev, loading: false }));
+        return;
+      }
+
+      const userIds = (likes as any[]).map(l => l.user_id);
+      const { data: profiles } = await supabase
+        .from('profiles')
+        .select('user_id, name, avatar_url')
+        .in('user_id', userIds);
+
+      setInteractionModal(prev => ({
+        ...prev,
+        users: (profiles as any[]) || [],
+        loading: false,
+      }));
+    } catch (error) {
+      console.error('Erro ao buscar curtidas:', error);
+      setInteractionModal(prev => ({ ...prev, loading: false }));
+    }
+  }, []);
+
+  // Buscar quem comentou
+  const fetchComments = useCallback(async (postId: string) => {
+    setInteractionModal(prev => ({ ...prev, loading: true, users: [] }));
+    try {
+      const comments = await feedPostsService.getComments(postId);
+      const users = comments.map(c => ({
+        user_id: c.author_id,
+        name: c.author?.name || 'Usuário',
+        avatar_url: c.author?.avatar_url || undefined,
+        content: c.content,
+        created_at: c.created_at,
+      }));
+      setInteractionModal(prev => ({ ...prev, users, loading: false }));
+    } catch (error) {
+      console.error('Erro ao buscar comentários:', error);
+      setInteractionModal(prev => ({ ...prev, loading: false }));
+    }
+  }, []);
+
+  // Criar novo comentário
+  const handleCreateComment = useCallback(async () => {
+    if (!interactionModal.postId || !interactionModal.newComment.trim()) return;
+    setInteractionModal(prev => ({ ...prev, submitting: true }));
+    try {
+      const newComment = await feedPostsService.createComment(interactionModal.postId, interactionModal.newComment.trim());
+      const commentUser = {
+        user_id: newComment.author_id,
+        name: newComment.author?.name || 'Você',
+        avatar_url: newComment.author?.avatar_url || undefined,
+        content: newComment.content,
+        created_at: newComment.created_at,
+      };
+      setInteractionModal(prev => ({
+        ...prev,
+        users: [...prev.users, commentUser],
+        newComment: '',
+        submitting: false,
+      }));
+      // Atualizar contador de comentários no post
+      setFeedPosts(prev => prev.map(p => 
+        p.id === interactionModal.postId 
+          ? { ...p, comments_count: (p.comments_count || 0) + 1 }
+          : p
+      ));
+    } catch (error) {
+      console.error('Erro ao criar comentário:', error);
+      setInteractionModal(prev => ({ ...prev, submitting: false }));
+    }
+  }, [interactionModal.postId, interactionModal.newComment]);
+
+  // Abrir modal de curtidas ou comentários
+  const openInteractionModal = useCallback((type: 'likes' | 'comments', postId: string) => {
+    setInteractionModal({ open: true, type, postId, users: [], loading: true, newComment: '', submitting: false });
+    if (type === 'likes') {
+      fetchLikes(postId);
+    } else {
+      fetchComments(postId);
+    }
+  }, [fetchLikes, fetchComments]);
+
+  // Fechar modal de interação
+  const closeInteractionModal = useCallback(() => {
+    setInteractionModal({ open: false, type: 'likes', postId: null, users: [], loading: false, newComment: '', submitting: false });
+  }, []);
+
+  // Expandir/colapsar comentários inline
+  const toggleInlineComments = useCallback(async (postId: string) => {
+    if (expandedComments[postId]) {
+      // Colapsar
+      setExpandedComments(prev => {
+        const newState = { ...prev };
+        delete newState[postId];
+        return newState;
+      });
+    } else {
+      // Expandir e carregar comentários
+      setExpandedComments(prev => ({
+        ...prev,
+        [postId]: { comments: [], loading: true, newComment: '', submitting: false }
+      }));
+      try {
+        const comments = await feedPostsService.getComments(postId);
+        const mappedComments = comments.map(c => ({
+          user_id: c.author_id,
+          name: c.author?.name || 'Usuário',
+          avatar_url: c.author?.avatar_url || undefined,
+          content: c.content,
+          created_at: c.created_at,
+        }));
+        setExpandedComments(prev => ({
+          ...prev,
+          [postId]: { ...prev[postId], comments: mappedComments, loading: false }
+        }));
+      } catch (error) {
+        console.error('Erro ao carregar comentários:', error);
+        setExpandedComments(prev => ({
+          ...prev,
+          [postId]: { ...prev[postId], loading: false }
+        }));
+      }
+    }
+  }, [expandedComments]);
+
+  // Criar comentário inline
+  const handleCreateInlineComment = useCallback(async (postId: string) => {
+    const state = expandedComments[postId];
+    if (!state || !state.newComment.trim()) return;
+    
+    setExpandedComments(prev => ({
+      ...prev,
+      [postId]: { ...prev[postId], submitting: true }
+    }));
+    
+    try {
+      const newComment = await feedPostsService.createComment(postId, state.newComment.trim());
+      const commentData = {
+        user_id: newComment.author_id,
+        name: newComment.author?.name || 'Você',
+        avatar_url: newComment.author?.avatar_url || undefined,
+        content: newComment.content,
+        created_at: newComment.created_at,
+      };
+      setExpandedComments(prev => ({
+        ...prev,
+        [postId]: {
+          ...prev[postId],
+          comments: [...prev[postId].comments, commentData],
+          newComment: '',
+          submitting: false
+        }
+      }));
+      // Atualizar contador
+      setFeedPosts(prev => prev.map(p => 
+        p.id === postId ? { ...p, comments_count: (p.comments_count || 0) + 1 } : p
+      ));
+      
+      // Notificar o autor do post (se não for o próprio usuário)
+      const post = feedPosts.find(p => p.id === postId);
+      if (post && post.author_id !== user?.id && currentProfile?.name) {
+        try {
+          await userNotificationService.createNotification({
+            user_id: post.author_id,
+            type: 'feed_comment',
+            title: `${currentProfile.name} comentou sua publicação`,
+            message: state.newComment.trim().substring(0, 100) + (state.newComment.trim().length > 100 ? '...' : ''),
+            metadata: { post_id: postId }
+          });
+        } catch (notifError) {
+          console.error('Erro ao criar notificação de comentário:', notifError);
+        }
+      }
+    } catch (error) {
+      console.error('Erro ao criar comentário:', error);
+      setExpandedComments(prev => ({
+        ...prev,
+        [postId]: { ...prev[postId], submitting: false }
+      }));
+    }
+  }, [expandedComments, feedPosts, user?.id, currentProfile?.name]);
+
+  // Renderizar conteúdo com menções em azul e referências financeiras clicáveis
+  const renderContentWithMentions = useCallback((content: string, entityReferences?: EntityReference[]) => {
     // Regex para encontrar menções @nome - suporta acentos e caracteres Unicode
     const mentionRegex = /@([A-Za-zÀ-ÖØ-öø-ÿ]+(?:\s+[A-Za-zÀ-ÖØ-öø-ÿ]+)*)/g;
     const parts: React.ReactNode[] = [];
     let lastIndex = 0;
     let match;
 
+    // Processar menções
     while ((match = mentionRegex.exec(content)) !== null) {
       // Adicionar texto antes da menção
       if (match.index > lastIndex) {
         parts.push(content.slice(lastIndex, match.index));
       }
-      // Adicionar menção estilizada em azul
+      // Adicionar menção estilizada em azul - clicável para ir ao perfil
+      const mentionName = match[1];
+      const mentionedProfile = allProfiles.find(p => p.name.toLowerCase() === mentionName.toLowerCase());
       parts.push(
-        <span key={match.index} className="text-blue-600 font-semibold cursor-pointer hover:underline">
+        <span 
+          key={match.index} 
+          className="text-blue-600 font-semibold cursor-pointer hover:underline"
+          onClick={() => {
+            if (mentionedProfile) {
+              handleNavigate('perfil', { odId: mentionedProfile.id });
+            }
+          }}
+        >
           @{match[1]}
         </span>
       );
@@ -1381,6 +1703,54 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToModule }) => {
       parts.push(content.slice(lastIndex));
     }
 
+    // Se não houver menções, retornar o conteúdo original
+    if (parts.length === 0) {
+      return content;
+    }
+
+    // Processar referências financeiras para torná-las clicáveis
+    if (entityReferences && entityReferences.length > 0) {
+      const financialRefs = entityReferences.filter(e => e.type === 'financial');
+      if (financialRefs.length > 0) {
+        // Para cada referência financeira, encontrar o texto correspondente e torná-lo clicável
+        const newParts: React.ReactNode[] = [];
+        let currentText = content;
+        
+        for (const ref of financialRefs) {
+          const refText = ref.name || '';
+          const refIndex = currentText.indexOf(refText);
+          
+          if (refIndex !== -1) {
+            // Adicionar texto antes da referência
+            if (refIndex > 0) {
+              newParts.push(currentText.slice(0, refIndex));
+            }
+            
+            // Adicionar referência clicável em azul
+            newParts.push(
+              <span
+                key={`fin-${ref.id}`}
+                className="text-blue-600 font-semibold cursor-pointer hover:underline"
+                onClick={() => handleOpenFinancialModal(ref.id)}
+              >
+                {refText}
+              </span>
+            );
+            
+            // Atualizar texto restante
+            currentText = currentText.slice(refIndex + refText.length);
+          }
+        }
+        
+        // Adicionar texto restante
+        if (currentText.length > 0) {
+          newParts.push(currentText);
+        }
+        
+        return newParts.length > 0 ? newParts : parts;
+      }
+    }
+
     return parts.length > 0 ? parts : content;
   }, []);
 
@@ -1388,6 +1758,33 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToModule }) => {
   useEffect(() => {
     loadFeedPosts();
   }, [loadFeedPosts]);
+
+  // Scroll até o post quando params?.scrollToPost for passado
+  useEffect(() => {
+    if (params?.scrollToPost) {
+      const scrollToPostId = params.scrollToPost;
+      const scrollToPost = () => {
+        const postElement = document.querySelector(`[data-post-id="${scrollToPostId}"]`);
+        if (postElement) {
+          postElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          postElement.classList.add('ring-2', 'ring-blue-500', 'ring-offset-2');
+          setTimeout(() => {
+            postElement.classList.remove('ring-2', 'ring-blue-500', 'ring-offset-2');
+          }, 2000);
+        }
+      };
+
+      // Esperar os posts carregarem antes de tentar scrollar
+      if (feedPosts.length > 0) {
+        scrollToPost();
+      } else {
+        const timeoutId = setTimeout(() => {
+          scrollToPost();
+        }, 1000);
+        return () => clearTimeout(timeoutId);
+      }
+    }
+  }, [params?.scrollToPost, feedPosts]);
 
   const pendingTasks = tasks.filter((t) => t.status === 'pending').length;
 
@@ -1558,7 +1955,7 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToModule }) => {
                       dateLabel={getDateLabel(eventDate)}
                       isToday={isToday}
                       title={event.title}
-                      subtitle={client?.full_name || event.type}
+                      subtitle={client?.full_name || (event.type === 'payment' ? 'Pagamento' : event.type === 'hearing' ? 'Audiência' : event.type === 'deadline' ? 'Prazo' : event.type === 'meeting' ? 'Reunião' : event.type === 'task' ? 'Tarefa' : event.type === 'other' ? 'Outro' : event.type)}
                       onClick={() => handleNavigate('agenda')}
                     />
                   );
@@ -1792,6 +2189,70 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToModule }) => {
         />
       );
     }
+    if (widgetId === 'prazos') {
+      const urgentDeadlines = deadlines.filter(d => {
+        if (d.status === 'cumprido' || d.status === 'cancelado') return false;
+        const dueDate = new Date(d.due_date);
+        const today = new Date();
+        const diffDays = Math.ceil((dueDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+        return diffDays <= 3;
+      }).slice(0, 5);
+      
+      return (
+        <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-3">
+          <div className="flex items-center justify-between mb-3">
+            <div className="flex items-center gap-2">
+              <div className="w-8 h-8 bg-red-100 rounded-lg flex items-center justify-center">
+                <Clock className="w-4 h-4 text-red-600" />
+              </div>
+              <h3 className="font-bold text-slate-900 text-sm">Prazos Urgentes</h3>
+            </div>
+            <button
+              onClick={() => handleNavigate('prazos')}
+              className="text-xs text-blue-600 hover:text-blue-700 font-medium"
+            >
+              Ver todos
+            </button>
+          </div>
+          {urgentDeadlines.length === 0 ? (
+            <p className="text-slate-400 text-xs text-center py-4">Nenhum prazo urgente</p>
+          ) : (
+            <div className="space-y-2">
+              {urgentDeadlines.map((d) => {
+                const dueDate = new Date(d.due_date);
+                const today = new Date();
+                const diffDays = Math.ceil((dueDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+                const isOverdue = diffDays < 0;
+                
+                return (
+                  <div
+                    key={d.id}
+                    onClick={() => handleNavigate('prazos')}
+                    className={`p-2 rounded-lg cursor-pointer transition-colors ${
+                      isOverdue ? 'bg-red-50 hover:bg-red-100' : 'bg-amber-50 hover:bg-amber-100'
+                    }`}
+                  >
+                    <p className="text-xs font-medium text-slate-900 truncate">{d.title}</p>
+                    <div className="flex items-center justify-between mt-1">
+                      <span className={`text-[10px] font-medium ${isOverdue ? 'text-red-600' : 'text-amber-600'}`}>
+                        {isOverdue ? `Atrasado ${Math.abs(diffDays)} dia(s)` : diffDays === 0 ? 'Hoje' : `${diffDays} dia(s)`}
+                      </span>
+                      <span className={`text-[10px] px-1.5 py-0.5 rounded ${
+                        d.priority === 'urgente' ? 'bg-red-200 text-red-700' :
+                        d.priority === 'alta' ? 'bg-orange-200 text-orange-700' :
+                        'bg-slate-200 text-slate-600'
+                      }`}>
+                        {d.priority}
+                      </span>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      );
+    }
     if (widgetId === 'navegacao') {
       return (
         <nav className="flex flex-col gap-2">
@@ -1856,40 +2317,52 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToModule }) => {
 
         {/* Feed Central */}
         <main className="col-span-1 lg:col-span-9 xl:col-span-6 flex flex-col gap-6 order-2">
-          {/* Cards de Estatísticas */}
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
-            <StatCard
-              icon={<Users className="w-5 h-5" />}
-              iconColor="text-blue-500"
-              label="Clientes"
-              value={activeClients}
-              hoverVariant="blue"
+          {/* Barra de Indicadores */}
+          <div className="bg-white rounded-xl border border-slate-200 shadow-sm px-4 py-2.5 flex items-center justify-between gap-2 overflow-x-auto">
+            <button 
               onClick={() => handleNavigate('clientes')}
-            />
-            <StatCard
-              icon={<Gavel className="w-5 h-5" />}
-              iconColor="text-purple-500"
-              label="Processos"
-              value={activeProcesses}
-              hoverVariant="purple"
+              className="flex items-center gap-1.5 hover:bg-slate-50 px-2 py-1 rounded-lg transition-colors whitespace-nowrap"
+            >
+              <Users className="w-4 h-4 text-blue-500" />
+              <span className="text-xs font-bold text-slate-700">CLIENTES:</span>
+              <span className="text-sm font-bold text-blue-600">{activeClients}</span>
+            </button>
+            <div className="w-px h-4 bg-slate-200" />
+            <button 
               onClick={() => handleNavigate('processos')}
-            />
-            <StatCard
-              icon={<Timer className="w-5 h-5" />}
-              iconColor="text-red-500"
-              label="Prazos"
-              value={pendingDeadlines}
-              hoverVariant="red"
+              className="flex items-center gap-1.5 hover:bg-slate-50 px-2 py-1 rounded-lg transition-colors whitespace-nowrap"
+            >
+              <Briefcase className="w-4 h-4 text-indigo-500" />
+              <span className="text-xs font-bold text-slate-700">PROCESSOS:</span>
+              <span className="text-sm font-bold text-indigo-600">{activeProcesses}</span>
+            </button>
+            <div className="w-px h-4 bg-slate-200" />
+            <button 
+              onClick={() => handleNavigate('requerimentos')}
+              className="flex items-center gap-1.5 hover:bg-slate-50 px-2 py-1 rounded-lg transition-colors whitespace-nowrap"
+            >
+              <FileText className="w-4 h-4 text-amber-500" />
+              <span className="text-xs font-bold text-slate-700">REQUERIMENTOS:</span>
+              <span className="text-sm font-bold text-amber-600">{requirementsAwaiting.length}</span>
+            </button>
+            <div className="w-px h-4 bg-slate-200" />
+            <button 
               onClick={() => handleNavigate('prazos')}
-            />
-            <StatCard
-              icon={<CheckSquare className="w-5 h-5" />}
-              iconColor="text-green-500"
-              label="Tarefas"
-              value={pendingTasks}
-              hoverVariant="green"
+              className="flex items-center gap-1.5 hover:bg-slate-50 px-2 py-1 rounded-lg transition-colors whitespace-nowrap"
+            >
+              <Clock className="w-4 h-4 text-red-500" />
+              <span className="text-xs font-bold text-slate-700">PRAZOS:</span>
+              <span className="text-sm font-bold text-red-600">{pendingDeadlines}</span>
+            </button>
+            <div className="w-px h-4 bg-slate-200" />
+            <button 
               onClick={() => handleNavigate('tarefas')}
-            />
+              className="flex items-center gap-1.5 hover:bg-slate-50 px-2 py-1 rounded-lg transition-colors whitespace-nowrap"
+            >
+              <CheckSquare className="w-4 h-4 text-emerald-500" />
+              <span className="text-xs font-bold text-slate-700">TAREFAS:</span>
+              <span className="text-sm font-bold text-emerald-600">{tasks.filter(t => t.status === 'pending').length}</span>
+            </button>
           </div>
 
           {/* Caixa de Postagem - Design Premium */}
@@ -1993,6 +2466,18 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToModule }) => {
                         </button>
                       </div>
                       
+                      {/* Campo de busca */}
+                      <div className="p-2 border-b border-slate-100">
+                        <input
+                          type="text"
+                          placeholder="Buscar..."
+                          value={tagRecordSearch}
+                          onChange={(e) => handleTagRecordSearch(e.target.value)}
+                          className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:ring-2 focus:ring-slate-500/20 focus:border-slate-400 outline-none"
+                          autoFocus
+                        />
+                      </div>
+                       
                       {loadingTagRecords ? (
                         <div className="p-4 text-center">
                           <Loader2 className="w-5 h-5 mx-auto text-blue-500 animate-spin" />
@@ -2162,16 +2647,16 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToModule }) => {
             {/* Criador de Enquete */}
             {showPollCreator && (
               <div className="px-4 pb-4 border-t border-slate-100 pt-4 mt-2">
-                <div className="bg-gradient-to-br from-indigo-50 via-purple-50 to-pink-50 rounded-2xl p-5 border border-indigo-100 shadow-lg shadow-indigo-100/30">
+                <div className="bg-gradient-to-br from-slate-50 to-blue-50 rounded-2xl p-5 border border-blue-100 shadow-lg shadow-blue-100/30">
                   {/* Header */}
                   <div className="flex items-center justify-between mb-4">
                     <div className="flex items-center gap-2.5">
-                      <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center shadow-md shadow-indigo-500/25">
+                      <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-blue-500 to-cyan-500 flex items-center justify-center shadow-md shadow-blue-500/25">
                         <BarChart2 className="w-5 h-5 text-white" />
                       </div>
                       <div>
-                        <span className="font-bold text-indigo-900 text-base">Criar Enquete</span>
-                        <p className="text-xs text-indigo-600/70">Faça uma pergunta e adicione opções</p>
+                        <span className="font-bold text-slate-900 text-base">Criar Enquete</span>
+                        <p className="text-xs text-slate-500">Faça uma pergunta e adicione opções</p>
                       </div>
                     </div>
                     <button
@@ -2190,7 +2675,7 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToModule }) => {
                       value={pollQuestion}
                       onChange={(e) => setPollQuestion(e.target.value)}
                       placeholder="Ex: Qual sua cor favorita?"
-                      className="w-full bg-white border-2 border-indigo-100 rounded-xl px-4 py-2.5 text-sm focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-400 transition-all placeholder:text-slate-400"
+                      className="w-full bg-white border-2 border-blue-100 rounded-xl px-4 py-2.5 text-sm focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400 transition-all placeholder:text-slate-400"
                     />
                   </div>
 
@@ -2203,7 +2688,7 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToModule }) => {
                     <div className="space-y-2">
                       {pollOptions.map((opt, idx) => (
                         <div key={idx} className="flex items-center gap-2 group">
-                          <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-indigo-100 to-purple-100 text-indigo-700 text-xs font-bold flex items-center justify-center shrink-0 border border-indigo-200">
+                          <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-blue-100 to-cyan-100 text-blue-700 text-xs font-bold flex items-center justify-center shrink-0 border border-blue-200">
                             {idx + 1}
                           </div>
                           <input
@@ -2215,7 +2700,7 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToModule }) => {
                               setPollOptions(newOpts);
                             }}
                             placeholder={`Opção ${idx + 1}`}
-                            className="flex-1 bg-white border-2 border-slate-100 rounded-xl px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-300 transition-all placeholder:text-slate-400"
+                            className="flex-1 bg-white border-2 border-slate-100 rounded-xl px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500/20 focus:border-blue-300 transition-all placeholder:text-slate-400"
                           />
                           {pollOptions.length > 2 && (
                             <button
@@ -2232,7 +2717,7 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToModule }) => {
                     {pollOptions.length < 6 && (
                       <button
                         onClick={() => setPollOptions([...pollOptions, ''])}
-                        className="w-full mt-2 flex items-center justify-center gap-1.5 py-2 rounded-xl border-2 border-dashed border-indigo-200 text-indigo-600 text-sm font-medium hover:bg-indigo-50 hover:border-indigo-300 transition-all"
+                        className="w-full mt-2 flex items-center justify-center gap-1.5 py-2 rounded-xl border-2 border-dashed border-blue-200 text-blue-600 text-sm font-medium hover:bg-blue-50 hover:border-blue-300 transition-all"
                       >
                         <Plus className="w-4 h-4" />
                         Adicionar opção
@@ -2243,10 +2728,10 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToModule }) => {
                   {/* Configurações */}
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-4">
                     {/* Múltiplas opções */}
-                    <div className="flex items-center gap-2 p-3 bg-white rounded-xl border-2 border-slate-100 hover:border-indigo-200 transition-all cursor-pointer"
+                    <div className="flex items-center gap-2 p-3 bg-white rounded-xl border-2 border-slate-100 hover:border-blue-200 transition-all cursor-pointer"
                       onClick={() => setPollAllowMultiple(!pollAllowMultiple)}
                     >
-                      <div className={`w-5 h-5 rounded-lg border-2 flex items-center justify-center transition-all ${pollAllowMultiple ? 'bg-indigo-500 border-indigo-500' : 'border-slate-300'}`}>
+                      <div className={`w-5 h-5 rounded-lg border-2 flex items-center justify-center transition-all ${pollAllowMultiple ? 'bg-blue-500 border-blue-500' : 'border-slate-300'}`}>
                         {pollAllowMultiple && (
                           <svg className="w-3 h-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
@@ -2278,27 +2763,46 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToModule }) => {
                   </div>
 
                   {/* Participantes */}
-                  <div className="flex items-center gap-2 p-3 bg-white rounded-xl border-2 border-slate-100">
-                    <Users className="w-4 h-4 text-slate-400" />
-                    <select
-                      multiple
-                      value={pollParticipants}
-                      onChange={(e) => {
-                        const selected = Array.from(e.target.selectedOptions, opt => opt.value);
-                        setPollParticipants(selected);
-                      }}
-                      className="flex-1 bg-transparent text-sm text-slate-700 focus:outline-none cursor-pointer min-h-0"
-                    >
-                      <option value="" disabled>Todos podem votar</option>
+                  <div className="p-3 bg-white rounded-xl border-2 border-slate-100">
+                    <div className="flex items-center gap-2 mb-2">
+                      <Users className="w-4 h-4 text-slate-400" />
+                      <span className="text-xs font-semibold text-slate-700">Participantes</span>
+                      {pollParticipants.length > 0 && (
+                        <span className="text-xs bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full font-medium">
+                          {pollParticipants.length} selecionado{pollParticipants.length !== 1 ? 's' : ''}
+                        </span>
+                      )}
+                    </div>
+                    <div className="max-h-32 overflow-y-auto space-y-1">
+                      <label className="flex items-center gap-2 p-2 rounded-lg hover:bg-slate-50 cursor-pointer transition-colors">
+                        <input
+                          type="checkbox"
+                          checked={pollParticipants.length === 0}
+                          onChange={(e) => {
+                            if (e.target.checked) setPollParticipants([]);
+                          }}
+                          className="w-4 h-4 rounded border-slate-300 text-blue-500 focus:ring-blue-500/20"
+                        />
+                        <span className="text-xs text-slate-600">Todos podem votar</span>
+                      </label>
                       {allProfiles.map(p => (
-                        <option key={p.user_id} value={p.user_id}>{p.name}</option>
+                        <label key={p.user_id} className="flex items-center gap-2 p-2 rounded-lg hover:bg-slate-50 cursor-pointer transition-colors">
+                          <input
+                            type="checkbox"
+                            checked={pollParticipants.includes(p.user_id)}
+                            onChange={(e) => {
+                              if (e.target.checked) {
+                                setPollParticipants([...pollParticipants, p.user_id]);
+                              } else {
+                                setPollParticipants(pollParticipants.filter(id => id !== p.user_id));
+                              }
+                            }}
+                            className="w-4 h-4 rounded border-slate-300 text-blue-500 focus:ring-blue-500/20"
+                          />
+                          <span className="text-xs text-slate-600">{p.name}</span>
+                        </label>
                       ))}
-                    </select>
-                    {pollParticipants.length > 0 && (
-                      <span className="text-xs bg-indigo-100 text-indigo-700 px-2 py-0.5 rounded-full font-medium">
-                        {pollParticipants.length} selecionado{pollParticipants.length !== 1 ? 's' : ''}
-                      </span>
-                    )}
+                    </div>
                   </div>
                 </div>
               </div>
@@ -2345,7 +2849,7 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToModule }) => {
               </div>
             ) : (
               feedPosts.map((post) => (
-                <div key={post.id} className="bg-white rounded-2xl border border-slate-200/80 shadow-md shadow-slate-200/50 overflow-hidden hover:shadow-lg hover:shadow-slate-200/60 transition-shadow">
+                <div key={post.id} data-post-id={post.id} className="bg-white rounded-2xl border border-slate-200/80 shadow-md shadow-slate-200/50 overflow-hidden hover:shadow-lg hover:shadow-slate-200/60 transition-shadow">
                   {/* Header do Post */}
                   <div className="p-4 pb-2 flex gap-3">
                     <button 
@@ -2492,7 +2996,7 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToModule }) => {
                     ) : (
                       <>
                         <div className="text-slate-800 text-sm leading-relaxed mb-3 whitespace-pre-wrap">
-                          {renderContentWithMentions(post.content)}
+                          {renderContentWithMentions(post.content, post.entity_references)}
                         </div>
                         {post.created_at !== post.updated_at && (
                           <div className="flex items-center gap-1 text-xs text-slate-400 mb-3">
@@ -2573,27 +3077,56 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToModule }) => {
                       );
                     })()}
 
-                    {post.attachments && post.attachments.length > 0 && (
-                      <div className="flex flex-wrap gap-2 mb-3">
-                        {post.attachments
-                          .filter((a) => a.kind === 'image')
-                          .map((a) => (
-                            <a
-                              key={a.filePath}
-                              href={a.signedUrl || '#'}
-                              target={a.signedUrl ? '_blank' : undefined}
-                              rel={a.signedUrl ? 'noopener noreferrer' : undefined}
-                              className="block"
+                    {/* Imagens estilo Instagram - ocupam toda a largura */}
+                    {post.attachments && post.attachments.length > 0 && (() => {
+                      const images = post.attachments.filter((a) => a.kind === 'image' && a.signedUrl && a.signedUrl.trim() !== '');
+                      if (images.length === 0) return null;
+                      
+                      return (
+                        <div className="-mx-4 mb-3">
+                          {images.length === 1 ? (
+                            // Uma imagem: ocupa toda a largura
+                            <button
+                              onClick={() => openImageGallery(post.attachments || [], 0)}
+                              className="w-full block cursor-pointer"
                             >
                               <img
-                                src={a.signedUrl || ''}
-                                className="h-28 w-28 object-cover rounded-lg border border-slate-200"
-                                alt={a.fileName}
+                                src={images[0].signedUrl || ''}
+                                className="w-full max-h-[500px] object-cover"
+                                alt={images[0].fileName}
                               />
-                            </a>
-                          ))}
-                      </div>
-                    )}
+                            </button>
+                          ) : (
+                            // Múltiplas imagens: grid estilo Instagram
+                            <div className={`grid gap-0.5 ${images.length === 2 ? 'grid-cols-2' : images.length === 3 ? 'grid-cols-2' : 'grid-cols-2'}`}>
+                              {images.slice(0, 4).map((a, idx) => (
+                                <button
+                                  key={a.filePath}
+                                  onClick={() => openImageGallery(post.attachments || [], idx)}
+                                  className={`relative block cursor-pointer overflow-hidden ${
+                                    images.length === 3 && idx === 0 ? 'row-span-2' : ''
+                                  }`}
+                                >
+                                  <img
+                                    src={a.signedUrl || ''}
+                                    className={`w-full object-cover ${
+                                      images.length === 3 && idx === 0 ? 'h-full' : 'h-48'
+                                    }`}
+                                    alt={a.fileName}
+                                  />
+                                  {/* Overlay para +N imagens */}
+                                  {idx === 3 && images.length > 4 && (
+                                    <div className="absolute inset-0 bg-black/50 flex items-center justify-center">
+                                      <span className="text-white text-2xl font-bold">+{images.length - 4}</span>
+                                    </div>
+                                  )}
+                                </button>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })()}
                     
                     {/* Cards de Preview de Dados */}
                     {post.preview_data && Object.keys(post.preview_data).length > 0 && (
@@ -2629,7 +3162,7 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToModule }) => {
                         {post.preview_data.cliente && (
                           <div 
                             className="bg-gradient-to-r from-blue-500 to-blue-600 rounded-lg p-3 cursor-pointer hover:shadow-md transition-shadow"
-                            onClick={() => handleNavigate('clientes')}
+                            onClick={() => handleNavigate('clientes', { selectedId: post.preview_data.cliente?.id || '' })}
                           >
                             <div className="flex items-center gap-3">
                               <div className="w-10 h-10 rounded-full bg-white/20 flex items-center justify-center text-white">
@@ -2647,7 +3180,7 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToModule }) => {
                         {post.preview_data.processo && (
                           <div 
                             className="bg-gradient-to-r from-purple-500 to-purple-600 rounded-lg p-3 cursor-pointer hover:shadow-md transition-shadow"
-                            onClick={() => handleNavigate('processos')}
+                            onClick={() => handleNavigate('processos', { selectedId: post.preview_data.processo?.id || '' })}
                           >
                             <div className="flex items-center gap-3">
                               <div className="w-10 h-10 rounded-full bg-white/20 flex items-center justify-center text-white">
@@ -2665,7 +3198,7 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToModule }) => {
                         {post.preview_data.prazo && (
                           <div 
                             className="bg-gradient-to-r from-red-500 to-red-600 rounded-lg p-3 cursor-pointer hover:shadow-md transition-shadow"
-                            onClick={() => handleNavigate('prazos')}
+                            onClick={() => handleNavigate('prazos', { selectedId: post.preview_data.prazo?.id || '' })}
                           >
                             <div className="flex items-center gap-3">
                               <div className="w-10 h-10 rounded-full bg-white/20 flex items-center justify-center text-white">
@@ -2683,15 +3216,91 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToModule }) => {
                         {post.preview_data.agenda && (
                           <div 
                             className="bg-gradient-to-r from-amber-500 to-amber-600 rounded-lg p-3 cursor-pointer hover:shadow-md transition-shadow"
-                            onClick={() => handleNavigate('agenda')}
+                            onClick={() => handleNavigate('agenda', { selectedId: post.preview_data.agenda?.id || '' })}
                           >
                             <div className="flex items-center gap-3">
-                              <div className="w-10 h-10 rounded-full bg-white/20 flex items-center justify-center text-white">
+                              <div className="w-10 h-10 bg-white/20 rounded-lg flex items-center justify-center text-white">
                                 <Calendar className="w-5 h-5" />
                               </div>
                               <div>
                                 <p className="text-white font-bold text-sm">{post.preview_data.agenda.titulo}</p>
                                 <p className="text-white/80 text-xs">{post.preview_data.agenda.data} {post.preview_data.agenda.hora && `às ${post.preview_data.agenda.hora}`}</p>
+                              </div>
+                            </div>
+                          </div>
+                        )}
+                        
+                        {/* Preview Documento */}
+                        {post.preview_data.documento && (
+                          <div 
+                            className="bg-gradient-to-r from-indigo-500 to-indigo-600 rounded-lg p-3 cursor-pointer hover:shadow-md transition-shadow"
+                            onClick={() => handleNavigate('documentos', { selectedId: post.preview_data.documento?.id || '' })}
+                          >
+                            <div className="flex items-center gap-3">
+                              <div className="w-10 h-10 bg-white/20 rounded-lg flex items-center justify-center text-white">
+                                <FileText className="w-5 h-5" />
+                              </div>
+                              <div>
+                                <p className="text-white font-bold text-sm">{post.preview_data.documento.nome}</p>
+                                <p className="text-white/80 text-xs">{post.preview_data.documento.tipo || 'Documento'}</p>
+                              </div>
+                            </div>
+                          </div>
+                        )}
+                        
+                        {/* Preview Petição */}
+                        {post.preview_data.peticao && (
+                          <div 
+                            className="bg-gradient-to-r from-cyan-500 to-cyan-600 rounded-lg p-3 cursor-pointer hover:shadow-md transition-shadow"
+                            onClick={() => handleNavigate('peticoes', { selectedId: post.preview_data.peticao?.id || '' })}
+                          >
+                            <div className="flex items-center gap-3">
+                              <div className="w-10 h-10 bg-white/20 rounded-lg flex items-center justify-center text-white">
+                                <ScrollText className="w-5 h-5" />
+                              </div>
+                              <div>
+                                <p className="text-white font-bold text-sm">{post.preview_data.peticao.nome}</p>
+                                <p className="text-white/80 text-xs">{post.preview_data.peticao.tipo || 'Petição'}</p>
+                              </div>
+                            </div>
+                          </div>
+                        )}
+                        
+                        {/* Preview Assinatura */}
+                        {post.preview_data.assinatura && (
+                          <div 
+                            className="bg-gradient-to-r from-pink-500 to-pink-600 rounded-lg p-3 cursor-pointer hover:shadow-md transition-shadow"
+                            onClick={() => handleNavigate('assinaturas', { selectedId: post.preview_data.assinatura?.id || '' })}
+                          >
+                            <div className="flex items-center gap-3">
+                              <div className="w-10 h-10 bg-white/20 rounded-lg flex items-center justify-center text-white">
+                                <Pencil className="w-5 h-5" />
+                              </div>
+                              <div>
+                                <p className="text-white font-bold text-sm">{post.preview_data.assinatura.nome}</p>
+                                <p className="text-white/80 text-xs">
+                                  {post.preview_data.assinatura.cliente || 'Assinatura'} • {post.preview_data.assinatura.status === 'signed' ? 'Assinado' : 'Pendente'}
+                                </p>
+                              </div>
+                            </div>
+                          </div>
+                        )}
+                        
+                        {/* Preview Requerimento */}
+                        {post.preview_data.requerimento && (
+                          <div 
+                            className="bg-gradient-to-r from-orange-500 to-orange-600 rounded-lg p-3 cursor-pointer hover:shadow-md transition-shadow"
+                            onClick={() => handleNavigate('requerimentos', { selectedId: post.preview_data.requerimento?.id || '' })}
+                          >
+                            <div className="flex items-center gap-3">
+                              <div className="w-10 h-10 bg-white/20 rounded-lg flex items-center justify-center text-white">
+                                <Briefcase className="w-5 h-5" />
+                              </div>
+                              <div>
+                                <p className="text-white font-bold text-sm">{post.preview_data.requerimento.protocolo || post.preview_data.requerimento.beneficiario}</p>
+                                <p className="text-white/80 text-xs">
+                                  {post.preview_data.requerimento.beneficiario} • {post.preview_data.requerimento.tipo || post.preview_data.requerimento.status || 'Requerimento'}
+                                </p>
                               </div>
                             </div>
                           </div>
@@ -2731,11 +3340,96 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToModule }) => {
                       <ThumbsUp className={`w-5 h-5 ${post.liked_by_me ? 'fill-current' : ''}`} />
                       {post.liked_by_me ? 'Curtido' : 'Curtir'}
                     </button>
-                    <button className="flex-1 flex items-center justify-center gap-2 py-2 hover:bg-slate-100 rounded-lg text-slate-600 text-sm font-medium transition-colors">
+                    <button 
+                      onClick={() => toggleInlineComments(post.id)}
+                      className={`flex-1 flex items-center justify-center gap-2 py-2 hover:bg-slate-100 rounded-lg text-sm font-medium transition-colors ${expandedComments[post.id] ? 'text-blue-600' : 'text-slate-600'}`}
+                    >
                       <MessageCircle className="w-5 h-5" />
                       Comentar
                     </button>
                   </div>
+                  
+                  {/* Seção de comentários inline (estilo Facebook/Instagram) */}
+                  {expandedComments[post.id] && (
+                    <div className="border-t border-slate-100">
+                      {/* Lista de comentários */}
+                      <div className="px-4 py-3 space-y-3 max-h-64 overflow-y-auto">
+                        {expandedComments[post.id].loading ? (
+                          <div className="flex items-center justify-center py-4">
+                            <Loader2 className="w-5 h-5 text-blue-600 animate-spin" />
+                          </div>
+                        ) : expandedComments[post.id].comments.length === 0 ? (
+                          <p className="text-slate-400 text-sm text-center py-2">Seja o primeiro a comentar!</p>
+                        ) : (
+                          expandedComments[post.id].comments.map((c, idx) => (
+                            <div key={`${c.user_id}-${idx}`} className="flex gap-2 group">
+                              <button
+                                onClick={() => handleNavigate('perfil', { userId: c.user_id })}
+                                className="flex-shrink-0"
+                              >
+                                <Avatar src={c.avatar_url} name={c.name} size="xs" />
+                              </button>
+                              <div className="flex-1">
+                                <div className="bg-slate-100 rounded-2xl px-3 py-2">
+                                  <button
+                                    onClick={() => handleNavigate('perfil', { userId: c.user_id })}
+                                    className="text-xs font-semibold text-slate-900 hover:underline"
+                                  >
+                                    {c.name}
+                                  </button>
+                                  <p className="text-sm text-slate-700">{c.content}</p>
+                                </div>
+                                {/* Ações do comentário */}
+                                <div className="flex items-center gap-3 mt-1 ml-2">
+                                  <span className="text-[10px] text-slate-400">
+                                    {new Date(c.created_at).toLocaleDateString('pt-BR', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })}
+                                  </span>
+                                  <button 
+                                    onClick={() => {
+                                      setExpandedComments(prev => ({
+                                        ...prev,
+                                        [post.id]: { ...prev[post.id], newComment: `@${c.name} ` }
+                                      }));
+                                    }}
+                                    className="text-[11px] font-semibold text-slate-500 hover:text-slate-700"
+                                  >
+                                    Responder
+                                  </button>
+                                </div>
+                              </div>
+                            </div>
+                          ))
+                        )}
+                      </div>
+                      
+                      {/* Input para novo comentário */}
+                      <div className="px-4 py-3 border-t border-slate-100 bg-slate-50/50">
+                        <div className="flex gap-2 items-center">
+                          <Avatar src={currentProfile?.avatar_url} name={currentProfile?.name || 'Você'} size="xs" />
+                          <input
+                            type="text"
+                            value={expandedComments[post.id]?.newComment || ''}
+                            onChange={(e) => setExpandedComments(prev => ({
+                              ...prev,
+                              [post.id]: { ...prev[post.id], newComment: e.target.value }
+                            }))}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter' && !e.shiftKey) {
+                                e.preventDefault();
+                                handleCreateInlineComment(post.id);
+                              }
+                            }}
+                            placeholder={`Comente como ${currentProfile?.name || 'você'}...`}
+                            className="flex-1 px-3 py-2 bg-white border border-slate-200 rounded-full text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-400"
+                            disabled={expandedComments[post.id]?.submitting}
+                          />
+                          {expandedComments[post.id]?.submitting && (
+                            <Loader2 className="w-4 h-4 text-blue-600 animate-spin" />
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  )}
                 </div>
               ))
             )}
@@ -2756,6 +3450,182 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToModule }) => {
         </aside>
       </div>
     </div>
+
+    {/* Modal do Acordo Financeiro */}
+    {showFinancialModal && selectedFinancialAgreementId && (
+      <FinancialModal
+        agreementId={selectedFinancialAgreementId!}
+        onClose={handleCloseFinancialModal}
+      />
+    )}
+
+    {/* Modal de galeria de imagens - estilo Instagram */}
+    {imageGalleryModal.open && (
+      <div 
+        className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4"
+        onClick={closeImageGallery}
+      >
+        <div 
+          className="relative max-w-lg w-full"
+          onClick={(e) => e.stopPropagation()}
+        >
+          {/* Botão fechar */}
+          <button 
+            onClick={closeImageGallery} 
+            className="absolute -top-10 right-0 text-white/80 hover:text-white"
+          >
+            <X className="w-6 h-6" />
+          </button>
+          
+          {/* Imagem */}
+          <div className="relative">
+            {imageGalleryModal.images.length > 1 && (
+              <button
+                onClick={prevImage}
+                className="absolute left-2 top-1/2 -translate-y-1/2 bg-black/50 hover:bg-black/70 text-white rounded-full p-1.5 transition-all"
+              >
+                <ChevronLeft className="w-5 h-5" />
+              </button>
+            )}
+            <img
+              src={imageGalleryModal.images[imageGalleryModal.currentIndex]?.url}
+              alt={imageGalleryModal.images[imageGalleryModal.currentIndex]?.fileName}
+              className="w-full max-h-[70vh] object-contain rounded-lg"
+            />
+            {imageGalleryModal.images.length > 1 && (
+              <button
+                onClick={nextImage}
+                className="absolute right-2 top-1/2 -translate-y-1/2 bg-black/50 hover:bg-black/70 text-white rounded-full p-1.5 transition-all"
+              >
+                <ChevronRight className="w-5 h-5" />
+              </button>
+            )}
+            
+            {/* Contador */}
+            {imageGalleryModal.images.length > 1 && (
+              <div className="absolute top-2 left-1/2 -translate-x-1/2 bg-black/60 text-white text-xs px-2 py-1 rounded-full">
+                {imageGalleryModal.currentIndex + 1} / {imageGalleryModal.images.length}
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+    )}
+
+    {/* Modal de quem curtiu/comentou */}
+    {interactionModal.open && (
+      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+        <div className="bg-white rounded-2xl shadow-xl max-w-lg w-full max-h-[80vh] flex flex-col">
+          <div className="flex items-center justify-between p-4 border-b border-slate-200">
+            <h3 className="font-bold text-slate-900">
+              {interactionModal.type === 'likes' ? 'Curtidas' : 'Comentários'}
+            </h3>
+            <button onClick={closeInteractionModal} className="text-slate-400 hover:text-slate-600">
+              <X className="w-5 h-5" />
+            </button>
+          </div>
+          <div className="flex-1 overflow-y-auto p-4">
+            {interactionModal.loading ? (
+              <div className="flex items-center justify-center py-8">
+                <Loader2 className="w-6 h-6 text-blue-600 animate-spin" />
+              </div>
+            ) : interactionModal.type === 'likes' ? (
+              interactionModal.users.length === 0 ? (
+                <p className="text-slate-500 text-center py-8">Ninguém curtiu ainda.</p>
+              ) : (
+                <div className="space-y-3">
+                  {interactionModal.users.map((u) => (
+                    <div
+                      key={u.user_id}
+                      className="flex items-center gap-3 p-2 rounded-lg hover:bg-slate-50 cursor-pointer"
+                      onClick={() => {
+                        handleNavigate('perfil', { userId: u.user_id });
+                        closeInteractionModal();
+                      }}
+                    >
+                      <Avatar src={u.avatar_url} name={u.name} size="sm" />
+                      <span className="text-sm font-medium text-slate-900">{u.name}</span>
+                    </div>
+                  ))}
+                </div>
+              )
+            ) : (
+              <div className="space-y-4">
+                {interactionModal.users.length === 0 ? (
+                  <p className="text-slate-500 text-center py-4">Seja o primeiro a comentar!</p>
+                ) : (
+                  <div className="space-y-3">
+                    {interactionModal.users.map((u, idx) => (
+                      <div key={`${u.user_id}-${idx}`} className="flex gap-3">
+                        <div 
+                          className="cursor-pointer"
+                          onClick={() => {
+                            handleNavigate('perfil', { userId: u.user_id });
+                            closeInteractionModal();
+                          }}
+                        >
+                          <Avatar src={u.avatar_url} name={u.name} size="sm" />
+                        </div>
+                        <div className="flex-1 bg-slate-100 rounded-xl px-3 py-2">
+                          <div className="flex items-center gap-2 mb-1">
+                            <span 
+                              className="text-sm font-semibold text-slate-900 cursor-pointer hover:underline"
+                              onClick={() => {
+                                handleNavigate('perfil', { userId: u.user_id });
+                                closeInteractionModal();
+                              }}
+                            >
+                              {u.name}
+                            </span>
+                            {u.created_at && (
+                              <span className="text-xs text-slate-400">
+                                {new Date(u.created_at).toLocaleDateString('pt-BR', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })}
+                              </span>
+                            )}
+                          </div>
+                          <p className="text-sm text-slate-700">{u.content}</p>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+          {/* Input para novo comentário */}
+          {interactionModal.type === 'comments' && (
+            <div className="p-4 border-t border-slate-200 bg-slate-50">
+              <div className="flex gap-3">
+                <Avatar src={currentProfile?.avatar_url} name={currentProfile?.name || 'Você'} size="sm" />
+                <div className="flex-1 flex gap-2">
+                  <input
+                    type="text"
+                    value={interactionModal.newComment}
+                    onChange={(e) => setInteractionModal(prev => ({ ...prev, newComment: e.target.value }))}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' && !e.shiftKey) {
+                        e.preventDefault();
+                        handleCreateComment();
+                      }
+                    }}
+                    placeholder="Escreva um comentário..."
+                    className="flex-1 px-4 py-2 bg-white border border-slate-200 rounded-full text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-400"
+                    disabled={interactionModal.submitting}
+                  />
+                  <button
+                    onClick={handleCreateComment}
+                    disabled={!interactionModal.newComment.trim() || interactionModal.submitting}
+                    className="px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-slate-300 text-white rounded-full text-sm font-medium transition-colors"
+                  >
+                    {interactionModal.submitting ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Enviar'}
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+    )}
     </DndContext>
   );
 };

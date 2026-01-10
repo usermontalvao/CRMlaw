@@ -9,7 +9,9 @@ export type UserNotificationType =
   | 'deadline_reminder'
   | 'appointment_reminder'
   | 'requirement_alert'
-  | 'mention';
+  | 'mention'
+  | 'feed_like'
+  | 'feed_comment';
 
 export interface UserNotification {
   id: string;

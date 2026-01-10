@@ -810,6 +810,63 @@ const ChatFloatingWidget: React.FC = () => {
   }, [user, loadMembers, loadRooms, loadUnread, loadRoomUnreadCounts]);
 
   useEffect(() => {
+    if (!user) return;
+
+    const unsubscribe = events.on(SYSTEM_EVENTS.CHAT_WIDGET_OPEN_DM, async (payload?: any) => {
+      const targetUserId = String(payload?.targetUserId ?? payload?.userId ?? '').trim();
+      if (!targetUserId) return;
+      if (targetUserId === user.id) return;
+
+      setNotifyCount(0);
+      setToast(null);
+      setLastUnreadImageSender(null);
+      setOpen(true);
+
+      try {
+        const list = await chatService.listRooms(user.id);
+        const membersMap = new Map<string, string[]>();
+
+        let dmRoom: ChatRoom | null = null;
+        for (const room of list) {
+          if (room.is_public) continue;
+          if (room.type !== 'dm') continue;
+          const memberIds = await chatService.getRoomMembers(room.id);
+          membersMap.set(room.id, memberIds);
+          if (memberIds.includes(user.id) && memberIds.includes(targetUserId)) {
+            dmRoom = room;
+          }
+        }
+
+        if (!dmRoom) {
+          const created = await chatService.createDirectMessage({
+            userId1: user.id,
+            userId2: targetUserId,
+          });
+          const memberIds = await chatService.getRoomMembers(created.id);
+          membersMap.set(created.id, memberIds);
+          list.unshift(created);
+          dmRoom = created;
+        }
+
+        setRooms(list);
+        setRoomMembers(membersMap);
+        setSelectedRoomId(dmRoom.id);
+        setRoomUnreadCounts((prev) => {
+          const next = new Map(prev);
+          next.set(dmRoom!.id, 0);
+          return next;
+        });
+      } catch (err) {
+        console.error('Erro ao abrir DM no widget:', err);
+      }
+    });
+
+    return () => {
+      unsubscribe?.();
+    };
+  }, [user]);
+
+  useEffect(() => {
     if (!selectedRoomId) {
       setMessages([]);
       return;

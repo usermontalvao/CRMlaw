@@ -386,11 +386,18 @@ const NotificationsModuleNew: React.FC<NotificationsModuleProps> = ({ onNavigate
       onNavigateToModule?.('financeiro');
     } else {
       const un = notification.data as UserNotification;
-      if (un.deadline_id) onNavigateToModule?.('prazos', { entityId: un.deadline_id } as any);
+      if (un.metadata?.post_id) {
+        // Notificação de menção/post: abrir feed e rolar até o post
+        onNavigateToModule?.('dashboard', { scrollToPost: un.metadata.post_id } as any);
+      } else if (un.deadline_id) onNavigateToModule?.('prazos', { entityId: un.deadline_id } as any);
       else if (un.process_id) onNavigateToModule?.('processos', { entityId: un.process_id } as any);
       else if (un.requirement_id) onNavigateToModule?.('requerimentos', { entityId: un.requirement_id } as any);
       else if (un.intimation_id) onNavigateToModule?.('intimacoes');
       else if (un.appointment_id) onNavigateToModule?.('agenda');
+      else if (un.metadata?.author_id) {
+        // Fallback: abrir perfil do autor se não houver post_id
+        onNavigateToModule?.('perfil', { userId: un.metadata.author_id } as any);
+      }
     }
   };
 

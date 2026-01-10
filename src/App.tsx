@@ -700,7 +700,8 @@ const MainApp: React.FC = () => {
 
   const openProfileModal = () => {
     if (profileLoading) return;
-    setIsProfileModalOpen(true);
+    // Navegar para a página de perfil em vez de abrir o modal
+    navigateTo('perfil');
   };
 
   const closeProfileModal = () => {
@@ -901,7 +902,7 @@ const MainApp: React.FC = () => {
           >
             {activeModule === 'dashboard' && <div className="absolute left-0 top-1/2 -translate-y-1/2 w-0.5 h-6 bg-amber-500 rounded-r" />}
             <Layers className="w-5 h-5" />
-            <span className="text-[9px] mt-1">Dashboard</span>
+            <span className="text-[9px] mt-1">Feed</span>
           </button>
 
           {!permissionsLoading && hasAnyModulePermission('leads') && (
@@ -1066,7 +1067,7 @@ const MainApp: React.FC = () => {
           <div className="my-2 mx-2 h-px bg-slate-800" />
 
           <button
-            onClick={() => { setIsMobileNavOpen(false); setIsProfileModalOpen(true); }}
+            onClick={() => { setIsMobileNavOpen(false); navigateTo('perfil'); }}
             className="flex flex-col items-center py-2.5 px-1 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800/50 transition-colors"
           >
             <UserCog className="w-5 h-5" />
@@ -1090,7 +1091,7 @@ const MainApp: React.FC = () => {
                 </button>
                 <div className="min-w-0 flex-1">
                   <h2 className="text-base sm:text-xl lg:text-2xl font-bold text-slate-900 truncate">
-                    {activeModule === 'dashboard' && 'Dashboard'}
+                    {activeModule === 'dashboard' && 'Feed'}
                     {activeModule === 'leads' && 'Pipeline de Leads'}
                     {activeModule === 'clientes' && 'Gestão de Clientes'}
                     {activeModule === 'processos' && 'Gestão de Processos'}
@@ -1106,7 +1107,7 @@ const MainApp: React.FC = () => {
                     {activeModule === 'configuracoes' && 'Configurações'}
                   </h2>
                   <p className="hidden md:block text-xs sm:text-sm text-slate-600 mt-1 truncate">
-                    {activeModule === 'dashboard' && 'Visão geral do escritório e atividades recentes'}
+                    {activeModule === 'dashboard' && 'Acompanhe as novidades e publicações da equipe'}
                     {activeModule === 'leads' && 'Gerencie leads e converta em clientes'}
                     {activeModule === 'clientes' && 'Gerencie todos os seus clientes e informações'}
                     {activeModule === 'processos' && 'Acompanhe processos e andamentos'}
@@ -1324,7 +1325,7 @@ const MainApp: React.FC = () => {
               </div>
             </div>
           }>
-            {activeModule === 'dashboard' && <Dashboard onNavigateToModule={handleNavigateToModule} />}
+            {activeModule === 'dashboard' && <Dashboard onNavigateToModule={handleNavigateToModule} params={moduleParams['dashboard'] ? JSON.parse(moduleParams['dashboard']) : undefined} />}
             {activeModule === 'leads' && <LeadsModule onConvertLead={handleConvertLead} />}
             {activeModule === 'clientes' && (
               <ClientsModule 
@@ -1421,7 +1422,7 @@ const MainApp: React.FC = () => {
               <UserProfilePage 
                 userId={moduleParams['perfil'] ? JSON.parse(moduleParams['perfil']).userId : undefined}
                 onClose={() => navigateTo('dashboard')}
-                onNavigateToModule={(moduleKey) => navigateTo(moduleKey as any)}
+                onNavigateToModule={(moduleKey, params) => navigateTo(moduleKey as any, params)}
               />
             )}
           </Suspense>

@@ -6,7 +6,7 @@ const FEED_ATTACHMENT_BUCKET = 'anexos_chat';
 
 // Tipos para referências de entidades
 export interface EntityReference {
-  type: 'client' | 'process' | 'requirement' | 'deadline' | 'calendar' | 'document' | 'financial';
+  type: 'client' | 'process' | 'requirement' | 'deadline' | 'calendar' | 'document' | 'financial' | 'petition' | 'signature';
   id: string;
   name?: string;
   number?: string;
@@ -48,6 +48,24 @@ export interface PreviewData {
     id: string;
     nome: string;
     tipo: string;
+  };
+  peticao?: {
+    id: string;
+    nome: string;
+    tipo: string;
+  };
+  assinatura?: {
+    id: string;
+    nome: string;
+    cliente: string;
+    status: string;
+  };
+  requerimento?: {
+    id: string;
+    protocolo: string;
+    beneficiario: string;
+    tipo: string;
+    status: string;
   };
 }
 
@@ -527,14 +545,14 @@ class FeedPostsService {
         if (entityId) {
           const { data: client } = await supabase
             .from('clients')
-            .select('id, full_name, cpf, phone')
+            .select('id, full_name, cpf_cnpj, phone')
             .eq('id', entityId)
             .single();
           if (client) {
             previewData.cliente = {
               id: client.id,
               nome: client.full_name,
-              cpf: client.cpf,
+              cpf: (client as any).cpf_cnpj,
               telefone: client.phone
             };
           }
@@ -546,20 +564,25 @@ class FeedPostsService {
         if (entityId) {
           const { data: process } = await supabase
             .from('processes')
-            .select(`
-              id, 
-              process_code, 
-              status,
-              client:clients!client_id(full_name)
-            `)
+            .select('id, client_id, process_code, status')
             .eq('id', entityId)
             .single();
           if (process) {
+            let clientName = 'N/A';
+            if ((process as any).client_id) {
+              const { data: client } = await supabase
+                .from('clients')
+                .select('full_name')
+                .eq('id', (process as any).client_id)
+                .single();
+              clientName = (client as any)?.full_name || clientName;
+            }
+
             previewData.processo = {
               id: process.id,
-              numero: process.process_code,
-              cliente: (process.client as any)?.full_name || 'N/A',
-              status: process.status
+              numero: (process as any).process_code,
+              cliente: clientName,
+              status: (process as any).status
             };
           }
         }
@@ -589,15 +612,21 @@ class FeedPostsService {
         if (entityId) {
           const { data: event } = await supabase
             .from('calendar_events')
-            .select('id, title, start_date, start_time')
+            .select('id, title, start_at')
             .eq('id', entityId)
             .single();
           if (event) {
+            const startAt = (event as any).start_at as string;
+            const startDate = startAt ? new Date(startAt) : null;
+            const hora = startDate
+              ? startDate.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })
+              : '';
+
             previewData.agenda = {
               id: event.id,
               titulo: event.title,
-              data: event.start_date,
-              hora: event.start_time || ''
+              data: startAt,
+              hora
             };
           }
         }
@@ -606,16 +635,85 @@ class FeedPostsService {
 
       case 'documento': {
         if (entityId) {
-          const { data: doc } = await supabase
-            .from('documents')
-            .select('id, name, type')
+          const { data: doc, error } = await supabase
+            .from('generated_petition_documents')
+            .select('id, file_name, petition_name, client_name')
             .eq('id', entityId)
             .single();
+          if (error) {
+            console.warn('Erro ao carregar preview do documento:', error);
+          }
           if (doc) {
             previewData.documento = {
               id: doc.id,
-              nome: doc.name,
-              tipo: doc.type
+              nome: doc.file_name,
+              tipo: doc.petition_name
+            };
+          }
+        }
+        break;
+      }
+
+      case 'peticao': {
+        if (entityId) {
+          const { data: pet, error } = await supabase
+            .from('saved_petitions')
+            .select('id, title, client_name')
+            .eq('id', entityId)
+            .single();
+          if (error) {
+            console.warn('Erro ao carregar preview da petição:', error);
+          }
+          if (pet) {
+            previewData.peticao = {
+              id: pet.id,
+              nome: (pet as any).title || 'Sem título',
+              tipo: (pet as any).client_name || 'Petição'
+            };
+          }
+        }
+        break;
+      }
+
+      case 'assinatura': {
+        if (entityId) {
+          const { data: sig, error } = await supabase
+            .from('signature_requests')
+            .select('id, document_name, client_name, status')
+            .eq('id', entityId)
+            .single();
+          if (error) {
+            console.warn('Erro ao carregar preview da assinatura:', error);
+          }
+          if (sig) {
+            previewData.assinatura = {
+              id: sig.id,
+              nome: (sig as any).document_name || 'Documento',
+              cliente: (sig as any).client_name || '',
+              status: (sig as any).status || 'pending'
+            };
+          }
+        }
+        break;
+      }
+
+      case 'requerimento': {
+        if (entityId) {
+          const { data: req, error } = await supabase
+            .from('requirements')
+            .select('id, protocol, beneficiary, benefit_type, status')
+            .eq('id', entityId)
+            .single();
+          if (error) {
+            console.warn('Erro ao carregar preview do requerimento:', error);
+          }
+          if (req) {
+            previewData.requerimento = {
+              id: req.id,
+              protocolo: (req as any).protocol || '',
+              beneficiario: (req as any).beneficiary || '',
+              tipo: (req as any).benefit_type || '',
+              status: (req as any).status || ''
             };
           }
         }
@@ -637,20 +735,44 @@ class FeedPostsService {
           .from('agreements')
           .select(`
             id,
+            client_id,
             description,
-            total_amount,
+            total_value,
             installments_count,
             installment_value,
-            status,
-            client:clients!client_id(id, full_name)
+            status
           `)
           .order('created_at', { ascending: false })
           .limit(limit);
         
+        let clientsMap = new Map<string, { full_name?: string | null }>();
+        if (data && data.length > 0) {
+          const clientIds = Array.from(
+            new Set(
+              data
+                .map((a: any) => a.client_id)
+                .filter((id: unknown): id is string => typeof id === 'string' && id.length > 0)
+            )
+          );
+
+          if (clientIds.length > 0) {
+            const { data: clientsData } = await supabase
+              .from('clients')
+              .select('id, full_name')
+              .in('id', clientIds);
+
+            if (clientsData) {
+              clientsMap = new Map(
+                clientsData.map((c: any) => [c.id as string, { full_name: c.full_name }])
+              );
+            }
+          }
+        }
+
         if (data) {
           for (const agreement of data) {
-            const clientName = (agreement.client as any)?.full_name || 'Cliente';
-            const totalFormatted = new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(agreement.total_amount || 0);
+            const clientName = clientsMap.get((agreement as any).client_id)?.full_name || 'Cliente';
+            const totalFormatted = new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(agreement.total_value || 0);
             const installmentFormatted = new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(agreement.installment_value || 0);
             
             let formattedText = `acordo financeiro do cliente ${clientName.toUpperCase()}, valor total ${totalFormatted}`;
@@ -668,7 +790,7 @@ class FeedPostsService {
               previewData: {
                 financeiro: {
                   recebido: 0,
-                  pendente: agreement.total_amount || 0,
+                  pendente: agreement.total_value || 0,
                   atrasado: 0
                 }
               }
@@ -685,26 +807,64 @@ class FeedPostsService {
           .select(`
             id,
             title,
-            start_date,
-            start_time,
-            end_time,
             event_type,
-            client:clients!client_id(id, full_name)
+            start_at,
+            end_at,
+            client_id
           `)
-          .gte('start_date', new Date().toISOString().split('T')[0])
-          .order('start_date', { ascending: true })
+          .gte('start_at', new Date().toISOString())
+          .order('start_at', { ascending: true })
           .limit(limit);
         
+        // Mapeamento de tradução de event_type
+        const eventTypeMap: Record<string, string> = {
+          hearing: 'audiência',
+          meeting: 'reunião',
+          appointment: 'compromisso',
+          deadline: 'prazo',
+          reminder: 'lembrete',
+          task: 'tarefa',
+          other: 'outro',
+        };
+
+        let clientsMap = new Map<string, { full_name?: string | null }>();
+        if (data && data.length > 0) {
+          const clientIds = Array.from(
+            new Set(
+              data
+                .map((e: any) => e.client_id)
+                .filter((id: unknown): id is string => typeof id === 'string' && id.length > 0)
+            )
+          );
+
+          if (clientIds.length > 0) {
+            const { data: clientsData } = await supabase
+              .from('clients')
+              .select('id, full_name')
+              .in('id', clientIds);
+
+            if (clientsData) {
+              clientsMap = new Map(
+                clientsData.map((c: any) => [c.id as string, { full_name: c.full_name }])
+              );
+            }
+          }
+        }
+
         if (data) {
           for (const event of data) {
-            const clientName = (event.client as any)?.full_name || '';
-            const dateFormatted = new Date(event.start_date + 'T12:00:00').toLocaleDateString('pt-BR');
-            const timeFormatted = event.start_time ? event.start_time.slice(0, 5) : '';
+            const clientName = clientsMap.get((event as any).client_id)?.full_name || '';
+            const startAt = (event as any).start_at as string;
+            const startDate = startAt ? new Date(startAt) : null;
+            const dateFormatted = startDate ? startDate.toLocaleDateString('pt-BR') : '';
+            const timeFormatted = startDate ? startDate.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }) : '';
+            const eventTypeRaw = (event as any).event_type as string;
+            const eventTypeTranslated = eventTypeRaw ? eventTypeMap[eventTypeRaw.toLowerCase()] || eventTypeRaw : '';
             
             let formattedText = `compromisso "${event.title}" no dia ${dateFormatted}`;
             if (timeFormatted) formattedText += ` às ${timeFormatted}`;
             if (clientName) formattedText += `, cliente ${clientName.toUpperCase()}`;
-            if (event.event_type) formattedText += ` (${event.event_type})`;
+            if (eventTypeTranslated) formattedText += ` (${eventTypeTranslated})`;
             
             records.push({
               id: event.id,
@@ -715,7 +875,7 @@ class FeedPostsService {
                 agenda: {
                   id: event.id,
                   titulo: event.title,
-                  data: event.start_date,
+                  data: startAt,
                   hora: timeFormatted
                 }
               }
@@ -729,7 +889,7 @@ class FeedPostsService {
         // Buscar clientes
         const query = supabase
           .from('clients')
-          .select('id, full_name, cpf, phone, status')
+          .select('id, full_name, cpf_cnpj, phone, status')
           .eq('status', 'ativo')
           .order('full_name', { ascending: true })
           .limit(limit);
@@ -747,14 +907,14 @@ class FeedPostsService {
             records.push({
               id: client.id,
               label: client.full_name,
-              sublabel: client.cpf || client.phone || 'Cliente ativo',
+              sublabel: (client as any).cpf_cnpj || (client as any).phone || 'Cliente ativo',
               formattedText,
               previewData: {
                 cliente: {
                   id: client.id,
                   nome: client.full_name,
-                  cpf: client.cpf,
-                  telefone: client.phone
+                  cpf: (client as any).cpf_cnpj,
+                  telefone: (client as any).phone
                 }
               }
             });
@@ -769,21 +929,45 @@ class FeedPostsService {
           .from('processes')
           .select(`
             id,
+            client_id,
             process_code,
-            action_type,
             status,
-            client:clients!client_id(id, full_name)
+            practice_area
           `)
           .order('created_at', { ascending: false })
           .limit(limit);
         
+        let clientsMap = new Map<string, { full_name?: string | null }>();
+        if (data && data.length > 0) {
+          const clientIds = Array.from(
+            new Set(
+              data
+                .map((p: any) => p.client_id)
+                .filter((id: unknown): id is string => typeof id === 'string' && id.length > 0)
+            )
+          );
+
+          if (clientIds.length > 0) {
+            const { data: clientsData } = await supabase
+              .from('clients')
+              .select('id, full_name')
+              .in('id', clientIds);
+
+            if (clientsData) {
+              clientsMap = new Map(
+                clientsData.map((c: any) => [c.id as string, { full_name: c.full_name }])
+              );
+            }
+          }
+        }
+
         if (data) {
           for (const process of data) {
-            const clientName = (process.client as any)?.full_name || 'Cliente';
+            const clientName = clientsMap.get((process as any).client_id)?.full_name || 'Cliente';
             
             let formattedText = `processo nº ${process.process_code}`;
             if (clientName) formattedText += `, cliente ${clientName.toUpperCase()}`;
-            if (process.action_type) formattedText += ` (${process.action_type})`;
+            if ((process as any).practice_area) formattedText += ` (${(process as any).practice_area})`;
             formattedText += ` - status: ${process.status}`;
             
             records.push({
@@ -815,17 +999,45 @@ class FeedPostsService {
             due_date,
             type,
             status,
-            client:clients!client_id(id, full_name)
+            client_id
           `)
           .eq('status', 'pendente')
-          .gte('due_date', new Date().toISOString().split('T')[0])
+          .gte('due_date', new Date().toISOString())
           .order('due_date', { ascending: true })
           .limit(limit);
         
+        let clientsMap = new Map<string, { full_name?: string | null }>();
+        if (data && data.length > 0) {
+          const clientIds = Array.from(
+            new Set(
+              data
+                .map((d: any) => d.client_id)
+                .filter((id: unknown): id is string => typeof id === 'string' && id.length > 0)
+            )
+          );
+
+          if (clientIds.length > 0) {
+            const { data: clientsData } = await supabase
+              .from('clients')
+              .select('id, full_name')
+              .in('id', clientIds);
+
+            if (clientsData) {
+              clientsMap = new Map(
+                clientsData.map((c: any) => [c.id as string, { full_name: c.full_name }])
+              );
+            }
+          }
+        }
+
         if (data) {
           for (const deadline of data) {
-            const clientName = (deadline.client as any)?.full_name || '';
-            const dateFormatted = new Date(deadline.due_date + 'T12:00:00').toLocaleDateString('pt-BR');
+            const clientName = clientsMap.get((deadline as any).client_id)?.full_name || '';
+            const dueDate = (deadline as any).due_date as string;
+            const dueDateObj = dueDate ? new Date(dueDate) : null;
+            const dateFormatted = dueDateObj && !Number.isNaN(dueDateObj.getTime())
+              ? dueDateObj.toLocaleDateString('pt-BR')
+              : '';
             
             let formattedText = `prazo "${deadline.title}" para ${dateFormatted}`;
             if (clientName) formattedText += `, cliente ${clientName.toUpperCase()}`;
@@ -834,13 +1046,13 @@ class FeedPostsService {
             records.push({
               id: deadline.id,
               label: deadline.title,
-              sublabel: `${dateFormatted}${clientName ? ` • ${clientName}` : ''} • ${deadline.type || 'Prazo'}`,
+              sublabel: `${dateFormatted || 'Sem data'}${clientName ? ` • ${clientName}` : ''} • ${deadline.type || 'Prazo'}`,
               formattedText,
               previewData: {
                 prazo: {
                   id: deadline.id,
                   titulo: deadline.title,
-                  data: deadline.due_date,
+                  data: dueDate,
                   tipo: deadline.type || ''
                 }
               }
@@ -851,50 +1063,194 @@ class FeedPostsService {
       }
 
       case 'documento': {
-        // Buscar documentos
-        const { data } = await supabase
-          .from('documents')
-          .select(`
-            id,
-            name,
-            type,
-            client:clients!client_id(id, full_name)
-          `)
+        const query = supabase
+          .from('generated_petition_documents')
+          .select('id, file_name, petition_name, client_name')
           .order('created_at', { ascending: false })
           .limit(limit);
-        
+
+        if (search) {
+          query.ilike('file_name', `%${search}%`);
+        }
+
+        const { data, error } = await query;
+
+        if (error) {
+          console.warn('Erro ao carregar registros da tag documento:', error);
+        }
+
         if (data) {
           for (const doc of data) {
-            const clientName = (doc.client as any)?.full_name || '';
-            
-            let formattedText = `documento "${doc.name}"`;
-            if (doc.type) formattedText += ` (${doc.type})`;
+            const clientName = (doc as any).client_name || '';
+            const petitionName = (doc as any).petition_name || '';
+            let formattedText = `documento "${(doc as any).file_name}"`;
             if (clientName) formattedText += `, cliente ${clientName.toUpperCase()}`;
-            
+            if (petitionName) formattedText += ` (${petitionName})`;
+
             records.push({
               id: doc.id,
-              label: doc.name,
-              sublabel: `${doc.type || 'Documento'}${clientName ? ` • ${clientName}` : ''}`,
+              label: (doc as any).file_name,
+              sublabel: clientName
+                ? `${clientName} • ${petitionName || 'Documento'}`
+                : (petitionName || 'Documento'),
               formattedText,
               previewData: {
                 documento: {
                   id: doc.id,
-                  nome: doc.name,
-                  tipo: doc.type || ''
-                }
-              }
+                  nome: (doc as any).file_name,
+                  tipo: petitionName,
+                },
+              },
             });
           }
         }
         break;
       }
+
+      case 'peticao': {
+        const query = supabase
+          .from('saved_petitions')
+          .select('id, title, client_name, updated_at')
+          .order('updated_at', { ascending: false })
+          .limit(limit);
+
+        if (search) {
+          query.or(`title.ilike.%${search}%,client_name.ilike.%${search}%`);
+        }
+
+        const { data, error } = await query;
+
+        if (error) {
+          console.warn('Erro ao carregar registros da tag peticao:', error);
+        }
+
+        if (data) {
+          for (const pet of data) {
+            const clientName = (pet as any).client_name || '';
+            const nome = (pet as any).title || 'Sem título';
+            let formattedText = `petição "${nome}"`;
+            if (clientName) formattedText += `, cliente ${clientName.toUpperCase()}`;
+
+            records.push({
+              id: pet.id,
+              label: nome,
+              sublabel: clientName || 'Petição',
+              formattedText,
+              previewData: {
+                peticao: {
+                  id: pet.id,
+                  nome,
+                  tipo: clientName || 'Petição',
+                },
+              },
+            });
+          }
+        }
+        break;
+      }
+
+      case 'assinatura': {
+        const query = supabase
+          .from('signature_requests')
+          .select('id, document_name, client_name, status, created_at')
+          .order('created_at', { ascending: false })
+          .limit(limit);
+
+        if (search) {
+          query.or(`document_name.ilike.%${search}%,client_name.ilike.%${search}%`);
+        }
+
+        const { data, error } = await query;
+
+        if (error) {
+          console.warn('Erro ao carregar registros da tag assinatura:', error);
+        }
+
+        if (data) {
+          for (const sig of data) {
+            const clientName = (sig as any).client_name || '';
+            const docName = (sig as any).document_name || 'Documento';
+            const status = (sig as any).status || 'pending';
+            const statusLabel = status === 'signed' ? 'Assinado' : status === 'pending' ? 'Pendente' : status;
+            let formattedText = `assinatura "${docName}"`;
+            if (clientName) formattedText += `, cliente ${clientName.toUpperCase()}`;
+            formattedText += ` (${statusLabel})`;
+
+            records.push({
+              id: sig.id,
+              label: docName,
+              sublabel: `${clientName || 'Sem cliente'} • ${statusLabel}`,
+              formattedText,
+              previewData: {
+                assinatura: {
+                  id: sig.id,
+                  nome: docName,
+                  cliente: clientName,
+                  status,
+                },
+              },
+            });
+          }
+        }
+        break;
+      }
+
+      case 'requerimento': {
+        const query = supabase
+          .from('requirements')
+          .select('id, protocol, beneficiary, benefit_type, status, created_at')
+          .order('created_at', { ascending: false })
+          .limit(limit);
+
+        if (search) {
+          query.or(`protocol.ilike.%${search}%,beneficiary.ilike.%${search}%,benefit_type.ilike.%${search}%`);
+        }
+
+        const { data, error } = await query;
+
+        if (error) {
+          console.warn('Erro ao carregar registros da tag requerimento:', error);
+        }
+
+        if (data) {
+          for (const req of data) {
+            const beneficiary = (req as any).beneficiary || '';
+            const protocol = (req as any).protocol || '';
+            const benefitType = (req as any).benefit_type || '';
+            const status = (req as any).status || '';
+            let formattedText = `requerimento ${protocol ? `"${protocol}"` : ''}`;
+            if (beneficiary) formattedText += `, beneficiário ${beneficiary.toUpperCase()}`;
+            if (benefitType) formattedText += ` (${benefitType})`;
+
+            records.push({
+              id: req.id,
+              label: protocol || beneficiary || 'Requerimento',
+              sublabel: `${beneficiary} • ${benefitType || status || 'Requerimento'}`,
+              formattedText,
+              previewData: {
+                requerimento: {
+                  id: req.id,
+                  protocolo: protocol,
+                  beneficiario: beneficiary,
+                  tipo: benefitType,
+                  status,
+                },
+              },
+            });
+          }
+        }
+        break;
+      }
+
+      default:
+        break;
     }
 
     return records;
   }
 
-  // Buscar entidades para autocomplete
-  async searchEntities(tag: string, search: string, limit = 5): Promise<EntityReference[]> {
+  // Buscar entidades para dropdown de seleção (tags integradas)
+  async searchEntitiesForTag(tag: string, search = '', limit = 10): Promise<EntityReference[]> {
     const results: EntityReference[] = [];
 
     switch (tag) {
@@ -905,11 +1261,7 @@ class FeedPostsService {
           .ilike('full_name', `%${search}%`)
           .limit(limit);
         if (data) {
-          results.push(...data.map(c => ({
-            type: 'client' as const,
-            id: c.id,
-            name: c.full_name
-          })));
+          for (const c of data) results.push({ type: 'client', id: c.id, name: (c as any).full_name });
         }
         break;
       }
@@ -917,16 +1269,11 @@ class FeedPostsService {
       case 'processo': {
         const { data } = await supabase
           .from('processes')
-          .select('id, process_code, client:clients!client_id(full_name)')
+          .select('id, process_code')
           .or(`process_code.ilike.%${search}%`)
           .limit(limit);
         if (data) {
-          results.push(...data.map(p => ({
-            type: 'process' as const,
-            id: p.id,
-            number: p.process_code,
-            name: (p.client as any)?.full_name
-          })));
+          for (const p of data) results.push({ type: 'process', id: p.id, name: (p as any).process_code });
         }
         break;
       }
@@ -938,12 +1285,7 @@ class FeedPostsService {
           .ilike('title', `%${search}%`)
           .limit(limit);
         if (data) {
-          results.push(...data.map(d => ({
-            type: 'deadline' as const,
-            id: d.id,
-            name: d.title,
-            extra: { due_date: d.due_date }
-          })));
+          for (const d of data) results.push({ type: 'deadline', id: d.id, name: (d as any).title });
         }
         break;
       }
@@ -951,36 +1293,84 @@ class FeedPostsService {
       case 'agenda': {
         const { data } = await supabase
           .from('calendar_events')
-          .select('id, title, start_date')
+          .select('id, title, start_at')
           .ilike('title', `%${search}%`)
           .limit(limit);
         if (data) {
-          results.push(...data.map(e => ({
-            type: 'calendar' as const,
-            id: e.id,
-            name: e.title,
-            extra: { start_date: e.start_date }
-          })));
+          for (const e of data) results.push({ type: 'calendar', id: e.id, name: (e as any).title });
         }
         break;
       }
 
       case 'documento': {
-        const { data } = await supabase
-          .from('documents')
-          .select('id, name, type')
-          .ilike('name', `%${search}%`)
+        const { data, error } = await supabase
+          .from('generated_petition_documents')
+          .select('id, file_name, petition_name')
+          .ilike('file_name', `%${search}%`)
           .limit(limit);
+        if (error) {
+          console.warn('Erro ao buscar entidades para tag documento:', error);
+        }
         if (data) {
-          results.push(...data.map(d => ({
-            type: 'document' as const,
-            id: d.id,
-            name: d.name,
-            extra: { type: d.type }
-          })));
+          for (const doc of data) results.push({ type: 'document', id: doc.id, name: (doc as any).file_name });
         }
         break;
       }
+
+      case 'peticao': {
+        const { data, error } = await supabase
+          .from('saved_petitions')
+          .select('id, title, client_name')
+          .or(`title.ilike.%${search}%,client_name.ilike.%${search}%`)
+          .limit(limit);
+        if (error) {
+          console.warn('Erro ao buscar entidades para tag peticao:', error);
+        }
+        if (data) {
+          for (const pet of data) {
+            const nome = (pet as any).title || 'Sem título';
+            results.push({ type: 'petition', id: pet.id, name: nome });
+          }
+        }
+        break;
+      }
+
+      case 'assinatura': {
+        const { data, error } = await supabase
+          .from('signature_requests')
+          .select('id, document_name, client_name')
+          .or(`document_name.ilike.%${search}%,client_name.ilike.%${search}%`)
+          .limit(limit);
+        if (error) {
+          console.warn('Erro ao buscar entidades para tag assinatura:', error);
+        }
+        if (data) {
+          for (const sig of data) {
+            results.push({ type: 'signature', id: sig.id, name: (sig as any).document_name || 'Documento' });
+          }
+        }
+        break;
+      }
+
+      case 'requerimento': {
+        const { data, error } = await supabase
+          .from('requirements')
+          .select('id, protocol, beneficiary')
+          .or(`protocol.ilike.%${search}%,beneficiary.ilike.%${search}%`)
+          .limit(limit);
+        if (error) {
+          console.warn('Erro ao buscar entidades para tag requerimento:', error);
+        }
+        if (data) {
+          for (const req of data) {
+            results.push({ type: 'requirement', id: req.id, name: (req as any).protocol || (req as any).beneficiary || 'Requerimento' });
+          }
+        }
+        break;
+      }
+
+      default:
+        break;
     }
 
     return results;
