@@ -1,6 +1,6 @@
 {
   "name": "crm",
-  "version": "1.9.198",
+  "version": "1.9.237",
   "main": "dist/index.js",
   "scripts": {
     "start": "vite",
@@ -26,6 +26,9 @@
     "typescript": "^5.9.3"
   },
   "dependencies": {
+    "@dnd-kit/core": "^6.3.1",
+    "@dnd-kit/sortable": "^10.0.0",
+    "@dnd-kit/utilities": "^3.2.2",
     "@fullcalendar/daygrid": "^6.1.19",
     "@fullcalendar/interaction": "^6.1.19",
     "@fullcalendar/list": "^6.1.19",

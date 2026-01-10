@@ -493,11 +493,13 @@ interface RequirementsModuleProps {
     beneficiary?: string;
     cpf?: string;
     signature_id?: string;
+    role?: string;
   };
+  initialStatusTab?: RequirementStatus | 'todos';
   onParamConsumed?: () => void;
 }
 
-const RequirementsModule: React.FC<RequirementsModuleProps> = ({ forceCreate, entityId, prefillData, onParamConsumed }) => {
+const RequirementsModule: React.FC<RequirementsModuleProps> = ({ forceCreate, entityId, prefillData, initialStatusTab, onParamConsumed }) => {
   const { user } = useAuth();
   const toast = useToastContext();
   const { confirmDelete } = useDeleteConfirm();
@@ -528,6 +530,15 @@ const RequirementsModule: React.FC<RequirementsModuleProps> = ({ forceCreate, en
   const [replyError, setReplyError] = useState<string | null>(null);
   const [statusExpanded, setStatusExpanded] = useState(false);
   const [documentsExpanded, setDocumentsExpanded] = useState(false);
+
+  const appliedInitialStatusRef = useRef(false);
+  useEffect(() => {
+    if (!initialStatusTab) return;
+    if (appliedInitialStatusRef.current) return;
+    appliedInitialStatusRef.current = true;
+    setActiveStatusTab(initialStatusTab);
+    onParamConsumed?.();
+  }, [initialStatusTab, onParamConsumed]);
   const [statusUpdatingId, setStatusUpdatingId] = useState<string | null>(null);
   const [linkedProcesses, setLinkedProcesses] = useState<{ principal?: Process | null; ms?: Process | null }>({
     principal: null,

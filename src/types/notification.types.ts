@@ -3,7 +3,9 @@ export type NotificationCategory =
   | 'hearing'
   | 'djen'
   | 'intimation'
-  | 'system';
+  | 'system'
+  | 'mention'
+  | 'feed';
 
 export interface NotificationItem {
   id: string;

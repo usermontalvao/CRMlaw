@@ -1,5 +1,201 @@
 # Changelog
 
+## 1.9.237
+- **Notificações**: Criação de notificações agora usa RPC `create_user_notification` (bypass RLS) para corrigir erro 403 ao notificar menções.
+
+## 1.9.236
+- **Feed**: Removido feed realtime temporariamente para corrigir erro de cache do Vite.
+
+## 1.9.235
+- **Feed**: Criada migration para corrigir RLS de notificações (permitir criar notificações para outros usuários).
+
+## 1.9.234
+- **Feed**: Implementado feed realtime - posts atualizam automaticamente quando outros usuários publicam.
+- **Feed**: Criada migration para adicionar tipo 'mention' ao enum de notificações.
+
+## 1.9.233
+- **Feed**: Corrigido regex de menções para suportar caracteres acentuados (ê, ã, ç, etc) em nomes completos.
+- **Feed**: Corrigido sistema de notificações para menções - agora usa `user_id` corretamente.
+
+## 1.9.232
+- **Feed**: Corrigido regex de menções para parar no final do nome (\b) - texto após @nome não fica mais azul.
+
+## 1.9.231
+- **Feed**: Corrigido erro "Edit2 is not defined" usando ícone Pencil já importado.
+
+## 1.9.230
+- **Feed**: Adicionado indicador visual "editado" (ícone + texto) quando um post foi modificado.
+
+## 1.9.229
+- **Feed**: Adicionado método `updatePost` no serviço `feedPostsService` para permitir edição de posts.
+
+## 1.9.228
+- **Dashboard**: Corrigido erro "activeClients is not defined" nos cards de estatísticas.
+
+## 1.9.227
+- **Feed**: Corrigido bug onde editar post inline também editava o composer (estados separados).
+- **Feed**: Corrigido erro "Cannot access 'availableTags' before initialization".
+
+## 1.9.226
+- **Feed**: Editor inline agora suporta **@** (menções) e **#** (tags) com dropdowns.
+- **Feed**: Editor inline mudado de azul para **cinza** (slate-50/200/700).
+
+## 1.9.225
+- **Feed**: Edição de posts agora é **inline** — edita diretamente no próprio post, não no composer.
+- **Feed**: Editor inline com textarea, botões Cancelar/Salvar e visual destacado (fundo indigo).
+
+## 1.9.224
+- **Enquetes**: Agora permite votar em **múltiplas opções** (checkboxes em vez de radio).
+- **Criador de Enquete**: UI/UX completamente redesenhado:
+  - Header com ícone em gradiente e descrição
+  - Input de pergunta com placeholder mais claro
+  - Contador de opções (x/6)
+  - Botões de remover opção aparecem apenas no hover
+  - Checkbox "Permitir múltiplas" com visual moderno
+  - Configurações organizadas em grid
+  - Indicador de participantes selecionados
+  - Gradientes mais vibrantes (indigo → purple → pink)
+  - Sombras e bordas mais refinadas
+
+## 1.9.223
+- **Página de Perfil do Usuário** (estilo Facebook):
+  - Foto de capa personalizável com upload
+  - Avatar grande com upload
+  - Informações do perfil (cargo, OAB, email, telefone, localização)
+  - Abas "Publicações" e "Sobre"
+  - Estatísticas de posts e curtidas
+  - Exibe apenas posts do usuário selecionado
+- **Badges Especiais**: Advogado (azul), Administrador (laranja), Estagiário (verde) exibidos nos posts.
+- **Feed**: Clicar no nome/avatar do autor abre a página de perfil.
+- **Database**: Migração `add_profile_cover_and_badge` adicionando campos `cover_url`, `badge`, `location`, `joined_at` na tabela `profiles`.
+- **Tipo Profile**: Atualizado com novos campos `cover_url`, `badge`, `location`, `joined_at`.
+- **Navegação**: Adicionado módulo `'perfil'` ao `ModuleName`.
+
+## 1.9.222
+- **Feed**: Substituído `confirm()` do navegador por modal customizado (`useDeleteConfirm`) para excluir posts.
+- **Dashboard**: Ajustada largura e espaçamento para igualar aos outros módulos (`space-y-4`, grid responsivo).
+- **Dashboard**: Corrigido posicionamento sticky dos sidebars (`top-4` em vez de `top-24`).
+- **Fix**: Corrigido erro `setNewPostContent is not defined` (já estava corrigido, era cache do navegador).
+
+## 1.9.221
+- **Enquetes**: Sistema completo de enquetes no feed com:
+  - Criação de enquetes com pergunta e até 6 opções
+  - Tempo de expiração configurável (1h, 6h, 24h, 3 dias, 7 dias ou sem expiração)
+  - Seleção de participantes específicos (ou todos podem votar)
+  - Notificação automática aos participantes selecionados
+  - Votação com barra de progresso visual e percentuais
+  - Indicador de voto do usuário e status de expiração
+- **Feed**: Corrigido layout cortado nos dropdowns de menção e tags (`overflow-visible`).
+- **Design Premium**: Melhorias visuais no composer e posts:
+  - Gradientes sutis no fundo do composer
+  - Indicador de status online no avatar
+  - Textarea com foco mais elegante (sombra azul)
+  - Botão Publicar com gradiente e efeito hover elevado
+  - Posts com sombras mais modernas e hover suave
+  - Bordas mais arredondadas (rounded-2xl)
+
+## 1.9.220
+- **Feed**: autor pode **editar** e **excluir** seus próprios posts (menu dropdown no ícone de 3 pontos).
+- **Feed**: removido botão "Compartilhar" dos posts.
+- **Feed**: menções `@nome` aparecem em **azul** e clicáveis no texto do post.
+- **Feed**: notificações de menção agora são salvas no **banco de dados** (tabela `user_notifications`) — o usuário mencionado recebe a notificação.
+- **Feed**: corrigido erro 404 `financial_agreements` → tabela correta é `agreements`.
+- **Feed**: adicionado tipo `'mention'` ao `UserNotificationType`.
+
+## 1.9.219
+- **Feed**: corrigido nome/role do autor nos posts — agora busca perfil opcionalmente (se existir, mostra nome real; senão, mostra "Usuário").
+- **Feed**: `hydrateAuthors` busca perfis em batch para melhor performance.
+
+## 1.9.218
+- **Feed**: corrigido erro de foreign key constraint — removidas dependências de `profiles` (feed funciona mesmo sem perfil criado).
+- **Database**: migration `remove_feed_posts_profile_fk` aplicada via MCP.
+
+## 1.9.217
+- **Feed**: **Foto** e **Emoji** funcionam no composer — emoji picker com 32 emojis e upload de imagem via Supabase Storage (bucket `anexos_chat`) com preview antes de publicar.
+- **Feed**: imagens anexadas aparecem nos posts (usando `signedUrl` temporário).
+- **Feed**: `feed_posts.attachments` (jsonb) salva metadados dos anexos; `feedPostsService.uploadAttachment` faz o upload.
+- **Database**: migration `20250110_feed_posts.sql` idempotente (`DROP POLICY/TRIGGER IF EXISTS`) — pode rodar quantas vezes quiser.
+
+## 1.9.216
+- **Feed**: componente `FeedWidget` reutilizável criado para usar em todos os módulos.
+- **Feed**: suporte a modo compacto para sidebars e modo completo para páginas.
+- **Feed**: filtro por contexto do módulo (posts relacionados a clientes, processos, etc).
+
+## 1.9.215
+- **Feed**: tabelas `feed_posts`, `feed_post_likes`, `feed_post_comments` criadas no Supabase via MCP.
+- **Feed**: **notificações de menções** - quando você menciona alguém (@usuario), a pessoa recebe uma notificação.
+- **Notificações**: novas categorias `mention` e `feed` adicionadas ao sistema de notificações.
+
+## 1.9.214
+- **Feed**: ao clicar em uma tag (`#financeiro`, `#cliente`, etc), agora mostra **lista de registros reais** do sistema.
+- **Feed**: ao selecionar um registro, insere **texto formatado automaticamente** no post (ex: "acordo financeiro do cliente ROBERTO, valor R$ 1.500,00 (3x de R$ 500,00)").
+- **Feed**: registros incluem acordos financeiros, compromissos da agenda, clientes, processos, prazos e documentos.
+
+## 1.9.213
+- **Feed**: sistema de **tags integradas** com dados reais do sistema (`#financeiro`, `#cliente`, `#processo`, `#prazo`, `#agenda`).
+- **Feed**: posts salvos no **banco de dados** (tabela `feed_posts`) com likes e comentários.
+- **Feed**: **cards de preview** coloridos mostrando dados reais (resumo financeiro, cliente, processo, prazo, agenda).
+- **Feed**: botão **Publicar** funcional com loading e salvamento no banco.
+- **Feed**: sistema de **likes** com contagem e estado visual.
+- **Database**: novas tabelas `feed_posts`, `feed_post_likes`, `feed_post_comments` com RLS.
+- **Dashboard**: corrigido espaço em branco lateral em telas largas (quando a sidebar direita está oculta). O feed central agora expande para ocupar as colunas disponíveis.
+
+## 1.9.212
+- **Dashboard**: cards de estatísticas de volta ao **topo** do feed (antes do campo de postar).
+
+## 1.9.211
+- **Dashboard**: campo de **postagem** movido para o **topo** do feed.
+- **Dashboard**: cards de estatísticas mais **compactos** (padding/typography/gap menores).
+
+## 1.9.210
+- **Dashboard**: cards de estatísticas (Clientes, Processos, Prazos, Tarefas) reduzidos de tamanho (padding menor, texto menor).
+- **Dashboard**: widget **Aguardando Confecção** redesenhado (layout mais clean, sem caixa de scroll) com **nomes** e contador `+N`.
+
+## 1.9.209
+- **Dashboard**: widget **Aguardando Confecção** melhorado para mostrar nomes dos clientes/beneficiários com design bonito.
+- **Dashboard**: itens do widget Aguardando Confecção agora mostram ícones, gradientes e hover effects.
+
+## 1.9.208
+- **Dashboard**: widget **Aguardando Confecção** melhorado para mostrar nomes dos clientes/beneficiários com design bonito.
+- **Dashboard**: itens do widget Aguardando Confecção agora mostram ícones, gradientes e hover effects.
+
+## 1.9.207
+- **Dashboard**: corrigido widget **Financeiro** para facilitar o arrastar (removido indicador duplicado).
+- **Dashboard**: tratamento de erro de **quota do localStorage** com fallback para cache reduzido.
+
+## 1.9.206
+- **Dashboard**: preferências de widgets agora são salvas no **banco de dados** (tabela `dashboard_preferences`) por usuário.
+- **Dashboard**: organização dos widgets persiste entre dispositivos e sessões.
+- **Database**: nova tabela `dashboard_preferences` com RLS para salvar preferências personalizadas por usuário.
+
+## 1.9.205
+- **Dashboard**: widgets agora podem ser **trocados entre sidebars** (esquerda ↔ direita) via drag-and-drop.
+- **Dashboard**: sidebar fica destacada (fundo azul claro) ao arrastar widget sobre ela.
+- **Dashboard**: ordem dos widgets persistida separadamente para cada sidebar no localStorage.
+
+## 1.9.204
+- **Build**: habilitado suporte a import com extensão `.tsx` para evitar conflito de resolução `Dashboard`/`dashboard` no Windows.
+- **Dashboard**: corrigido widget **Financeiro** que estava cortado/bugado na sidebar direita (layout compacto).
+- **Dashboard**: feed estilo **Facebook** com suporte a **menções** (@usuario) e **tags** (#financeiro, #processo, #prazo, etc).
+- **Dashboard**: indicadores visuais de **drag-and-drop** nos widgets (ícone de arrastar ao passar o mouse).
+- **Dashboard**: widgets da sidebar esquerda mais **compactos** para melhor visualização.
+- **Dashboard**: barra de tags interativas para filtrar o feed por categoria.
+
+## 1.9.203
+- **Dashboard/Build**: corrigidos conflitos de import (Dashboard/dashboard) e ajustes de parâmetros para abrir Processos/Requerimentos já filtrados em **Aguardando Confecção**.
+
+## 1.9.202
+- **Dashboard**: widgets de **Aguardando Confecção** para Processos e Requerimentos (com contagem e navegação filtrada) + correção de hover (Tailwind) nos cards.
+
+## 1.9.201
+- **Dashboard**: removidos card de perfil e conteúdos duplicados; financeiro fica apenas no sidebar (layout mais estilo Facebook).
+
+## 1.9.200
+- **Dashboard**: removidos itens não usados (ações/filtros/áreas/premium), adicionado widget **Financeiro** e menção **#financeiro** no feed.
+
+## 1.9.199
+- **Dashboard**: novo layout estilo rede social com 3 colunas (sidebar esquerda com agenda/tarefas/DJEN, feed central com posts/atualizações, sidebar direita com perfil/navegação).
+
 ## 1.9.198
 - **Chat**: corrigido crash "Rendered fewer hooks than expected" no widget flutuante.
 

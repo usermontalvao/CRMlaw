@@ -1,153 +1,97 @@
-import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
+import {
+  DndContext,
+  closestCenter,
+  KeyboardSensor,
+  PointerSensor,
+  useSensor,
+  useSensors,
+  DragEndEvent,
+  DragOverlay,
+  useDroppable,
+} from '@dnd-kit/core';
+import {
+  arrayMove,
+  SortableContext,
+  sortableKeyboardCoordinates,
+  useSortable,
+  rectSortingStrategy,
+} from '@dnd-kit/sortable';
+import { CSS } from '@dnd-kit/utilities';
 import {
   Users,
   Briefcase,
   Calendar,
   CheckSquare,
-  AlertCircle,
-  Clock,
-  FileText,
-  ArrowUpRight,
-  ArrowDownRight,
-  Target,
-  DollarSign,
-  TrendingUp,
-  PiggyBank,
-  CircleDollarSign,
-  ArrowRight,
-  X,
-  UserPlus,
   Bell,
-  Scale,
-  ChevronRight,
-  ExternalLink,
-  Zap,
-  BarChart3,
-  Wallet,
-  AlertTriangle,
-  CalendarDays,
+  FileText,
   Gavel,
-  Plus,
-  Eye,
+  MessageCircle,
+  Heart,
+  Share2,
+  MoreHorizontal,
+  Bookmark,
+  Newspaper,
+  ThumbsUp,
+  Loader2,
+  CheckCircle,
+  Timer,
   Sparkles,
+  GripVertical,
+  AtSign,
+  Hash,
+  Send,
+  Image,
+  Smile,
+  X,
+  DollarSign,
+  Clock,
+  Trash2,
+  Pencil,
+  BarChart2,
+  Plus,
+  Minus,
+  Shield,
+  Scale,
+  Award,
 } from 'lucide-react';
+import { useAuth } from '../contexts/AuthContext';
+import { useDeleteConfirm } from '../contexts/DeleteConfirmContext';
 import { clientService } from '../services/client.service';
 import { processService } from '../services/process.service';
 import { deadlineService } from '../services/deadline.service';
 import { taskService } from '../services/task.service';
 import { calendarService } from '../services/calendar.service';
-import { requirementService } from '../services/requirement.service';
-import { financialService } from '../services/financial.service';
 import { djenLocalService } from '../services/djenLocal.service';
-import { intimationAnalysisService } from '../services/intimationAnalysis.service';
+import { requirementService } from '../services/requirement.service';
+import { profileService, type Profile } from '../services/profile.service';
+import { financialService } from '../services/financial.service';
+import { dashboardPreferencesService } from '../services/dashboardPreferences.service';
+import { feedPostsService, type FeedPost, type EntityReference, type PreviewData, type TagRecord } from '../services/feedPosts.service';
+import { feedPollsService, type FeedPoll } from '../services/feedPolls.service';
 import type { Client } from '../types/client.types';
 import type { Process } from '../types/process.types';
 import type { Deadline } from '../types/deadline.types';
 import type { Task } from '../types/task.types';
 import type { CalendarEvent } from '../types/calendar.types';
-import type { Requirement } from '../types/requirement.types';
-import type { FinancialStats, Installment, Agreement } from '../types/financial.types';
 import type { DjenComunicacaoLocal } from '../types/djen.types';
-import { FinancialCard } from './dashboard/FinancialCard';
-import { DashboardHeader } from './dashboard/DashboardHeader';
+import type { FinancialStats } from '../types/financial.types';
+import type { Requirement } from '../types/requirement.types';
 import { events, SYSTEM_EVENTS } from '../utils/events';
+import { FinancialCard } from './dashboard/FinancialCard';
 
 interface DashboardProps {
   onNavigateToModule?: (moduleKey: string, params?: Record<string, string>) => void;
 }
 
-type StatCardProps = {
-  title: string;
-  value: string | number;
-  icon: React.ReactNode;
-  trend?: { value: string; isPositive: boolean };
-  color: 'blue' | 'green' | 'amber' | 'red' | 'purple';
-  onClick?: () => void;
-};
-
-const StatCard: React.FC<StatCardProps> = ({ title, value, icon, trend, color, onClick }) => {
-  const colorClasses = {
-    blue: 'bg-blue-50 text-blue-600 border-blue-200',
-    green: 'bg-emerald-50 text-emerald-600 border-emerald-200',
-    amber: 'bg-amber-50 text-amber-600 border-amber-200',
-    red: 'bg-red-50 text-red-600 border-red-200',
-    purple: 'bg-purple-50 text-purple-600 border-purple-200',
-  };
-
-  return (
-    <div
-      className={`rounded-xl border-2 ${colorClasses[color]} p-6 transition hover:shadow-lg ${
-        onClick ? 'cursor-pointer' : ''
-      }`}
-      onClick={onClick}
-    >
-      <div className="flex items-start justify-between">
-        <div className="flex-1">
-          <p className="text-sm font-medium opacity-80">{title}</p>
-          <p className="mt-2 text-3xl font-bold">{value}</p>
-          {trend && (
-            <div className="mt-2 flex items-center gap-1 text-sm">
-              {trend.isPositive ? (
-                <ArrowUpRight className="h-4 w-4 text-emerald-600" />
-              ) : (
-                <ArrowDownRight className="h-4 w-4 text-red-600" />
-              )}
-              <span className={trend.isPositive ? 'text-emerald-600' : 'text-red-600'}>
-                {trend.value}
-              </span>
-            </div>
-          )}
-        </div>
-        <div className="rounded-lg bg-white/50 p-3">{icon}</div>
-      </div>
-    </div>
-  );
-};
-
-type QuickActionProps = {
-  title: string;
-  description: string;
-  icon: React.ReactNode;
-  onClick: () => void;
-  accent?: 'amber' | 'blue' | 'green' | 'purple';
-};
-
-const QuickAction: React.FC<QuickActionProps> = ({ title, description, icon, onClick, accent = 'amber' }) => {
-  const accentClasses: Record<NonNullable<QuickActionProps['accent']>, string> = {
-    amber: 'bg-amber-50 text-amber-600',
-    blue: 'bg-blue-50 text-blue-600',
-    green: 'bg-emerald-50 text-emerald-600',
-    purple: 'bg-purple-50 text-purple-600',
-  };
-
-  return (
-    <button
-      onClick={onClick}
-      className="flex items-start gap-4 rounded-lg border border-slate-200 bg-white p-4 text-left transition hover:border-amber-300 hover:shadow-md"
-    >
-      <div className={`rounded-lg p-3 ${accentClasses[accent]}`}>{icon}</div>
-      <div className="flex-1">
-        <h3 className="font-semibold text-slate-900">{title}</h3>
-        <p className="text-sm text-slate-600">{description}</p>
-      </div>
-    </button>
-  );
-};
-
-interface ModuleShortcut {
-  title: string;
-  description: string;
-  icon: React.ReactNode;
-  action: () => void;
-  accent: NonNullable<QuickActionProps['accent']>;
-}
-
 // Cache keys e configuração
-const DASHBOARD_CACHE_KEY = 'crm-dashboard-cache';
-const CACHE_DURATION = 30 * 60 * 1000; // 30 minutos (reduzir requisições)
-const REQUEST_TIMEOUT_MS = 15000; // 15s por requisição pesada
+const DASHBOARD_CACHE_KEY = 'crm-dashboard-social-cache';
+const DASHBOARD_CACHE_VERSION = 1;
+const CACHE_DURATION = 15 * 60 * 1000; // 15 minutos
+const REQUEST_TIMEOUT_MS = 15000;
 
 interface DashboardCache {
+  version: number;
   timestamp: number;
   data: {
     clients: Client[];
@@ -155,33 +99,574 @@ interface DashboardCache {
     deadlines: Deadline[];
     tasks: Task[];
     calendarEvents: CalendarEvent[];
-    requirements: Requirement[];
-    financialStats: FinancialStats | null;
-    overdueInstallments: (Installment & { agreement?: Agreement })[];
     djenIntimacoes: DjenComunicacaoLocal[];
+    financialStats: FinancialStats | null;
+    requirementsAwaiting: Requirement[];
   };
 }
 
+// Componente de Avatar
+const Avatar: React.FC<{ src?: string | null; name: string; size?: 'sm' | 'md' | 'lg' | 'xl' }> = ({
+  src,
+  name,
+  size = 'md',
+}) => {
+  const sizeClasses = {
+    sm: 'w-8 h-8 text-xs',
+    md: 'w-10 h-10 text-sm',
+    lg: 'w-14 h-14 text-base',
+    xl: 'w-16 h-16 text-lg',
+  };
+
+  const initials = name
+    .split(' ')
+    .filter((n) => n.length > 0)
+    .map((n) => n[0])
+    .join('')
+    .toUpperCase()
+    .slice(0, 2);
+
+  if (src) {
+    return (
+      <div
+        className={`${sizeClasses[size]} rounded-full bg-cover bg-center bg-no-repeat border-2 border-white shadow-sm shrink-0`}
+        style={{ backgroundImage: `url(${src})` }}
+      />
+    );
+  }
+
+  return (
+    <div
+      className={`${sizeClasses[size]} rounded-full bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center text-white font-bold shrink-0 shadow-sm`}
+    >
+      {initials || '?'}
+    </div>
+  );
+};
+
+// Componente de Badge para Advogado/Administrador
+const BadgeIcon: React.FC<{ badge?: string | null; className?: string }> = ({ badge, className = '' }) => {
+  if (!badge) return null;
+  
+  switch (badge) {
+    case 'administrador':
+      return (
+        <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-gradient-to-r from-amber-500 to-orange-500 text-white text-[10px] font-bold shadow-sm ${className}`}>
+          <Shield className="w-3 h-3" />
+          Admin
+        </span>
+      );
+    case 'advogado':
+      return (
+        <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-gradient-to-r from-blue-600 to-indigo-600 text-white text-[10px] font-bold shadow-sm ${className}`}>
+          <Scale className="w-3 h-3" />
+          Advogado
+        </span>
+      );
+    case 'estagiario':
+      return (
+        <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-gradient-to-r from-emerald-500 to-teal-500 text-white text-[10px] font-bold shadow-sm ${className}`}>
+          <Award className="w-3 h-3" />
+          Estagiário
+        </span>
+      );
+    default:
+      return null;
+  }
+};
+
+// Componente de Card de Estatística
+const StatCard: React.FC<{
+  icon: React.ReactNode;
+  iconColor: string;
+  label: string;
+  value: number;
+  hoverVariant: 'blue' | 'purple' | 'red' | 'green';
+  onClick?: () => void;
+}> = ({ icon, iconColor, label, value, hoverVariant, onClick }) => {
+  const hoverClass =
+    hoverVariant === 'blue'
+      ? 'hover:border-blue-200'
+      : hoverVariant === 'purple'
+        ? 'hover:border-purple-200'
+        : hoverVariant === 'red'
+          ? 'hover:border-red-200'
+          : 'hover:border-green-200';
+
+  return (
+    <button
+      onClick={onClick}
+      className={`bg-white rounded-xl p-2 border border-slate-200 shadow-sm flex flex-col items-center sm:items-start ${hoverClass} transition-colors cursor-pointer`}
+    >
+      <div className="flex items-center gap-1.5 mb-0.5">
+        <span className={`${iconColor} [&_svg]:w-4 [&_svg]:h-4`}>{icon}</span>
+        <span className="text-[9px] font-bold text-slate-500 uppercase tracking-wide">{label}</span>
+      </div>
+      <span className="text-lg font-bold text-slate-900 leading-none">{value}</span>
+    </button>
+  );
+};
+
+// Componente de Item da Agenda
+const AgendaItem: React.FC<{
+  time: string;
+  dateLabel: string;
+  isToday?: boolean;
+  title: string;
+  subtitle: string;
+  onClick?: () => void;
+}> = ({ time, dateLabel, isToday, title, subtitle, onClick }) => (
+  <div
+    onClick={onClick}
+    className="flex items-start gap-3 p-2 hover:bg-slate-50 rounded-lg transition-colors cursor-pointer group"
+  >
+    <div className="flex flex-col items-center justify-center min-w-[50px] bg-slate-100 rounded-lg py-2 px-1">
+      <span className={`text-[10px] font-bold uppercase ${isToday ? 'text-red-500' : 'text-slate-500'}`}>
+        {dateLabel}
+      </span>
+      <span className="text-lg font-bold text-slate-900 leading-none">{time}</span>
+    </div>
+    <div className="flex-1 min-w-0">
+      <p className="text-slate-900 text-sm font-semibold truncate">{title}</p>
+      <p className="text-slate-500 text-xs truncate">{subtitle}</p>
+    </div>
+  </div>
+);
+
+// Componente de Tarefa
+const TaskItem: React.FC<{
+  title: string;
+  dueLabel: string;
+  isUrgent?: boolean;
+  onToggle?: () => void;
+}> = ({ title, dueLabel, isUrgent, onToggle }) => (
+  <div className="flex items-start gap-3 group">
+    <input
+      type="checkbox"
+      onChange={onToggle}
+      className="mt-1 rounded border-slate-300 text-blue-600 focus:ring-blue-500 h-4 w-4 cursor-pointer"
+    />
+    <div className="flex-1 group-hover:bg-slate-50 rounded p-1 -m-1 transition-colors">
+      <p className="text-slate-800 text-sm font-medium">{title}</p>
+      <p className={`text-xs font-medium ${isUrgent ? 'text-red-500' : 'text-slate-500'}`}>{dueLabel}</p>
+    </div>
+  </div>
+);
+
+// Componente de Notificação DJEN
+const DjenNotification: React.FC<{
+  processNumber: string;
+  content: string;
+  timeAgo: string;
+  onClick?: () => void;
+}> = ({ processNumber, content, timeAgo, onClick }) => (
+  <div
+    onClick={onClick}
+    className="p-3 bg-slate-50 rounded-lg border border-slate-100 cursor-pointer hover:border-blue-200 hover:bg-blue-50/30 transition-colors"
+  >
+    <div className="flex justify-between items-start mb-1">
+      <span className="text-[10px] font-bold text-blue-600 bg-blue-100 px-1.5 py-0.5 rounded">
+        {processNumber}
+      </span>
+      <span className="text-[10px] text-slate-400">{timeAgo}</span>
+    </div>
+    <p className="text-xs text-slate-800 line-clamp-2">{content}</p>
+  </div>
+);
+
+// Componente de Post/Atualização
+const FeedPost: React.FC<{
+  author: { name: string; role: string; avatar?: string | null };
+  timeAgo: string;
+  content: React.ReactNode;
+  badge?: { label: string; color: string };
+  likes?: number;
+  comments?: number;
+  highlight?: { icon: React.ReactNode; title: string; subtitle: string; color: string };
+}> = ({ author, timeAgo, content, badge, likes = 0, comments = 0, highlight }) => (
+  <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+    <div className="p-4 pb-2 flex gap-3">
+      <Avatar src={author.avatar} name={author.name} />
+      <div className="flex flex-col flex-1">
+        <div className="flex items-center gap-2">
+          <p className="text-slate-900 font-bold text-sm">{author.name}</p>
+          {badge && (
+            <span className={`${badge.color} text-[10px] font-bold px-2 py-0.5 rounded-full`}>
+              {badge.label}
+            </span>
+          )}
+        </div>
+        <p className="text-slate-500 text-xs">
+          {author.role} • {timeAgo}
+        </p>
+      </div>
+      <button className="ml-auto text-slate-400 hover:text-slate-600">
+        <MoreHorizontal className="w-5 h-5" />
+      </button>
+    </div>
+    <div className="px-4 py-2">
+      <div className="text-slate-800 text-sm leading-relaxed mb-3">{content}</div>
+      {highlight && (
+        <div className={`${highlight.color} rounded-lg p-3 flex items-center gap-3`}>
+          <div className="w-10 h-10 rounded-full bg-white/20 flex items-center justify-center text-white shrink-0 shadow-sm">
+            {highlight.icon}
+          </div>
+          <div>
+            <p className="text-white font-bold text-sm">{highlight.title}</p>
+            <p className="text-white/80 text-xs">{highlight.subtitle}</p>
+          </div>
+        </div>
+      )}
+    </div>
+    <div className="px-4 py-2 flex items-center justify-between text-xs text-slate-500 border-b border-slate-200 mt-2">
+      <div className="flex items-center gap-1">
+        <div className="flex -space-x-1.5">
+          <div className="w-5 h-5 rounded-full bg-blue-500 border border-white flex items-center justify-center">
+            <ThumbsUp className="w-2.5 h-2.5 text-white" />
+          </div>
+          {likes > 5 && (
+            <div className="w-5 h-5 rounded-full bg-red-500 border border-white flex items-center justify-center">
+              <Heart className="w-2.5 h-2.5 text-white" />
+            </div>
+          )}
+        </div>
+        <span className="ml-1 hover:underline cursor-pointer font-medium text-slate-600">
+          {likes > 0 ? `${likes} curtidas` : 'Seja o primeiro'}
+        </span>
+      </div>
+      <span className="hover:underline cursor-pointer font-medium text-slate-600">
+        {comments} comentário{comments !== 1 ? 's' : ''}
+      </span>
+    </div>
+    <div className="flex items-center px-2 py-1 bg-slate-50/50">
+      <button className="flex-1 flex items-center justify-center gap-2 py-2 hover:bg-slate-100 rounded-lg text-slate-600 text-sm font-medium transition-colors">
+        <ThumbsUp className="w-5 h-5" />
+        Curtir
+      </button>
+      <button className="flex-1 flex items-center justify-center gap-2 py-2 hover:bg-slate-100 rounded-lg text-slate-600 text-sm font-medium transition-colors">
+        <MessageCircle className="w-5 h-5" />
+        Comentar
+      </button>
+      <button className="flex-1 flex items-center justify-center gap-2 py-2 hover:bg-slate-100 rounded-lg text-slate-600 text-sm font-medium transition-colors">
+        <Share2 className="w-5 h-5" />
+        Compartilhar
+      </button>
+    </div>
+  </div>
+);
+
+// Tipos para Widgets
+interface WidgetConfig {
+  id: string;
+  type: 'agenda' | 'tarefas' | 'djen' | 'confeccao' | 'financeiro' | 'navegacao';
+  title: string;
+  visible: boolean;
+}
+
+const WIDGET_ORDER_KEY = 'crm-dashboard-widget-order';
+
+// Componente de Sidebar Droppable
+const SidebarDroppable: React.FC<{
+  id: string;
+  children: React.ReactNode;
+}> = ({ id, children }) => {
+  const { setNodeRef, isOver } = useDroppable({ id });
+  return (
+    <div
+      ref={setNodeRef}
+      className={`flex flex-col gap-4 transition-colors ${isOver ? 'bg-blue-50/50 rounded-xl p-2 -mx-2' : ''}`}
+    >
+      {children}
+    </div>
+  );
+};
+
+// Componente de Widget Arrastável
+const SortableWidget: React.FC<{
+  id: string;
+  children: React.ReactNode;
+}> = ({ id, children }) => {
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({ id });
+
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.5 : 1,
+  };
+
+  return (
+    <div ref={setNodeRef} style={style} className="relative group">
+      <div
+        {...attributes}
+        {...listeners}
+        className="absolute -top-2 left-1/2 -translate-x-1/2 z-10 opacity-0 group-hover:opacity-100 transition-opacity cursor-grab active:cursor-grabbing bg-white rounded-full p-1 shadow-md border border-slate-200"
+      >
+        <GripVertical className="w-4 h-4 text-slate-400" />
+      </div>
+      {children}
+    </div>
+  );
+};
+
 const Dashboard: React.FC<DashboardProps> = ({ onNavigateToModule }) => {
+  const { user } = useAuth();
+  const { confirmDelete } = useDeleteConfirm();
   const [loading, setLoading] = useState(true);
   const [clients, setClients] = useState<Client[]>([]);
   const [processes, setProcesses] = useState<Process[]>([]);
   const [deadlines, setDeadlines] = useState<Deadline[]>([]);
   const [tasks, setTasks] = useState<Task[]>([]);
   const [calendarEvents, setCalendarEvents] = useState<CalendarEvent[]>([]);
-  const [requirements, setRequirements] = useState<Requirement[]>([]);
-  const [financialStats, setFinancialStats] = useState<FinancialStats | null>(null);
-  const [overdueInstallments, setOverdueInstallments] = useState<(Installment & { agreement?: Agreement })[]>([]);
   const [djenIntimacoes, setDjenIntimacoes] = useState<DjenComunicacaoLocal[]>([]);
-  const [djenUrgencyStats, setDjenUrgencyStats] = useState({ alta: 0, media: 0, baixa: 0, sem_analise: 0 });
-  const [selectedEvent, setSelectedEvent] = useState<{
-    id: string;
-    title: string;
-    start_at: string;
-    type: string;
-    client_id?: string | null;
-  } | null>(null);
-  const [selectedIntimacao, setSelectedIntimacao] = useState<DjenComunicacaoLocal | null>(null);
+  const [financialStats, setFinancialStats] = useState<FinancialStats | null>(null);
+  const [requirementsAwaiting, setRequirementsAwaiting] = useState<Requirement[]>([]);
+  const [currentProfile, setCurrentProfile] = useState<Profile | null>(null);
+  const [postText, setPostText] = useState('');
+  const [allProfiles, setAllProfiles] = useState<Profile[]>([]);
+  const [showMentionDropdown, setShowMentionDropdown] = useState(false);
+  const [mentionSearch, setMentionSearch] = useState('');
+  const [selectedTags, setSelectedTags] = useState<string[]>([]);
+  const [showTagDropdown, setShowTagDropdown] = useState(false);
+  const postInputRef = useRef<HTMLTextAreaElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [showEmojiPicker, setShowEmojiPicker] = useState(false);
+  const [uploadingAttachment, setUploadingAttachment] = useState(false);
+  const [pendingAttachments, setPendingAttachments] = useState<Array<{ localUrl: string; attachment: any }>>([]);
+
+  const insertTextAtCursor = useCallback(
+    (text: string) => {
+      const el = postInputRef.current;
+      if (!el) {
+        setPostText((prev) => `${prev}${text}`);
+        return;
+      }
+
+      const start = el.selectionStart ?? postText.length;
+      const end = el.selectionEnd ?? postText.length;
+      const next = `${postText.slice(0, start)}${text}${postText.slice(end)}`;
+      setPostText(next);
+
+      requestAnimationFrame(() => {
+        try {
+          el.focus();
+          const pos = start + text.length;
+          el.setSelectionRange(pos, pos);
+        } catch {}
+      });
+    },
+    [postText]
+  );
+
+  const handlePickEmoji = useCallback(
+    (emoji: string) => {
+      insertTextAtCursor(emoji);
+      setShowEmojiPicker(false);
+    },
+    [insertTextAtCursor]
+  );
+
+  const handleAttachClick = useCallback(() => {
+    if (uploadingAttachment) return;
+    fileInputRef.current?.click();
+  }, [uploadingAttachment]);
+
+  const handleUploadAttachment = useCallback(async (file: File) => {
+    setUploadingAttachment(true);
+    try {
+      const localUrl = URL.createObjectURL(file);
+      const attachment = await feedPostsService.uploadAttachment(file);
+      setPendingAttachments((prev) => [...prev, { localUrl, attachment }]);
+    } catch (err: any) {
+      console.error('Falha ao enviar anexo:', err);
+      alert(`Falha ao enviar anexo: ${err?.message ?? 'erro desconhecido'}`);
+    } finally {
+      setUploadingAttachment(false);
+      if (fileInputRef.current) fileInputRef.current.value = '';
+    }
+  }, []);
+  
+  // Feed posts state
+  const [feedPosts, setFeedPosts] = useState<FeedPost[]>([]);
+  const [loadingPosts, setLoadingPosts] = useState(false);
+  const [postingInProgress, setPostingInProgress] = useState(false);
+  const [openPostMenu, setOpenPostMenu] = useState<string | null>(null);
+  const [editingPostId, setEditingPostId] = useState<string | null>(null);
+  const [editingContent, setEditingContent] = useState('');
+  const inlineEditRef = useRef<HTMLTextAreaElement | null>(null);
+  const [showMentionDropdownInline, setShowMentionDropdownInline] = useState(false);
+  const [showTagDropdownInline, setShowTagDropdownInline] = useState(false);
+  const [inlineMentionQuery, setInlineMentionQuery] = useState('');
+  const [inlineTagQuery, setInlineTagQuery] = useState('');
+
+  // Available tags (definido antes dos filtros inline que dependem dele)
+  const availableTags = [
+    { id: 'financeiro', label: 'Financeiro', icon: DollarSign, color: 'bg-emerald-100 text-emerald-700' },
+    { id: 'processo', label: 'Processo', icon: Gavel, color: 'bg-purple-100 text-purple-700' },
+    { id: 'prazo', label: 'Prazo', icon: Clock, color: 'bg-red-100 text-red-700' },
+    { id: 'cliente', label: 'Cliente', icon: Users, color: 'bg-blue-100 text-blue-700' },
+    { id: 'audiencia', label: 'Audiência', icon: Calendar, color: 'bg-amber-100 text-amber-700' },
+    { id: 'documento', label: 'Documento', icon: FileText, color: 'bg-indigo-100 text-indigo-700' },
+  ];
+
+  // Filtrar perfis para menção (composer)
+  const filteredProfiles = useMemo(() => {
+    if (!mentionSearch) return allProfiles;
+    return allProfiles.filter((profile) =>
+      profile.name.toLowerCase().includes(mentionSearch.toLowerCase())
+    );
+  }, [mentionSearch, allProfiles]);
+
+  // ===== Editor inline (edição no próprio post) =====
+  // Importante: NÃO reutiliza estados/handlers do composer, para não editar os dois campos.
+  const filteredProfilesInline = useMemo(() => {
+    const q = inlineMentionQuery.trim().toLowerCase();
+    if (!q) return allProfiles;
+    return allProfiles.filter((profile) => profile.name.toLowerCase().includes(q));
+  }, [inlineMentionQuery, allProfiles]);
+
+  const filteredTagsInline = useMemo(() => {
+    const q = inlineTagQuery.trim().toLowerCase();
+    if (!q) return availableTags;
+    return availableTags.filter((tag) => tag.label.toLowerCase().includes(q));
+  }, [inlineTagQuery, availableTags]);
+
+  const handleInlineEditChange = useCallback((e: React.ChangeEvent<HTMLTextAreaElement>) => {
+    const value = e.target.value;
+    setEditingContent(value);
+
+    const cursorPos = e.target.selectionStart ?? value.length;
+    const beforeCursor = value.slice(0, cursorPos);
+
+    const mentionMatch = beforeCursor.match(/@([^\s@#]*)$/);
+    const tagMatch = beforeCursor.match(/#([^\s@#]*)$/);
+
+    if (mentionMatch) {
+      setInlineMentionQuery(mentionMatch[1] || '');
+      setShowMentionDropdownInline(true);
+      setShowTagDropdownInline(false);
+      return;
+    }
+
+    if (tagMatch) {
+      setInlineTagQuery(tagMatch[1] || '');
+      setShowTagDropdownInline(true);
+      setShowMentionDropdownInline(false);
+      return;
+    }
+
+    setShowMentionDropdownInline(false);
+    setShowTagDropdownInline(false);
+    setInlineMentionQuery('');
+    setInlineTagQuery('');
+  }, []);
+
+  const insertMentionInline = useCallback((profile: Profile) => {
+    const el = inlineEditRef.current;
+    const content = editingContent;
+    const token = `@${profile.name} `;
+
+    if (!el) {
+      setEditingContent((prev) => prev + token);
+      setShowMentionDropdownInline(false);
+      setInlineMentionQuery('');
+      return;
+    }
+
+    const start = el.selectionStart ?? content.length;
+    const end = el.selectionEnd ?? content.length;
+    const before = content.slice(0, start);
+    const after = content.slice(end);
+
+    const match = before.match(/@([^\s@#]*)$/);
+    const replaceFrom = match ? before.length - match[0].length : before.length;
+    const newText = content.slice(0, replaceFrom) + token + after;
+
+    setEditingContent(newText);
+    setShowMentionDropdownInline(false);
+    setInlineMentionQuery('');
+
+    requestAnimationFrame(() => {
+      const pos = replaceFrom + token.length;
+      el.focus();
+      el.setSelectionRange(pos, pos);
+    });
+  }, [editingContent]);
+
+  const insertTagInline = useCallback((tagId: string) => {
+    const tag = availableTags.find((t) => t.id === tagId);
+    if (!tag) return;
+
+    const el = inlineEditRef.current;
+    const content = editingContent;
+    const token = `#${tag.label} `;
+
+    if (!el) {
+      setEditingContent((prev) => prev + token);
+      setShowTagDropdownInline(false);
+      setInlineTagQuery('');
+      return;
+    }
+
+    const start = el.selectionStart ?? content.length;
+    const end = el.selectionEnd ?? content.length;
+    const before = content.slice(0, start);
+    const after = content.slice(end);
+
+    const match = before.match(/#([^\s@#]*)$/);
+    const replaceFrom = match ? before.length - match[0].length : before.length;
+    const newText = content.slice(0, replaceFrom) + token + after;
+
+    setEditingContent(newText);
+    setShowTagDropdownInline(false);
+    setInlineTagQuery('');
+
+    requestAnimationFrame(() => {
+      const pos = replaceFrom + token.length;
+      el.focus();
+      el.setSelectionRange(pos, pos);
+    });
+  }, [availableTags, editingContent]);
+  
+  // Poll (enquete) state
+  const [showPollCreator, setShowPollCreator] = useState(false);
+  const [pollQuestion, setPollQuestion] = useState('');
+  const [pollOptions, setPollOptions] = useState<string[]>(['', '']);
+  const [pollAllowMultiple, setPollAllowMultiple] = useState(true);
+  const [pollExpiresIn, setPollExpiresIn] = useState<string>('24h');
+  const [pollParticipants, setPollParticipants] = useState<string[]>([]);
+  const [postPolls, setPostPolls] = useState<Map<string, FeedPoll>>(new Map());
+  
+  // Entity selection state (para tags integradas)
+  const [showEntityDropdown, setShowEntityDropdown] = useState(false);
+  const [entitySearchTag, setEntitySearchTag] = useState<string | null>(null);
+  const [entitySearchTerm, setEntitySearchTerm] = useState('');
+  const [entityResults, setEntityResults] = useState<EntityReference[]>([]);
+  const [selectedEntities, setSelectedEntities] = useState<EntityReference[]>([]);
+  const [previewData, setPreviewData] = useState<PreviewData>({});
+  
+  // Tag records state (registros reais para inserir no post)
+  const [tagRecords, setTagRecords] = useState<TagRecord[]>([]);
+  const [loadingTagRecords, setLoadingTagRecords] = useState(false);
+  const [selectedTagForRecords, setSelectedTagForRecords] = useState<string | null>(null);
+  
+  // Widget order state
+  const [leftWidgets, setLeftWidgets] = useState<string[]>(['agenda', 'tarefas', 'djen', 'confeccao']);
+  const [rightWidgets, setRightWidgets] = useState<string[]>(['financeiro', 'navegacao']);
+  const [preferencesLoaded, setPreferencesLoaded] = useState(false);
+
+  // Drag and drop sensors
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates })
+  );
+
   const clientMap = useMemo(() => new Map(clients.map((client) => [client.id, client])), [clients]);
 
   const withTimeout = useCallback(<T,>(promise: Promise<T>, label: string): Promise<T> => {
@@ -202,191 +687,175 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToModule }) => {
     });
   }, []);
 
-  const safeFetch = useCallback(<T,>(factory: () => Promise<T>, fallback: T, label: string): Promise<T> => {
-    return withTimeout(factory(), label).catch((error: unknown) => {
-      console.warn(`Dashboard: ${label} indisponível`, error);
-      return fallback;
-    });
-  }, [withTimeout]);
+  const safeFetch = useCallback(
+    <T,>(factory: () => Promise<T>, fallback: T, label: string): Promise<T> => {
+      return withTimeout(factory(), label).catch((error: unknown) => {
+        console.warn(`Dashboard: ${label} indisponível`, error);
+        return fallback;
+      });
+    },
+    [withTimeout]
+  );
 
-  const loadDashboardData = useCallback(async (forceRefresh = false) => {
-    try {
-      setLoading(true);
+  const loadDashboardData = useCallback(
+    async (forceRefresh = false) => {
+      try {
+        setLoading(true);
 
-      // Tentar carregar do cache primeiro
-      if (!forceRefresh) {
-        const cachedData = localStorage.getItem(DASHBOARD_CACHE_KEY);
-        if (cachedData) {
-          try {
-            const cache: DashboardCache = JSON.parse(cachedData);
-            const now = Date.now();
-            
-            // Verificar se o cache ainda é válido
-            if (now - cache.timestamp < CACHE_DURATION) {
-              console.log(' Carregando Dashboard do cache');
-              setClients(cache.data.clients);
-              setProcesses(cache.data.processes);
-              setDeadlines(cache.data.deadlines);
-              setTasks(cache.data.tasks);
-              setCalendarEvents(cache.data.calendarEvents);
-              setRequirements(cache.data.requirements);
-              setFinancialStats(cache.data.financialStats);
-              setOverdueInstallments(cache.data.overdueInstallments);
-              setDjenIntimacoes(cache.data.djenIntimacoes);
-              setLoading(false);
-              return;
+        // Carregar perfil do usuário
+        if (user?.id && !currentProfile) {
+          const profile = await profileService.getProfile(user.id);
+          setCurrentProfile(profile);
+        }
+
+        // Tentar carregar do cache primeiro
+        if (!forceRefresh) {
+          const cachedData = localStorage.getItem(DASHBOARD_CACHE_KEY);
+          if (cachedData) {
+            try {
+              const cache: DashboardCache = JSON.parse(cachedData);
+              const now = Date.now();
+              const cacheValid =
+                cache?.version === DASHBOARD_CACHE_VERSION &&
+                typeof cache?.timestamp === 'number' &&
+                cache?.data &&
+                Array.isArray(cache.data.clients) &&
+                Array.isArray(cache.data.processes) &&
+                Array.isArray(cache.data.deadlines) &&
+                Array.isArray(cache.data.tasks) &&
+                Array.isArray(cache.data.calendarEvents) &&
+                Array.isArray(cache.data.djenIntimacoes) &&
+                typeof cache.data.financialStats !== 'undefined' &&
+                Array.isArray(cache.data.requirementsAwaiting);
+
+              if (cacheValid && now - cache.timestamp < CACHE_DURATION) {
+                console.log('📊 Dashboard Social: carregando do cache');
+                setClients(cache.data.clients);
+                setProcesses(cache.data.processes);
+                setDeadlines(cache.data.deadlines);
+                setTasks(cache.data.tasks);
+                setCalendarEvents(cache.data.calendarEvents);
+                setDjenIntimacoes(cache.data.djenIntimacoes);
+                setFinancialStats(cache.data.financialStats);
+                setRequirementsAwaiting(cache.data.requirementsAwaiting);
+                setLoading(false);
+                return;
+              }
+            } catch {
+              console.warn('Cache inválido, recarregando dados');
             }
-          } catch (e) {
-            console.warn('Cache inválido, recarregando dados');
           }
         }
-      }
 
-      // Carregar dados da API com limites para reduzir egress
-      console.log(' Carregando Dashboard da API (com limites)');
-      const today = new Date().toISOString().split('T')[0];
-      const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
-      
-      const [
-        clientsData,
-        processesData,
-        deadlinesData,
-        tasksData,
-        calendarEventsData,
-        requirementsData,
-        financialStatsData,
-        allInstallmentsData,
-        djenIntimacoesData,
-      ] = await Promise.all([
-        safeFetch(
-          () => clientService.listClients().then((clients) => clients.filter((c) => c.status === 'ativo')),
-          [],
-          'Clientes'
-        ),
-        safeFetch(
-          () => processService.listProcesses().then((procs) => procs.filter((p) => p.status !== 'arquivado').slice(0, 100)),
-          [],
-          'Processos'
-        ),
-        safeFetch(
-          () => deadlineService.listDeadlines().then((deadlines) => deadlines.filter((d) => d.status === 'pendente').slice(0, 50)),
-          [],
-          'Prazos'
-        ),
-        safeFetch(
-          () => taskService.listTasks().then((tasks) => tasks.filter((t) => t.status === 'pending').slice(0, 50)),
-          [],
-          'Tarefas'
-        ),
-        safeFetch(
-          () =>
-            calendarService.listEvents().then((events) => {
-              const now = new Date();
-              now.setHours(0, 0, 0, 0);
-              const futureDate = new Date(now.getTime() + 60 * 24 * 60 * 60 * 1000);
-              return events
-                .filter((e) => {
-                  if (!e.start_at) return false;
-                  const eventDate = new Date(e.start_at);
-                  return eventDate >= now && eventDate <= futureDate;
-                })
-                .slice(0, 100);
-            }),
-          [],
-          'Agenda'
-        ),
-        safeFetch(
-          () => requirementService
-            .listRequirements()
-            .then((reqs) => reqs.filter((r) => r.status === 'aguardando_confeccao').slice(0, 50)),
-          [],
-          'Requerimentos'
-        ),
-        safeFetch(
-          () => financialService.getFinancialStats(new Date().toISOString().slice(0, 7)),
-          null,
-          'Financeiro'
-        ),
-        safeFetch(
-          () =>
-            financialService.listAllInstallments().then((insts) =>
-              insts
-                .filter(
-                  (i) => (i.status === 'pendente' || i.status === 'vencido') && i.due_date >= thirtyDaysAgo
-                )
-                .slice(0, 50)
+        console.log('📊 Dashboard Social: carregando da API');
+
+        const [clientsData, processesData, deadlinesData, tasksData, calendarEventsData, djenIntimacoesData, financialStatsData, requirementsAwaitingData] =
+          await Promise.all([
+            safeFetch(
+              () => clientService.listClients().then((c) => c.filter((x) => x.status === 'ativo')),
+              [],
+              'Clientes'
             ),
-          [],
-          'Parcelas'
-        ),
-        safeFetch(
-          () => djenLocalService.listComunicacoes({ lida: false }),
-          [],
-          'Intimações DJEN'
-        ),
-      ]);
-      
-      // Filtrar parcelas vencidas (reutilizar variável today já declarada)
-      const overdue = allInstallmentsData
-        .filter((inst: any) => (inst.status === 'pendente' || inst.status === 'vencido') && inst.due_date < today)
-        .sort((a: any, b: any) => a.due_date.localeCompare(b.due_date))
-        .slice(0, 5);
+            safeFetch(
+              () => processService.listProcesses().then((p) => p.filter((x) => x.status !== 'arquivado').slice(0, 100)),
+              [],
+              'Processos'
+            ),
+            safeFetch(
+              () => deadlineService.listDeadlines().then((d) => d.filter((x) => x.status === 'pendente').slice(0, 50)),
+              [],
+              'Prazos'
+            ),
+            safeFetch(
+              () => taskService.listTasks().then((t) => t.filter((x) => x.status === 'pending').slice(0, 50)),
+              [],
+              'Tarefas'
+            ),
+            safeFetch(
+              () =>
+                calendarService.listEvents().then((e) => {
+                  const now = new Date();
+                  now.setHours(0, 0, 0, 0);
+                  const futureDate = new Date(now.getTime() + 60 * 24 * 60 * 60 * 1000);
+                  return e
+                    .filter((ev) => {
+                      if (!ev.start_at) return false;
+                      const eventDate = new Date(ev.start_at);
+                      return eventDate >= now && eventDate <= futureDate;
+                    })
+                    .slice(0, 100);
+                }),
+              [],
+              'Agenda'
+            ),
+            safeFetch(() => djenLocalService.listComunicacoes({ lida: false }), [], 'Intimações DJEN'),
+            safeFetch(() => financialService.getFinancialStats(new Date().toISOString().slice(0, 7)), null, 'Financeiro'),
+            safeFetch(() => requirementService.listRequirements({ status: 'aguardando_confeccao' }), [], 'Requerimentos'),
+          ]);
 
-      // Carregar estatísticas de urgência das intimações
-      if (djenIntimacoesData.length > 0) {
+        setClients(clientsData);
+        setProcesses(processesData);
+        setDeadlines(deadlinesData);
+        setTasks(tasksData);
+        setCalendarEvents(calendarEventsData);
+        setDjenIntimacoes(djenIntimacoesData);
+        setFinancialStats(financialStatsData);
+        setRequirementsAwaiting(requirementsAwaitingData);
+
+        // Salvar no cache (com tratamento de erro de quota)
         try {
-          const intimationIds = djenIntimacoesData.map((int: any) => int.id);
-          const analyses = await intimationAnalysisService.getAnalysesByIntimationIds(intimationIds);
-          
-          const stats = { alta: 0, media: 0, baixa: 0, sem_analise: 0 };
-          djenIntimacoesData.forEach((intimacao: any) => {
-            const analysis = analyses.get(intimacao.id);
-            if (analysis && analysis.urgency) {
-              stats[analysis.urgency as 'alta' | 'media' | 'baixa']++;
-            } else {
-              stats.sem_analise++;
+          const cacheData: DashboardCache = {
+            version: DASHBOARD_CACHE_VERSION,
+            timestamp: Date.now(),
+            data: {
+              clients: clientsData,
+              processes: processesData,
+              deadlines: deadlinesData,
+              tasks: tasksData,
+              calendarEvents: calendarEventsData,
+              djenIntimacoes: djenIntimacoesData,
+              financialStats: financialStatsData,
+              requirementsAwaiting: requirementsAwaitingData,
+            },
+          };
+          localStorage.setItem(DASHBOARD_CACHE_KEY, JSON.stringify(cacheData));
+        } catch (quotaError: any) {
+          if (quotaError?.name === 'QuotaExceededError') {
+            console.warn('LocalStorage quota exceeded, limpando cache antigo...');
+            // Limpar cache antigo para liberar espaço
+            localStorage.removeItem(DASHBOARD_CACHE_KEY);
+            // Tentar salvar novamente sem dados pesados
+            try {
+              const minimalCache = {
+                version: DASHBOARD_CACHE_VERSION,
+                timestamp: Date.now(),
+                data: {
+                  clients: clientsData.slice(0, 10),
+                  processes: processesData.slice(0, 10),
+                  deadlines: deadlinesData.slice(0, 10),
+                  tasks: tasksData.slice(0, 10),
+                  calendarEvents: calendarEventsData.slice(0, 10),
+                  djenIntimacoes: djenIntimacoesData.slice(0, 5),
+                  financialStats: financialStatsData,
+                  requirementsAwaiting: requirementsAwaitingData.slice(0, 10),
+                },
+              };
+              localStorage.setItem(DASHBOARD_CACHE_KEY, JSON.stringify(minimalCache));
+            } catch (retryError) {
+              console.warn('Não foi possível salvar cache mesmo após limpar:', retryError);
             }
-          });
-          setDjenUrgencyStats(stats);
-        } catch (err) {
-          console.error('Erro ao carregar estatísticas de urgência:', err);
+          } else {
+            throw quotaError;
+          }
         }
+      } catch (error) {
+        console.error('Erro ao carregar dados do dashboard:', error);
+      } finally {
+        setLoading(false);
       }
-
-      // Atualizar estados
-      setClients(clientsData);
-      setProcesses(processesData);
-      setDeadlines(deadlinesData);
-      setTasks(tasksData);
-      setCalendarEvents(calendarEventsData);
-      setRequirements(requirementsData);
-      setFinancialStats(financialStatsData);
-      setDjenIntimacoes(djenIntimacoesData);
-      setOverdueInstallments(overdue);
-
-      // Salvar no cache
-      const cacheData: DashboardCache = {
-        timestamp: Date.now(),
-        data: {
-          clients: clientsData,
-          processes: processesData,
-          deadlines: deadlinesData,
-          tasks: tasksData,
-          calendarEvents: calendarEventsData,
-          requirements: requirementsData,
-          financialStats: financialStatsData,
-          overdueInstallments: overdue,
-          djenIntimacoes: djenIntimacoesData,
-        },
-      };
-      localStorage.setItem(DASHBOARD_CACHE_KEY, JSON.stringify(cacheData));
-      console.log(' Dashboard salvo no cache');
-    } catch (error) {
-      console.error('Erro ao carregar dados do dashboard:', error);
-    } finally {
-      setLoading(false);
-    }
-  }, [safeFetch]);
+    },
+    [safeFetch, user?.id, currentProfile]
+  );
 
   useEffect(() => {
     loadDashboardData();
@@ -394,38 +863,574 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToModule }) => {
 
   useEffect(() => {
     const unsubscribe = events.on(SYSTEM_EVENTS.CLIENTS_CHANGED, () => {
-      console.log('🔄 Dashboard: Mudança de clientes detectada, recarregando...');
-      loadDashboardData(true); // Forçar recarregamento ignorando cache
+      console.log('🔄 Dashboard: Mudança detectada, recarregando...');
+      loadDashboardData(true);
     });
-    
+
     return () => unsubscribe();
   }, [loadDashboardData]);
 
-  const activeClients = clients.filter((c) => c.status === 'ativo').length;
-  const activeProcesses = processes.length;
-  // ... (rest of the code remains the same)
-  const pendingDeadlines = deadlines.filter((d) => d.status === 'pendente').length;
+  // Carregar todos os perfis para menções
+  useEffect(() => {
+    const loadProfiles = async () => {
+      try {
+        const profiles = await profileService.listMembers();
+        setAllProfiles(profiles);
+      } catch (error) {
+        console.warn('Erro ao carregar perfis:', error);
+      }
+    };
+    loadProfiles();
+  }, []);
+
+  // Carregar preferências do dashboard do banco de dados
+  useEffect(() => {
+    const loadPreferences = async () => {
+      if (!user?.id) return;
+      
+      try {
+        const preferences = await dashboardPreferencesService.getPreferences(user.id);
+        if (preferences) {
+          setLeftWidgets(preferences.left_widgets);
+          setRightWidgets(preferences.right_widgets);
+        }
+        setPreferencesLoaded(true);
+      } catch (error) {
+        console.warn('Erro ao carregar preferências do dashboard:', error);
+        setPreferencesLoaded(true);
+      }
+    };
+    loadPreferences();
+  }, [user?.id]);
+
+  // Handler único para drag-and-drop entre sidebars (salva no banco de dados)
+  const handleDragEnd = (event: DragEndEvent) => {
+    const { active, over } = event;
+    
+    if (!over || !user?.id) return;
+
+    const activeId = active.id as string;
+    const overId = over.id as string;
+
+    // Verificar se está movendo para mesma sidebar
+    const inLeft = leftWidgets.includes(activeId);
+    const inRight = rightWidgets.includes(activeId);
+    const overInLeft = leftWidgets.includes(overId);
+    const overInRight = rightWidgets.includes(overId);
+
+    // Mover dentro da mesma sidebar
+    if ((inLeft && overInLeft) || (inRight && overInRight)) {
+      const sourceWidgets = inLeft ? leftWidgets : rightWidgets;
+      const oldIndex = sourceWidgets.indexOf(activeId);
+      const newIndex = sourceWidgets.indexOf(overId);
+      
+      if (oldIndex !== newIndex) {
+        const newOrder = arrayMove(sourceWidgets, oldIndex, newIndex);
+        if (inLeft) {
+          setLeftWidgets(newOrder);
+        } else {
+          setRightWidgets(newOrder);
+        }
+        // Salvar no banco de dados
+        dashboardPreferencesService.savePreferences(user.id, inLeft ? newOrder : leftWidgets, inRight ? newOrder : rightWidgets);
+      }
+    }
+    // Mover entre sidebars
+    else if (inLeft && overInRight) {
+      const newLeft = leftWidgets.filter(id => id !== activeId);
+      const newRight = [...rightWidgets, activeId];
+      setLeftWidgets(newLeft);
+      setRightWidgets(newRight);
+      // Salvar no banco de dados
+      dashboardPreferencesService.savePreferences(user.id, newLeft, newRight);
+    }
+    else if (inRight && overInLeft) {
+      const newRight = rightWidgets.filter(id => id !== activeId);
+      const newLeft = [...leftWidgets, activeId];
+      setRightWidgets(newRight);
+      setLeftWidgets(newLeft);
+      // Salvar no banco de dados
+      dashboardPreferencesService.savePreferences(user.id, newLeft, newRight);
+    }
+  };
+
+  // Handler para input do post com menções
+  const handlePostTextChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+    const value = e.target.value;
+    setPostText(value);
+
+    // Detectar @ para menções
+    const lastAtIndex = value.lastIndexOf('@');
+    if (lastAtIndex !== -1) {
+      const textAfterAt = value.slice(lastAtIndex + 1);
+      const spaceIndex = textAfterAt.indexOf(' ');
+      if (spaceIndex === -1 && textAfterAt.length > 0) {
+        setMentionSearch(textAfterAt.toLowerCase());
+        setShowMentionDropdown(true);
+      } else {
+        setShowMentionDropdown(false);
+      }
+    } else {
+      setShowMentionDropdown(false);
+    }
+
+    // Detectar # para tags
+    const lastHashIndex = value.lastIndexOf('#');
+    if (lastHashIndex !== -1) {
+      const textAfterHash = value.slice(lastHashIndex + 1);
+      const spaceIndex = textAfterHash.indexOf(' ');
+      if (spaceIndex === -1 && textAfterHash.length >= 0) {
+        setShowTagDropdown(true);
+      } else {
+        setShowTagDropdown(false);
+      }
+    } else {
+      setShowTagDropdown(false);
+    }
+  };
+
+  // Inserir menção no texto
+  const insertMention = (profile: Profile) => {
+    const lastAtIndex = postText.lastIndexOf('@');
+    const newText = postText.slice(0, lastAtIndex) + `@${profile.name} `;
+    setPostText(newText);
+    setShowMentionDropdown(false);
+    postInputRef.current?.focus();
+  };
+
+  // Inserir tag no texto
+  const insertTag = (tagId: string) => {
+    const lastHashIndex = postText.lastIndexOf('#');
+    const newText = postText.slice(0, lastHashIndex) + `#${tagId} `;
+    setPostText(newText);
+    if (!selectedTags.includes(tagId)) {
+      setSelectedTags([...selectedTags, tagId]);
+    }
+    setShowTagDropdown(false);
+    postInputRef.current?.focus();
+  };
+
+  // Toggle tag
+  const toggleTag = (tagId: string) => {
+    if (selectedTags.includes(tagId)) {
+      setSelectedTags(selectedTags.filter(t => t !== tagId));
+    } else {
+      setSelectedTags([...selectedTags, tagId]);
+    }
+  };
+
+  // Carregar registros reais para uma tag
+  const loadTagRecords = useCallback(async (tagId: string) => {
+    setLoadingTagRecords(true);
+    setSelectedTagForRecords(tagId);
+    try {
+      const records = await feedPostsService.getRecordsForTag(tagId, '', 10);
+      setTagRecords(records);
+    } catch (error) {
+      console.error('Erro ao carregar registros:', error);
+      setTagRecords([]);
+    } finally {
+      setLoadingTagRecords(false);
+    }
+  }, []);
+
+  // Selecionar um registro e inserir texto formatado no post
+  const selectTagRecord = useCallback((record: TagRecord) => {
+    // Inserir texto formatado no post
+    setPostText(prev => {
+      const newText = prev.trim() ? `${prev} ${record.formattedText}` : record.formattedText;
+      return newText;
+    });
+    
+    // Adicionar tag se não estiver selecionada
+    if (selectedTagForRecords && !selectedTags.includes(selectedTagForRecords)) {
+      setSelectedTags(prev => [...prev, selectedTagForRecords]);
+    }
+    
+    // Adicionar dados de preview
+    setPreviewData(prev => ({ ...prev, ...record.previewData }));
+    
+    // Fechar dropdown
+    setSelectedTagForRecords(null);
+    setTagRecords([]);
+    setShowTagDropdown(false);
+    postInputRef.current?.focus();
+  }, [selectedTagForRecords, selectedTags]);
+
+  // Fechar dropdown de registros
+  const closeTagRecordsDropdown = useCallback(() => {
+    setSelectedTagForRecords(null);
+    setTagRecords([]);
+  }, []);
+
+  // Carregar posts do feed
+  const loadFeedPosts = useCallback(async () => {
+    setLoadingPosts(true);
+    try {
+      const posts = await feedPostsService.getPosts(20, 0);
+      setFeedPosts(posts);
+      // Carregar enquetes dos posts
+      const pollMap = new Map<string, FeedPoll>();
+      for (const post of posts) {
+        try {
+          const poll = await feedPollsService.getPollByPostId(post.id);
+          if (poll) pollMap.set(post.id, poll);
+        } catch {
+          // ignore
+        }
+      }
+      setPostPolls(pollMap);
+    } catch (error) {
+      console.error('Erro ao carregar posts:', error);
+    } finally {
+      setLoadingPosts(false);
+    }
+  }, []);
+
+  // Buscar entidades para autocomplete
+  const searchEntities = useCallback(async (tag: string, search: string) => {
+    if (!search || search.length < 2) {
+      setEntityResults([]);
+      return;
+    }
+    try {
+      const results = await feedPostsService.searchEntities(tag, search, 5);
+      setEntityResults(results);
+    } catch (error) {
+      console.error('Erro ao buscar entidades:', error);
+      setEntityResults([]);
+    }
+  }, []);
+
+  // Selecionar entidade
+  const selectEntity = useCallback(async (entity: EntityReference) => {
+    // Adicionar à lista de entidades selecionadas
+    setSelectedEntities(prev => {
+      if (prev.some(e => e.id === entity.id && e.type === entity.type)) return prev;
+      return [...prev, entity];
+    });
+    
+    // Buscar dados de preview para a entidade
+    const tagType = entity.type === 'client' ? 'cliente' : 
+                    entity.type === 'process' ? 'processo' :
+                    entity.type === 'deadline' ? 'prazo' :
+                    entity.type === 'calendar' ? 'agenda' :
+                    entity.type === 'document' ? 'documento' : entity.type;
+    
+    try {
+      const preview = await feedPostsService.getPreviewDataForTag(tagType, entity.id);
+      setPreviewData(prev => ({ ...prev, ...preview }));
+    } catch (error) {
+      console.error('Erro ao buscar preview:', error);
+    }
+    
+    // Inserir referência no texto
+    const entityLabel = entity.name || entity.number || entity.id;
+    setPostText(prev => prev + `[${tagType}:${entityLabel}] `);
+    
+    // Fechar dropdown
+    setShowEntityDropdown(false);
+    setEntitySearchTag(null);
+    setEntitySearchTerm('');
+    setEntityResults([]);
+    postInputRef.current?.focus();
+  }, []);
+
+  // Remover entidade selecionada
+  const removeEntity = useCallback((entityId: string) => {
+    setSelectedEntities(prev => prev.filter(e => e.id !== entityId));
+  }, []);
+
+  // Calcular data de expiração da enquete
+  const calculatePollExpiration = useCallback((expiresIn: string): string | null => {
+    if (expiresIn === 'never') return null;
+    const now = new Date();
+    switch (expiresIn) {
+      case '1h': now.setHours(now.getHours() + 1); break;
+      case '6h': now.setHours(now.getHours() + 6); break;
+      case '24h': now.setHours(now.getHours() + 24); break;
+      case '3d': now.setDate(now.getDate() + 3); break;
+      case '7d': now.setDate(now.getDate() + 7); break;
+      default: return null;
+    }
+    return now.toISOString();
+  }, []);
+
+  // Publicar post
+  const handlePublishPost = useCallback(async () => {
+    // Permitir publicar se tem texto OU se tem enquete válida
+    const hasPoll = showPollCreator && pollQuestion.trim() && pollOptions.filter(o => o.trim()).length >= 2;
+    if ((!postText.trim() && !hasPoll) || postingInProgress) return;
+    
+    setPostingInProgress(true);
+    try {
+      // Extrair menções do texto (@nome) - suporta acentos e nomes compostos
+      const mentionRegex = /@([A-Za-zÀ-ÖØ-öø-ÿ]+(?:\s+[A-Za-zÀ-ÖØ-öø-ÿ]+)*)/g;
+      const mentionMatches: string[] = [];
+      let match;
+      while ((match = mentionRegex.exec(postText)) !== null) {
+        mentionMatches.push(match[1].toLowerCase());
+      }
+      
+      // Buscar user_id dos perfis mencionados pelo nome
+      const mentionedIds = allProfiles
+        .filter(p => {
+          const profileName = p.name?.toLowerCase() || '';
+          return mentionMatches.some(mentioned => profileName === mentioned || profileName.includes(mentioned));
+        })
+        .map(p => p.user_id);
+      
+      // Buscar dados de preview para tags selecionadas (sem entidade específica)
+      let finalPreviewData = { ...previewData };
+      for (const tag of selectedTags) {
+        if (!selectedEntities.some(e => {
+          const tagType = e.type === 'client' ? 'cliente' : 
+                          e.type === 'process' ? 'processo' :
+                          e.type === 'deadline' ? 'prazo' :
+                          e.type === 'calendar' ? 'agenda' :
+                          e.type === 'document' ? 'documento' : e.type;
+          return tagType === tag;
+        })) {
+          // Tag sem entidade específica - buscar dados gerais
+          const tagPreview = await feedPostsService.getPreviewDataForTag(tag);
+          finalPreviewData = { ...finalPreviewData, ...tagPreview };
+        }
+      }
+      
+      // Conteúdo do post (se não tiver texto mas tiver enquete, usar a pergunta)
+      const postContent = postText.trim() || (hasPoll ? `📊 ${pollQuestion}` : '');
+      
+      const newPost = await feedPostsService.createPost({
+        content: postContent,
+        tags: selectedTags,
+        mentions: mentionedIds,
+        entity_references: selectedEntities,
+        preview_data: finalPreviewData,
+        attachments: pendingAttachments.map((p) => p.attachment)
+      });
+
+      // Criar enquete se ativa
+      if (hasPoll) {
+        const validOptions = pollOptions.filter(o => o.trim());
+        const expiresAt = calculatePollExpiration(pollExpiresIn);
+        const poll = await feedPollsService.createPoll({
+          post_id: newPost.id,
+          question: pollQuestion,
+          options: validOptions,
+          expires_at: expiresAt,
+          allow_multiple: pollAllowMultiple,
+          participants: pollParticipants.filter(p => p),
+        });
+        // Salvar enquete no mapa local
+        setPostPolls(prev => new Map(prev).set(newPost.id, poll));
+      }
+      
+      // Adicionar post ao início da lista
+      setFeedPosts(prev => [newPost, ...prev]);
+      
+      // Limpar formulário
+      setPostText('');
+      setSelectedTags([]);
+      setSelectedEntities([]);
+      setPreviewData({});
+      pendingAttachments.forEach((p) => {
+        try {
+          URL.revokeObjectURL(p.localUrl);
+        } catch {}
+      });
+      setPendingAttachments([]);
+      
+      // Limpar enquete
+      setShowPollCreator(false);
+      setPollQuestion('');
+      setPollOptions(['', '']);
+      setPollAllowMultiple(true);
+      setPollExpiresIn('24h');
+      setPollParticipants([]);
+    } catch (error) {
+      console.error('Erro ao publicar post:', error);
+    } finally {
+      setPostingInProgress(false);
+    }
+  }, [postText, selectedTags, selectedEntities, previewData, allProfiles, postingInProgress, pendingAttachments, showPollCreator, pollQuestion, pollOptions, pollAllowMultiple, pollExpiresIn, pollParticipants, calculatePollExpiration]);
+
+  // Votar em enquete
+  const handlePollVote = useCallback(async (pollId: string, optionIndex: number) => {
+    try {
+      await feedPollsService.vote(pollId, optionIndex);
+      // Atualizar enquete local
+      const updatedPoll = await feedPollsService.getPollByPostId(
+        Array.from(postPolls.entries()).find(([_, p]) => p.id === pollId)?.[0] || ''
+      );
+      if (updatedPoll) {
+        setPostPolls(prev => {
+          const newMap = new Map(prev);
+          const postId = Array.from(prev.entries()).find(([_, p]) => p.id === pollId)?.[0];
+          if (postId) newMap.set(postId, updatedPoll);
+          return newMap;
+        });
+      }
+    } catch (error) {
+      console.error('Erro ao votar:', error);
+    }
+  }, [postPolls]);
+
+  // Carregar enquetes dos posts
+  const loadPollsForPosts = useCallback(async (posts: FeedPost[]) => {
+    const pollMap = new Map<string, FeedPoll>();
+    for (const post of posts) {
+      try {
+        const poll = await feedPollsService.getPollByPostId(post.id);
+        if (poll) pollMap.set(post.id, poll);
+      } catch {
+        // ignore
+      }
+    }
+    setPostPolls(pollMap);
+  }, []);
+
+  // Dar/remover like
+  const handleToggleLike = useCallback(async (postId: string, currentlyLiked: boolean) => {
+    try {
+      if (currentlyLiked) {
+        await feedPostsService.unlikePost(postId);
+      } else {
+        await feedPostsService.likePost(postId);
+      }
+      // Atualizar estado local
+      setFeedPosts(prev => prev.map(p => {
+        if (p.id === postId) {
+          return {
+            ...p,
+            liked_by_me: !currentlyLiked,
+            likes_count: currentlyLiked ? p.likes_count - 1 : p.likes_count + 1
+          };
+        }
+        return p;
+      }));
+    } catch (error) {
+      console.error('Erro ao dar/remover like:', error);
+    }
+  }, []);
+
+  // Salvar edição de post
+  const handleSaveEdit = useCallback(async (postId: string) => {
+    if (!editingContent.trim()) return;
+    try {
+      const updatedPost = await feedPostsService.updatePost(postId, { content: editingContent.trim() });
+      setFeedPosts(prev => prev.map(p => p.id === postId ? updatedPost : p));
+      setEditingPostId(null);
+      setEditingContent('');
+    } catch (error) {
+      console.error('Erro ao salvar edição:', error);
+    }
+  }, [editingContent]);
+
+  // Cancelar edição
+  const handleCancelEdit = useCallback(() => {
+    setEditingPostId(null);
+    setEditingContent('');
+    setShowMentionDropdownInline(false);
+    setShowTagDropdownInline(false);
+    setInlineMentionQuery('');
+    setInlineTagQuery('');
+  }, []);
+
+  // Excluir post
+  const handleDeletePost = useCallback(async (postId: string) => {
+    const confirmed = await confirmDelete({
+      title: 'Excluir publicação',
+      message: 'Tem certeza que deseja excluir esta publicação? Esta ação não pode ser desfeita.',
+      confirmLabel: 'Excluir',
+      cancelLabel: 'Cancelar',
+    });
+    if (!confirmed) return;
+    try {
+      await feedPostsService.deletePost(postId);
+      setFeedPosts(prev => prev.filter(p => p.id !== postId));
+      setOpenPostMenu(null);
+    } catch (error) {
+      console.error('Erro ao excluir post:', error);
+    }
+  }, [confirmDelete]);
+
+  // Renderizar conteúdo com menções em azul
+  const renderContentWithMentions = useCallback((content: string) => {
+    // Regex para encontrar menções @nome - suporta acentos e caracteres Unicode
+    const mentionRegex = /@([A-Za-zÀ-ÖØ-öø-ÿ]+(?:\s+[A-Za-zÀ-ÖØ-öø-ÿ]+)*)/g;
+    const parts: React.ReactNode[] = [];
+    let lastIndex = 0;
+    let match;
+
+    while ((match = mentionRegex.exec(content)) !== null) {
+      // Adicionar texto antes da menção
+      if (match.index > lastIndex) {
+        parts.push(content.slice(lastIndex, match.index));
+      }
+      // Adicionar menção estilizada em azul
+      parts.push(
+        <span key={match.index} className="text-blue-600 font-semibold cursor-pointer hover:underline">
+          @{match[1]}
+        </span>
+      );
+      lastIndex = match.index + match[0].length;
+    }
+
+    // Adicionar texto restante
+    if (lastIndex < content.length) {
+      parts.push(content.slice(lastIndex));
+    }
+
+    return parts.length > 0 ? parts : content;
+  }, []);
+
+  // Carregar posts do feed ao montar
+  useEffect(() => {
+    loadFeedPosts();
+  }, [loadFeedPosts]);
+
   const pendingTasks = tasks.filter((t) => t.status === 'pending').length;
-  const awaitingRequirements = requirements.filter((r) => r.status === 'aguardando_confeccao');
-  const awaitingDraftProcesses = processes.filter((p) => p.status === 'aguardando_confeccao');
-  const pendingProcesses = processes.filter((p) => p.status === 'andamento' || p.status === 'distribuido');
 
-  const upcomingDeadlines = deadlines
-    .filter((d) => d.status === 'pendente' && d.due_date)
-    .sort((a, b) => new Date(a.due_date!).getTime() - new Date(b.due_date!).getTime())
-    .slice(0, 5);
+  const activeClients = clients.length;
+  const activeProcesses = processes.length;
+  const pendingDeadlines = deadlines.filter((d) => d.status === 'pendente').length;
 
-  const recentTasks = tasks
-    .filter((t) => t.status === 'pending')
-    .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
-    .slice(0, 5);
+  const awaitingDraftProcesses = useMemo(
+    () => processes.filter((p) => p.status === 'aguardando_confeccao'),
+    [processes]
+  );
 
-  // Combinar compromissos manuais + audiências dos processos
+  const formatCurrency = useCallback((value: number): string => {
+    return new Intl.NumberFormat('pt-BR', {
+      style: 'currency',
+      currency: 'BRL',
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    }).format(value);
+  }, []);
+
+  const upcomingDeadlines = useMemo(
+    () =>
+      deadlines
+        .filter((d) => d.status === 'pendente' && d.due_date)
+        .sort((a, b) => new Date(a.due_date!).getTime() - new Date(b.due_date!).getTime())
+        .slice(0, 5),
+    [deadlines]
+  );
+
+  const recentTasks = useMemo(
+    () =>
+      tasks
+        .filter((t) => t.status === 'pending')
+        .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
+        .slice(0, 5),
+    [tasks]
+  );
+
   const upcomingEvents = useMemo(() => {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
 
-    // Compromissos manuais
     const manualEvents = calendarEvents
       .filter((e) => {
         if (!e.start_at) return false;
@@ -440,7 +1445,6 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToModule }) => {
         client_id: e.client_id,
       }));
 
-    // Audiências dos processos
     const hearingEvents = processes
       .filter((p) => p.hearing_scheduled && p.hearing_date)
       .filter((p) => {
@@ -450,866 +1454,1309 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToModule }) => {
       .map((p) => {
         const client = clients.find((c) => c.id === p.client_id);
         const clientName = client?.full_name || 'Sem cliente';
-        const modeLabel = p.hearing_mode ? p.hearing_mode.toUpperCase() : '';
         return {
           id: `hearing-${p.id}`,
-          title: `Audiência${modeLabel ? ` - ${modeLabel}` : ''} - ${clientName}`,
+          title: `Audiência - ${clientName}`,
           start_at: p.hearing_time ? `${p.hearing_date}T${p.hearing_time}` : p.hearing_date!,
           type: 'hearing',
           client_id: p.client_id,
         };
       });
 
-    // Combinar e ordenar
     return [...manualEvents, ...hearingEvents]
       .sort((a, b) => new Date(a.start_at).getTime() - new Date(b.start_at).getTime())
       .slice(0, 10);
   }, [calendarEvents, processes, clients]);
 
-  const pendingRequirementsList = awaitingRequirements
-    .sort((a, b) => {
-      const dateA = a.entry_date ? new Date(a.entry_date).getTime() : 0;
-      const dateB = b.entry_date ? new Date(b.entry_date).getTime() : 0;
-      return dateA - dateB;
-    })
-    .slice(0, 5);
-
-  const awaitingDraftProcessesList = awaitingDraftProcesses
-    .sort((a, b) => {
-      const dateA = a.distributed_at ? new Date(a.distributed_at).getTime() : new Date(a.created_at).getTime();
-      const dateB = b.distributed_at ? new Date(b.distributed_at).getTime() : new Date(b.created_at).getTime();
-      return dateA - dateB;
-    })
-    .slice(0, 5);
-
-  const pendingProcessesList = pendingProcesses
-    .sort((a, b) => {
-      const dateA = a.distributed_at ? new Date(a.distributed_at).getTime() : new Date(a.created_at).getTime();
-      const dateB = b.distributed_at ? new Date(b.distributed_at).getTime() : new Date(b.created_at).getTime();
-      return dateB - dateA;
-    })
-    .slice(0, 5);
-
-  const nowDate = new Date();
-  const dayDescription = nowDate.toLocaleDateString('pt-BR', {
-    weekday: 'long',
-    day: 'numeric',
-    month: 'long',
-  });
-
-  const newClientsThisMonth = clients.filter((client) => {
-    if (!client.created_at) return false;
-    const created = new Date(client.created_at);
-    return created.getMonth() === nowDate.getMonth() && created.getFullYear() === nowDate.getFullYear();
-  }).length;
-
-  const newProcessesThisMonth = processes.filter((process) => {
-    if (!process.created_at) return false;
-    const created = new Date(process.created_at);
-    return created.getMonth() === nowDate.getMonth() && created.getFullYear() === nowDate.getFullYear();
-  }).length;
-
-  const completedTasksCount = tasks.filter((task) => {
-    const normalized = (task.status || '').toLowerCase();
-    return normalized === 'completed' || normalized === 'done' || normalized === 'concluido';
-  }).length;
-
-  const totalTrackedTasks = completedTasksCount + pendingTasks;
-  const tasksCompletionRate = totalTrackedTasks ? Math.round((completedTasksCount / totalTrackedTasks) * 100) : 0;
-
-  const summaryCards = [
-    {
-      id: 'clients',
-      label: 'Clientes',
-      value: activeClients,
-      helper: `${newClientsThisMonth} novos este mês`,
-      accent: 'text-blue-600 bg-blue-50',
-      icon: Users,
-      action: 'clientes',
-    },
-    {
-      id: 'processes',
-      label: 'Processos',
-      value: activeProcesses,
-      helper: `${newProcessesThisMonth} iniciados`,
-      accent: 'text-purple-600 bg-purple-50',
-      icon: Briefcase,
-      action: 'processos',
-    },
-    {
-      id: 'deadlines',
-      label: 'Prazos',
-      value: pendingDeadlines,
-      helper: 'pendentes',
-      accent: 'text-rose-600 bg-rose-50',
-      icon: CalendarDays,
-      action: 'prazos',
-    },
-    {
-      id: 'tasks',
-      label: 'Tarefas',
-      value: `${tasksCompletionRate}%`,
-      helper: `${completedTasksCount}/${totalTrackedTasks} concluídas`,
-      accent: 'text-amber-600 bg-amber-50',
-      icon: CheckSquare,
-      action: 'tarefas',
-    },
-  ];
-
-  const handleNavigate = (moduleWithParams: string) => {
-    if (!onNavigateToModule) return;
-    
-    // Extrair módulo e parâmetros da string (ex: "clients?mode=create")
-    const [module, queryString] = moduleWithParams.split('?');
-    
-    if (queryString) {
-      // Parsear query string em objeto de parâmetros
-      const params: Record<string, string> = {};
-      queryString.split('&').forEach(pair => {
-        const [key, value] = pair.split('=');
-        params[key] = value;
-      });
-      onNavigateToModule(module, params);
-    } else {
-      onNavigateToModule(module);
-    }
+  const handleNavigate = (moduleKey: string, params?: Record<string, string>) => {
+    onNavigateToModule?.(moduleKey, params);
   };
 
-  const formatCurrency = (value: number) => {
-    return new Intl.NumberFormat('pt-BR', {
-      style: 'currency',
-      currency: 'BRL',
-    }).format(value);
+  const formatTimeAgo = (date: string) => {
+    const now = new Date();
+    const d = new Date(date);
+    const diffMs = now.getTime() - d.getTime();
+    const diffMins = Math.floor(diffMs / 60000);
+    const diffHours = Math.floor(diffMs / 3600000);
+    const diffDays = Math.floor(diffMs / 86400000);
+
+    if (diffMins < 1) return 'Agora';
+    if (diffMins < 60) return `${diffMins}m atrás`;
+    if (diffHours < 24) return `${diffHours}h atrás`;
+    if (diffDays === 1) return 'Ontem';
+    return `${diffDays}d atrás`;
   };
 
-  // Calcular saudação baseada na hora
-  const getGreeting = () => {
-    const hour = new Date().getHours();
-    if (hour < 12) return 'Bom dia';
-    if (hour < 18) return 'Boa tarde';
-    return 'Boa noite';
+  const getDateLabel = (date: Date) => {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const tomorrow = new Date(today);
+    tomorrow.setDate(tomorrow.getDate() + 1);
+
+    if (date.toDateString() === today.toDateString()) return 'Hoje';
+    if (date.toDateString() === tomorrow.toDateString()) return 'Amanhã';
+    return date.toLocaleDateString('pt-BR', { weekday: 'short' }).replace('.', '');
   };
 
-  // Calcular alertas urgentes
-  const urgentAlerts = useMemo(() => {
-    const alerts: { type: string; count: number; color: string; icon: React.ReactNode; action: string }[] = [];
-    
-    if (pendingDeadlines > 0) {
-      const urgentDeadlines = deadlines.filter(d => {
-        if (d.status !== 'pendente') return false;
-        const dueDate = new Date(d.due_date!);
-        const today = new Date();
-        const diffDays = Math.ceil((dueDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
-        return diffDays <= 3 && diffDays >= 0;
-      }).length;
-      if (urgentDeadlines > 0) {
-        alerts.push({ type: 'Prazos Urgentes', count: urgentDeadlines, color: 'red', icon: <AlertTriangle className="w-5 h-5" />, action: 'prazos' });
-      }
-    }
-    
-    if (djenIntimacoes.length > 0) {
-      alerts.push({ type: 'Intimações Não Lidas', count: djenIntimacoes.length, color: 'orange', icon: <Bell className="w-5 h-5" />, action: 'intimacoes' });
-    }
-    
-    if (financialStats && financialStats.overdue_installments > 0) {
-      alerts.push({ type: 'Parcelas Vencidas', count: financialStats.overdue_installments, color: 'amber', icon: <Wallet className="w-5 h-5" />, action: 'financeiro' });
-    }
-    
-    return alerts;
-  }, [pendingDeadlines, deadlines, djenIntimacoes, financialStats]);
+  const getDueLabel = (dueDate?: string | null) => {
+    if (!dueDate) return 'Sem prazo';
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const due = new Date(dueDate);
+    const diffDays = Math.ceil((due.getTime() - today.getTime()) / 86400000);
+
+    if (diffDays < 0) return `Atrasado ${Math.abs(diffDays)}d`;
+    if (diffDays === 0) return 'Vence Hoje';
+    if (diffDays === 1) return 'Vence Amanhã';
+    return `Vence em ${diffDays}d`;
+  };
 
   if (loading) {
     return (
-      <div className="flex min-h-[400px] items-center justify-center">
-        <div className="text-center">
-          <div className="mx-auto mb-4 h-12 w-12 animate-spin rounded-full border-4 border-amber-600 border-t-transparent"></div>
-          <p className="text-slate-600">Carregando dashboard...</p>
+      <div className="min-h-screen bg-slate-100 flex items-center justify-center">
+        <div className="flex flex-col items-center gap-4">
+          <Loader2 className="w-10 h-10 text-blue-600 animate-spin" />
+          <p className="text-slate-600 font-medium">Carregando dashboard...</p>
         </div>
       </div>
     );
   }
 
-  return (
-    <div className="space-y-4 bg-slate-50 -m-6 p-4 sm:p-6 min-h-screen">
-
-      {/* Header repaginado */}
-      <DashboardHeader onNewClient={() => handleNavigate('clientes?mode=create')} />
-
-      {/* Barra de Atenção / Alertas Urgentes */}
-      {urgentAlerts.length > 0 && (
-        <div className="flex items-center justify-between gap-2 sm:gap-4 rounded-xl bg-gradient-to-r from-slate-800 to-slate-900 px-3 sm:px-5 py-2.5 sm:py-3 shadow-md">
-          {/* Header */}
-          <div className="flex items-center gap-2 sm:gap-3 min-w-0 flex-shrink-0">
-            <div className="relative flex-shrink-0">
-              <div className="flex items-center justify-center w-8 h-8 sm:w-10 sm:h-10 rounded-xl bg-orange-500 text-white">
-                <AlertTriangle className="w-4 h-4 sm:w-5 sm:h-5" />
-              </div>
-              <span className="absolute -top-1 -right-1 flex items-center justify-center w-4 h-4 sm:w-5 sm:h-5 rounded-full bg-red-500 text-white text-[9px] sm:text-[10px] font-bold border-2 border-slate-900">
-                {urgentAlerts.reduce((sum, a) => sum + a.count, 0)}
-              </span>
-            </div>
-            <div className="min-w-0 hidden sm:block">
-              <p className="text-sm font-semibold text-white">Centro de Atenção</p>
-              <p className="text-xs text-slate-400 truncate">
-                {urgentAlerts.reduce((sum, a) => sum + a.count, 0)} itens precisam da sua atenção
-              </p>
-            </div>
+  // Função para renderizar widget por ID
+  const renderWidget = (widgetId: string) => {
+    if (widgetId === 'agenda') {
+      return (
+        <div className="bg-white rounded-xl border border-slate-200 shadow-sm flex flex-col max-h-[320px]">
+          <div className="p-3 border-b border-slate-200 flex justify-between items-center bg-slate-50 rounded-t-xl">
+            <h3 className="text-slate-900 font-bold text-sm flex items-center gap-2">
+              <Calendar className="w-4 h-4 text-blue-600" />
+              Agenda Jurídica
+            </h3>
+            <button
+              onClick={() => handleNavigate('agenda')}
+              className="text-xs text-blue-600 font-medium hover:underline"
+            >
+              Ver Agenda
+            </button>
           </div>
-
-          {/* Botões de alerta */}
-          <div className="flex items-center gap-1.5 sm:gap-2 overflow-x-auto no-scrollbar">
-            {urgentAlerts.map((alert, index) => {
-              const colorClass =
-                alert.action === 'prazos' ? 'bg-red-500 hover:bg-red-600' :
-                alert.action === 'intimacoes' ? 'bg-orange-500 hover:bg-orange-600' :
-                'bg-amber-500 hover:bg-amber-600';
-
-              return (
-                <button
-                  key={index}
-                  onClick={() => handleNavigate(alert.action)}
-                  className={`inline-flex items-center gap-1 sm:gap-2 rounded-lg ${colorClass} px-2.5 sm:px-4 py-1.5 sm:py-2 text-white text-[11px] sm:text-sm font-medium transition-colors flex-shrink-0`}
-                >
-                  <span className="font-bold">{alert.count}</span>
-                  <span className="hidden sm:inline truncate max-w-[180px]">{alert.type}</span>
-                  <ChevronRight className="w-3 h-3 sm:w-4 sm:h-4" />
-                </button>
-              );
-            })}
-          </div>
-        </div>
-      )}
-
-      {/* Estatísticas em linha única */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 sm:gap-3">
-        <button
-          onClick={() => handleNavigate('clientes')}
-          className="bg-white rounded-xl p-3 sm:p-4 shadow-sm border border-slate-100 hover:shadow-md hover:border-blue-200 transition-all text-left"
-        >
-          <div className="flex items-center gap-2 sm:gap-3">
-            <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-lg bg-blue-500 flex items-center justify-center flex-shrink-0">
-              <Users className="w-4 h-4 sm:w-5 sm:h-5 text-white" />
-            </div>
-            <div className="min-w-0">
-              <p className="text-lg sm:text-xl font-bold text-slate-900">{activeClients}</p>
-              <p className="text-[10px] sm:text-xs text-slate-500">Clientes</p>
-            </div>
-          </div>
-        </button>
-
-        <button
-          onClick={() => handleNavigate('processos')}
-          className="bg-white rounded-xl p-3 sm:p-4 shadow-sm border border-slate-100 hover:shadow-md hover:border-purple-200 transition-all text-left"
-        >
-          <div className="flex items-center gap-2 sm:gap-3">
-            <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-lg bg-purple-500 flex items-center justify-center flex-shrink-0">
-              <Gavel className="w-4 h-4 sm:w-5 sm:h-5 text-white" />
-            </div>
-            <div className="min-w-0">
-              <p className="text-lg sm:text-xl font-bold text-slate-900">{activeProcesses}</p>
-              <p className="text-[10px] sm:text-xs text-slate-500">Processos</p>
-            </div>
-          </div>
-        </button>
-
-        <button
-          onClick={() => handleNavigate('prazos')}
-          className="bg-white rounded-xl p-3 sm:p-4 shadow-sm border border-slate-100 hover:shadow-md hover:border-red-200 transition-all text-left"
-        >
-          <div className="flex items-center gap-2 sm:gap-3">
-            <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-lg bg-red-500 flex items-center justify-center flex-shrink-0">
-              <CalendarDays className="w-4 h-4 sm:w-5 sm:h-5 text-white" />
-            </div>
-            <div className="min-w-0">
-              <p className="text-lg sm:text-xl font-bold text-slate-900">{pendingDeadlines}</p>
-              <p className="text-[10px] sm:text-xs text-slate-500">Prazos</p>
-            </div>
-          </div>
-        </button>
-
-        <button
-          onClick={() => handleNavigate('tarefas')}
-          className="bg-white rounded-xl p-3 sm:p-4 shadow-sm border border-slate-100 hover:shadow-md hover:border-amber-200 transition-all text-left"
-        >
-          <div className="flex items-center gap-2 sm:gap-3">
-            <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-lg bg-amber-500 flex items-center justify-center flex-shrink-0">
-              <CheckSquare className="w-4 h-4 sm:w-5 sm:h-5 text-white" />
-            </div>
-            <div className="min-w-0">
-              <p className="text-lg sm:text-xl font-bold text-slate-900">{pendingTasks}</p>
-              <p className="text-[10px] sm:text-xs text-slate-500">Tarefas</p>
-            </div>
-          </div>
-        </button>
-      </div>
-
-      {/* Grid Principal - Agenda + Financeiro lado a lado */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        {/* Widget de Agenda */}
-        <div className="bg-gradient-to-br from-slate-800 to-slate-900 rounded-xl shadow-lg overflow-hidden">
-        <div className="relative">
-          <div className="relative p-4">
-            <div className="flex items-center justify-between mb-4">
-              <div className="flex items-center gap-2">
-                <div className="w-9 h-9 rounded-lg bg-blue-600 flex items-center justify-center">
-                  <Calendar className="w-5 h-5 text-white" />
-                </div>
-                <div>
-                  <h2 className="text-sm font-bold text-white">Agenda Jurídica</h2>
-                  <p className="text-[10px] text-white/60">{upcomingEvents.length} compromisso{upcomingEvents.length !== 1 ? 's' : ''}</p>
-                </div>
-              </div>
-            </div>
-
+          <div className="flex-1 overflow-y-auto p-2">
             {upcomingEvents.length === 0 ? (
-              <div className="bg-white/5 rounded-lg p-6 text-center border border-white/10">
-                <Calendar className="w-10 h-10 text-white/30 mx-auto mb-2" />
-                <p className="text-white/60 text-sm">Nenhum compromisso agendado</p>
-                <button
-                  onClick={() => handleNavigate('agenda')}
-                  className="mt-3 px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-semibold transition-all"
-                >
-                  Criar Compromisso
-                </button>
+              <div className="text-center py-6 text-slate-500 text-sm">
+                <Calendar className="w-6 h-6 mx-auto mb-2 text-slate-300" />
+                Nenhum compromisso
               </div>
             ) : (
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
-                {upcomingEvents.slice(0, 6).map((event, index) => {
+              <div className="flex flex-col">
+                {upcomingEvents.slice(0, 4).map((event) => {
                   const eventDate = new Date(event.start_at);
                   const isToday = eventDate.toDateString() === new Date().toDateString();
-                  const isTomorrow = eventDate.toDateString() === new Date(Date.now() + 86400000).toDateString();
-                  
+                  const client = event.client_id ? clientMap.get(event.client_id) : null;
                   return (
-                    <div 
-                      key={event.id} 
-                      className="group relative bg-white/10 hover:bg-white/15 rounded-lg p-3 border border-white/10 hover:border-white/20 transition-all cursor-pointer"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setSelectedEvent(event);
-                      }}
-                    >
-                      <div className="flex items-center gap-2">
-                        <div className={`w-8 h-8 rounded flex items-center justify-center flex-shrink-0 text-xs font-bold ${
-                          isToday ? 'bg-amber-500 text-white' : isTomorrow ? 'bg-blue-500 text-white' : 'bg-white/20 text-white'
-                        }`}>
-                          {eventDate.getDate()}
-                        </div>
-                        <div className="flex-1 min-w-0">
-                          <p className="text-xs font-medium text-white truncate">
-                            {event.title}
-                          </p>
-                          <p className="text-[10px] text-white/50">
-                            {eventDate.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}
-                            {isToday && <span className="ml-1 text-amber-400">• Hoje</span>}
-                            {isTomorrow && <span className="ml-1 text-blue-400">• Amanhã</span>}
-                          </p>
-                        </div>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-            
-            {/* Botão Ver Agenda Completa */}
-            <div className="mt-4 pt-3 border-t border-white/10">
-              <button
-                onClick={() => handleNavigate('agenda')}
-                className="w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-blue-600 hover:bg-blue-500 text-white rounded-lg font-medium text-sm transition-all"
-              >
-                Ver Agenda Completa
-                <ArrowRight className="w-4 h-4" />
-              </button>
-            </div>
-          </div>
-        </div>
-        </div>
-
-        {/* Controle Financeiro */}
-        {financialStats && (
-          <FinancialCard 
-            stats={financialStats}
-            onNavigate={() => handleNavigate('financeiro')}
-          />
-        )}
-      </div>
-
-      {/* Grid de 2 Colunas - Prazos e Tarefas */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
-
-          {/* Próximos Prazos */}
-          <div className="bg-white rounded-2xl p-5 shadow-sm border border-slate-200 hover:shadow-md transition-shadow">
-            <div className="mb-4 flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-red-500 to-red-600 flex items-center justify-center">
-                  <CalendarDays className="w-5 h-5 text-white" />
-                </div>
-                <div>
-                  <h2 className="text-sm font-bold text-slate-800">Próximos Prazos</h2>
-                  <p className="text-xs text-slate-500">{upcomingDeadlines.length} pendente{upcomingDeadlines.length !== 1 ? 's' : ''}</p>
-                </div>
-              </div>
-              <button
-                onClick={() => handleNavigate('prazos')}
-                className="flex items-center gap-1 text-red-500 hover:text-red-600 text-xs font-semibold"
-              >
-                Ver todos
-                <ChevronRight className="w-4 h-4" />
-              </button>
-            </div>
-            {upcomingDeadlines.length === 0 ? (
-              <div className="text-center py-8">
-                <CalendarDays className="w-10 h-10 text-slate-300 mx-auto mb-2" />
-                <p className="text-sm text-slate-500">Nenhum prazo pendente</p>
-              </div>
-            ) : (
-              <div className="space-y-2">
-                {upcomingDeadlines.map((deadline) => {
-                  const client = deadline.client_id ? clientMap.get(deadline.client_id) : null;
-                  const dueDate = new Date(deadline.due_date!);
-                  const today = new Date();
-                  const diffDays = Math.ceil((dueDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
-                  const isUrgent = diffDays <= 3;
-                  
-                  return (
-                    <div
-                      key={deadline.id}
-                      onClick={() => handleNavigate('prazos')}
-                      className={`flex items-center gap-3 rounded-xl p-3 cursor-pointer transition-all hover:scale-[1.02] ${
-                        isUrgent ? 'bg-red-50 border border-red-100' : 'bg-slate-50 border border-slate-100'
-                      }`}
-                    >
-                      <div className={`w-10 h-10 rounded-lg flex items-center justify-center flex-shrink-0 ${
-                        isUrgent ? 'bg-red-100' : 'bg-slate-200'
-                      }`}>
-                        <span className="text-sm font-bold text-slate-700">
-                          {dueDate.getDate()}
-                        </span>
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <p className="font-medium text-slate-900 text-sm truncate">{deadline.title}</p>
-                        <p className="text-xs text-slate-500 truncate">
-                          {client?.full_name || 'Sem cliente'}
-                        </p>
-                      </div>
-                      <div className="text-right flex-shrink-0">
-                        <span className={`inline-block px-2 py-1 rounded-full text-[10px] font-bold uppercase ${
-                          isUrgent ? 'bg-red-500 text-white' : 
-                          deadline.priority === 'alta' ? 'bg-red-100 text-red-700' :
-                          deadline.priority === 'media' ? 'bg-amber-100 text-amber-700' :
-                          'bg-blue-100 text-blue-700'
-                        }`}>
-                          {isUrgent ? `${diffDays}d` : deadline.priority}
-                        </span>
-                      </div>
-                    </div>
+                    <AgendaItem
+                      key={event.id}
+                      time={eventDate.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}
+                      dateLabel={getDateLabel(eventDate)}
+                      isToday={isToday}
+                      title={event.title}
+                      subtitle={client?.full_name || event.type}
+                      onClick={() => handleNavigate('agenda')}
+                    />
                   );
                 })}
               </div>
             )}
           </div>
-
-          {/* Tarefas Recentes */}
-          <div className="bg-white rounded-2xl p-5 shadow-sm border border-slate-200 hover:shadow-md transition-shadow">
-            <div className="mb-4 flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-emerald-500 to-emerald-600 flex items-center justify-center">
-                  <CheckSquare className="w-5 h-5 text-white" />
-                </div>
-                <div>
-                  <h2 className="text-sm font-bold text-slate-800">Tarefas Pendentes</h2>
-                  <p className="text-xs text-slate-500">{recentTasks.length} tarefa{recentTasks.length !== 1 ? 's' : ''}</p>
-                </div>
-              </div>
-              <button
-                onClick={() => handleNavigate('tarefas')}
-                className="flex items-center gap-1 text-emerald-500 hover:text-emerald-600 text-xs font-semibold"
-              >
-                Ver todas
-                <ChevronRight className="w-4 h-4" />
-              </button>
-            </div>
-            {recentTasks.length === 0 ? (
-              <div className="text-center py-8">
-                <CheckSquare className="w-10 h-10 text-slate-300 mx-auto mb-2" />
-                <p className="text-sm text-slate-500">Nenhuma tarefa pendente</p>
-              </div>
-            ) : (
-              <div className="space-y-2">
-                {recentTasks.map((task) => (
-                  <div 
-                    key={task.id} 
-                    onClick={() => handleNavigate('tarefas')}
-                    className="flex items-center gap-3 p-3 rounded-xl bg-slate-50 border border-slate-100 hover:bg-emerald-50 hover:border-emerald-100 cursor-pointer transition-all hover:scale-[1.02]"
-                  >
-                    <div className="w-8 h-8 rounded-lg bg-emerald-100 flex items-center justify-center flex-shrink-0">
-                      <CheckSquare className="w-4 h-4 text-emerald-600" />
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm font-medium text-slate-900 truncate">{task.title}</p>
-                    </div>
-                    <ChevronRight className="w-4 h-4 text-slate-400" />
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-      </div>
-
-      {/* Grid de 4 Colunas - DJEN, Processos e Requerimentos */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
-        {/* Widget de Intimações DJEN */}
-        <div className="bg-gradient-to-br from-red-700 to-red-800 rounded-xl shadow-lg overflow-hidden">
-          <div className="p-4">
-            <div className="flex items-center justify-between mb-3">
-              <div className="flex items-center gap-2">
-                <div className="w-8 h-8 rounded-lg bg-red-600 flex items-center justify-center">
-                  <Bell className="w-4 h-4 text-white" />
-                </div>
-                <div>
-                  <h2 className="text-sm font-bold text-white">Intimações DJEN</h2>
-                  <p className="text-[10px] text-white/60">{djenIntimacoes.length} não lida{djenIntimacoes.length !== 1 ? 's' : ''}</p>
-                </div>
-              </div>
-            </div>
-            {djenIntimacoes.length === 0 ? (
-              <div className="bg-white/10 rounded-lg p-4 text-center border border-white/10">
-                <Scale className="w-6 h-6 text-white/30 mx-auto mb-1" />
-                <p className="text-white/60 text-xs">Nenhuma intimação</p>
-              </div>
-            ) : (
-              <div className="space-y-1.5">
-                {djenIntimacoes.slice(0, 2).map((intimacao) => (
-                  <div 
-                    key={intimacao.id} 
-                    className="bg-white/10 hover:bg-white/15 rounded-lg p-2 border border-white/10 cursor-pointer transition-all"
-                    onClick={() => setSelectedIntimacao(intimacao)}
-                  >
-                    <p className="text-xs font-medium text-white truncate">{intimacao.tipo_comunicacao || 'Comunicação'}</p>
-                    <p className="text-[10px] text-white/50 truncate">{intimacao.numero_processo_mascara}</p>
-                  </div>
-                ))}
-              </div>
-            )}
-            <button
-              onClick={() => handleNavigate('intimacoes')}
-              className="w-full mt-3 flex items-center justify-center gap-1 px-3 py-1.5 bg-red-600 hover:bg-red-500 text-white rounded-lg font-medium text-xs transition-all"
-            >
-              Ver Todas <ArrowRight className="w-3 h-3" />
-            </button>
-          </div>
         </div>
-        {/* Processos Aguardando Confecção */}
-        <div className="bg-white rounded-2xl p-5 shadow-sm border border-slate-200 hover:shadow-md transition-shadow">
-          <div className="mb-4 flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-amber-500 to-orange-500 flex items-center justify-center">
-                <FileText className="w-5 h-5 text-white" />
+      );
+    }
+    if (widgetId === 'tarefas') {
+      return (
+        <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-3">
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="text-slate-900 font-bold text-sm flex items-center gap-2">
+              <CheckSquare className="w-4 h-4 text-orange-500" />
+              Tarefas Pendentes
+            </h3>
+            {recentTasks.filter((t) => {
+              const due = t.due_date ? new Date(t.due_date) : null;
+              return due && due <= new Date();
+            }).length > 0 && (
+              <div className="text-xs bg-orange-100 text-orange-600 px-2 py-0.5 rounded-full font-bold">
+                {recentTasks.filter((t) => {
+                  const due = t.due_date ? new Date(t.due_date) : null;
+                  return due && due <= new Date();
+                }).length}{' '}
+                Urgente
               </div>
-              <div>
-                <h2 className="text-sm font-bold text-slate-800">Aguardando Confecção</h2>
-                <p className="text-xs text-slate-500">{awaitingDraftProcessesList.length} processo{awaitingDraftProcessesList.length !== 1 ? 's' : ''}</p>
-              </div>
-            </div>
-            <button
-              onClick={() => handleNavigate('processos')}
-              className="flex items-center gap-1 text-amber-500 hover:text-amber-600 text-xs font-semibold"
-            >
-              Ver
-              <ChevronRight className="w-4 h-4" />
-            </button>
+            )}
           </div>
-          {awaitingDraftProcessesList.length === 0 ? (
-            <div className="text-center py-6">
-              <FileText className="w-8 h-8 text-slate-300 mx-auto mb-2" />
-              <p className="text-sm text-slate-500">Nenhum processo aguardando</p>
+          {recentTasks.length === 0 ? (
+            <div className="text-center py-6 text-slate-500 text-sm">
+              <CheckCircle className="w-8 h-8 mx-auto mb-2 text-slate-300" />
+              Nenhuma tarefa pendente
             </div>
           ) : (
-            <div className="space-y-2 max-h-[200px] overflow-y-auto">
-              {awaitingDraftProcessesList.map((process) => {
-                const client = process.client_id ? clientMap.get(process.client_id) : null;
+            <div className="flex flex-col gap-3">
+              {recentTasks.slice(0, 4).map((task) => {
+                const dueDate = task.due_date ? new Date(task.due_date) : null;
+                const isUrgent = !!(dueDate && dueDate <= new Date());
                 return (
-                  <div 
-                    key={process.id} 
-                    onClick={() => handleNavigate('processos')}
-                    className="p-3 rounded-xl bg-amber-50 border border-amber-100 hover:bg-amber-100 cursor-pointer transition-all"
-                  >
-                    <p className="text-sm font-medium text-slate-900 truncate">{client?.full_name || 'Cliente não informado'}</p>
-                    <p className="text-xs text-slate-500 truncate">{process.process_code || 'Sem código'}</p>
-                  </div>
+                  <TaskItem
+                    key={task.id}
+                    title={task.title}
+                    dueLabel={getDueLabel(task.due_date)}
+                    isUrgent={isUrgent}
+                  />
                 );
               })}
             </div>
           )}
+          <button
+            onClick={() => handleNavigate('tarefas')}
+            className="w-full mt-4 py-2 border border-dashed border-slate-300 rounded-lg text-slate-500 text-xs hover:bg-slate-50 transition-colors font-medium"
+          >
+            + Nova Tarefa
+          </button>
         </div>
-
-        {/* Requerimentos Aguardando Confecção */}
-        <div className="bg-white rounded-2xl p-5 shadow-sm border border-slate-200 hover:shadow-md transition-shadow">
-          <div className="mb-4 flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-purple-500 to-violet-500 flex items-center justify-center">
-                <Target className="w-5 h-5 text-white" />
-              </div>
-              <div>
-                <h2 className="text-sm font-bold text-slate-800">Requerimentos</h2>
-                <p className="text-xs text-slate-500">{pendingRequirementsList.length} pendente{pendingRequirementsList.length !== 1 ? 's' : ''}</p>
-              </div>
-            </div>
-            <button
-              onClick={() => handleNavigate('requerimentos')}
-              className="flex items-center gap-1 text-purple-500 hover:text-purple-600 text-xs font-semibold"
-            >
-              Ver
-              <ChevronRight className="w-4 h-4" />
-            </button>
+      );
+    }
+    if (widgetId === 'djen') {
+      return (
+        <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-3">
+          <div className="flex items-center justify-between mb-3">
+            <h3 className="text-slate-900 font-bold text-sm flex items-center gap-2">
+              <Newspaper className="w-4 h-4 text-blue-500" />
+              Intimações DJEN
+            </h3>
+            {djenIntimacoes.length > 0 && (
+              <span className="text-xs bg-blue-100 text-blue-600 px-2 py-0.5 rounded-full font-bold">
+                {djenIntimacoes.length} Nova{djenIntimacoes.length !== 1 ? 's' : ''}
+              </span>
+            )}
           </div>
-          {pendingRequirementsList.length === 0 ? (
-            <div className="text-center py-6">
-              <Target className="w-8 h-8 text-slate-300 mx-auto mb-2" />
-              <p className="text-sm text-slate-500">Nenhum requerimento pendente</p>
+          {djenIntimacoes.length === 0 ? (
+            <div className="text-center py-4 text-slate-500 text-sm">
+              <Bell className="w-6 h-6 mx-auto mb-2 text-slate-300" />
+              Nenhuma intimação
             </div>
           ) : (
-            <div className="space-y-2 max-h-[200px] overflow-y-auto">
-              {pendingRequirementsList.map((requirement) => (
-                <div 
-                  key={requirement.id} 
-                  onClick={() => handleNavigate('requerimentos')}
-                  className="p-3 rounded-xl bg-purple-50 border border-purple-100 hover:bg-purple-100 cursor-pointer transition-all"
-                >
-                  <p className="text-sm font-medium text-slate-900 truncate">{requirement.beneficiary || 'Sem beneficiário'}</p>
-                  <p className="text-xs text-slate-500 truncate">Aguardando confecção</p>
-                </div>
+            <div className="flex flex-col gap-2">
+              {djenIntimacoes.slice(0, 2).map((int) => (
+                <DjenNotification
+                  key={int.id}
+                  processNumber={int.numero_processo || 'Sem número'}
+                  content={int.texto || 'Sem conteúdo'}
+                  timeAgo={formatTimeAgo(int.data_disponibilizacao || new Date().toISOString())}
+                  onClick={() => handleNavigate('intimacoes')}
+                />
               ))}
             </div>
           )}
         </div>
-
-        {/* Processos em Andamento */}
-        <div className="bg-white rounded-2xl p-5 shadow-sm border border-slate-200 hover:shadow-md transition-shadow">
-          <div className="mb-4 flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-blue-500 to-indigo-500 flex items-center justify-center">
-                <Gavel className="w-5 h-5 text-white" />
-              </div>
-              <div>
-                <h2 className="text-sm font-bold text-slate-800">Em Andamento</h2>
-                <p className="text-xs text-slate-500">{pendingProcessesList.length} processo{pendingProcessesList.length !== 1 ? 's' : ''}</p>
-              </div>
-            </div>
-            <button
-              onClick={() => handleNavigate('processos')}
-              className="flex items-center gap-1 text-blue-500 hover:text-blue-600 text-xs font-semibold"
-            >
-              Ver
-              <ChevronRight className="w-4 h-4" />
-            </button>
+      );
+    }
+    if (widgetId === 'confeccao') {
+      const hasItems = awaitingDraftProcesses.length > 0 || requirementsAwaiting.length > 0;
+      
+      return (
+        <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-3">
+          <div className="flex items-center justify-between mb-3">
+            <h3 className="text-slate-900 font-bold text-sm flex items-center gap-2">
+              <FileText className="w-4 h-4 text-indigo-500" />
+              Aguardando Confecção
+            </h3>
+            <span className="text-xs bg-indigo-100 text-indigo-700 px-2 py-0.5 rounded-full font-bold">
+              {awaitingDraftProcesses.length + requirementsAwaiting.length}
+            </span>
           </div>
-          {pendingProcessesList.length === 0 ? (
-            <div className="text-center py-6">
-              <Gavel className="w-8 h-8 text-slate-300 mx-auto mb-2" />
-              <p className="text-sm text-slate-500">Nenhum processo em andamento</p>
+          
+          {!hasItems ? (
+            <div className="text-center py-4 text-slate-500 text-sm">
+              <FileText className="w-6 h-6 mx-auto mb-2 text-slate-300" />
+              Nada aguardando
             </div>
           ) : (
-            <div className="space-y-2 max-h-[200px] overflow-y-auto">
-              {pendingProcessesList.map((process) => {
-                const client = process.client_id ? clientMap.get(process.client_id) : null;
-                return (
-                  <div 
-                    key={process.id} 
-                    onClick={() => handleNavigate('processos')}
-                    className="p-3 rounded-xl bg-blue-50 border border-blue-100 hover:bg-blue-100 cursor-pointer transition-all"
-                  >
-                    <p className="text-sm font-medium text-slate-900 truncate">{client?.full_name || 'Cliente não informado'}</p>
-                    <p className="text-xs text-slate-500 truncate">{process.process_code || 'Sem código'}</p>
+            <div className="flex flex-col gap-2">
+              {/* Processos */}
+              <button
+                onClick={() => handleNavigate('processos', { statusFilter: 'aguardando_confeccao' })}
+                className="text-left rounded-xl border border-slate-200 bg-slate-50 hover:bg-slate-100 transition-colors p-2"
+              >
+                <div className="flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-2 min-w-0">
+                    <div className="w-7 h-7 rounded-lg bg-indigo-100 flex items-center justify-center text-indigo-600 flex-shrink-0">
+                      <Briefcase className="w-4 h-4" />
+                    </div>
+                    <div className="min-w-0">
+                      <div className="text-xs font-bold text-slate-900 truncate">Processos</div>
+                      <div className="text-[10px] text-slate-500 truncate">Aguardando confecção</div>
+                    </div>
                   </div>
-                );
-              })}
+                  <div className="text-xs font-bold bg-white border border-slate-200 px-2 py-0.5 rounded-full text-slate-700 flex-shrink-0">
+                    {awaitingDraftProcesses.length}
+                  </div>
+                </div>
+
+                <div className="mt-2 flex flex-col gap-1">
+                  {awaitingDraftProcesses.length === 0 ? (
+                    <div className="text-[10px] text-slate-500">Nenhum processo</div>
+                  ) : (
+                    <>
+                      {awaitingDraftProcesses.slice(0, 2).map((process) => {
+                        const client = process.client_id ? clientMap.get(process.client_id) : null;
+                        const primary = client?.full_name || 'Cliente não vinculado';
+                        const secondary = process.process_code || 'Processo';
+                        return (
+                          <div key={process.id} className="flex items-start gap-1.5">
+                            <span className="mt-1.5 w-1.5 h-1.5 rounded-full bg-indigo-400 flex-shrink-0" />
+                            <div className="min-w-0">
+                              <div className="text-[11px] font-semibold text-slate-800 truncate">{primary}</div>
+                              <div className="text-[10px] text-slate-500 truncate">{secondary}</div>
+                            </div>
+                          </div>
+                        );
+                      })}
+                      {awaitingDraftProcesses.length > 2 && (
+                        <div className="text-[10px] text-indigo-700 font-semibold">+{awaitingDraftProcesses.length - 2} processos</div>
+                      )}
+                    </>
+                  )}
+                </div>
+              </button>
+
+              {/* Requerimentos */}
+              <button
+                onClick={() => handleNavigate('requerimentos', { statusTab: 'aguardando_confeccao' })}
+                className="text-left rounded-xl border border-slate-200 bg-slate-50 hover:bg-slate-100 transition-colors p-2"
+              >
+                <div className="flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-2 min-w-0">
+                    <div className="w-7 h-7 rounded-lg bg-purple-100 flex items-center justify-center text-purple-600 flex-shrink-0">
+                      <FileText className="w-4 h-4" />
+                    </div>
+                    <div className="min-w-0">
+                      <div className="text-xs font-bold text-slate-900 truncate">Requerimentos</div>
+                      <div className="text-[10px] text-slate-500 truncate">Aguardando confecção</div>
+                    </div>
+                  </div>
+                  <div className="text-xs font-bold bg-white border border-slate-200 px-2 py-0.5 rounded-full text-slate-700 flex-shrink-0">
+                    {requirementsAwaiting.length}
+                  </div>
+                </div>
+
+                <div className="mt-2 flex flex-col gap-1">
+                  {requirementsAwaiting.length === 0 ? (
+                    <div className="text-[10px] text-slate-500">Nenhum requerimento</div>
+                  ) : (
+                    <>
+                      {requirementsAwaiting.slice(0, 2).map((req) => {
+                        const primary = req.beneficiary || 'Beneficiário não informado';
+                        const secondary = (req.benefit_type || 'Requerimento').replace(/_/g, ' ');
+                        return (
+                          <div key={req.id} className="flex items-start gap-1.5">
+                            <span className="mt-1.5 w-1.5 h-1.5 rounded-full bg-purple-400 flex-shrink-0" />
+                            <div className="min-w-0">
+                              <div className="text-[11px] font-semibold text-slate-800 truncate">{primary}</div>
+                              <div className="text-[10px] text-slate-500 truncate">{secondary}</div>
+                            </div>
+                          </div>
+                        );
+                      })}
+                      {requirementsAwaiting.length > 2 && (
+                        <div className="text-[10px] text-purple-700 font-semibold">+{requirementsAwaiting.length - 2} requerimentos</div>
+                      )}
+                    </>
+                  )}
+                </div>
+              </button>
+
+              {/* Mostrar mais se houver muitos itens */}
+              {(awaitingDraftProcesses.length + requirementsAwaiting.length) > 4 && (
+                <button
+                  onClick={() => handleNavigate('processos', { statusFilter: 'aguardando_confeccao' })}
+                  className="text-xs text-center text-indigo-600 hover:text-indigo-700 font-semibold py-1"
+                >
+                  Ver todos ({awaitingDraftProcesses.length + requirementsAwaiting.length})
+                </button>
+              )}
             </div>
           )}
         </div>
-      </div>
-
-      {/* Modal de Detalhes do Evento */}
-      {selectedEvent && (
-        <div
-          className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4"
-          onClick={() => setSelectedEvent(null)}
-        >
-          <div
-            className="bg-white rounded-3xl shadow-2xl max-w-lg w-full overflow-hidden"
-            onClick={(e) => e.stopPropagation()}
+      );
+    }
+    if (widgetId === 'financeiro') {
+      return (
+        <FinancialCard
+          stats={financialStats}
+          onNavigate={() => handleNavigate('financeiro')}
+        />
+      );
+    }
+    if (widgetId === 'navegacao') {
+      return (
+        <nav className="flex flex-col gap-2">
+          <button
+            onClick={() => handleNavigate('dashboard')}
+            className="flex items-center gap-3 px-4 py-3 bg-blue-50 text-blue-600 border border-blue-100 rounded-xl font-medium transition-all shadow-sm"
           >
-            <div className="bg-gradient-to-r from-blue-50 to-white p-6 border-b border-slate-100">
-              <div className="flex items-start justify-between">
-                <div>
-                  <h3 className="text-xl font-bold text-slate-900">{selectedEvent.title}</h3>
-                  <span className="inline-flex items-center gap-1 mt-2 px-3 py-1 rounded-full bg-blue-100 text-blue-700 text-xs font-semibold">
-                    Compromisso
-                  </span>
+            <Sparkles className="w-5 h-5" />
+            Feed de Notícias
+          </button>
+          <button
+            onClick={() => handleNavigate('processos')}
+            className="flex items-center gap-3 px-4 py-3 text-slate-600 hover:bg-slate-100 hover:text-slate-900 rounded-xl font-medium transition-colors"
+          >
+            <Briefcase className="w-5 h-5" />
+            Meus Processos
+          </button>
+          <button
+            onClick={() => handleNavigate('agenda')}
+            className="flex items-center gap-3 px-4 py-3 text-slate-600 hover:bg-slate-100 hover:text-slate-900 rounded-xl font-medium transition-colors"
+          >
+            <Calendar className="w-5 h-5" />
+            Agenda
+          </button>
+          <button
+            onClick={() => handleNavigate('clientes')}
+            className="flex items-center gap-3 px-4 py-3 text-slate-600 hover:bg-slate-100 hover:text-slate-900 rounded-xl font-medium transition-colors"
+          >
+            <Users className="w-5 h-5" />
+            Clientes
+          </button>
+          <button
+            onClick={() => handleNavigate('documentos')}
+            className="flex items-center gap-3 px-4 py-3 text-slate-600 hover:bg-slate-100 hover:text-slate-900 rounded-xl font-medium transition-colors"
+          >
+            <Bookmark className="w-5 h-5" />
+            Documentos
+          </button>
+        </nav>
+      );
+    }
+    return null;
+  };
+
+  return (
+    <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+      <div className="space-y-4">
+        {/* Main Content */}
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 lg:gap-6 items-start">
+          {/* Sidebar Esquerda - Widgets Arrastáveis */}
+          <aside className="hidden lg:flex lg:col-span-3 flex-col sticky top-4 order-1">
+            <SidebarDroppable id="sidebar-left">
+              <SortableContext items={leftWidgets} strategy={rectSortingStrategy}>
+                {leftWidgets.map((widgetId) => (
+                  <SortableWidget key={widgetId} id={widgetId}>
+                    {renderWidget(widgetId)}
+                  </SortableWidget>
+                ))}
+              </SortableContext>
+            </SidebarDroppable>
+          </aside>
+
+        {/* Feed Central */}
+        <main className="col-span-1 lg:col-span-9 xl:col-span-6 flex flex-col gap-6 order-2">
+          {/* Cards de Estatísticas */}
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+            <StatCard
+              icon={<Users className="w-5 h-5" />}
+              iconColor="text-blue-500"
+              label="Clientes"
+              value={activeClients}
+              hoverVariant="blue"
+              onClick={() => handleNavigate('clientes')}
+            />
+            <StatCard
+              icon={<Gavel className="w-5 h-5" />}
+              iconColor="text-purple-500"
+              label="Processos"
+              value={activeProcesses}
+              hoverVariant="purple"
+              onClick={() => handleNavigate('processos')}
+            />
+            <StatCard
+              icon={<Timer className="w-5 h-5" />}
+              iconColor="text-red-500"
+              label="Prazos"
+              value={pendingDeadlines}
+              hoverVariant="red"
+              onClick={() => handleNavigate('prazos')}
+            />
+            <StatCard
+              icon={<CheckSquare className="w-5 h-5" />}
+              iconColor="text-green-500"
+              label="Tarefas"
+              value={pendingTasks}
+              hoverVariant="green"
+              onClick={() => handleNavigate('tarefas')}
+            />
+          </div>
+
+          {/* Caixa de Postagem - Design Premium */}
+          <div className="bg-gradient-to-br from-white to-slate-50 rounded-2xl border border-slate-200/80 shadow-lg shadow-slate-200/50 overflow-visible">
+            {/* Header do Post */}
+            <div className="p-4 pb-3">
+              <div className="flex gap-3">
+                <div className="relative">
+                  <Avatar src={currentProfile?.avatar_url} name={currentProfile?.name || 'Usuário'} size="md" />
+                  <div className="absolute -bottom-0.5 -right-0.5 w-3.5 h-3.5 bg-green-500 rounded-full border-2 border-white" />
                 </div>
-                <button
-                  onClick={() => setSelectedEvent(null)}
-                  className="text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-full p-2 transition-all"
-                >
-                  <X className="w-5 h-5" />
-                </button>
-              </div>
-            </div>
-            <div className="p-6 space-y-4">
-              {/* Tipo de Evento */}
-              <div className="flex items-center gap-2">
-                <div className={`w-2 h-2 rounded-full ${
-                  selectedEvent.type === 'hearing' ? 'bg-red-500' :
-                  selectedEvent.type === 'deadline' ? 'bg-blue-500' :
-                  selectedEvent.type === 'payment' ? 'bg-green-500' :
-                  'bg-purple-500'
-                }`}></div>
-                <span className="font-semibold text-slate-700">Tipo:</span>
-                <span className="text-slate-600 capitalize">
-                  {selectedEvent.type === 'deadline' && 'Prazo'}
-                  {selectedEvent.type === 'hearing' && 'Audiência'}
-                  {selectedEvent.type === 'requirement' && 'Exigência'}
-                  {selectedEvent.type === 'payment' && 'Pagamento'}
-                  {selectedEvent.type === 'meeting' && 'Reunião'}
-                  {selectedEvent.type === 'pericia' && 'Perícia'}
-                </span>
+                <div className="flex-1 relative">
+                  <textarea
+                    ref={postInputRef}
+                    value={postText}
+                    onChange={handlePostTextChange}
+                    rows={2}
+                    className="w-full bg-white border border-slate-200 rounded-2xl px-4 py-3 text-slate-900 placeholder:text-slate-400 focus:ring-2 focus:ring-blue-500/30 focus:border-blue-400 focus:shadow-lg focus:shadow-blue-500/10 transition-all resize-none text-sm leading-relaxed"
+                    placeholder="O que você gostaria de compartilhar? Use @ para mencionar e # para tags..."
+                  />
+
+                  {showEmojiPicker && (
+                    <div className="absolute bottom-14 left-0 z-20 w-[280px] rounded-2xl border border-slate-200 bg-white shadow-xl p-3">
+                      <p className="text-xs font-semibold text-slate-500 mb-2">Emojis</p>
+                      <div className="grid grid-cols-8 gap-1">
+                        {['😀','😄','😁','😂','🤣','😊','😍','😘','😎','🤔','😅','😭','😡','👍','👎','🙏','👏','💪','🔥','🎉','✅','❌','⚠️','📌','📎','📞','💬','❤️','🧠','📄','🗂️','🕒'].map((e) => (
+                          <button
+                            key={e}
+                            type="button"
+                            className="h-8 w-8 rounded-lg hover:bg-slate-100 transition text-lg"
+                            onClick={() => handlePickEmoji(e)}
+                            aria-label={`Emoji ${e}`}
+                          >
+                            {e}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                  
+                  {/* Dropdown de Menções */}
+                  {showMentionDropdown && filteredProfiles.length > 0 && (
+                    <div className="absolute left-0 right-0 top-full mt-1 bg-white rounded-lg border border-slate-200 shadow-lg z-50 max-h-48 overflow-y-auto">
+                      <div className="p-2 border-b border-slate-100">
+                        <span className="text-xs text-slate-500 font-medium flex items-center gap-1">
+                          <AtSign className="w-3 h-3" /> Mencionar usuário
+                        </span>
+                      </div>
+                      {filteredProfiles.map((profile) => (
+                        <button
+                          key={profile.id}
+                          onClick={() => insertMention(profile)}
+                          className="w-full flex items-center gap-3 px-3 py-2 hover:bg-slate-50 transition-colors text-left"
+                        >
+                          <Avatar src={profile.avatar_url} name={profile.name} size="sm" />
+                          <div>
+                            <p className="text-sm font-medium text-slate-900">{profile.name}</p>
+                            <p className="text-xs text-slate-500">{profile.role}</p>
+                          </div>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+
+                  {/* Dropdown de Tags */}
+                  {showTagDropdown && !selectedTagForRecords && (
+                    <div className="absolute left-0 right-0 top-full mt-1 bg-white rounded-lg border border-slate-200 shadow-lg z-50">
+                      <div className="p-2 border-b border-slate-100">
+                        <span className="text-xs text-slate-500 font-medium flex items-center gap-1">
+                          <Hash className="w-3 h-3" /> Selecione uma categoria para ver registros
+                        </span>
+                      </div>
+                      <div className="p-2 grid grid-cols-2 gap-1">
+                        {availableTags.map((tag) => (
+                          <button
+                            key={tag.id}
+                            onClick={() => loadTagRecords(tag.id)}
+                            className={`flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition-colors ${tag.color} hover:opacity-80`}
+                          >
+                            <tag.icon className="w-4 h-4" />
+                            {tag.label}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Dropdown de Registros da Tag Selecionada */}
+                  {selectedTagForRecords && (
+                    <div className="absolute left-0 right-0 top-full mt-1 bg-white rounded-lg border border-slate-200 shadow-lg z-50 max-h-80 overflow-y-auto">
+                      <div className="p-2 border-b border-slate-100 flex items-center justify-between sticky top-0 bg-white">
+                        <span className="text-xs text-slate-500 font-medium flex items-center gap-1">
+                          <Hash className="w-3 h-3" /> 
+                          {availableTags.find(t => t.id === selectedTagForRecords)?.label || 'Registros'}
+                        </span>
+                        <button 
+                          onClick={closeTagRecordsDropdown}
+                          className="text-slate-400 hover:text-slate-600"
+                        >
+                          <X className="w-4 h-4" />
+                        </button>
+                      </div>
+                      
+                      {loadingTagRecords ? (
+                        <div className="p-4 text-center">
+                          <Loader2 className="w-5 h-5 mx-auto text-blue-500 animate-spin" />
+                          <p className="text-xs text-slate-500 mt-1">Carregando...</p>
+                        </div>
+                      ) : tagRecords.length === 0 ? (
+                        <div className="p-4 text-center">
+                          <p className="text-sm text-slate-500">Nenhum registro encontrado</p>
+                        </div>
+                      ) : (
+                        <div className="divide-y divide-slate-100">
+                          {tagRecords.map((record) => {
+                            const tagConfig = availableTags.find(t => t.id === selectedTagForRecords);
+                            return (
+                              <button
+                                key={record.id}
+                                onClick={() => selectTagRecord(record)}
+                                className="w-full p-3 text-left hover:bg-slate-50 transition-colors"
+                              >
+                                <div className="flex items-start gap-3">
+                                  <div className={`w-8 h-8 rounded-lg flex items-center justify-center ${tagConfig?.color || 'bg-slate-100'}`}>
+                                    {tagConfig && <tagConfig.icon className="w-4 h-4" />}
+                                  </div>
+                                  <div className="flex-1 min-w-0">
+                                    <p className="text-sm font-medium text-slate-900 truncate">{record.label}</p>
+                                    <p className="text-xs text-slate-500 truncate">{record.sublabel}</p>
+                                  </div>
+                                </div>
+                              </button>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
               </div>
 
-              {/* Data */}
-              <div className="flex items-center gap-2">
-                <Calendar className="w-5 h-5 text-slate-600" />
-                <div className="flex-1">
-                  <span className="font-semibold text-slate-700">Data:</span>
-                  <span className="text-slate-600 ml-2">
-                    {new Date(selectedEvent.start_at).toLocaleDateString('pt-BR', {
-                      day: '2-digit',
-                      month: 'long',
-                      year: 'numeric',
-                      hour: '2-digit',
-                      minute: '2-digit',
-                    })}
-                  </span>
+              {/* Tags Selecionadas */}
+              {selectedTags.length > 0 && (
+                <div className="flex flex-wrap gap-2 mt-3 ml-13">
+                  {selectedTags.map((tagId) => {
+                    const tag = availableTags.find(t => t.id === tagId);
+                    if (!tag) return null;
+                    return (
+                      <span
+                        key={tagId}
+                        className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium ${tag.color}`}
+                      >
+                        <tag.icon className="w-3 h-3" />
+                        #{tag.label}
+                        <button
+                          onClick={() => toggleTag(tagId)}
+                          className="ml-1 hover:opacity-70"
+                        >
+                          <X className="w-3 h-3" />
+                        </button>
+                      </span>
+                    );
+                  })}
                 </div>
-              </div>
+              )}
 
-              {/* Cliente */}
-              {selectedEvent.client_id && (
-                <div className="flex items-center gap-2">
-                  <Users className="w-5 h-5 text-slate-600" />
-                  <div className="flex-1">
-                    <span className="font-semibold text-slate-700">Cliente:</span>
-                    <span className="text-slate-600 ml-2">
-                      {clientMap.get(selectedEvent.client_id)?.full_name || 'Cliente vinculado'}
-                    </span>
+              {pendingAttachments.length > 0 && (
+                <div className="mt-3 ml-13">
+                  <div className="flex flex-wrap gap-2">
+                    {pendingAttachments.map((att) => (
+                      <div key={att.attachment.filePath} className="relative">
+                        <img src={att.localUrl} className="h-20 w-20 object-cover rounded-lg border border-slate-200" />
+                        <button
+                          type="button"
+                          className="absolute -top-2 -right-2 bg-white rounded-full border border-slate-200 shadow p-1"
+                          onClick={() => {
+                            try { URL.revokeObjectURL(att.localUrl); } catch {}
+                            setPendingAttachments((prev) => prev.filter((p) => p.attachment.filePath !== att.attachment.filePath));
+                          }}
+                          aria-label="Remover anexo"
+                        >
+                          <X className="w-3 h-3 text-slate-600" />
+                        </button>
+                      </div>
+                    ))}
                   </div>
                 </div>
               )}
+            </div>
 
-              <div className="mt-6 flex justify-end gap-3">
+            {/* Barra de Ações */}
+            <div className="flex items-center justify-between px-4 py-3 bg-gradient-to-r from-slate-50 to-slate-100/50 border-t border-slate-200/80">
+              <div className="flex items-center gap-1">
                 <button
-                  onClick={() => setSelectedEvent(null)}
-                  className="px-4 py-2 text-sm font-medium text-slate-600 hover:text-slate-800 transition"
-                >
-                  Fechar
-                </button>
-                <button
+                  type="button"
                   onClick={() => {
-                    setSelectedEvent(null);
-                    handleNavigate('agenda');
+                    setPostText(postText + '@');
+                    setShowMentionDropdown(true);
+                    postInputRef.current?.focus();
                   }}
-                  className="px-4 py-2 text-sm font-semibold bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition"
+                  className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-slate-600 hover:bg-slate-200 transition-colors text-sm font-medium"
                 >
-                  Ver na Agenda
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Modal de Detalhes da Intimação */}
-      {selectedIntimacao && (
-        <div
-          className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4"
-          onClick={() => setSelectedIntimacao(null)}
-        >
-          <div
-            className="bg-white rounded-3xl shadow-2xl max-w-lg w-full overflow-hidden"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="bg-gradient-to-r from-red-50 to-white p-6 border-b border-slate-100">
-              <div className="flex items-start justify-between">
-                <div>
-                  <h3 className="text-xl font-bold text-slate-900">{selectedIntimacao.tipo_comunicacao || 'Comunicação'}</h3>
-                  <span className="inline-flex items-center gap-1 mt-2 px-3 py-1 rounded-full bg-red-100 text-red-700 text-xs font-semibold uppercase">
-                    {selectedIntimacao.sigla_tribunal}
-                  </span>
-                </div>
-                <button
-                  onClick={() => setSelectedIntimacao(null)}
-                  className="text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-full p-2 transition-all"
-                >
-                  <X className="w-5 h-5" />
-                </button>
-              </div>
-            </div>
-            <div className="p-6 space-y-4">
-              <div className="flex items-center gap-2">
-                <Calendar className="w-5 h-5 text-slate-600" />
-                <div>
-                  <span className="font-semibold text-slate-700">Data de Disponibilização:</span>
-                  <span className="text-slate-600 ml-2">
-                    {new Date(selectedIntimacao.data_disponibilizacao).toLocaleDateString('pt-BR', {
-                      day: '2-digit',
-                      month: 'long',
-                      year: 'numeric',
-                    })}
-                  </span>
-                </div>
-              </div>
-
-              <div>
-                <span className="font-semibold text-slate-700">Processo:</span>
-                <p className="text-slate-600 mt-1">{selectedIntimacao.numero_processo_mascara || selectedIntimacao.numero_processo}</p>
-              </div>
-
-              {selectedIntimacao.nome_orgao && (
-                <div>
-                  <span className="font-semibold text-slate-700">Órgão:</span>
-                  <p className="text-slate-600 mt-1">{selectedIntimacao.nome_orgao}</p>
-                </div>
-              )}
-
-              {selectedIntimacao.texto && (
-                <div>
-                  <span className="font-semibold text-slate-700">Texto:</span>
-                  <p className="text-slate-600 mt-1 text-sm max-h-40 overflow-y-auto">{selectedIntimacao.texto}</p>
-                </div>
-              )}
-
-              <div className="mt-6 flex justify-end gap-3">
-                <button
-                  onClick={() => setSelectedIntimacao(null)}
-                  className="px-4 py-2 text-sm font-medium text-slate-600 hover:text-slate-800 transition"
-                >
-                  Fechar
+                  <AtSign className="w-4 h-4 text-blue-500" />
+                  <span className="hidden sm:inline">Mencionar</span>
                 </button>
                 <button
+                  type="button"
                   onClick={() => {
-                    setSelectedIntimacao(null);
-                    handleNavigate('intimacoes');
+                    setPostText(postText + '#');
+                    setShowTagDropdown(true);
+                    postInputRef.current?.focus();
                   }}
-                  className="px-4 py-2 text-sm font-semibold bg-red-600 hover:bg-red-700 text-white rounded-lg transition"
+                  className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-slate-600 hover:bg-slate-200 transition-colors text-sm font-medium"
                 >
-                  Ver Todas Intimações
+                  <Hash className="w-4 h-4 text-emerald-500" />
+                  <span className="hidden sm:inline">Tag</span>
                 </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
+                <button
+                  type="button"
+                  onClick={handleAttachClick}
+                  disabled={uploadingAttachment}
+                  className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-slate-600 hover:bg-slate-200 transition-colors text-sm font-medium"
+                >
+                  <Image className="w-4 h-4 text-purple-500" />
+                  <span className="hidden sm:inline">Foto</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setShowEmojiPicker((v) => !v)}
+                  className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-slate-600 hover:bg-slate-200 transition-colors text-sm font-medium"
+                >
+                  <Smile className="w-4 h-4 text-amber-500" />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setShowPollCreator((v) => !v)}
+                  className={`flex items-center gap-2 px-3 py-1.5 rounded-lg transition-colors text-sm font-medium ${showPollCreator ? 'bg-indigo-100 text-indigo-700' : 'text-slate-600 hover:bg-slate-200'}`}
+                >
+                  <BarChart2 className="w-4 h-4 text-indigo-500" />
+                  <span className="hidden sm:inline">Enquete</span>
+                </button>
 
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept="image/*"
+                  className="hidden"
+                  onChange={(e) => {
+                    const file = e.target.files?.[0];
+                    if (!file) return;
+                    handleUploadAttachment(file);
+                  }}
+                />
+              </div>
+              <button
+                type="button"
+                onClick={handlePublishPost}
+                disabled={(!postText.trim() && !showPollCreator) || postingInProgress}
+                className="flex items-center gap-2 bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 disabled:from-slate-300 disabled:to-slate-400 disabled:cursor-not-allowed text-white px-5 py-2.5 rounded-xl text-sm font-bold transition-all shadow-md shadow-blue-500/25 hover:shadow-lg hover:shadow-blue-500/30 hover:-translate-y-0.5"
+              >
+                {postingInProgress ? (
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                ) : (
+                  <Send className="w-4 h-4" />
+                )}
+                {postingInProgress ? 'Publicando...' : 'Publicar'}
+              </button>
+            </div>
+
+            {/* Criador de Enquete */}
+            {showPollCreator && (
+              <div className="px-4 pb-4 border-t border-slate-100 pt-4 mt-2">
+                <div className="bg-gradient-to-br from-indigo-50 via-purple-50 to-pink-50 rounded-2xl p-5 border border-indigo-100 shadow-lg shadow-indigo-100/30">
+                  {/* Header */}
+                  <div className="flex items-center justify-between mb-4">
+                    <div className="flex items-center gap-2.5">
+                      <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center shadow-md shadow-indigo-500/25">
+                        <BarChart2 className="w-5 h-5 text-white" />
+                      </div>
+                      <div>
+                        <span className="font-bold text-indigo-900 text-base">Criar Enquete</span>
+                        <p className="text-xs text-indigo-600/70">Faça uma pergunta e adicione opções</p>
+                      </div>
+                    </div>
+                    <button
+                      onClick={() => setShowPollCreator(false)}
+                      className="w-8 h-8 rounded-lg bg-white/80 hover:bg-white text-slate-500 hover:text-slate-700 flex items-center justify-center transition-all shadow-sm hover:shadow-md"
+                    >
+                      <X className="w-4 h-4" />
+                    </button>
+                  </div>
+
+                  {/* Pergunta */}
+                  <div className="mb-4">
+                    <label className="block text-xs font-semibold text-slate-600 mb-1.5">Pergunta *</label>
+                    <input
+                      type="text"
+                      value={pollQuestion}
+                      onChange={(e) => setPollQuestion(e.target.value)}
+                      placeholder="Ex: Qual sua cor favorita?"
+                      className="w-full bg-white border-2 border-indigo-100 rounded-xl px-4 py-2.5 text-sm focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-400 transition-all placeholder:text-slate-400"
+                    />
+                  </div>
+
+                  {/* Opções */}
+                  <div className="mb-4">
+                    <div className="flex items-center justify-between mb-2">
+                      <label className="block text-xs font-semibold text-slate-600">Opções *</label>
+                      <span className="text-xs text-slate-400">{pollOptions.filter(o => o.trim()).length}/6</span>
+                    </div>
+                    <div className="space-y-2">
+                      {pollOptions.map((opt, idx) => (
+                        <div key={idx} className="flex items-center gap-2 group">
+                          <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-indigo-100 to-purple-100 text-indigo-700 text-xs font-bold flex items-center justify-center shrink-0 border border-indigo-200">
+                            {idx + 1}
+                          </div>
+                          <input
+                            type="text"
+                            value={opt}
+                            onChange={(e) => {
+                              const newOpts = [...pollOptions];
+                              newOpts[idx] = e.target.value;
+                              setPollOptions(newOpts);
+                            }}
+                            placeholder={`Opção ${idx + 1}`}
+                            className="flex-1 bg-white border-2 border-slate-100 rounded-xl px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-300 transition-all placeholder:text-slate-400"
+                          />
+                          {pollOptions.length > 2 && (
+                            <button
+                              onClick={() => setPollOptions(pollOptions.filter((_, i) => i !== idx))}
+                              className="w-7 h-7 rounded-lg bg-red-50 hover:bg-red-100 text-red-400 hover:text-red-600 flex items-center justify-center transition-all opacity-0 group-hover:opacity-100"
+                            >
+                              <Minus className="w-4 h-4" />
+                            </button>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+
+                    {pollOptions.length < 6 && (
+                      <button
+                        onClick={() => setPollOptions([...pollOptions, ''])}
+                        className="w-full mt-2 flex items-center justify-center gap-1.5 py-2 rounded-xl border-2 border-dashed border-indigo-200 text-indigo-600 text-sm font-medium hover:bg-indigo-50 hover:border-indigo-300 transition-all"
+                      >
+                        <Plus className="w-4 h-4" />
+                        Adicionar opção
+                      </button>
+                    )}
+                  </div>
+
+                  {/* Configurações */}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-4">
+                    {/* Múltiplas opções */}
+                    <div className="flex items-center gap-2 p-3 bg-white rounded-xl border-2 border-slate-100 hover:border-indigo-200 transition-all cursor-pointer"
+                      onClick={() => setPollAllowMultiple(!pollAllowMultiple)}
+                    >
+                      <div className={`w-5 h-5 rounded-lg border-2 flex items-center justify-center transition-all ${pollAllowMultiple ? 'bg-indigo-500 border-indigo-500' : 'border-slate-300'}`}>
+                        {pollAllowMultiple && (
+                          <svg className="w-3 h-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
+                          </svg>
+                        )}
+                      </div>
+                      <div className="flex-1">
+                        <p className="text-xs font-semibold text-slate-700">Permitir múltiplas</p>
+                        <p className="text-[10px] text-slate-400">Votar em mais de uma opção</p>
+                      </div>
+                    </div>
+
+                    {/* Expiração */}
+                    <div className="flex items-center gap-2 p-3 bg-white rounded-xl border-2 border-slate-100">
+                      <Clock className="w-4 h-4 text-slate-400" />
+                      <select
+                        value={pollExpiresIn}
+                        onChange={(e) => setPollExpiresIn(e.target.value)}
+                        className="flex-1 bg-transparent text-sm font-medium text-slate-700 focus:outline-none cursor-pointer"
+                      >
+                        <option value="1h">1 hora</option>
+                        <option value="6h">6 horas</option>
+                        <option value="24h">24 horas</option>
+                        <option value="3d">3 dias</option>
+                        <option value="7d">7 dias</option>
+                        <option value="never">Sem expiração</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  {/* Participantes */}
+                  <div className="flex items-center gap-2 p-3 bg-white rounded-xl border-2 border-slate-100">
+                    <Users className="w-4 h-4 text-slate-400" />
+                    <select
+                      multiple
+                      value={pollParticipants}
+                      onChange={(e) => {
+                        const selected = Array.from(e.target.selectedOptions, opt => opt.value);
+                        setPollParticipants(selected);
+                      }}
+                      className="flex-1 bg-transparent text-sm text-slate-700 focus:outline-none cursor-pointer min-h-0"
+                    >
+                      <option value="" disabled>Todos podem votar</option>
+                      {allProfiles.map(p => (
+                        <option key={p.user_id} value={p.user_id}>{p.name}</option>
+                      ))}
+                    </select>
+                    {pollParticipants.length > 0 && (
+                      <span className="text-xs bg-indigo-100 text-indigo-700 px-2 py-0.5 rounded-full font-medium">
+                        {pollParticipants.length} selecionado{pollParticipants.length !== 1 ? 's' : ''}
+                      </span>
+                    )}
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Filtros do Feed */}
+          <div className="flex gap-2 overflow-x-auto pb-2 scrollbar-hide">
+            <button className="px-4 py-2 rounded-full bg-slate-800 text-white text-sm font-semibold whitespace-nowrap border border-transparent shadow-sm hover:bg-slate-700 transition-colors">
+              Todas Atualizações
+            </button>
+            {availableTags.map((tag) => (
+              <button
+                key={tag.id}
+                onClick={() => toggleTag(tag.id)}
+                className={`px-4 py-2 rounded-full text-sm font-medium whitespace-nowrap border transition-colors flex items-center gap-1.5 ${
+                  selectedTags.includes(tag.id)
+                    ? `${tag.color} border-transparent`
+                    : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'
+                }`}
+              >
+                <tag.icon className="w-3.5 h-3.5" />
+                #{tag.label}
+              </button>
+            ))}
+          </div>
+
+          {/* Feed de Posts */}
+          <div className="flex flex-col gap-6">
+            {loadingPosts ? (
+              <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-6 text-center">
+                <Loader2 className="w-8 h-8 mx-auto mb-2 text-blue-500 animate-spin" />
+                <p className="text-slate-500 text-sm">Carregando publicações...</p>
+              </div>
+            ) : feedPosts.length === 0 ? (
+              <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-6 text-center">
+                <div className="mx-auto w-16 h-16 rounded-full bg-gradient-to-br from-blue-100 to-purple-100 flex items-center justify-center text-blue-500 mb-4">
+                  <MessageCircle className="w-8 h-8" />
+                </div>
+                <p className="text-slate-900 font-bold text-lg">Sem publicações ainda</p>
+                <p className="text-sm text-slate-500 mt-2 max-w-md mx-auto">
+                  Use a caixa acima para compartilhar uma atualização. Mencione colegas com <span className="font-semibold text-blue-600">@nome</span> e categorize com tags como <span className="font-semibold text-emerald-600">#financeiro</span> ou <span className="font-semibold text-purple-600">#processo</span>.
+                </p>
+              </div>
+            ) : (
+              feedPosts.map((post) => (
+                <div key={post.id} className="bg-white rounded-2xl border border-slate-200/80 shadow-md shadow-slate-200/50 overflow-hidden hover:shadow-lg hover:shadow-slate-200/60 transition-shadow">
+                  {/* Header do Post */}
+                  <div className="p-4 pb-2 flex gap-3">
+                    <button 
+                      onClick={() => onNavigateToModule?.('perfil', { userId: post.author_id })}
+                      className="cursor-pointer hover:opacity-80 transition-opacity"
+                    >
+                      <Avatar src={post.author?.avatar_url} name={post.author?.name || 'Usuário'} />
+                    </button>
+                    <div className="flex flex-col flex-1">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <button 
+                          onClick={() => onNavigateToModule?.('perfil', { userId: post.author_id })}
+                          className="text-slate-900 font-bold text-sm hover:underline cursor-pointer"
+                        >
+                          {post.author?.name || 'Usuário'}
+                        </button>
+                        <BadgeIcon badge={post.author?.badge} />
+                        {post.tags.length > 0 && (
+                          <div className="flex gap-1">
+                            {post.tags.slice(0, 2).map(tag => {
+                              const tagConfig = availableTags.find(t => t.id === tag);
+                              return tagConfig ? (
+                                <span key={tag} className={`${tagConfig.color} text-[10px] font-bold px-2 py-0.5 rounded-full`}>
+                                  #{tagConfig.label}
+                                </span>
+                              ) : null;
+                            })}
+                          </div>
+                        )}
+                      </div>
+                      <p className="text-slate-500 text-xs">
+                        {post.author?.role || 'Membro'} • {formatTimeAgo(post.created_at)}
+                      </p>
+                    </div>
+                    {/* Menu de ações do post (só para autor) */}
+                    {user?.id === post.author_id && (
+                      <div className="ml-auto relative">
+                        <button 
+                          onClick={() => setOpenPostMenu(openPostMenu === post.id ? null : post.id)}
+                          className="text-slate-400 hover:text-slate-600 p-1 rounded-full hover:bg-slate-100"
+                        >
+                          <MoreHorizontal className="w-5 h-5" />
+                        </button>
+                        {openPostMenu === post.id && (
+                          <div className="absolute right-0 top-8 bg-white rounded-lg shadow-lg border border-slate-200 py-1 z-20 min-w-[140px]">
+                            <button
+                              onClick={() => {
+                                setEditingPostId(post.id);
+                                setEditingContent(post.content);
+                                setOpenPostMenu(null);
+                              }}
+                              className="w-full flex items-center gap-2 px-3 py-2 text-sm text-slate-700 hover:bg-slate-50"
+                            >
+                              <Pencil className="w-4 h-4" />
+                              Editar
+                            </button>
+                            <button
+                              onClick={() => handleDeletePost(post.id)}
+                              className="w-full flex items-center gap-2 px-3 py-2 text-sm text-red-600 hover:bg-red-50"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                              Excluir
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                  
+                  {/* Conteúdo do Post */}
+                  <div className="px-4 py-2">
+                    {editingPostId === post.id ? (
+                      <div className="bg-slate-50 rounded-xl p-3 border-2 border-slate-200">
+                        <div className="relative">
+                          <textarea
+                            ref={inlineEditRef}
+                            value={editingContent}
+                            onChange={handleInlineEditChange}
+                            rows={4}
+                            className="w-full bg-white border-2 border-slate-200 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-slate-500/20 focus:border-slate-400 resize-none"
+                            placeholder="Edite seu post... Use @ para mencionar e # para tags"
+                          />
+                          
+                          {/* Dropdown de Menções no Editor Inline */}
+                          {showMentionDropdownInline && filteredProfilesInline.length > 0 && (
+                            <div className="absolute left-0 right-0 top-full mt-1 bg-white rounded-lg border border-slate-200 shadow-lg z-50 max-h-48 overflow-y-auto">
+                              <div className="p-2 border-b border-slate-100">
+                                <span className="text-xs text-slate-500 font-medium flex items-center gap-1">
+                                  <AtSign className="w-3 h-3" /> Mencionar usuário
+                                </span>
+                              </div>
+                              {filteredProfilesInline.map((profile) => (
+                                <button
+                                  key={profile.id}
+                                  onClick={() => insertMentionInline(profile)}
+                                  className="w-full flex items-center gap-3 px-3 py-2 hover:bg-slate-50 transition-colors text-left"
+                                >
+                                  <Avatar src={profile.avatar_url} name={profile.name} size="sm" />
+                                  <div>
+                                    <p className="text-sm font-medium text-slate-900">{profile.name}</p>
+                                    <p className="text-xs text-slate-500">{profile.role}</p>
+                                  </div>
+                                </button>
+                              ))}
+                            </div>
+                          )}
+
+                          {/* Dropdown de Tags no Editor Inline */}
+                          {showTagDropdownInline && filteredTagsInline.length > 0 && (
+                            <div className="absolute left-0 right-0 top-full mt-1 bg-white rounded-lg border border-slate-200 shadow-lg z-50 max-h-48 overflow-y-auto">
+                              <div className="p-2 border-b border-slate-100">
+                                <span className="text-xs text-slate-500 font-medium flex items-center gap-1">
+                                  <Hash className="w-3 h-3" /> Adicionar tag
+                                </span>
+                              </div>
+                              {filteredTagsInline.map((tag: any) => (
+                                <button
+                                  key={tag.id}
+                                  onClick={() => insertTagInline(tag.id)}
+                                  className="w-full flex items-center gap-2 px-3 py-2 hover:bg-slate-50 transition-colors text-left"
+                                >
+                                  <tag.icon className="w-4 h-4" />
+                                  <span className="text-sm font-medium text-slate-900">#{tag.label}</span>
+                                </button>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                        <div className="flex items-center justify-end gap-2 mt-3">
+                          <button
+                            onClick={handleCancelEdit}
+                            className="px-3 py-1.5 rounded-lg text-slate-600 hover:bg-slate-200 text-sm font-medium transition-colors"
+                          >
+                            Cancelar
+                          </button>
+                          <button
+                            onClick={() => handleSaveEdit(post.id)}
+                            className="px-4 py-1.5 rounded-lg bg-slate-700 hover:bg-slate-800 text-white text-sm font-medium transition-colors shadow-sm"
+                          >
+                            Salvar
+                          </button>
+                        </div>
+                      </div>
+                    ) : (
+                      <>
+                        <div className="text-slate-800 text-sm leading-relaxed mb-3 whitespace-pre-wrap">
+                          {renderContentWithMentions(post.content)}
+                        </div>
+                        {post.created_at !== post.updated_at && (
+                          <div className="flex items-center gap-1 text-xs text-slate-400 mb-3">
+                            <Pencil className="w-3 h-3" />
+                            <span>editado</span>
+                          </div>
+                        )}
+                      </>
+                    )}
+
+                    {/* Enquete */}
+                    {postPolls.has(post.id) && (() => {
+                      const poll = postPolls.get(post.id)!;
+                      const totalVotes = poll.total_votes || 0;
+                      return (
+                        <div className="bg-gradient-to-br from-indigo-50 to-purple-50 rounded-xl p-4 border border-indigo-100 mb-3">
+                          <div className="flex items-center gap-2 mb-3">
+                            <BarChart2 className="w-5 h-5 text-indigo-600" />
+                            <span className="font-bold text-indigo-900">{poll.question}</span>
+                          </div>
+                          
+                          <div className="space-y-2">
+                            {poll.options.map((opt, idx) => {
+                              const percentage = totalVotes > 0 ? Math.round((opt.votes / totalVotes) * 100) : 0;
+                              const hasVoted = poll.user_votes?.includes(idx);
+                              const canVote = !poll.is_expired && (poll.participants.length === 0 || poll.participants.includes(user?.id || ''));
+                              const isMultiple = poll.allow_multiple;
+                              
+                              return (
+                                <button
+                                  key={idx}
+                                  onClick={() => canVote && handlePollVote(poll.id, idx)}
+                                  disabled={!canVote || (hasVoted && !isMultiple)}
+                                  className={`w-full relative overflow-hidden rounded-lg border transition-all ${
+                                    hasVoted 
+                                      ? 'border-indigo-400 bg-indigo-50' 
+                                      : canVote 
+                                        ? 'border-slate-200 bg-white hover:border-indigo-300 hover:bg-indigo-50/50 cursor-pointer' 
+                                        : 'border-slate-200 bg-slate-50 cursor-not-allowed'
+                                  }`}
+                                >
+                                  {/* Barra de progresso */}
+                                  <div 
+                                    className={`absolute inset-y-0 left-0 transition-all ${hasVoted ? 'bg-indigo-200' : 'bg-slate-100'}`}
+                                    style={{ width: `${percentage}%` }}
+                                  />
+                                  
+                                  <div className="relative flex items-center justify-between px-3 py-2.5">
+                                    <div className="flex items-center gap-2">
+                                      {/* Checkbox para múltiplas, Radio para única */}
+                                      <span className={`w-5 h-5 ${isMultiple ? 'rounded-md' : 'rounded-full'} border-2 flex items-center justify-center ${
+                                        hasVoted ? 'border-indigo-500 bg-indigo-500' : 'border-slate-300'
+                                      }`}>
+                                        {hasVoted && <CheckCircle className="w-3 h-3 text-white" />}
+                                      </span>
+                                      <span className={`text-sm font-medium ${hasVoted ? 'text-indigo-900' : 'text-slate-700'}`}>
+                                        {opt.text}
+                                      </span>
+                                    </div>
+                                    <span className={`text-sm font-bold ${hasVoted ? 'text-indigo-600' : 'text-slate-500'}`}>
+                                      {percentage}%
+                                    </span>
+                                  </div>
+                                </button>
+                              );
+                            })}
+                          </div>
+                          
+                          <div className="flex items-center justify-between mt-3 text-xs text-slate-500">
+                            <span>{totalVotes} voto{totalVotes !== 1 ? 's' : ''}</span>
+                            {poll.expires_at && (
+                              <span className={poll.is_expired ? 'text-red-500' : ''}>
+                                {poll.is_expired ? 'Encerrada' : `Encerra em ${formatTimeAgo(poll.expires_at)}`}
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })()}
+
+                    {post.attachments && post.attachments.length > 0 && (
+                      <div className="flex flex-wrap gap-2 mb-3">
+                        {post.attachments
+                          .filter((a) => a.kind === 'image')
+                          .map((a) => (
+                            <a
+                              key={a.filePath}
+                              href={a.signedUrl || '#'}
+                              target={a.signedUrl ? '_blank' : undefined}
+                              rel={a.signedUrl ? 'noopener noreferrer' : undefined}
+                              className="block"
+                            >
+                              <img
+                                src={a.signedUrl || ''}
+                                className="h-28 w-28 object-cover rounded-lg border border-slate-200"
+                                alt={a.fileName}
+                              />
+                            </a>
+                          ))}
+                      </div>
+                    )}
+                    
+                    {/* Cards de Preview de Dados */}
+                    {post.preview_data && Object.keys(post.preview_data).length > 0 && (
+                      <div className="space-y-2">
+                        {/* Preview Financeiro */}
+                        {post.preview_data.financeiro && (
+                          <div 
+                            className="bg-gradient-to-r from-emerald-500 to-emerald-600 rounded-lg p-3 cursor-pointer hover:shadow-md transition-shadow"
+                            onClick={() => handleNavigate('financeiro')}
+                          >
+                            <div className="flex items-center gap-2 mb-2">
+                              <DollarSign className="w-4 h-4 text-white" />
+                              <span className="text-white font-bold text-sm">Resumo Financeiro</span>
+                            </div>
+                            <div className="grid grid-cols-3 gap-2">
+                              <div className="bg-white/20 rounded-lg p-2 text-center">
+                                <p className="text-white/80 text-[10px]">Recebido</p>
+                                <p className="text-white font-bold text-sm">{formatCurrency(post.preview_data.financeiro.recebido)}</p>
+                              </div>
+                              <div className="bg-white/20 rounded-lg p-2 text-center">
+                                <p className="text-white/80 text-[10px]">Pendente</p>
+                                <p className="text-white font-bold text-sm">{formatCurrency(post.preview_data.financeiro.pendente)}</p>
+                              </div>
+                              <div className="bg-white/20 rounded-lg p-2 text-center">
+                                <p className="text-white/80 text-[10px]">Atrasado</p>
+                                <p className="text-white font-bold text-sm">{formatCurrency(post.preview_data.financeiro.atrasado)}</p>
+                              </div>
+                            </div>
+                          </div>
+                        )}
+                        
+                        {/* Preview Cliente */}
+                        {post.preview_data.cliente && (
+                          <div 
+                            className="bg-gradient-to-r from-blue-500 to-blue-600 rounded-lg p-3 cursor-pointer hover:shadow-md transition-shadow"
+                            onClick={() => handleNavigate('clientes')}
+                          >
+                            <div className="flex items-center gap-3">
+                              <div className="w-10 h-10 rounded-full bg-white/20 flex items-center justify-center text-white">
+                                <Users className="w-5 h-5" />
+                              </div>
+                              <div>
+                                <p className="text-white font-bold text-sm">{post.preview_data.cliente.nome}</p>
+                                <p className="text-white/80 text-xs">{post.preview_data.cliente.cpf || post.preview_data.cliente.telefone || 'Cliente'}</p>
+                              </div>
+                            </div>
+                          </div>
+                        )}
+                        
+                        {/* Preview Processo */}
+                        {post.preview_data.processo && (
+                          <div 
+                            className="bg-gradient-to-r from-purple-500 to-purple-600 rounded-lg p-3 cursor-pointer hover:shadow-md transition-shadow"
+                            onClick={() => handleNavigate('processos')}
+                          >
+                            <div className="flex items-center gap-3">
+                              <div className="w-10 h-10 rounded-full bg-white/20 flex items-center justify-center text-white">
+                                <Gavel className="w-5 h-5" />
+                              </div>
+                              <div>
+                                <p className="text-white font-bold text-sm">{post.preview_data.processo.numero}</p>
+                                <p className="text-white/80 text-xs">{post.preview_data.processo.cliente} • {post.preview_data.processo.status}</p>
+                              </div>
+                            </div>
+                          </div>
+                        )}
+                        
+                        {/* Preview Prazo */}
+                        {post.preview_data.prazo && (
+                          <div 
+                            className="bg-gradient-to-r from-red-500 to-red-600 rounded-lg p-3 cursor-pointer hover:shadow-md transition-shadow"
+                            onClick={() => handleNavigate('prazos')}
+                          >
+                            <div className="flex items-center gap-3">
+                              <div className="w-10 h-10 rounded-full bg-white/20 flex items-center justify-center text-white">
+                                <Clock className="w-5 h-5" />
+                              </div>
+                              <div>
+                                <p className="text-white font-bold text-sm">{post.preview_data.prazo.titulo}</p>
+                                <p className="text-white/80 text-xs">{post.preview_data.prazo.data} • {post.preview_data.prazo.tipo}</p>
+                              </div>
+                            </div>
+                          </div>
+                        )}
+                        
+                        {/* Preview Agenda */}
+                        {post.preview_data.agenda && (
+                          <div 
+                            className="bg-gradient-to-r from-amber-500 to-amber-600 rounded-lg p-3 cursor-pointer hover:shadow-md transition-shadow"
+                            onClick={() => handleNavigate('agenda')}
+                          >
+                            <div className="flex items-center gap-3">
+                              <div className="w-10 h-10 rounded-full bg-white/20 flex items-center justify-center text-white">
+                                <Calendar className="w-5 h-5" />
+                              </div>
+                              <div>
+                                <p className="text-white font-bold text-sm">{post.preview_data.agenda.titulo}</p>
+                                <p className="text-white/80 text-xs">{post.preview_data.agenda.data} {post.preview_data.agenda.hora && `às ${post.preview_data.agenda.hora}`}</p>
+                              </div>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                  
+                  {/* Contadores */}
+                  <div className="px-4 py-2 flex items-center justify-between text-xs text-slate-500 border-b border-slate-200 mt-2">
+                    <div className="flex items-center gap-1">
+                      <div className="flex -space-x-1.5">
+                        <div className="w-5 h-5 rounded-full bg-blue-500 border border-white flex items-center justify-center">
+                          <ThumbsUp className="w-2.5 h-2.5 text-white" />
+                        </div>
+                        {post.likes_count > 5 && (
+                          <div className="w-5 h-5 rounded-full bg-red-500 border border-white flex items-center justify-center">
+                            <Heart className="w-2.5 h-2.5 text-white" />
+                          </div>
+                        )}
+                      </div>
+                      <span className="ml-1 hover:underline cursor-pointer font-medium text-slate-600">
+                        {post.likes_count > 0 ? `${post.likes_count} curtida${post.likes_count !== 1 ? 's' : ''}` : 'Seja o primeiro'}
+                      </span>
+                    </div>
+                    <span className="hover:underline cursor-pointer font-medium text-slate-600">
+                      {post.comments_count} comentário{post.comments_count !== 1 ? 's' : ''}
+                    </span>
+                  </div>
+                  
+                  {/* Ações */}
+                  <div className="flex items-center px-2 py-1 bg-slate-50/50">
+                    <button 
+                      onClick={() => handleToggleLike(post.id, post.liked_by_me || false)}
+                      className={`flex-1 flex items-center justify-center gap-2 py-2 hover:bg-slate-100 rounded-lg text-sm font-medium transition-colors ${post.liked_by_me ? 'text-blue-600' : 'text-slate-600'}`}
+                    >
+                      <ThumbsUp className={`w-5 h-5 ${post.liked_by_me ? 'fill-current' : ''}`} />
+                      {post.liked_by_me ? 'Curtido' : 'Curtir'}
+                    </button>
+                    <button className="flex-1 flex items-center justify-center gap-2 py-2 hover:bg-slate-100 rounded-lg text-slate-600 text-sm font-medium transition-colors">
+                      <MessageCircle className="w-5 h-5" />
+                      Comentar
+                    </button>
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+        </main>
+
+        {/* Sidebar Direita - Widgets Arrastáveis */}
+        <aside className="hidden xl:flex xl:col-span-3 flex-col sticky top-4 order-3">
+          <SidebarDroppable id="sidebar-right">
+            <SortableContext items={rightWidgets} strategy={rectSortingStrategy}>
+              {rightWidgets.map((widgetId) => (
+                <SortableWidget key={widgetId} id={widgetId}>
+                  {renderWidget(widgetId)}
+                </SortableWidget>
+              ))}
+            </SortableContext>
+          </SidebarDroppable>
+        </aside>
+      </div>
     </div>
+    </DndContext>
   );
 };
 

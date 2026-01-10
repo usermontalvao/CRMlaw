@@ -20,7 +20,8 @@ export type ModuleName =
   | 'login'
   | 'cron'
   | 'configuracoes'
-  | 'peticoes'; // Editor de Petições - Módulo isolado
+  | 'peticoes' // Editor de Petições - Módulo isolado
+  | 'perfil'; // Página de perfil do usuário
 
 interface ModuleParams {
   [key: string]: any;

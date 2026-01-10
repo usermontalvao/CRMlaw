@@ -3,6 +3,8 @@ import { supabase } from '../config/supabase';
 export type PresenceStatus = 'online' | 'away' | 'offline';
 export type ThemePreference = 'light' | 'dark' | 'system';
 
+export type ProfileBadge = 'advogado' | 'administrador' | 'estagiario' | 'secretario' | null;
+
 export interface Profile {
   id: string;
   user_id: string;
@@ -15,6 +17,10 @@ export interface Profile {
   lawyer_full_name?: string | null;
   bio?: string | null;
   avatar_url?: string | null;
+  cover_url?: string | null;
+  badge?: ProfileBadge;
+  location?: string | null;
+  joined_at?: string | null;
   presence_status?: PresenceStatus;
   theme_preference?: ThemePreference;
   last_seen_at?: string | null;

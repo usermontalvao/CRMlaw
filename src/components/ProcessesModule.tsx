@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import {
   Plus,
@@ -254,11 +254,13 @@ interface ProcessesModuleProps {
   prefillData?: {
     client_id?: string;
     client_name?: string;
+    responsible_lawyer_id?: string;
   };
+  initialStatusFilter?: ProcessStatus | 'todos';
   onParamConsumed?: () => void;
 }
 
-const ProcessesModule: React.FC<ProcessesModuleProps> = ({ forceCreate, entityId, prefillData, onParamConsumed }) => {
+const ProcessesModule: React.FC<ProcessesModuleProps> = ({ forceCreate, entityId, prefillData, initialStatusFilter, onParamConsumed }) => {
   const { user } = useAuth();
   const { confirmDelete } = useDeleteConfirm();
   const [processes, setProcesses] = useState<Process[]>([]);
@@ -421,6 +423,15 @@ const ProcessesModule: React.FC<ProcessesModuleProps> = ({ forceCreate, entityId
       return composite.includes(term);
     });
   }, [processes, statusFilter, searchTerm, allClientsMap]);
+
+  const appliedInitialFilterRef = useRef(false);
+  useEffect(() => {
+    if (!initialStatusFilter) return;
+    if (appliedInitialFilterRef.current) return;
+    appliedInitialFilterRef.current = true;
+    setStatusFilter(initialStatusFilter);
+    onParamConsumed?.();
+  }, [initialStatusFilter, onParamConsumed]);
 
   useEffect(() => {
     const fetchProcesses = async () => {

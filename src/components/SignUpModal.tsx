@@ -92,6 +92,7 @@ export const SignUpModal: React.FC<SignUpModalProps> = ({ isOpen, onClose, onSuc
         .from('profiles')
         .insert({
           id: authData.user?.id,
+          user_id: authData.user?.id,
           email: formData.email,
           name: formData.name,
           role: formData.role,
@@ -101,10 +102,6 @@ export const SignUpModal: React.FC<SignUpModalProps> = ({ isOpen, onClose, onSuc
 
       if (profileError) {
         console.error('Erro ao criar perfil:', profileError);
-        // Tentar deletar usuário auth se profile falhou
-        if (authData.user?.id) {
-          await supabase.auth.admin.deleteUser(authData.user.id);
-        }
         throw profileError;
       }
 

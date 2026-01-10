@@ -33,7 +33,8 @@ import TermsPrivacyPage from './components/TermsPrivacyPage';
 import ProfileModal, { type AppProfile, type UserRole } from './components/ProfileModal';
 
 // Lazy loading dos módulos principais (carrega apenas quando acessado)
-const Dashboard = lazy(() => import('./components/Dashboard'));
+const Dashboard = lazy(() => import('./components/DashboardPage'));
+const UserProfilePage = lazy(() => import('./components/UserProfilePage'));
 const ClientsModule = lazy(() => import('./components/ClientsModule'));
 const DocumentsModule = lazy(() => import('./components/DocumentsModule'));
 const LeadsModule = lazy(() => import('./components/LeadsModule'));
@@ -132,7 +133,7 @@ const MainApp: React.FC = () => {
 
     const prefetch = () => {
       const tasks = [
-        () => import('./components/Dashboard'),
+        () => import('./components/DashboardPage'),
         () => import('./components/ProcessesModule'),
         () => import('./components/ClientsModule'),
         () => import('./components/DeadlinesModule'),
@@ -1350,6 +1351,7 @@ const MainApp: React.FC = () => {
                 forceCreate={moduleParams['processos'] ? JSON.parse(moduleParams['processos']).mode === 'create' : false}
                 entityId={moduleParams['processos'] ? JSON.parse(moduleParams['processos']).entityId : undefined}
                 prefillData={moduleParams['processos'] ? JSON.parse(moduleParams['processos']).prefill : undefined}
+                initialStatusFilter={moduleParams['processos'] ? JSON.parse(moduleParams['processos']).statusFilter : undefined}
                 onParamConsumed={() => clearModuleParams('processos')}
               />
             )}
@@ -1358,6 +1360,7 @@ const MainApp: React.FC = () => {
                 forceCreate={moduleParams['requerimentos'] ? JSON.parse(moduleParams['requerimentos']).mode === 'create' : false}
                 entityId={moduleParams['requerimentos'] ? JSON.parse(moduleParams['requerimentos']).entityId : undefined}
                 prefillData={moduleParams['requerimentos'] ? JSON.parse(moduleParams['requerimentos']).prefill : undefined}
+                initialStatusTab={moduleParams['requerimentos'] ? JSON.parse(moduleParams['requerimentos']).statusTab : undefined}
                 onParamConsumed={() => clearModuleParams('requerimentos')}
               />
             )}
@@ -1414,6 +1417,13 @@ const MainApp: React.FC = () => {
             )}
             {activeModule === 'configuracoes' && <SettingsModule />}
             {activeModule === 'cron' && <CronEndpoint />}
+            {activeModule === 'perfil' && (
+              <UserProfilePage 
+                userId={moduleParams['perfil'] ? JSON.parse(moduleParams['perfil']).userId : undefined}
+                onClose={() => navigateTo('dashboard')}
+                onNavigateToModule={(moduleKey) => navigateTo(moduleKey as any)}
+              />
+            )}
           </Suspense>
         </main>
 

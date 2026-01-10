@@ -49,22 +49,20 @@ class UserNotificationService {
    */
   async createNotification(payload: CreateUserNotificationDTO): Promise<UserNotification> {
     const dbPayload = this.normalizePayloadForDb(payload);
-    const { data, error } = await supabase
-      .from(this.tableName)
-      .insert({
-        ...dbPayload,
-        read: false,
-        created_at: new Date().toISOString(),
-      })
-      .select()
-      .single();
+    const { data, error } = await supabase.rpc('create_user_notification', {
+      p_user_id: dbPayload.user_id,
+      p_type: dbPayload.type,
+      p_title: dbPayload.title,
+      p_message: dbPayload.message,
+      p_metadata: (dbPayload.metadata as any) ?? {},
+    });
 
     if (error) {
       console.error('Erro ao criar notificação:', error);
       throw new Error(error.message);
     }
 
-    return data;
+    return data as UserNotification;
   }
 
   async createNotificationDeduped(params: {

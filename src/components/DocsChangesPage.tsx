@@ -559,6 +559,130 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
 
 const releases: ReleaseNote[] = [
   {
+    version: '1.9.237',
+    date: '10/01/2026',
+    summary: 'Notificações: RPC create_user_notification para corrigir erro 403 ao notificar menções.',
+    modules: [
+      {
+        moduleId: 'feed',
+        changes: [
+          {
+            type: 'fix',
+            title: 'Erro 403 ao criar notificações de menção',
+            description: 'Criação de notificações agora usa RPC create_user_notification (SECURITY DEFINER) para bypass RLS e corrigir erro 403 ao notificar usuários mencionados em posts.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.204',
+    date: '09/01/2026',
+    summary: 'Build: import .tsx habilitado para resolver conflito Dashboard/dashboard.',
+    modules: [
+      {
+        moduleId: 'dashboard',
+        changes: [
+          {
+            type: 'fix',
+            title: 'Conflito de import no Windows',
+            description: 'Habilitado allowImportingTsExtensions para permitir import explícito de Dashboard.tsx, evitando conflito de resolução com a pasta components/dashboard.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.203',
+    date: '09/01/2026',
+    summary: 'Dashboard/Build: correções de import e filtros iniciais.',
+    modules: [
+      {
+        moduleId: 'dashboard',
+        changes: [
+          {
+            type: 'fix',
+            title: 'Build e navegação do Dashboard',
+            description: 'Corrigidos conflitos de import por casing (Dashboard/dashboard) e padronizado o uso de parâmetros para abrir Processos/Requerimentos já filtrados em Aguardando Confecção.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.202',
+    date: '09/01/2026',
+    summary: 'Dashboard: aguardando confecção (processos/requerimentos) + hover corrigido.',
+    modules: [
+      {
+        moduleId: 'dashboard',
+        changes: [
+          {
+            type: 'feature',
+            title: 'Widgets Aguardando Confecção',
+            description: 'Adicionados widgets para Processos e Requerimentos em status aguardando_confeccao, com contagem e navegação já filtrada.',
+          },
+          {
+            type: 'fix',
+            title: 'Hover dos cards',
+            description: 'Corrigido hover dos cards do Dashboard (classe dinâmica do Tailwind não era aplicada).',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.201',
+    date: '09/01/2026',
+    summary: 'Dashboard: layout mais estilo Facebook (financeiro apenas no sidebar).',
+    modules: [
+      {
+        moduleId: 'dashboard',
+        changes: [
+          {
+            type: 'fix',
+            title: 'Layout estilo Facebook',
+            description: 'Removido o card de perfil e o resumo duplicado do financeiro no feed. O Financeiro fica apenas no sidebar direito para um layout mais limpo.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.200',
+    date: '09/01/2026',
+    summary: 'Dashboard: limpeza do social + widget financeiro + #financeiro.',
+    modules: [
+      {
+        moduleId: 'dashboard',
+        changes: [
+          {
+            type: 'fix',
+            title: 'Ajustes no Dashboard Social',
+            description: 'Removidos itens sem uso (ações e seções que não existem no CRM), adicionado widget de Financeiro e menção #financeiro no feed.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.199',
+    date: '09/01/2026',
+    summary: 'Dashboard: novo layout estilo rede social com 3 colunas.',
+    modules: [
+      {
+        moduleId: 'dashboard',
+        changes: [
+          {
+            type: 'feature',
+            title: 'Dashboard Social',
+            description: 'Novo layout inspirado em redes sociais com sidebar esquerda (agenda jurídica, tarefas pendentes, intimações DJEN), feed central (cards de estatísticas, caixa de postagem, feed de atualizações) e sidebar direita (perfil do usuário, navegação rápida, áreas de atuação).',
+          },
+        ],
+      },
+    ],
+  },
+  {
     version: '1.9.198',
     date: '09/01/2026',
     summary: 'Chat: corrigido crash de hooks no widget flutuante.',

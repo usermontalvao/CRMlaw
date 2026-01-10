@@ -8,7 +8,8 @@ export type UserNotificationType =
   | 'intimation_urgent'
   | 'deadline_reminder'
   | 'appointment_reminder'
-  | 'requirement_alert';
+  | 'requirement_alert'
+  | 'mention';
 
 export interface UserNotification {
   id: string;
