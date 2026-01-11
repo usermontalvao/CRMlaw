@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useMemo } from 'react';
 import {
   Scale,
   Users,
@@ -18,8 +18,6 @@ import {
   CheckSquare,
 } from 'lucide-react';
 import type { ModuleName } from '../../contexts/NavigationContext';
-import { supabase } from '../../config/supabase';
-import { useAuth } from '../../contexts/AuthContext';
 
 interface MobileSidebarProps {
   isOpen: boolean;
@@ -28,6 +26,9 @@ interface MobileSidebarProps {
   onClose: () => void;
   onOpenProfile: () => void;
   logoUrl?: string;
+  canView: (module: string) => boolean;
+  isAdmin: boolean;
+  permissionsLoading: boolean;
 }
 
 interface NavItem {
@@ -61,67 +62,19 @@ export const MobileSidebar: React.FC<MobileSidebarProps> = ({
   onClose,
   onOpenProfile,
   logoUrl,
+  canView,
+  isAdmin,
+  permissionsLoading,
 }) => {
-  const { user } = useAuth();
-  const [permissions, setPermissions] = useState<Record<string, boolean>>({});
-  const [loading, setLoading] = useState(true);
-
-  const normalizeRole = (role: string) =>
-    role
-      .toLowerCase()
-      .normalize('NFD')
-      .replace(/[\u0300-\u036f]/g, '');
-
-  useEffect(() => {
-    const loadPermissions = async () => {
-      if (!user?.id) return;
-
-      try {
-        const { data: profile } = await supabase
-          .from('profiles')
-          .select('role')
-          .eq('user_id', user.id)
-          .single();
-
-        const normalizedRole = normalizeRole(profile?.role || '');
-
-        if (normalizedRole === 'administrador') {
-          const allPerms: Record<string, boolean> = {};
-          navItems.forEach((item) => {
-            allPerms[item.moduleKey] = true;
-          });
-          setPermissions(allPerms);
-          return;
-        }
-
-        const { data: rolePerms } = await supabase
-          .from('role_permissions')
-          .select('module, can_view, can_create, can_edit, can_delete')
-          .eq('role', normalizedRole);
-
-        const perms: Record<string, boolean> = {};
-        rolePerms?.forEach((perm) => {
-          const hasAnyPermission = perm.can_view || perm.can_create || perm.can_edit || perm.can_delete;
-          perms[perm.module] = hasAnyPermission;
-        });
-
-        setPermissions(perms);
-      } catch (err) {
-        console.error('Erro ao carregar permissões:', err);
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    loadPermissions();
-  }, [user?.id]);
-
-  const visibleItems = loading
-    ? []
-    : navItems.filter((item) => {
-        if (item.moduleKey === 'dashboard') return true;
-        return permissions[item.moduleKey] === true;
-      });
+  // Filtrar itens do menu baseado em permissões (via props)
+  const visibleItems = useMemo(() => {
+    if (permissionsLoading) return [];
+    return navItems.filter((item) => {
+      if (item.moduleKey === 'dashboard') return true;
+      if (isAdmin) return true;
+      return canView(item.moduleKey);
+    });
+  }, [permissionsLoading, isAdmin, canView]);
 
   if (!isOpen) return null;
 

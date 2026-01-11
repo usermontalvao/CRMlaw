@@ -21,6 +21,14 @@ export interface FeedPoll {
   total_votes?: number;
 }
 
+export interface FeedPollVoter {
+  user_id: string;
+  name: string;
+  avatar_url?: string | null;
+  role?: string | null;
+  option_indices: number[];
+}
+
 export interface CreatePollDTO {
   post_id: string;
   question: string;
@@ -137,6 +145,67 @@ class FeedPollsService {
 
     // Atualizar contagem de votos na enquete
     await this.updateVoteCounts(pollId);
+
+    // Auto-encerrar quando todos os participantes votarem
+    await this.closePollIfAllParticipantsVoted(pollId, poll);
+  }
+
+  async closePoll(pollId: string): Promise<void> {
+    const now = new Date().toISOString();
+    const { error } = await supabase
+      .from('feed_polls')
+      .update({ expires_at: now, updated_at: now })
+      .eq('id', pollId);
+
+    if (error) {
+      console.error('Erro ao encerrar enquete:', error);
+      throw error;
+    }
+  }
+
+  async getVoters(pollId: string): Promise<FeedPollVoter[]> {
+    const { data: votes, error } = await supabase
+      .from('feed_poll_votes')
+      .select('user_id, option_index')
+      .eq('poll_id', pollId);
+
+    if (error) {
+      console.error('Erro ao buscar votos da enquete:', error);
+      throw error;
+    }
+
+    if (!votes || votes.length === 0) return [];
+
+    const userIds = Array.from(new Set((votes as any[]).map((v) => v.user_id)));
+    const { data: profiles, error: profilesError } = await supabase
+      .from('profiles')
+      .select('user_id, name, avatar_url, role')
+      .in('user_id', userIds);
+
+    if (profilesError) {
+      console.error('Erro ao buscar perfis dos votantes:', profilesError);
+      throw profilesError;
+    }
+
+    const profileMap = new Map<string, any>((profiles as any[] | null)?.map((p) => [p.user_id, p]) || []);
+    const grouped = new Map<string, number[]>();
+
+    (votes as any[]).forEach((v) => {
+      const prev = grouped.get(v.user_id) || [];
+      if (!prev.includes(v.option_index)) prev.push(v.option_index);
+      grouped.set(v.user_id, prev);
+    });
+
+    return Array.from(grouped.entries()).map(([user_id, option_indices]) => {
+      const p = profileMap.get(user_id);
+      return {
+        user_id,
+        name: p?.name || 'Usuário',
+        avatar_url: p?.avatar_url || null,
+        role: p?.role || null,
+        option_indices,
+      };
+    });
   }
 
   async removeVote(pollId: string, optionIndex: number): Promise<void> {
@@ -193,6 +262,32 @@ class FeedPollsService {
       .eq('id', pollId);
   }
 
+  private async closePollIfAllParticipantsVoted(pollId: string, poll: any): Promise<void> {
+    const participants = (poll?.participants || []) as string[];
+    if (!participants || participants.length === 0) return;
+    if (poll?.expires_at && new Date(poll.expires_at) < new Date()) return;
+
+    const { data: votes, error } = await supabase
+      .from('feed_poll_votes')
+      .select('user_id')
+      .eq('poll_id', pollId);
+
+    if (error) {
+      console.warn('Erro ao verificar votos para auto-encerrar:', error);
+      return;
+    }
+
+    const votedSet = new Set<string>((votes as any[] | null)?.map((v) => v.user_id) || []);
+    const allVoted = participants.every((p) => votedSet.has(p));
+    if (!allVoted) return;
+
+    try {
+      await this.closePoll(pollId);
+    } catch {
+      // ignore
+    }
+  }
+
   private async hydratePoll(poll: any): Promise<FeedPoll> {
     const { data: { user } } = await supabase.auth.getUser();
     
@@ -210,7 +305,7 @@ class FeedPollsService {
 
     const options = poll.options as PollOption[];
     const totalVotes = options.reduce((sum, opt) => sum + opt.votes, 0);
-    const isExpired = poll.expires_at ? new Date(poll.expires_at) < new Date() : false;
+    const isExpired = poll.expires_at ? new Date(poll.expires_at) <= new Date() : false;
 
     return {
       ...poll,

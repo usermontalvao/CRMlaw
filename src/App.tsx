@@ -1,5 +1,6 @@
-import { useEffect, useState, useMemo, lazy, Suspense, useRef } from 'react';
+import { useEffect, useState, useMemo, useCallback, lazy, Suspense, useRef } from 'react';
 import { useNavigation } from './contexts/NavigationContext';
+import type { ModuleName } from './contexts/NavigationContext';
 import {
   Users,
   Calendar,
@@ -211,19 +212,67 @@ const MainApp: React.FC = () => {
   const profileMenuRef = useRef<HTMLDivElement | null>(null);
   const logoutCleanupDoneRef = useRef(false);
 
-  const canAccessConfig = ['admin', 'administrador', 'advogado'].includes(
-    (profile.role || '').toLowerCase(),
+  const canAccessConfig = useMemo(() => 
+    ['admin', 'administrador', 'advogado'].includes((profile.role || '').toLowerCase()),
+    [profile.role]
   );
 
-  const hasAnyModulePermission = (moduleKey: string) => {
+  const permissionGuardedModules = useMemo<ModuleName[]>(() => [
+    'leads',
+    'clientes',
+    'documentos',
+    'assinaturas',
+    'processos',
+    'requerimentos',
+    'prazos',
+    'intimacoes',
+    'notificacoes',
+    'financeiro',
+    'agenda',
+    'tarefas',
+    'chat',
+    'peticoes',
+    'configuracoes',
+    'usuarios',
+    'monitor',
+  ], []);
+
+  const canAccessModule = useCallback((moduleKey: ModuleName) => {
     if (isAdmin) return true;
-    return (
-      canView(moduleKey) ||
-      canCreate(moduleKey) ||
-      canEdit(moduleKey) ||
-      canDelete(moduleKey)
-    );
-  };
+    if (moduleKey === 'configuracoes') return canAccessConfig;
+    return canView(moduleKey);
+  }, [isAdmin, canAccessConfig, canView]);
+
+  const hasModuleAccess = useCallback((moduleKey: ModuleName) => {
+    if (moduleKey === 'dashboard') return true;
+    if (moduleKey === 'perfil') return true;
+    if (!permissionGuardedModules.includes(moduleKey)) return true;
+    return canAccessModule(moduleKey);
+  }, [permissionGuardedModules, canAccessModule]);
+
+  const safeNavigateTo = useCallback((moduleKey: ModuleName, params?: Record<string, string>) => {
+    if (!permissionsLoading && !hasModuleAccess(moduleKey)) {
+      setProfileError('Você não tem permissão para acessar este módulo.');
+      navigateTo('dashboard');
+      return;
+    }
+    navigateTo(moduleKey, params);
+  }, [permissionsLoading, hasModuleAccess, navigateTo]);
+
+  // Guard de permissões - redireciona apenas uma vez se não tiver acesso
+  const permissionCheckDoneRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (permissionsLoading) return;
+    // Evita loop: só verifica se mudou de módulo
+    if (permissionCheckDoneRef.current === activeModule) return;
+    permissionCheckDoneRef.current = activeModule;
+    
+    if (!hasModuleAccess(activeModule)) {
+      setProfileError('Você não tem permissão para acessar este módulo.');
+      permissionCheckDoneRef.current = 'dashboard';
+      navigateTo('dashboard');
+    }
+  }, [activeModule, permissionsLoading, hasModuleAccess, navigateTo]);
 
   useEffect(() => {
     if (!profileMenuOpen) return;
@@ -251,10 +300,11 @@ const MainApp: React.FC = () => {
 
   const [leadToConvert, setLeadToConvert] = useState<Lead | null>(null);
   const [pendingTasksCount, setPendingTasksCount] = useState(0);
-  const [clientSearchTerm, setClientSearchTerm] = useState('');
+  const [searchTerm, setSearchTerm] = useState('');
   const [clientSearchResults, setClientSearchResults] = useState<ClientSearchResult[]>([]);
-  const [clientSearchLoading, setClientSearchLoading] = useState(false);
-  const [clientSearchOpen, setClientSearchOpen] = useState(false);
+  const [collaboratorSearchResults, setCollaboratorSearchResults] = useState<any[]>([]);
+  const [searchLoading, setSearchLoading] = useState(false);
+  const [searchOpen, setSearchOpen] = useState(false);
   // const [isClientFormModalOpen, setIsClientFormModalOpen] = useState(false);
   // const [clientFormPrefill, setClientFormPrefill] = useState<Partial<CreateClientDTO> | null>(null);
   const unreadCount = useMemo(() => notifications.filter((n) => !n.read).length, [notifications]);
@@ -534,37 +584,50 @@ const MainApp: React.FC = () => {
   }, [user]);
 
   useEffect(() => {
-    const term = clientSearchTerm.trim();
+    const term = searchTerm.trim();
 
     if (term.length < 2) {
       setClientSearchResults([]);
-      setClientSearchLoading(false);
+      setCollaboratorSearchResults([]);
+      setSearchLoading(false);
       return;
     }
 
-    setClientSearchLoading(true);
+    const isCollaboratorSearch = term.startsWith('@');
+    const searchQuery = isCollaboratorSearch ? term.slice(1) : term;
+
+    setSearchLoading(true);
     let isActive = true;
     const handler = setTimeout(async () => {
       try {
-        const results = await clientService.searchClients(term);
-        if (!isActive) return;
-        setClientSearchResults(results);
+        if (isCollaboratorSearch) {
+          const results = await profileService.searchMembers(searchQuery);
+          if (!isActive) return;
+          setCollaboratorSearchResults(results);
+          setClientSearchResults([]);
+        } else {
+          const results = await clientService.searchClients(searchQuery);
+          if (!isActive) return;
+          setClientSearchResults(results);
+          setCollaboratorSearchResults([]);
+        }
       } catch (error) {
         if (!isActive) return;
-        console.error('Erro ao buscar clientes:', error);
+        console.error('Erro ao buscar:', error);
         setClientSearchResults([]);
+        setCollaboratorSearchResults([]);
       } finally {
         if (isActive) {
-          setClientSearchLoading(false);
+          setSearchLoading(false);
         }
       }
-    }, 350);
+    }, 200);
 
     return () => {
       isActive = false;
       clearTimeout(handler);
     };
-  }, [clientSearchTerm]);
+  }, [searchTerm]);
 
   useEffect(() => {
     const cacheAvailable = typeof window !== 'undefined';
@@ -627,7 +690,7 @@ const MainApp: React.FC = () => {
   };
 
   const handleNavigateToModule = (moduleKey: string, params?: Record<string, string>) => {
-    navigateTo(moduleKey as any, params);
+    safeNavigateTo(moduleKey as any, params);
   };
 
   const handleConvertLead = async (lead: Lead) => {
@@ -648,7 +711,7 @@ const MainApp: React.FC = () => {
     // Guardar referência do lead para remover apenas quando cliente for salvo
     setLeadToConvert(lead);
     setClientPrefill(prefill);
-    navigateTo('clientes');
+    safeNavigateTo('clientes');
   };
 
   const handleClientSaved = async () => {
@@ -671,20 +734,30 @@ const MainApp: React.FC = () => {
   };
 
   const handleClientSearchSelect = (clientId: string) => {
-    setClientSearchOpen(false);
-    navigateTo('clientes', { mode: 'details', entityId: clientId });
+    setSearchOpen(false);
+    setSearchTerm('');
+    safeNavigateTo('clientes', { mode: 'details', entityId: clientId });
   };
 
-  const handleClientSearchKeyDown = (event: React.KeyboardEvent<HTMLInputElement>) => {
+  const handleCollaboratorSearchSelect = (collaboratorId: string) => {
+    setSearchOpen(false);
+    setSearchTerm('');
+    safeNavigateTo('perfil', { userId: collaboratorId });
+  };
+
+  const handleSearchKeyDown = (event: React.KeyboardEvent<HTMLInputElement>) => {
     if (event.key === 'Enter') {
       event.preventDefault();
-      if (clientSearchResults.length > 0) {
+      const isCollaboratorSearch = searchTerm.startsWith('@');
+      if (isCollaboratorSearch && collaboratorSearchResults.length > 0) {
+        handleCollaboratorSearchSelect(collaboratorSearchResults[0].user_id);
+      } else if (!isCollaboratorSearch && clientSearchResults.length > 0) {
         handleClientSearchSelect(clientSearchResults[0].id);
       }
     }
 
     if (event.key === 'Escape') {
-      setClientSearchOpen(false);
+      setSearchOpen(false);
     }
   };
 
@@ -701,7 +774,7 @@ const MainApp: React.FC = () => {
   const openProfileModal = () => {
     if (profileLoading) return;
     // Navegar para a página de perfil em vez de abrir o modal
-    navigateTo('perfil');
+    safeNavigateTo('perfil');
   };
 
   const closeProfileModal = () => {
@@ -905,9 +978,9 @@ const MainApp: React.FC = () => {
             <span className="text-[9px] mt-1">Feed</span>
           </button>
 
-          {!permissionsLoading && hasAnyModulePermission('leads') && (
+          {!permissionsLoading && canAccessModule('leads') && (
             <button
-              onClick={() => { setClientPrefill(null); setIsMobileNavOpen(false); navigateTo('leads'); }}
+              onClick={() => { setClientPrefill(null); setIsMobileNavOpen(false); safeNavigateTo('leads'); }}
               className={`relative flex flex-col items-center py-2.5 px-1 rounded-lg transition-colors ${
                 activeModule === 'leads' ? 'text-amber-500' : 'text-slate-400 hover:text-white hover:bg-slate-800/50'
               }`}
@@ -918,9 +991,9 @@ const MainApp: React.FC = () => {
             </button>
           )}
 
-          {!permissionsLoading && hasAnyModulePermission('clientes') && (
+          {!permissionsLoading && canAccessModule('clientes') && (
             <button
-              onClick={() => { setClientPrefill(null); setIsMobileNavOpen(false); navigateTo('clientes'); }}
+              onClick={() => { setClientPrefill(null); setIsMobileNavOpen(false); safeNavigateTo('clientes'); }}
               className={`relative flex flex-col items-center py-2.5 px-1 rounded-lg transition-colors ${
                 activeModule === 'clientes' ? 'text-amber-500' : 'text-slate-400 hover:text-white hover:bg-slate-800/50'
               }`}
@@ -931,9 +1004,9 @@ const MainApp: React.FC = () => {
             </button>
           )}
 
-          {!permissionsLoading && hasAnyModulePermission('documentos') && (
+          {!permissionsLoading && canAccessModule('documentos') && (
             <button
-              onClick={() => { setClientPrefill(null); setIsMobileNavOpen(false); navigateTo('documentos'); }}
+              onClick={() => { setClientPrefill(null); setIsMobileNavOpen(false); safeNavigateTo('documentos'); }}
               className={`relative flex flex-col items-center py-2.5 px-1 rounded-lg transition-colors ${
                 activeModule === 'documentos' ? 'text-amber-500' : 'text-slate-400 hover:text-white hover:bg-slate-800/50'
               }`}
@@ -944,9 +1017,9 @@ const MainApp: React.FC = () => {
             </button>
           )}
 
-          {!permissionsLoading && hasAnyModulePermission('assinaturas') && (
+          {!permissionsLoading && canAccessModule('assinaturas') && (
             <button
-              onClick={() => { setClientPrefill(null); setIsMobileNavOpen(false); navigateTo('assinaturas'); }}
+              onClick={() => { setClientPrefill(null); setIsMobileNavOpen(false); safeNavigateTo('assinaturas'); }}
               className={`relative flex flex-col items-center py-2.5 px-1 rounded-lg transition-colors ${
                 activeModule === 'assinaturas' ? 'text-amber-500' : 'text-slate-400 hover:text-white hover:bg-slate-800/50'
               }`}
@@ -957,9 +1030,9 @@ const MainApp: React.FC = () => {
             </button>
           )}
 
-          {!permissionsLoading && hasAnyModulePermission('processos') && (
+          {!permissionsLoading && canAccessModule('processos') && (
             <button
-              onClick={() => { setClientPrefill(null); setIsMobileNavOpen(false); navigateTo('processos'); }}
+              onClick={() => { setClientPrefill(null); setIsMobileNavOpen(false); safeNavigateTo('processos'); }}
               className={`relative flex flex-col items-center py-2.5 px-1 rounded-lg transition-colors ${
                 activeModule === 'processos' ? 'text-amber-500' : 'text-slate-400 hover:text-white hover:bg-slate-800/50'
               }`}
@@ -970,9 +1043,9 @@ const MainApp: React.FC = () => {
             </button>
           )}
 
-          {!permissionsLoading && hasAnyModulePermission('requerimentos') && (
+          {!permissionsLoading && canAccessModule('requerimentos') && (
             <button
-              onClick={() => { setClientPrefill(null); setIsMobileNavOpen(false); navigateTo('requerimentos'); }}
+              onClick={() => { setClientPrefill(null); setIsMobileNavOpen(false); safeNavigateTo('requerimentos'); }}
               className={`relative flex flex-col items-center py-2.5 px-1 rounded-lg transition-colors ${
                 activeModule === 'requerimentos' ? 'text-amber-500' : 'text-slate-400 hover:text-white hover:bg-slate-800/50'
               }`}
@@ -983,9 +1056,9 @@ const MainApp: React.FC = () => {
             </button>
           )}
 
-          {!permissionsLoading && hasAnyModulePermission('prazos') && (
+          {!permissionsLoading && canAccessModule('prazos') && (
             <button
-              onClick={() => { setClientPrefill(null); setIsMobileNavOpen(false); navigateTo('prazos'); }}
+              onClick={() => { setClientPrefill(null); setIsMobileNavOpen(false); safeNavigateTo('prazos'); }}
               className={`relative flex flex-col items-center py-2.5 px-1 rounded-lg transition-colors ${
                 activeModule === 'prazos' ? 'text-amber-500' : 'text-slate-400 hover:text-white hover:bg-slate-800/50'
               }`}
@@ -996,9 +1069,9 @@ const MainApp: React.FC = () => {
             </button>
           )}
 
-          {!permissionsLoading && hasAnyModulePermission('intimacoes') && (
+          {!permissionsLoading && canAccessModule('intimacoes') && (
             <button
-              onClick={() => { setClientPrefill(null); setIsMobileNavOpen(false); navigateTo('intimacoes'); }}
+              onClick={() => { setClientPrefill(null); setIsMobileNavOpen(false); safeNavigateTo('intimacoes'); }}
               className={`relative flex flex-col items-center py-2.5 px-1 rounded-lg transition-colors ${
                 activeModule === 'intimacoes' ? 'text-amber-500' : 'text-slate-400 hover:text-white hover:bg-slate-800/50'
               }`}
@@ -1009,9 +1082,9 @@ const MainApp: React.FC = () => {
             </button>
           )}
 
-          {!permissionsLoading && hasAnyModulePermission('financeiro') && (
+          {!permissionsLoading && canAccessModule('financeiro') && (
             <button
-              onClick={() => { setClientPrefill(null); setIsMobileNavOpen(false); navigateTo('financeiro'); }}
+              onClick={() => { setClientPrefill(null); setIsMobileNavOpen(false); safeNavigateTo('financeiro'); }}
               className={`relative flex flex-col items-center py-2.5 px-1 rounded-lg transition-colors ${
                 activeModule === 'financeiro' ? 'text-amber-500' : 'text-slate-400 hover:text-white hover:bg-slate-800/50'
               }`}
@@ -1022,9 +1095,9 @@ const MainApp: React.FC = () => {
             </button>
           )}
 
-          {!permissionsLoading && hasAnyModulePermission('agenda') && (
+          {!permissionsLoading && canAccessModule('agenda') && (
             <button
-              onClick={() => { setClientPrefill(null); setIsMobileNavOpen(false); navigateTo('agenda'); }}
+              onClick={() => { setClientPrefill(null); setIsMobileNavOpen(false); safeNavigateTo('agenda'); }}
               className={`relative flex flex-col items-center py-2.5 px-1 rounded-lg transition-colors ${
                 activeModule === 'agenda' ? 'text-amber-500' : 'text-slate-400 hover:text-white hover:bg-slate-800/50'
               }`}
@@ -1035,13 +1108,25 @@ const MainApp: React.FC = () => {
             </button>
           )}
 
-          {!permissionsLoading && hasAnyModulePermission('chat') && (
+          {!permissionsLoading && canAccessModule('tarefas') && (
             <button
-              onClick={() => { setClientPrefill(null); setIsMobileNavOpen(false); navigateTo('chat'); }}
+              onClick={() => { setClientPrefill(null); setIsMobileNavOpen(false); safeNavigateTo('tarefas'); }}
+              className={`relative flex flex-col items-center py-2.5 px-1 rounded-lg transition-colors ${
+                activeModule === 'tarefas' ? 'text-amber-500' : 'text-slate-400 hover:text-white hover:bg-slate-800/50'
+              }`}
+            >
+              {activeModule === 'tarefas' && <div className="absolute left-0 top-1/2 -translate-y-1/2 w-0.5 h-6 bg-amber-500 rounded-r" />}
+              <CheckSquare className="w-5 h-5" />
+              <span className="text-[9px] mt-1">Tarefas</span>
+            </button>
+          )}
+
+          {!permissionsLoading && canAccessModule('chat') && (
+            <button
+              onClick={() => { setClientPrefill(null); setIsMobileNavOpen(false); safeNavigateTo('chat'); }}
               className={`relative flex flex-col items-center py-2.5 px-1 rounded-lg transition-colors ${
                 activeModule === 'chat' ? 'text-amber-500' : 'text-slate-400 hover:text-white hover:bg-slate-800/50'
               }`}
-              title="Chat"
             >
               {activeModule === 'chat' && <div className="absolute left-0 top-1/2 -translate-y-1/2 w-0.5 h-6 bg-amber-500 rounded-r" />}
               <MessageCircle className="w-5 h-5" />
@@ -1049,11 +1134,10 @@ const MainApp: React.FC = () => {
             </button>
           )}
 
-          {/* Editor de Petições - Widget flutuante (remover este bloco para desativar) */}
-          {!permissionsLoading && hasAnyModulePermission('peticoes') && (
+          {!permissionsLoading && canAccessModule('peticoes') && (
             <button
-              onClick={() => { 
-                setIsMobileNavOpen(false); 
+              onClick={() => {
+                setIsMobileNavOpen(false);
                 events.emit(SYSTEM_EVENTS.PETITION_EDITOR_OPEN);
               }}
               className="relative flex flex-col items-center py-2.5 px-1 rounded-lg transition-colors text-slate-400 hover:text-white hover:bg-slate-800/50"
@@ -1132,30 +1216,35 @@ const MainApp: React.FC = () => {
                   </div>
                   <input
                     type="text"
-                    value={clientSearchTerm}
-                    onChange={(event) => setClientSearchTerm(event.target.value)}
-                    onFocus={() => setClientSearchOpen(true)}
-                    onKeyDown={handleClientSearchKeyDown}
-                    placeholder="Buscar clientes..."
+                    value={searchTerm}
+                    onChange={(event) => setSearchTerm(event.target.value)}
+                    onFocus={() => setSearchOpen(true)}
+                    onKeyDown={handleSearchKeyDown}
+                    placeholder={searchTerm.startsWith('@') ? '@ Buscar colaborador...' : 'Buscar clientes...'}
                     className="w-full rounded-lg border border-gray-200 pl-9 pr-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-500 focus:border-amber-500"
                   />
-                  {(clientSearchOpen && (clientSearchLoading || clientSearchResults.length > 0 || clientSearchTerm.trim().length >= 2)) && (
+                  {searchOpen && (searchLoading || clientSearchResults.length > 0 || collaboratorSearchResults.length > 0 || searchTerm.trim().length >= 2) && (
                     <div className="absolute left-0 right-0 mt-1 bg-white border border-slate-200 rounded-lg shadow-lg z-40 max-h-72 overflow-y-auto text-sm">
-                      {clientSearchLoading && (
+                      {searchLoading && (
                         <div className="px-3 py-2 text-slate-500">Buscando...</div>
                       )}
-                      {!clientSearchLoading && clientSearchResults.length === 0 && clientSearchTerm.trim().length >= 2 && (
+                      {!searchLoading && searchTerm.startsWith('@') && collaboratorSearchResults.length === 0 && searchTerm.trim().length >= 2 && (
+                        <div className="px-3 py-2 text-slate-400">
+                          Nenhum colaborador encontrado para "{searchTerm}"
+                        </div>
+                      )}
+                      {!searchLoading && !searchTerm.startsWith('@') && clientSearchResults.length === 0 && searchTerm.trim().length >= 2 && (
                         <>
                           <div className="px-3 py-2 text-slate-400 border-b border-slate-100">
-                            Nenhum cliente encontrado para "{clientSearchTerm}"
+                            Nenhum cliente encontrado para "{searchTerm}"
                           </div>
                           <button
                             type="button"
                             onMouseDown={(event) => event.preventDefault()}
                             onClick={() => {
-                              setClientPrefill({ full_name: clientSearchTerm.trim() });
-                              setClientSearchOpen(false);
-                              setClientSearchTerm('');
+                              setClientPrefill({ full_name: searchTerm.trim() });
+                              setSearchOpen(false);
+                              setSearchTerm('');
                               navigateTo('clientes');
                             }}
                             className="w-full text-left px-3 py-2.5 hover:bg-emerald-50 transition border-t border-slate-100 flex items-center gap-2 text-emerald-600 font-medium"
@@ -1163,12 +1252,37 @@ const MainApp: React.FC = () => {
                             <span className="text-lg">+</span>
                             <div>
                               <p className="text-sm font-semibold">Adicionar Novo Cliente</p>
-                              <p className="text-xs text-slate-500">Criar cadastro para "{clientSearchTerm}"</p>
+                              <p className="text-xs text-slate-500">Criar cadastro para "{searchTerm}"</p>
                             </div>
                           </button>
                         </>
                       )}
-                      {!clientSearchLoading && clientSearchResults.map((client) => {
+                      {!searchLoading && searchTerm.startsWith('@') && collaboratorSearchResults.map((collaborator) => (
+                        <button
+                          key={collaborator.id}
+                          type="button"
+                          onMouseDown={(event) => event.preventDefault()}
+                          onClick={() => handleCollaboratorSearchSelect(collaborator.user_id)}
+                          className="w-full text-left px-3 py-2 hover:bg-blue-50 transition"
+                        >
+                          <div className="flex items-center gap-2">
+                            {collaborator.avatar_url ? (
+                              <img src={collaborator.avatar_url} alt={collaborator.name} className="w-6 h-6 rounded-full object-cover" />
+                            ) : (
+                              <div className="w-6 h-6 rounded-full bg-slate-200 flex items-center justify-center">
+                                <span className="text-xs font-semibold text-slate-600">
+                                  {collaborator.name.charAt(0).toUpperCase()}
+                                </span>
+                              </div>
+                            )}
+                            <div className="flex-1 min-w-0">
+                              <p className="text-sm font-semibold text-slate-900 truncate">@{collaborator.name}</p>
+                              <p className="text-xs text-slate-500 truncate">{collaborator.email || collaborator.role}</p>
+                            </div>
+                          </div>
+                        </button>
+                      ))}
+                      {!searchLoading && !searchTerm.startsWith('@') && clientSearchResults.map((client) => {
                         const primaryPhone = client.phone || client.mobile || '';
                         return (
                           <button
@@ -1183,14 +1297,14 @@ const MainApp: React.FC = () => {
                           </button>
                         );
                       })}
-                      {!clientSearchLoading && clientSearchResults.length > 0 && (
+                      {!searchLoading && !searchTerm.startsWith('@') && clientSearchResults.length > 0 && (
                         <button
                           type="button"
                           onMouseDown={(event) => event.preventDefault()}
                           onClick={() => {
-                            setClientPrefill({ full_name: clientSearchTerm.trim() });
-                            setClientSearchOpen(false);
-                            setClientSearchTerm('');
+                            setClientPrefill({ full_name: searchTerm.trim() });
+                            setSearchOpen(false);
+                            setSearchTerm('');
                             navigateTo('clientes');
                           }}
                           className="w-full text-left px-3 py-2 hover:bg-emerald-50 transition border-t border-slate-100 flex items-center gap-2 text-emerald-600 font-medium"
@@ -1220,7 +1334,7 @@ const MainApp: React.FC = () => {
                 </button>
                 <NotificationBell 
                   onNavigateToModule={(moduleKey: string, params?: any) => {
-                    navigateTo(moduleKey as any, params);
+                    safeNavigateTo(moduleKey as any, params);
                   }}
                 />
                 
@@ -1317,14 +1431,7 @@ const MainApp: React.FC = () => {
           )}
 
           {/* Renderização condicional baseada no módulo ativo com Lazy Loading */}
-          <Suspense fallback={
-            <div className="flex h-96 items-center justify-center">
-              <div className="text-center">
-                <Loader2 className="w-12 h-12 text-amber-600 animate-spin mx-auto mb-4" />
-                <p className="text-slate-600">Carregando módulo...</p>
-              </div>
-            </div>
-          }>
+          <Suspense fallback={<div className="min-h-[200px]" />}>
             {activeModule === 'dashboard' && <Dashboard onNavigateToModule={handleNavigateToModule} params={moduleParams['dashboard'] ? JSON.parse(moduleParams['dashboard']) : undefined} />}
             {activeModule === 'leads' && <LeadsModule onConvertLead={handleConvertLead} />}
             {activeModule === 'clientes' && (

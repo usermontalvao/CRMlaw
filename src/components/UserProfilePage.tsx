@@ -44,6 +44,8 @@ import {
   X,
   ChevronLeft,
   ChevronRight,
+  Globe,
+  Lock,
 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { profileService, type Profile } from '../services/profile.service';
@@ -227,6 +229,17 @@ export const UserProfilePage: React.FC<UserProfilePageProps> = ({ userId, onClos
   // Estados para criar posts
   const [postText, setPostText] = useState('');
   const [postingInProgress, setPostingInProgress] = useState(false);
+  
+  // Visibilidade e agendamento do post
+  const [postVisibility, setPostVisibility] = useState<'public' | 'private' | 'team'>('public');
+  const [showScheduler, setShowScheduler] = useState(false);
+  const [scheduledDate, setScheduledDate] = useState('');
+  const [scheduledTime, setScheduledTime] = useState('');
+
+  // Audiência (destinatários) para posts privados/equipe
+  const [audienceUserIds, setAudienceUserIds] = useState<string[]>([]);
+  const [audienceRoles, setAudienceRoles] = useState<string[]>([]);
+  const [audienceSearch, setAudienceSearch] = useState('');
 
   const [allProfiles, setAllProfiles] = useState<Profile[]>([]);
   const [showMentionDropdown, setShowMentionDropdown] = useState(false);
@@ -283,6 +296,32 @@ export const UserProfilePage: React.FC<UserProfilePageProps> = ({ userId, onClos
   }>({ open: false, images: [], currentIndex: 0 });
 
   const targetUserId = userId || user?.id;
+
+  const availableAudienceRoles = useMemo(() => {
+    const roles = Array.from(
+      new Set(
+        (allProfiles || [])
+          .map((p) => (p.role || '').trim())
+          .filter((r) => r.length > 0)
+      )
+    );
+    roles.sort((a, b) => a.localeCompare(b));
+    return roles;
+  }, [allProfiles]);
+
+  const filteredAudienceProfiles = useMemo(() => {
+    const q = audienceSearch.trim().toLowerCase();
+    if (!q) return allProfiles;
+    return allProfiles.filter((p) => (p.name || '').toLowerCase().includes(q));
+  }, [audienceSearch, allProfiles]);
+
+  useEffect(() => {
+    if (postVisibility === 'public') {
+      setAudienceUserIds([]);
+      setAudienceRoles([]);
+      setAudienceSearch('');
+    }
+  }, [postVisibility]);
 
   useEffect(() => {
     const loadProfiles = async () => {
@@ -619,6 +658,14 @@ export const UserProfilePage: React.FC<UserProfilePageProps> = ({ userId, onClos
         })
         .map(p => p.user_id);
 
+      const allowedUserIds = Array.from(new Set([...(audienceUserIds || []), ...(mentionedIds || [])]));
+      const allowedRoles = [...(audienceRoles || [])];
+
+      if (postVisibility !== 'public' && allowedUserIds.length === 0 && allowedRoles.length === 0) {
+        alert('Selecione pelo menos uma pessoa ou departamento para publicar como Privado/Equipe.');
+        return;
+      }
+
       let finalPreviewData = { ...previewData };
       for (const tag of selectedTags) {
         if (!selectedEntities.some(e => {
@@ -636,6 +683,11 @@ export const UserProfilePage: React.FC<UserProfilePageProps> = ({ userId, onClos
 
       const postContent = postText.trim() || (hasPoll ? `📊 ${pollQuestion}` : '');
 
+      // Montar data de agendamento se definida
+      const scheduledAt = showScheduler && scheduledDate && scheduledTime
+        ? `${scheduledDate}T${scheduledTime}:00`
+        : null;
+
       const newPost = await feedPostsService.createPost({
         content: postContent,
         tags: selectedTags,
@@ -643,6 +695,10 @@ export const UserProfilePage: React.FC<UserProfilePageProps> = ({ userId, onClos
         entity_references: selectedEntities,
         preview_data: finalPreviewData,
         attachments: pendingAttachments.map((p) => p.attachment),
+        visibility: postVisibility,
+        scheduled_at: scheduledAt,
+        allowed_user_ids: postVisibility === 'public' ? [] : allowedUserIds,
+        allowed_roles: postVisibility === 'public' ? [] : allowedRoles
       });
 
       if (hasPoll) {
@@ -667,6 +723,13 @@ export const UserProfilePage: React.FC<UserProfilePageProps> = ({ userId, onClos
       setSelectedTags([]);
       setSelectedEntities([]);
       setPreviewData({});
+      setPostVisibility('public');
+      setShowScheduler(false);
+      setScheduledDate('');
+      setScheduledTime('');
+      setAudienceUserIds([]);
+      setAudienceRoles([]);
+      setAudienceSearch('');
       pendingAttachments.forEach((p) => {
         try {
           URL.revokeObjectURL(p.localUrl);
@@ -684,7 +747,7 @@ export const UserProfilePage: React.FC<UserProfilePageProps> = ({ userId, onClos
     } finally {
       setPostingInProgress(false);
     }
-  }, [postText, selectedTags, selectedEntities, previewData, allProfiles, postingInProgress, pendingAttachments, showPollCreator, pollQuestion, pollOptions, pollAllowMultiple, pollExpiresIn, pollParticipants, calculatePollExpiration, user?.id]);
+  }, [postText, selectedTags, selectedEntities, previewData, allProfiles, postingInProgress, pendingAttachments, showPollCreator, pollQuestion, pollOptions, pollAllowMultiple, pollExpiresIn, pollParticipants, calculatePollExpiration, user?.id, postVisibility, showScheduler, scheduledDate, scheduledTime, audienceUserIds, audienceRoles]);
 
   const handlePasswordSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -1649,56 +1712,131 @@ export const UserProfilePage: React.FC<UserProfilePageProps> = ({ userId, onClos
                     )}
                   </div>
 
-                  {/* Barra de Ações */}
-                  <div className="flex items-center justify-between px-4 py-3 bg-gradient-to-r from-slate-50 to-slate-100/50 border-t border-slate-200/80">
-                    <div className="flex items-center gap-1">
+                  {/* Barra de Ações - Layout responsivo em 2 linhas */}
+                  <div className="px-4 py-3 bg-gradient-to-r from-slate-50 to-slate-100/50 border-t border-slate-200/80 space-y-2">
+                    {/* Linha 1: Ações principais */}
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-1 flex-wrap">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            insertTextAtCursor('@');
+                            setShowMentionDropdown(true);
+                          }}
+                          className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-slate-600 hover:bg-slate-200 transition-colors text-sm font-medium"
+                        >
+                          <AtSign className="w-4 h-4 text-blue-500" />
+                          <span className="hidden sm:inline text-xs">Mencionar</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            insertTextAtCursor('#');
+                            setShowTagDropdown(true);
+                          }}
+                          className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-slate-600 hover:bg-slate-200 transition-colors text-sm font-medium"
+                        >
+                          <Hash className="w-4 h-4 text-emerald-500" />
+                          <span className="hidden sm:inline text-xs">Tag</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={handleAttachClick}
+                          disabled={uploadingAttachment}
+                          className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-slate-600 hover:bg-slate-200 transition-colors text-sm font-medium"
+                        >
+                          <Image className="w-4 h-4 text-purple-500" />
+                          <span className="hidden sm:inline text-xs">Foto</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setShowEmojiPicker((v) => !v)}
+                          className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-slate-600 hover:bg-slate-200 transition-colors text-sm font-medium"
+                        >
+                          <Smile className="w-4 h-4 text-amber-500" />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setShowPollCreator((v) => !v)}
+                          className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg transition-colors text-sm font-medium ${showPollCreator ? 'bg-indigo-100 text-indigo-700' : 'text-slate-600 hover:bg-slate-200'}`}
+                        >
+                          <BarChart2 className="w-4 h-4 text-indigo-500" />
+                          <span className="hidden sm:inline text-xs">Enquete</span>
+                        </button>
+                      </div>
+
+                      {/* Botão Publicar */}
                       <button
                         type="button"
-                        onClick={() => {
-                          setPostText(postText + '@');
-                          setShowMentionDropdown(true);
-                          postInputRef.current?.focus();
-                        }}
-                        className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-slate-600 hover:bg-slate-200 transition-colors text-sm font-medium"
+                        onClick={handlePublishPost}
+                        disabled={(!postText.trim() && !showPollCreator) || postingInProgress}
+                        className="flex items-center gap-2 bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 disabled:from-slate-300 disabled:to-slate-400 disabled:cursor-not-allowed text-white px-4 py-2 rounded-xl text-sm font-bold transition-all shadow-md shadow-blue-500/25 hover:shadow-lg hover:shadow-blue-500/30 hover:-translate-y-0.5"
                       >
-                        <AtSign className="w-4 h-4 text-blue-500" />
-                        <span className="hidden sm:inline">Mencionar</span>
+                        {postingInProgress ? (
+                          <Loader2 className="w-4 h-4 animate-spin" />
+                        ) : showScheduler && scheduledDate && scheduledTime ? (
+                          <Clock className="w-4 h-4" />
+                        ) : (
+                          <Send className="w-4 h-4" />
+                        )}
+                        <span className="hidden sm:inline">
+                          {postingInProgress ? 'Publicando...' : showScheduler && scheduledDate && scheduledTime ? 'Agendar' : 'Publicar'}
+                        </span>
                       </button>
+                    </div>
+
+                    {/* Linha 2: Visibilidade e Agendamento */}
+                    <div className="flex items-center gap-2 flex-wrap">
+                      {/* Visibilidade - Tabs */}
+                      <div className="flex items-center gap-1 bg-white rounded-lg border border-slate-200 px-1 py-0.5">
+                        <button
+                          type="button"
+                          onClick={() => setPostVisibility('public')}
+                          className={`flex items-center gap-1 px-2 py-1 rounded-md transition-colors text-xs font-medium ${
+                            postVisibility === 'public' ? 'bg-emerald-100 text-emerald-700' : 'text-slate-500 hover:bg-slate-100'
+                          }`}
+                          title="Público - todos veem"
+                        >
+                          <Globe className="w-3.5 h-3.5" />
+                          <span>Público</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setPostVisibility('team')}
+                          className={`flex items-center gap-1 px-2 py-1 rounded-md transition-colors text-xs font-medium ${
+                            postVisibility === 'team' ? 'bg-blue-100 text-blue-700' : 'text-slate-500 hover:bg-slate-100'
+                          }`}
+                          title="Equipe - só colaboradores"
+                        >
+                          <Users className="w-3.5 h-3.5" />
+                          <span>Equipe</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setPostVisibility('private')}
+                          className={`flex items-center gap-1 px-2 py-1 rounded-md transition-colors text-xs font-medium ${
+                            postVisibility === 'private' ? 'bg-amber-100 text-amber-700' : 'text-slate-500 hover:bg-slate-100'
+                          }`}
+                          title="Privado - selecione quem pode ver"
+                        >
+                          <Lock className="w-3.5 h-3.5" />
+                          <span>Privado</span>
+                        </button>
+                      </div>
+
+                      {/* Agendar */}
                       <button
                         type="button"
-                        onClick={() => {
-                          setPostText(postText + '#');
-                          setShowTagDropdown(true);
-                          postInputRef.current?.focus();
-                        }}
-                        className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-slate-600 hover:bg-slate-200 transition-colors text-sm font-medium"
+                        onClick={() => setShowScheduler((v) => !v)}
+                        className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg transition-colors text-xs font-medium border ${
+                          showScheduler 
+                            ? 'bg-orange-100 text-orange-700 border-orange-200' 
+                            : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'
+                        }`}
+                        title="Agendar publicação"
                       >
-                        <Hash className="w-4 h-4 text-emerald-500" />
-                        <span className="hidden sm:inline">Tag</span>
-                      </button>
-                      <button
-                        type="button"
-                        onClick={handleAttachClick}
-                        disabled={uploadingAttachment}
-                        className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-slate-600 hover:bg-slate-200 transition-colors text-sm font-medium"
-                      >
-                        <Image className="w-4 h-4 text-purple-500" />
-                        <span className="hidden sm:inline">Foto</span>
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setShowEmojiPicker((v) => !v)}
-                        className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-slate-600 hover:bg-slate-200 transition-colors text-sm font-medium"
-                      >
-                        <Smile className="w-4 h-4 text-amber-500" />
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setShowPollCreator((v) => !v)}
-                        className={`flex items-center gap-2 px-3 py-1.5 rounded-lg transition-colors text-sm font-medium ${showPollCreator ? 'bg-indigo-100 text-indigo-700' : 'text-slate-600 hover:bg-slate-200'}`}
-                      >
-                        <BarChart2 className="w-4 h-4 text-indigo-500" />
-                        <span className="hidden sm:inline">Enquete</span>
+                        <Clock className="w-3.5 h-3.5" />
+                        <span>Agendar</span>
                       </button>
 
                       <input
@@ -1713,19 +1851,127 @@ export const UserProfilePage: React.FC<UserProfilePageProps> = ({ userId, onClos
                         }}
                       />
                     </div>
-                    <button
-                      type="button"
-                      onClick={handlePublishPost}
-                      disabled={(!postText.trim() && !showPollCreator) || postingInProgress}
-                      className="flex items-center gap-2 bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 disabled:from-slate-300 disabled:to-slate-400 disabled:cursor-not-allowed text-white px-5 py-2.5 rounded-xl text-sm font-bold transition-all shadow-md shadow-blue-500/25 hover:shadow-lg hover:shadow-blue-500/30 hover:-translate-y-0.5"
-                    >
-                      {postingInProgress ? (
-                        <Loader2 className="w-4 h-4 animate-spin" />
-                      ) : (
-                        <Send className="w-4 h-4" />
-                      )}
-                      {postingInProgress ? 'Publicando...' : 'Publicar'}
-                    </button>
+
+                    {/* Destinatários (Privado/Equipe) */}
+                    {postVisibility !== 'public' && (
+                      <div className="bg-white rounded-xl border border-slate-200 px-3 py-2">
+                        <div className="flex items-center justify-between gap-2 flex-wrap">
+                          <span className="text-xs font-semibold text-slate-700">
+                            {postVisibility === 'private' ? 'Privado para:' : 'Equipe (selecionar):'}
+                          </span>
+                          <span className="text-[11px] text-slate-500">
+                            Selecione pessoas e/ou departamentos
+                          </span>
+                        </div>
+
+                        {/* Roles (departamentos via Cargo) */}
+                        {availableAudienceRoles.length > 0 && (
+                          <div className="flex flex-wrap gap-1 mt-2">
+                            {availableAudienceRoles.map((role) => {
+                              const active = audienceRoles.includes(role);
+                              return (
+                                <button
+                                  key={role}
+                                  type="button"
+                                  onClick={() => {
+                                    setAudienceRoles((prev) =>
+                                      prev.includes(role) ? prev.filter((r) => r !== role) : [...prev, role]
+                                    );
+                                  }}
+                                  className={`text-[11px] px-2 py-1 rounded-full border transition-colors ${
+                                    active
+                                      ? 'bg-slate-900 text-white border-slate-900'
+                                      : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'
+                                  }`}
+                                  title={role}
+                                >
+                                  {role}
+                                </button>
+                              );
+                            })}
+                          </div>
+                        )}
+
+                        {/* Pessoas */}
+                        <div className="mt-2">
+                          <input
+                            value={audienceSearch}
+                            onChange={(e) => setAudienceSearch(e.target.value)}
+                            placeholder="Buscar pessoas..."
+                            className="w-full px-3 py-2 text-sm rounded-lg border border-slate-200 bg-white focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
+                          />
+                          <div className="flex flex-wrap gap-1 mt-2">
+                            {audienceUserIds.map((uid) => {
+                              const p = allProfiles.find((x) => x.user_id === uid);
+                              const label = p?.name || 'Usuário';
+                              return (
+                                <button
+                                  key={uid}
+                                  type="button"
+                                  onClick={() => setAudienceUserIds((prev) => prev.filter((x) => x !== uid))}
+                                  className="text-[11px] px-2 py-1 rounded-full bg-blue-50 text-blue-700 border border-blue-200 hover:bg-blue-100 transition-colors"
+                                  title="Remover"
+                                >
+                                  {label} ✕
+                                </button>
+                              );
+                            })}
+                          </div>
+                          {audienceSearch.trim().length > 0 && (
+                            <div className="mt-2 max-h-40 overflow-auto border border-slate-200 rounded-lg bg-white">
+                              {filteredAudienceProfiles
+                                .filter((p) => !audienceUserIds.includes(p.user_id))
+                                .slice(0, 10)
+                                .map((p) => (
+                                  <button
+                                    key={p.user_id}
+                                    type="button"
+                                    onClick={() => {
+                                      setAudienceUserIds((prev) => [...prev, p.user_id]);
+                                      setAudienceSearch('');
+                                    }}
+                                    className="w-full text-left px-3 py-2 hover:bg-slate-50 text-sm"
+                                  >
+                                    <span className="font-medium text-slate-900">{p.name}</span>
+                                    <span className="text-xs text-slate-500">{p.role ? ` • ${p.role}` : ''}</span>
+                                  </button>
+                                ))}
+                              {filteredAudienceProfiles.length === 0 && (
+                                <div className="px-3 py-2 text-sm text-slate-500">Nenhum usuário encontrado</div>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Agendamento inline */}
+                    {showScheduler && (
+                      <div className="flex items-center gap-2 px-3 py-2 bg-orange-50 rounded-lg border border-orange-200">
+                        <Clock className="w-4 h-4 text-orange-500" />
+                        <span className="text-xs text-orange-700 font-medium">Agendar para:</span>
+                        <input
+                          type="date"
+                          value={scheduledDate}
+                          onChange={(e) => setScheduledDate(e.target.value)}
+                          min={new Date().toISOString().split('T')[0]}
+                          className="px-2 py-1 text-xs rounded border border-orange-200 bg-white focus:ring-2 focus:ring-orange-500/30 focus:border-orange-400"
+                        />
+                        <input
+                          type="time"
+                          value={scheduledTime}
+                          onChange={(e) => setScheduledTime(e.target.value)}
+                          className="px-2 py-1 text-xs rounded border border-orange-200 bg-white focus:ring-2 focus:ring-orange-500/30 focus:border-orange-400"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => { setShowScheduler(false); setScheduledDate(''); setScheduledTime(''); }}
+                          className="ml-auto text-orange-500 hover:text-orange-700"
+                        >
+                          <X className="w-4 h-4" />
+                        </button>
+                      </div>
+                    )}
                   </div>
 
                   {/* Criador de Enquete */}
@@ -2308,7 +2554,7 @@ export const UserProfilePage: React.FC<UserProfilePageProps> = ({ userId, onClos
                                     >
                                       {c.name}
                                     </button>
-                                    <p className="text-sm text-slate-700">{c.content}</p>
+                                    <p className="text-sm text-slate-700">{renderContentWithMentions(c.content)}</p>
                                   </div>
                                   <div className="flex items-center gap-3 mt-1 ml-2">
                                     <span className="text-[10px] text-slate-400">

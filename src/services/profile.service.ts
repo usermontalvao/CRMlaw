@@ -102,6 +102,20 @@ class ProfileService {
     return data ?? [];
   }
 
+  async searchMembers(query: string): Promise<Profile[]> {
+    if (!query || query.length < 2) return [];
+
+    const { data, error } = await supabase
+      .from(this.tableName)
+      .select('*')
+      .or(`name.ilike.%${query}%,email.ilike.%${query}%`)
+      .order('name', { ascending: true })
+      .limit(10);
+
+    if (error) throw new Error(error.message);
+    return data ?? [];
+  }
+
   async getMyProfile(): Promise<Profile | null> {
     const { data: { user } } = await supabase.auth.getUser();
     

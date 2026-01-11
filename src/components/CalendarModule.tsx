@@ -18,6 +18,7 @@ import { ClientSearchSelect } from './ClientSearchSelect';
 import { useDeleteConfirm } from '../contexts/DeleteConfirmContext';
 import { userNotificationService } from '../services/userNotification.service';
 import { useAuth } from '../contexts/AuthContext';
+import { usePermissions } from '../hooks/usePermissions';
 import type { Deadline } from '../types/deadline.types';
 import type { Process } from '../types/process.types';
 import type { Requirement } from '../types/requirement.types';
@@ -106,6 +107,28 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({
 }) => {
   const { confirmDelete } = useDeleteConfirm();
   const { user } = useAuth();
+  const { canView, isAdmin, loading: permissionsLoading } = usePermissions();
+
+  // Mapeia event_type para módulo de permissão
+  const canViewEventType = useCallback((eventType: string) => {
+    if (permissionsLoading) return true;
+    if (isAdmin) return true;
+    switch (eventType) {
+      case 'payment':
+        return canView('financeiro');
+      case 'hearing':
+        return canView('processos');
+      case 'deadline':
+        return canView('prazos');
+      case 'requirement':
+      case 'pericia':
+        return canView('requerimentos');
+      case 'meeting':
+      case 'task':
+      default:
+        return canView('agenda');
+    }
+  }, [permissionsLoading, isAdmin, canView]);
 
   const calendarRef = useRef<FullCalendar | null>(null);
   const [loading, setLoading] = useState(true);
@@ -613,9 +636,11 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({
     return combined.filter((event) => {
       const eventType = event.extendedProps?.type as EventType | undefined;
       if (!eventType) return true;
+      // Filtrar por permissão do módulo de origem
+      if (!canViewEventType(eventType)) return false;
       return viewFilters[eventType] ?? true;
     });
-  }, [systemEvents, customEvents, viewFilters]);
+  }, [systemEvents, customEvents, viewFilters, canViewEventType]);
 
   const handleEventClick = useCallback(
     (info: any) => {

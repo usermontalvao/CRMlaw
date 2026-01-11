@@ -1,5 +1,138 @@
 # Changelog
 
+## 1.9.320
+- **Feed Social (UI/UX)**: Design premium dos filtros com gradientes e sombras.
+- **Feed Social (UI/UX)**: Cards de posts com sombras suaves e transições elegantes.
+- **Feed Social (UI/UX)**: Header do post redesenhado com avatar maior e layout mais organizado.
+- **Feed Social (UI/UX)**: Botões de curtir/comentar com estados visuais melhorados.
+- **Feed Social (UI/UX)**: Seção de comentários com design mais moderno e espaçamento adequado.
+- **Feed Social (UI/UX)**: Ícones de reação com gradientes coloridos.
+
+## 1.9.319
+- **Feed Social (Post Modal)**: Carregamento instantâneo - usa dados do feed já carregado em vez de nova requisição.
+- **Feed Social (Post Modal)**: Comentários carregam em paralelo sem bloquear exibição do post.
+
+## 1.9.318
+- **Feed Social (Banimento)**: Administradores podem banir posts de outros usuários.
+- **Feed Social (Banimento)**: Posts banidos ficam com blur e exibem "Post Banido por [nome do admin]".
+- **Feed Social (Banimento)**: Admin pode desbanir posts previamente banidos.
+- **Feed Social (Banimento)**: Menu de ações do post agora aparece para admin em todos os posts.
+
+## 1.9.317
+- **Feed Social (Post Modal)**: Corrigido fundo preto durante carregamento do modal - agora sempre branco.
+
+## 1.9.316
+- **Feed Social (Post Modal)**: Corrigidas cores do modal para sempre exibir fundo branco e textos escuros.
+- **Feed Social (Post Modal)**: Clique no tempo da publicação (ex: "9m", "2h") agora abre o modal do post.
+- **Feed Social (Post Modal)**: Cores dos comentários e input corrigidas para tema claro.
+
+## 1.9.315
+- **Feed Social (Notificações)**: Evita notificação duplicada quando usuário é mencionado em comentário do próprio post.
+- **Feed Social (Notificações)**: Se o autor do post é mencionado, recebe apenas "comentou sua publicação" (não mais "mencionou você" também).
+
+## 1.9.314
+- **Feed Social (Post Modal)**: Novo modal de visualização de post individual estilo Facebook.
+- **Feed Social (Post Modal)**: Ao clicar em notificação de menção/curtida/comentário, abre o post em modal dedicado.
+- **Feed Social (Post Modal)**: Botão "Voltar ao Feed" para retornar à visualização completa.
+- **Feed Social (Post Modal)**: Exibe autor, conteúdo, imagens, curtidas, comentários e permite interagir.
+- **Feed Social (Post Modal)**: Menções clicáveis que levam ao perfil do usuário.
+
+## 1.9.313
+- **Feed Social (Menções)**: Corrigido clique em nome mencionado para navegar ao perfil do usuário.
+- **Feed Social (Menções)**: Melhorada busca flexível de perfis (comparação parcial de nomes).
+- **Feed Social (Menções)**: Adicionados logs de debug para diagnóstico de notificações.
+
+## 1.9.312
+- **Feed Social (Menções)**: Nomes mencionados com @ agora ficam azuis e clicáveis (levam ao perfil do usuário).
+- **Feed Social (Menções)**: Usuários mencionados em comentários agora recebem notificação corretamente.
+- **Feed Social (Menções)**: Corrigida renderização de menções em todos os componentes (Dashboard, UserProfilePage, FeedWidget).
+
+## 1.9.311
+- **Feed Social (Comentários)**: Dropdown de menções (@) agora aparece corretamente ao digitar @.
+- **Feed Social (Comentários)**: Usuários mencionados com @ agora recebem notificação.
+
+## 1.9.310
+- **Feed Social (Comentários)**: Dropdown de menções (@) agora aparece abaixo do input, não mais escondido/cortado.
+
+## 1.9.309
+- **Feed Social (Comentários)**: Clique em "X comentários" agora expande/mostra os comentários abaixo do post.
+
+## 1.9.308
+- **Feed Social (Enquetes)**: Exibe quem votou (modal), tempo de expiração corrigido (sem "Agora") e auto-encerramento quando todos os participantes votarem.
+- **Feed Social (Comentários)**: Dropdown de menções (@) não fica mais escondido/cortado.
+
+## 1.9.307
+- **Feed Social**: Após publicar uma enquete, o criador agora fecha automaticamente, limpa os campos e exibe confirmação. Botão Publicar só habilita com enquete válida.
+
+## 1.9.306
+- **Feed Social**: Avatar do usuário no composer/comentários agora prioriza foto real do perfil e faz fallback para a foto do login (evita ícone genérico).
+
+## 1.9.305
+- **Feed Social**: Adicionada funcionalidade de menções (@) nos comentários dos posts.
+
+## 1.9.304
+- **Dashboard**: Ajustado visual do card "Aguardando Confecção" para manter consistência com os demais widgets.
+
+## 1.9.303
+- **Dashboard**: Card "Aguardando Confecção" redesenhado com visual premium: header com gradiente, cards internos com sombras e hover effects, ícones com gradiente.
+
+## 1.9.302
+- **Feed Social**: Modal de editar post agora inclui opções de visibilidade (Público/Equipe/Privado) e seleção de destinatários.
+
+## 1.9.301
+- **Feed Social**: Posts privados não notificam mais mencionados que não estão nos destinatários.
+- **Feed Social**: Corrigida RLS para que posts privados/equipe só apareçam para destinatários selecionados (não mais para mencionados).
+
+## 1.9.300
+- **Feed Social**: Corrigido bug onde menção (@) e tag (#) eram inseridas no final do texto em vez da posição do cursor.
+- **Financeiro**: Acordos encerrados agora mostram corretamente "ENCERRADO" em vez de "A SALDAR" ou "PARCIAL".
+
+## 1.9.299
+- **Feed Social**: Visibilidade "Privado" e "Equipe" agora exigem seleção de destinatários (pessoas específicas e/ou departamentos via Cargo). Controle por `allowed_user_ids` e `allowed_roles`.
+
+## 1.9.298
+- **Feed Social**: UI do composer no Perfil atualizada com visibilidade em tabs e agendamento.
+
+## 1.9.297
+- **Feed Social**: UI/UX do composer reorganizada em 2 linhas. Visibilidade em formato de tabs (Público/Equipe/Privado). Referências de entidades (clientes, processos, etc.) renderizadas com cores e clicáveis.
+
+## 1.9.296
+- **Feed Social**: Optimistic updates para likes (feedback instantâneo). Melhor fluidez na interação.
+
+## 1.9.295
+- **Feed Social**: Comentários expandidos automaticamente quando post é aberto via menção (@).
+
+## 1.9.294
+- **Feed Social**: Adicionada visibilidade de posts (público/privado/equipe) e agendamento de publicações.
+
+## 1.9.293
+- **Performance**: Corrigido loop/recarregamento que podia manter "Carregando publicações..." indefinidamente no Feed.
+
+## 1.9.292
+- **Performance**: Corrigido loading de publicações - não mostra 'Carregando...' se já tem posts do cache.
+
+## 1.9.291
+- **Performance**: Publicações do Feed carregadas do cache instantaneamente. Atualização em background sem bloquear UI. Enquetes carregadas em paralelo.
+
+## 1.9.290
+- **Performance**: Carregamento instantâneo do Feed e módulos. Cache carregado sincronamente no início, sem loading visível. Atualização de dados em background.
+
+## 1.9.289
+- **Permissões**: Eventos do calendário e widget de agenda agora filtrados por permissão do módulo de origem (ex: pagamentos só aparecem se tiver acesso ao financeiro, audiências só se tiver acesso a processos).
+
+## 1.9.288
+- **Performance**: Corrigida lentidão crítica (30s+) no carregamento de páginas. Funções de permissão agora memoizadas com useCallback/useMemo e guard de permissões com proteção contra loops.
+
+## 1.9.287
+- **Permissões**: Menu/Feed agora respeitam `can_view` (permite ver) e a navegação é bloqueada quando o usuário não possui permissão de visualização do módulo.
+- **Header**: Busca de colaboradores no campo de busca. Digite @nome para buscar membros da equipe. Clique para navegar ao perfil do colaborador.
+
+## 1.9.286
+- **Feed**: Widgets da coluna direita (incluindo "Prazos") agora aparecem também em telas menores (fora do breakpoint XL), garantindo visibilidade para Administrador.
+
+## 1.9.285
+- **Feed**: Widget "Prazos" agora mostra os 5 próximos prazos por ordem de vencimento (não apenas urgentes).
+
 ## 1.9.284
 - **Dashboard**: Adicionado widget "Prazos Urgentes" na sidebar direita (abaixo do Saúde Financeira). Exibe prazos com vencimento em até 3 dias, com indicação de atrasado/dias restantes.
 - **Dashboard**: Barra de indicadores substituída por métricas reais: Clientes, Processos, Requerimentos, Prazos, Tarefas (sem percentuais fictícios).
@@ -2180,6 +2313,15 @@
 - Versão anterior.
 
 ## Releases
+
+### 1.9.287
+- **Permissões**: Menu/Feed agora respeitam `can_view` (permite ver) e a navegação é bloqueada quando o usuário não possui permissão de visualização do módulo.
+
+### 1.9.286
+- **Feed**: Widgets da coluna direita (incluindo "Prazos") agora aparecem também em telas menores (fora do breakpoint XL), garantindo visibilidade para Administrador.
+
+### 1.9.285
+- **Feed**: Widget "Prazos" agora mostra os 5 próximos prazos por ordem de vencimento (não apenas urgentes).
 
 ### 1.9.284
 - **Dashboard**: Adicionado widget "Prazos Urgentes" na sidebar direita (abaixo do Saúde Financeira). Exibe prazos com vencimento em até 3 dias, com indicação de atrasado/dias restantes.

@@ -242,11 +242,11 @@ export const NotificationBell: React.FC<NotificationBellProps> = ({ onNavigateTo
       console.log('➡️ Navegando para agenda');
       onNavigateToModule('agenda');
     } else if (notification.type === 'feed_like' || notification.type === 'feed_comment' || notification.type === 'mention') {
-      // Notificação de feed: navegar para dashboard e scroll até o post
+      // Notificação de feed: abrir modal do post específico
       const postId = notification.metadata?.post_id;
-      console.log('➡️ Navegando para dashboard, post_id:', postId);
+      console.log('➡️ Abrindo modal do post:', postId);
       if (postId) {
-        onNavigateToModule('dashboard', { scrollToPost: postId });
+        onNavigateToModule('dashboard', { openPostModal: postId });
       } else {
         onNavigateToModule('dashboard');
       }

@@ -58,9 +58,14 @@ import {
   ChevronLeft,
   ChevronRight,
   UserPlus,
+  Globe,
+  Lock,
+  Check,
 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { useDeleteConfirm } from '../contexts/DeleteConfirmContext';
+import { useToastContext } from '../contexts/ToastContext';
+import { usePermissions } from '../hooks/usePermissions';
 import { clientService } from '../services/client.service';
 import { processService } from '../services/process.service';
 import { deadlineService } from '../services/deadline.service';
@@ -72,7 +77,7 @@ import { profileService, type Profile } from '../services/profile.service';
 import { financialService } from '../services/financial.service';
 import { dashboardPreferencesService } from '../services/dashboardPreferences.service';
 import { feedPostsService, type FeedPost, type EntityReference, type PreviewData, type TagRecord } from '../services/feedPosts.service';
-import { feedPollsService, type FeedPoll } from '../services/feedPolls.service';
+import { feedPollsService, type FeedPoll, type FeedPollVoter } from '../services/feedPolls.service';
 import type { Client } from '../types/client.types';
 import type { Process } from '../types/process.types';
 import type { Deadline } from '../types/deadline.types';
@@ -84,6 +89,7 @@ import type { Requirement } from '../types/requirement.types';
 import { events, SYSTEM_EVENTS } from '../utils/events';
 import { FinancialCard } from './dashboard/FinancialCard';
 import { FinancialModal } from './FinancialModal';
+import { PostModal } from './PostModal';
 import { supabase } from '../config/supabase';
 import { userNotificationService } from '../services/userNotification.service';
 
@@ -95,8 +101,8 @@ interface DashboardProps {
 // Cache keys e configuração
 const DASHBOARD_CACHE_KEY = 'crm-dashboard-social-cache';
 const DASHBOARD_CACHE_VERSION = 1;
-const CACHE_DURATION = 15 * 60 * 1000; // 15 minutos
-const REQUEST_TIMEOUT_MS = 15000;
+const CACHE_DURATION = 30 * 60 * 1000; // 30 minutos (aumentado para menos reloads)
+const REQUEST_TIMEOUT_MS = 10000; // 10s timeout
 
 interface DashboardCache {
   version: number;
@@ -112,6 +118,80 @@ interface DashboardCache {
     requirementsAwaiting: Requirement[];
   };
 }
+
+// Função para carregar cache instantaneamente (síncrono)
+const getInstantCache = (): DashboardCache['data'] | null => {
+  try {
+    const cachedData = localStorage.getItem(DASHBOARD_CACHE_KEY);
+    if (!cachedData) return null;
+    const cache: DashboardCache = JSON.parse(cachedData);
+    const now = Date.now();
+    const isValid =
+      cache?.version === DASHBOARD_CACHE_VERSION &&
+      typeof cache?.timestamp === 'number' &&
+      cache?.data &&
+      Array.isArray(cache.data.clients) &&
+      Array.isArray(cache.data.processes) &&
+      Array.isArray(cache.data.deadlines) &&
+      Array.isArray(cache.data.tasks) &&
+      Array.isArray(cache.data.calendarEvents) &&
+      Array.isArray(cache.data.djenIntimacoes) &&
+      typeof cache.data.financialStats !== 'undefined' &&
+      Array.isArray(cache.data.requirementsAwaiting);
+    // Cache válido por 2 horas para carregamento instantâneo
+    if (isValid && now - cache.timestamp < 2 * 60 * 60 * 1000) {
+      return cache.data;
+    }
+  } catch {
+    // Ignora erros de parse
+  }
+  return null;
+};
+
+// Cache para publicações do Feed
+const FEED_POSTS_CACHE_KEY = 'crm-feed-posts-cache';
+const FEED_POSTS_CACHE_VERSION = 1;
+
+interface FeedPostsCache {
+  version: number;
+  timestamp: number;
+  posts: FeedPost[];
+}
+
+// Função para carregar cache de posts instantaneamente (síncrono)
+const getInstantPostsCache = (): FeedPost[] | null => {
+  try {
+    const cachedData = localStorage.getItem(FEED_POSTS_CACHE_KEY);
+    if (!cachedData) return null;
+    const cache: FeedPostsCache = JSON.parse(cachedData);
+    const now = Date.now();
+    const isValid =
+      cache?.version === FEED_POSTS_CACHE_VERSION &&
+      typeof cache?.timestamp === 'number' &&
+      Array.isArray(cache?.posts);
+    // Cache válido por 1 hora para carregamento instantâneo
+    if (isValid && now - cache.timestamp < 60 * 60 * 1000) {
+      return cache.posts;
+    }
+  } catch {
+    // Ignora erros de parse
+  }
+  return null;
+};
+
+// Função para salvar cache de posts
+const savePostsCache = (posts: FeedPost[]) => {
+  try {
+    const cache: FeedPostsCache = {
+      version: FEED_POSTS_CACHE_VERSION,
+      timestamp: Date.now(),
+      posts: posts.slice(0, 20), // Limitar a 20 posts no cache
+    };
+    localStorage.setItem(FEED_POSTS_CACHE_KEY, JSON.stringify(cache));
+  } catch {
+    // Ignora erros de quota
+  }
+};
 
 // Componente de Avatar
 const Avatar: React.FC<{ src?: string | null; name: string; size?: 'xs' | 'sm' | 'md' | 'lg' | 'xl' }> = ({
@@ -426,16 +506,24 @@ const SortableWidget: React.FC<{
 
 const Dashboard: React.FC<DashboardProps> = ({ onNavigateToModule, params }) => {
   const { user } = useAuth();
+  const { canView, isAdmin, loading: permissionsLoading } = usePermissions();
   const { confirmDelete } = useDeleteConfirm();
-  const [loading, setLoading] = useState(true);
-  const [clients, setClients] = useState<Client[]>([]);
-  const [processes, setProcesses] = useState<Process[]>([]);
-  const [deadlines, setDeadlines] = useState<Deadline[]>([]);
-  const [tasks, setTasks] = useState<Task[]>([]);
-  const [calendarEvents, setCalendarEvents] = useState<CalendarEvent[]>([]);
-  const [djenIntimacoes, setDjenIntimacoes] = useState<DjenComunicacaoLocal[]>([]);
-  const [financialStats, setFinancialStats] = useState<FinancialStats | null>(null);
-  const [requirementsAwaiting, setRequirementsAwaiting] = useState<Requirement[]>([]);
+  const toast = useToastContext();
+  const avatarSyncedRef = useRef(false);
+  
+  // Carregar cache instantaneamente para evitar loading visível
+  const instantCache = useMemo(() => getInstantCache(), []);
+  const hasInstantCache = !!instantCache;
+  
+  const [loading, setLoading] = useState(!hasInstantCache); // Sem loading se tiver cache
+  const [clients, setClients] = useState<Client[]>(instantCache?.clients || []);
+  const [processes, setProcesses] = useState<Process[]>(instantCache?.processes || []);
+  const [deadlines, setDeadlines] = useState<Deadline[]>(instantCache?.deadlines || []);
+  const [tasks, setTasks] = useState<Task[]>(instantCache?.tasks || []);
+  const [calendarEvents, setCalendarEvents] = useState<CalendarEvent[]>(instantCache?.calendarEvents || []);
+  const [djenIntimacoes, setDjenIntimacoes] = useState<DjenComunicacaoLocal[]>(instantCache?.djenIntimacoes || []);
+  const [financialStats, setFinancialStats] = useState<FinancialStats | null>(instantCache?.financialStats || null);
+  const [requirementsAwaiting, setRequirementsAwaiting] = useState<Requirement[]>(instantCache?.requirementsAwaiting || []);
   const [currentProfile, setCurrentProfile] = useState<Profile | null>(null);
   const [postText, setPostText] = useState('');
   const [allProfiles, setAllProfiles] = useState<Profile[]>([]);
@@ -448,6 +536,42 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToModule, params }) => 
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
   const [uploadingAttachment, setUploadingAttachment] = useState(false);
   const [pendingAttachments, setPendingAttachments] = useState<Array<{ localUrl: string; attachment: any }>>([]);
+
+  const resolvedCurrentAvatarUrl = useMemo(() => {
+    const meta: any = (user as any)?.user_metadata || {};
+    return (
+      currentProfile?.avatar_url ||
+      meta?.avatar_url ||
+      meta?.picture ||
+      meta?.avatarUrl ||
+      meta?.photoURL ||
+      null
+    );
+  }, [currentProfile?.avatar_url, user]);
+
+  useEffect(() => {
+    if (!user?.id) return;
+    if (!currentProfile) return;
+    if (avatarSyncedRef.current) return;
+    if (currentProfile.avatar_url) return;
+
+    const meta: any = (user as any)?.user_metadata || {};
+    const metaAvatar = meta?.avatar_url || meta?.picture || meta?.avatarUrl || meta?.photoURL;
+    if (!metaAvatar) return;
+
+    avatarSyncedRef.current = true;
+    profileService
+      .upsertProfile(user.id, {
+        name: currentProfile.name || meta?.full_name || meta?.name || 'Usuário',
+        email: currentProfile.email || user.email || '',
+        role: currentProfile.role || 'Membro',
+        avatar_url: metaAvatar,
+      })
+      .then((updated) => setCurrentProfile(updated))
+      .catch(() => {
+        avatarSyncedRef.current = false;
+      });
+  }, [currentProfile, user]);
 
   const insertTextAtCursor = useCallback(
     (text: string) => {
@@ -500,26 +624,90 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToModule, params }) => 
       if (fileInputRef.current) fileInputRef.current.value = '';
     }
   }, []);
-  
-  // Feed posts state
-  const [feedPosts, setFeedPosts] = useState<FeedPost[]>([]);
-  const [loadingPosts, setLoadingPosts] = useState(false);
+
+  // Feed posts state - carregar cache instantaneamente
+  const instantPostsCache = useMemo(() => getInstantPostsCache(), []);
+  const hasInstantPostsCache = !!instantPostsCache && instantPostsCache.length > 0;
+  const [feedPosts, setFeedPosts] = useState<FeedPost[]>(instantPostsCache || []);
+  const [loadingPosts, setLoadingPosts] = useState(!hasInstantPostsCache);
+  const feedPostsInFlightRef = useRef(false);
+  const feedPostsCountRef = useRef(0);
+  useEffect(() => {
+    feedPostsCountRef.current = feedPosts.length;
+  }, [feedPosts.length]);
   const [postingInProgress, setPostingInProgress] = useState(false);
   const [openPostMenu, setOpenPostMenu] = useState<string | null>(null);
   const [editingPostId, setEditingPostId] = useState<string | null>(null);
   const [editingContent, setEditingContent] = useState('');
+  const [editingVisibility, setEditingVisibility] = useState<'public' | 'private' | 'team'>('public');
+  const [editingAudienceUserIds, setEditingAudienceUserIds] = useState<string[]>([]);
+  const [editingAudienceRoles, setEditingAudienceRoles] = useState<string[]>([]);
+  const [editingAudienceSearch, setEditingAudienceSearch] = useState('');
   const inlineEditRef = useRef<HTMLTextAreaElement | null>(null);
   const [showMentionDropdownInline, setShowMentionDropdownInline] = useState(false);
   const [showTagDropdownInline, setShowTagDropdownInline] = useState(false);
   const [inlineMentionQuery, setInlineMentionQuery] = useState('');
   const [inlineTagQuery, setInlineTagQuery] = useState('');
   
+  // Visibilidade e agendamento do post
+  const [postVisibility, setPostVisibility] = useState<'public' | 'private' | 'team'>('public');
+  const [showScheduler, setShowScheduler] = useState(false);
+  const [scheduledDate, setScheduledDate] = useState('');
+  const [scheduledTime, setScheduledTime] = useState('');
+
+  // Audiência (destinatários) para posts privados/equipe
+  const [audienceUserIds, setAudienceUserIds] = useState<string[]>([]);
+  const [audienceRoles, setAudienceRoles] = useState<string[]>([]);
+  const [audienceSearch, setAudienceSearch] = useState('');
+
+  const availableAudienceRoles = useMemo(() => {
+    const roles = Array.from(
+      new Set(
+        (allProfiles || [])
+          .map((p) => (p.role || '').trim())
+          .filter((r) => r.length > 0)
+      )
+    );
+    roles.sort((a, b) => a.localeCompare(b));
+    return roles;
+  }, [allProfiles]);
+
+  const filteredAudienceProfiles = useMemo(() => {
+    const q = audienceSearch.trim().toLowerCase();
+    if (!q) return allProfiles;
+    return allProfiles.filter((p) => (p.name || '').toLowerCase().includes(q));
+  }, [audienceSearch, allProfiles]);
+
+  const filteredEditingAudienceProfiles = useMemo(() => {
+    const q = editingAudienceSearch.trim().toLowerCase();
+    if (!q) return allProfiles;
+    return allProfiles.filter((p) => (p.name || '').toLowerCase().includes(q));
+  }, [editingAudienceSearch, allProfiles]);
+
+  useEffect(() => {
+    if (postVisibility === 'public') {
+      setAudienceUserIds([]);
+      setAudienceRoles([]);
+      setAudienceSearch('');
+    }
+  }, [postVisibility]);
+
+  useEffect(() => {
+    if (editingVisibility === 'public') {
+      setEditingAudienceUserIds([]);
+      setEditingAudienceRoles([]);
+      setEditingAudienceSearch('');
+    }
+  }, [editingVisibility]);
+
   // Estado para comentários inline (expandidos abaixo do post)
   const [expandedComments, setExpandedComments] = useState<Record<string, {
     comments: Array<{ user_id: string; name: string; avatar_url?: string; content: string; created_at: string }>;
     loading: boolean;
     newComment: string;
     submitting: boolean;
+    showMentionDropdown: boolean;
+    mentionSearch: string;
   }>>({});
 
   // Available tags (definido antes dos filtros inline que dependem dele)
@@ -653,7 +841,7 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToModule, params }) => 
       el.setSelectionRange(pos, pos);
     });
   }, [availableTags, editingContent]);
-  
+
   // Poll (enquete) state
   const [showPollCreator, setShowPollCreator] = useState(false);
   const [pollQuestion, setPollQuestion] = useState('');
@@ -662,11 +850,15 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToModule, params }) => 
   const [pollExpiresIn, setPollExpiresIn] = useState<string>('24h');
   const [pollParticipants, setPollParticipants] = useState<string[]>([]);
   const [postPolls, setPostPolls] = useState<Map<string, FeedPoll>>(new Map());
-  
+
   // Modal do acordo financeiro
   const [showFinancialModal, setShowFinancialModal] = useState(false);
   const [selectedFinancialAgreementId, setSelectedFinancialAgreementId] = useState<string | null>(null);
-  
+
+  // Modal do post individual (estilo Facebook)
+  const [showPostModal, setShowPostModal] = useState(false);
+  const [selectedPostId, setSelectedPostId] = useState<string | null>(null);
+
   // Entity selection state (para tags integradas)
   const [showEntityDropdown, setShowEntityDropdown] = useState(false);
   const [entitySearchTag, setEntitySearchTag] = useState<string | null>(null);
@@ -674,23 +866,34 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToModule, params }) => 
   const [entityResults, setEntityResults] = useState<EntityReference[]>([]);
   const [selectedEntities, setSelectedEntities] = useState<EntityReference[]>([]);
   const [previewData, setPreviewData] = useState<PreviewData>({});
-  
+
   // Tag records state (registros reais para inserir no post)
   const [tagRecords, setTagRecords] = useState<TagRecord[]>([]);
   const [loadingTagRecords, setLoadingTagRecords] = useState(false);
   const [selectedTagForRecords, setSelectedTagForRecords] = useState<string | null>(null);
   const [tagRecordSearch, setTagRecordSearch] = useState('');
-  
+
   // Widget order state
   const [leftWidgets, setLeftWidgets] = useState<string[]>(['agenda', 'tarefas', 'djen', 'confeccao']);
   const [rightWidgets, setRightWidgets] = useState<string[]>(['financeiro', 'prazos', 'navegacao']);
   const [preferencesLoaded, setPreferencesLoaded] = useState(false);
+  const [isXlScreen, setIsXlScreen] = useState<boolean>(() => {
+    if (typeof window === 'undefined') return true;
+    return window.matchMedia('(min-width: 1280px)').matches;
+  });
   const [imageGalleryModal, setImageGalleryModal] = useState<{
     open: boolean;
     images: Array<{ url: string; fileName: string }>;
     currentIndex: number;
   }>({ open: false, images: [], currentIndex: 0 });
-  
+
+  const [pollVotersModal, setPollVotersModal] = useState<{
+    open: boolean;
+    pollId: string | null;
+    voters: FeedPollVoter[];
+    loading: boolean;
+  }>({ open: false, pollId: null, voters: [], loading: false });
+
   // Modal de interação (curtidas/comentários)
   const [interactionModal, setInteractionModal] = useState<{
     open: boolean;
@@ -741,54 +944,35 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToModule, params }) => 
   const loadDashboardData = useCallback(
     async (forceRefresh = false) => {
       try {
-        setLoading(true);
-
-        // Carregar perfil do usuário
-        if (user?.id && !currentProfile) {
-          const profile = await profileService.getProfile(user.id);
-          setCurrentProfile(profile);
+        // Só mostra loading se não tiver cache instantâneo
+        if (!hasInstantCache) {
+          setLoading(true);
         }
 
-        // Tentar carregar do cache primeiro
-        if (!forceRefresh) {
+        // Carregar perfil do usuário em background
+        if (user?.id && !currentProfile) {
+          profileService.getProfile(user.id).then(setCurrentProfile).catch(() => {});
+        }
+
+        // Se já carregou do cache instantâneo e não é forceRefresh, 
+        // verifica se precisa atualizar em background
+        if (!forceRefresh && hasInstantCache) {
           const cachedData = localStorage.getItem(DASHBOARD_CACHE_KEY);
           if (cachedData) {
             try {
               const cache: DashboardCache = JSON.parse(cachedData);
               const now = Date.now();
-              const cacheValid =
-                cache?.version === DASHBOARD_CACHE_VERSION &&
-                typeof cache?.timestamp === 'number' &&
-                cache?.data &&
-                Array.isArray(cache.data.clients) &&
-                Array.isArray(cache.data.processes) &&
-                Array.isArray(cache.data.deadlines) &&
-                Array.isArray(cache.data.tasks) &&
-                Array.isArray(cache.data.calendarEvents) &&
-                Array.isArray(cache.data.djenIntimacoes) &&
-                typeof cache.data.financialStats !== 'undefined' &&
-                Array.isArray(cache.data.requirementsAwaiting);
-
-              if (cacheValid && now - cache.timestamp < CACHE_DURATION) {
-                console.log('📊 Dashboard Social: carregando do cache');
-                setClients(cache.data.clients);
-                setProcesses(cache.data.processes);
-                setDeadlines(cache.data.deadlines);
-                setTasks(cache.data.tasks);
-                setCalendarEvents(cache.data.calendarEvents);
-                setDjenIntimacoes(cache.data.djenIntimacoes);
-                setFinancialStats(cache.data.financialStats);
-                setRequirementsAwaiting(cache.data.requirementsAwaiting);
+              // Se cache ainda é válido (< 30min), não precisa recarregar
+              if (cache?.timestamp && now - cache.timestamp < CACHE_DURATION) {
                 setLoading(false);
                 return;
               }
-            } catch {
-              console.warn('Cache inválido, recarregando dados');
-            }
+            } catch {}
           }
         }
 
-        console.log('📊 Dashboard Social: carregando da API');
+        // Atualizar dados em background (sem mostrar loading se já tem cache)
+        console.log('📊 Dashboard: atualizando em background');
 
         const [clientsData, processesData, deadlinesData, tasksData, calendarEventsData, djenIntimacoesData, financialStatsData, requirementsAwaitingData] =
           await Promise.all([
@@ -895,12 +1079,21 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToModule, params }) => 
         setLoading(false);
       }
     },
-    [safeFetch, user?.id, currentProfile]
+    [safeFetch, user?.id, currentProfile, hasInstantCache]
   );
 
   useEffect(() => {
     loadDashboardData();
   }, [loadDashboardData]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const mql = window.matchMedia('(min-width: 1280px)');
+    const handler = (event: MediaQueryListEvent) => setIsXlScreen(event.matches);
+    setIsXlScreen(mql.matches);
+    mql.addEventListener('change', handler);
+    return () => mql.removeEventListener('change', handler);
+  }, []);
 
   useEffect(() => {
     const unsubscribe = events.on(SYSTEM_EVENTS.CLIENTS_CHANGED, () => {
@@ -928,12 +1121,29 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToModule, params }) => 
   useEffect(() => {
     const loadPreferences = async () => {
       if (!user?.id) return;
-      
+
       try {
         const preferences = await dashboardPreferencesService.getPreferences(user.id);
         if (preferences) {
-          setLeftWidgets(preferences.left_widgets);
-          setRightWidgets(preferences.right_widgets);
+          const isAdmin = (currentProfile?.role || '')
+            .toLowerCase()
+            .normalize('NFD')
+            .replace(/[\u0300-\u036f]/g, '') === 'administrador';
+
+          const loadedLeft = Array.isArray(preferences.left_widgets)
+            ? preferences.left_widgets
+            : ['agenda', 'tarefas', 'djen', 'confeccao'];
+          const loadedRight = Array.isArray(preferences.right_widgets)
+            ? preferences.right_widgets
+            : ['financeiro', 'prazos', 'navegacao'];
+
+          if (isAdmin) {
+            const all = new Set<string>([...loadedLeft, ...loadedRight]);
+            if (!all.has('prazos')) loadedRight.push('prazos');
+          }
+
+          setLeftWidgets(loadedLeft);
+          setRightWidgets(loadedRight);
         }
         setPreferencesLoaded(true);
       } catch (error) {
@@ -942,12 +1152,60 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToModule, params }) => 
       }
     };
     loadPreferences();
-  }, [user?.id]);
+  }, [user?.id, currentProfile?.role]);
+
+  const canSeeWidget = useCallback(
+    (widgetId: string) => {
+      if (permissionsLoading) return true;
+      if (isAdmin) return true;
+      switch (widgetId) {
+        case 'agenda':
+          return canView('agenda');
+        case 'tarefas':
+          return canView('tarefas');
+        case 'djen':
+          return canView('intimacoes');
+        case 'confeccao':
+          return canView('processos') || canView('requerimentos');
+        case 'financeiro':
+          return canView('financeiro');
+        case 'prazos':
+          return canView('prazos');
+        case 'navegacao':
+          return canView('processos') || canView('agenda') || canView('clientes') || canView('documentos');
+        default:
+          return true;
+      }
+    },
+    [permissionsLoading, isAdmin, canView]
+  );
+
+  const visibleLeftWidgets = useMemo(() => leftWidgets.filter(canSeeWidget), [leftWidgets, canSeeWidget]);
+  const visibleRightWidgets = useMemo(() => rightWidgets.filter(canSeeWidget), [rightWidgets, canSeeWidget]);
+
+  useEffect(() => {
+    if (!user?.id) return;
+    if (!preferencesLoaded) return;
+    if (permissionsLoading) return;
+    if (isAdmin) return;
+
+    const filteredLeft = leftWidgets.filter(canSeeWidget);
+    const filteredRight = rightWidgets.filter(canSeeWidget);
+
+    const sameLeft = filteredLeft.length === leftWidgets.length && filteredLeft.every((x, i) => x === leftWidgets[i]);
+    const sameRight = filteredRight.length === rightWidgets.length && filteredRight.every((x, i) => x === rightWidgets[i]);
+
+    if (sameLeft && sameRight) return;
+
+    setLeftWidgets(filteredLeft);
+    setRightWidgets(filteredRight);
+    dashboardPreferencesService.savePreferences(user.id, filteredLeft, filteredRight);
+  }, [user?.id, preferencesLoaded, permissionsLoading, isAdmin, leftWidgets, rightWidgets, canSeeWidget]);
 
   // Handler único para drag-and-drop entre sidebars (salva no banco de dados)
   const handleDragEnd = (event: DragEndEvent) => {
     const { active, over } = event;
-    
+
     if (!over || !user?.id) return;
 
     const activeId = active.id as string;
@@ -964,7 +1222,7 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToModule, params }) => 
       const sourceWidgets = inLeft ? leftWidgets : rightWidgets;
       const oldIndex = sourceWidgets.indexOf(activeId);
       const newIndex = sourceWidgets.indexOf(overId);
-      
+
       if (oldIndex !== newIndex) {
         const newOrder = arrayMove(sourceWidgets, oldIndex, newIndex);
         if (inLeft) {
@@ -1083,12 +1341,12 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToModule, params }) => 
       const newText = prev.trim() ? `${prev} ${record.formattedText}` : record.formattedText;
       return newText;
     });
-    
+
     // Adicionar tag se não estiver selecionada
     if (selectedTagForRecords && !selectedTags.includes(selectedTagForRecords)) {
       setSelectedTags(prev => [...prev, selectedTagForRecords]);
     }
-    
+
     // Adicionar referência da entidade para tornar clicável
     if (selectedTagForRecords === 'financeiro') {
       setSelectedEntities(prev => [
@@ -1096,10 +1354,10 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToModule, params }) => 
         { type: 'financial', id: record.id, name: record.label }
       ]);
     }
-    
+
     // Adicionar dados de preview
     setPreviewData(prev => ({ ...prev, ...record.previewData }));
-    
+
     // Fechar dropdown
     setSelectedTagForRecords(null);
     setTagRecords([]);
@@ -1122,29 +1380,51 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToModule, params }) => 
     }
   }, [selectedTagForRecords, loadTagRecords]);
 
-  // Carregar posts do feed
+  // Carregar posts do feed - atualiza em background se já tem cache
   const loadFeedPosts = useCallback(async () => {
-    setLoadingPosts(true);
+    if (feedPostsInFlightRef.current) return;
+    feedPostsInFlightRef.current = true;
     try {
-      const posts = await feedPostsService.getPosts(20, 0);
-      setFeedPosts(posts);
-      // Carregar enquetes dos posts
-      const pollMap = new Map<string, FeedPoll>();
-      for (const post of posts) {
-        try {
-          const poll = await feedPollsService.getPollByPostId(post.id);
-          if (poll) pollMap.set(post.id, poll);
-        } catch {
-          // ignore
-        }
+      // Só mostra loading se não tem cache e ainda não há posts no estado
+      if (!hasInstantPostsCache && feedPostsCountRef.current === 0) {
+        setLoadingPosts(true);
       }
-      setPostPolls(pollMap);
+
+      // Timeout garante que nunca ficará preso em "Carregando publicações..."
+      const posts = await withTimeout(feedPostsService.getPosts(20, 0), 'Publicações');
+      setFeedPosts(posts);
+      savePostsCache(posts);
+      setLoadingPosts(false);
+
+      // Enquetes carregam em background (não bloqueia UI)
+      void (async () => {
+        const pollResults = await Promise.allSettled(
+          posts.map(async (post) => {
+            try {
+              const poll = await withTimeout(feedPollsService.getPollByPostId(post.id), 'Enquete');
+              return poll ? { postId: post.id, poll } : null;
+            } catch {
+              return null;
+            }
+          })
+        );
+
+        const pollMap = new Map<string, FeedPoll>();
+        pollResults.forEach((r) => {
+          if (r.status === 'fulfilled' && r.value) {
+            pollMap.set(r.value.postId, r.value.poll);
+          }
+        });
+        setPostPolls(pollMap);
+      })();
     } catch (error) {
       console.error('Erro ao carregar posts:', error);
+      setLoadingPosts(false);
     } finally {
       setLoadingPosts(false);
+      feedPostsInFlightRef.current = false;
     }
-  }, []);
+  }, [hasInstantPostsCache, withTimeout]);
 
   // Buscar entidades para autocomplete
   const searchEntities = useCallback(async (tag: string, search: string) => {
@@ -1168,25 +1448,25 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToModule, params }) => 
       if (prev.some(e => e.id === entity.id && e.type === entity.type)) return prev;
       return [...prev, entity];
     });
-    
+
     // Buscar dados de preview para a entidade
-    const tagType = entity.type === 'client' ? 'cliente' : 
+    const tagType = entity.type === 'client' ? 'cliente' :
                     entity.type === 'process' ? 'processo' :
                     entity.type === 'deadline' ? 'prazo' :
                     entity.type === 'calendar' ? 'agenda' :
                     entity.type === 'document' ? 'documento' : entity.type;
-    
+
     try {
       const preview = await feedPostsService.getPreviewDataForTag(tagType, entity.id);
       setPreviewData(prev => ({ ...prev, ...preview }));
     } catch (error) {
       console.error('Erro ao buscar preview:', error);
     }
-    
+
     // Inserir referência no texto
     const entityLabel = entity.name || entity.number || entity.id;
     setPostText(prev => prev + `[${tagType}:${entityLabel}] `);
-    
+
     // Fechar dropdown
     setShowEntityDropdown(false);
     setEntitySearchTag(null);
@@ -1220,7 +1500,7 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToModule, params }) => 
     // Permitir publicar se tem texto OU se tem enquete válida
     const hasPoll = showPollCreator && pollQuestion.trim() && pollOptions.filter(o => o.trim()).length >= 2;
     if ((!postText.trim() && !hasPoll) || postingInProgress) return;
-    
+
     setPostingInProgress(true);
     try {
       // Extrair menções do texto (@nome) - suporta acentos e nomes compostos
@@ -1230,7 +1510,7 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToModule, params }) => 
       while ((match = mentionRegex.exec(postText)) !== null) {
         mentionMatches.push(match[1].toLowerCase());
       }
-      
+
       // Buscar user_id dos perfis mencionados pelo nome
       const mentionedIds = allProfiles
         .filter(p => {
@@ -1238,12 +1518,20 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToModule, params }) => 
           return mentionMatches.some(mentioned => profileName === mentioned || profileName.includes(mentioned));
         })
         .map(p => p.user_id);
-      
+
+      const allowedUserIds = Array.from(new Set([...(audienceUserIds || []), ...(mentionedIds || [])]));
+      const allowedRoles = [...(audienceRoles || [])];
+
+      if (postVisibility !== 'public' && allowedUserIds.length === 0 && allowedRoles.length === 0) {
+        alert('Selecione pelo menos uma pessoa ou departamento para publicar como Privado/Equipe.');
+        return;
+      }
+
       // Buscar dados de preview para tags selecionadas (sem entidade específica)
       let finalPreviewData = { ...previewData };
       for (const tag of selectedTags) {
         if (!selectedEntities.some(e => {
-          const tagType = e.type === 'client' ? 'cliente' : 
+          const tagType = e.type === 'client' ? 'cliente' :
                           e.type === 'process' ? 'processo' :
                           e.type === 'deadline' ? 'prazo' :
                           e.type === 'calendar' ? 'agenda' :
@@ -1255,17 +1543,26 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToModule, params }) => 
           finalPreviewData = { ...finalPreviewData, ...tagPreview };
         }
       }
-      
+
       // Conteúdo do post (se não tiver texto mas tiver enquete, usar a pergunta)
       const postContent = postText.trim() || (hasPoll ? `📊 ${pollQuestion}` : '');
-      
+
+      // Montar data de agendamento se definida
+      const scheduledAt = showScheduler && scheduledDate && scheduledTime
+        ? `${scheduledDate}T${scheduledTime}:00`
+        : null;
+
       const newPost = await feedPostsService.createPost({
         content: postContent,
         tags: selectedTags,
         mentions: mentionedIds,
         entity_references: selectedEntities,
         preview_data: finalPreviewData,
-        attachments: pendingAttachments.map((p) => p.attachment)
+        attachments: pendingAttachments.map((p) => p.attachment),
+        visibility: postVisibility,
+        scheduled_at: scheduledAt,
+        allowed_user_ids: postVisibility === 'public' ? [] : allowedUserIds,
+        allowed_roles: postVisibility === 'public' ? [] : allowedRoles
       });
 
       // Criar enquete se ativa
@@ -1282,36 +1579,53 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToModule, params }) => 
         });
         // Salvar enquete no mapa local
         setPostPolls(prev => new Map(prev).set(newPost.id, poll));
+
+        setShowPollCreator(false);
+        setPollQuestion('');
+        setPollOptions(['', '']);
+        setPollAllowMultiple(true);
+        setPollExpiresIn('24h');
+        setPollParticipants([]);
       }
-      
-      // Adicionar post ao início da lista
-      setFeedPosts(prev => [newPost, ...prev]);
-      
+
+      // Adicionar post ao início da lista e atualizar cache
+      setFeedPosts(prev => {
+        const updated = [newPost, ...prev];
+        savePostsCache(updated);
+        return updated;
+      });
+
       // Limpar formulário
       setPostText('');
       setSelectedTags([]);
       setSelectedEntities([]);
       setPreviewData({});
+      setPostVisibility('public');
+      setShowScheduler(false);
+      setScheduledDate('');
+      setScheduledTime('');
+      setAudienceUserIds([]);
+      setAudienceRoles([]);
+      setAudienceSearch('');
       pendingAttachments.forEach((p) => {
         try {
           URL.revokeObjectURL(p.localUrl);
         } catch {}
       });
       setPendingAttachments([]);
-      
-      // Limpar enquete
-      setShowPollCreator(false);
-      setPollQuestion('');
-      setPollOptions(['', '']);
-      setPollAllowMultiple(true);
-      setPollExpiresIn('24h');
-      setPollParticipants([]);
+
+      if (hasPoll) {
+        toast.success('Enquete criada', 'Sua enquete foi publicada com sucesso.');
+      } else {
+        toast.success('Publicado', 'Sua publicação foi criada com sucesso.');
+      }
     } catch (error) {
       console.error('Erro ao publicar post:', error);
+      toast.error('Erro ao publicar', 'Não foi possível publicar. Tente novamente.');
     } finally {
       setPostingInProgress(false);
     }
-  }, [postText, selectedTags, selectedEntities, previewData, allProfiles, postingInProgress, pendingAttachments, showPollCreator, pollQuestion, pollOptions, pollAllowMultiple, pollExpiresIn, pollParticipants, calculatePollExpiration]);
+  }, [postText, selectedTags, selectedEntities, previewData, allProfiles, postingInProgress, pendingAttachments, showPollCreator, pollQuestion, pollOptions, pollAllowMultiple, pollExpiresIn, pollParticipants, calculatePollExpiration, postVisibility, showScheduler, scheduledDate, scheduledTime, audienceUserIds, audienceRoles]);
 
   // Votar em enquete
   const handlePollVote = useCallback(async (pollId: string, optionIndex: number) => {
@@ -1348,42 +1662,46 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToModule, params }) => 
     setPostPolls(pollMap);
   }, []);
 
-  // Dar/remover like
+  // Toggle like com optimistic update
   const handleToggleLike = useCallback(async (postId: string, currentlyLiked: boolean) => {
+    // Optimistic update - atualiza UI imediatamente
+    setFeedPosts(prev => prev.map(p =>
+      p.id === postId
+        ? { ...p, liked_by_me: !currentlyLiked, likes_count: currentlyLiked ? p.likes_count - 1 : p.likes_count + 1 }
+        : p
+    ));
+
     try {
       if (currentlyLiked) {
         await feedPostsService.unlikePost(postId);
       } else {
         await feedPostsService.likePost(postId);
-        
+
         // Notificar o autor do post (se não for o próprio usuário)
         const post = feedPosts.find(p => p.id === postId);
         if (post && post.author_id !== user?.id && currentProfile?.name) {
-          try {
-            await userNotificationService.createNotification({
-              user_id: post.author_id,
-              type: 'feed_like',
-              title: `${currentProfile.name} curtiu sua publicação`,
-              message: post.content.substring(0, 100) + (post.content.length > 100 ? '...' : ''),
-              metadata: { post_id: postId }
-            });
-          } catch (notifError) {
-            console.error('Erro ao criar notificação de curtida:', notifError);
-          }
+          userNotificationService.createNotification({
+            user_id: post.author_id,
+            type: 'feed_like',
+            title: `${currentProfile.name} curtiu sua publicação`,
+            message: post.content.length > 100 
+              ? post.content.substring(0, 100) + '...' 
+              : post.content,
+            metadata: {
+              post_id: postId,
+              author_id: user?.id,
+              author_name: currentProfile.name
+            }
+          }).catch(() => {});
         }
       }
-      // Atualizar estado local
-      setFeedPosts(prev => prev.map(p => {
-        if (p.id === postId) {
-          return {
-            ...p,
-            liked_by_me: !currentlyLiked,
-            likes_count: currentlyLiked ? p.likes_count - 1 : p.likes_count + 1
-          };
-        }
-        return p;
-      }));
     } catch (error) {
+      // Reverter optimistic update em caso de erro
+      setFeedPosts(prev => prev.map(p =>
+        p.id === postId
+          ? { ...p, liked_by_me: currentlyLiked, likes_count: currentlyLiked ? p.likes_count + 1 : p.likes_count - 1 }
+          : p
+      ));
       console.error('Erro ao dar/remover like:', error);
     }
   }, [feedPosts, user?.id, currentProfile?.name]);
@@ -1391,20 +1709,40 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToModule, params }) => 
   // Salvar edição de post
   const handleSaveEdit = useCallback(async (postId: string) => {
     if (!editingContent.trim()) return;
+
+    // Validar destinatários para posts privados/equipe
+    if (editingVisibility !== 'public' && editingAudienceUserIds.length === 0 && editingAudienceRoles.length === 0) {
+      toast.error('Erro', 'Selecione pelo menos um destinatário para posts privados/equipe.');
+      return;
+    }
+
     try {
-      const updatedPost = await feedPostsService.updatePost(postId, { content: editingContent.trim() });
+      const updatedPost = await feedPostsService.updatePost(postId, { 
+        content: editingContent.trim(),
+        visibility: editingVisibility,
+        allowed_user_ids: editingVisibility !== 'public' ? editingAudienceUserIds : [],
+        allowed_roles: editingVisibility !== 'public' ? editingAudienceRoles : [],
+      });
       setFeedPosts(prev => prev.map(p => p.id === postId ? updatedPost : p));
       setEditingPostId(null);
       setEditingContent('');
+      setEditingVisibility('public');
+      setEditingAudienceUserIds([]);
+      setEditingAudienceRoles([]);
+      setEditingAudienceSearch('');
     } catch (error) {
       console.error('Erro ao salvar edição:', error);
     }
-  }, [editingContent]);
+  }, [editingContent, editingVisibility, editingAudienceUserIds, editingAudienceRoles]);
 
   // Cancelar edição
   const handleCancelEdit = useCallback(() => {
     setEditingPostId(null);
     setEditingContent('');
+    setEditingVisibility('public');
+    setEditingAudienceUserIds([]);
+    setEditingAudienceRoles([]);
+    setEditingAudienceSearch('');
     setShowMentionDropdownInline(false);
     setShowTagDropdownInline(false);
     setInlineMentionQuery('');
@@ -1544,8 +1882,8 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToModule, params }) => 
         submitting: false,
       }));
       // Atualizar contador de comentários no post
-      setFeedPosts(prev => prev.map(p => 
-        p.id === interactionModal.postId 
+      setFeedPosts(prev => prev.map(p =>
+        p.id === interactionModal.postId
           ? { ...p, comments_count: (p.comments_count || 0) + 1 }
           : p
       ));
@@ -1570,6 +1908,44 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToModule, params }) => 
     setInteractionModal({ open: false, type: 'likes', postId: null, users: [], loading: false, newComment: '', submitting: false });
   }, []);
 
+  // Handler para mudança no input de comentário inline (detectar @)
+  const handleCommentInputChange = useCallback((postId: string, value: string) => {
+    const lastAtIndex = value.lastIndexOf('@');
+    const afterAt = lastAtIndex >= 0 ? value.slice(lastAtIndex + 1) : '';
+    
+    // Detectar se está digitando uma menção
+    const isMentioning = lastAtIndex >= 0 && (afterAt === '' || !afterAt.includes(' '));
+    
+    setExpandedComments(prev => ({
+      ...prev,
+      [postId]: {
+        ...prev[postId],
+        newComment: value,
+        showMentionDropdown: isMentioning,
+        mentionSearch: afterAt
+      }
+    }));
+  }, []);
+
+  // Handler para selecionar perfil mencionado no comentário
+  const handleSelectCommentMention = useCallback((postId: string, profile: Profile) => {
+    const state = expandedComments[postId];
+    if (!state) return;
+
+    const lastAtIndex = state.newComment.lastIndexOf('@');
+    const newText = state.newComment.slice(0, lastAtIndex) + `@${profile.name} `;
+
+    setExpandedComments(prev => ({
+      ...prev,
+      [postId]: {
+        ...prev[postId],
+        newComment: newText,
+        showMentionDropdown: false,
+        mentionSearch: ''
+      }
+    }));
+  }, [expandedComments]);
+
   // Expandir/colapsar comentários inline
   const toggleInlineComments = useCallback(async (postId: string) => {
     if (expandedComments[postId]) {
@@ -1583,7 +1959,7 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToModule, params }) => 
       // Expandir e carregar comentários
       setExpandedComments(prev => ({
         ...prev,
-        [postId]: { comments: [], loading: true, newComment: '', submitting: false }
+        [postId]: { comments: [], loading: true, newComment: '', submitting: false, showMentionDropdown: false, mentionSearch: '' }
       }));
       try {
         const comments = await feedPostsService.getComments(postId);
@@ -1596,13 +1972,13 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToModule, params }) => 
         }));
         setExpandedComments(prev => ({
           ...prev,
-          [postId]: { ...prev[postId], comments: mappedComments, loading: false }
+          [postId]: { ...prev[postId], comments: mappedComments, loading: false, showMentionDropdown: false, mentionSearch: '' }
         }));
       } catch (error) {
         console.error('Erro ao carregar comentários:', error);
         setExpandedComments(prev => ({
           ...prev,
-          [postId]: { ...prev[postId], loading: false }
+          [postId]: { ...prev[postId], loading: false, showMentionDropdown: false, mentionSearch: '' }
         }));
       }
     }
@@ -1612,12 +1988,12 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToModule, params }) => 
   const handleCreateInlineComment = useCallback(async (postId: string) => {
     const state = expandedComments[postId];
     if (!state || !state.newComment.trim()) return;
-    
+
     setExpandedComments(prev => ({
       ...prev,
       [postId]: { ...prev[postId], submitting: true }
     }));
-    
+
     try {
       const newComment = await feedPostsService.createComment(postId, state.newComment.trim());
       const commentData = {
@@ -1633,14 +2009,18 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToModule, params }) => 
           ...prev[postId],
           comments: [...prev[postId].comments, commentData],
           newComment: '',
-          submitting: false
+          submitting: false,
+          showMentionDropdown: false,
+          mentionSearch: ''
         }
       }));
       // Atualizar contador
-      setFeedPosts(prev => prev.map(p => 
-        p.id === postId ? { ...p, comments_count: (p.comments_count || 0) + 1 } : p
+      setFeedPosts(prev => prev.map(p =>
+        p.id === postId
+          ? { ...p, comments_count: (p.comments_count || 0) + 1 }
+          : p
       ));
-      
+
       // Notificar o autor do post (se não for o próprio usuário)
       const post = feedPosts.find(p => p.id === postId);
       if (post && post.author_id !== user?.id && currentProfile?.name) {
@@ -1656,46 +2036,174 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToModule, params }) => 
           console.error('Erro ao criar notificação de comentário:', notifError);
         }
       }
+
+      // Notificar usuários mencionados com @ no comentário
+      const mentionRegex = /@([A-Za-zÀ-ÖØ-öø-ÿ]+(?:\s+[A-Za-zÀ-ÖØ-öø-ÿ]+)*)/g;
+      const mentions = state.newComment.match(mentionRegex);
+      if (mentions && currentProfile?.name) {
+        const mentionedNames = mentions.map(m => m.slice(1).trim().toLowerCase());
+        const mentionedProfiles = allProfiles.filter(p => 
+          mentionedNames.some(name => p.name.toLowerCase().startsWith(name)) && p.id !== user?.id
+        );
+        for (const mentionedProfile of mentionedProfiles) {
+          try {
+            await userNotificationService.createNotification({
+              user_id: mentionedProfile.id,
+              type: 'mention',
+              title: `${currentProfile.name} mencionou você em um comentário`,
+              message: state.newComment.trim().substring(0, 100) + (state.newComment.trim().length > 100 ? '...' : ''),
+              metadata: { post_id: postId }
+            });
+          } catch (notifError) {
+            console.error('Erro ao criar notificação de menção:', notifError);
+          }
+        }
+      }
     } catch (error) {
       console.error('Erro ao criar comentário:', error);
       setExpandedComments(prev => ({
         ...prev,
-        [postId]: { ...prev[postId], submitting: false }
+        [postId]: { ...prev[postId], submitting: true, showMentionDropdown: false, mentionSearch: '' }
       }));
     }
-  }, [expandedComments, feedPosts, user?.id, currentProfile?.name]);
+  }, [expandedComments, feedPosts, user?.id, currentProfile?.name, allProfiles]);
 
-  // Renderizar conteúdo com menções em azul e referências financeiras clicáveis
+  // Handler de navegação (definido antes de renderContentWithMentions para poder ser usado nele)
+  const handleNavigate = useCallback((moduleKey: string, params?: Record<string, string>) => {
+    console.log('🧭 handleNavigate chamado:', moduleKey, params);
+    onNavigateToModule?.(moduleKey, params);
+  }, [onNavigateToModule]);
+
+  // Renderizar conteúdo com menções e referências de entidades clicáveis
   const renderContentWithMentions = useCallback((content: string, entityReferences?: EntityReference[]) => {
-    // Regex para encontrar menções @nome - suporta acentos e caracteres Unicode
+    // Regex para encontrar menções @nome e referências [tipo:nome]
     const mentionRegex = /@([A-Za-zÀ-ÖØ-öø-ÿ]+(?:\s+[A-Za-zÀ-ÖØ-öø-ÿ]+)*)/g;
+    const entityRefRegex = /\[(cliente|processo|prazo|agenda|documento|peticao|assinatura|requerimento|financeiro):([^\]]+)\]/g;
+    
     const parts: React.ReactNode[] = [];
     let lastIndex = 0;
-    let match;
+    let workingContent = content;
 
-    // Processar menções
-    while ((match = mentionRegex.exec(content)) !== null) {
-      // Adicionar texto antes da menção
+    // Primeiro, processar referências de entidades [tipo:nome]
+    const entityMatches: { index: number; length: number; type: string; name: string; ref?: EntityReference }[] = [];
+    let entityMatch;
+    while ((entityMatch = entityRefRegex.exec(content)) !== null) {
+      const type = entityMatch[1];
+      const name = entityMatch[2];
+      const ref = entityReferences?.find(e => e.name === name || e.number === name);
+      entityMatches.push({
+        index: entityMatch.index,
+        length: entityMatch[0].length,
+        type,
+        name,
+        ref
+      });
+    }
+
+    // Processar menções @nome
+    const mentionMatches: { index: number; length: number; name: string }[] = [];
+    let mentionMatch;
+    while ((mentionMatch = mentionRegex.exec(content)) !== null) {
+      mentionMatches.push({
+        index: mentionMatch.index,
+        length: mentionMatch[0].length,
+        name: mentionMatch[1]
+      });
+    }
+
+    // Combinar e ordenar todos os matches
+    const allMatches = [
+      ...entityMatches.map(m => ({ ...m, matchType: 'entity' as const })),
+      ...mentionMatches.map(m => ({ ...m, matchType: 'mention' as const }))
+    ].sort((a, b) => a.index - b.index);
+
+    // Processar matches em ordem
+    for (const match of allMatches) {
+      // Adicionar texto antes do match
       if (match.index > lastIndex) {
         parts.push(content.slice(lastIndex, match.index));
       }
-      // Adicionar menção estilizada em azul - clicável para ir ao perfil
-      const mentionName = match[1];
-      const mentionedProfile = allProfiles.find(p => p.name.toLowerCase() === mentionName.toLowerCase());
-      parts.push(
-        <span 
-          key={match.index} 
-          className="text-blue-600 font-semibold cursor-pointer hover:underline"
-          onClick={() => {
-            if (mentionedProfile) {
-              handleNavigate('perfil', { odId: mentionedProfile.id });
-            }
-          }}
-        >
-          @{match[1]}
-        </span>
-      );
-      lastIndex = match.index + match[0].length;
+
+      if (match.matchType === 'mention') {
+        // Menção de usuário - busca flexível por nome
+        const mentionName = match.name.toLowerCase().trim();
+        const mentionedProfile = allProfiles.find(p => {
+          const profileName = (p.name || '').toLowerCase().trim();
+          // Comparação exata ou parcial (nome contém a menção ou menção contém o nome)
+          return profileName === mentionName || 
+                 profileName.includes(mentionName) || 
+                 mentionName.includes(profileName);
+        });
+        
+        parts.push(
+          <span
+            key={`mention-${match.index}`}
+            className="text-blue-600 font-semibold cursor-pointer hover:underline"
+            onClick={(e) => {
+              e.stopPropagation();
+              console.log('🔵 Clique em menção:', match.name, 'Perfil encontrado:', mentionedProfile);
+              if (mentionedProfile) {
+                handleNavigate('perfil', { userId: mentionedProfile.user_id });
+              } else {
+                console.warn('⚠️ Perfil não encontrado para:', match.name);
+              }
+            }}
+          >
+            @{match.name}
+          </span>
+        );
+      } else {
+        // Referência de entidade
+        const entityMatch = match as typeof entityMatches[0];
+        const typeColors: Record<string, string> = {
+          cliente: 'text-blue-600 bg-blue-50',
+          processo: 'text-purple-600 bg-purple-50',
+          prazo: 'text-red-600 bg-red-50',
+          agenda: 'text-amber-600 bg-amber-50',
+          documento: 'text-indigo-600 bg-indigo-50',
+          peticao: 'text-cyan-600 bg-cyan-50',
+          assinatura: 'text-pink-600 bg-pink-50',
+          requerimento: 'text-orange-600 bg-orange-50',
+          financeiro: 'text-emerald-600 bg-emerald-50'
+        };
+        const color = typeColors[entityMatch.type] || 'text-slate-600 bg-slate-50';
+        
+        parts.push(
+          <span
+            key={`entity-${match.index}`}
+            className={`${color} font-medium px-1.5 py-0.5 rounded text-xs cursor-pointer hover:opacity-80 transition-opacity`}
+            onClick={() => {
+              // Navegar para o módulo correspondente
+              if (entityMatch.ref?.id) {
+                const moduleMap: Record<string, string> = {
+                  cliente: 'clientes',
+                  processo: 'processos',
+                  prazo: 'prazos',
+                  agenda: 'agenda',
+                  documento: 'documentos',
+                  peticao: 'peticoes',
+                  assinatura: 'assinaturas',
+                  requerimento: 'requerimentos',
+                  financeiro: 'financeiro'
+                };
+                const module = moduleMap[entityMatch.type];
+                if (module) {
+                  if (entityMatch.type === 'financeiro') {
+                    handleOpenFinancialModal(entityMatch.ref.id);
+                  } else {
+                    onNavigateToModule?.(module, { id: entityMatch.ref.id });
+                  }
+                }
+              }
+            }}
+            title={`${entityMatch.type}: ${entityMatch.name}`}
+          >
+            {entityMatch.name}
+          </span>
+        );
+      }
+
+      lastIndex = match.index + match.length;
     }
 
     // Adicionar texto restante
@@ -1703,63 +2211,25 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToModule, params }) => 
       parts.push(content.slice(lastIndex));
     }
 
-    // Se não houver menções, retornar o conteúdo original
-    if (parts.length === 0) {
-      return content;
-    }
-
-    // Processar referências financeiras para torná-las clicáveis
-    if (entityReferences && entityReferences.length > 0) {
-      const financialRefs = entityReferences.filter(e => e.type === 'financial');
-      if (financialRefs.length > 0) {
-        // Para cada referência financeira, encontrar o texto correspondente e torná-lo clicável
-        const newParts: React.ReactNode[] = [];
-        let currentText = content;
-        
-        for (const ref of financialRefs) {
-          const refText = ref.name || '';
-          const refIndex = currentText.indexOf(refText);
-          
-          if (refIndex !== -1) {
-            // Adicionar texto antes da referência
-            if (refIndex > 0) {
-              newParts.push(currentText.slice(0, refIndex));
-            }
-            
-            // Adicionar referência clicável em azul
-            newParts.push(
-              <span
-                key={`fin-${ref.id}`}
-                className="text-blue-600 font-semibold cursor-pointer hover:underline"
-                onClick={() => handleOpenFinancialModal(ref.id)}
-              >
-                {refText}
-              </span>
-            );
-            
-            // Atualizar texto restante
-            currentText = currentText.slice(refIndex + refText.length);
-          }
-        }
-        
-        // Adicionar texto restante
-        if (currentText.length > 0) {
-          newParts.push(currentText);
-        }
-        
-        return newParts.length > 0 ? newParts : parts;
-      }
-    }
-
     return parts.length > 0 ? parts : content;
-  }, []);
+  }, [allProfiles, handleOpenFinancialModal, handleNavigate]);
 
   // Carregar posts do feed ao montar
   useEffect(() => {
     loadFeedPosts();
   }, [loadFeedPosts]);
 
-  // Scroll até o post quando params?.scrollToPost for passado
+  // Abrir modal do post quando params?.openPostModal for passado
+  useEffect(() => {
+    if (params?.openPostModal) {
+      const postId = params.openPostModal;
+      console.log('📬 Abrindo modal do post:', postId);
+      setSelectedPostId(postId);
+      setShowPostModal(true);
+    }
+  }, [params?.openPostModal]);
+
+  // Scroll até o post quando params?.scrollToPost for passado (fallback)
   useEffect(() => {
     if (params?.scrollToPost) {
       const scrollToPostId = params.scrollToPost;
@@ -1771,6 +2241,33 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToModule, params }) => 
           setTimeout(() => {
             postElement.classList.remove('ring-2', 'ring-blue-500', 'ring-offset-2');
           }, 2000);
+          
+          // Expandir comentários automaticamente quando aberto via menção
+          if (!expandedComments[scrollToPostId]) {
+            setExpandedComments(prev => ({
+              ...prev,
+              [scrollToPostId]: { comments: [], loading: true, newComment: '', submitting: false, showMentionDropdown: false, mentionSearch: '' }
+            }));
+            // Carregar comentários
+            feedPostsService.getComments(scrollToPostId).then(comments => {
+              const mappedComments = comments.map(c => ({
+                user_id: c.author_id,
+                name: c.author?.name || 'Usuário',
+                avatar_url: c.author?.avatar_url || undefined,
+                content: c.content,
+                created_at: c.created_at,
+              }));
+              setExpandedComments(prev => ({
+                ...prev,
+                [scrollToPostId]: { ...prev[scrollToPostId], comments: mappedComments, loading: false }
+              }));
+            }).catch(() => {
+              setExpandedComments(prev => ({
+                ...prev,
+                [scrollToPostId]: { ...prev[scrollToPostId], loading: false }
+              }));
+            });
+          }
         }
       };
 
@@ -1784,13 +2281,40 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToModule, params }) => 
         return () => clearTimeout(timeoutId);
       }
     }
-  }, [params?.scrollToPost, feedPosts]);
+  }, [params?.scrollToPost, feedPosts, expandedComments]);
 
   const pendingTasks = tasks.filter((t) => t.status === 'pending').length;
 
   const activeClients = clients.length;
   const activeProcesses = processes.length;
   const pendingDeadlines = deadlines.filter((d) => d.status === 'pendente').length;
+  const canSeeIndicators = useMemo(() => {
+    if (permissionsLoading) {
+      return {
+        clientes: true,
+        processos: true,
+        requerimentos: true,
+        prazos: true,
+        tarefas: true,
+      };
+    }
+    if (isAdmin) {
+      return {
+        clientes: true,
+        processos: true,
+        requerimentos: true,
+        prazos: true,
+        tarefas: true,
+      };
+    }
+    return {
+      clientes: canView('clientes'),
+      processos: canView('processos'),
+      requerimentos: canView('requerimentos'),
+      prazos: canView('prazos'),
+      tarefas: canView('tarefas'),
+    };
+  }, [permissionsLoading, isAdmin, canView]);
 
   const awaitingDraftProcesses = useMemo(
     () => processes.filter((p) => p.status === 'aguardando_confeccao'),
@@ -1824,6 +2348,27 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToModule, params }) => 
     [tasks]
   );
 
+  // Mapeia event_type para módulo de permissão
+  const canViewEventType = useCallback((eventType: string) => {
+    if (permissionsLoading) return true;
+    if (isAdmin) return true;
+    switch (eventType) {
+      case 'payment':
+        return canView('financeiro');
+      case 'hearing':
+        return canView('processos');
+      case 'deadline':
+        return canView('prazos');
+      case 'requirement':
+      case 'pericia':
+        return canView('requerimentos');
+      case 'meeting':
+      case 'task':
+      default:
+        return canView('agenda');
+    }
+  }, [permissionsLoading, isAdmin, canView]);
+
   const upcomingEvents = useMemo(() => {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
@@ -1832,7 +2377,9 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToModule, params }) => 
       .filter((e) => {
         if (!e.start_at) return false;
         const eventDate = new Date(e.start_at);
-        return eventDate >= today;
+        if (eventDate < today) return false;
+        // Filtrar por permissão do módulo de origem
+        return canViewEventType(e.event_type || 'meeting');
       })
       .map((e) => ({
         id: e.id,
@@ -1842,32 +2389,31 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToModule, params }) => 
         client_id: e.client_id,
       }));
 
-    const hearingEvents = processes
-      .filter((p) => p.hearing_scheduled && p.hearing_date)
-      .filter((p) => {
-        const hearingDate = new Date(p.hearing_date!);
-        return hearingDate >= today;
-      })
-      .map((p) => {
-        const client = clients.find((c) => c.id === p.client_id);
-        const clientName = client?.full_name || 'Sem cliente';
-        return {
-          id: `hearing-${p.id}`,
-          title: `Audiência - ${clientName}`,
-          start_at: p.hearing_time ? `${p.hearing_date}T${p.hearing_time}` : p.hearing_date!,
-          type: 'hearing',
-          client_id: p.client_id,
-        };
-      });
+    // Audiências só aparecem se tiver permissão de processos
+    const hearingEvents = (isAdmin || canView('processos'))
+      ? processes
+          .filter((p) => p.hearing_scheduled && p.hearing_date)
+          .filter((p) => {
+            const hearingDate = new Date(p.hearing_date!);
+            return hearingDate >= today;
+          })
+          .map((p) => {
+            const client = clients.find((c) => c.id === p.client_id);
+            const clientName = client?.full_name || 'Sem cliente';
+            return {
+              id: `hearing-${p.id}`,
+              title: `Audiência - ${clientName}`,
+              start_at: p.hearing_time ? `${p.hearing_date}T${p.hearing_time}` : p.hearing_date!,
+              type: 'hearing',
+              client_id: p.client_id,
+            };
+          })
+      : [];
 
     return [...manualEvents, ...hearingEvents]
       .sort((a, b) => new Date(a.start_at).getTime() - new Date(b.start_at).getTime())
       .slice(0, 10);
-  }, [calendarEvents, processes, clients]);
-
-  const handleNavigate = (moduleKey: string, params?: Record<string, string>) => {
-    onNavigateToModule?.(moduleKey, params);
-  };
+  }, [calendarEvents, processes, clients, canViewEventType, isAdmin, canView]);
 
   const formatTimeAgo = (date: string) => {
     const now = new Date();
@@ -1883,6 +2429,45 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToModule, params }) => 
     if (diffDays === 1) return 'Ontem';
     return `${diffDays}d atrás`;
   };
+
+  const formatTimeUntil = (date: string) => {
+    const now = new Date();
+    const d = new Date(date);
+    const diffMs = d.getTime() - now.getTime();
+
+    if (diffMs <= 60000) return 'em instantes';
+
+    const diffMins = Math.ceil(diffMs / 60000);
+    if (diffMins < 60) return `em ${diffMins}m`;
+
+    const diffHours = Math.ceil(diffMs / 3600000);
+    if (diffHours < 24) return `em ${diffHours}h`;
+
+    const diffDays = Math.ceil(diffMs / 86400000);
+    if (diffDays === 1) return 'amanhã';
+    return `em ${diffDays}d`;
+  };
+
+  const openPollVotersModal = useCallback(async (pollId: string) => {
+    setPollVotersModal({ open: true, pollId, voters: [], loading: true });
+    try {
+      const voters = await feedPollsService.getVoters(pollId);
+      setPollVotersModal({ open: true, pollId, voters, loading: false });
+    } catch (err) {
+      console.error('Erro ao carregar votantes:', err);
+      setPollVotersModal({ open: true, pollId, voters: [], loading: false });
+      toast.error('Erro', 'Não foi possível carregar quem votou.');
+    }
+  }, [toast]);
+
+  const closePollVotersModal = useCallback(() => {
+    setPollVotersModal({ open: false, pollId: null, voters: [], loading: false });
+  }, []);
+
+  const pollForVotersModal = useMemo(() => {
+    if (!pollVotersModal.pollId) return null;
+    return Array.from(postPolls.values()).find((p) => p.id === pollVotersModal.pollId) || null;
+  }, [pollVotersModal.pollId, postPolls]);
 
   const getDateLabel = (date: Date) => {
     const today = new Date();
@@ -1906,6 +2491,20 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToModule, params }) => 
     if (diffDays === 0) return 'Vence Hoje';
     if (diffDays === 1) return 'Vence Amanhã';
     return `Vence em ${diffDays}d`;
+  };
+
+  const parseDateOnly = (value?: string | null): Date | null => {
+    if (!value) return null;
+    const datePart = value.includes('T') ? value.split('T')[0] : value;
+    const parts = datePart.split('-').map((part) => Number.parseInt(part, 10));
+    if (parts.length === 3 && parts.every((num) => Number.isFinite(num))) {
+      const [year, month, day] = parts;
+      return new Date(year, month - 1, day);
+    }
+
+    const parsed = new Date(value);
+    if (Number.isNaN(parsed.getTime())) return null;
+    return new Date(parsed.getFullYear(), parsed.getMonth(), parsed.getDate());
   };
 
   if (loading) {
@@ -2054,6 +2653,10 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToModule, params }) => 
     }
     if (widgetId === 'confeccao') {
       const hasItems = awaitingDraftProcesses.length > 0 || requirementsAwaiting.length > 0;
+      const canViewProcesses = isAdmin || canView('processos');
+      const canViewRequirements = isAdmin || canView('requerimentos');
+      
+      const totalItems = awaitingDraftProcesses.length + requirementsAwaiting.length;
       
       return (
         <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-3">
@@ -2062,118 +2665,116 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToModule, params }) => 
               <FileText className="w-4 h-4 text-indigo-500" />
               Aguardando Confecção
             </h3>
-            <span className="text-xs bg-indigo-100 text-indigo-700 px-2 py-0.5 rounded-full font-bold">
-              {awaitingDraftProcesses.length + requirementsAwaiting.length}
-            </span>
+            {totalItems > 0 && (
+              <span className="text-xs bg-indigo-100 text-indigo-700 px-2 py-0.5 rounded-full font-bold">
+                {totalItems}
+              </span>
+            )}
           </div>
-          
-          {!hasItems ? (
+
+          {!hasItems || (!canViewProcesses && !canViewRequirements) ? (
             <div className="text-center py-4 text-slate-500 text-sm">
-              <FileText className="w-6 h-6 mx-auto mb-2 text-slate-300" />
+              <CheckCircle className="w-6 h-6 mx-auto mb-2 text-slate-300" />
               Nada aguardando
             </div>
           ) : (
-            <div className="flex flex-col gap-2">
+            <div className="space-y-2">
               {/* Processos */}
-              <button
-                onClick={() => handleNavigate('processos', { statusFilter: 'aguardando_confeccao' })}
-                className="text-left rounded-xl border border-slate-200 bg-slate-50 hover:bg-slate-100 transition-colors p-2"
-              >
-                <div className="flex items-center justify-between gap-2">
-                  <div className="flex items-center gap-2 min-w-0">
-                    <div className="w-7 h-7 rounded-lg bg-indigo-100 flex items-center justify-center text-indigo-600 flex-shrink-0">
-                      <Briefcase className="w-4 h-4" />
+              {canViewProcesses && awaitingDraftProcesses.length > 0 && (
+                <button
+                  onClick={() => handleNavigate('processos', { statusFilter: 'aguardando_confeccao' })}
+                  className="w-full text-left group"
+                >
+                  <div className="bg-slate-50 rounded-lg border border-slate-200 p-2.5 hover:border-indigo-300 hover:bg-indigo-50/50 transition-all">
+                    <div className="flex items-center justify-between mb-2">
+                      <div className="flex items-center gap-2">
+                        <div className="w-7 h-7 rounded-lg bg-indigo-100 flex items-center justify-center">
+                          <Briefcase className="w-3.5 h-3.5 text-indigo-600" />
+                        </div>
+                        <div>
+                          <div className="text-xs font-bold text-slate-800">Processos</div>
+                          <div className="text-[10px] text-slate-500">Aguardando confecção</div>
+                        </div>
+                      </div>
+                      <span className="text-xs font-bold bg-white border border-slate-200 px-2 py-0.5 rounded-full text-slate-700">
+                        {awaitingDraftProcesses.length}
+                      </span>
                     </div>
-                    <div className="min-w-0">
-                      <div className="text-xs font-bold text-slate-900 truncate">Processos</div>
-                      <div className="text-[10px] text-slate-500 truncate">Aguardando confecção</div>
-                    </div>
-                  </div>
-                  <div className="text-xs font-bold bg-white border border-slate-200 px-2 py-0.5 rounded-full text-slate-700 flex-shrink-0">
-                    {awaitingDraftProcesses.length}
-                  </div>
-                </div>
 
-                <div className="mt-2 flex flex-col gap-1">
-                  {awaitingDraftProcesses.length === 0 ? (
-                    <div className="text-[10px] text-slate-500">Nenhum processo</div>
-                  ) : (
-                    <>
+                    <div className="space-y-1 pl-9">
                       {awaitingDraftProcesses.slice(0, 2).map((process) => {
                         const client = process.client_id ? clientMap.get(process.client_id) : null;
                         const primary = client?.full_name || 'Cliente não vinculado';
                         const secondary = process.process_code || 'Processo';
                         return (
-                          <div key={process.id} className="flex items-start gap-1.5">
-                            <span className="mt-1.5 w-1.5 h-1.5 rounded-full bg-indigo-400 flex-shrink-0" />
+                          <div key={process.id} className="flex items-center gap-1.5">
+                            <span className="w-1 h-1 rounded-full bg-indigo-400 flex-shrink-0" />
                             <div className="min-w-0">
-                              <div className="text-[11px] font-semibold text-slate-800 truncate">{primary}</div>
+                              <div className="text-[11px] font-semibold text-slate-700 truncate">{primary}</div>
                               <div className="text-[10px] text-slate-500 truncate">{secondary}</div>
                             </div>
                           </div>
                         );
                       })}
                       {awaitingDraftProcesses.length > 2 && (
-                        <div className="text-[10px] text-indigo-700 font-semibold">+{awaitingDraftProcesses.length - 2} processos</div>
+                        <div className="text-[10px] text-indigo-600 font-semibold">+{awaitingDraftProcesses.length - 2} processos</div>
                       )}
-                    </>
-                  )}
-                </div>
-              </button>
+                    </div>
+                  </div>
+                </button>
+              )}
 
               {/* Requerimentos */}
-              <button
-                onClick={() => handleNavigate('requerimentos', { statusTab: 'aguardando_confeccao' })}
-                className="text-left rounded-xl border border-slate-200 bg-slate-50 hover:bg-slate-100 transition-colors p-2"
-              >
-                <div className="flex items-center justify-between gap-2">
-                  <div className="flex items-center gap-2 min-w-0">
-                    <div className="w-7 h-7 rounded-lg bg-purple-100 flex items-center justify-center text-purple-600 flex-shrink-0">
-                      <FileText className="w-4 h-4" />
+              {canViewRequirements && requirementsAwaiting.length > 0 && (
+                <button
+                  onClick={() => handleNavigate('requerimentos', { statusTab: 'aguardando_confeccao' })}
+                  className="w-full text-left group"
+                >
+                  <div className="bg-slate-50 rounded-lg border border-slate-200 p-2.5 hover:border-purple-300 hover:bg-purple-50/50 transition-all">
+                    <div className="flex items-center justify-between mb-2">
+                      <div className="flex items-center gap-2">
+                        <div className="w-7 h-7 rounded-lg bg-purple-100 flex items-center justify-center">
+                          <ScrollText className="w-3.5 h-3.5 text-purple-600" />
+                        </div>
+                        <div>
+                          <div className="text-xs font-bold text-slate-800">Requerimentos</div>
+                          <div className="text-[10px] text-slate-500">Aguardando confecção</div>
+                        </div>
+                      </div>
+                      <span className="text-xs font-bold bg-white border border-slate-200 px-2 py-0.5 rounded-full text-slate-700">
+                        {requirementsAwaiting.length}
+                      </span>
                     </div>
-                    <div className="min-w-0">
-                      <div className="text-xs font-bold text-slate-900 truncate">Requerimentos</div>
-                      <div className="text-[10px] text-slate-500 truncate">Aguardando confecção</div>
-                    </div>
-                  </div>
-                  <div className="text-xs font-bold bg-white border border-slate-200 px-2 py-0.5 rounded-full text-slate-700 flex-shrink-0">
-                    {requirementsAwaiting.length}
-                  </div>
-                </div>
 
-                <div className="mt-2 flex flex-col gap-1">
-                  {requirementsAwaiting.length === 0 ? (
-                    <div className="text-[10px] text-slate-500">Nenhum requerimento</div>
-                  ) : (
-                    <>
+                    <div className="space-y-1 pl-9">
                       {requirementsAwaiting.slice(0, 2).map((req) => {
                         const primary = req.beneficiary || 'Beneficiário não informado';
                         const secondary = (req.benefit_type || 'Requerimento').replace(/_/g, ' ');
                         return (
-                          <div key={req.id} className="flex items-start gap-1.5">
-                            <span className="mt-1.5 w-1.5 h-1.5 rounded-full bg-purple-400 flex-shrink-0" />
+                          <div key={req.id} className="flex items-center gap-1.5">
+                            <span className="w-1 h-1 rounded-full bg-purple-400 flex-shrink-0" />
                             <div className="min-w-0">
-                              <div className="text-[11px] font-semibold text-slate-800 truncate">{primary}</div>
+                              <div className="text-[11px] font-semibold text-slate-700 truncate">{primary}</div>
                               <div className="text-[10px] text-slate-500 truncate">{secondary}</div>
                             </div>
                           </div>
                         );
                       })}
                       {requirementsAwaiting.length > 2 && (
-                        <div className="text-[10px] text-purple-700 font-semibold">+{requirementsAwaiting.length - 2} requerimentos</div>
+                        <div className="text-[10px] text-purple-600 font-semibold">+{requirementsAwaiting.length - 2} requerimentos</div>
                       )}
-                    </>
-                  )}
-                </div>
-              </button>
+                    </div>
+                  </div>
+                </button>
+              )}
 
-              {/* Mostrar mais se houver muitos itens */}
-              {(awaitingDraftProcesses.length + requirementsAwaiting.length) > 4 && (
+              {/* Botão Ver Todos */}
+              {totalItems > 0 && (
                 <button
                   onClick={() => handleNavigate('processos', { statusFilter: 'aguardando_confeccao' })}
-                  className="text-xs text-center text-indigo-600 hover:text-indigo-700 font-semibold py-1"
+                  className="w-full py-2 text-center text-xs font-semibold text-indigo-600 hover:text-indigo-700 hover:bg-indigo-50 rounded-lg transition-colors"
                 >
-                  Ver todos ({awaitingDraftProcesses.length + requirementsAwaiting.length})
+                  Ver todos ({totalItems})
                 </button>
               )}
             </div>
@@ -2190,22 +2791,19 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToModule, params }) => 
       );
     }
     if (widgetId === 'prazos') {
-      const urgentDeadlines = deadlines.filter(d => {
-        if (d.status === 'cumprido' || d.status === 'cancelado') return false;
-        const dueDate = new Date(d.due_date);
-        const today = new Date();
-        const diffDays = Math.ceil((dueDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
-        return diffDays <= 3;
-      }).slice(0, 5);
-      
+      const nextDeadlines = deadlines
+        .filter((d) => d.status === 'pendente' && d.due_date)
+        .sort((a, b) => new Date(a.due_date!).getTime() - new Date(b.due_date!).getTime())
+        .slice(0, 5);
+
       return (
         <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-3">
           <div className="flex items-center justify-between mb-3">
             <div className="flex items-center gap-2">
-              <div className="w-8 h-8 bg-red-100 rounded-lg flex items-center justify-center">
-                <Clock className="w-4 h-4 text-red-600" />
+              <div className="w-8 h-8 bg-blue-100 rounded-lg flex items-center justify-center">
+                <Clock className="w-4 h-4 text-blue-600" />
               </div>
-              <h3 className="font-bold text-slate-900 text-sm">Prazos Urgentes</h3>
+              <h3 className="font-bold text-slate-900 text-sm">Prazos</h3>
             </div>
             <button
               onClick={() => handleNavigate('prazos')}
@@ -2214,16 +2812,17 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToModule, params }) => 
               Ver todos
             </button>
           </div>
-          {urgentDeadlines.length === 0 ? (
-            <p className="text-slate-400 text-xs text-center py-4">Nenhum prazo urgente</p>
+          {nextDeadlines.length === 0 ? (
+            <p className="text-slate-400 text-xs text-center py-4">Nenhum prazo pendente</p>
           ) : (
             <div className="space-y-2">
-              {urgentDeadlines.map((d) => {
-                const dueDate = new Date(d.due_date);
+              {nextDeadlines.map((d) => {
                 const today = new Date();
-                const diffDays = Math.ceil((dueDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+                today.setHours(0, 0, 0, 0);
+                const due = parseDateOnly(d.due_date);
+                const diffDays = due ? Math.floor((due.getTime() - today.getTime()) / 86400000) : 0;
                 const isOverdue = diffDays < 0;
-                
+
                 return (
                   <div
                     key={d.id}
@@ -2263,34 +2862,42 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToModule, params }) => 
             <Sparkles className="w-5 h-5" />
             Feed de Notícias
           </button>
-          <button
-            onClick={() => handleNavigate('processos')}
-            className="flex items-center gap-3 px-4 py-3 text-slate-600 hover:bg-slate-100 hover:text-slate-900 rounded-xl font-medium transition-colors"
-          >
-            <Briefcase className="w-5 h-5" />
-            Meus Processos
-          </button>
-          <button
-            onClick={() => handleNavigate('agenda')}
-            className="flex items-center gap-3 px-4 py-3 text-slate-600 hover:bg-slate-100 hover:text-slate-900 rounded-xl font-medium transition-colors"
-          >
-            <Calendar className="w-5 h-5" />
-            Agenda
-          </button>
-          <button
-            onClick={() => handleNavigate('clientes')}
-            className="flex items-center gap-3 px-4 py-3 text-slate-600 hover:bg-slate-100 hover:text-slate-900 rounded-xl font-medium transition-colors"
-          >
-            <Users className="w-5 h-5" />
-            Clientes
-          </button>
-          <button
-            onClick={() => handleNavigate('documentos')}
-            className="flex items-center gap-3 px-4 py-3 text-slate-600 hover:bg-slate-100 hover:text-slate-900 rounded-xl font-medium transition-colors"
-          >
-            <Bookmark className="w-5 h-5" />
-            Documentos
-          </button>
+          {(isAdmin || canView('processos')) && (
+            <button
+              onClick={() => handleNavigate('processos')}
+              className="flex items-center gap-3 px-4 py-3 text-slate-600 hover:bg-slate-100 hover:text-slate-900 rounded-xl font-medium transition-colors"
+            >
+              <Briefcase className="w-5 h-5" />
+              Meus Processos
+            </button>
+          )}
+          {(isAdmin || canView('agenda')) && (
+            <button
+              onClick={() => handleNavigate('agenda')}
+              className="flex items-center gap-3 px-4 py-3 text-slate-600 hover:bg-slate-100 hover:text-slate-900 rounded-xl font-medium transition-colors"
+            >
+              <Calendar className="w-5 h-5" />
+              Agenda
+            </button>
+          )}
+          {(isAdmin || canView('clientes')) && (
+            <button
+              onClick={() => handleNavigate('clientes')}
+              className="flex items-center gap-3 px-4 py-3 text-slate-600 hover:bg-slate-100 hover:text-slate-900 rounded-xl font-medium transition-colors"
+            >
+              <Users className="w-5 h-5" />
+              Clientes
+            </button>
+          )}
+          {(isAdmin || canView('documentos')) && (
+            <button
+              onClick={() => handleNavigate('documentos')}
+              className="flex items-center gap-3 px-4 py-3 text-slate-600 hover:bg-slate-100 hover:text-slate-900 rounded-xl font-medium transition-colors"
+            >
+              <Bookmark className="w-5 h-5" />
+              Documentos
+            </button>
+          )}
         </nav>
       );
     }
@@ -2305,8 +2912,8 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToModule, params }) => 
           {/* Sidebar Esquerda - Widgets Arrastáveis */}
           <aside className="hidden lg:flex lg:col-span-3 flex-col sticky top-4 order-1">
             <SidebarDroppable id="sidebar-left">
-              <SortableContext items={leftWidgets} strategy={rectSortingStrategy}>
-                {leftWidgets.map((widgetId) => (
+              <SortableContext items={visibleLeftWidgets} strategy={rectSortingStrategy}>
+                {visibleLeftWidgets.map((widgetId) => (
                   <SortableWidget key={widgetId} id={widgetId}>
                     {renderWidget(widgetId)}
                   </SortableWidget>
@@ -2315,55 +2922,73 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToModule, params }) => 
             </SidebarDroppable>
           </aside>
 
-        {/* Feed Central */}
-        <main className="col-span-1 lg:col-span-9 xl:col-span-6 flex flex-col gap-6 order-2">
-          {/* Barra de Indicadores */}
-          <div className="bg-white rounded-xl border border-slate-200 shadow-sm px-4 py-2.5 flex items-center justify-between gap-2 overflow-x-auto">
-            <button 
-              onClick={() => handleNavigate('clientes')}
-              className="flex items-center gap-1.5 hover:bg-slate-50 px-2 py-1 rounded-lg transition-colors whitespace-nowrap"
-            >
-              <Users className="w-4 h-4 text-blue-500" />
-              <span className="text-xs font-bold text-slate-700">CLIENTES:</span>
-              <span className="text-sm font-bold text-blue-600">{activeClients}</span>
-            </button>
-            <div className="w-px h-4 bg-slate-200" />
-            <button 
-              onClick={() => handleNavigate('processos')}
-              className="flex items-center gap-1.5 hover:bg-slate-50 px-2 py-1 rounded-lg transition-colors whitespace-nowrap"
-            >
-              <Briefcase className="w-4 h-4 text-indigo-500" />
-              <span className="text-xs font-bold text-slate-700">PROCESSOS:</span>
-              <span className="text-sm font-bold text-indigo-600">{activeProcesses}</span>
-            </button>
-            <div className="w-px h-4 bg-slate-200" />
-            <button 
-              onClick={() => handleNavigate('requerimentos')}
-              className="flex items-center gap-1.5 hover:bg-slate-50 px-2 py-1 rounded-lg transition-colors whitespace-nowrap"
-            >
-              <FileText className="w-4 h-4 text-amber-500" />
-              <span className="text-xs font-bold text-slate-700">REQUERIMENTOS:</span>
-              <span className="text-sm font-bold text-amber-600">{requirementsAwaiting.length}</span>
-            </button>
-            <div className="w-px h-4 bg-slate-200" />
-            <button 
-              onClick={() => handleNavigate('prazos')}
-              className="flex items-center gap-1.5 hover:bg-slate-50 px-2 py-1 rounded-lg transition-colors whitespace-nowrap"
-            >
-              <Clock className="w-4 h-4 text-red-500" />
-              <span className="text-xs font-bold text-slate-700">PRAZOS:</span>
-              <span className="text-sm font-bold text-red-600">{pendingDeadlines}</span>
-            </button>
-            <div className="w-px h-4 bg-slate-200" />
-            <button 
-              onClick={() => handleNavigate('tarefas')}
-              className="flex items-center gap-1.5 hover:bg-slate-50 px-2 py-1 rounded-lg transition-colors whitespace-nowrap"
-            >
-              <CheckSquare className="w-4 h-4 text-emerald-500" />
-              <span className="text-xs font-bold text-slate-700">TAREFAS:</span>
-              <span className="text-sm font-bold text-emerald-600">{tasks.filter(t => t.status === 'pending').length}</span>
-            </button>
-          </div>
+          {/* Feed Central */}
+          <main className="col-span-1 lg:col-span-9 xl:col-span-6 flex flex-col gap-6 order-2">
+            {/* Barra de Indicadores */}
+            <div className="bg-white rounded-xl border border-slate-200 shadow-sm px-4 py-2.5 flex items-center justify-between gap-2 overflow-x-auto">
+              {canSeeIndicators.clientes && (
+                <button
+                  onClick={() => handleNavigate('clientes')}
+                  className="flex items-center gap-1.5 hover:bg-slate-50 px-2 py-1 rounded-lg transition-colors whitespace-nowrap"
+                >
+                  <Users className="w-4 h-4 text-blue-500" />
+                  <span className="text-xs font-bold text-slate-700">CLIENTES:</span>
+                  <span className="text-sm font-bold text-blue-600">{activeClients}</span>
+                </button>
+              )}
+              {canSeeIndicators.clientes && (canSeeIndicators.processos || canSeeIndicators.requerimentos || canSeeIndicators.prazos || canSeeIndicators.tarefas) && (
+                <div className="w-px h-4 bg-slate-200" />
+              )}
+              {canSeeIndicators.processos && (
+                <button
+                  onClick={() => handleNavigate('processos')}
+                  className="flex items-center gap-1.5 hover:bg-slate-50 px-2 py-1 rounded-lg transition-colors whitespace-nowrap"
+                >
+                  <Briefcase className="w-4 h-4 text-indigo-500" />
+                  <span className="text-xs font-bold text-slate-700">PROCESSOS:</span>
+                  <span className="text-sm font-bold text-indigo-600">{activeProcesses}</span>
+                </button>
+              )}
+              {canSeeIndicators.processos && (canSeeIndicators.requerimentos || canSeeIndicators.prazos || canSeeIndicators.tarefas) && (
+                <div className="w-px h-4 bg-slate-200" />
+              )}
+              {canSeeIndicators.requerimentos && (
+                <button
+                  onClick={() => handleNavigate('requerimentos')}
+                  className="flex items-center gap-1.5 hover:bg-slate-50 px-2 py-1 rounded-lg transition-colors whitespace-nowrap"
+                >
+                  <FileText className="w-4 h-4 text-amber-500" />
+                  <span className="text-xs font-bold text-slate-700">REQUERIMENTOS:</span>
+                  <span className="text-sm font-bold text-amber-600">{requirementsAwaiting.length}</span>
+                </button>
+              )}
+              {canSeeIndicators.requerimentos && (canSeeIndicators.prazos || canSeeIndicators.tarefas) && (
+                <div className="w-px h-4 bg-slate-200" />
+              )}
+              {canSeeIndicators.prazos && (
+                <button
+                  onClick={() => handleNavigate('prazos')}
+                  className="flex items-center gap-1.5 hover:bg-slate-50 px-2 py-1 rounded-lg transition-colors whitespace-nowrap"
+                >
+                  <Clock className="w-4 h-4 text-red-500" />
+                  <span className="text-xs font-bold text-slate-700">PRAZOS:</span>
+                  <span className="text-sm font-bold text-red-600">{pendingDeadlines}</span>
+                </button>
+              )}
+              {canSeeIndicators.prazos && canSeeIndicators.tarefas && (
+                <div className="w-px h-4 bg-slate-200" />
+              )}
+              {canSeeIndicators.tarefas && (
+                <button
+                  onClick={() => handleNavigate('tarefas')}
+                  className="flex items-center gap-1.5 hover:bg-slate-50 px-2 py-1 rounded-lg transition-colors whitespace-nowrap"
+                >
+                  <CheckSquare className="w-4 h-4 text-emerald-500" />
+                  <span className="text-xs font-bold text-slate-700">TAREFAS:</span>
+                  <span className="text-sm font-bold text-emerald-600">{pendingTasks}</span>
+                </button>
+              )}
+            </div>
 
           {/* Caixa de Postagem - Design Premium */}
           <div className="bg-gradient-to-br from-white to-slate-50 rounded-2xl border border-slate-200/80 shadow-lg shadow-slate-200/50 overflow-visible">
@@ -2371,7 +2996,7 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToModule, params }) => 
             <div className="p-4 pb-3">
               <div className="flex gap-3">
                 <div className="relative">
-                  <Avatar src={currentProfile?.avatar_url} name={currentProfile?.name || 'Usuário'} size="md" />
+                  <Avatar src={resolvedCurrentAvatarUrl} name={currentProfile?.name || 'Usuário'} size="md" />
                   <div className="absolute -bottom-0.5 -right-0.5 w-3.5 h-3.5 bg-green-500 rounded-full border-2 border-white" />
                 </div>
                 <div className="flex-1 relative">
@@ -2565,56 +3190,134 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToModule, params }) => 
               )}
             </div>
 
-            {/* Barra de Ações */}
-            <div className="flex items-center justify-between px-4 py-3 bg-gradient-to-r from-slate-50 to-slate-100/50 border-t border-slate-200/80">
-              <div className="flex items-center gap-1">
+            {/* Barra de Ações - Layout responsivo em 2 linhas */}
+            <div className="px-4 py-3 bg-gradient-to-r from-slate-50 to-slate-100/50 border-t border-slate-200/80 space-y-2">
+              {/* Linha 1: Ações principais */}
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-1 flex-wrap">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      insertTextAtCursor('@');
+                      setShowMentionDropdown(true);
+                    }}
+                    className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-slate-600 hover:bg-slate-200 transition-colors text-sm font-medium"
+                  >
+                    <AtSign className="w-4 h-4 text-blue-500" />
+                    <span className="hidden sm:inline text-xs">Mencionar</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      insertTextAtCursor('#');
+                      setShowTagDropdown(true);
+                    }}
+                    className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-slate-600 hover:bg-slate-200 transition-colors text-sm font-medium"
+                  >
+                    <Hash className="w-4 h-4 text-emerald-500" />
+                    <span className="hidden sm:inline text-xs">Tag</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleAttachClick}
+                    disabled={uploadingAttachment}
+                    className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-slate-600 hover:bg-slate-200 transition-colors text-sm font-medium"
+                  >
+                    <Image className="w-4 h-4 text-purple-500" />
+                    <span className="hidden sm:inline text-xs">Foto</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setShowEmojiPicker((v) => !v)}
+                    className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-slate-600 hover:bg-slate-200 transition-colors text-sm font-medium"
+                  >
+                    <Smile className="w-4 h-4 text-amber-500" />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setShowPollCreator((v) => !v)}
+                    className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg transition-colors text-sm font-medium ${showPollCreator ? 'bg-indigo-100 text-indigo-700' : 'text-slate-600 hover:bg-slate-200'}`}
+                  >
+                    <BarChart2 className="w-4 h-4 text-indigo-500" />
+                    <span className="hidden sm:inline text-xs">Enquete</span>
+                  </button>
+                </div>
+
+                {/* Botão Publicar */}
                 <button
                   type="button"
-                  onClick={() => {
-                    setPostText(postText + '@');
-                    setShowMentionDropdown(true);
-                    postInputRef.current?.focus();
-                  }}
-                  className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-slate-600 hover:bg-slate-200 transition-colors text-sm font-medium"
+                  onClick={handlePublishPost}
+                  disabled={!(
+                    postText.trim() ||
+                    (showPollCreator && pollQuestion.trim() && pollOptions.filter((o) => o.trim()).length >= 2)
+                  ) || postingInProgress}
+                  className="flex items-center gap-2 bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 disabled:from-slate-300 disabled:to-slate-400 disabled:cursor-not-allowed text-white px-4 py-2 rounded-xl text-sm font-bold transition-all shadow-md shadow-blue-500/25 hover:shadow-lg hover:shadow-blue-500/30 hover:-translate-y-0.5"
                 >
-                  <AtSign className="w-4 h-4 text-blue-500" />
-                  <span className="hidden sm:inline">Mencionar</span>
+                  {postingInProgress ? (
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                  ) : showScheduler && scheduledDate && scheduledTime ? (
+                    <Clock className="w-4 h-4" />
+                  ) : (
+                    <Send className="w-4 h-4" />
+                  )}
+                  <span className="hidden sm:inline">
+                    {postingInProgress ? 'Publicando...' : showScheduler && scheduledDate && scheduledTime ? 'Agendar' : 'Publicar'}
+                  </span>
                 </button>
+              </div>
+
+              {/* Linha 2: Visibilidade e Agendamento */}
+              <div className="flex items-center gap-2 flex-wrap">
+                {/* Visibilidade - Dropdown */}
+                <div className="flex items-center gap-1 bg-white rounded-lg border border-slate-200 px-1 py-0.5">
+                  <button
+                    type="button"
+                    onClick={() => setPostVisibility('public')}
+                    className={`flex items-center gap-1 px-2 py-1 rounded-md transition-colors text-xs font-medium ${
+                      postVisibility === 'public' ? 'bg-emerald-100 text-emerald-700' : 'text-slate-500 hover:bg-slate-100'
+                    }`}
+                    title="Público - todos veem"
+                  >
+                    <Globe className="w-3.5 h-3.5" />
+                    <span>Público</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setPostVisibility('team')}
+                    className={`flex items-center gap-1 px-2 py-1 rounded-md transition-colors text-xs font-medium ${
+                      postVisibility === 'team' ? 'bg-blue-100 text-blue-700' : 'text-slate-500 hover:bg-slate-100'
+                    }`}
+                    title="Equipe - só colaboradores"
+                  >
+                    <Users className="w-3.5 h-3.5" />
+                    <span>Equipe</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setPostVisibility('private')}
+                    className={`flex items-center gap-1 px-2 py-1 rounded-md transition-colors text-xs font-medium ${
+                      postVisibility === 'private' ? 'bg-amber-100 text-amber-700' : 'text-slate-500 hover:bg-slate-100'
+                    }`}
+                    title="Privado - selecione quem pode ver"
+                  >
+                    <Lock className="w-3.5 h-3.5" />
+                    <span>Privado</span>
+                  </button>
+                </div>
+
+                {/* Agendar */}
                 <button
                   type="button"
-                  onClick={() => {
-                    setPostText(postText + '#');
-                    setShowTagDropdown(true);
-                    postInputRef.current?.focus();
-                  }}
-                  className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-slate-600 hover:bg-slate-200 transition-colors text-sm font-medium"
+                  onClick={() => setShowScheduler((v) => !v)}
+                  className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg transition-colors text-xs font-medium border ${
+                    showScheduler 
+                      ? 'bg-orange-100 text-orange-700 border-orange-200' 
+                      : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'
+                  }`}
+                  title="Agendar publicação"
                 >
-                  <Hash className="w-4 h-4 text-emerald-500" />
-                  <span className="hidden sm:inline">Tag</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={handleAttachClick}
-                  disabled={uploadingAttachment}
-                  className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-slate-600 hover:bg-slate-200 transition-colors text-sm font-medium"
-                >
-                  <Image className="w-4 h-4 text-purple-500" />
-                  <span className="hidden sm:inline">Foto</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setShowEmojiPicker((v) => !v)}
-                  className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-slate-600 hover:bg-slate-200 transition-colors text-sm font-medium"
-                >
-                  <Smile className="w-4 h-4 text-amber-500" />
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setShowPollCreator((v) => !v)}
-                  className={`flex items-center gap-2 px-3 py-1.5 rounded-lg transition-colors text-sm font-medium ${showPollCreator ? 'bg-indigo-100 text-indigo-700' : 'text-slate-600 hover:bg-slate-200'}`}
-                >
-                  <BarChart2 className="w-4 h-4 text-indigo-500" />
-                  <span className="hidden sm:inline">Enquete</span>
+                  <Clock className="w-3.5 h-3.5" />
+                  <span>Agendar</span>
                 </button>
 
                 <input
@@ -2629,19 +3332,127 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToModule, params }) => 
                   }}
                 />
               </div>
-              <button
-                type="button"
-                onClick={handlePublishPost}
-                disabled={(!postText.trim() && !showPollCreator) || postingInProgress}
-                className="flex items-center gap-2 bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 disabled:from-slate-300 disabled:to-slate-400 disabled:cursor-not-allowed text-white px-5 py-2.5 rounded-xl text-sm font-bold transition-all shadow-md shadow-blue-500/25 hover:shadow-lg hover:shadow-blue-500/30 hover:-translate-y-0.5"
-              >
-                {postingInProgress ? (
-                  <Loader2 className="w-4 h-4 animate-spin" />
-                ) : (
-                  <Send className="w-4 h-4" />
-                )}
-                {postingInProgress ? 'Publicando...' : 'Publicar'}
-              </button>
+
+              {/* Destinatários (Privado/Equipe) */}
+              {postVisibility !== 'public' && (
+                <div className="bg-white rounded-xl border border-slate-200 px-3 py-2">
+                  <div className="flex items-center justify-between gap-2 flex-wrap">
+                    <span className="text-xs font-semibold text-slate-700">
+                      {postVisibility === 'private' ? 'Privado para:' : 'Equipe (selecionar):'}
+                    </span>
+                    <span className="text-[11px] text-slate-500">
+                      Selecione pessoas e/ou departamentos
+                    </span>
+                  </div>
+
+                  {/* Roles (departamentos via Cargo) */}
+                  {availableAudienceRoles.length > 0 && (
+                    <div className="flex flex-wrap gap-1 mt-2">
+                      {availableAudienceRoles.map((role) => {
+                        const active = audienceRoles.includes(role);
+                        return (
+                          <button
+                            key={role}
+                            type="button"
+                            onClick={() => {
+                              setAudienceRoles((prev) =>
+                                prev.includes(role) ? prev.filter((r) => r !== role) : [...prev, role]
+                              );
+                            }}
+                            className={`text-[11px] px-2 py-1 rounded-full border transition-colors ${
+                              active
+                                ? 'bg-slate-900 text-white border-slate-900'
+                                : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'
+                            }`}
+                            title={role}
+                          >
+                            {role}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
+
+                  {/* Pessoas */}
+                  <div className="mt-2">
+                    <input
+                      value={audienceSearch}
+                      onChange={(e) => setAudienceSearch(e.target.value)}
+                      placeholder="Buscar pessoas..."
+                      className="w-full px-3 py-2 text-sm rounded-lg border border-slate-200 bg-white focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
+                    />
+                    <div className="flex flex-wrap gap-1 mt-2">
+                      {audienceUserIds.map((uid) => {
+                        const p = allProfiles.find((x) => x.user_id === uid);
+                        const label = p?.name || 'Usuário';
+                        return (
+                          <button
+                            key={uid}
+                            type="button"
+                            onClick={() => setAudienceUserIds((prev) => prev.filter((x) => x !== uid))}
+                            className="text-[11px] px-2 py-1 rounded-full bg-blue-50 text-blue-700 border border-blue-200 hover:bg-blue-100 transition-colors"
+                            title="Remover"
+                          >
+                            {label} ✕
+                          </button>
+                        );
+                      })}
+                    </div>
+                    {audienceSearch.trim().length > 0 && (
+                      <div className="mt-2 max-h-40 overflow-auto border border-slate-200 rounded-lg bg-white">
+                        {filteredAudienceProfiles
+                          .filter((p) => !audienceUserIds.includes(p.user_id))
+                          .slice(0, 10)
+                          .map((p) => (
+                            <button
+                              key={p.user_id}
+                              type="button"
+                              onClick={() => {
+                                setAudienceUserIds((prev) => [...prev, p.user_id]);
+                                setAudienceSearch('');
+                              }}
+                              className="w-full text-left px-3 py-2 hover:bg-slate-50 text-sm"
+                            >
+                              <span className="font-medium text-slate-900">{p.name}</span>
+                              <span className="text-xs text-slate-500">{p.role ? ` • ${p.role}` : ''}</span>
+                            </button>
+                          ))}
+                        {filteredAudienceProfiles.length === 0 && (
+                          <div className="px-3 py-2 text-sm text-slate-500">Nenhum usuário encontrado</div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {/* Agendamento inline */}
+              {showScheduler && (
+                <div className="flex items-center gap-2 px-3 py-2 bg-orange-50 rounded-lg border border-orange-200">
+                  <Clock className="w-4 h-4 text-orange-500" />
+                  <span className="text-xs text-orange-700 font-medium">Agendar para:</span>
+                  <input
+                    type="date"
+                    value={scheduledDate}
+                    onChange={(e) => setScheduledDate(e.target.value)}
+                    min={new Date().toISOString().split('T')[0]}
+                    className="px-2 py-1 text-xs rounded border border-orange-200 bg-white focus:ring-2 focus:ring-orange-500/30 focus:border-orange-400"
+                  />
+                  <input
+                    type="time"
+                    value={scheduledTime}
+                    onChange={(e) => setScheduledTime(e.target.value)}
+                    className="px-2 py-1 text-xs rounded border border-orange-200 bg-white focus:ring-2 focus:ring-orange-500/30 focus:border-orange-400"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => { setShowScheduler(false); setScheduledDate(''); setScheduledTime(''); }}
+                    className="ml-auto text-orange-500 hover:text-orange-700"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                </div>
+              )}
             </div>
 
             {/* Criador de Enquete */}
@@ -2809,83 +3620,110 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToModule, params }) => 
             )}
           </div>
 
-          {/* Filtros do Feed */}
-          <div className="flex gap-2 overflow-x-auto pb-2 scrollbar-hide">
-            <button className="px-4 py-2 rounded-full bg-slate-800 text-white text-sm font-semibold whitespace-nowrap border border-transparent shadow-sm hover:bg-slate-700 transition-colors">
+          {/* Filtros do Feed - Design Premium */}
+          <div className="flex gap-2 overflow-x-auto pb-3 scrollbar-hide">
+            <button className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-slate-800 to-slate-700 text-white text-sm font-semibold whitespace-nowrap shadow-lg shadow-slate-300/30 hover:shadow-xl hover:shadow-slate-300/40 hover:from-slate-700 hover:to-slate-600 transition-all duration-200 flex items-center gap-2">
+              <Sparkles className="w-4 h-4" />
               Todas Atualizações
             </button>
             {availableTags.map((tag) => (
               <button
                 key={tag.id}
                 onClick={() => toggleTag(tag.id)}
-                className={`px-4 py-2 rounded-full text-sm font-medium whitespace-nowrap border transition-colors flex items-center gap-1.5 ${
+                className={`px-4 py-2.5 rounded-xl text-sm font-semibold whitespace-nowrap transition-all duration-200 flex items-center gap-2 ${
                   selectedTags.includes(tag.id)
-                    ? `${tag.color} border-transparent`
-                    : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'
+                    ? `${tag.color} shadow-md`
+                    : 'bg-white text-slate-600 border border-slate-200 hover:border-slate-300 hover:bg-slate-50 hover:shadow-sm'
                 }`}
               >
-                <tag.icon className="w-3.5 h-3.5" />
+                <tag.icon className="w-4 h-4" />
                 #{tag.label}
               </button>
             ))}
           </div>
 
           {/* Feed de Posts */}
-          <div className="flex flex-col gap-6">
-            {loadingPosts ? (
-              <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-6 text-center">
-                <Loader2 className="w-8 h-8 mx-auto mb-2 text-blue-500 animate-spin" />
-                <p className="text-slate-500 text-sm">Carregando publicações...</p>
+          <div className="flex flex-col gap-5">
+            {loadingPosts && feedPosts.length === 0 ? (
+              <div className="bg-white rounded-2xl border border-slate-100 shadow-lg shadow-slate-200/40 p-8 text-center">
+                <div className="w-12 h-12 mx-auto mb-3 rounded-full bg-gradient-to-br from-blue-500 to-indigo-500 flex items-center justify-center">
+                  <Loader2 className="w-6 h-6 text-white animate-spin" />
+                </div>
+                <p className="text-slate-600 text-sm font-medium">Carregando publicações...</p>
               </div>
             ) : feedPosts.length === 0 ? (
-              <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-6 text-center">
-                <div className="mx-auto w-16 h-16 rounded-full bg-gradient-to-br from-blue-100 to-purple-100 flex items-center justify-center text-blue-500 mb-4">
-                  <MessageCircle className="w-8 h-8" />
+              <div className="bg-gradient-to-br from-white to-slate-50 rounded-2xl border border-slate-100 shadow-lg shadow-slate-200/40 p-10 text-center">
+                <div className="mx-auto w-20 h-20 rounded-2xl bg-gradient-to-br from-blue-500 to-purple-500 flex items-center justify-center text-white mb-5 shadow-lg shadow-blue-500/25">
+                  <MessageCircle className="w-10 h-10" />
                 </div>
-                <p className="text-slate-900 font-bold text-lg">Sem publicações ainda</p>
-                <p className="text-sm text-slate-500 mt-2 max-w-md mx-auto">
+                <p className="text-slate-900 font-bold text-xl">Sem publicações ainda</p>
+                <p className="text-sm text-slate-500 mt-3 max-w-md mx-auto leading-relaxed">
                   Use a caixa acima para compartilhar uma atualização. Mencione colegas com <span className="font-semibold text-blue-600">@nome</span> e categorize com tags como <span className="font-semibold text-emerald-600">#financeiro</span> ou <span className="font-semibold text-purple-600">#processo</span>.
                 </p>
               </div>
             ) : (
               feedPosts.map((post) => (
-                <div key={post.id} data-post-id={post.id} className="bg-white rounded-2xl border border-slate-200/80 shadow-md shadow-slate-200/50 overflow-hidden hover:shadow-lg hover:shadow-slate-200/60 transition-shadow">
+                <div key={post.id} data-post-id={post.id} className="bg-white rounded-2xl border border-slate-100 shadow-lg shadow-slate-200/30 overflow-visible hover:shadow-xl hover:shadow-slate-300/40 hover:border-slate-200 transition-all duration-300 group">
                   {/* Header do Post */}
-                  <div className="p-4 pb-2 flex gap-3">
+                  <div className="p-5 pb-3 flex gap-4">
                     <button 
                       onClick={() => onNavigateToModule?.('perfil', { userId: post.author_id })}
-                      className="cursor-pointer hover:opacity-80 transition-opacity"
+                      className="cursor-pointer hover:scale-105 transition-transform duration-200"
                     >
-                      <Avatar src={post.author?.avatar_url} name={post.author?.name || 'Usuário'} />
+                      <div className="ring-2 ring-white shadow-md rounded-full">
+                        <Avatar src={post.author?.avatar_url} name={post.author?.name || 'Usuário'} size="md" />
+                      </div>
                     </button>
-                    <div className="flex flex-col flex-1">
+                    <div className="flex flex-col flex-1 min-w-0">
                       <div className="flex items-center gap-2 flex-wrap">
                         <button 
                           onClick={() => onNavigateToModule?.('perfil', { userId: post.author_id })}
-                          className="text-slate-900 font-bold text-sm hover:underline cursor-pointer"
+                          className="text-slate-900 font-bold text-[15px] hover:text-blue-600 transition-colors cursor-pointer"
                         >
                           {post.author?.name || 'Usuário'}
                         </button>
                         <BadgeIcon badge={post.author?.badge} />
-                        {post.tags.length > 0 && (
-                          <div className="flex gap-1">
-                            {post.tags.slice(0, 2).map(tag => {
-                              const tagConfig = availableTags.find(t => t.id === tag);
-                              return tagConfig ? (
-                                <span key={tag} className={`${tagConfig.color} text-[10px] font-bold px-2 py-0.5 rounded-full`}>
-                                  #{tagConfig.label}
-                                </span>
-                              ) : null;
-                            })}
-                          </div>
+                        {/* Badge de visibilidade */}
+                        {post.visibility && post.visibility !== 'public' && (
+                          <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-lg text-[10px] font-semibold ${
+                            post.visibility === 'private' ? 'bg-amber-50 text-amber-600 border border-amber-200' : 'bg-blue-50 text-blue-600 border border-blue-200'
+                          }`}>
+                            {post.visibility === 'private' ? <Lock className="w-2.5 h-2.5" /> : <Users className="w-2.5 h-2.5" />}
+                            {post.visibility === 'private' ? 'Privado' : 'Equipe'}
+                          </span>
                         )}
                       </div>
-                      <p className="text-slate-500 text-xs">
-                        {post.author?.role || 'Membro'} • {formatTimeAgo(post.created_at)}
-                      </p>
+                      <div className="flex items-center gap-2 mt-0.5">
+                        <span className="text-slate-400 text-xs font-medium">{post.author?.role || 'Membro'}</span>
+                        <span className="text-slate-300">•</span>
+                        <button 
+                          onClick={() => {
+                            setSelectedPostId(post.id);
+                            setShowPostModal(true);
+                          }}
+                          className="text-slate-400 text-xs hover:text-blue-500 transition-colors"
+                        >
+                          {formatTimeAgo(post.created_at)}
+                        </button>
+                        {post.tags.length > 0 && (
+                          <>
+                            <span className="text-slate-300">•</span>
+                            <div className="flex gap-1">
+                              {post.tags.slice(0, 2).map(tag => {
+                                const tagConfig = availableTags.find(t => t.id === tag);
+                                return tagConfig ? (
+                                  <span key={tag} className={`${tagConfig.color} text-[10px] font-bold px-2 py-0.5 rounded-lg`}>
+                                    #{tagConfig.label}
+                                  </span>
+                                ) : null;
+                              })}
+                            </div>
+                          </>
+                        )}
+                      </div>
                     </div>
-                    {/* Menu de ações do post (só para autor) */}
-                    {user?.id === post.author_id && (
+                    {/* Menu de ações do post (autor ou admin) */}
+                    {(user?.id === post.author_id || isAdmin) && (
                       <div className="ml-auto relative">
                         <button 
                           onClick={() => setOpenPostMenu(openPostMenu === post.id ? null : post.id)}
@@ -2894,25 +3732,135 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToModule, params }) => 
                           <MoreHorizontal className="w-5 h-5" />
                         </button>
                         {openPostMenu === post.id && (
-                          <div className="absolute right-0 top-8 bg-white rounded-lg shadow-lg border border-slate-200 py-1 z-20 min-w-[140px]">
-                            <button
-                              onClick={() => {
-                                setEditingPostId(post.id);
-                                setEditingContent(post.content);
-                                setOpenPostMenu(null);
-                              }}
-                              className="w-full flex items-center gap-2 px-3 py-2 text-sm text-slate-700 hover:bg-slate-50"
-                            >
-                              <Pencil className="w-4 h-4" />
-                              Editar
-                            </button>
-                            <button
-                              onClick={() => handleDeletePost(post.id)}
-                              className="w-full flex items-center gap-2 px-3 py-2 text-sm text-red-600 hover:bg-red-50"
-                            >
-                              <Trash2 className="w-4 h-4" />
-                              Excluir
-                            </button>
+                          <div className="absolute right-0 top-8 bg-white rounded-lg shadow-lg border border-slate-200 py-1 z-20 min-w-[160px]">
+                            {/* Opções do autor */}
+                            {user?.id === post.author_id && (
+                              <>
+                                <button
+                                  onClick={() => {
+                                    setEditingPostId(post.id);
+                                    setEditingContent(post.content);
+                                    setEditingVisibility((post.visibility as 'public' | 'private' | 'team') || 'public');
+                                    setEditingAudienceUserIds(post.allowed_user_ids || []);
+                                    setEditingAudienceRoles(post.allowed_roles || []);
+                                    setEditingAudienceSearch('');
+                                    setOpenPostMenu(null);
+                                  }}
+                                  className="w-full flex items-center gap-2 px-3 py-2 text-sm text-slate-700 hover:bg-slate-50"
+                                >
+                                  <Pencil className="w-4 h-4" />
+                                  Editar
+                                </button>
+                                <button
+                                  onClick={() => handleDeletePost(post.id)}
+                                  className="w-full flex items-center gap-2 px-3 py-2 text-sm text-red-600 hover:bg-red-50"
+                                >
+                                  <Trash2 className="w-4 h-4" />
+                                  Excluir
+                                </button>
+                              </>
+                            )}
+                            {/* Opções do admin */}
+                            {isAdmin && user?.id !== post.author_id && (
+                              <>
+                                {!post.banned_at ? (
+                                  <button
+                                    onClick={async () => {
+                                      try {
+                                        await feedPostsService.banPost(post.id);
+                                        setFeedPosts(prev => prev.map(p => 
+                                          p.id === post.id 
+                                            ? { ...p, banned_at: new Date().toISOString(), banned_by: user?.id, banned_by_name: currentProfile?.name || 'Administrador' }
+                                            : p
+                                        ));
+                                        toast.success('Post banido com sucesso');
+                                      } catch (err) {
+                                        console.error('Erro ao banir post:', err);
+                                        toast.error('Erro ao banir post');
+                                      }
+                                      setOpenPostMenu(null);
+                                    }}
+                                    className="w-full flex items-center gap-2 px-3 py-2 text-sm text-red-600 hover:bg-red-50"
+                                  >
+                                    <Shield className="w-4 h-4" />
+                                    Banir Post
+                                  </button>
+                                ) : (
+                                  <button
+                                    onClick={async () => {
+                                      try {
+                                        await feedPostsService.unbanPost(post.id);
+                                        setFeedPosts(prev => prev.map(p => 
+                                          p.id === post.id 
+                                            ? { ...p, banned_at: null, banned_by: null, banned_by_name: undefined }
+                                            : p
+                                        ));
+                                        toast.success('Post desbanido com sucesso');
+                                      } catch (err) {
+                                        console.error('Erro ao desbanir post:', err);
+                                        toast.error('Erro ao desbanir post');
+                                      }
+                                      setOpenPostMenu(null);
+                                    }}
+                                    className="w-full flex items-center gap-2 px-3 py-2 text-sm text-emerald-600 hover:bg-emerald-50"
+                                  >
+                                    <Shield className="w-4 h-4" />
+                                    Desbanir Post
+                                  </button>
+                                )}
+                              </>
+                            )}
+                            {/* Admin pode banir próprio post também */}
+                            {isAdmin && user?.id === post.author_id && (
+                              <>
+                                <div className="border-t border-slate-100 my-1" />
+                                {!post.banned_at ? (
+                                  <button
+                                    onClick={async () => {
+                                      try {
+                                        await feedPostsService.banPost(post.id);
+                                        setFeedPosts(prev => prev.map(p => 
+                                          p.id === post.id 
+                                            ? { ...p, banned_at: new Date().toISOString(), banned_by: user?.id, banned_by_name: currentProfile?.name || 'Administrador' }
+                                            : p
+                                        ));
+                                        toast.success('Post banido com sucesso');
+                                      } catch (err) {
+                                        console.error('Erro ao banir post:', err);
+                                        toast.error('Erro ao banir post');
+                                      }
+                                      setOpenPostMenu(null);
+                                    }}
+                                    className="w-full flex items-center gap-2 px-3 py-2 text-sm text-red-600 hover:bg-red-50"
+                                  >
+                                    <Shield className="w-4 h-4" />
+                                    Banir Post
+                                  </button>
+                                ) : (
+                                  <button
+                                    onClick={async () => {
+                                      try {
+                                        await feedPostsService.unbanPost(post.id);
+                                        setFeedPosts(prev => prev.map(p => 
+                                          p.id === post.id 
+                                            ? { ...p, banned_at: null, banned_by: null, banned_by_name: undefined }
+                                            : p
+                                        ));
+                                        toast.success('Post desbanido com sucesso');
+                                      } catch (err) {
+                                        console.error('Erro ao desbanir post:', err);
+                                        toast.error('Erro ao desbanir post');
+                                      }
+                                      setOpenPostMenu(null);
+                                    }}
+                                    className="w-full flex items-center gap-2 px-3 py-2 text-sm text-emerald-600 hover:bg-emerald-50"
+                                  >
+                                    <Shield className="w-4 h-4" />
+                                    Desbanir Post
+                                  </button>
+                                )}
+                              </>
+                            )}
                           </div>
                         )}
                       </div>
@@ -2921,7 +3869,25 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToModule, params }) => 
                   
                   {/* Conteúdo do Post */}
                   <div className="px-4 py-2">
-                    {editingPostId === post.id ? (
+                    {/* Post Banido - Exibir com blur */}
+                    {post.banned_at ? (
+                      <div className="relative">
+                        <div className="blur-md select-none pointer-events-none opacity-50">
+                          <div className="text-slate-800 text-sm leading-relaxed whitespace-pre-wrap">
+                            {post.content}
+                          </div>
+                        </div>
+                        <div className="absolute inset-0 flex items-center justify-center">
+                          <div className="bg-red-100 border border-red-300 rounded-lg px-4 py-3 text-center shadow-sm">
+                            <Shield className="w-6 h-6 text-red-500 mx-auto mb-1" />
+                            <p className="text-red-700 font-semibold text-sm">Post Banido</p>
+                            <p className="text-red-600 text-xs mt-1">
+                              por {post.banned_by_name || 'Administrador'}
+                            </p>
+                          </div>
+                        </div>
+                      </div>
+                    ) : editingPostId === post.id ? (
                       <div className="bg-slate-50 rounded-xl p-3 border-2 border-slate-200">
                         <div className="relative">
                           <textarea
@@ -2978,6 +3944,139 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToModule, params }) => 
                             </div>
                           )}
                         </div>
+
+                        {/* Visibilidade */}
+                        <div className="mt-3 pt-3 border-t border-slate-200">
+                          <div className="flex items-center gap-1 mb-2">
+                            <span className="text-xs font-medium text-slate-500">Visibilidade:</span>
+                          </div>
+                          <div className="flex items-center gap-1 flex-wrap">
+                            <button
+                              type="button"
+                              onClick={() => setEditingVisibility('public')}
+                              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold transition-all ${
+                                editingVisibility === 'public'
+                                  ? 'bg-emerald-100 text-emerald-700 ring-2 ring-emerald-500/30'
+                                  : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                              }`}
+                            >
+                              <Globe className="w-3.5 h-3.5" />
+                              Público
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setEditingVisibility('team')}
+                              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold transition-all ${
+                                editingVisibility === 'team'
+                                  ? 'bg-blue-100 text-blue-700 ring-2 ring-blue-500/30'
+                                  : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                              }`}
+                            >
+                              <Users className="w-3.5 h-3.5" />
+                              Equipe
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setEditingVisibility('private')}
+                              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold transition-all ${
+                                editingVisibility === 'private'
+                                  ? 'bg-amber-100 text-amber-700 ring-2 ring-amber-500/30'
+                                  : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                              }`}
+                            >
+                              <Lock className="w-3.5 h-3.5" />
+                              Privado
+                            </button>
+                          </div>
+                        </div>
+
+                        {/* Seleção de Destinatários (para privado/equipe) */}
+                        {editingVisibility !== 'public' && (
+                          <div className="mt-3 p-3 bg-white rounded-lg border border-slate-200">
+                            <p className="text-xs font-semibold text-slate-700 mb-2">
+                              Selecione os destinatários:
+                            </p>
+                            
+                            {/* Cargos/Departamentos */}
+                            <div className="mb-2">
+                              <p className="text-[10px] text-slate-500 mb-1">Por cargo/departamento:</p>
+                              <div className="flex flex-wrap gap-1">
+                                {availableAudienceRoles.map((role) => (
+                                  <button
+                                    key={role}
+                                    type="button"
+                                    onClick={() => {
+                                      setEditingAudienceRoles((prev) =>
+                                        prev.includes(role)
+                                          ? prev.filter((r) => r !== role)
+                                          : [...prev, role]
+                                      );
+                                    }}
+                                    className={`px-2 py-0.5 rounded-full text-[10px] font-medium transition-all ${
+                                      editingAudienceRoles.includes(role)
+                                        ? 'bg-blue-100 text-blue-700 ring-1 ring-blue-400'
+                                        : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                                    }`}
+                                  >
+                                    {role}
+                                  </button>
+                                ))}
+                              </div>
+                            </div>
+
+                            {/* Pessoas específicas */}
+                            <div>
+                              <p className="text-[10px] text-slate-500 mb-1">Pessoas específicas:</p>
+                              <input
+                                type="text"
+                                value={editingAudienceSearch}
+                                onChange={(e) => setEditingAudienceSearch(e.target.value)}
+                                placeholder="Buscar pessoa..."
+                                className="w-full px-2 py-1 text-xs border border-slate-200 rounded-lg mb-1"
+                              />
+                              <div className="max-h-24 overflow-y-auto space-y-0.5">
+                                {filteredEditingAudienceProfiles.slice(0, 10).map((profile) => (
+                                  <button
+                                    key={profile.user_id}
+                                    type="button"
+                                    onClick={() => {
+                                      setEditingAudienceUserIds((prev) =>
+                                        prev.includes(profile.user_id)
+                                          ? prev.filter((id) => id !== profile.user_id)
+                                          : [...prev, profile.user_id]
+                                      );
+                                    }}
+                                    className={`w-full flex items-center gap-2 px-2 py-1 rounded-lg text-left transition-all ${
+                                      editingAudienceUserIds.includes(profile.user_id)
+                                        ? 'bg-emerald-50 ring-1 ring-emerald-400'
+                                        : 'hover:bg-slate-50'
+                                    }`}
+                                  >
+                                    <Avatar src={profile.avatar_url} name={profile.name} size="xs" />
+                                    <span className="text-xs text-slate-700 truncate">{profile.name}</span>
+                                    {editingAudienceUserIds.includes(profile.user_id) && (
+                                      <Check className="w-3 h-3 text-emerald-600 ml-auto" />
+                                    )}
+                                  </button>
+                                ))}
+                              </div>
+                            </div>
+
+                            {/* Resumo */}
+                            {(editingAudienceUserIds.length > 0 || editingAudienceRoles.length > 0) && (
+                              <div className="mt-2 pt-2 border-t border-slate-100 text-[10px] text-slate-500">
+                                {editingAudienceRoles.length > 0 && (
+                                  <span>Cargos: {editingAudienceRoles.join(', ')}</span>
+                                )}
+                                {editingAudienceRoles.length > 0 && editingAudienceUserIds.length > 0 && ' • '}
+                                {editingAudienceUserIds.length > 0 && (
+                                  <span>{editingAudienceUserIds.length} pessoa(s)</span>
+                                )}
+                              </div>
+                            )}
+                          </div>
+                        )}
+
                         <div className="flex items-center justify-end gap-2 mt-3">
                           <button
                             onClick={handleCancelEdit}
@@ -3066,10 +4165,20 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToModule, params }) => 
                           </div>
                           
                           <div className="flex items-center justify-between mt-3 text-xs text-slate-500">
-                            <span>{totalVotes} voto{totalVotes !== 1 ? 's' : ''}</span>
+                            {totalVotes > 0 ? (
+                              <button
+                                type="button"
+                                onClick={() => openPollVotersModal(poll.id)}
+                                className="hover:underline font-medium"
+                              >
+                                {totalVotes} voto{totalVotes !== 1 ? 's' : ''}
+                              </button>
+                            ) : (
+                              <span>{totalVotes} voto{totalVotes !== 1 ? 's' : ''}</span>
+                            )}
                             {poll.expires_at && (
                               <span className={poll.is_expired ? 'text-red-500' : ''}>
-                                {poll.is_expired ? 'Encerrada' : `Encerra em ${formatTimeAgo(poll.expires_at)}`}
+                                {poll.is_expired ? 'Encerrada' : `Encerra ${formatTimeUntil(poll.expires_at)}`}
                               </span>
                             )}
                           </div>
@@ -3309,75 +4418,92 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToModule, params }) => 
                     )}
                   </div>
                   
-                  {/* Contadores */}
-                  <div className="px-4 py-2 flex items-center justify-between text-xs text-slate-500 border-b border-slate-200 mt-2">
-                    <div className="flex items-center gap-1">
-                      <div className="flex -space-x-1.5">
-                        <div className="w-5 h-5 rounded-full bg-blue-500 border border-white flex items-center justify-center">
-                          <ThumbsUp className="w-2.5 h-2.5 text-white" />
+                  {/* Contadores - Design Premium */}
+                  <div className="px-5 py-3 flex items-center justify-between text-xs border-t border-slate-100 mt-3">
+                    <div className="flex items-center gap-2">
+                      <div className="flex -space-x-1">
+                        <div className="w-6 h-6 rounded-full bg-gradient-to-br from-blue-500 to-blue-600 border-2 border-white flex items-center justify-center shadow-sm">
+                          <ThumbsUp className="w-3 h-3 text-white" />
                         </div>
                         {post.likes_count > 5 && (
-                          <div className="w-5 h-5 rounded-full bg-red-500 border border-white flex items-center justify-center">
-                            <Heart className="w-2.5 h-2.5 text-white" />
+                          <div className="w-6 h-6 rounded-full bg-gradient-to-br from-red-500 to-pink-500 border-2 border-white flex items-center justify-center shadow-sm">
+                            <Heart className="w-3 h-3 text-white" />
                           </div>
                         )}
                       </div>
-                      <span className="ml-1 hover:underline cursor-pointer font-medium text-slate-600">
+                      <span className="hover:underline cursor-pointer font-semibold text-slate-600">
                         {post.likes_count > 0 ? `${post.likes_count} curtida${post.likes_count !== 1 ? 's' : ''}` : 'Seja o primeiro'}
                       </span>
                     </div>
-                    <span className="hover:underline cursor-pointer font-medium text-slate-600">
+                    <button
+                      type="button"
+                      onClick={() => toggleInlineComments(post.id)}
+                      className="hover:underline cursor-pointer font-semibold text-slate-500 hover:text-blue-600 transition-colors"
+                    >
                       {post.comments_count} comentário{post.comments_count !== 1 ? 's' : ''}
-                    </span>
+                    </button>
                   </div>
                   
-                  {/* Ações */}
-                  <div className="flex items-center px-2 py-1 bg-slate-50/50">
+                  {/* Ações - Design Premium */}
+                  <div className="flex items-center gap-2 px-4 py-2 border-t border-slate-100">
                     <button 
                       onClick={() => handleToggleLike(post.id, post.liked_by_me || false)}
-                      className={`flex-1 flex items-center justify-center gap-2 py-2 hover:bg-slate-100 rounded-lg text-sm font-medium transition-colors ${post.liked_by_me ? 'text-blue-600' : 'text-slate-600'}`}
+                      className={`flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl text-sm font-semibold transition-all duration-200 ${
+                        post.liked_by_me 
+                          ? 'bg-blue-50 text-blue-600 hover:bg-blue-100' 
+                          : 'text-slate-600 hover:bg-slate-100'
+                      }`}
                     >
-                      <ThumbsUp className={`w-5 h-5 ${post.liked_by_me ? 'fill-current' : ''}`} />
+                      <ThumbsUp className={`w-5 h-5 transition-transform ${post.liked_by_me ? 'fill-current scale-110' : 'group-hover:scale-110'}`} />
                       {post.liked_by_me ? 'Curtido' : 'Curtir'}
                     </button>
                     <button 
                       onClick={() => toggleInlineComments(post.id)}
-                      className={`flex-1 flex items-center justify-center gap-2 py-2 hover:bg-slate-100 rounded-lg text-sm font-medium transition-colors ${expandedComments[post.id] ? 'text-blue-600' : 'text-slate-600'}`}
+                      className={`flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl text-sm font-semibold transition-all duration-200 ${
+                        expandedComments[post.id] 
+                          ? 'bg-blue-50 text-blue-600 hover:bg-blue-100' 
+                          : 'text-slate-600 hover:bg-slate-100'
+                      }`}
                     >
                       <MessageCircle className="w-5 h-5" />
                       Comentar
                     </button>
                   </div>
                   
-                  {/* Seção de comentários inline (estilo Facebook/Instagram) */}
+                  {/* Seção de comentários inline - Design Premium */}
                   {expandedComments[post.id] && (
-                    <div className="border-t border-slate-100">
+                    <div className="border-t border-slate-100 overflow-visible bg-gradient-to-b from-slate-50/50 to-white">
                       {/* Lista de comentários */}
-                      <div className="px-4 py-3 space-y-3 max-h-64 overflow-y-auto">
+                      <div className="px-5 py-4 space-y-4 max-h-72 overflow-y-auto overflow-x-visible">
                         {expandedComments[post.id].loading ? (
-                          <div className="flex items-center justify-center py-4">
-                            <Loader2 className="w-5 h-5 text-blue-600 animate-spin" />
+                          <div className="flex items-center justify-center py-6">
+                            <div className="w-8 h-8 rounded-full bg-gradient-to-br from-blue-500 to-indigo-500 flex items-center justify-center">
+                              <Loader2 className="w-4 h-4 text-white animate-spin" />
+                            </div>
                           </div>
                         ) : expandedComments[post.id].comments.length === 0 ? (
-                          <p className="text-slate-400 text-sm text-center py-2">Seja o primeiro a comentar!</p>
+                          <div className="text-center py-4">
+                            <MessageCircle className="w-8 h-8 text-slate-300 mx-auto mb-2" />
+                            <p className="text-slate-400 text-sm font-medium">Seja o primeiro a comentar!</p>
+                          </div>
                         ) : (
                           expandedComments[post.id].comments.map((c, idx) => (
-                            <div key={`${c.user_id}-${idx}`} className="flex gap-2 group">
+                            <div key={`${c.user_id}-${idx}`} className="flex gap-3 group">
                               <button
                                 onClick={() => handleNavigate('perfil', { userId: c.user_id })}
-                                className="flex-shrink-0"
+                                className="flex-shrink-0 hover:scale-105 transition-transform"
                               >
-                                <Avatar src={c.avatar_url} name={c.name} size="xs" />
+                                <Avatar src={c.avatar_url} name={c.name} size="sm" />
                               </button>
                               <div className="flex-1">
-                                <div className="bg-slate-100 rounded-2xl px-3 py-2">
+                                <div className="bg-slate-100/80 rounded-2xl px-4 py-2.5 hover:bg-slate-100 transition-colors">
                                   <button
                                     onClick={() => handleNavigate('perfil', { userId: c.user_id })}
-                                    className="text-xs font-semibold text-slate-900 hover:underline"
+                                    className="text-[13px] font-bold text-slate-900 hover:text-blue-600 transition-colors"
                                   >
                                     {c.name}
                                   </button>
-                                  <p className="text-sm text-slate-700">{c.content}</p>
+                                  <p className="text-sm text-slate-700 leading-relaxed">{renderContentWithMentions(c.content)}</p>
                                 </div>
                                 {/* Ações do comentário */}
                                 <div className="flex items-center gap-3 mt-1 ml-2">
@@ -3405,29 +4531,60 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToModule, params }) => 
                       {/* Input para novo comentário */}
                       <div className="px-4 py-3 border-t border-slate-100 bg-slate-50/50">
                         <div className="flex gap-2 items-center">
-                          <Avatar src={currentProfile?.avatar_url} name={currentProfile?.name || 'Você'} size="xs" />
-                          <input
-                            type="text"
-                            value={expandedComments[post.id]?.newComment || ''}
-                            onChange={(e) => setExpandedComments(prev => ({
-                              ...prev,
-                              [post.id]: { ...prev[post.id], newComment: e.target.value }
-                            }))}
-                            onKeyDown={(e) => {
-                              if (e.key === 'Enter' && !e.shiftKey) {
-                                e.preventDefault();
-                                handleCreateInlineComment(post.id);
-                              }
-                            }}
-                            placeholder={`Comente como ${currentProfile?.name || 'você'}...`}
-                            className="flex-1 px-3 py-2 bg-white border border-slate-200 rounded-full text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-400"
-                            disabled={expandedComments[post.id]?.submitting}
-                          />
+                          <Avatar src={resolvedCurrentAvatarUrl} name={currentProfile?.name || 'Você'} size="xs" />
+                          <div className="flex-1">
+                            <input
+                              type="text"
+                              value={expandedComments[post.id]?.newComment || ''}
+                              onChange={(e) => handleCommentInputChange(post.id, e.target.value)}
+                              onKeyDown={(e) => {
+                                if (e.key === 'Enter' && !e.shiftKey) {
+                                  e.preventDefault();
+                                  handleCreateInlineComment(post.id);
+                                }
+                              }}
+                              placeholder={`Comente como ${currentProfile?.name || 'você'}... Use @ para mencionar`}
+                              className="w-full px-3 py-2 bg-white border border-slate-200 rounded-full text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-400"
+                              disabled={expandedComments[post.id]?.submitting}
+                            />
+                          </div>
                           {expandedComments[post.id]?.submitting && (
                             <Loader2 className="w-4 h-4 text-blue-600 animate-spin" />
                           )}
                         </div>
                       </div>
+                      
+                      {/* Dropdown de Menções no Comentário - fora do container com overflow */}
+                      {expandedComments[post.id]?.showMentionDropdown && allProfiles.length > 0 && (
+                        <div className="px-4 pb-2">
+                          <div className="bg-white rounded-lg border border-slate-200 shadow-lg max-h-48 overflow-y-auto">
+                            <div className="p-2 border-b border-slate-100">
+                              <span className="text-xs text-slate-500 font-medium flex items-center gap-1">
+                                <AtSign className="w-3 h-3" /> Mencionar usuário
+                              </span>
+                            </div>
+                            {allProfiles
+                              .filter(p => {
+                                const search = (expandedComments[post.id]?.mentionSearch || '').toLowerCase();
+                                return search === '' || p.name.toLowerCase().includes(search);
+                              })
+                              .slice(0, 10)
+                              .map((profile) => (
+                                <button
+                                  key={profile.id}
+                                  onClick={() => handleSelectCommentMention(post.id, profile)}
+                                  className="w-full flex items-center gap-3 px-3 py-2 hover:bg-slate-50 transition-colors text-left"
+                                >
+                                  <Avatar src={profile.avatar_url} name={profile.name} size="sm" />
+                                  <div>
+                                    <p className="text-sm font-medium text-slate-900">{profile.name}</p>
+                                    <p className="text-xs text-slate-500">{profile.role}</p>
+                                  </div>
+                                </button>
+                              ))}
+                          </div>
+                        </div>
+                      )}
                     </div>
                   )}
                 </div>
@@ -3436,18 +4593,26 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToModule, params }) => 
           </div>
         </main>
 
-        {/* Sidebar Direita - Widgets Arrastáveis */}
-        <aside className="hidden xl:flex xl:col-span-3 flex-col sticky top-4 order-3">
-          <SidebarDroppable id="sidebar-right">
-            <SortableContext items={rightWidgets} strategy={rectSortingStrategy}>
-              {rightWidgets.map((widgetId) => (
-                <SortableWidget key={widgetId} id={widgetId}>
-                  {renderWidget(widgetId)}
-                </SortableWidget>
-              ))}
-            </SortableContext>
-          </SidebarDroppable>
-        </aside>
+        {/* Widgets da direita */}
+        {isXlScreen ? (
+          <aside className="xl:col-span-3 flex-col sticky top-4 order-3 hidden xl:flex">
+            <SidebarDroppable id="sidebar-right">
+              <SortableContext items={visibleRightWidgets} strategy={rectSortingStrategy}>
+                {visibleRightWidgets.map((widgetId) => (
+                  <SortableWidget key={widgetId} id={widgetId}>
+                    {renderWidget(widgetId)}
+                  </SortableWidget>
+                ))}
+              </SortableContext>
+            </SidebarDroppable>
+          </aside>
+        ) : (
+          <section className="xl:hidden col-span-1 lg:col-span-9 order-3 space-y-4">
+            {visibleRightWidgets.map((widgetId) => (
+              <div key={widgetId}>{renderWidget(widgetId)}</div>
+            ))}
+          </section>
+        )}
       </div>
     </div>
 
@@ -3583,7 +4748,7 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToModule, params }) => 
                               </span>
                             )}
                           </div>
-                          <p className="text-sm text-slate-700">{u.content}</p>
+                          <p className="text-sm text-slate-700">{u.content ? renderContentWithMentions(u.content) : ''}</p>
                         </div>
                       </div>
                     ))}
@@ -3596,7 +4761,7 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToModule, params }) => 
           {interactionModal.type === 'comments' && (
             <div className="p-4 border-t border-slate-200 bg-slate-50">
               <div className="flex gap-3">
-                <Avatar src={currentProfile?.avatar_url} name={currentProfile?.name || 'Você'} size="sm" />
+                <Avatar src={resolvedCurrentAvatarUrl} name={currentProfile?.name || 'Você'} size="sm" />
                 <div className="flex-1 flex gap-2">
                   <input
                     type="text"
@@ -3625,6 +4790,99 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToModule, params }) => 
           )}
         </div>
       </div>
+    )}
+
+    {/* Modal: Quem votou na enquete */}
+    {pollVotersModal.open && (
+      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onClick={closePollVotersModal}>
+        <div
+          className="bg-white rounded-2xl shadow-xl max-w-lg w-full max-h-[80vh] flex flex-col"
+          onClick={(e) => e.stopPropagation()}
+        >
+          <div className="flex items-center justify-between p-4 border-b border-slate-200">
+            <div className="min-w-0">
+              <h3 className="font-bold text-slate-900 truncate">Quem votou</h3>
+              {pollForVotersModal?.question && (
+                <p className="text-xs text-slate-500 truncate">{pollForVotersModal.question}</p>
+              )}
+            </div>
+            <button onClick={closePollVotersModal} className="text-slate-400 hover:text-slate-600">
+              <X className="w-5 h-5" />
+            </button>
+          </div>
+
+          <div className="flex-1 overflow-y-auto p-4">
+            {pollVotersModal.loading ? (
+              <div className="flex items-center justify-center py-8">
+                <Loader2 className="w-6 h-6 text-blue-600 animate-spin" />
+              </div>
+            ) : pollVotersModal.voters.length === 0 ? (
+              <p className="text-slate-500 text-center py-8">Ainda não há votos.</p>
+            ) : (
+              <div className="space-y-3">
+                {pollVotersModal.voters.map((v) => {
+                  const labels = (v.option_indices || [])
+                    .map((idx) => pollForVotersModal?.options?.[idx]?.text)
+                    .filter(Boolean) as string[];
+
+                  return (
+                    <div
+                      key={v.user_id}
+                      className="flex items-start gap-3 p-2 rounded-xl hover:bg-slate-50 cursor-pointer"
+                      onClick={() => {
+                        handleNavigate('perfil', { userId: v.user_id });
+                        closePollVotersModal();
+                      }}
+                    >
+                      <Avatar src={v.avatar_url || undefined} name={v.name} size="sm" />
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center gap-2">
+                          <p className="text-sm font-semibold text-slate-900 truncate">{v.name}</p>
+                          {v.role && <span className="text-[10px] text-slate-500 truncate">{v.role}</span>}
+                        </div>
+                        {labels.length > 0 && (
+                          <div className="flex flex-wrap gap-1 mt-1">
+                            {labels.map((label, i) => (
+                              <span
+                                key={`${v.user_id}-${i}`}
+                                className="text-[10px] px-2 py-0.5 rounded-full bg-indigo-50 text-indigo-700 border border-indigo-100"
+                              >
+                                {label}
+                              </span>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+    )}
+
+    {/* Modal do Post Individual (estilo Facebook) */}
+    {showPostModal && selectedPostId && (
+      <PostModal
+        postId={selectedPostId}
+        isOpen={showPostModal}
+        initialPost={feedPosts.find(p => p.id === selectedPostId) || null}
+        onClose={() => {
+          setShowPostModal(false);
+          setSelectedPostId(null);
+        }}
+        onNavigateToProfile={(userId) => {
+          setShowPostModal(false);
+          setSelectedPostId(null);
+          handleNavigate('perfil', { userId });
+        }}
+        onBackToFeed={() => {
+          setShowPostModal(false);
+          setSelectedPostId(null);
+        }}
+      />
     )}
     </DndContext>
   );

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useMemo } from 'react';
 import {
   Scale,
   Users,
@@ -17,14 +17,15 @@ import {
   CheckSquare,
 } from 'lucide-react';
 import type { ModuleName } from '../../contexts/NavigationContext';
-import { supabase } from '../../config/supabase';
-import { useAuth } from '../../contexts/AuthContext';
 
 interface SidebarProps {
   activeModule: ModuleName;
   onNavigate: (module: ModuleName) => void;
   onOpenProfile: () => void;
   logoUrl?: string;
+  canView: (module: string) => boolean;
+  isAdmin: boolean;
+  permissionsLoading: boolean;
 }
 
 interface NavItem {
@@ -74,81 +75,19 @@ export const Sidebar: React.FC<SidebarProps> = ({
   onNavigate,
   onOpenProfile,
   logoUrl,
+  canView,
+  isAdmin,
+  permissionsLoading,
 }) => {
-  const { user } = useAuth();
-  const [userRole, setUserRole] = useState<string>('');
-  const [permissions, setPermissions] = useState<Record<string, boolean>>({});
-  const [loading, setLoading] = useState(true);
-
-  const normalizeRole = (role: string) =>
-    role
-      .toLowerCase()
-      .normalize('NFD')
-      .replace(/[\u0300-\u036f]/g, '');
-
-  useEffect(() => {
-    const loadPermissions = async () => {
-      if (!user?.id) {
-        setLoading(false);
-        return;
-      }
-
-      try {
-        // Carregar cargo do usuário
-        const { data: profile } = await supabase
-          .from('profiles')
-          .select('role')
-          .eq('user_id', user.id)
-          .single();
-
-        const role = profile?.role || '';
-        setUserRole(role);
-        const normalizedRole = normalizeRole(role);
-
-        // Administrador tem acesso a tudo
-        if (normalizedRole === 'administrador') {
-          const allPerms: Record<string, boolean> = {};
-          navItems.forEach((item) => {
-            allPerms[item.moduleKey] = true;
-          });
-          setPermissions(allPerms);
-          setLoading(false);
-          return;
-        }
-
-        // Carregar permissões do cargo
-        const { data: rolePerms } = await supabase
-          .from('role_permissions')
-          .select('module, can_view, can_create, can_edit, can_delete')
-          .eq('role', normalizedRole);
-
-        const perms: Record<string, boolean> = {};
-        rolePerms?.forEach((perm) => {
-          // Se tem pelo menos uma permissão no módulo, mostra no menu
-          const hasAnyPermission = perm.can_view || perm.can_create || perm.can_edit || perm.can_delete;
-          perms[perm.module] = hasAnyPermission;
-        });
-
-        setPermissions(perms);
-      } catch (err) {
-        console.error('Erro ao carregar permissões:', err);
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    loadPermissions();
-  }, [user?.id]);
-
-  // Filtrar itens do menu baseado em permissões
-  const visibleItems = loading
-    ? [] // Não mostrar nada enquanto carrega
-    : navItems.filter((item) => {
-        // Dashboard sempre visível
-        if (item.moduleKey === 'dashboard') return true;
-        // Mostrar se tem pelo menos uma permissão
-        return permissions[item.moduleKey] === true;
-      });
+  // Filtrar itens do menu baseado em permissões (via props)
+  const visibleItems = useMemo(() => {
+    if (permissionsLoading) return [];
+    return navItems.filter((item) => {
+      if (item.moduleKey === 'dashboard') return true;
+      if (isAdmin) return true;
+      return canView(item.moduleKey);
+    });
+  }, [permissionsLoading, isAdmin, canView]);
 
   return (
     <aside className="hidden md:flex fixed left-0 top-0 h-screen w-20 bg-slate-900 flex-col items-center py-4 z-40">

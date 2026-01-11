@@ -69,6 +69,12 @@ export interface PreviewData {
   };
 }
 
+// Visibilidade do post
+export type PostVisibility = 'public' | 'private' | 'team';
+
+// Status do post
+export type PostStatus = 'published' | 'scheduled' | 'draft';
+
 // Tipo do post
 export interface FeedPost {
   id: string;
@@ -83,6 +89,17 @@ export interface FeedPost {
   comments_count: number;
   created_at: string;
   updated_at: string;
+  // Novos campos
+  visibility: PostVisibility;
+  scheduled_at: string | null;
+  status: PostStatus;
+  allowed_user_ids?: string[];
+  allowed_roles?: string[];
+  // Campos de banimento
+  banned_at?: string | null;
+  banned_by?: string | null;
+  banned_reason?: string | null;
+  banned_by_name?: string; // Nome do admin que baniu (populado)
   // Campos populados
   author?: Profile;
   liked_by_me?: boolean;
@@ -125,6 +142,10 @@ export interface CreateFeedPostDTO {
   entity_references?: EntityReference[];
   preview_data?: PreviewData;
   attachments?: Omit<FeedPostAttachment, 'signedUrl'>[];
+  visibility?: PostVisibility;
+  scheduled_at?: string | null;
+  allowed_user_ids?: string[];
+  allowed_roles?: string[];
 }
 
 class FeedPostsService {
@@ -205,19 +226,24 @@ class FeedPostsService {
   private async hydrateAuthors(posts: any[]): Promise<any[]> {
     if (!posts || posts.length === 0) return posts;
 
+    // Coletar IDs de autores e admins que baniram
     const authorIds = [...new Set(posts.map(p => p.author_id).filter(Boolean))];
-    if (authorIds.length === 0) return posts;
+    const bannedByIds = [...new Set(posts.map(p => p.banned_by).filter(Boolean))];
+    const allUserIds = [...new Set([...authorIds, ...bannedByIds])];
+    
+    if (allUserIds.length === 0) return posts;
 
     const { data: profiles } = await supabase
       .from('profiles')
       .select('*')
-      .in('user_id', authorIds);
+      .in('user_id', allUserIds);
 
     const profileMap = new Map((profiles || []).map((p: any) => [p.user_id, p]));
 
     return posts.map(post => ({
       ...post,
-      author: profileMap.get(post.author_id) || this.makeFallbackAuthor(String(post.author_id))
+      author: profileMap.get(post.author_id) || this.makeFallbackAuthor(String(post.author_id)),
+      banned_by_name: post.banned_by ? (profileMap.get(post.banned_by)?.name || 'Administrador') : undefined
     }));
   }
 
@@ -240,11 +266,12 @@ class FeedPostsService {
     }));
   }
 
-  // Buscar posts do feed
+  // Buscar posts do feed (apenas publicados)
   async getPosts(limit = 20, offset = 0): Promise<FeedPost[]> {
     const { data: posts, error } = await supabase
       .from('feed_posts')
       .select('*')
+      .eq('status', 'published')
       .order('created_at', { ascending: false })
       .range(offset, offset + limit - 1);
 
@@ -282,10 +309,50 @@ class FeedPostsService {
     return hydrated;
   }
 
+  // Buscar post por ID
+  async getPostById(postId: string): Promise<FeedPost | null> {
+    const { data: { user } } = await supabase.auth.getUser();
+    
+    const { data, error } = await supabase
+      .from('feed_posts')
+      .select('*')
+      .eq('id', postId)
+      .maybeSingle();
+
+    if (error) {
+      console.error('Erro ao buscar post:', error);
+      return null;
+    }
+
+    if (!data) return null;
+
+    // Hidratar autor e anexos
+    const [hydrated] = await this.hydrateAuthors([data]);
+    const withAttachments = await this.hydrateAttachments(hydrated);
+
+    // Verificar se o usuário curtiu
+    if (user) {
+      const { data: like } = await supabase
+        .from('feed_post_likes')
+        .select('id')
+        .eq('post_id', postId)
+        .eq('user_id', user.id)
+        .maybeSingle();
+      
+      withAttachments.liked_by_me = !!like;
+    }
+
+    return withAttachments;
+  }
+
   // Criar novo post
   async createPost(dto: CreateFeedPostDTO): Promise<FeedPost> {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) throw new Error('Usuário não autenticado');
+
+    // Determinar status baseado em agendamento
+    const isScheduled = dto.scheduled_at && new Date(dto.scheduled_at) > new Date();
+    const status = isScheduled ? 'scheduled' : 'published';
 
     const { data, error } = await supabase
       .from('feed_posts')
@@ -296,7 +363,12 @@ class FeedPostsService {
         mentions: dto.mentions || [],
         entity_references: dto.entity_references || [],
         preview_data: dto.preview_data || {},
-        attachments: dto.attachments || []
+        attachments: dto.attachments || [],
+        visibility: dto.visibility || 'public',
+        scheduled_at: dto.scheduled_at || null,
+        allowed_user_ids: dto.allowed_user_ids || [],
+        allowed_roles: dto.allowed_roles || [],
+        status
       })
       .select('*')
       .single();
@@ -307,6 +379,7 @@ class FeedPostsService {
     }
 
     // Criar notificações para usuários mencionados (salva no banco para o usuário mencionado ver)
+    // IMPORTANTE: Em posts privados/equipe, só notifica se o mencionado está nos destinatários permitidos
     if (dto.mentions && dto.mentions.length > 0) {
       // Buscar nome do autor para a notificação
       let authorName = 'Usuário';
@@ -321,26 +394,36 @@ class FeedPostsService {
         // ignore
       }
 
+      // Determinar quem pode ser notificado baseado na visibilidade
+      const allowedUserIds = dto.allowed_user_ids || [];
+      const isPublic = !dto.visibility || dto.visibility === 'public';
+
       for (const mentionedUserId of dto.mentions) {
         // Não notificar o próprio autor
-        if (mentionedUserId !== user.id) {
-          try {
-            await userNotificationService.createNotification({
-              user_id: mentionedUserId,
-              type: 'mention',
-              title: `${authorName} mencionou você`,
-              message: dto.content.length > 100 
-                ? dto.content.substring(0, 100) + '...' 
-                : dto.content,
-              metadata: {
-                post_id: data.id,
-                author_id: user.id,
-                author_name: authorName
-              }
-            });
-          } catch (notifError) {
-            console.warn('Erro ao criar notificação de menção:', notifError);
-          }
+        if (mentionedUserId === user.id) continue;
+
+        // Se não é público, só notifica se o mencionado está na lista de destinatários
+        if (!isPublic && !allowedUserIds.includes(mentionedUserId)) {
+          console.log(`Menção ignorada: ${mentionedUserId} não está nos destinatários do post privado/equipe`);
+          continue;
+        }
+
+        try {
+          await userNotificationService.createNotification({
+            user_id: mentionedUserId,
+            type: 'mention',
+            title: `${authorName} mencionou você`,
+            message: dto.content.length > 100 
+              ? dto.content.substring(0, 100) + '...' 
+              : dto.content,
+            metadata: {
+              post_id: data.id,
+              author_id: user.id,
+              author_name: authorName
+            }
+          });
+        } catch (notifError) {
+          console.warn('Erro ao criar notificação de menção:', notifError);
         }
       }
     }
@@ -396,19 +479,77 @@ class FeedPostsService {
     }
   }
 
-  // Atualizar post
-  async updatePost(postId: string, updates: Partial<CreateFeedPostDTO>): Promise<FeedPost> {
+  // Banir post (somente admin)
+  async banPost(postId: string, reason?: string): Promise<FeedPost> {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) throw new Error('Usuário não autenticado');
+
     const { data, error } = await supabase
       .from('feed_posts')
       .update({
-        content: updates.content,
-        tags: updates.tags,
-        mentions: updates.mentions,
-        entity_references: updates.entity_references,
-        preview_data: updates.preview_data,
-        attachments: updates.attachments,
-        updated_at: new Date().toISOString()
+        banned_at: new Date().toISOString(),
+        banned_by: user.id,
+        banned_reason: reason || null
       })
+      .eq('id', postId)
+      .select('*')
+      .single();
+
+    if (error) {
+      console.error('Erro ao banir post:', error);
+      throw error;
+    }
+
+    // Hidratar autor
+    const [hydrated] = await this.hydrateAuthors([data]);
+    return hydrated;
+  }
+
+  // Desbanir post (somente admin)
+  async unbanPost(postId: string): Promise<FeedPost> {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) throw new Error('Usuário não autenticado');
+
+    const { data, error } = await supabase
+      .from('feed_posts')
+      .update({
+        banned_at: null,
+        banned_by: null,
+        banned_reason: null
+      })
+      .eq('id', postId)
+      .select('*')
+      .single();
+
+    if (error) {
+      console.error('Erro ao desbanir post:', error);
+      throw error;
+    }
+
+    // Hidratar autor
+    const [hydrated] = await this.hydrateAuthors([data]);
+    return hydrated;
+  }
+
+  // Atualizar post
+  async updatePost(postId: string, updates: Partial<CreateFeedPostDTO>): Promise<FeedPost> {
+    const updatePayload: Record<string, unknown> = {
+      updated_at: new Date().toISOString()
+    };
+    
+    if (updates.content !== undefined) updatePayload.content = updates.content;
+    if (updates.tags !== undefined) updatePayload.tags = updates.tags;
+    if (updates.mentions !== undefined) updatePayload.mentions = updates.mentions;
+    if (updates.entity_references !== undefined) updatePayload.entity_references = updates.entity_references;
+    if (updates.preview_data !== undefined) updatePayload.preview_data = updates.preview_data;
+    if (updates.attachments !== undefined) updatePayload.attachments = updates.attachments;
+    if (updates.visibility !== undefined) updatePayload.visibility = updates.visibility;
+    if (updates.allowed_user_ids !== undefined) updatePayload.allowed_user_ids = updates.allowed_user_ids;
+    if (updates.allowed_roles !== undefined) updatePayload.allowed_roles = updates.allowed_roles;
+
+    const { data, error } = await supabase
+      .from('feed_posts')
+      .update(updatePayload)
       .eq('id', postId)
       .select('*')
       .single();
@@ -504,6 +645,112 @@ class FeedPostsService {
     if (error) {
       console.error('Erro ao criar comentário:', error);
       throw error;
+    }
+
+    // Buscar o autor do post para evitar notificação duplicada
+    // (se o mencionado é o autor do post, ele já receberá notificação de "comentou sua publicação")
+    let postAuthorId: string | null = null;
+    try {
+      const { data: postData } = await supabase
+        .from('feed_posts')
+        .select('author_id')
+        .eq('id', postId)
+        .maybeSingle();
+      postAuthorId = postData?.author_id || null;
+    } catch {
+      // ignore
+    }
+
+    // Processar menções no comentário e criar notificações
+    const mentionRegex = /@([A-Za-zÀ-ÖØ-öø-ÿ]+(?:\s+[A-Za-zÀ-ÖØ-öø-ÿ]+)*)/g;
+    const mentionMatches: string[] = [];
+    let match;
+    while ((match = mentionRegex.exec(content)) !== null) {
+      mentionMatches.push(match[1].toLowerCase());
+    }
+
+    console.log('📝 Comentário criado, processando menções...');
+    console.log('📝 Conteúdo:', content);
+    console.log('📝 Menções encontradas:', mentionMatches);
+    console.log('📝 Autor do post:', postAuthorId);
+
+    if (mentionMatches.length > 0) {
+      try {
+        // Buscar todos os perfis para encontrar os mencionados
+        const { data: profiles, error: profilesError } = await supabase
+          .from('profiles')
+          .select('user_id, name');
+
+        if (profilesError) {
+          console.error('❌ Erro ao buscar perfis:', profilesError);
+        }
+
+        console.log('👥 Perfis encontrados:', profiles?.length || 0);
+
+        if (profiles && profiles.length > 0) {
+          // Buscar nome do autor para a notificação
+          let authorName = 'Usuário';
+          const authorProfile = profiles.find(p => p.user_id === user.id);
+          if (authorProfile?.name) authorName = authorProfile.name;
+
+          // Encontrar user_ids dos mencionados - busca flexível
+          const mentionedProfiles = profiles.filter(p => {
+            const profileName = (p.name || '').toLowerCase().trim();
+            return mentionMatches.some(mentioned => {
+              const mentionedTrimmed = mentioned.trim();
+              const isMatch = profileName === mentionedTrimmed || 
+                             profileName.includes(mentionedTrimmed) || 
+                             mentionedTrimmed.includes(profileName);
+              if (isMatch) {
+                console.log(`✅ Match encontrado: "${mentioned}" -> "${p.name}"`);
+              }
+              return isMatch;
+            });
+          });
+
+          console.log('🎯 Perfis mencionados encontrados:', mentionedProfiles.map(p => p.name));
+
+          // Criar notificação para cada mencionado
+          for (const mentionedProfile of mentionedProfiles) {
+            // Não notificar o próprio autor do comentário
+            if (mentionedProfile.user_id === user.id) {
+              console.log('⏭️ Ignorando auto-menção:', mentionedProfile.name);
+              continue;
+            }
+
+            // Não notificar o autor do post (ele já recebe notificação de "comentou sua publicação")
+            if (mentionedProfile.user_id === postAuthorId) {
+              console.log('⏭️ Ignorando menção ao autor do post (já receberá notificação de comentário):', mentionedProfile.name);
+              continue;
+            }
+
+            try {
+              console.log('📤 Criando notificação para:', mentionedProfile.name, mentionedProfile.user_id);
+              await userNotificationService.createNotification({
+                user_id: mentionedProfile.user_id,
+                type: 'mention',
+                title: `${authorName} mencionou você em um comentário`,
+                message: content.length > 100 
+                  ? content.substring(0, 100) + '...' 
+                  : content,
+                metadata: {
+                  post_id: postId,
+                  comment_id: data.id,
+                  author_id: user.id,
+                  author_name: authorName
+                }
+              });
+              console.log(`🔔 Notificação de menção criada para: ${mentionedProfile.name}`);
+            } catch (notifError) {
+              console.error('❌ Erro ao criar notificação de menção em comentário:', notifError);
+            }
+          }
+        }
+      } catch (profileError) {
+        console.error('❌ Erro ao processar menções no comentário:', profileError);
+      }
+    } else {
+      console.log('ℹ️ Nenhuma menção encontrada no comentário');
     }
 
     const hydratedArr = await this.hydrateCommentAuthors([data]);

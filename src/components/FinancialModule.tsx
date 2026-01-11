@@ -3142,9 +3142,6 @@ ${clientAddress ? `<div class="flex"><span class="text-subtle-light dark:text-su
                     <div className="rounded-2xl border border-slate-200 overflow-hidden bg-white">
                       <div className="sm:hidden divide-y divide-slate-100">
                         {displayedAgreements.map((agreement: Agreement) => {
-                          const agreementInstallments = allInstallments.filter(inst => inst.agreement_id === agreement.id);
-                          const paidInstallments = agreementInstallments.filter(inst => inst.status === 'pago');
-                          const isFullyPaid = agreementInstallments.length > 0 && paidInstallments.length === agreementInstallments.length;
                           const closedLabel = new Date(agreement.updated_at).toLocaleDateString('pt-BR');
 
                           return (
@@ -3163,12 +3160,8 @@ ${clientAddress ? `<div class="flex"><span class="text-subtle-light dark:text-su
                                 <div className="text-right flex-shrink-0">
                                   <p className="text-sm font-bold text-slate-900">{formatCurrency(agreement.total_value)}</p>
                                   <p className="mt-0.5 text-[11px] font-bold text-blue-700">Hon: {formatCurrency(agreement.fee_value)}</p>
-                                  <span
-                                    className={`mt-2 inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold ${
-                                      isFullyPaid ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'
-                                    }`}
-                                  >
-                                    {isFullyPaid ? 'PAGO' : 'PARCIAL'}
+                                  <span className="mt-2 inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-700">
+                                    ENCERRADO
                                   </span>
                                 </div>
                               </div>
@@ -3190,10 +3183,6 @@ ${clientAddress ? `<div class="flex"><span class="text-subtle-light dark:text-su
                           </thead>
                           <tbody className="divide-y divide-slate-100">
                             {displayedAgreements.map((agreement: Agreement) => {
-                              const agreementInstallments = allInstallments.filter(inst => inst.agreement_id === agreement.id);
-                              const paidInstallments = agreementInstallments.filter(inst => inst.status === 'pago');
-                              const isFullyPaid = agreementInstallments.length > 0 && paidInstallments.length === agreementInstallments.length;
-
                               return (
                                 <tr
                                   key={agreement.id}
@@ -3214,10 +3203,8 @@ ${clientAddress ? `<div class="flex"><span class="text-subtle-light dark:text-su
                                     <p className="text-slate-600">{new Date(agreement.updated_at).toLocaleDateString('pt-BR')}</p>
                                   </td>
                                   <td className="px-4 py-3 text-center">
-                                    <span className={`inline-flex items-center px-2 py-1 rounded-lg text-[10px] font-bold ${
-                                      isFullyPaid ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'
-                                    }`}>
-                                      {isFullyPaid ? 'PAGO INTEGRAL' : 'PARCIAL'}
+                                    <span className="inline-flex items-center px-2 py-1 rounded-lg text-[10px] font-bold bg-emerald-100 text-emerald-700">
+                                      ENCERRADO
                                     </span>
                                   </td>
                                 </tr>
@@ -3231,10 +3218,6 @@ ${clientAddress ? `<div class="flex"><span class="text-subtle-light dark:text-su
                 ) : (
                   <div className="divide-y divide-slate-100">
                     {displayedAgreements.map((agreement: Agreement, index: number) => {
-                      const agreementInstallments = allInstallments.filter(inst => inst.agreement_id === agreement.id);
-                      const paidInstallments = agreementInstallments.filter(inst => inst.status === 'pago');
-                      const isFullyPaid = agreementInstallments.length > 0 && paidInstallments.length === agreementInstallments.length;
-
                       return (
                         <div
                           key={agreement.id}
@@ -3250,7 +3233,7 @@ ${clientAddress ? `<div class="flex"><span class="text-subtle-light dark:text-su
                               <span className="text-slate-400">#{agreement.id.slice(0, 6)}</span>
                             </div>
                             <div className="flex items-center gap-2 text-[11px] text-slate-500">
-                              <span className="text-emerald-600 font-semibold">{isFullyPaid ? 'Pago integralmente' : 'Recebido parcialmente'}</span>
+                              <span className="text-emerald-600 font-semibold">Encerrado</span>
                               <span className="hidden sm:inline text-slate-300">•</span>
                               <span className="font-medium text-slate-400">{new Date(agreement.updated_at).toLocaleDateString('pt-BR')}</span>
                             </div>

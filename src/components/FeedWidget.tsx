@@ -323,6 +323,42 @@ export const FeedWidget: React.FC<FeedWidgetProps> = ({
       .slice(0, 5);
   }, [allProfiles, mentionSearch]);
 
+  // Renderizar conteúdo com menções clicáveis (azul)
+  const renderContentWithMentions = useCallback((content: string) => {
+    const mentionRegex = /@([A-Za-zÀ-ÖØ-öø-ÿ]+(?:\s+[A-Za-zÀ-ÖØ-öø-ÿ]+)*)/g;
+    const parts: React.ReactNode[] = [];
+    let lastIndex = 0;
+    let match: RegExpExecArray | null;
+
+    while ((match = mentionRegex.exec(content)) !== null) {
+      if (match.index > lastIndex) {
+        parts.push(content.slice(lastIndex, match.index));
+      }
+      const matchName = match[1];
+      const mentionedProfile = allProfiles.find(p => p.name?.toLowerCase() === matchName.toLowerCase());
+      parts.push(
+        <span
+          key={`mention-${match.index}`}
+          className="text-blue-600 font-semibold cursor-pointer hover:underline"
+          onClick={() => {
+            if (mentionedProfile && onNavigate) {
+              onNavigate('perfil');
+            }
+          }}
+        >
+          @{matchName}
+        </span>
+      );
+      lastIndex = match.index + match[0].length;
+    }
+
+    if (lastIndex < content.length) {
+      parts.push(content.slice(lastIndex));
+    }
+
+    return parts.length > 0 ? parts : content;
+  }, [allProfiles, onNavigate]);
+
   // Publicar post
   const handlePublishPost = useCallback(async () => {
     if (!postText.trim() || postingInProgress) return;
@@ -440,7 +476,7 @@ export const FeedWidget: React.FC<FeedWidgetProps> = ({
                     <Avatar src={post.author?.avatar_url} name={post.author?.name || 'U'} size="sm" />
                     <div className="flex-1 min-w-0">
                       <p className="text-xs font-medium text-slate-900 truncate">{post.author?.name}</p>
-                      <p className="text-xs text-slate-600 line-clamp-2">{post.content}</p>
+                      <p className="text-xs text-slate-600 line-clamp-2">{renderContentWithMentions(post.content)}</p>
                       <p className="text-[10px] text-slate-400 mt-1">{formatTimeAgo(post.created_at)}</p>
                     </div>
                   </div>
@@ -752,7 +788,7 @@ export const FeedWidget: React.FC<FeedWidgetProps> = ({
               
               {/* Conteúdo do Post */}
               <div className="px-4 py-2">
-                <div className="text-slate-800 text-sm leading-relaxed whitespace-pre-wrap">{post.content}</div>
+                <div className="text-slate-800 text-sm leading-relaxed whitespace-pre-wrap">{renderContentWithMentions(post.content)}</div>
 
                 {post.attachments && post.attachments.length > 0 && (
                   <div className="flex flex-wrap gap-2 mt-3">

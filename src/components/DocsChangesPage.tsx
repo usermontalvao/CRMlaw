@@ -559,6 +559,552 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
 
 const releases: ReleaseNote[] = [
   {
+    version: '1.9.320',
+    date: '11/01/2026',
+    summary: 'Feed Social: Design premium dos filtros e cards com gradientes e sombras.',
+    modules: [
+      {
+        moduleId: 'dashboard',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Design premium dos filtros',
+            description: 'Filtros do Feed Social redesenhados com gradientes e sombras elegantes.',
+          },
+          {
+            type: 'improvement',
+            title: 'Cards de posts premium',
+            description: 'Cards com sombras suaves, transições elegantes e header redesenhado.',
+          },
+          {
+            type: 'improvement',
+            title: 'Botões e comentários modernizados',
+            description: 'Botões de curtir/comentar com estados visuais melhorados e seção de comentários com design moderno.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.311',
+    date: '10/01/2026',
+    summary: 'Feed Social: Menções funcionando e notificando usuários.',
+    modules: [
+      {
+        moduleId: 'dashboard',
+        changes: [
+          {
+            type: 'fix',
+            title: 'Dropdown de menções nos comentários',
+            description: 'Dropdown de @ agora aparece corretamente ao digitar @ no campo de comentário.',
+          },
+          {
+            type: 'feature',
+            title: 'Notificação de menção',
+            description: 'Usuários mencionados com @ nos comentários agora recebem notificação.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.310',
+    date: '10/01/2026',
+    summary: 'Feed Social: Dropdown de menções visível nos comentários.',
+    modules: [
+      {
+        moduleId: 'dashboard',
+        changes: [
+          {
+            type: 'fix',
+            title: 'Dropdown de menções nos comentários',
+            description: 'Dropdown de @ agora aparece abaixo do input de comentário, não mais escondido/cortado.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.309',
+    date: '10/01/2026',
+    summary: 'Feed Social: Clique em comentários abre comentários inline.',
+    modules: [
+      {
+        moduleId: 'dashboard',
+        changes: [
+          {
+            type: 'fix',
+            title: 'Abrir comentários ao clicar no contador',
+            description: 'Ao clicar em “X comentários”, a lista de comentários agora é expandida abaixo do post.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.308',
+    date: '10/01/2026',
+    summary: 'Feed Social: Melhorias em enquetes e menções em comentários.',
+    modules: [
+      {
+        moduleId: 'dashboard',
+        changes: [
+          {
+            type: 'feature',
+            title: 'Quem votou na enquete',
+            description: 'Agora é possível ver quem votou e as opções escolhidas ao clicar em “X votos”.',
+          },
+          {
+            type: 'fix',
+            title: 'Expiração da enquete',
+            description: 'Texto “Encerra em Agora” corrigido; exibe tempo restante e encerra automaticamente quando todos os participantes votarem.',
+          },
+          {
+            type: 'fix',
+            title: 'Menções em comentários',
+            description: 'Dropdown de @ não fica mais escondido/cortado no card do post.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.307',
+    date: '10/01/2026',
+    summary: 'Feed Social: Ajustes no fluxo de enquete.',
+    modules: [
+      {
+        moduleId: 'dashboard',
+        changes: [
+          {
+            type: 'fix',
+            title: 'Criar enquete (feedback e limpeza)',
+            description: 'Ao publicar uma enquete, o criador agora fecha automaticamente, limpa os campos e mostra confirmação. O botão Publicar só habilita com enquete válida.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.306',
+    date: '10/01/2026',
+    summary: 'Feed Social: Avatar do usuário no composer/comentários.',
+    modules: [
+      {
+        moduleId: 'dashboard',
+        changes: [
+          {
+            type: 'fix',
+            title: 'Avatar real no Feed',
+            description: 'Composer e comentários agora priorizam avatar do perfil e fazem fallback para a foto do login (evita imagem genérica).',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.305',
+    date: '10/01/2026',
+    summary: 'Feed Social: Menções em comentários.',
+    modules: [
+      {
+        moduleId: 'dashboard',
+        changes: [
+          {
+            type: 'feature',
+            title: 'Menções em comentários',
+            description: 'Agora é possível mencionar colaboradores (@nome) nos comentários dos posts. O dropdown aparece ao digitar @.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.304',
+    date: '10/01/2026',
+    summary: 'Dashboard: Ajuste visual do card Aguardando Confecção.',
+    modules: [
+      {
+        moduleId: 'dashboard',
+        changes: [
+          {
+            type: 'fix',
+            title: 'Consistência visual',
+            description: 'Card Aguardando Confecção ajustado para combinar com os demais widgets (fundo branco, border simples).',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.303',
+    date: '10/01/2026',
+    summary: 'Dashboard: Card Aguardando Confecção redesenhado.',
+    modules: [
+      {
+        moduleId: 'dashboard',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Card Aguardando Confecção',
+            description: 'Visual premium com header gradiente, cards internos com sombras e hover effects, ícones com gradiente e layout mais moderno.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.302',
+    date: '10/01/2026',
+    summary: 'Feed Social: Edição de posts com visibilidade e destinatários.',
+    modules: [
+      {
+        moduleId: 'dashboard',
+        changes: [
+          {
+            type: 'feature',
+            title: 'Editar visibilidade do post',
+            description: 'Ao editar um post, agora é possível alterar a visibilidade (Público/Equipe/Privado) e selecionar destinatários.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.301',
+    date: '10/01/2026',
+    summary: 'Feed Social: Correções de privacidade em posts privados.',
+    modules: [
+      {
+        moduleId: 'dashboard',
+        changes: [
+          {
+            type: 'fix',
+            title: 'Privacidade de posts',
+            description: 'Posts privados/equipe agora só aparecem para destinatários selecionados. Menções não dão acesso automático.',
+          },
+          {
+            type: 'fix',
+            title: 'Notificações de menção',
+            description: 'Em posts privados, só notifica mencionados que estão na lista de destinatários.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.300',
+    date: '10/01/2026',
+    summary: 'Correções de bugs no Feed Social e Financeiro.',
+    modules: [
+      {
+        moduleId: 'dashboard',
+        changes: [
+          {
+            type: 'fix',
+            title: 'Menção na posição do cursor',
+            description: 'Ao clicar em Mencionar (@) ou Tag (#), o símbolo agora é inserido na posição atual do cursor, não no final do texto.',
+          },
+        ],
+      },
+      {
+        moduleId: 'financeiro',
+        changes: [
+          {
+            type: 'fix',
+            title: 'Status de acordos encerrados',
+            description: 'Acordos com status "concluído" agora mostram corretamente "ENCERRADO" em vez de "A SALDAR" ou "PARCIAL".',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.299',
+    date: '10/01/2026',
+    summary: 'Feed Social: destinatários para posts Privado/Equipe.',
+    modules: [
+      {
+        moduleId: 'dashboard',
+        changes: [
+          {
+            type: 'feature',
+            title: 'Privado/Equipe com destinatários',
+            description: 'Posts Privado e Equipe agora exigem seleção de pessoas específicas e/ou departamentos (Cargo).',
+          },
+        ],
+      },
+      {
+        moduleId: 'perfil',
+        changes: [
+          {
+            type: 'feature',
+            title: 'Privado/Equipe com destinatários',
+            description: 'No Perfil, o composer também permite selecionar pessoas/departamentos para posts Privado/Equipe.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.298',
+    date: '10/01/2026',
+    summary: 'Feed Social: UI do composer no Perfil atualizada.',
+    modules: [
+      {
+        moduleId: 'perfil',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Composer do Perfil',
+            description: 'Barra de ações em 2 linhas, visibilidade em tabs (Público/Equipe/Privado) e agendamento de posts.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.297',
+    date: '10/01/2026',
+    summary: 'Feed Social: UI/UX melhorada no composer e referências de entidades.',
+    modules: [
+      {
+        moduleId: 'dashboard',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Composer reorganizado',
+            description: 'Barra de ações em 2 linhas para melhor responsividade. Visibilidade em formato de tabs (Público/Equipe/Privado).',
+          },
+          {
+            type: 'fix',
+            title: 'Referências de entidades',
+            description: 'Marcações de clientes, processos, requerimentos, etc. agora são renderizadas com cores e são clicáveis para navegar ao módulo.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.296',
+    date: '10/01/2026',
+    summary: 'Feed Social: optimistic updates para likes.',
+    modules: [
+      {
+        moduleId: 'dashboard',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Likes instantâneos',
+            description: 'Ao curtir um post, a UI atualiza imediatamente (optimistic update). Se houver erro, reverte automaticamente.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.295',
+    date: '10/01/2026',
+    summary: 'Feed Social: comentários carregados ao abrir via menção.',
+    modules: [
+      {
+        moduleId: 'dashboard',
+        changes: [
+          {
+            type: 'fix',
+            title: 'Comentários em menções',
+            description: 'Ao clicar em uma notificação de menção (@), os comentários do post agora são expandidos e carregados automaticamente.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.294',
+    date: '10/01/2026',
+    summary: 'Feed Social: visibilidade e agendamento de posts.',
+    modules: [
+      {
+        moduleId: 'dashboard',
+        changes: [
+          {
+            type: 'feature',
+            title: 'Visibilidade de posts',
+            description: 'Posts podem ser públicos (todos veem), privados (só mencionados) ou equipe (só colaboradores). Badge visual no post.',
+          },
+          {
+            type: 'feature',
+            title: 'Agendar publicação',
+            description: 'Agende posts para serem publicados em data/hora futura. Posts agendados não aparecem no feed até a hora programada.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.293',
+    date: '10/01/2026',
+    summary: 'Performance: correção de carregamento infinito de publicações no Feed.',
+    modules: [
+      {
+        moduleId: 'dashboard',
+        changes: [
+          {
+            type: 'fix',
+            title: 'Carregando publicações (loop)',
+            description: 'Corrigido cenário onde o Feed podia ficar mostrando "Carregando publicações..." indefinidamente devido a re-fetch/loop de efeito. Agora há proteção contra chamadas concorrentes e timeout.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.292',
+    date: '10/01/2026',
+    summary: 'Performance: loading de publicações corrigido.',
+    modules: [
+      {
+        moduleId: 'dashboard',
+        changes: [
+          {
+            type: 'fix',
+            title: 'Loading de publicações',
+            description: 'Não mostra "Carregando publicações..." se já tem posts do cache. Mostra posts instantâneos e atualiza em background.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.291',
+    date: '10/01/2026',
+    summary: 'Performance: publicações do Feed com cache instantâneo.',
+    modules: [
+      {
+        moduleId: 'dashboard',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Cache de publicações',
+            description: 'Publicações do Feed carregadas do cache instantaneamente. Atualização em background sem bloquear UI. Enquetes carregadas em paralelo.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.290',
+    date: '10/01/2026',
+    summary: 'Performance: carregamento instantâneo do Feed e módulos.',
+    modules: [
+      {
+        moduleId: 'dashboard',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Carregamento instantâneo',
+            description: 'Cache carregado sincronamente no início do componente, eliminando loading visível. Dados atualizados em background sem bloquear a UI.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.289',
+    date: '10/01/2026',
+    summary: 'Permissões: eventos filtrados por módulo de origem.',
+    modules: [
+      {
+        moduleId: 'agenda',
+        changes: [
+          {
+            type: 'fix',
+            title: 'Eventos de módulos sem permissão',
+            description: 'Eventos do calendário e widget de agenda agora filtrados por permissão do módulo de origem (pagamentos só aparecem com acesso ao financeiro, audiências com acesso a processos, etc.).',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.288',
+    date: '10/01/2026',
+    summary: 'Performance: corrigida lentidão crítica no carregamento de páginas.',
+    modules: [
+      {
+        moduleId: 'configuracoes',
+        changes: [
+          {
+            type: 'fix',
+            title: 'Lentidão no carregamento (30s+)',
+            description: 'Funções de permissão agora memoizadas com useCallback/useMemo. Guard de permissões com proteção contra loops de re-render.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.287',
+    date: '10/01/2026',
+    summary: 'Permissões: bloqueio real por can_view + widgets/menus filtrados por visualização.',
+    modules: [
+      {
+        moduleId: 'configuracoes',
+        changes: [
+          {
+            type: 'fix',
+            title: 'Acesso a módulos com permissão zero',
+            description: 'A navegação agora é bloqueada quando o usuário não possui permissão de visualização (can_view=false), impedindo acesso por atalhos/notificações/URL.',
+          },
+        ],
+      },
+      {
+        moduleId: 'dashboard',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Widgets e indicadores respeitam permissões',
+            description: 'Widgets do Feed e barra de indicadores agora aparecem somente para módulos em que o usuário tem permissão de visualizar.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.286',
+    date: '10/01/2026',
+    summary: 'Feed: widgets da direita agora aparecem também em telas menores e para Admin.',
+    modules: [
+      {
+        moduleId: 'dashboard',
+        changes: [
+          {
+            type: 'fix',
+            title: 'Widgets do Feed em telas menores (Admin)',
+            description: 'Os widgets da coluna direita (ex.: Prazos/Financeiro/Navegação) agora também são renderizados fora do breakpoint XL (abaixo do feed), garantindo que o Administrador veja o widget de prazos em qualquer resolução.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.285',
+    date: '10/01/2026',
+    summary: 'Feed: widget de prazos agora mostra os 5 próximos vencimentos (sem urgente).',
+    modules: [
+      {
+        moduleId: 'dashboard',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Widget de prazos no Feed',
+            description: 'O widget "Prazos" agora lista os 5 próximos prazos por ordem de vencimento (não apenas urgentes), garantindo que sempre haja visibilidade dos vencimentos futuros.',
+          },
+        ],
+      },
+    ],
+  },
+  {
     version: '1.9.284',
     date: '10/01/2026',
     summary: 'Dashboard: widget de prazos urgentes, métricas reais e renomeação para Feed.',
@@ -577,7 +1123,7 @@ const releases: ReleaseNote[] = [
             description: 'Barra de indicadores substituída por métricas reais: Clientes, Processos, Requerimentos, Prazos, Tarefas (sem percentuais fictícios).',
           },
           {
-            type: 'change',
+            type: 'improvement',
             title: 'Renomeação para Feed',
             description: '"Dashboard" renomeado para "Feed" no menu lateral e no título do header.',
           },
