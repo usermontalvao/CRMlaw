@@ -309,11 +309,15 @@ const AgendaItem: React.FC<{
     onClick={onClick}
     className="flex items-start gap-3 p-2 hover:bg-slate-50 rounded-lg transition-colors cursor-pointer group"
   >
-    <div className="flex flex-col items-center justify-center min-w-[50px] bg-slate-100 rounded-lg py-2 px-1">
-      <span className={`text-[10px] font-bold uppercase ${isToday ? 'text-red-500' : 'text-slate-500'}`}>
+    <div
+      className={`flex flex-col items-center justify-center min-w-[50px] rounded-lg py-2 px-1 border ${
+        isToday ? 'bg-blue-50 border-blue-200' : 'bg-slate-100 border-transparent'
+      }`}
+    >
+      <span className={`text-[10px] font-bold uppercase ${isToday ? 'text-blue-700' : 'text-slate-500'}`}>
         {dateLabel}
       </span>
-      <span className="text-lg font-bold text-slate-900 leading-none">{time}</span>
+      <span className={`text-lg font-bold leading-none ${isToday ? 'text-blue-900' : 'text-slate-900'}`}>{time}</span>
     </div>
     <div className="flex-1 min-w-0">
       <p className="text-slate-900 text-sm font-semibold truncate">{title}</p>
@@ -847,6 +851,7 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToModule, params }) => 
   const [pollQuestion, setPollQuestion] = useState('');
   const [pollOptions, setPollOptions] = useState<string[]>(['', '']);
   const [pollAllowMultiple, setPollAllowMultiple] = useState(true);
+  const [isMobileComposerActionsExpanded, setIsMobileComposerActionsExpanded] = useState(false);
   const [pollExpiresIn, setPollExpiresIn] = useState<string>('24h');
   const [pollParticipants, setPollParticipants] = useState<string[]>([]);
   const [postPolls, setPostPolls] = useState<Map<string, FeedPoll>>(new Map());
@@ -1291,7 +1296,18 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToModule, params }) => 
   // Inserir menção no texto
   const insertMention = (profile: Profile) => {
     const lastAtIndex = postText.lastIndexOf('@');
-    const newText = postText.slice(0, lastAtIndex) + `@${profile.name} `;
+    if (lastAtIndex === -1) return;
+    
+    // Encontrar o fim da query de menção (próximo espaço ou fim do texto)
+    const textAfterAt = postText.slice(lastAtIndex + 1);
+    const spaceIndex = textAfterAt.search(/\s/);
+    const queryEnd = spaceIndex === -1 ? postText.length : lastAtIndex + 1 + spaceIndex;
+    
+    // Preservar texto antes do @, inserir menção, e preservar texto após a query
+    const beforeAt = postText.slice(0, lastAtIndex);
+    const afterQuery = postText.slice(queryEnd);
+    const newText = beforeAt + `@${profile.name} ` + afterQuery.trimStart();
+    
     setPostText(newText);
     setShowMentionDropdown(false);
     postInputRef.current?.focus();
@@ -1300,7 +1316,18 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToModule, params }) => 
   // Inserir tag no texto
   const insertTag = (tagId: string) => {
     const lastHashIndex = postText.lastIndexOf('#');
-    const newText = postText.slice(0, lastHashIndex) + `#${tagId} `;
+    if (lastHashIndex === -1) return;
+    
+    // Encontrar o fim da query de tag (próximo espaço ou fim do texto)
+    const textAfterHash = postText.slice(lastHashIndex + 1);
+    const spaceIndex = textAfterHash.search(/\s/);
+    const queryEnd = spaceIndex === -1 ? postText.length : lastHashIndex + 1 + spaceIndex;
+    
+    // Preservar texto antes do #, inserir tag, e preservar texto após a query
+    const beforeHash = postText.slice(0, lastHashIndex);
+    const afterQuery = postText.slice(queryEnd);
+    const newText = beforeHash + `#${tagId} ` + afterQuery.trimStart();
+    
     setPostText(newText);
     if (!selectedTags.includes(tagId)) {
       setSelectedTags([...selectedTags, tagId]);
@@ -1503,21 +1530,21 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToModule, params }) => 
 
     setPostingInProgress(true);
     try {
-      // Extrair menções do texto (@nome) - suporta acentos e nomes compostos
-      const mentionRegex = /@([A-Za-zÀ-ÖØ-öø-ÿ]+(?:\s+[A-Za-zÀ-ÖØ-öø-ÿ]+)*)/g;
-      const mentionMatches: string[] = [];
-      let match;
-      while ((match = mentionRegex.exec(postText)) !== null) {
-        mentionMatches.push(match[1].toLowerCase());
+      // Extrair menções do texto - buscar nomes exatos de perfis
+      const mentionedIds: string[] = [];
+      for (const profile of allProfiles) {
+        if (!profile.name) continue;
+        const mentionPattern = `@${profile.name}`;
+        const foundIndex = postText.indexOf(mentionPattern);
+        if (foundIndex !== -1) {
+          // Verificar se após o nome há um caractere que não seja letra
+          const afterMention = postText[foundIndex + mentionPattern.length];
+          const isValidEnd = !afterMention || !/[A-Za-zÀ-ÖØ-öø-ÿ]/.test(afterMention);
+          if (isValidEnd && !mentionedIds.includes(profile.user_id)) {
+            mentionedIds.push(profile.user_id);
+          }
+        }
       }
-
-      // Buscar user_id dos perfis mencionados pelo nome
-      const mentionedIds = allProfiles
-        .filter(p => {
-          const profileName = p.name?.toLowerCase() || '';
-          return mentionMatches.some(mentioned => profileName === mentioned || profileName.includes(mentioned));
-        })
-        .map(p => p.user_id);
 
       const allowedUserIds = Array.from(new Set([...(audienceUserIds || []), ...(mentionedIds || [])]));
       const allowedRoles = [...(audienceRoles || [])];
@@ -2076,13 +2103,11 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToModule, params }) => 
 
   // Renderizar conteúdo com menções e referências de entidades clicáveis
   const renderContentWithMentions = useCallback((content: string, entityReferences?: EntityReference[]) => {
-    // Regex para encontrar menções @nome e referências [tipo:nome]
-    const mentionRegex = /@([A-Za-zÀ-ÖØ-öø-ÿ]+(?:\s+[A-Za-zÀ-ÖØ-öø-ÿ]+)*)/g;
+    // Regex para referências [tipo:nome]
     const entityRefRegex = /\[(cliente|processo|prazo|agenda|documento|peticao|assinatura|requerimento|financeiro):([^\]]+)\]/g;
     
     const parts: React.ReactNode[] = [];
     let lastIndex = 0;
-    let workingContent = content;
 
     // Primeiro, processar referências de entidades [tipo:nome]
     const entityMatches: { index: number; length: number; type: string; name: string; ref?: EntityReference }[] = [];
@@ -2100,21 +2125,43 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToModule, params }) => 
       });
     }
 
-    // Processar menções @nome
-    const mentionMatches: { index: number; length: number; name: string }[] = [];
-    let mentionMatch;
-    while ((mentionMatch = mentionRegex.exec(content)) !== null) {
-      mentionMatches.push({
-        index: mentionMatch.index,
-        length: mentionMatch[0].length,
-        name: mentionMatch[1]
-      });
+    // Processar menções @nome - buscar nomes reais de perfis no conteúdo
+    const mentionMatches: { index: number; length: number; name: string; profile: typeof allProfiles[0] }[] = [];
+    
+    // Para cada perfil, verificar se existe uma menção @NomeDoPerfil no conteúdo
+    for (const profile of allProfiles) {
+      if (!profile.name) continue;
+      const mentionPattern = `@${profile.name}`;
+      let searchIndex = 0;
+      while (true) {
+        const foundIndex = content.indexOf(mentionPattern, searchIndex);
+        if (foundIndex === -1) break;
+        
+        // Verificar se após o nome há um caractere que não seja letra (para evitar match parcial)
+        const afterMention = content[foundIndex + mentionPattern.length];
+        const isValidEnd = !afterMention || !/[A-Za-zÀ-ÖØ-öø-ÿ]/.test(afterMention);
+        
+        if (isValidEnd) {
+          mentionMatches.push({
+            index: foundIndex,
+            length: mentionPattern.length,
+            name: profile.name,
+            profile
+          });
+        }
+        searchIndex = foundIndex + 1;
+      }
     }
+    
+    // Remover duplicatas (mesmo índice) e ordenar por índice
+    const uniqueMentions = mentionMatches.filter((m, i, arr) => 
+      arr.findIndex(x => x.index === m.index) === i
+    );
 
     // Combinar e ordenar todos os matches
     const allMatches = [
-      ...entityMatches.map(m => ({ ...m, matchType: 'entity' as const })),
-      ...mentionMatches.map(m => ({ ...m, matchType: 'mention' as const }))
+      ...entityMatches.map(m => ({ ...m, matchType: 'entity' as const, profile: undefined as typeof allProfiles[0] | undefined })),
+      ...uniqueMentions.map(m => ({ ...m, matchType: 'mention' as const }))
     ].sort((a, b) => a.index - b.index);
 
     // Processar matches em ordem
@@ -2125,15 +2172,8 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToModule, params }) => 
       }
 
       if (match.matchType === 'mention') {
-        // Menção de usuário - busca flexível por nome
-        const mentionName = match.name.toLowerCase().trim();
-        const mentionedProfile = allProfiles.find(p => {
-          const profileName = (p.name || '').toLowerCase().trim();
-          // Comparação exata ou parcial (nome contém a menção ou menção contém o nome)
-          return profileName === mentionName || 
-                 profileName.includes(mentionName) || 
-                 mentionName.includes(profileName);
-        });
+        // Menção de usuário - perfil já foi encontrado na busca
+        const mentionedProfile = match.profile;
         
         parts.push(
           <span
@@ -2470,14 +2510,7 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToModule, params }) => 
   }, [pollVotersModal.pollId, postPolls]);
 
   const getDateLabel = (date: Date) => {
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    const tomorrow = new Date(today);
-    tomorrow.setDate(tomorrow.getDate() + 1);
-
-    if (date.toDateString() === today.toDateString()) return 'Hoje';
-    if (date.toDateString() === tomorrow.toDateString()) return 'Amanhã';
-    return date.toLocaleDateString('pt-BR', { weekday: 'short' }).replace('.', '');
+    return date.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' });
   };
 
   const getDueLabel = (dueDate?: string | null) => {
@@ -2906,9 +2939,9 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToModule, params }) => 
 
   return (
     <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
-      <div className="space-y-4">
+      <div className="space-y-3 sm:space-y-4">
         {/* Main Content */}
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 lg:gap-6 items-start">
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-3 sm:gap-4 lg:gap-6 items-start">
           {/* Sidebar Esquerda - Widgets Arrastáveis */}
           <aside className="hidden lg:flex lg:col-span-3 flex-col sticky top-4 order-1">
             <SidebarDroppable id="sidebar-left">
@@ -2923,15 +2956,15 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToModule, params }) => 
           </aside>
 
           {/* Feed Central */}
-          <main className="col-span-1 lg:col-span-9 xl:col-span-6 flex flex-col gap-6 order-2">
-            {/* Barra de Indicadores */}
-            <div className="bg-white rounded-xl border border-slate-200 shadow-sm px-4 py-2.5 flex items-center justify-between gap-2 overflow-x-auto">
+          <main className="col-span-1 lg:col-span-9 xl:col-span-6 flex flex-col gap-4 sm:gap-6 order-2 min-w-0">
+            {/* Barra de Indicadores - escondida no mobile */}
+            <div className="hidden sm:flex bg-white rounded-xl border border-slate-200 shadow-sm px-3 sm:px-4 py-2 sm:py-2.5 items-center justify-start flex-nowrap gap-2 sm:gap-3 overflow-x-auto scrollbar-hide">
               {canSeeIndicators.clientes && (
                 <button
                   onClick={() => handleNavigate('clientes')}
                   className="flex items-center gap-1.5 hover:bg-slate-50 px-2 py-1 rounded-lg transition-colors whitespace-nowrap"
                 >
-                  <Users className="w-4 h-4 text-blue-500" />
+                  <Users className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-blue-500" />
                   <span className="text-xs font-bold text-slate-700">CLIENTES:</span>
                   <span className="text-sm font-bold text-blue-600">{activeClients}</span>
                 </button>
@@ -2944,7 +2977,7 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToModule, params }) => 
                   onClick={() => handleNavigate('processos')}
                   className="flex items-center gap-1.5 hover:bg-slate-50 px-2 py-1 rounded-lg transition-colors whitespace-nowrap"
                 >
-                  <Briefcase className="w-4 h-4 text-indigo-500" />
+                  <Briefcase className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-indigo-500" />
                   <span className="text-xs font-bold text-slate-700">PROCESSOS:</span>
                   <span className="text-sm font-bold text-indigo-600">{activeProcesses}</span>
                 </button>
@@ -2957,7 +2990,7 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToModule, params }) => 
                   onClick={() => handleNavigate('requerimentos')}
                   className="flex items-center gap-1.5 hover:bg-slate-50 px-2 py-1 rounded-lg transition-colors whitespace-nowrap"
                 >
-                  <FileText className="w-4 h-4 text-amber-500" />
+                  <FileText className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-amber-500" />
                   <span className="text-xs font-bold text-slate-700">REQUERIMENTOS:</span>
                   <span className="text-sm font-bold text-amber-600">{requirementsAwaiting.length}</span>
                 </button>
@@ -2970,7 +3003,7 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToModule, params }) => 
                   onClick={() => handleNavigate('prazos')}
                   className="flex items-center gap-1.5 hover:bg-slate-50 px-2 py-1 rounded-lg transition-colors whitespace-nowrap"
                 >
-                  <Clock className="w-4 h-4 text-red-500" />
+                  <Clock className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-red-500" />
                   <span className="text-xs font-bold text-slate-700">PRAZOS:</span>
                   <span className="text-sm font-bold text-red-600">{pendingDeadlines}</span>
                 </button>
@@ -2983,7 +3016,7 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToModule, params }) => 
                   onClick={() => handleNavigate('tarefas')}
                   className="flex items-center gap-1.5 hover:bg-slate-50 px-2 py-1 rounded-lg transition-colors whitespace-nowrap"
                 >
-                  <CheckSquare className="w-4 h-4 text-emerald-500" />
+                  <CheckSquare className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-emerald-500" />
                   <span className="text-xs font-bold text-slate-700">TAREFAS:</span>
                   <span className="text-sm font-bold text-emerald-600">{pendingTasks}</span>
                 </button>
@@ -2993,7 +3026,7 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToModule, params }) => 
           {/* Caixa de Postagem - Design Premium */}
           <div className="bg-gradient-to-br from-white to-slate-50 rounded-2xl border border-slate-200/80 shadow-lg shadow-slate-200/50 overflow-visible">
             {/* Header do Post */}
-            <div className="p-4 pb-3">
+            <div className="p-3 sm:p-4 pb-2 sm:pb-3">
               <div className="flex gap-3">
                 <div className="relative">
                   <Avatar src={resolvedCurrentAvatarUrl} name={currentProfile?.name || 'Usuário'} size="md" />
@@ -3005,7 +3038,7 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToModule, params }) => 
                     value={postText}
                     onChange={handlePostTextChange}
                     rows={2}
-                    className="w-full bg-white border border-slate-200 rounded-2xl px-4 py-3 text-slate-900 placeholder:text-slate-400 focus:ring-2 focus:ring-blue-500/30 focus:border-blue-400 focus:shadow-lg focus:shadow-blue-500/10 transition-all resize-none text-sm leading-relaxed"
+                    className="w-full bg-white border border-slate-200 rounded-2xl px-3 sm:px-4 py-2.5 sm:py-3 text-slate-900 placeholder:text-slate-400 focus:ring-2 focus:ring-blue-500/30 focus:border-blue-400 focus:shadow-lg focus:shadow-blue-500/10 transition-all resize-none text-sm leading-relaxed"
                     placeholder="O que você gostaria de compartilhar? Use @ para mencionar e # para tags..."
                   />
 
@@ -3143,7 +3176,7 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToModule, params }) => 
 
               {/* Tags Selecionadas */}
               {selectedTags.length > 0 && (
-                <div className="flex flex-wrap gap-2 mt-3 ml-13">
+                <div className="flex flex-wrap gap-2 mt-3 ml-[52px]">
                   {selectedTags.map((tagId) => {
                     const tag = availableTags.find(t => t.id === tagId);
                     if (!tag) return null;
@@ -3167,7 +3200,7 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToModule, params }) => 
               )}
 
               {pendingAttachments.length > 0 && (
-                <div className="mt-3 ml-13">
+                <div className="mt-3 ml-[52px]">
                   <div className="flex flex-wrap gap-2">
                     {pendingAttachments.map((att) => (
                       <div key={att.attachment.filePath} className="relative">
@@ -3191,17 +3224,18 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToModule, params }) => 
             </div>
 
             {/* Barra de Ações - Layout responsivo em 2 linhas */}
-            <div className="px-4 py-3 bg-gradient-to-r from-slate-50 to-slate-100/50 border-t border-slate-200/80 space-y-2">
+            <div className="px-3 sm:px-4 py-2.5 sm:py-3 bg-gradient-to-r from-slate-50 to-slate-100/50 border-t border-slate-200/80 space-y-2">
               {/* Linha 1: Ações principais */}
               <div className="flex items-center justify-between">
-                <div className="flex items-center gap-1 flex-wrap">
+                <div className="flex flex-col gap-2">
+                  <div className="flex items-center gap-1">
                   <button
                     type="button"
                     onClick={() => {
                       insertTextAtCursor('@');
                       setShowMentionDropdown(true);
                     }}
-                    className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-slate-600 hover:bg-slate-200 transition-colors text-sm font-medium"
+                    className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-slate-600 hover:bg-slate-200 transition-colors text-xs sm:text-sm font-medium"
                   >
                     <AtSign className="w-4 h-4 text-blue-500" />
                     <span className="hidden sm:inline text-xs">Mencionar</span>
@@ -3212,16 +3246,70 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToModule, params }) => 
                       insertTextAtCursor('#');
                       setShowTagDropdown(true);
                     }}
-                    className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-slate-600 hover:bg-slate-200 transition-colors text-sm font-medium"
+                    className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-slate-600 hover:bg-slate-200 transition-colors text-xs sm:text-sm font-medium"
                   >
                     <Hash className="w-4 h-4 text-emerald-500" />
                     <span className="hidden sm:inline text-xs">Tag</span>
                   </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setIsMobileComposerActionsExpanded((v) => !v)}
+                    className="sm:hidden flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-slate-600 hover:bg-slate-200 transition-colors text-xs font-medium"
+                    aria-label={isMobileComposerActionsExpanded ? 'Recolher ações' : 'Expandir ações'}
+                    title={isMobileComposerActionsExpanded ? 'Recolher' : 'Expandir'}
+                  >
+                    {isMobileComposerActionsExpanded ? (
+                      <Minus className="w-4 h-4 text-slate-600" />
+                    ) : (
+                      <Plus className="w-4 h-4 text-slate-600" />
+                    )}
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setPostVisibility((prev) => (prev === 'public' ? 'team' : prev === 'team' ? 'private' : 'public'))
+                    }
+                    className={`sm:hidden flex items-center gap-1 px-2.5 py-1.5 rounded-lg transition-colors text-xs font-medium whitespace-nowrap border ${
+                      postVisibility === 'public'
+                        ? 'bg-emerald-100 text-emerald-700 border-emerald-200'
+                        : postVisibility === 'team'
+                          ? 'bg-blue-100 text-blue-700 border-blue-200'
+                          : 'bg-amber-100 text-amber-700 border-amber-200'
+                    }`}
+                    title={`Visibilidade: ${postVisibility === 'public' ? 'Público' : postVisibility === 'team' ? 'Equipe' : 'Privado'}`}
+                  >
+                    {postVisibility === 'public' ? (
+                      <Globe className="w-3.5 h-3.5" />
+                    ) : postVisibility === 'team' ? (
+                      <Users className="w-3.5 h-3.5" />
+                    ) : (
+                      <Lock className="w-3.5 h-3.5" />
+                    )}
+                    <span>{postVisibility === 'public' ? 'Público' : postVisibility === 'team' ? 'Equipe' : 'Privado'}</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setShowScheduler((v) => !v)}
+                    className={`sm:hidden flex items-center justify-center p-2 rounded-lg transition-colors text-xs font-medium border flex-none ${
+                      showScheduler
+                        ? 'bg-orange-100 text-orange-700 border-orange-200'
+                        : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'
+                    }`}
+                    aria-label="Agendar publicação"
+                    title="Agendar publicação"
+                  >
+                    <Clock className="w-3.5 h-3.5" />
+                  </button>
+
+                  <div className="hidden sm:flex items-center gap-1">
                   <button
                     type="button"
                     onClick={handleAttachClick}
                     disabled={uploadingAttachment}
-                    className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-slate-600 hover:bg-slate-200 transition-colors text-sm font-medium"
+                    className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-slate-600 hover:bg-slate-200 transition-colors text-xs sm:text-sm font-medium"
                   >
                     <Image className="w-4 h-4 text-purple-500" />
                     <span className="hidden sm:inline text-xs">Foto</span>
@@ -3229,18 +3317,53 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToModule, params }) => 
                   <button
                     type="button"
                     onClick={() => setShowEmojiPicker((v) => !v)}
-                    className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-slate-600 hover:bg-slate-200 transition-colors text-sm font-medium"
+                    className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-slate-600 hover:bg-slate-200 transition-colors text-xs sm:text-sm font-medium"
                   >
                     <Smile className="w-4 h-4 text-amber-500" />
                   </button>
                   <button
                     type="button"
                     onClick={() => setShowPollCreator((v) => !v)}
-                    className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg transition-colors text-sm font-medium ${showPollCreator ? 'bg-indigo-100 text-indigo-700' : 'text-slate-600 hover:bg-slate-200'}`}
+                    className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg transition-colors text-xs sm:text-sm font-medium ${showPollCreator ? 'bg-indigo-100 text-indigo-700' : 'text-slate-600 hover:bg-slate-200'}`}
                   >
                     <BarChart2 className="w-4 h-4 text-indigo-500" />
                     <span className="hidden sm:inline text-xs">Enquete</span>
                   </button>
+                  </div>
+                  </div>
+
+                  {isMobileComposerActionsExpanded && (
+                    <div className="sm:hidden flex items-center gap-1">
+                      <button
+                        type="button"
+                        onClick={handleAttachClick}
+                        disabled={uploadingAttachment}
+                        className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-slate-600 hover:bg-slate-200 transition-colors text-xs font-medium"
+                        aria-label="Adicionar foto"
+                        title="Foto"
+                      >
+                        <Image className="w-4 h-4 text-purple-500" />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setShowEmojiPicker((v) => !v)}
+                        className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-slate-600 hover:bg-slate-200 transition-colors text-xs font-medium"
+                        aria-label="Emojis"
+                        title="Emojis"
+                      >
+                        <Smile className="w-4 h-4 text-amber-500" />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setShowPollCreator((v) => !v)}
+                        className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg transition-colors text-xs font-medium ${showPollCreator ? 'bg-indigo-100 text-indigo-700' : 'text-slate-600 hover:bg-slate-200'}`}
+                        aria-label="Enquete"
+                        title="Enquete"
+                      >
+                        <BarChart2 className="w-4 h-4 text-indigo-500" />
+                      </button>
+                    </div>
+                  )}
                 </div>
 
                 {/* Botão Publicar */}
@@ -3251,7 +3374,7 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToModule, params }) => 
                     postText.trim() ||
                     (showPollCreator && pollQuestion.trim() && pollOptions.filter((o) => o.trim()).length >= 2)
                   ) || postingInProgress}
-                  className="flex items-center gap-2 bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 disabled:from-slate-300 disabled:to-slate-400 disabled:cursor-not-allowed text-white px-4 py-2 rounded-xl text-sm font-bold transition-all shadow-md shadow-blue-500/25 hover:shadow-lg hover:shadow-blue-500/30 hover:-translate-y-0.5"
+                  className="flex items-center gap-2 bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 disabled:from-slate-300 disabled:to-slate-400 disabled:cursor-not-allowed text-white px-3 sm:px-4 py-2 rounded-xl text-sm font-bold transition-all shadow-md shadow-blue-500/25 hover:shadow-lg hover:shadow-blue-500/30 hover:-translate-y-0.5"
                 >
                   {postingInProgress ? (
                     <Loader2 className="w-4 h-4 animate-spin" />
@@ -3267,49 +3390,51 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToModule, params }) => 
               </div>
 
               {/* Linha 2: Visibilidade e Agendamento */}
-              <div className="flex items-center gap-2 flex-wrap">
-                {/* Visibilidade - Dropdown */}
-                <div className="flex items-center gap-1 bg-white rounded-lg border border-slate-200 px-1 py-0.5">
-                  <button
-                    type="button"
-                    onClick={() => setPostVisibility('public')}
-                    className={`flex items-center gap-1 px-2 py-1 rounded-md transition-colors text-xs font-medium ${
-                      postVisibility === 'public' ? 'bg-emerald-100 text-emerald-700' : 'text-slate-500 hover:bg-slate-100'
-                    }`}
-                    title="Público - todos veem"
-                  >
-                    <Globe className="w-3.5 h-3.5" />
-                    <span>Público</span>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setPostVisibility('team')}
-                    className={`flex items-center gap-1 px-2 py-1 rounded-md transition-colors text-xs font-medium ${
-                      postVisibility === 'team' ? 'bg-blue-100 text-blue-700' : 'text-slate-500 hover:bg-slate-100'
-                    }`}
-                    title="Equipe - só colaboradores"
-                  >
-                    <Users className="w-3.5 h-3.5" />
-                    <span>Equipe</span>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setPostVisibility('private')}
-                    className={`flex items-center gap-1 px-2 py-1 rounded-md transition-colors text-xs font-medium ${
-                      postVisibility === 'private' ? 'bg-amber-100 text-amber-700' : 'text-slate-500 hover:bg-slate-100'
-                    }`}
-                    title="Privado - selecione quem pode ver"
-                  >
-                    <Lock className="w-3.5 h-3.5" />
-                    <span>Privado</span>
-                  </button>
+              <div className="hidden sm:flex items-center gap-2">
+                {/* Visibilidade */}
+                <div className="flex items-center gap-1 bg-white rounded-lg border border-slate-200 px-1 py-0.5 flex-none">
+                  <div className="flex items-center gap-1">
+                    <button
+                      type="button"
+                      onClick={() => setPostVisibility('public')}
+                      className={`flex items-center gap-1 px-2 py-1 rounded-md transition-colors text-xs font-medium whitespace-nowrap ${
+                        postVisibility === 'public' ? 'bg-emerald-100 text-emerald-700' : 'text-slate-500 hover:bg-slate-100'
+                      }`}
+                      title="Público - todos veem"
+                    >
+                      <Globe className="w-3.5 h-3.5" />
+                      <span>Público</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setPostVisibility('team')}
+                      className={`flex items-center gap-1 px-2 py-1 rounded-md transition-colors text-xs font-medium whitespace-nowrap ${
+                        postVisibility === 'team' ? 'bg-blue-100 text-blue-700' : 'text-slate-500 hover:bg-slate-100'
+                      }`}
+                      title="Equipe - só colaboradores"
+                    >
+                      <Users className="w-3.5 h-3.5" />
+                      <span>Equipe</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setPostVisibility('private')}
+                      className={`flex items-center gap-1 px-2 py-1 rounded-md transition-colors text-xs font-medium whitespace-nowrap ${
+                        postVisibility === 'private' ? 'bg-amber-100 text-amber-700' : 'text-slate-500 hover:bg-slate-100'
+                      }`}
+                      title="Privado - selecione quem pode ver"
+                    >
+                      <Lock className="w-3.5 h-3.5" />
+                      <span>Privado</span>
+                    </button>
+                  </div>
                 </div>
 
                 {/* Agendar */}
                 <button
                   type="button"
                   onClick={() => setShowScheduler((v) => !v)}
-                  className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg transition-colors text-xs font-medium border ${
+                  className={`flex items-center gap-1.5 p-2 sm:px-2.5 sm:py-1.5 rounded-lg transition-colors text-xs font-medium border whitespace-nowrap flex-none ${
                     showScheduler 
                       ? 'bg-orange-100 text-orange-700 border-orange-200' 
                       : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'
@@ -3317,7 +3442,7 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToModule, params }) => 
                   title="Agendar publicação"
                 >
                   <Clock className="w-3.5 h-3.5" />
-                  <span>Agendar</span>
+                  <span className="hidden sm:inline">Agendar</span>
                 </button>
 
                 <input
@@ -3620,12 +3745,8 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToModule, params }) => 
             )}
           </div>
 
-          {/* Filtros do Feed - Design Premium */}
-          <div className="flex gap-2 overflow-x-auto pb-3 scrollbar-hide">
-            <button className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-slate-800 to-slate-700 text-white text-sm font-semibold whitespace-nowrap shadow-lg shadow-slate-300/30 hover:shadow-xl hover:shadow-slate-300/40 hover:from-slate-700 hover:to-slate-600 transition-all duration-200 flex items-center gap-2">
-              <Sparkles className="w-4 h-4" />
-              Todas Atualizações
-            </button>
+          {/* Filtros do Feed - escondidos no mobile */}
+          <div className="hidden sm:flex gap-2 overflow-x-auto pb-2 sm:pb-3 scrollbar-hide -mx-1 px-1">
             {availableTags.map((tag) => (
               <button
                 key={tag.id}
@@ -3643,7 +3764,7 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToModule, params }) => 
           </div>
 
           {/* Feed de Posts */}
-          <div className="flex flex-col gap-5">
+          <div className="flex flex-col gap-4 sm:gap-5">
             {loadingPosts && feedPosts.length === 0 ? (
               <div className="bg-white rounded-2xl border border-slate-100 shadow-lg shadow-slate-200/40 p-8 text-center">
                 <div className="w-12 h-12 mx-auto mb-3 rounded-full bg-gradient-to-br from-blue-500 to-indigo-500 flex items-center justify-center">
@@ -3665,7 +3786,7 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToModule, params }) => 
               feedPosts.map((post) => (
                 <div key={post.id} data-post-id={post.id} className="bg-white rounded-2xl border border-slate-100 shadow-lg shadow-slate-200/30 overflow-visible hover:shadow-xl hover:shadow-slate-300/40 hover:border-slate-200 transition-all duration-300 group">
                   {/* Header do Post */}
-                  <div className="p-5 pb-3 flex gap-4">
+                  <div className="p-3 sm:p-5 pb-2 sm:pb-3 flex gap-3 sm:gap-4">
                     <button 
                       onClick={() => onNavigateToModule?.('perfil', { userId: post.author_id })}
                       className="cursor-pointer hover:scale-105 transition-transform duration-200"
@@ -3678,7 +3799,7 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToModule, params }) => 
                       <div className="flex items-center gap-2 flex-wrap">
                         <button 
                           onClick={() => onNavigateToModule?.('perfil', { userId: post.author_id })}
-                          className="text-slate-900 font-bold text-[15px] hover:text-blue-600 transition-colors cursor-pointer"
+                          className="text-slate-900 font-bold text-sm sm:text-[15px] hover:text-blue-600 transition-colors cursor-pointer truncate max-w-[180px] sm:max-w-none"
                         >
                           {post.author?.name || 'Usuário'}
                         </button>
@@ -3733,8 +3854,8 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToModule, params }) => 
                         </button>
                         {openPostMenu === post.id && (
                           <div className="absolute right-0 top-8 bg-white rounded-lg shadow-lg border border-slate-200 py-1 z-20 min-w-[160px]">
-                            {/* Opções do autor */}
-                            {user?.id === post.author_id && (
+                            {/* Opções do autor - não permite editar/excluir posts banidos */}
+                            {user?.id === post.author_id && !post.banned_at && (
                               <>
                                 <button
                                   onClick={() => {
@@ -3786,27 +3907,54 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToModule, params }) => 
                                     Banir Post
                                   </button>
                                 ) : (
-                                  <button
-                                    onClick={async () => {
-                                      try {
-                                        await feedPostsService.unbanPost(post.id);
-                                        setFeedPosts(prev => prev.map(p => 
-                                          p.id === post.id 
-                                            ? { ...p, banned_at: null, banned_by: null, banned_by_name: undefined }
-                                            : p
-                                        ));
-                                        toast.success('Post desbanido com sucesso');
-                                      } catch (err) {
-                                        console.error('Erro ao desbanir post:', err);
-                                        toast.error('Erro ao desbanir post');
-                                      }
-                                      setOpenPostMenu(null);
-                                    }}
-                                    className="w-full flex items-center gap-2 px-3 py-2 text-sm text-emerald-600 hover:bg-emerald-50"
-                                  >
-                                    <Shield className="w-4 h-4" />
-                                    Desbanir Post
-                                  </button>
+                                  <>
+                                    <button
+                                      onClick={async () => {
+                                        try {
+                                          await feedPostsService.unbanPost(post.id);
+                                          setFeedPosts(prev => prev.map(p => 
+                                            p.id === post.id 
+                                              ? { ...p, banned_at: null, banned_by: null, banned_by_name: undefined }
+                                              : p
+                                          ));
+                                          toast.success('Post desbanido com sucesso');
+                                        } catch (err) {
+                                          console.error('Erro ao desbanir post:', err);
+                                          toast.error('Erro ao desbanir post');
+                                        }
+                                        setOpenPostMenu(null);
+                                      }}
+                                      className="w-full flex items-center gap-2 px-3 py-2 text-sm text-emerald-600 hover:bg-emerald-50"
+                                    >
+                                      <Shield className="w-4 h-4" />
+                                      Desbanir Post
+                                    </button>
+                                    <button
+                                      onClick={async () => {
+                                        const confirmed = await confirmDelete({
+                                          title: 'Remover Post Banido',
+                                          message: 'Tem certeza que deseja remover permanentemente este post banido? Esta ação não pode ser desfeita.',
+                                          confirmLabel: 'Remover',
+                                          cancelLabel: 'Cancelar',
+                                        });
+                                        if (!confirmed) return;
+                                        
+                                        try {
+                                          await feedPostsService.deletePost(post.id);
+                                          setFeedPosts(prev => prev.filter(p => p.id !== post.id));
+                                          setOpenPostMenu(null);
+                                          toast.success('Post removido com sucesso');
+                                        } catch (err) {
+                                          console.error('Erro ao remover post:', err);
+                                          toast.error('Erro ao remover post');
+                                        }
+                                      }}
+                                      className="w-full flex items-center gap-2 px-3 py-2 text-sm text-red-600 hover:bg-red-50"
+                                    >
+                                      <Trash2 className="w-4 h-4" />
+                                      Remover Post
+                                    </button>
+                                  </>
                                 )}
                               </>
                             )}
@@ -3837,27 +3985,54 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToModule, params }) => 
                                     Banir Post
                                   </button>
                                 ) : (
-                                  <button
-                                    onClick={async () => {
-                                      try {
-                                        await feedPostsService.unbanPost(post.id);
-                                        setFeedPosts(prev => prev.map(p => 
-                                          p.id === post.id 
-                                            ? { ...p, banned_at: null, banned_by: null, banned_by_name: undefined }
-                                            : p
-                                        ));
-                                        toast.success('Post desbanido com sucesso');
-                                      } catch (err) {
-                                        console.error('Erro ao desbanir post:', err);
-                                        toast.error('Erro ao desbanir post');
-                                      }
-                                      setOpenPostMenu(null);
-                                    }}
-                                    className="w-full flex items-center gap-2 px-3 py-2 text-sm text-emerald-600 hover:bg-emerald-50"
-                                  >
-                                    <Shield className="w-4 h-4" />
-                                    Desbanir Post
-                                  </button>
+                                  <>
+                                    <button
+                                      onClick={async () => {
+                                        try {
+                                          await feedPostsService.unbanPost(post.id);
+                                          setFeedPosts(prev => prev.map(p => 
+                                            p.id === post.id 
+                                              ? { ...p, banned_at: null, banned_by: null, banned_by_name: undefined }
+                                              : p
+                                          ));
+                                          toast.success('Post desbanido com sucesso');
+                                        } catch (err) {
+                                          console.error('Erro ao desbanir post:', err);
+                                          toast.error('Erro ao desbanir post');
+                                        }
+                                        setOpenPostMenu(null);
+                                      }}
+                                      className="w-full flex items-center gap-2 px-3 py-2 text-sm text-emerald-600 hover:bg-emerald-50"
+                                    >
+                                      <Shield className="w-4 h-4" />
+                                      Desbanir Post
+                                    </button>
+                                    <button
+                                      onClick={async () => {
+                                        const confirmed = await confirmDelete({
+                                          title: 'Remover Post Banido',
+                                          message: 'Tem certeza que deseja remover permanentemente este post banido? Esta ação não pode ser desfeita.',
+                                          confirmLabel: 'Remover',
+                                          cancelLabel: 'Cancelar',
+                                        });
+                                        if (!confirmed) return;
+                                        
+                                        try {
+                                          await feedPostsService.deletePost(post.id);
+                                          setFeedPosts(prev => prev.filter(p => p.id !== post.id));
+                                          setOpenPostMenu(null);
+                                          toast.success('Post removido com sucesso');
+                                        } catch (err) {
+                                          console.error('Erro ao remover post:', err);
+                                          toast.error('Erro ao remover post');
+                                        }
+                                      }}
+                                      className="w-full flex items-center gap-2 px-3 py-2 text-sm text-red-600 hover:bg-red-50"
+                                    >
+                                      <Trash2 className="w-4 h-4" />
+                                      Remover Post
+                                    </button>
+                                  </>
                                 )}
                               </>
                             )}
@@ -3868,24 +4043,20 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToModule, params }) => 
                   </div>
                   
                   {/* Conteúdo do Post */}
-                  <div className="px-4 py-2">
-                    {/* Post Banido - Exibir com blur */}
+                  <div className="px-3 sm:px-4 py-2">
+                    {/* Post Banido - Ocultar completamente todo o conteúdo */}
                     {post.banned_at ? (
-                      <div className="relative">
-                        <div className="blur-md select-none pointer-events-none opacity-50">
-                          <div className="text-slate-800 text-sm leading-relaxed whitespace-pre-wrap">
-                            {post.content}
-                          </div>
+                      <div className="py-8 flex flex-col items-center justify-center bg-gradient-to-br from-red-50 to-slate-50 rounded-xl border border-red-200/50">
+                        <div className="w-16 h-16 rounded-full bg-red-100 flex items-center justify-center mb-4">
+                          <Shield className="w-8 h-8 text-red-500" />
                         </div>
-                        <div className="absolute inset-0 flex items-center justify-center">
-                          <div className="bg-red-100 border border-red-300 rounded-lg px-4 py-3 text-center shadow-sm">
-                            <Shield className="w-6 h-6 text-red-500 mx-auto mb-1" />
-                            <p className="text-red-700 font-semibold text-sm">Post Banido</p>
-                            <p className="text-red-600 text-xs mt-1">
-                              por {post.banned_by_name || 'Administrador'}
-                            </p>
-                          </div>
-                        </div>
+                        <p className="text-red-700 font-bold text-lg">Conteúdo Removido</p>
+                        <p className="text-red-500 text-sm mt-1">
+                          Este post foi banido por violar as diretrizes da comunidade
+                        </p>
+                        <p className="text-slate-400 text-xs mt-3">
+                          Banido por {post.banned_by_name || 'Administrador'}
+                        </p>
                       </div>
                     ) : editingPostId === post.id ? (
                       <div className="bg-slate-50 rounded-xl p-3 border-2 border-slate-200">
@@ -4106,8 +4277,8 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToModule, params }) => 
                       </>
                     )}
 
-                    {/* Enquete */}
-                    {postPolls.has(post.id) && (() => {
+                    {/* Enquete - só mostra se post não está banido */}
+                    {!post.banned_at && postPolls.has(post.id) && (() => {
                       const poll = postPolls.get(post.id)!;
                       const totalVotes = poll.total_votes || 0;
                       return (
@@ -4186,8 +4357,8 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToModule, params }) => 
                       );
                     })()}
 
-                    {/* Imagens estilo Instagram - ocupam toda a largura */}
-                    {post.attachments && post.attachments.length > 0 && (() => {
+                    {/* Imagens estilo Instagram - só mostra se post não está banido */}
+                    {!post.banned_at && post.attachments && post.attachments.length > 0 && (() => {
                       const images = post.attachments.filter((a) => a.kind === 'image' && a.signedUrl && a.signedUrl.trim() !== '');
                       if (images.length === 0) return null;
                       
@@ -4237,8 +4408,8 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToModule, params }) => 
                       );
                     })()}
                     
-                    {/* Cards de Preview de Dados */}
-                    {post.preview_data && Object.keys(post.preview_data).length > 0 && (
+                    {/* Cards de Preview de Dados - só mostra se post não está banido */}
+                    {!post.banned_at && post.preview_data && Object.keys(post.preview_data).length > 0 && (
                       <div className="space-y-2">
                         {/* Preview Financeiro */}
                         {post.preview_data.financeiro && (
@@ -4607,7 +4778,7 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToModule, params }) => 
             </SidebarDroppable>
           </aside>
         ) : (
-          <section className="xl:hidden col-span-1 lg:col-span-9 order-3 space-y-4">
+          <section className="xl:hidden col-span-1 lg:col-span-9 lg:col-start-4 order-3 space-y-3 sm:space-y-4">
             {visibleRightWidgets.map((widgetId) => (
               <div key={widgetId}>{renderWidget(widgetId)}</div>
             ))}

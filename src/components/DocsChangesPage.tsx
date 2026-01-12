@@ -559,6 +559,23 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
 
 const releases: ReleaseNote[] = [
   {
+    version: '1.9.339',
+    date: '11/01/2026',
+    summary: 'Atualização de sistema e correções diversas.',
+    modules: [
+      {
+        moduleId: 'core',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Atualização de versão',
+            description: 'Incremento de versão para 1.9.339 com atualização de changelog.',
+          },
+        ],
+      },
+    ],
+  },
+  {
     version: '1.9.320',
     date: '11/01/2026',
     summary: 'Feed Social: Design premium dos filtros e cards com gradientes e sombras.',

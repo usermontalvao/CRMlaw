@@ -12,7 +12,8 @@ import {
   Clock,
   Globe,
   Users,
-  Lock
+  Lock,
+  Shield
 } from 'lucide-react';
 import { feedPostsService, type FeedPost } from '../services/feedPosts.service';
 import { profileService, type Profile } from '../services/profile.service';
@@ -375,76 +376,94 @@ export const PostModal: React.FC<PostModalProps> = ({
                   </button>
                 </div>
 
-                {/* Conteúdo do post */}
-                <div className="mt-3 text-[15px] leading-relaxed whitespace-pre-wrap" style={{ color: '#1e293b' }}>
-                  {renderContentWithMentions(post.content)}
-                </div>
+                {/* Conteúdo do post - verificar se está banido */}
+                {post.banned_at ? (
+                  <div className="mt-4 py-8 flex flex-col items-center justify-center bg-gradient-to-br from-red-50 to-slate-50 rounded-xl border border-red-200/50">
+                    <div className="w-16 h-16 rounded-full bg-red-100 flex items-center justify-center mb-4">
+                      <Shield className="w-8 h-8 text-red-500" />
+                    </div>
+                    <p className="text-red-700 font-bold text-lg">Conteúdo Removido</p>
+                    <p className="text-red-500 text-sm mt-1 text-center px-4">
+                      Este post foi banido por violar as diretrizes da comunidade
+                    </p>
+                    <p className="text-slate-400 text-xs mt-3">
+                      Banido por {(post as any).banned_by_name || 'Administrador'}
+                    </p>
+                  </div>
+                ) : (
+                  <>
+                    <div className="mt-3 text-[15px] leading-relaxed whitespace-pre-wrap" style={{ color: '#1e293b' }}>
+                      {renderContentWithMentions(post.content)}
+                    </div>
 
-                {/* Imagens/Anexos */}
-                {post.attachments && post.attachments.length > 0 && (
-                  <div className="mt-3">
-                    {post.attachments.filter(a => a.kind === 'image').map((a, idx) => (
-                      <a
-                        key={idx}
-                        href={a.signedUrl || '#'}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="block"
+                    {/* Imagens/Anexos */}
+                    {post.attachments && post.attachments.length > 0 && (
+                      <div className="mt-3">
+                        {post.attachments.filter(a => a.kind === 'image').map((a, idx) => (
+                          <a
+                            key={idx}
+                            href={a.signedUrl || '#'}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="block"
+                          >
+                            <img
+                              src={a.signedUrl || ''}
+                              alt={a.fileName}
+                              className="w-full rounded-lg border border-slate-200"
+                            />
+                          </a>
+                        ))}
+                      </div>
+                    )}
+
+                    {/* Contadores */}
+                    <div className="flex items-center justify-between mt-4 pt-3 border-t border-slate-100">
+                      <div className="flex items-center gap-1 text-sm text-slate-500">
+                        {(post.likes_count || 0) > 0 && (
+                          <span className="flex items-center gap-1">
+                            <span className="w-5 h-5 bg-blue-500 rounded-full flex items-center justify-center">
+                              <ThumbsUp className="w-3 h-3 text-white" />
+                            </span>
+                            {post.likes_count}
+                          </span>
+                        )}
+                      </div>
+                      <div className="text-sm text-slate-500">
+                        {(post.comments_count || 0) > 0 && (
+                          <span>{post.comments_count} comentário{(post.comments_count || 0) !== 1 ? 's' : ''}</span>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Botões de ação */}
+                    <div className="flex items-center gap-1 mt-2 pt-2 border-t border-slate-100">
+                      <button
+                        onClick={handleLike}
+                        disabled={liking}
+                        className={`flex-1 flex items-center justify-center gap-2 py-2 rounded-lg transition-colors ${
+                          post.liked_by_me 
+                            ? 'text-blue-600 hover:bg-blue-50' 
+                            : 'text-slate-600 hover:bg-slate-100'
+                        }`}
                       >
-                        <img
-                          src={a.signedUrl || ''}
-                          alt={a.fileName}
-                          className="w-full rounded-lg border border-slate-200"
-                        />
-                      </a>
-                    ))}
-                  </div>
+                        <ThumbsUp className={`w-5 h-5 ${post.liked_by_me ? 'fill-current' : ''}`} />
+                        <span className="font-medium">Curtir</span>
+                      </button>
+                      <button
+                        onClick={() => commentInputRef.current?.focus()}
+                        className="flex-1 flex items-center justify-center gap-2 py-2 text-slate-600 hover:bg-slate-100 rounded-lg transition-colors"
+                      >
+                        <MessageCircle className="w-5 h-5" />
+                        <span className="font-medium">Comentar</span>
+                      </button>
+                    </div>
+                  </>
                 )}
-
-                {/* Contadores */}
-                <div className="flex items-center justify-between mt-4 pt-3 border-t border-slate-100">
-                  <div className="flex items-center gap-1 text-sm text-slate-500">
-                    {(post.likes_count || 0) > 0 && (
-                      <span className="flex items-center gap-1">
-                        <span className="w-5 h-5 bg-blue-500 rounded-full flex items-center justify-center">
-                          <ThumbsUp className="w-3 h-3 text-white" />
-                        </span>
-                        {post.likes_count}
-                      </span>
-                    )}
-                  </div>
-                  <div className="text-sm text-slate-500">
-                    {(post.comments_count || 0) > 0 && (
-                      <span>{post.comments_count} comentário{(post.comments_count || 0) !== 1 ? 's' : ''}</span>
-                    )}
-                  </div>
-                </div>
-
-                {/* Botões de ação */}
-                <div className="flex items-center gap-1 mt-2 pt-2 border-t border-slate-100">
-                  <button
-                    onClick={handleLike}
-                    disabled={liking}
-                    className={`flex-1 flex items-center justify-center gap-2 py-2 rounded-lg transition-colors ${
-                      post.liked_by_me 
-                        ? 'text-blue-600 hover:bg-blue-50' 
-                        : 'text-slate-600 hover:bg-slate-100'
-                    }`}
-                  >
-                    <ThumbsUp className={`w-5 h-5 ${post.liked_by_me ? 'fill-current' : ''}`} />
-                    <span className="font-medium">Curtir</span>
-                  </button>
-                  <button
-                    onClick={() => commentInputRef.current?.focus()}
-                    className="flex-1 flex items-center justify-center gap-2 py-2 text-slate-600 hover:bg-slate-100 rounded-lg transition-colors"
-                  >
-                    <MessageCircle className="w-5 h-5" />
-                    <span className="font-medium">Comentar</span>
-                  </button>
-                </div>
               </div>
 
-              {/* Seção de comentários */}
+              {/* Seção de comentários - só mostra se não está banido */}
+              {!post.banned_at && (
               <div style={{ borderTop: '1px solid #e2e8f0', backgroundColor: '#f8fafc' }}>
                 {/* Lista de comentários */}
                 <div className="p-4 space-y-3 max-h-[300px] overflow-y-auto">
@@ -540,7 +559,9 @@ export const PostModal: React.FC<PostModalProps> = ({
                   </div>
                 </div>
               </div>
+              )}
             </>
+
           ) : null}
         </div>
       </div>

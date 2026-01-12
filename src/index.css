@@ -2486,6 +2486,27 @@ div[class*="z-[60]"] span[class*="text-sky"] {
   }
 }
 
+@layer utilities {
+  .scrollbar-hide {
+    -ms-overflow-style: none !important;
+    scrollbar-width: none !important;
+  }
+
+  .scrollbar-hide::-webkit-scrollbar {
+    width: 0 !important;
+    height: 0 !important;
+    display: none !important;
+  }
+
+  .scrollbar-hide::-webkit-scrollbar-thumb {
+    background: transparent !important;
+  }
+
+  .scrollbar-hide::-webkit-scrollbar-track {
+    background: transparent !important;
+  }
+}
+
 /* Custom Animations */
 @keyframes slow-zoom {
   0% {

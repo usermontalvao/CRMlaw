@@ -1,5 +1,65 @@
 # Changelog
 
+## 1.9.325
+- **Feed (Agenda Jurídica)**: Widget agora exibe a data (dd/mm) nos compromissos.
+
+## 1.9.326
+- **Feed (Agenda Jurídica)**: Compromissos de hoje agora aparecem com destaque de cor no badge.
+
+## 1.9.338
+- **Feed (Menções)**: Corrigido bug onde texto após o nome mencionado ficava azul; agora apenas o nome exato do perfil é destacado e notificações são enviadas corretamente.
+
+## 1.9.337
+- **Feed (Composer)**: Corrigido bug de inserção de menções e tags que descartava texto digitado após a query.
+
+## 1.9.336
+- **Feed (Mobile)**: Barra de indicadores e filtros de tags escondidos no mobile; corrigido nome do autor bugado/cortado nos posts.
+
+## 1.9.335
+- **Feed (UI)**: Removidos ajustes específicos de mobile na barra de indicadores e nos filtros (voltando layout/tamanhos padrão).
+
+## 1.9.334
+- **Feed (Mobile)**: Botões de visibilidade (Público/Equipe/Privado) e agendamento (relógio) reposicionados para a barra de ações ao lado do botão "+".
+
+## 1.9.333
+- **Feed (Mobile)**: Barra de ações do composer organizada e expansível no mobile; filtro "Todas Atualizações" removido.
+
+## 1.9.332
+- **Feed (Mobile)**: Visibilidade (Público/Equipe/Privado) unificada em um único botão no mobile e botão Agendar exibindo apenas o ícone.
+
+## 1.9.331
+- **Feed (Responsivo)**: Indicadores mais compactos no mobile (faixa horizontal) e controles de visibilidade/agendar em uma linha.
+
+## 1.9.330
+- **Feed (Responsivo)**: Barra de indicadores ajustada para encaixar no mobile (grid) e `scrollbar-hide` reforçado para evitar scrollbar visível.
+
+## 1.9.329
+- **Feed (Responsivo)**: Filtros do feed compactados no mobile (tamanho de botões/ícones e espaçamentos).
+
+## 1.9.328
+- **Feed (Responsivo)**: Barra de indicadores e controles do composer ajustados para melhor encaixe no mobile (scroll e layout sem overflow).
+
+## 1.9.327
+- **Feed (Responsivo)**: Ajustes de layout para melhorar visualização em mobile/tablet (espaçamentos, alinhamento e prevenção de overflow).
+
+## 1.9.324
+- **Feed Social (Admin)**: Administradores agora podem remover permanentemente posts banidos.
+- **Feed Social (Moderação)**: Opção "Remover Post" aparece apenas para posts banidos e apenas para administradores.
+- **Feed Social (Segurança)**: Confirmação explícita antes de remover post banido permanentemente.
+
+## 1.9.323
+- **Feed Social (Banimento)**: Posts banidos não podem mais ser editados ou excluídos pelo autor.
+- **Feed Social (Segurança)**: Restrição de ações em posts banidos para preservar o registro de moderação.
+
+## 1.9.322
+- **Feed Social (Banimento)**: Posts banidos agora ocultam completamente todo o conteúdo (texto, enquetes, imagens e previews de dados).
+- **Feed Social (Modal)**: Modal de detalhes do post também exibe mensagem de conteúdo removido para posts banidos.
+- **Feed Social (UI)**: Design melhorado da mensagem de post banido com ícone e informações do administrador.
+
+## 1.9.321
+- **Feed Social (Correção)**: Corrigida política RLS que impedia administradores de banir posts de outros usuários.
+- **Feed Social (UI/UX)**: Melhorias visuais no design do feed e criador de posts.
+
 ## 1.9.320
 - **Feed Social (UI/UX)**: Design premium dos filtros com gradientes e sombras.
 - **Feed Social (UI/UX)**: Cards de posts com sombras suaves e transições elegantes.
