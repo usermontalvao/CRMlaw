@@ -559,6 +559,114 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
 
 const releases: ReleaseNote[] = [
   {
+    version: '1.9.345',
+    date: '11/01/2026',
+    summary: 'Perfil: barra de ações do post em uma linha no mobile.',
+    modules: [
+      {
+        moduleId: 'perfil',
+        changes: [
+          {
+            type: 'fix',
+            title: 'Barra de ações do post sem quebra de linha',
+            description:
+              'Ajustada a barra de ações dos posts no Perfil (Curtir/Comentar/contagens) para não quebrar linha no mobile.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.344',
+    date: '11/01/2026',
+    summary: 'Perfil: contato profissional no painel do mobile.',
+    modules: [
+      {
+        moduleId: 'perfil',
+        changes: [
+          {
+            type: 'fix',
+            title: 'Contato Profissional dentro do painel expandível',
+            description:
+              'No mobile, o card "Contato Profissional" foi movido para dentro do mesmo painel expandível usado para as abas (Feed/Atividade/Sobre), deixando a sidebar apenas para o desktop.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.343',
+    date: '11/01/2026',
+    summary: 'Perfil: sidebar oculto no mobile.',
+    modules: [
+      {
+        moduleId: 'perfil',
+        changes: [
+          {
+            type: 'fix',
+            title: 'Sidebar "Contato Profissional" oculto no mobile',
+            description:
+              'No mobile, a sidebar "Contato Profissional" fica oculta quando as abas estão fechadas; aparece apenas ao expandir ou em perfis de outros usuários.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.342',
+    date: '11/01/2026',
+    summary: 'Perfil: abas ocultas por padrão no mobile.',
+    modules: [
+      {
+        moduleId: 'perfil',
+        changes: [
+          {
+            type: 'fix',
+            title: 'Abas Feed/Atividade/Sobre ocultas no mobile',
+            description:
+              'No mobile, as abas Feed, Atividade e Sobre agora ficam ocultas por padrão; aparecem apenas ao clicar no botão "Ver Feed, Atividade e Sobre".',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.341',
+    date: '11/01/2026',
+    summary: 'Chat: widget flutuante mais compacto no mobile.',
+    modules: [
+      {
+        moduleId: 'chat',
+        changes: [
+          {
+            type: 'fix',
+            title: 'Botão flutuante compacto no mobile',
+            description:
+              'O launcher do ChatFloatingWidget no mobile agora é um FAB pequeno (ícone + badge), evitando cobrir conteúdo das páginas.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.340',
+    date: '11/01/2026',
+    summary: 'Perfil: correções de responsividade no mobile.',
+    modules: [
+      {
+        moduleId: 'perfil',
+        changes: [
+          {
+            type: 'fix',
+            title: 'Perfil responsivo no mobile',
+            description:
+              'Ajustado layout do Perfil para telas pequenas (banner, avatar, botões e abas com scroll horizontal), evitando sobreposição com o widget flutuante.',
+          },
+        ],
+      },
+    ],
+  },
+  {
     version: '1.9.339',
     date: '11/01/2026',
     summary: 'Atualização de sistema e correções diversas.',

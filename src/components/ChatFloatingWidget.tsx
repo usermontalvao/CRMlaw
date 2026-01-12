@@ -1067,7 +1067,7 @@ const ChatFloatingWidget: React.FC = () => {
   const headerVerified = getVerifiedVariant(otherUser);
 
   return createPortal(
-    <div className="fixed bottom-5 right-5 z-[9999] flex flex-col items-end" style={{ isolation: 'isolate' }}>
+    <div className="fixed bottom-4 right-3 sm:bottom-5 sm:right-5 z-[9999] flex flex-col items-end" style={{ isolation: 'isolate' }}>
       {open && (
         <div className="mb-3 w-[360px] max-w-[calc(100vw-24px)] rounded-2xl bg-[#111827]/95 text-white shadow-[0_30px_80px_rgba(0,0,0,0.55)] ring-1 ring-white/10 overflow-hidden flex flex-col h-[460px] max-h-[calc(100vh-120px)]">
           <div className="px-4 py-3 border-b border-white/10 flex items-center justify-between shrink-0">
@@ -1392,7 +1392,18 @@ const ChatFloatingWidget: React.FC = () => {
         className="rounded-full overflow-hidden shadow-[0_20px_60px_rgba(0,0,0,0.5)] ring-1 ring-white/10"
         title="Mensagens / Editor"
       >
-        <div className="flex items-stretch bg-[#111827]/95 text-white hover:bg-[#0f172a] transition">
+        <div className="sm:hidden flex items-center justify-center h-12 w-12 bg-[#111827]/95 text-white hover:bg-[#0f172a] transition">
+          <div className="relative">
+            <MessageCircle className="w-5 h-5" />
+            {badgeCount > 0 && (
+              <span className="absolute -top-2 -right-2 min-w-5 h-5 px-1.5 rounded-full bg-red-500 text-white text-[11px] font-bold flex items-center justify-center">
+                {badgeCount}
+              </span>
+            )}
+          </div>
+        </div>
+
+        <div className="hidden sm:flex items-stretch bg-[#111827]/95 text-white hover:bg-[#0f172a] transition">
           <div className="flex items-center gap-3 px-4 h-12">
             <div className="relative">
               <MessageCircle className="w-5 h-5" />

@@ -46,6 +46,8 @@ import {
   ChevronRight,
   Globe,
   Lock,
+  ChevronDown,
+  ChevronUp,
 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { profileService, type Profile } from '../services/profile.service';
@@ -246,17 +248,18 @@ export const UserProfilePage: React.FC<UserProfilePageProps> = ({ userId, onClos
   const [mentionSearch, setMentionSearch] = useState('');
   const [selectedTags, setSelectedTags] = useState<string[]>([]);
   const [showTagDropdown, setShowTagDropdown] = useState(false);
+  const [showMobileTabs, setShowMobileTabs] = useState(false);
+  const [pollQuestion, setPollQuestion] = useState('');
+  const [pollOptions, setPollOptions] = useState(['', '']);
+  const [pollAllowMultiple, setPollAllowMultiple] = useState(false);
+  const [pollExpiresIn, setPollExpiresIn] = useState('24h');
+  const [pollParticipants, setPollParticipants] = useState<string[]>([]);
+  const [showPollCreator, setShowPollCreator] = useState(false);
   const postInputRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
   const [uploadingAttachment, setUploadingAttachment] = useState(false);
   const [pendingAttachments, setPendingAttachments] = useState<Array<{ localUrl: string; attachment: any }>>([]);
-  const [showPollCreator, setShowPollCreator] = useState(false);
-  const [pollQuestion, setPollQuestion] = useState('');
-  const [pollOptions, setPollOptions] = useState<string[]>(['', '']);
-  const [pollAllowMultiple, setPollAllowMultiple] = useState(true);
-  const [pollExpiresIn, setPollExpiresIn] = useState<string>('24h');
-  const [pollParticipants, setPollParticipants] = useState<string[]>([]);
   const [interactionModal, setInteractionModal] = useState<{
     open: boolean;
     type: 'likes' | 'comments';
@@ -276,10 +279,10 @@ export const UserProfilePage: React.FC<UserProfilePageProps> = ({ userId, onClos
   }>>({});
   const [selectedEntities, setSelectedEntities] = useState<EntityReference[]>([]);
   const [previewData, setPreviewData] = useState<PreviewData>({});
-  const [tagRecords, setTagRecords] = useState<TagRecord[]>([]);
-  const [loadingTagRecords, setLoadingTagRecords] = useState(false);
   const [selectedTagForRecords, setSelectedTagForRecords] = useState<string | null>(null);
   const [tagRecordSearch, setTagRecordSearch] = useState('');
+  const [tagRecords, setTagRecords] = useState<TagRecord[]>([]);
+  const [loadingTagRecords, setLoadingTagRecords] = useState(false);
   const [financialDetailsByPostId, setFinancialDetailsByPostId] = useState<Record<string, {
     agreement_id: string;
     client_name: string;
@@ -1276,9 +1279,9 @@ export const UserProfilePage: React.FC<UserProfilePageProps> = ({ userId, onClos
   }
 
   return (
-    <div className="bg-slate-50 dark:bg-slate-950 min-h-full">
+    <div className="bg-slate-50 dark:bg-slate-950 min-h-full pb-24 sm:pb-0">
       {/* Cover Photo com gradiente premium */}
-      <div className="relative h-48 bg-gradient-to-r from-blue-600 to-indigo-700 overflow-hidden rounded-b-2xl">
+      <div className="relative h-40 sm:h-48 bg-gradient-to-r from-blue-600 to-indigo-700 overflow-hidden rounded-b-2xl">
         <img
           src={(profile.cover_url && profile.cover_url.trim() !== '') ? profile.cover_url : DEFAULT_BANNER}
           alt="Capa"
@@ -1288,17 +1291,17 @@ export const UserProfilePage: React.FC<UserProfilePageProps> = ({ userId, onClos
         {isOwnProfile && (
           <button
             onClick={() => setShowCoverModal(true)}
-            className="absolute bottom-4 right-4 z-10 flex items-center gap-2 bg-black/30 hover:bg-black/50 text-white px-4 py-2 rounded-lg cursor-pointer backdrop-blur-md transition-all pointer-events-auto"
+            className="absolute bottom-3 right-3 sm:bottom-4 sm:right-4 z-10 flex items-center gap-2 bg-black/30 hover:bg-black/50 text-white px-3 py-1.5 sm:px-4 sm:py-2 rounded-lg cursor-pointer backdrop-blur-md transition-all pointer-events-auto"
           >
             <Camera className="w-4 h-4" />
-            <span className="text-sm font-medium">Editar capa</span>
+            <span className="hidden sm:inline text-sm font-medium">Editar capa</span>
           </button>
         )}
 
         {onClose && (
           <button
             onClick={onClose}
-            className="absolute top-4 right-4 bg-black/30 hover:bg-black/50 text-white p-2 rounded-full transition-colors backdrop-blur-md"
+            className="absolute top-3 right-3 sm:top-4 sm:right-4 bg-black/30 hover:bg-black/50 text-white p-2 rounded-full transition-colors backdrop-blur-md"
           >
             <X className="w-5 h-5" />
           </button>
@@ -1306,16 +1309,16 @@ export const UserProfilePage: React.FC<UserProfilePageProps> = ({ userId, onClos
       </div>
 
       {/* Profile Header */}
-      <div className="relative px-8 pb-6 flex flex-col md:flex-row items-end gap-6 -mt-16">
+      <div className="relative px-4 sm:px-8 pb-4 sm:pb-6 flex flex-col md:flex-row items-center md:items-end gap-4 sm:gap-6 -mt-14 sm:-mt-16">
         {/* Avatar com borda e sombra premium */}
         <div className="relative">
           <img 
             src={profile.avatar_url || `https://ui-avatars.com/api/?name=${encodeURIComponent(profile.name || 'U')}&size=128&background=3b82f6&color=fff`}
             alt={profile.name || 'Usuário'}
-            className="w-32 h-32 rounded-2xl border-4 border-white dark:border-slate-900 object-cover shadow-xl bg-white"
+            className="w-24 h-24 sm:w-32 sm:h-32 rounded-2xl border-4 border-white dark:border-slate-900 object-cover shadow-xl bg-white"
           />
           {isOwnProfile && (
-            <label className="absolute bottom-2 right-2 p-1.5 bg-blue-600 text-white rounded-lg shadow-lg cursor-pointer hover:bg-blue-700 transition-colors">
+            <label className="absolute bottom-1 right-1 sm:bottom-2 sm:right-2 p-1.5 bg-blue-600 text-white rounded-lg shadow-lg cursor-pointer hover:bg-blue-700 transition-colors">
               <Camera className="w-4 h-4" />
               <input
                 type="file"
@@ -1332,22 +1335,22 @@ export const UserProfilePage: React.FC<UserProfilePageProps> = ({ userId, onClos
         </div>
 
         {/* Name and Info */}
-        <div className="flex-grow mb-2">
-          <div className="flex flex-wrap items-center gap-3">
-            <h1 className="text-2xl font-bold text-slate-900 dark:text-white">{profile.name}</h1>
+        <div className="flex-1 w-full mb-1 sm:mb-2 text-center md:text-left">
+          <div className="flex flex-wrap items-center justify-center md:justify-start gap-3">
+            <h1 className="text-xl sm:text-2xl font-bold text-slate-900 dark:text-white">{profile.name}</h1>
             <BadgeIcon badge={profile.badge} />
           </div>
-          <p className="text-slate-500 dark:text-slate-400 mt-1">
+          <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">
             {profile.role || 'Membro da equipe'}
           </p>
         </div>
 
         {/* Action Buttons */}
-        <div className="flex gap-2 mb-2">
+        <div className="flex gap-2 mb-2 w-full md:w-auto justify-center md:justify-end">
           {isOwnProfile ? (
             <button
               onClick={() => setActiveTab('dados')}
-              className="px-4 py-2 bg-blue-600 text-white font-semibold rounded-lg flex items-center gap-2 hover:bg-blue-700 transition-colors shadow-lg shadow-blue-500/20"
+              className="w-full md:w-auto px-4 py-2 bg-blue-600 text-white text-sm font-semibold rounded-lg flex items-center justify-center gap-2 hover:bg-blue-700 transition-colors shadow-lg shadow-blue-500/20"
             >
               <Edit3 className="w-4 h-4" />
               Editar Perfil
@@ -1359,7 +1362,7 @@ export const UserProfilePage: React.FC<UserProfilePageProps> = ({ userId, onClos
                 if (!targetId) return;
                 events.emit(SYSTEM_EVENTS.CHAT_WIDGET_OPEN_DM, { targetUserId: targetId });
               }}
-              className="px-4 py-2 bg-blue-600 text-white font-semibold rounded-lg flex items-center gap-2 hover:bg-blue-700 transition-colors shadow-lg shadow-blue-500/20"
+              className="w-full md:w-auto px-4 py-2 bg-blue-600 text-white text-sm font-semibold rounded-lg flex items-center justify-center gap-2 hover:bg-blue-700 transition-colors shadow-lg shadow-blue-500/20"
             >
               <MessageCircle className="w-4 h-4" />
               Mensagem
@@ -1369,8 +1372,21 @@ export const UserProfilePage: React.FC<UserProfilePageProps> = ({ userId, onClos
       </div>
 
       {/* Tabs Navigation */}
-      <div className="border-t border-slate-100 dark:border-slate-800 px-8 overflow-x-auto">
-        <nav className="flex gap-6">
+      <div className="border-t border-slate-100 dark:border-slate-800 px-4 sm:px-8 overflow-x-auto scrollbar-hide">
+        {/* Mobile: Botão para expandir abas */}
+        <div className="sm:hidden">
+          <button
+            onClick={() => setShowMobileTabs(!showMobileTabs)}
+            className="w-full py-3 flex items-center justify-center gap-2 text-blue-600 font-medium text-sm hover:bg-blue-50 transition-colors rounded-lg"
+          >
+            <Activity className="w-4 h-4" />
+            {showMobileTabs ? 'Ocultar' : 'Ver Feed, Atividade, Sobre e Contato'}
+            {showMobileTabs ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+          </button>
+        </div>
+
+        {/* Abas (sempre visíveis no desktop, condicionais no mobile) */}
+        <nav className={`${showMobileTabs ? 'flex' : 'hidden sm:flex'} gap-6 min-w-max`}>
           <button
             onClick={() => setActiveTab('timeline')}
             className={`py-3 px-1 border-b-2 font-semibold text-sm transition-colors flex items-center gap-2 whitespace-nowrap ${
@@ -1433,11 +1449,8 @@ export const UserProfilePage: React.FC<UserProfilePageProps> = ({ userId, onClos
         </nav>
       </div>
 
-      {/* Content Grid */}
-      <div className="px-4 lg:px-8 py-6 grid grid-cols-12 gap-6">
-        {/* Sidebar */}
-        <aside className="col-span-12 lg:col-span-4 space-y-6">
-          {/* Contato Profissional */}
+      {showMobileTabs && (
+        <div className="sm:hidden px-4 pt-4">
           <div className="bg-white dark:bg-slate-900 rounded-2xl p-6 shadow-sm border border-slate-200 dark:border-slate-800">
             <h3 className="font-bold mb-4 flex items-center gap-2 text-slate-800 dark:text-slate-100">
               <Badge className="w-5 h-5 text-blue-600" /> Contato Profissional
@@ -1500,7 +1513,75 @@ export const UserProfilePage: React.FC<UserProfilePageProps> = ({ userId, onClos
               )}
             </ul>
           </div>
+        </div>
+      )}
 
+      {/* Content Grid */}
+      <div className="px-4 lg:px-8 py-6 grid grid-cols-12 gap-6">
+        {/* Sidebar */}
+        <aside className="hidden lg:block col-span-12 lg:col-span-4 space-y-6">
+          <div className="bg-white dark:bg-slate-900 rounded-2xl p-6 shadow-sm border border-slate-200 dark:border-slate-800">
+            <h3 className="font-bold mb-4 flex items-center gap-2 text-slate-800 dark:text-slate-100">
+              <Badge className="w-5 h-5 text-blue-600" /> Contato Profissional
+            </h3>
+            <ul className="space-y-4">
+              {profile.role && (
+                <li className="flex items-center gap-3">
+                  <div className="w-8 h-8 rounded-lg bg-blue-50 dark:bg-blue-900/20 flex items-center justify-center text-blue-600">
+                    <Briefcase className="w-4 h-4" />
+                  </div>
+                  <div className="text-sm">
+                    <p className="text-slate-400 text-xs font-medium">Cargo</p>
+                    <p className="font-semibold text-slate-900 dark:text-white">{profile.role}</p>
+                  </div>
+                </li>
+              )}
+              {profile.oab && (
+                <li className="flex items-center gap-3">
+                  <div className="w-8 h-8 rounded-lg bg-purple-50 dark:bg-purple-900/20 flex items-center justify-center text-purple-600">
+                    <Scale className="w-4 h-4" />
+                  </div>
+                  <div className="text-sm">
+                    <p className="text-slate-400 text-xs font-medium">OAB</p>
+                    <p className="font-semibold text-slate-900 dark:text-white">{profile.oab}</p>
+                  </div>
+                </li>
+              )}
+              {profile.email && (
+                <li className="flex items-center gap-3">
+                  <div className="w-8 h-8 rounded-lg bg-indigo-50 dark:bg-indigo-900/20 flex items-center justify-center text-indigo-600">
+                    <Mail className="w-4 h-4" />
+                  </div>
+                  <div className="text-sm">
+                    <p className="text-slate-400 text-xs font-medium">E-mail</p>
+                    <p className="font-semibold truncate max-w-[180px] text-slate-900 dark:text-white">{profile.email}</p>
+                  </div>
+                </li>
+              )}
+              {profile.phone && (
+                <li className="flex items-center gap-3">
+                  <div className="w-8 h-8 rounded-lg bg-teal-50 dark:bg-teal-900/20 flex items-center justify-center text-teal-600">
+                    <Phone className="w-4 h-4" />
+                  </div>
+                  <div className="text-sm">
+                    <p className="text-slate-400 text-xs font-medium">Telefone</p>
+                    <p className="font-semibold text-slate-900 dark:text-white">{profile.phone}</p>
+                  </div>
+                </li>
+              )}
+              {profile.location && (
+                <li className="flex items-center gap-3">
+                  <div className="w-8 h-8 rounded-lg bg-orange-50 dark:bg-orange-900/20 flex items-center justify-center text-orange-600">
+                    <MapPin className="w-4 h-4" />
+                  </div>
+                  <div className="text-sm">
+                    <p className="text-slate-400 text-xs font-medium">Localização</p>
+                    <p className="font-semibold text-xs text-slate-900 dark:text-white">{profile.location}</p>
+                  </div>
+                </li>
+              )}
+            </ul>
+          </div>
         </aside>
 
         {/* Main Content */}
@@ -2492,37 +2573,47 @@ export const UserProfilePage: React.FC<UserProfilePageProps> = ({ userId, onClos
                     </div>
 
                     {/* Ações (minimalista) */}
-                    <div className="flex items-center justify-between px-3 py-2 text-xs text-slate-500 border-t border-slate-100 bg-slate-50/40">
-                      <div className="flex items-center gap-4">
+                    <div className="flex items-center justify-between gap-3 sm:gap-4 px-3 py-2 text-xs text-slate-500 border-t border-slate-100 bg-slate-50/40 flex-nowrap whitespace-nowrap">
+                      <div className="flex items-center gap-3 sm:gap-4 flex-nowrap shrink-0">
                         <button 
                           onClick={() => handleToggleLike(post.id, (post as any).liked_by_me || false)}
-                          className={`inline-flex items-center gap-1.5 hover:text-blue-600 transition-colors ${(post as any).liked_by_me ? 'text-blue-600' : 'text-slate-600'}`}
+                          className={`inline-flex items-center gap-1.5 hover:text-blue-600 transition-colors whitespace-nowrap ${(post as any).liked_by_me ? 'text-blue-600' : 'text-slate-600'}`}
                         >
                           <ThumbsUp className={`w-4 h-4 ${(post as any).liked_by_me ? 'fill-current' : ''}`} />
                           {(post as any).liked_by_me ? 'Gostei' : 'Curtir'}
                         </button>
                         <button 
                           onClick={() => toggleInlineComments(post.id)}
-                          className={`inline-flex items-center gap-1.5 hover:text-blue-600 transition-colors ${expandedComments[post.id] ? 'text-blue-600' : 'text-slate-600'}`}
+                          className={`inline-flex items-center gap-1.5 hover:text-blue-600 transition-colors whitespace-nowrap ${expandedComments[post.id] ? 'text-blue-600' : 'text-slate-600'}`}
                         >
                           <MessageCircle className="w-4 h-4" />
                           Comentar
                         </button>
                       </div>
-                      <div className="flex items-center gap-4">
+                      <div className="flex items-center gap-3 sm:gap-4 flex-nowrap shrink-0">
                         <button
                           onClick={() => openInteractionModal('likes', post.id)}
-                          className="hover:text-slate-700 transition-colors"
+                          className="hover:text-slate-700 transition-colors whitespace-nowrap"
                         >
                           {(post.likes_count || 0) > 0
                             ? `${post.likes_count} curtida${post.likes_count !== 1 ? 's' : ''}`
-                            : 'Seja o primeiro'}
+                            : (
+                              <>
+                                <span className="sm:hidden">Seja o 1º</span>
+                                <span className="hidden sm:inline">Seja o primeiro</span>
+                              </>
+                            )}
                         </button>
                         <button
                           onClick={() => toggleInlineComments(post.id)}
-                          className="hover:text-slate-700 transition-colors"
+                          className="hover:text-slate-700 transition-colors whitespace-nowrap"
                         >
-                          {post.comments_count || 0} comentário{(post.comments_count || 0) !== 1 ? 's' : ''}
+                          <span className="sm:hidden">
+                            {post.comments_count || 0} com.
+                          </span>
+                          <span className="hidden sm:inline">
+                            {post.comments_count || 0} comentário{(post.comments_count || 0) !== 1 ? 's' : ''}
+                          </span>
                         </button>
                       </div>
                     </div>

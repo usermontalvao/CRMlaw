@@ -1,5 +1,23 @@
 # Changelog
 
+## 1.9.340
+- **Perfil (Mobile)**: Ajustado layout do perfil para telas pequenas (banner, avatar, botões e abas com scroll horizontal), evitando sobreposição com o widget flutuante.
+
+## 1.9.343
+- **Perfil (Mobile)**: Sidebar "Contato Profissional" agora fica oculto no mobile quando as abas estão fechadas; aparece apenas ao expandir ou em perfis de outros usuários.
+
+## 1.9.344
+- **Perfil (Mobile)**: "Contato Profissional" foi movido para dentro do painel expandível (mesmo botão de ver Feed/Atividade/Sobre), e a sidebar fica apenas no desktop.
+
+## 1.9.345
+- **Perfil (Mobile)**: Barra de ações dos posts (Curtir/Comentar/contagens) ajustada para ficar em uma única linha no mobile.
+
+## 1.9.342
+- **Perfil (Mobile)**: Abas Feed/Atividade/Sobre agora ficam ocultas por padrão no mobile; aparecem apenas ao clicar em "Ver Feed, Atividade e Sobre".
+
+## 1.9.341
+- **Chat (Mobile)**: Botão flutuante de Mensagens agora fica compacto no mobile (apenas ícone + badge), evitando cobrir conteúdo das páginas.
+
 ## 1.9.325
 - **Feed (Agenda Jurídica)**: Widget agora exibe a data (dd/mm) nos compromissos.
 
