@@ -46,6 +46,7 @@ import {
    ============================================================================ */
 
 const VERSION_CODENAMES: Record<string, { name: string; emoji: string }> = {
+  '1.9.349': { name: 'Café Intimação Expandida', emoji: '📱' },
   '1.9.136': { name: 'Café CPF do Login', emoji: '🧾' },
   '1.9.135': { name: 'Café CPF Persistente', emoji: '💾' },
   '1.9.134': { name: 'Café CPF Resiliente', emoji: '🧯' },
@@ -558,6 +559,24 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
    ============================================================================ */
 
 const releases: ReleaseNote[] = [
+  {
+    version: '1.9.349',
+    date: '15/01/2026',
+    summary: 'Intimações: seção expandida melhorada no mobile com layout limpo e ações em grid.',
+    modules: [
+      {
+        moduleId: 'intimations',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Seção expandida da intimação otimizada',
+            description:
+              'Removida duplicação de botões e reorganizadas as ações em grid (2 colunas no mobile). Análise IA mais compacta e visual mais limpo.',
+          },
+        ],
+      },
+    ],
+  },
   {
     version: '1.9.345',
     date: '11/01/2026',

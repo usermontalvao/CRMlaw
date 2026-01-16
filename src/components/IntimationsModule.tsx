@@ -136,6 +136,7 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
   const [customDateEnd, setCustomDateEnd] = useState('');
   const [showFilters, setShowFilters] = useState(false);
   const [groupByProcess, setGroupByProcess] = useState(true);
+  const [mobileControlsExpanded, setMobileControlsExpanded] = useState(false);
 
   // Detalhes e ações
   const [selectedIntimation, setSelectedIntimation] = useState<DjenComunicacaoLocal | null>(null);
@@ -1331,15 +1332,15 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
       <div className="bg-white border border-slate-100 rounded-lg p-3">
         {/* Linha 1: Título, indicadores e sincronizar */}
         <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
-          <div className="flex items-center gap-2 text-xs text-slate-500">
+          <div className="flex flex-wrap items-center gap-2 text-xs text-slate-500 flex-1 min-w-0">
             <Bell className="w-4 h-4 text-amber-600" />
             <span className="font-semibold text-slate-800 text-sm">Intimações</span>
             <span className="hidden sm:inline-flex items-center gap-1">
               <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
               Online
             </span>
-            <span>•</span>
-            <span>{intimations.length} total</span>
+            <span className="hidden sm:inline">•</span>
+            <span className="hidden sm:inline">{intimations.length} total</span>
             <span className="font-medium text-amber-600">{unreadCount} não lidas</span>
             {aiUrgencyStats.alta > 0 && (
               <span className="font-medium text-red-600">{aiUrgencyStats.alta} Alta</span>
@@ -1359,8 +1360,8 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
         </div>
 
         {/* Linha 2: Busca, filtros e ações */}
-        <div className="flex flex-wrap items-center gap-2">
-          <div className="relative flex-1 min-w-[200px]">
+        <div className="flex flex-col gap-2">
+          <div className="relative w-full">
             <Search className="absolute left-2.5 top-1/2 transform -translate-y-1/2 text-slate-400 w-4 h-4" />
             <input
               type="text"
@@ -1371,185 +1372,214 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
             />
           </div>
 
-          <select
-            value={statusFilter}
-            onChange={(e) => setStatusFilter(e.target.value as any)}
-            className="px-2.5 py-1.5 border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-blue-500 text-sm"
-          >
-            <option value="all">Todas ({intimations.length})</option>
-            <option value="unread">Não Lidas ({unreadCount})</option>
-            <option value="read">Lidas ({readCount})</option>
-          </select>
-
-          <select
-            value={tribunalFilter}
-            onChange={(e) => setTribunalFilter(e.target.value)}
-            className="px-2.5 py-1.5 border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-blue-500 text-sm"
-          >
-            <option value="all">Todos os Tribunais</option>
-            {availableTribunals.map((tribunal) => (
-              <option key={tribunal} value={tribunal}>
-                {tribunal}
-              </option>
-            ))}
-          </select>
-
-          <select
-            value={dateFilter}
-            onChange={(e) => setDateFilter(e.target.value as any)}
-            className="px-2.5 py-1.5 border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-blue-500 text-sm"
-          >
-            <option value="30days">Últimos 30 dias</option>
-            <option value="60days">Últimos 60 dias</option>
-            <option value="90days">Últimos 90 dias</option>
-            <option value="all">Todas as datas</option>
-          </select>
-
           <button
-            onClick={() => setShowFilters(!showFilters)}
-            className={`inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg transition text-sm ${
-              showFilters
-                ? 'bg-slate-100 text-slate-700 border border-slate-300'
-                : 'border border-gray-200 text-slate-600 hover:bg-slate-50'
-            }`}
+            type="button"
+            onClick={() => {
+              setMobileControlsExpanded((prev) => {
+                const next = !prev;
+                if (!next) {
+                  setShowClearMenu(false);
+                  setShowExportMenu(false);
+                  setShowSettingsMenu(false);
+                }
+                return next;
+              });
+            }}
+            className="sm:hidden inline-flex items-center justify-between gap-2 w-full px-3 py-2 border border-gray-200 rounded-lg text-sm text-slate-700 hover:bg-slate-50 transition"
           >
-            <Filter className="w-3.5 h-3.5" />
-            <span className="hidden sm:inline">Filtros</span>
+            <span className="font-medium">Filtros e ações</span>
+            <ChevronDown
+              className={`w-4 h-4 text-slate-500 transition-transform ${mobileControlsExpanded ? 'rotate-180' : ''}`}
+            />
           </button>
 
-          <div className="relative">
-            <button
-              onClick={() => setShowClearMenu((prev) => !prev)}
-              disabled={syncing}
-              className="inline-flex items-center gap-1.5 border border-gray-200 text-slate-600 hover:bg-slate-50 text-sm px-2.5 py-1.5 rounded-lg transition disabled:opacity-50"
+          <div
+            className={`${mobileControlsExpanded ? 'grid' : 'hidden'} grid-cols-2 sm:flex sm:flex-wrap items-center gap-2`}
+          >
+            <select
+              value={statusFilter}
+              onChange={(e) => setStatusFilter(e.target.value as any)}
+              className="w-full px-2.5 py-1.5 border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-blue-500 text-xs sm:text-sm"
             >
-              <Trash2 className="w-3.5 h-3.5" />
-            </button>
-            {showClearMenu && (
-              <div className="absolute right-0 mt-2 w-56 bg-white rounded-lg shadow-lg border border-gray-200 z-50 text-sm text-slate-700">
-                <button
-                  onClick={handleDeleteSelected}
-                  className="w-full text-left px-4 py-2.5 hover:bg-gray-50 flex items-center gap-2 disabled:text-slate-400"
-                >
-                  <CheckCircle className="w-4 h-4" /> Remover selecionadas
-                </button>
-                <button
-                  onClick={handleDeleteRead}
-                  className="w-full text-left px-4 py-2.5 hover:bg-gray-50 flex items-center gap-2"
-                >
-                  <EyeOff className="w-4 h-4" /> Remover lidas
-                </button>
-                <button
-                  onClick={handleClearAllIntimations}
-                  disabled={clearingAll || intimations.length === 0}
-                  className="w-full text-left px-4 py-2.5 hover:bg-gray-50 flex items-center gap-2 text-red-600 disabled:text-red-300"
-                >
-                  <Trash2 className="w-4 h-4" /> Remover tudo
-                </button>
-              </div>
-            )}
-          </div>
+              <option value="all">Todas ({intimations.length})</option>
+              <option value="unread">Não Lidas ({unreadCount})</option>
+              <option value="read">Lidas ({readCount})</option>
+            </select>
 
-          <div className="relative">
-            <button
-              onClick={() => setShowExportMenu((prev) => !prev)}
-              disabled={filteredIntimations.length === 0}
-              className="inline-flex items-center gap-1.5 border border-gray-200 text-slate-600 hover:bg-slate-50 text-sm px-2.5 py-1.5 rounded-lg transition disabled:opacity-50"
+            <select
+              value={tribunalFilter}
+              onChange={(e) => setTribunalFilter(e.target.value)}
+              className="w-full px-2.5 py-1.5 border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-blue-500 text-xs sm:text-sm"
             >
-              <Download className="w-3.5 h-3.5" />
+              <option value="all">Todos os Tribunais</option>
+              {availableTribunals.map((tribunal) => (
+                <option key={tribunal} value={tribunal}>
+                  {tribunal}
+                </option>
+              ))}
+            </select>
+
+            <select
+              value={dateFilter}
+              onChange={(e) => setDateFilter(e.target.value as any)}
+              className="w-full px-2.5 py-1.5 border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-blue-500 text-xs sm:text-sm"
+            >
+              <option value="30days">Últimos 30 dias</option>
+              <option value="60days">Últimos 60 dias</option>
+              <option value="90days">Últimos 90 dias</option>
+              <option value="all">Todas as datas</option>
+            </select>
+
+            <button
+              onClick={() => setShowFilters(!showFilters)}
+              className={`inline-flex items-center justify-center gap-1.5 px-2.5 py-1.5 rounded-lg transition text-xs sm:text-sm w-full sm:w-auto ${
+                showFilters
+                  ? 'bg-slate-100 text-slate-700 border border-slate-300'
+                  : 'border border-gray-200 text-slate-600 hover:bg-slate-50'
+              }`}
+            >
+              <Filter className="w-3.5 h-3.5" />
+              <span className="sm:hidden">Filtros</span>
+              <span className="hidden sm:inline">Filtros</span>
             </button>
-            {showExportMenu && (
-              <div className="absolute right-0 mt-2 w-44 bg-white rounded-lg shadow-lg border border-gray-200 z-50">
-                <div className="py-1 text-sm text-gray-700">
+
+            <div className="relative col-span-1 w-full sm:w-auto">
+              <button
+                onClick={() => setShowClearMenu((prev) => !prev)}
+                disabled={syncing}
+                className="inline-flex items-center justify-center gap-1.5 border border-gray-200 text-slate-600 hover:bg-slate-50 text-xs sm:text-sm px-2.5 py-1.5 rounded-lg transition disabled:opacity-50 w-full sm:w-auto"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+                <span className="sm:hidden">Limpar</span>
+              </button>
+              {showClearMenu && (
+                <div className="absolute left-0 sm:left-auto sm:right-0 mt-2 w-full sm:w-56 bg-white rounded-lg shadow-lg border border-gray-200 z-50 text-sm text-slate-700">
                   <button
-                    onClick={handleExportCSV}
-                    className="w-full text-left px-4 py-2.5 hover:bg-gray-50 flex items-center gap-2"
+                    onClick={handleDeleteSelected}
+                    className="w-full text-left px-4 py-2.5 hover:bg-gray-50 flex items-center gap-2 disabled:text-slate-400"
                   >
-                    <FileText className="w-4 h-4" /> CSV
+                    <CheckCircle className="w-4 h-4" /> Remover selecionadas
                   </button>
                   <button
-                    onClick={handleExportExcel}
+                    onClick={handleDeleteRead}
                     className="w-full text-left px-4 py-2.5 hover:bg-gray-50 flex items-center gap-2"
                   >
-                    <FileText className="w-4 h-4" /> Excel
+                    <EyeOff className="w-4 h-4" /> Remover lidas
                   </button>
                   <button
-                    onClick={handleExportPDF}
-                    className="w-full text-left px-4 py-2.5 hover:bg-gray-50 flex items-center gap-2"
+                    onClick={handleClearAllIntimations}
+                    disabled={clearingAll || intimations.length === 0}
+                    className="w-full text-left px-4 py-2.5 hover:bg-gray-50 flex items-center gap-2 text-red-600 disabled:text-red-300"
                   >
-                    <FileText className="w-4 h-4" /> PDF
+                    <Trash2 className="w-4 h-4" /> Remover tudo
                   </button>
                 </div>
-              </div>
-            )}
-          </div>
+              )}
+            </div>
 
-          <div className="relative">
-            <button
-              onClick={() => setShowSettingsMenu((prev) => !prev)}
-              className="inline-flex items-center gap-1.5 border border-gray-200 text-slate-600 hover:bg-slate-50 text-sm px-2.5 py-1.5 rounded-lg transition"
-            >
-              <UserCog className="w-3.5 h-3.5" />
-            </button>
-            {showSettingsMenu && (
-              <div className="absolute right-0 mt-2 w-72 bg-white rounded-lg shadow-lg border border-gray-200 z-50 p-4">
-                <div className="mb-3">
-                  <h3 className="text-sm font-semibold text-slate-900">Configurações</h3>
-                </div>
-                <div className="space-y-3">
-                  <label className="flex items-center gap-2 text-sm text-slate-600 cursor-pointer">
-                    <input
-                      type="checkbox"
-                      checked={moduleSettings.defaultGroupByProcess}
-                      onChange={(e) => {
-                        setModuleSettings((prev) => ({
-                          ...prev,
-                          defaultGroupByProcess: e.target.checked,
-                        }));
-                        setGroupByProcess(e.target.checked);
-                      }}
-                      className="rounded border-slate-300 text-blue-600 focus:ring-blue-500"
-                    />
-                    Agrupar por processo
-                  </label>
-                  <label className="flex items-center gap-2 text-sm text-slate-600 cursor-pointer">
-                    <input
-                      type="checkbox"
-                      checked={selectionMode}
-                      onChange={(e) => {
-                        setSelectionMode(e.target.checked);
-                        if (!e.target.checked) setSelectedIds(new Set());
-                      }}
-                      className="rounded border-slate-300 text-purple-600 focus:ring-purple-500"
-                    />
-                    Modo seleção múltipla
-                  </label>
-                  <div className="pt-2 border-t border-gray-100">
-                    <label className="block text-xs font-medium text-slate-600 mb-1">Filtro padrão</label>
-                    <select
-                      value={moduleSettings.defaultStatusFilter}
-                      onChange={(e) => {
-                        const value = e.target.value as 'all' | 'unread' | 'read';
-                        setModuleSettings((prev) => ({
-                          ...prev,
-                          defaultStatusFilter: value,
-                        }));
-                      }}
-                      className="w-full px-2 py-1.5 border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-blue-500 text-sm"
+            <div className="relative col-span-1 w-full sm:w-auto">
+              <button
+                onClick={() => setShowExportMenu((prev) => !prev)}
+                disabled={filteredIntimations.length === 0}
+                className="inline-flex items-center justify-center gap-1.5 border border-gray-200 text-slate-600 hover:bg-slate-50 text-xs sm:text-sm px-2.5 py-1.5 rounded-lg transition disabled:opacity-50 w-full sm:w-auto"
+              >
+                <Download className="w-3.5 h-3.5" />
+                <span className="sm:hidden">Exportar</span>
+              </button>
+              {showExportMenu && (
+                <div className="absolute left-0 sm:left-auto sm:right-0 mt-2 w-full sm:w-44 bg-white rounded-lg shadow-lg border border-gray-200 z-50">
+                  <div className="py-1 text-sm text-gray-700">
+                    <button
+                      onClick={handleExportCSV}
+                      className="w-full text-left px-4 py-2.5 hover:bg-gray-50 flex items-center gap-2"
                     >
-                      <option value="all">Todas</option>
-                      <option value="unread">Não lidas</option>
-                      <option value="read">Lidas</option>
-                    </select>
+                      <FileText className="w-4 h-4" /> CSV
+                    </button>
+                    <button
+                      onClick={handleExportExcel}
+                      className="w-full text-left px-4 py-2.5 hover:bg-gray-50 flex items-center gap-2"
+                    >
+                      <FileText className="w-4 h-4" /> Excel
+                    </button>
+                    <button
+                      onClick={handleExportPDF}
+                      className="w-full text-left px-4 py-2.5 hover:bg-gray-50 flex items-center gap-2"
+                    >
+                      <FileText className="w-4 h-4" /> PDF
+                    </button>
                   </div>
                 </div>
-              </div>
-            )}
+              )}
+            </div>
+
+            <div className="relative col-span-2 sm:col-span-1 w-full sm:w-auto">
+              <button
+                onClick={() => setShowSettingsMenu((prev) => !prev)}
+                className="inline-flex items-center justify-center gap-1.5 border border-gray-200 text-slate-600 hover:bg-slate-50 text-xs sm:text-sm px-2.5 py-1.5 rounded-lg transition w-full sm:w-auto"
+              >
+                <UserCog className="w-3.5 h-3.5" />
+                <span className="sm:hidden">Configurações</span>
+              </button>
+              {showSettingsMenu && (
+                <div className="absolute left-0 sm:left-auto sm:right-0 mt-2 w-full sm:w-72 bg-white rounded-lg shadow-lg border border-gray-200 z-50 p-4">
+                  <div className="mb-3">
+                    <h3 className="text-sm font-semibold text-slate-900">Configurações</h3>
+                  </div>
+                  <div className="space-y-3">
+                    <label className="flex items-center gap-2 text-sm text-slate-600 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={moduleSettings.defaultGroupByProcess}
+                        onChange={(e) => {
+                          setModuleSettings((prev) => ({
+                            ...prev,
+                            defaultGroupByProcess: e.target.checked,
+                          }));
+                          setGroupByProcess(e.target.checked);
+                        }}
+                        className="rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                      />
+                      Agrupar por processo
+                    </label>
+                    <label className="flex items-center gap-2 text-sm text-slate-600 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={selectionMode}
+                        onChange={(e) => {
+                          setSelectionMode(e.target.checked);
+                          if (!e.target.checked) setSelectedIds(new Set());
+                        }}
+                        className="rounded border-slate-300 text-purple-600 focus:ring-purple-500"
+                      />
+                      Modo seleção múltipla
+                    </label>
+                    <div className="pt-2 border-t border-gray-100">
+                      <label className="block text-xs font-medium text-slate-600 mb-1">Filtro padrão</label>
+                      <select
+                        value={moduleSettings.defaultStatusFilter}
+                        onChange={(e) => {
+                          const value = e.target.value as 'all' | 'unread' | 'read';
+                          setModuleSettings((prev) => ({
+                            ...prev,
+                            defaultStatusFilter: value,
+                          }));
+                        }}
+                        className="w-full px-2 py-1.5 border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-blue-500 text-sm"
+                      >
+                        <option value="all">Todas</option>
+                        <option value="unread">Não lidas</option>
+                        <option value="read">Lidas</option>
+                      </select>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
           </div>
         </div>
 
         {showFilters && (
-          <div className="mt-4 pt-4 border-t border-gray-200">
+          <div className={`${mobileControlsExpanded ? 'block' : 'hidden'} sm:block mt-4 pt-4 border-t border-gray-200`}>
             <h4 className="text-sm font-semibold text-slate-700 mb-3">Filtro por Data Personalizado</h4>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
@@ -1613,9 +1643,9 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
       {/* Lista de Intimações */}
       <div className="space-y-3">
         {filteredIntimations.length === 0 ? (
-          <div className="bg-slate-50 border border-slate-200 rounded-xl p-12 text-center">
-            <FileText className="w-16 h-16 text-slate-300 mx-auto mb-4" />
-            <h4 className="text-lg font-semibold text-slate-900 mb-2">Nenhuma intimação encontrada</h4>
+          <div className="bg-slate-50 border border-slate-200 rounded-xl p-6 sm:p-12 text-center">
+            <FileText className="w-12 h-12 sm:w-16 sm:h-16 text-slate-300 mx-auto mb-4" />
+            <h4 className="text-base sm:text-lg font-semibold text-slate-900 mb-2">Nenhuma intimação encontrada</h4>
             <p className="text-slate-600">
               {statusFilter === 'unread'
                 ? 'Não há intimações não lidas no momento'
@@ -1650,8 +1680,8 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
                     className="inline-flex items-center justify-center gap-1.5 sm:gap-2 px-3 sm:px-4 py-1.5 sm:py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-medium rounded-lg transition text-xs sm:text-sm w-full sm:w-auto"
                   >
                     <CheckCircle className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
-                    <span className="hidden xs:inline">Marcar Todas</span>
-                    <span className="xs:hidden">Marcar Lidas</span>
+                    <span className="hidden sm:inline">Marcar Todas</span>
+                    <span className="sm:hidden">Marcar Lidas</span>
                   </button>
                 )}
               </div>
@@ -1680,7 +1710,7 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
                         setExpandedIntimationIds(newExpanded);
                       }}
                     >
-                      <div className="flex items-start gap-2 sm:gap-3">
+                      <div className="flex items-start gap-2 sm:gap-3 flex-wrap">
                         <div className="flex items-center">
                           {isExpanded ? <ChevronDown className="w-4 h-4 text-slate-600 flex-shrink-0" /> : <ChevronRight className="w-4 h-4 text-slate-600 flex-shrink-0" />}
                         </div>
@@ -1728,7 +1758,7 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
                           </p>
                         </div>
                         {/* Botões de ação - ocultos em mobile quando não expandido */}
-                        <div className={`flex items-center gap-1.5 sm:gap-2 flex-shrink-0 ${!isExpanded ? 'hidden sm:flex' : 'flex'}`}>
+                        <div className={`hidden sm:flex items-center gap-1.5 sm:gap-2 flex-shrink-0 ${!isExpanded ? '' : ''}`}>
                           {!intimation.lida && (
                             <button
                               onClick={(e) => {
@@ -1772,30 +1802,35 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
                       <div className="px-4 pb-4 border-t border-slate-200">
                         {aiAnalysis.has(intimation.id) && (
                           <div className="mt-3 bg-gradient-to-r from-purple-50 to-blue-50 border border-purple-200 rounded-lg p-3 space-y-2">
-                            <div className="flex items-center gap-2 mb-1">
-                              <Sparkles className="w-4 h-4 text-purple-600" />
-                              <h6 className="text-xs font-bold text-purple-900">Análise IA</h6>
+                            <div className="flex items-center justify-between gap-3">
+                              <div className="flex items-center gap-2 min-w-0">
+                                <Sparkles className="w-4 h-4 text-purple-600 flex-shrink-0" />
+                                <h6 className="text-xs font-bold text-purple-900 truncate">Análise IA</h6>
+                              </div>
+                              {(() => {
+                                const analysis = aiAnalysis.get(intimation.id)!;
+                                const urgencyColors = {
+                                  'critica': 'bg-red-100 text-red-800 border-red-300',
+                                  'alta': 'bg-orange-100 text-orange-800 border-orange-300',
+                                  'media': 'bg-yellow-100 text-yellow-800 border-yellow-300',
+                                  'baixa': 'bg-green-100 text-green-800 border-green-300',
+                                };
+                                return (
+                                  <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-semibold border ${urgencyColors[analysis.urgency]}`}>
+                                    {analysis.urgency.toUpperCase()}
+                                  </span>
+                                );
+                              })()}
                             </div>
                             {(() => {
                               const analysis = aiAnalysis.get(intimation.id)!;
-                              const urgencyColors = {
-                                'critica': 'bg-red-100 text-red-800 border-red-300',
-                                'alta': 'bg-orange-100 text-orange-800 border-orange-300',
-                                'media': 'bg-yellow-100 text-yellow-800 border-yellow-300',
-                                'baixa': 'bg-green-100 text-green-800 border-green-300',
-                              };
                               return (
                                 <>
-                                  <div className="flex items-center gap-2">
-                                    <span className="text-xs font-medium text-slate-700">Urgência:</span>
-                                    <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold border ${urgencyColors[analysis.urgency]}`}>
-                                      {analysis.urgency.toUpperCase()}
-                                    </span>
-                                  </div>
-                                  <p className="text-xs text-slate-700"><strong>Resumo:</strong> {analysis.summary}</p>
+                                  <p className="text-xs text-slate-700 line-clamp-3"><strong>Resumo:</strong> {analysis.summary}</p>
                                   {analysis.deadline && (
-                                    <div className="bg-white/70 border border-amber-200 rounded p-2 text-xs">
-                                      <p><strong>{analysis.deadline.days} dias úteis</strong> - {analysis.deadline.description}</p>
+                                    <div className="bg-white/70 border border-amber-200 rounded-lg p-2 text-xs">
+                                      <p className="font-semibold text-slate-900">{analysis.deadline.days} dias úteis</p>
+                                      <p className="text-slate-700">{analysis.deadline.description}</p>
                                       {analysis.deadline.dueDate && (
                                         <p className="text-slate-600 mt-1">Vencimento: {new Date(analysis.deadline.dueDate).toLocaleDateString('pt-BR')}</p>
                                       )}
@@ -1808,16 +1843,16 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
                         )}
                         
                         {/* Botões de Ação - Visualização Agrupada */}
-                        <div className="mt-3 flex flex-wrap gap-2">
+                        <div className="mt-3 grid grid-cols-2 sm:flex sm:flex-wrap gap-2">
                           <button
                             onClick={(e) => {
                               e.stopPropagation();
                               setCurrentIntimationForAction(intimation);
                               setDeadlineModalOpen(true);
                             }}
-                            className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-amber-700 bg-amber-50 hover:bg-amber-100 border border-amber-200 rounded-full transition"
+                            className="inline-flex items-center justify-center gap-2 px-3 py-2 text-xs font-semibold text-amber-800 bg-amber-50 hover:bg-amber-100 border border-amber-200 rounded-lg transition w-full"
                           >
-                            <Clock className="w-3.5 h-3.5" />
+                            <Clock className="w-4 h-4" />
                             Novo Prazo
                           </button>
                           <button
@@ -1826,9 +1861,9 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
                               setCurrentIntimationForAction(intimation);
                               setAppointmentModalOpen(true);
                             }}
-                            className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-slate-700 bg-slate-50 hover:bg-slate-100 border border-slate-200 rounded-full transition"
+                            className="inline-flex items-center justify-center gap-2 px-3 py-2 text-xs font-semibold text-indigo-800 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 rounded-lg transition w-full"
                           >
-                            <CalendarIcon className="w-3.5 h-3.5" />
+                            <CalendarIcon className="w-4 h-4" />
                             Compromisso
                           </button>
                           {!intimation.lida && (
@@ -1837,9 +1872,9 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
                                 e.stopPropagation();
                                 handleMarkAsRead(intimation.id);
                               }}
-                              className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-emerald-700 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 rounded-full transition"
+                              className="inline-flex items-center justify-center gap-2 px-3 py-2 text-xs font-semibold text-emerald-800 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 rounded-lg transition w-full"
                             >
-                              <CheckCircle className="w-3.5 h-3.5" />
+                              <CheckCircle className="w-4 h-4" />
                               Marcar Lida
                             </button>
                           )}
@@ -1851,9 +1886,9 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
                               setSelectedProcessId(intimation.process_id || '');
                               setLinkModalOpen(true);
                             }}
-                            className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-blue-700 bg-blue-50 hover:bg-blue-100 border border-blue-200 rounded-full transition"
+                            className="inline-flex items-center justify-center gap-2 px-3 py-2 text-xs font-semibold text-blue-800 bg-blue-50 hover:bg-blue-100 border border-blue-200 rounded-lg transition w-full"
                           >
-                            <Link2 className="w-3.5 h-3.5" />
+                            <Link2 className="w-4 h-4" />
                             Vincular
                           </button>
                           {intimation.link && (
@@ -1862,12 +1897,22 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
                               target="_blank"
                               rel="noopener noreferrer"
                               onClick={(e) => e.stopPropagation()}
-                              className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-purple-700 bg-purple-50 hover:bg-purple-100 border border-purple-200 rounded-full transition"
+                              className="inline-flex items-center justify-center gap-2 px-3 py-2 text-xs font-semibold text-purple-800 bg-purple-50 hover:bg-purple-100 border border-purple-200 rounded-lg transition w-full"
                             >
-                              <ExternalLink className="w-3.5 h-3.5" />
+                              <ExternalLink className="w-4 h-4" />
                               Ver Diário
                             </a>
                           )}
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setSelectedIntimation(intimation);
+                            }}
+                            className="inline-flex items-center justify-center gap-2 px-3 py-2 text-xs font-semibold text-slate-800 bg-white hover:bg-slate-50 border border-slate-200 rounded-lg transition w-full sm:w-auto"
+                          >
+                            <Eye className="w-4 h-4" />
+                            Detalhes
+                          </button>
                         </div>
                       </div>
                     )}
@@ -2089,64 +2134,73 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
                                     </ul>
                                   </div>
                                 )}
-
-                                {/* Botões de Ação Rápida */}
-                                <div className="pt-3 border-t border-purple-200">
-                                  <h6 className="text-xs font-semibold text-slate-900 mb-2 flex items-center gap-1">
-                                    ⚡ Ações Rápidas:
-                                  </h6>
-                                  <div className="flex flex-wrap gap-2">
-                                    {analysis.deadline && (
-                                      <button
-                                        onClick={(e) => {
-                                          e.stopPropagation();
-                                          handleCreateDeadline(intimation);
-                                        }}
-                                        className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-amber-600 hover:bg-amber-700 text-white text-xs font-semibold rounded-lg transition"
-                                      >
-                                        <Clock className="w-3.5 h-3.5" />
-                                        Criar Prazo ({analysis.deadline.days}d)
-                                      </button>
-                                    )}
-                                    <button
-                                      onClick={(e) => {
-                                        e.stopPropagation();
-                                        handleCreateAppointment(intimation);
-                                      }}
-                                      className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold rounded-lg transition"
-                                    >
-                                      <CalendarIcon className="w-3.5 h-3.5" />
-                                      Agendar Compromisso
-                                    </button>
-                                    {!intimation.lida && (
-                                      <button
-                                        onClick={(e) => {
-                                          e.stopPropagation();
-                                          handleMarkAsRead(intimation.id);
-                                        }}
-                                        className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold rounded-lg transition"
-                                      >
-                                        <CheckCircle className="w-3.5 h-3.5" />
-                                        Marcar como Lida
-                                      </button>
-                                    )}
-                                    {!intimation.client_id && (
-                                      <button
-                                        onClick={(e) => {
-                                          e.stopPropagation();
-                                          handleOpenLinkModal(intimation);
-                                        }}
-                                        className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-purple-600 hover:bg-purple-700 text-white text-xs font-semibold rounded-lg transition"
-                                      >
-                                        <Link2 className="w-3.5 h-3.5" />
-                                        Vincular Cliente
-                                      </button>
-                                    )}
-                                  </div>
-                                </div>
                               </>
                             );
                           })()}
+                        </div>
+                      )}
+
+                      {/* Ações (Mobile/Expandido) */}
+                      {!selectionMode && (
+                        <div className="grid grid-cols-2 sm:hidden gap-2">
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleCreateDeadline(intimation);
+                            }}
+                            className="inline-flex items-center justify-center gap-2 px-3 py-2 text-xs font-semibold text-amber-800 bg-amber-50 hover:bg-amber-100 border border-amber-200 rounded-lg transition w-full"
+                          >
+                            <Clock className="w-4 h-4" />
+                            Novo Prazo
+                          </button>
+
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleCreateAppointment(intimation);
+                            }}
+                            className="inline-flex items-center justify-center gap-2 px-3 py-2 text-xs font-semibold text-indigo-800 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 rounded-lg transition w-full"
+                          >
+                            <CalendarIcon className="w-4 h-4" />
+                            Compromisso
+                          </button>
+
+                          {!intimation.lida && (
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleMarkAsRead(intimation.id);
+                              }}
+                              className="inline-flex items-center justify-center gap-2 px-3 py-2 text-xs font-semibold text-emerald-800 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 rounded-lg transition w-full"
+                            >
+                              <CheckCircle className="w-4 h-4" />
+                              Marcar Lida
+                            </button>
+                          )}
+
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleOpenLinkModal(intimation);
+                            }}
+                            className="inline-flex items-center justify-center gap-2 px-3 py-2 text-xs font-semibold text-blue-800 bg-blue-50 hover:bg-blue-100 border border-blue-200 rounded-lg transition w-full"
+                          >
+                            <Link2 className="w-4 h-4" />
+                            Vincular
+                          </button>
+
+                          {intimation.link && (
+                            <a
+                              href={intimation.link}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              onClick={(e) => e.stopPropagation()}
+                              className="col-span-2 inline-flex items-center justify-center gap-2 px-3 py-2 text-xs font-semibold text-purple-800 bg-purple-50 hover:bg-purple-100 border border-purple-200 rounded-lg transition w-full"
+                            >
+                              <ExternalLink className="w-4 h-4" />
+                              Ver Diário
+                            </a>
+                          )}
                         </div>
                       )}
 
@@ -2181,7 +2235,7 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
 
                 {/* Botões de ação - Ocultos em mobile quando não expandido */}
                 {!selectionMode && (
-                  <div className={`flex flex-col gap-1.5 sm:gap-2 ${!isExpanded ? 'hidden sm:flex' : 'flex'}`}>
+                  <div className={`hidden sm:flex flex-col gap-1.5 sm:gap-2 ${isExpanded ? 'sm:hidden' : ''}`}>
                     <button
                       onClick={(e) => {
                         e.stopPropagation();

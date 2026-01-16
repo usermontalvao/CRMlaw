@@ -1,5 +1,17 @@
 # Changelog
 
+## 1.9.349
+- **Intimações (Mobile)**: Seção expandida melhorada (Análise IA + ações) com layout mais limpo, remoção de botões duplicados e ações organizadas em grid.
+
+## 1.9.348
+- **Intimações (Mobile)**: Painel de filtros e ações agora é expansível/retrátil no mobile (busca fica sempre visível; selects e botões ficam recolhíveis para economizar espaço).
+
+## 1.9.347
+- **Intimações (Mobile)**: Na lista agrupada por processo, os botões de ação agora quebram para baixo no mobile quando a intimação está expandida, evitando que o texto fique espremido e quebre palavra por palavra.
+
+## 1.9.346
+- **Intimações (Mobile)**: Ajustado layout responsivo do módulo de Intimações DJEN para evitar overflow em telas pequenas. Busca agora ocupa linha própria; filtros e botões em grid responsivo (2 colunas no mobile, flex no desktop). Dropdowns (Limpar/Exportar/Configurações) agora abrem em largura total no mobile para não cortar conteúdo. Estado vazio compactado com ícones e textos menores. Botões com textos abreviados no mobile (Filtros/Limpar/Exportar/Configurações).
+
 ## 1.9.340
 - **Perfil (Mobile)**: Ajustado layout do perfil para telas pequenas (banner, avatar, botões e abas com scroll horizontal), evitando sobreposição com o widget flutuante.
 
