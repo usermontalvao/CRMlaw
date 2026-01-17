@@ -74,6 +74,7 @@ interface CalendarModuleProps {
     client_name?: string;
   };
   forceCreate?: boolean;
+  focusEventId?: string;
   onParamConsumed?: () => void;
 }
 
@@ -103,6 +104,7 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({
   onEditSystemEntity,
   prefillData,
   forceCreate,
+  focusEventId,
   onParamConsumed,
 }) => {
   const { confirmDelete } = useDeleteConfirm();
@@ -175,15 +177,6 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({
     [clients, newEventForm.client_id],
   );
 
-  const currentMonthName = useMemo(() => {
-    return calendarTitle || new Date().toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' });
-  }, [calendarTitle]);
-
-  useEffect(() => {
-    if (!feedback) return;
-    const timeout = window.setTimeout(() => setFeedback(null), 4000);
-    return () => window.clearTimeout(timeout);
-  }, [feedback]);
   const clientMap = useMemo(() => {
     const map = new Map<string, Client>();
     clients.forEach((client) => {
@@ -194,6 +187,68 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({
     return map;
   }, [clients]);
 
+  const focusEventConsumedRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    if (!focusEventId) return;
+    if (focusEventConsumedRef.current === focusEventId) return;
+    if (calendarEventsData.length === 0) return;
+
+    focusEventConsumedRef.current = focusEventId;
+    const event = calendarEventsData.find((e) => e.id === focusEventId) || null;
+    if (!event) {
+      if (onParamConsumed) onParamConsumed();
+      return;
+    }
+
+    const startAt = event.start_at;
+    const endAt = event.end_at || undefined;
+    const hasTime =
+      Boolean(startAt) &&
+      typeof startAt === 'string' &&
+      startAt.includes('T') &&
+      startAt.slice(11, 16) !== '00:00';
+
+    const moduleLink =
+      event.event_type === 'deadline'
+        ? 'prazos'
+        : event.event_type === 'hearing'
+        ? 'processos'
+        : event.event_type === 'requirement' || event.event_type === 'pericia'
+        ? 'requerimentos'
+        : event.event_type === 'payment'
+        ? 'financeiro'
+        : undefined;
+
+    setSelectedEvent({
+      title: event.title,
+      start: startAt,
+      end: endAt,
+      allDay: !hasTime,
+      extendedProps: {
+        type: event.event_type,
+        status: event.status,
+        description: event.description ?? undefined,
+        data: event,
+        moduleLink,
+        clientName: event.client_id ? clientMap.get(event.client_id)?.full_name : undefined,
+        clientPhone: event.client_id ? (clientMap.get(event.client_id)?.mobile || clientMap.get(event.client_id)?.phone) : undefined,
+        calendarEventId: event.id,
+      },
+    });
+
+    if (onParamConsumed) onParamConsumed();
+  }, [calendarEventsData, clientMap, focusEventId, onParamConsumed]);
+
+  const currentMonthName = useMemo(() => {
+    return calendarTitle || new Date().toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' });
+  }, [calendarTitle]);
+
+  useEffect(() => {
+    if (!feedback) return;
+    const timeout = window.setTimeout(() => setFeedback(null), 4000);
+    return () => window.clearTimeout(timeout);
+  }, [feedback]);
   // Calcular estatísticas
   const stats = useMemo(() => {
     // Usar timezone de Cuiabá (UTC-4)

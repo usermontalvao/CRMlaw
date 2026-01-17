@@ -322,6 +322,27 @@ const MainApp: React.FC = () => {
   const clientsForceCreate = clientsParams?.mode === 'create';
   const clientsFocusClientId = clientsParams?.mode === 'details' ? clientsParams.entityId : undefined;
 
+  const agendaParams = useMemo(() => {
+    const raw = moduleParams['agenda'] || moduleParams['calendar'];
+    if (!raw) return null;
+    try {
+      return JSON.parse(raw);
+    } catch (error) {
+      console.error('Erro ao interpretar parâmetros de agenda:', error);
+      return null;
+    }
+  }, [moduleParams]);
+
+  const financeiroParams = useMemo(() => {
+    if (!moduleParams['financeiro']) return null;
+    try {
+      return JSON.parse(moduleParams['financeiro']);
+    } catch (error) {
+      console.error('Erro ao interpretar parâmetros do financeiro:', error);
+      return null;
+    }
+  }, [moduleParams]);
+
   const PROFILE_CACHE_KEY = 'crm-profile-cache';
   const NOTIFICATIONS_CACHE_KEY = 'crm-notifications-cache';
   const LAST_LOGIN_CPF_KEY = 'crm-last-login-cpf';
@@ -1497,9 +1518,13 @@ const MainApp: React.FC = () => {
                     navigateTo(module as any);
                   }
                 }}
-                forceCreate={moduleParams['calendar'] ? JSON.parse(moduleParams['calendar']).mode === 'create' : false}
-                prefillData={moduleParams['calendar'] ? JSON.parse(moduleParams['calendar']).prefill : undefined}
-                onParamConsumed={() => clearModuleParams('calendar')}
+                forceCreate={agendaParams?.mode === 'create'}
+                prefillData={agendaParams?.prefill}
+                focusEventId={agendaParams?.entityId}
+                onParamConsumed={() => {
+                  clearModuleParams('agenda');
+                  clearModuleParams('calendar');
+                }}
               />
             )}
             {activeModule === 'tarefas' && (
@@ -1511,7 +1536,12 @@ const MainApp: React.FC = () => {
             )}
             {activeModule === 'chat' && <ChatModule />}
             {activeModule === 'notificacoes' && <NotificationsModuleNew onNavigateToModule={handleNavigateToModule} />}
-            {activeModule === 'financeiro' && <FinancialModule />}
+            {activeModule === 'financeiro' && (
+              <FinancialModule
+                entityId={financeiroParams?.entityId}
+                onParamConsumed={() => clearModuleParams('financeiro')}
+              />
+            )}
             {activeModule === 'assinaturas' && (
               <SignatureModule 
                 prefillData={moduleParams['assinaturas'] ? JSON.parse(moduleParams['assinaturas']).prefill : undefined}

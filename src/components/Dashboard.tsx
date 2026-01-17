@@ -4415,7 +4415,14 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToModule, params }) => 
                         {post.preview_data.financeiro && (
                           <div 
                             className="bg-gradient-to-r from-emerald-500 to-emerald-600 rounded-lg p-3 cursor-pointer hover:shadow-md transition-shadow"
-                            onClick={() => handleNavigate('financeiro')}
+                            onClick={() => {
+                              const agreementId = post.entity_references?.find((e) => e.type === 'financial')?.id;
+                              if (agreementId) {
+                                handleNavigate('financeiro', { entityId: agreementId });
+                                return;
+                              }
+                              handleNavigate('financeiro');
+                            }}
                           >
                             <div className="flex items-center gap-2 mb-2">
                               <DollarSign className="w-4 h-4 text-white" />
@@ -4442,7 +4449,14 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToModule, params }) => 
                         {post.preview_data.cliente && (
                           <div 
                             className="bg-gradient-to-r from-blue-500 to-blue-600 rounded-lg p-3 cursor-pointer hover:shadow-md transition-shadow"
-                            onClick={() => handleNavigate('clientes', { selectedId: post.preview_data.cliente?.id || '' })}
+                            onClick={() => {
+                              const clientId = post.preview_data?.cliente?.id;
+                              if (clientId) {
+                                handleNavigate('clientes', { mode: 'details', entityId: clientId });
+                                return;
+                              }
+                              handleNavigate('clientes');
+                            }}
                           >
                             <div className="flex items-center gap-3">
                               <div className="w-10 h-10 rounded-full bg-white/20 flex items-center justify-center text-white">
@@ -4460,7 +4474,14 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToModule, params }) => 
                         {post.preview_data.processo && (
                           <div 
                             className="bg-gradient-to-r from-purple-500 to-purple-600 rounded-lg p-3 cursor-pointer hover:shadow-md transition-shadow"
-                            onClick={() => handleNavigate('processos', { selectedId: post.preview_data.processo?.id || '' })}
+                            onClick={() => {
+                              const processId = post.preview_data?.processo?.id;
+                              if (processId) {
+                                handleNavigate('processos', { entityId: processId });
+                                return;
+                              }
+                              handleNavigate('processos');
+                            }}
                           >
                             <div className="flex items-center gap-3">
                               <div className="w-10 h-10 rounded-full bg-white/20 flex items-center justify-center text-white">
@@ -4478,7 +4499,14 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToModule, params }) => 
                         {post.preview_data.prazo && (
                           <div 
                             className="bg-gradient-to-r from-red-500 to-red-600 rounded-lg p-3 cursor-pointer hover:shadow-md transition-shadow"
-                            onClick={() => handleNavigate('prazos', { selectedId: post.preview_data.prazo?.id || '' })}
+                            onClick={() => {
+                              const deadlineId = post.preview_data?.prazo?.id;
+                              if (deadlineId) {
+                                handleNavigate('prazos', { entityId: deadlineId });
+                                return;
+                              }
+                              handleNavigate('prazos');
+                            }}
                           >
                             <div className="flex items-center gap-3">
                               <div className="w-10 h-10 rounded-full bg-white/20 flex items-center justify-center text-white">
@@ -4496,7 +4524,14 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToModule, params }) => 
                         {post.preview_data.agenda && (
                           <div 
                             className="bg-gradient-to-r from-amber-500 to-amber-600 rounded-lg p-3 cursor-pointer hover:shadow-md transition-shadow"
-                            onClick={() => handleNavigate('agenda', { selectedId: post.preview_data.agenda?.id || '' })}
+                            onClick={() => {
+                              const calendarEventId = post.preview_data?.agenda?.id;
+                              if (calendarEventId) {
+                                handleNavigate('agenda', { entityId: calendarEventId });
+                                return;
+                              }
+                              handleNavigate('agenda');
+                            }}
                           >
                             <div className="flex items-center gap-3">
                               <div className="w-10 h-10 bg-white/20 rounded-lg flex items-center justify-center text-white">
@@ -4514,7 +4549,14 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToModule, params }) => 
                         {post.preview_data.documento && (
                           <div 
                             className="bg-gradient-to-r from-indigo-500 to-indigo-600 rounded-lg p-3 cursor-pointer hover:shadow-md transition-shadow"
-                            onClick={() => handleNavigate('documentos', { selectedId: post.preview_data.documento?.id || '' })}
+                            onClick={() => {
+                              const docId = post.preview_data?.documento?.id;
+                              if (docId) {
+                                handleNavigate('documentos', { entityId: docId });
+                                return;
+                              }
+                              handleNavigate('documentos');
+                            }}
                           >
                             <div className="flex items-center gap-3">
                               <div className="w-10 h-10 bg-white/20 rounded-lg flex items-center justify-center text-white">
@@ -4532,7 +4574,14 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToModule, params }) => 
                         {post.preview_data.peticao && (
                           <div 
                             className="bg-gradient-to-r from-cyan-500 to-cyan-600 rounded-lg p-3 cursor-pointer hover:shadow-md transition-shadow"
-                            onClick={() => handleNavigate('peticoes', { selectedId: post.preview_data.peticao?.id || '' })}
+                            onClick={() => {
+                              const petId = post.preview_data?.peticao?.id;
+                              if (petId) {
+                                handleNavigate('peticoes', { entityId: petId });
+                                return;
+                              }
+                              handleNavigate('peticoes');
+                            }}
                           >
                             <div className="flex items-center gap-3">
                               <div className="w-10 h-10 bg-white/20 rounded-lg flex items-center justify-center text-white">
@@ -4550,7 +4599,14 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToModule, params }) => 
                         {post.preview_data.assinatura && (
                           <div 
                             className="bg-gradient-to-r from-pink-500 to-pink-600 rounded-lg p-3 cursor-pointer hover:shadow-md transition-shadow"
-                            onClick={() => handleNavigate('assinaturas', { selectedId: post.preview_data.assinatura?.id || '' })}
+                            onClick={() => {
+                              const requestId = post.preview_data?.assinatura?.id;
+                              if (requestId) {
+                                handleNavigate('assinaturas', { mode: 'details', requestId });
+                                return;
+                              }
+                              handleNavigate('assinaturas');
+                            }}
                           >
                             <div className="flex items-center gap-3">
                               <div className="w-10 h-10 bg-white/20 rounded-lg flex items-center justify-center text-white">
@@ -4570,7 +4626,14 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToModule, params }) => 
                         {post.preview_data.requerimento && (
                           <div 
                             className="bg-gradient-to-r from-orange-500 to-orange-600 rounded-lg p-3 cursor-pointer hover:shadow-md transition-shadow"
-                            onClick={() => handleNavigate('requerimentos', { selectedId: post.preview_data.requerimento?.id || '' })}
+                            onClick={() => {
+                              const reqId = post.preview_data?.requerimento?.id;
+                              if (reqId) {
+                                handleNavigate('requerimentos', { entityId: reqId });
+                                return;
+                              }
+                              handleNavigate('requerimentos');
+                            }}
                           >
                             <div className="flex items-center gap-3">
                               <div className="w-10 h-10 bg-white/20 rounded-lg flex items-center justify-center text-white">

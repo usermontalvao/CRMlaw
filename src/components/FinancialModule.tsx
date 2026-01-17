@@ -56,7 +56,12 @@ import type {
 import type { Client } from '../types/client.types';
 import { events, SYSTEM_EVENTS } from '../utils/events';
 
-const FinancialModule: React.FC = () => {
+interface FinancialModuleProps {
+  entityId?: string;
+  onParamConsumed?: () => void;
+}
+
+const FinancialModule: React.FC<FinancialModuleProps> = ({ entityId, onParamConsumed }) => {
   const toast = useToastContext();
   const { confirmDelete } = useDeleteConfirm();
   const { user } = useAuth();
@@ -194,6 +199,8 @@ const FinancialModule: React.FC = () => {
   const [loadingAudit, setLoadingAudit] = useState(false);
   const [auditAgreementId, setAuditAgreementId] = useState<string | null>(null);
   const [auditFilterMonth, setAuditFilterMonth] = useState(new Date().toISOString().slice(0, 7));
+
+  const focusAgreementConsumedRef = React.useRef<string | null>(null);
 
   const loadData = useCallback(async (month?: string) => {
     try {
@@ -765,18 +772,34 @@ const FinancialModule: React.FC = () => {
       const installmentsData = await financialService.listInstallments(agreement.id);
       setInstallments(installmentsData);
       await ensureOverdueDeadlines(agreement, installmentsData);
-    } catch (err: any) {
-      toast.error('Erro ao carregar parcelas', err.message);
+    } catch (error) {
+      console.error('Erro ao carregar parcelas:', error);
     } finally {
       setLoadingInstallments(false);
     }
   };
 
-  const handleCloseDetails = () => {
+  const handleCloseDetails = useCallback(() => {
     setIsDetailsModalOpen(false);
     setSelectedAgreement(null);
     setInstallments([]);
-  };
+  }, []);
+
+  useEffect(() => {
+    if (!entityId) return;
+    if (focusAgreementConsumedRef.current === entityId) return;
+    if (loading) return;
+
+    focusAgreementConsumedRef.current = entityId;
+    const agreement = agreements.find((a) => a.id === entityId) || null;
+    if (agreement) {
+      void handleOpenDetails(agreement);
+    }
+
+    if (onParamConsumed) {
+      onParamConsumed();
+    }
+  }, [agreements, entityId, loading, onParamConsumed]);
 
   const handleOpenPaymentModal = (installment: Installment) => {
     setSelectedInstallment(installment);

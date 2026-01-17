@@ -560,6 +560,60 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
 
 const releases: ReleaseNote[] = [
   {
+    version: '1.9.352',
+    date: '17/01/2026',
+    summary: 'Feed: cards agora abrem direto o modal de detalhes (não a lista do módulo).',
+    modules: [
+      {
+        moduleId: 'feed',
+        changes: [
+          {
+            type: 'fix',
+            title: 'Cards de preview abrem detalhes do registro',
+            description:
+              'Ao clicar em um card (Cliente/Processo/Prazo/Agenda/Financeiro etc.), o sistema agora navega com params (`entityId`/`mode: details`) para abrir o modal de detalhes do item, em vez de levar para a lista geral do módulo. Agenda e Financeiro agora suportam deep-link por ID.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.351',
+    date: '17/01/2026',
+    summary: 'Feed: redesign completo com visual limpo e profissional.',
+    modules: [
+      {
+        moduleId: 'feed',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'UI/UX do Feed redesenhado',
+            description:
+              'Avatar fallback agora usa cor neutra (slate) ao invés de gradiente roxo. Cards de preview (Financeiro, Processo, Prazo, etc) com design clean: bordas sutis, fundo branco/slate, sem gradientes saturados. Tags com cores mais discretas.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.350',
+    date: '17/01/2026',
+    summary: 'Feed: avatar agora usa a mesma origem do Nav/Perfil (fallback via user_metadata).',
+    modules: [
+      {
+        moduleId: 'feed',
+        changes: [
+          {
+            type: 'fix',
+            title: 'Foto do avatar no Feed unificada com o Nav',
+            description:
+              'O Feed agora resolve a foto do usuário/autor com o mesmo padrão do Nav: prioriza profiles.avatar_url e faz fallback para user_metadata (avatar_url/picture/etc), evitando avatar vazio.',
+          },
+        ],
+      },
+    ],
+  },
+  {
     version: '1.9.349',
     date: '15/01/2026',
     summary: 'Intimações: seção expandida melhorada no mobile com layout limpo e ações em grid.',

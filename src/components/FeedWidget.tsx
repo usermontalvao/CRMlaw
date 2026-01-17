@@ -19,11 +19,11 @@ import {
   Image,
   Smile
 } from 'lucide-react';
-import { feedPostsService, type FeedPost, type PreviewData, type TagRecord } from '../services/feedPosts.service';
+import { feedPostsService, type EntityReference, type FeedPost, type PreviewData, type TagRecord } from '../services/feedPosts.service';
 import { profileService, type Profile } from '../services/profile.service';
 import { useAuth } from '../contexts/AuthContext';
 
-// Avatar component
+// Avatar component - Design clean e profissional
 const Avatar: React.FC<{ src?: string | null; name: string; size?: 'sm' | 'md' | 'lg' }> = ({ src, name, size = 'md' }) => {
   const sizeClasses = {
     sm: 'w-8 h-8 text-xs',
@@ -32,7 +32,7 @@ const Avatar: React.FC<{ src?: string | null; name: string; size?: 'sm' | 'md' |
   };
 
   if (src) {
-    return <img src={src} alt={name} className={`${sizeClasses[size]} rounded-full object-cover`} />;
+    return <img src={src} alt={name} className={`${sizeClasses[size]} rounded-full object-cover ring-2 ring-slate-100`} />;
   }
 
   const initials = name
@@ -43,7 +43,7 @@ const Avatar: React.FC<{ src?: string | null; name: string; size?: 'sm' | 'md' |
     .slice(0, 2);
 
   return (
-    <div className={`${sizeClasses[size]} rounded-full bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center text-white font-bold`}>
+    <div className={`${sizeClasses[size]} rounded-full bg-slate-600 flex items-center justify-center text-white font-semibold ring-2 ring-slate-100`}>
       {initials}
     </div>
   );
@@ -81,7 +81,7 @@ interface FeedWidgetProps {
   entityName?: string; // Nome da entidade para exibição
   compact?: boolean; // Modo compacto para sidebars
   maxPosts?: number; // Limite de posts a exibir
-  onNavigate?: (module: string) => void; // Callback para navegação
+  onNavigate?: (module: string, params?: Record<string, string>) => void; // Callback para navegação
 }
 
 export const FeedWidget: React.FC<FeedWidgetProps> = ({
@@ -112,16 +112,50 @@ export const FeedWidget: React.FC<FeedWidgetProps> = ({
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
   const [uploadingAttachment, setUploadingAttachment] = useState(false);
   const [pendingAttachments, setPendingAttachments] = useState<Array<{ localUrl: string; attachment: any }>>([]);
+  const [selectedEntities, setSelectedEntities] = useState<EntityReference[]>([]);
 
-  // Tags disponíveis
+  // Tags disponíveis - Cores mais sutis e profissionais
   const availableTags = [
-    { id: 'financeiro', label: 'Financeiro', icon: DollarSign, color: 'bg-emerald-100 text-emerald-700' },
-    { id: 'processo', label: 'Processo', icon: Gavel, color: 'bg-purple-100 text-purple-700' },
-    { id: 'prazo', label: 'Prazo', icon: Timer, color: 'bg-red-100 text-red-700' },
-    { id: 'cliente', label: 'Cliente', icon: Users, color: 'bg-blue-100 text-blue-700' },
-    { id: 'agenda', label: 'Agenda', icon: Calendar, color: 'bg-amber-100 text-amber-700' },
-    { id: 'documento', label: 'Documento', icon: FileText, color: 'bg-indigo-100 text-indigo-700' },
+    { id: 'financeiro', label: 'Financeiro', icon: DollarSign, color: 'bg-slate-100 text-slate-600 border border-slate-200' },
+    { id: 'processo', label: 'Processo', icon: Gavel, color: 'bg-slate-100 text-slate-600 border border-slate-200' },
+    { id: 'prazo', label: 'Prazo', icon: Timer, color: 'bg-slate-100 text-slate-600 border border-slate-200' },
+    { id: 'cliente', label: 'Cliente', icon: Users, color: 'bg-slate-100 text-slate-600 border border-slate-200' },
+    { id: 'agenda', label: 'Agenda', icon: Calendar, color: 'bg-slate-100 text-slate-600 border border-slate-200' },
+    { id: 'documento', label: 'Documento', icon: FileText, color: 'bg-slate-100 text-slate-600 border border-slate-200' },
   ];
+
+  const profilesByUserId = useMemo(() => {
+    return new Map<string, Profile>(allProfiles.map((p) => [p.user_id, p]));
+  }, [allProfiles]);
+
+  const resolvedCurrentAvatarUrl = useMemo(() => {
+    const meta: any = (user as any)?.user_metadata || {};
+    return (
+      currentProfile?.avatar_url ||
+      meta?.avatar_url ||
+      meta?.picture ||
+      meta?.avatarUrl ||
+      meta?.photoURL ||
+      null
+    );
+  }, [currentProfile?.avatar_url, user]);
+
+  const resolvePostAuthorAvatarUrl = useCallback(
+    (post: FeedPost): string | null => {
+      const direct = post.author?.avatar_url;
+      if (direct) return direct;
+
+      const fromProfiles = profilesByUserId.get(post.author_id)?.avatar_url;
+      if (fromProfiles) return fromProfiles;
+
+      if (user?.id && post.author_id === user.id) {
+        return resolvedCurrentAvatarUrl;
+      }
+
+      return null;
+    },
+    [profilesByUserId, resolvedCurrentAvatarUrl, user?.id]
+  );
 
   // Carregar perfil atual e todos os perfis
   useEffect(() => {
@@ -294,6 +328,28 @@ export const FeedWidget: React.FC<FeedWidgetProps> = ({
     }
     
     setPreviewData(prev => ({ ...prev, ...record.previewData }));
+
+    if (selectedTagForRecords) {
+      const type: EntityReference['type'] | null =
+        selectedTagForRecords === 'cliente' ? 'client' :
+        selectedTagForRecords === 'processo' ? 'process' :
+        selectedTagForRecords === 'prazo' ? 'deadline' :
+        selectedTagForRecords === 'agenda' ? 'calendar' :
+        selectedTagForRecords === 'financeiro' ? 'financial' :
+        selectedTagForRecords === 'requerimento' ? 'requirement' :
+        selectedTagForRecords === 'documento' ? 'document' :
+        selectedTagForRecords === 'peticao' ? 'petition' :
+        selectedTagForRecords === 'assinatura' ? 'signature' :
+        null;
+
+      if (type) {
+        setSelectedEntities((prev) => {
+          if (prev.some((e) => e.type === type && e.id === record.id)) return prev;
+          return [...prev, { type, id: record.id }];
+        });
+      }
+    }
+
     setSelectedTagForRecords(null);
     setTagRecords([]);
     setShowTagDropdown(false);
@@ -395,7 +451,7 @@ export const FeedWidget: React.FC<FeedWidgetProps> = ({
         content: postText,
         tags: finalTags,
         mentions: mentionedIds,
-        entity_references: [],
+        entity_references: selectedEntities,
         preview_data: finalPreviewData,
         attachments: pendingAttachments.map((p) => p.attachment)
       });
@@ -403,6 +459,7 @@ export const FeedWidget: React.FC<FeedWidgetProps> = ({
       setFeedPosts(prev => [newPost, ...prev]);
       setPostText('');
       setSelectedTags([]);
+      setSelectedEntities([]);
       setPreviewData({});
       pendingAttachments.forEach((p) => {
         try {
@@ -415,7 +472,7 @@ export const FeedWidget: React.FC<FeedWidgetProps> = ({
     } finally {
       setPostingInProgress(false);
     }
-  }, [postText, selectedTags, previewData, allProfiles, postingInProgress, moduleContext, pendingAttachments]);
+  }, [postText, selectedTags, selectedEntities, previewData, allProfiles, postingInProgress, moduleContext, pendingAttachments]);
 
   // Dar/remover like
   const handleToggleLike = useCallback(async (postId: string, currentlyLiked: boolean) => {
@@ -442,10 +499,15 @@ export const FeedWidget: React.FC<FeedWidgetProps> = ({
 
   // Navegação
   const handleNavigate = (module: string) => {
-    if (onNavigate) {
-      onNavigate(module);
-    }
+    onNavigate?.(module);
   };
+
+  const handleNavigateDetails = useCallback(
+    (module: string, params?: Record<string, string>) => {
+      onNavigate?.(module, params);
+    },
+    [onNavigate]
+  );
 
   if (compact) {
     // Modo compacto para sidebars
@@ -473,7 +535,7 @@ export const FeedWidget: React.FC<FeedWidgetProps> = ({
               {feedPosts.slice(0, 5).map(post => (
                 <div key={post.id} className="p-3 hover:bg-slate-50">
                   <div className="flex items-start gap-2">
-                    <Avatar src={post.author?.avatar_url} name={post.author?.name || 'U'} size="sm" />
+                    <Avatar src={resolvePostAuthorAvatarUrl(post)} name={post.author?.name || 'U'} size="sm" />
                     <div className="flex-1 min-w-0">
                       <p className="text-xs font-medium text-slate-900 truncate">{post.author?.name}</p>
                       <p className="text-xs text-slate-600 line-clamp-2">{renderContentWithMentions(post.content)}</p>
@@ -519,7 +581,7 @@ export const FeedWidget: React.FC<FeedWidgetProps> = ({
       <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
         <div className="p-4">
           <div className="flex gap-3">
-            <Avatar src={currentProfile?.avatar_url} name={currentProfile?.name || 'Usuário'} size="md" />
+            <Avatar src={resolvedCurrentAvatarUrl} name={currentProfile?.name || 'Usuário'} size="md" />
             <div className="flex-1 relative">
               <textarea
                 ref={postInputRef}
@@ -760,7 +822,7 @@ export const FeedWidget: React.FC<FeedWidgetProps> = ({
             <div key={post.id} className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
               {/* Header do Post */}
               <div className="p-4 pb-2 flex gap-3">
-                <Avatar src={post.author?.avatar_url} name={post.author?.name || 'Usuário'} />
+                <Avatar src={resolvePostAuthorAvatarUrl(post)} name={post.author?.name || 'Usuário'} />
                 <div className="flex flex-col flex-1">
                   <div className="flex items-center gap-2">
                     <p className="text-slate-900 font-bold text-sm">{post.author?.name || 'Usuário'}</p>
@@ -812,30 +874,39 @@ export const FeedWidget: React.FC<FeedWidgetProps> = ({
                   </div>
                 )}
                 
-                {/* Cards de Preview */}
+                {/* Cards de Preview - Design clean com bordas sutis */}
                 {post.preview_data && Object.keys(post.preview_data).length > 0 && (
                   <div className="space-y-2 mt-3">
                     {post.preview_data.financeiro && (
                       <div 
-                        className="bg-gradient-to-r from-emerald-500 to-emerald-600 rounded-lg p-3 cursor-pointer hover:shadow-md transition-shadow"
-                        onClick={() => handleNavigate('financeiro')}
+                        className="bg-slate-50 border border-slate-200 rounded-lg p-3 cursor-pointer hover:bg-slate-100 transition-colors"
+                        onClick={() => {
+                          const agreementId = post.entity_references?.find((e) => e.type === 'financial')?.id;
+                          if (agreementId) {
+                            handleNavigateDetails('financeiro', { entityId: agreementId });
+                            return;
+                          }
+                          handleNavigate('financeiro');
+                        }}
                       >
                         <div className="flex items-center gap-2 mb-2">
-                          <DollarSign className="w-4 h-4 text-white" />
-                          <span className="text-white font-bold text-sm">Resumo Financeiro</span>
+                          <div className="w-6 h-6 rounded bg-emerald-100 flex items-center justify-center">
+                            <DollarSign className="w-3.5 h-3.5 text-emerald-600" />
+                          </div>
+                          <span className="text-slate-700 font-semibold text-sm">Resumo Financeiro</span>
                         </div>
                         <div className="grid grid-cols-3 gap-2">
-                          <div className="bg-white/20 rounded-lg p-2 text-center">
-                            <p className="text-white/80 text-[10px]">Recebido</p>
-                            <p className="text-white font-bold text-sm">{formatCurrency(post.preview_data.financeiro.recebido)}</p>
+                          <div className="bg-white border border-slate-100 rounded-md p-2 text-center">
+                            <p className="text-slate-500 text-[10px] font-medium">Recebido</p>
+                            <p className="text-emerald-600 font-bold text-sm">{formatCurrency(post.preview_data.financeiro.recebido)}</p>
                           </div>
-                          <div className="bg-white/20 rounded-lg p-2 text-center">
-                            <p className="text-white/80 text-[10px]">Pendente</p>
-                            <p className="text-white font-bold text-sm">{formatCurrency(post.preview_data.financeiro.pendente)}</p>
+                          <div className="bg-white border border-slate-100 rounded-md p-2 text-center">
+                            <p className="text-slate-500 text-[10px] font-medium">Pendente</p>
+                            <p className="text-amber-600 font-bold text-sm">{formatCurrency(post.preview_data.financeiro.pendente)}</p>
                           </div>
-                          <div className="bg-white/20 rounded-lg p-2 text-center">
-                            <p className="text-white/80 text-[10px]">Atrasado</p>
-                            <p className="text-white font-bold text-sm">{formatCurrency(post.preview_data.financeiro.atrasado)}</p>
+                          <div className="bg-white border border-slate-100 rounded-md p-2 text-center">
+                            <p className="text-slate-500 text-[10px] font-medium">Atrasado</p>
+                            <p className="text-red-600 font-bold text-sm">{formatCurrency(post.preview_data.financeiro.atrasado)}</p>
                           </div>
                         </div>
                       </div>
@@ -843,16 +914,23 @@ export const FeedWidget: React.FC<FeedWidgetProps> = ({
                     
                     {post.preview_data.cliente && (
                       <div 
-                        className="bg-gradient-to-r from-blue-500 to-blue-600 rounded-lg p-3 cursor-pointer hover:shadow-md transition-shadow"
-                        onClick={() => handleNavigate('clientes')}
+                        className="bg-slate-50 border border-slate-200 rounded-lg p-3 cursor-pointer hover:bg-slate-100 transition-colors"
+                        onClick={() => {
+                          const clientId = post.preview_data?.cliente?.id;
+                          if (clientId) {
+                            handleNavigateDetails('clientes', { mode: 'details', entityId: clientId });
+                            return;
+                          }
+                          handleNavigate('clientes');
+                        }}
                       >
                         <div className="flex items-center gap-3">
-                          <div className="w-10 h-10 rounded-full bg-white/20 flex items-center justify-center text-white">
-                            <Users className="w-5 h-5" />
+                          <div className="w-9 h-9 rounded-lg bg-blue-100 flex items-center justify-center">
+                            <Users className="w-4 h-4 text-blue-600" />
                           </div>
                           <div>
-                            <p className="text-white font-bold text-sm">{post.preview_data.cliente.nome}</p>
-                            <p className="text-white/80 text-xs">{post.preview_data.cliente.cpf || post.preview_data.cliente.telefone || 'Cliente'}</p>
+                            <p className="text-slate-800 font-semibold text-sm">{post.preview_data.cliente.nome}</p>
+                            <p className="text-slate-500 text-xs">{post.preview_data.cliente.cpf || post.preview_data.cliente.telefone || 'Cliente'}</p>
                           </div>
                         </div>
                       </div>
@@ -860,16 +938,23 @@ export const FeedWidget: React.FC<FeedWidgetProps> = ({
                     
                     {post.preview_data.processo && (
                       <div 
-                        className="bg-gradient-to-r from-purple-500 to-purple-600 rounded-lg p-3 cursor-pointer hover:shadow-md transition-shadow"
-                        onClick={() => handleNavigate('processos')}
+                        className="bg-slate-50 border border-slate-200 rounded-lg p-3 cursor-pointer hover:bg-slate-100 transition-colors"
+                        onClick={() => {
+                          const processId = post.preview_data?.processo?.id;
+                          if (processId) {
+                            handleNavigateDetails('processos', { entityId: processId });
+                            return;
+                          }
+                          handleNavigate('processos');
+                        }}
                       >
                         <div className="flex items-center gap-3">
-                          <div className="w-10 h-10 rounded-full bg-white/20 flex items-center justify-center text-white">
-                            <Gavel className="w-5 h-5" />
+                          <div className="w-9 h-9 rounded-lg bg-indigo-100 flex items-center justify-center">
+                            <Gavel className="w-4 h-4 text-indigo-600" />
                           </div>
                           <div>
-                            <p className="text-white font-bold text-sm">{post.preview_data.processo.numero}</p>
-                            <p className="text-white/80 text-xs">{post.preview_data.processo.cliente} • {post.preview_data.processo.status}</p>
+                            <p className="text-slate-800 font-semibold text-sm">{post.preview_data.processo.numero}</p>
+                            <p className="text-slate-500 text-xs">{post.preview_data.processo.cliente} • {post.preview_data.processo.status}</p>
                           </div>
                         </div>
                       </div>
@@ -877,16 +962,23 @@ export const FeedWidget: React.FC<FeedWidgetProps> = ({
                     
                     {post.preview_data.prazo && (
                       <div 
-                        className="bg-gradient-to-r from-red-500 to-red-600 rounded-lg p-3 cursor-pointer hover:shadow-md transition-shadow"
-                        onClick={() => handleNavigate('prazos')}
+                        className="bg-slate-50 border border-slate-200 rounded-lg p-3 cursor-pointer hover:bg-slate-100 transition-colors"
+                        onClick={() => {
+                          const deadlineId = post.preview_data?.prazo?.id;
+                          if (deadlineId) {
+                            handleNavigateDetails('prazos', { entityId: deadlineId });
+                            return;
+                          }
+                          handleNavigate('prazos');
+                        }}
                       >
                         <div className="flex items-center gap-3">
-                          <div className="w-10 h-10 rounded-full bg-white/20 flex items-center justify-center text-white">
-                            <Clock className="w-5 h-5" />
+                          <div className="w-9 h-9 rounded-lg bg-red-100 flex items-center justify-center">
+                            <Clock className="w-4 h-4 text-red-600" />
                           </div>
                           <div>
-                            <p className="text-white font-bold text-sm">{post.preview_data.prazo.titulo}</p>
-                            <p className="text-white/80 text-xs">{post.preview_data.prazo.data} • {post.preview_data.prazo.tipo}</p>
+                            <p className="text-slate-800 font-semibold text-sm">{post.preview_data.prazo.titulo}</p>
+                            <p className="text-slate-500 text-xs">{post.preview_data.prazo.data} • {post.preview_data.prazo.tipo}</p>
                           </div>
                         </div>
                       </div>
@@ -894,16 +986,23 @@ export const FeedWidget: React.FC<FeedWidgetProps> = ({
                     
                     {post.preview_data.agenda && (
                       <div 
-                        className="bg-gradient-to-r from-amber-500 to-amber-600 rounded-lg p-3 cursor-pointer hover:shadow-md transition-shadow"
-                        onClick={() => handleNavigate('agenda')}
+                        className="bg-slate-50 border border-slate-200 rounded-lg p-3 cursor-pointer hover:bg-slate-100 transition-colors"
+                        onClick={() => {
+                          const calendarEventId = post.preview_data?.agenda?.id;
+                          if (calendarEventId) {
+                            handleNavigateDetails('agenda', { entityId: calendarEventId });
+                            return;
+                          }
+                          handleNavigate('agenda');
+                        }}
                       >
                         <div className="flex items-center gap-3">
-                          <div className="w-10 h-10 rounded-full bg-white/20 flex items-center justify-center text-white">
-                            <Calendar className="w-5 h-5" />
+                          <div className="w-9 h-9 rounded-lg bg-amber-100 flex items-center justify-center">
+                            <Calendar className="w-4 h-4 text-amber-600" />
                           </div>
                           <div>
-                            <p className="text-white font-bold text-sm">{post.preview_data.agenda.titulo}</p>
-                            <p className="text-white/80 text-xs">{post.preview_data.agenda.data} {post.preview_data.agenda.hora && `às ${post.preview_data.agenda.hora}`}</p>
+                            <p className="text-slate-800 font-semibold text-sm">{post.preview_data.agenda.titulo}</p>
+                            <p className="text-slate-500 text-xs">{post.preview_data.agenda.data} {post.preview_data.agenda.hora && `às ${post.preview_data.agenda.hora}`}</p>
                           </div>
                         </div>
                       </div>

@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.9.352
+- **Feed**: Cards de preview agora abrem o modal de detalhes do registro (via `entityId`/`mode: details`) em vez de levar para a lista geral do módulo. Agenda e Financeiro agora suportam deep-link por ID.
+
+## 1.9.351
+- **Feed**: Redesign completo com visual limpo e profissional. Avatar fallback usa cor neutra (slate). Cards de preview com bordas sutis e fundo branco/slate (sem gradientes saturados). Tags com cores mais discretas.
+
+## 1.9.350
+- **Feed**: Avatar agora usa a mesma origem do Nav/Perfil (prioriza `profiles.avatar_url` com fallback via `user_metadata`), evitando foto vazia.
+
 ## 1.9.349
 - **Intimações (Mobile)**: Seção expandida melhorada (Análise IA + ações) com layout mais limpo, remoção de botões duplicados e ações organizadas em grid.
 
