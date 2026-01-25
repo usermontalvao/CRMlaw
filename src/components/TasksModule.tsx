@@ -200,27 +200,27 @@ const TasksModule = ({ focusNewTask = false, onParamConsumed, onPendingTasksChan
   const completedTasks = tasks.filter((t) => t.status === 'completed');
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4 sm:space-y-6 p-3 sm:p-0">
       {/* Header */}
       <div>
-        <h2 className="text-2xl font-bold text-slate-900">Tarefas</h2>
-        <p className="text-sm text-slate-600 mt-1">Gerencie suas tarefas e lembretes</p>
+        <h2 className="text-xl sm:text-2xl font-bold text-slate-900">Tarefas</h2>
+        <p className="text-xs sm:text-sm text-slate-600 mt-1">Gerencie suas tarefas e lembretes</p>
       </div>
 
       {/* Add Task Form */}
-      <form onSubmit={handleAddTask} className="flex gap-2">
+      <form onSubmit={handleAddTask} className="flex flex-col sm:flex-row gap-2">
         <input
           type="text"
           value={newTaskTitle}
           onChange={(e) => setNewTaskTitle(e.target.value)}
           placeholder="Digite uma nova tarefa..."
           ref={newTaskInputRef}
-          className="flex-1 px-4 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+          className="flex-1 px-3 py-2 sm:px-4 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
         />
         <button
           type="submit"
           disabled={!newTaskTitle.trim()}
-          className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition disabled:opacity-50 disabled:cursor-not-allowed font-medium"
+          className="w-full sm:w-auto px-4 sm:px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition disabled:opacity-50 disabled:cursor-not-allowed font-medium text-sm"
         >
           Adicionar
         </button>
@@ -230,7 +230,7 @@ const TasksModule = ({ focusNewTask = false, onParamConsumed, onPendingTasksChan
       <div className="flex flex-wrap gap-2">
         <button
           onClick={() => setFilter('pending')}
-          className={`px-4 py-2 rounded-lg text-sm font-medium transition ${
+          className={`px-3 py-1.5 sm:px-4 sm:py-2 rounded-lg text-xs sm:text-sm font-medium transition ${
             filter === 'pending'
               ? 'bg-blue-600 text-white'
               : 'bg-white border border-slate-300 text-slate-700 hover:bg-slate-50'
@@ -240,7 +240,7 @@ const TasksModule = ({ focusNewTask = false, onParamConsumed, onPendingTasksChan
         </button>
         <button
           onClick={() => setFilter('completed')}
-          className={`px-4 py-2 rounded-lg text-sm font-medium transition ${
+          className={`px-3 py-1.5 sm:px-4 sm:py-2 rounded-lg text-xs sm:text-sm font-medium transition ${
             filter === 'completed'
               ? 'bg-green-600 text-white'
               : 'bg-white border border-slate-300 text-slate-700 hover:bg-slate-50'
@@ -250,7 +250,7 @@ const TasksModule = ({ focusNewTask = false, onParamConsumed, onPendingTasksChan
         </button>
         <button
           onClick={() => setFilter('all')}
-          className={`px-4 py-2 rounded-lg text-sm font-medium transition ${
+          className={`px-3 py-1.5 sm:px-4 sm:py-2 rounded-lg text-xs sm:text-sm font-medium transition ${
             filter === 'all'
               ? 'bg-slate-600 text-white'
               : 'bg-white border border-slate-300 text-slate-700 hover:bg-slate-50'
@@ -261,19 +261,19 @@ const TasksModule = ({ focusNewTask = false, onParamConsumed, onPendingTasksChan
       </div>
 
       {filter === 'completed' && (
-        <div className="flex items-center gap-2">
+        <div className="flex flex-col sm:flex-row items-center gap-2">
           <input
             type="text"
             value={completedSearch}
             onChange={(e) => setCompletedSearch(e.target.value)}
             placeholder="Pesquisar tarefas concluídas..."
-            className="flex-1 px-4 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+            className="flex-1 px-3 py-2 sm:px-4 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
           />
           {completedSearch && (
             <button
               type="button"
               onClick={() => setCompletedSearch('')}
-              className="px-4 py-2 text-sm font-medium text-slate-600 bg-slate-100 rounded-lg hover:bg-slate-200"
+              className="w-full sm:w-auto px-3 sm:px-4 py-2 text-xs sm:text-sm font-medium text-slate-600 bg-slate-100 rounded-lg hover:bg-slate-200"
             >
               Limpar
             </button>
@@ -284,12 +284,12 @@ const TasksModule = ({ focusNewTask = false, onParamConsumed, onPendingTasksChan
       {/* Task List */}
       {loading ? (
         <div className="flex items-center justify-center py-12">
-          <Loader2 className="w-8 h-8 text-blue-600 animate-spin" />
+          <Loader2 className="w-6 h-6 sm:w-8 sm:h-8 text-blue-600 animate-spin" />
         </div>
       ) : filteredTasks.length === 0 ? (
-        <div className="text-center py-12 bg-white rounded-xl border border-slate-200">
-          <AlertCircle className="w-12 h-12 text-slate-400 mx-auto mb-3" />
-          <p className="text-slate-600">Nenhuma tarefa encontrada</p>
+        <div className="text-center py-8 sm:py-12 bg-white rounded-xl border border-slate-200">
+          <AlertCircle className="w-8 h-8 sm:w-12 sm:h-12 text-slate-400 mx-auto mb-3" />
+          <p className="text-xs sm:text-sm text-slate-600">Nenhuma tarefa encontrada</p>
         </div>
       ) : (
         <div className="space-y-2">
@@ -299,7 +299,7 @@ const TasksModule = ({ focusNewTask = false, onParamConsumed, onPendingTasksChan
             return (
             <div
               key={task.id}
-              className={`bg-white border rounded-lg p-4 transition flex items-center gap-3 ${
+              className={`bg-white border rounded-lg p-3 sm:p-4 transition flex items-center gap-2 sm:gap-3 ${
                 task.status === 'completed'
                   ? 'border-slate-200 bg-slate-50'
                   : isDragging
@@ -329,9 +329,9 @@ const TasksModule = ({ focusNewTask = false, onParamConsumed, onPendingTasksChan
                 className="flex-shrink-0"
               >
                 {task.status === 'completed' ? (
-                  <CheckCircle2 className="w-5 h-5 text-green-600" />
+                  <CheckCircle2 className="w-4 h-4 sm:w-5 sm:h-5 text-green-600" />
                 ) : (
-                  <Circle className="w-5 h-5 text-slate-400 hover:text-blue-600 transition" />
+                  <Circle className="w-4 h-4 sm:w-5 sm:h-5 text-slate-400 hover:text-blue-600 transition" />
                 )}
               </button>
 
@@ -349,27 +349,27 @@ const TasksModule = ({ focusNewTask = false, onParamConsumed, onPendingTasksChan
                           handleCancelEditing();
                         }
                       }}
-                      className="flex-1 px-2 py-1 border border-slate-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500 text-sm"
+                      className="flex-1 px-2 py-1 border border-slate-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500 text-xs sm:text-sm"
                       autoFocus
                     />
                     <button
                       type="button"
                       onClick={handleSaveEditing}
-                      className="px-3 py-1 text-xs font-semibold text-white bg-blue-600 rounded hover:bg-blue-700"
+                      className="px-2 sm:px-3 py-1 text-xs font-semibold text-white bg-blue-600 rounded hover:bg-blue-700"
                     >
                       Salvar
                     </button>
                     <button
                       type="button"
                       onClick={handleCancelEditing}
-                      className="px-3 py-1 text-xs font-semibold text-slate-600 bg-slate-100 rounded hover:bg-slate-200"
+                      className="px-2 sm:px-3 py-1 text-xs font-semibold text-slate-600 bg-slate-100 rounded hover:bg-slate-200"
                     >
                       Cancelar
                     </button>
                   </div>
                 ) : (
                   <p
-                    className={`font-medium ${
+                    className={`text-xs sm:text-sm font-medium ${
                       task.status === 'completed'
                         ? 'text-slate-500 line-through'
                         : 'text-slate-900'
@@ -378,41 +378,43 @@ const TasksModule = ({ focusNewTask = false, onParamConsumed, onPendingTasksChan
                     {task.title}
                   </p>
                 )}
-                <p className="text-xs text-slate-500 mt-1">
-                  Criado em {formatDate(task.created_at)} às {formatTime(task.created_at)} pelo usuário {task.created_by_name || fallbackCreatorName}
+                <p className="text-[10px] sm:text-xs text-slate-500 mt-1">
+                  Criado em {formatDate(task.created_at)} às {formatTime(task.created_at)} por {task.created_by_name || fallbackCreatorName}
                 </p>
                 {task.completed_at && task.completed_by_name && (
-                  <p className="text-xs text-emerald-600 mt-1">
+                  <p className="text-[10px] sm:text-xs text-emerald-600 mt-1">
                     Concluído em {formatDate(task.completed_at)} às {formatTime(task.completed_at)} por {task.completed_by_name}
                   </p>
                 )}
               </div>
 
-              <button
-                onClick={() => handleStartEditing(task)}
-                className="p-2 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition flex-shrink-0"
-                title="Editar"
-              >
-                <Pencil className="w-4 h-4" />
-              </button>
-
-              {task.status === 'completed' && (
+              <div className="flex items-center gap-1 sm:gap-2">
                 <button
-                  onClick={() => handleToggleStatus(task)}
-                  className="p-2 text-emerald-600 hover:text-emerald-700 hover:bg-emerald-50 rounded-lg transition flex-shrink-0"
-                  title="Restaurar tarefa"
+                  onClick={() => handleStartEditing(task)}
+                  className="p-1.5 sm:p-2 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition flex-shrink-0"
+                  title="Editar"
                 >
-                  <RotateCcw className="w-4 h-4" />
+                  <Pencil className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
                 </button>
-              )}
 
-              <button
-                onClick={() => handleDelete(task.id)}
-                className="p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition flex-shrink-0"
-                title="Excluir"
-              >
-                <Trash2 className="w-4 h-4" />
-              </button>
+                {task.status === 'completed' && (
+                  <button
+                    onClick={() => handleToggleStatus(task)}
+                    className="p-1.5 sm:p-2 text-emerald-600 hover:text-emerald-700 hover:bg-emerald-50 rounded-lg transition flex-shrink-0"
+                    title="Restaurar tarefa"
+                  >
+                    <RotateCcw className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+                  </button>
+                )}
+
+                <button
+                  onClick={() => handleDelete(task.id)}
+                  className="p-1.5 sm:p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition flex-shrink-0"
+                  title="Excluir"
+                >
+                  <Trash2 className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+                </button>
+              </div>
             </div>
           );
           })}

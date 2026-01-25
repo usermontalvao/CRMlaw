@@ -1,5 +1,25 @@
 # Changelog
 
+## 1.9.402
+- **Dashboard (Mobile)**: Header reorganizado para remover a “barra preta” e melhorar a legibilidade.
+  - Nome + botão "Novo Cliente" na mesma linha sem esticar largura
+  - Avisos/alertas abaixo como chips com texto + contador (inclui Financeiro atrasado)
+
+## 1.9.401
+- **Dashboard / Tarefas**: Ajustes de responsividade.
+  - Header: alertas urgentes ao lado do "Novo Cliente" com texto + contador
+  - Estatísticas: preservado layout do desktop; grid 2x2 apenas no mobile
+  - **TasksModule**: formulário/filtros/lista responsivos no mobile
+
+## 1.9.400
+- **Dashboard**: Layout responsivo mobile-first refatorado.
+  - Header compacto: saudação + botão "Novo Cliente" (apenas ícone no mobile)
+  - Estatísticas em grid 2x2 no mobile (flex-wrap no desktop)
+  - Widgets com padding/gaps reduzidos no mobile
+  - Itens de agenda/tarefas/prazos mais compactos
+  - Modais com backdrop escuro e botões full-width no mobile
+  - Corrigido bug do botão "Novo Cliente" mostrando "+ +"
+
 ## 1.9.399
 - **Dashboard**: Corrigido backdrop dos modais para usar bg-transparent e forçar fundo branco com !bg-white no modo claro (removido backdrop escuro).
 

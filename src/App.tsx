@@ -35,7 +35,7 @@ import TermsPrivacyPage from './components/TermsPrivacyPage';
 import ProfileModal, { type AppProfile, type UserRole } from './components/ProfileModal';
 
 // Lazy loading dos módulos principais (carrega apenas quando acessado)
-const Dashboard = lazy(() => import('./components/DashboardPage'));
+const Dashboard = lazy(() => import('./components/Dashboard'));
 const Feed = lazy(() => import('./components/FeedPage'));
 const UserProfilePage = lazy(() => import('./components/UserProfilePage'));
 const ClientsModule = lazy(() => import('./components/ClientsModule'));
@@ -136,7 +136,7 @@ const MainApp: React.FC = () => {
 
     const prefetch = () => {
       const tasks = [
-        () => import('./components/DashboardPage'),
+        () => import('./components/Dashboard'),
         () => import('./components/ProcessesModule'),
         () => import('./components/ClientsModule'),
         () => import('./components/DeadlinesModule'),

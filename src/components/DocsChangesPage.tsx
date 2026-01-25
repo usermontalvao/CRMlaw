@@ -46,6 +46,10 @@ import {
    ============================================================================ */
 
 const VERSION_CODENAMES: Record<string, { name: string; emoji: string }> = {
+  '1.9.403': { name: 'Café Assinatura Mobile', emoji: '✍️' },
+  '1.9.402': { name: 'Café Header Sem Barra', emoji: '🧼' },
+  '1.9.401': { name: 'Café Responsivo Master', emoji: '📱' },
+  '1.9.400': { name: 'Café Dashboard Mobile', emoji: '📱' },
   '1.9.349': { name: 'Café Intimação Expandida', emoji: '📱' },
   '1.9.136': { name: 'Café CPF do Login', emoji: '🧾' },
   '1.9.135': { name: 'Café CPF Persistente', emoji: '💾' },
@@ -559,6 +563,132 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
    ============================================================================ */
 
 const releases: ReleaseNote[] = [
+  {
+    version: '1.9.403',
+    date: '24/01/2026',
+    summary: 'Assinaturas: toolbar responsiva no mobile (tabs, busca e ações sem overflow).',
+    modules: [
+      {
+        moduleId: 'assinatura-publica',
+        changes: [
+          {
+            type: 'fix',
+            title: 'Toolbar responsiva no mobile',
+            description:
+              'Tabs agora têm scroll horizontal (overflow-x-auto), busca ocupa 100% da largura e ações quebram linha no mobile, evitando overflow lateral.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.402',
+    date: '24/01/2026',
+    summary: 'Dashboard (mobile): header reorganizado para evitar esticar o botão e melhorar alertas com chips.',
+    modules: [
+      {
+        moduleId: 'sistema',
+        changes: [
+          {
+            type: 'fix',
+            title: 'Header sem “barra preta” no mobile',
+            description:
+              'Reorganizado o header para manter nome + botão "Novo Cliente" na mesma linha sem esticar largura.',
+          },
+          {
+            type: 'improvement',
+            title: 'Alertas em chips com texto',
+            description:
+              'Alertas (Prazos/Intimações/Financeiro) agora aparecem abaixo como chips com texto + contador, com wrap no mobile.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.401',
+    date: '24/01/2026',
+    summary: 'Dashboard e TasksModule: layout responsivo mobile-first refatorado com alertas melhorados.',
+    modules: [
+      {
+        moduleId: 'sistema',
+        changes: [
+          {
+            type: 'feature',
+            title: 'Dashboard Responsivo Master',
+            description: 'Refatoração completa do layout responsivo do Dashboard com foco mobile-first.',
+          },
+          {
+            type: 'improvement',
+            title: 'Header Otimizado',
+            description: 'Saudação + botão "Novo Cliente" com layout flexível e alertas urgentes ao lado.',
+          },
+          {
+            type: 'improvement',
+            title: 'Estatísticas Adaptativas',
+            description: 'Grid 2x2 no mobile, linha única no desktop com labels visíveis.',
+          },
+          {
+            type: 'improvement',
+            title: 'Alertas Urgentes',
+            description: 'Alertas com ícone + texto + número ao lado do botão "Novo Cliente".',
+          },
+          {
+            type: 'improvement',
+            title: 'Widgets Responsivos',
+            description: 'Agenda, Tarefas, Prazos, Intimações com padding e gaps otimizados para mobile.',
+          },
+          {
+            type: 'improvement',
+            title: 'TasksModule Mobile',
+            description: 'Módulo de Tarefas totalmente responsivo com formulários, filtros e lista adaptados.',
+          },
+          {
+            type: 'fix',
+            title: 'Botão Novo Cliente',
+            description: 'Corrigido bug que mostrava "+ +" no mobile (apenas ícone visível).',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.400',
+    date: '24/01/2026',
+    summary: 'Dashboard: layout responsivo mobile-first refatorado.',
+    modules: [
+      {
+        moduleId: 'sistema',
+        changes: [
+          {
+            type: 'feature',
+            title: 'Dashboard Mobile-First',
+            description: 'Refatoração completa do layout responsivo com foco em mobile.',
+          },
+          {
+            type: 'improvement',
+            title: 'Header Compacto',
+            description: 'Saudação + botão "Novo Cliente" com layout otimizado.',
+          },
+          {
+            type: 'improvement',
+            title: 'Estatísticas em Grid',
+            description: 'Grid 2x2 no mobile, flex-wrap no desktop.',
+          },
+          {
+            type: 'improvement',
+            title: 'Widgets Responsivos',
+            description: 'Padding, gaps e tamanhos adaptados para mobile.',
+          },
+          {
+            type: 'fix',
+            title: 'Botão Novo Cliente',
+            description: 'Removido texto "+" duplicado no mobile.',
+          },
+        ],
+      },
+    ],
+  },
   {
     version: '1.9.399',
     date: '24/01/2026',

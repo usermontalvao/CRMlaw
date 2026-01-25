@@ -2631,14 +2631,14 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
       </div>
 
       {/* Toolbar compacta e limpa */}
-      <div className="rounded-xl border border-slate-200 bg-white px-4 py-3">
-        <div className="flex items-center justify-between gap-4">
+      <div className="rounded-xl border border-slate-200 bg-white px-3 sm:px-4 py-3">
+        <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3 md:gap-4">
           {/* Lado esquerdo: Filtros de status como tabs */}
-          <div className="flex items-center gap-1 rounded-lg bg-slate-100 p-1">
+          <div className="flex items-center gap-1 rounded-lg bg-slate-100 p-1 overflow-x-auto max-w-full">
             <button
               type="button"
               onClick={() => setFilterStatus('all')}
-              className={`rounded-md px-3 py-1.5 text-xs font-medium transition ${
+              className={`shrink-0 whitespace-nowrap rounded-md px-3 py-1.5 text-xs font-medium transition ${
                 filterStatus === 'all'
                   ? 'bg-white text-slate-900 shadow-sm'
                   : 'text-slate-600 hover:text-slate-900'
@@ -2649,7 +2649,7 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
             <button
               type="button"
               onClick={() => setFilterStatus('pending')}
-              className={`rounded-md px-3 py-1.5 text-xs font-medium transition ${
+              className={`shrink-0 whitespace-nowrap rounded-md px-3 py-1.5 text-xs font-medium transition ${
                 filterStatus === 'pending'
                   ? 'bg-white text-slate-900 shadow-sm'
                   : 'text-slate-600 hover:text-slate-900'
@@ -2660,7 +2660,7 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
             <button
               type="button"
               onClick={() => setFilterStatus('signed')}
-              className={`rounded-md px-3 py-1.5 text-xs font-medium transition ${
+              className={`shrink-0 whitespace-nowrap rounded-md px-3 py-1.5 text-xs font-medium transition ${
                 filterStatus === 'signed'
                   ? 'bg-white text-slate-900 shadow-sm'
                   : 'text-slate-600 hover:text-slate-900'
@@ -2670,14 +2670,14 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
             </button>
             <button
               type="button"
-              className="rounded-md px-3 py-1.5 text-xs font-medium text-slate-600 border-l border-slate-300 pl-2 ml-1"
+              className="shrink-0 whitespace-nowrap rounded-md px-3 py-1.5 text-xs font-medium text-slate-600 border-l border-slate-300 pl-2 ml-1"
             >
               Assinantes <span className="text-blue-500">{requests.reduce((acc, r) => acc + (r.signers?.length || 0), 0)}</span>
             </button>
           </div>
 
           {/* Centro: Busca */}
-          <div className="relative flex-1 max-w-md">
+          <div className="relative w-full md:flex-1 md:max-w-md">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
             <input
               type="text"
@@ -2689,7 +2689,7 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
           </div>
 
           {/* Lado direito: Ações */}
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2 w-full md:w-auto md:justify-end">
             {/* Assinatura Pública */}
             <button
               type="button"

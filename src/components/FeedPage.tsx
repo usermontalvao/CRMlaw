@@ -1,3 +1,3 @@
-import Dashboard from './Dashboard';
+import Feed from './feed';
 
-export default Dashboard;
+export default Feed;
