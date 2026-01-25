@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.9.404
+- **Requerimentos (Mobile)**: Área superior (ações/abas/filtros) agora é retrátil, mantendo "Novo Requerimento" sempre visível.
+
+## 1.9.403
+- **Assinaturas (Mobile)**: Toolbar responsiva sem overflow.
+  - Tabs com scroll horizontal
+  - Busca em largura total
+  - Ações com quebra de linha
+
 ## 1.9.402
 - **Dashboard (Mobile)**: Header reorganizado para remover a “barra preta” e melhorar a legibilidade.
   - Nome + botão "Novo Cliente" na mesma linha sem esticar largura

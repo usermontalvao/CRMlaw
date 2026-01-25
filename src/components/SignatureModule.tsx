@@ -2567,7 +2567,7 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
   const signedRequestsCount = requests.filter((r) => r.status === 'signed').length;
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-4 max-w-full overflow-x-hidden">
       {/* Header */}
       <div className="rounded-2xl border border-slate-200 bg-white overflow-hidden">
         <div className="px-4 py-3 sm:px-6 border-b border-slate-200 bg-white">
@@ -2585,7 +2585,7 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
 
             <button
               onClick={() => { resetWizard(); setWizardStep('upload'); }}
-              className="inline-flex items-center justify-center gap-2 rounded-lg bg-slate-900 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-slate-800"
+              className="w-full sm:w-auto inline-flex items-center justify-center gap-2 rounded-lg bg-slate-900 px-3 py-2 sm:py-1.5 text-xs font-semibold text-white transition hover:bg-slate-800"
             >
               <Plus className="h-4 w-4" />
               Novo documento

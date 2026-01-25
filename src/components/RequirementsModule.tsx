@@ -580,6 +580,7 @@ const RequirementsModule: React.FC<RequirementsModuleProps> = ({ forceCreate, en
   });
   const [periciaSaving, setPericiaSaving] = useState(false);
   const [showFilters, setShowFilters] = useState(false);
+  const [mobileControlsOpen, setMobileControlsOpen] = useState(false);
   const [statusHistory, setStatusHistory] = useState<RequirementStatusHistoryEntry[]>([]);
   const [statusHistoryLoading, setStatusHistoryLoading] = useState(false);
   const [exigencyForm, setExigencyForm] = useState({
@@ -590,6 +591,10 @@ const RequirementsModule: React.FC<RequirementsModuleProps> = ({ forceCreate, en
   });
   const exigencySubmittingRef = useRef(false);
   const [sourceSignatureId, setSourceSignatureId] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (showFilters) setMobileControlsOpen(true);
+  }, [showFilters]);
 
   const memberMap = useMemo(() => new Map(members.map((member) => [member.id, member])), [members]);
   const memberByUserId = useMemo(
@@ -3458,12 +3463,31 @@ const RequirementsModule: React.FC<RequirementsModuleProps> = ({ forceCreate, en
       )}
 
       <div className="bg-white border border-gray-200 rounded-xl p-3 sm:p-4">
-        <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-2 sm:gap-3 mb-3 sm:mb-4">
+        <div className="flex items-start justify-between gap-2 sm:gap-3 mb-3 sm:mb-4">
           <div>
             <h3 className="text-lg sm:text-xl font-semibold text-slate-900">Sistema de Requerimentos</h3>
             <p className="text-xs sm:text-sm text-slate-600 mt-1 hidden sm:block">Gerencie requerimentos administrativos do INSS</p>
           </div>
 
+          <button
+            type="button"
+            onClick={() => setMobileControlsOpen((prev) => !prev)}
+            className="sm:hidden inline-flex items-center gap-2 text-xs font-semibold text-slate-700 hover:text-slate-900"
+          >
+            <span>{mobileControlsOpen ? 'Ocultar' : 'Mostrar'}</span>
+            <ChevronDown className={`w-4 h-4 transition-transform ${mobileControlsOpen ? 'rotate-180' : ''}`} />
+          </button>
+        </div>
+
+        <button
+          onClick={() => handleOpenModal(undefined)}
+          className="sm:hidden inline-flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-700 text-white font-medium px-3 py-2 rounded-lg shadow-sm transition text-xs w-full"
+        >
+          <Plus className="w-4 h-4" />
+          <span>Novo Requerimento</span>
+        </button>
+
+        <div className={`${mobileControlsOpen ? 'block' : 'hidden'} sm:block`}>
           <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3 w-full sm:w-auto sm:justify-end">
             <button
               onClick={handleExportExcel}
@@ -3486,16 +3510,14 @@ const RequirementsModule: React.FC<RequirementsModuleProps> = ({ forceCreate, en
 
             <button
               onClick={() => handleOpenModal(undefined)}
-              className="inline-flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-700 text-white font-medium px-3 sm:px-5 py-2 sm:py-2.5 rounded-lg shadow-sm transition text-xs sm:text-sm w-full sm:w-auto"
+              className="hidden sm:inline-flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-700 text-white font-medium px-3 sm:px-5 py-2 sm:py-2.5 rounded-lg shadow-sm transition text-xs sm:text-sm w-full sm:w-auto"
             >
               <Plus className="w-4 h-4" />
               <span>Novo Requerimento</span>
             </button>
           </div>
-        </div>
 
-        {/* Abas de Status */}
-        <div className="flex flex-wrap gap-1.5 sm:gap-2 mb-4 sm:mb-6 overflow-x-auto pb-2">
+          <div className="flex flex-wrap gap-1.5 sm:gap-2 mb-4 sm:mb-6 overflow-x-auto pb-2 mt-3">
           <button
             onClick={() => setActiveStatusTab('todos')}
             className={`px-2.5 sm:px-4 py-1.5 sm:py-2 rounded-lg text-xs sm:text-sm font-medium transition whitespace-nowrap ${
@@ -3536,10 +3558,9 @@ const RequirementsModule: React.FC<RequirementsModuleProps> = ({ forceCreate, en
               </span>
             </button>
           ))}
-        </div>
+          </div>
 
-        {/* Filtros */}
-        <div className="mt-2 sm:mt-3 space-y-2">
+          <div className="mt-2 sm:mt-3 space-y-2">
           <div className="flex items-center justify-between">
             <span className="text-xs sm:text-sm text-slate-600">Filtros avançados</span>
             <button
@@ -3610,6 +3631,7 @@ const RequirementsModule: React.FC<RequirementsModuleProps> = ({ forceCreate, en
               </label>
             </div>
           )}
+        </div>
         </div>
       </div>
 

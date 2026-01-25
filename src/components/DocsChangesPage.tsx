@@ -46,6 +46,7 @@ import {
    ============================================================================ */
 
 const VERSION_CODENAMES: Record<string, { name: string; emoji: string }> = {
+  '1.9.404': { name: 'Café Requerimentos Retrátil', emoji: '🧩' },
   '1.9.403': { name: 'Café Assinatura Mobile', emoji: '✍️' },
   '1.9.402': { name: 'Café Header Sem Barra', emoji: '🧼' },
   '1.9.401': { name: 'Café Responsivo Master', emoji: '📱' },
@@ -563,6 +564,24 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
    ============================================================================ */
 
 const releases: ReleaseNote[] = [
+  {
+    version: '1.9.404',
+    date: '25/01/2026',
+    summary: 'Requerimentos (mobile): área superior retrátil (ações/abas/filtros) com Novo Requerimento sempre visível.',
+    modules: [
+      {
+        moduleId: 'requerimentos',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Controles superiores retráteis no mobile',
+            description:
+              'Ações (Exportar/Template), abas de status e filtros avançados agora podem ser recolhidos no mobile; o botão "Novo Requerimento" permanece sempre visível.',
+          },
+        ],
+      },
+    ],
+  },
   {
     version: '1.9.403',
     date: '24/01/2026',
