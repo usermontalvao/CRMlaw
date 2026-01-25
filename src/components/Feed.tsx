@@ -61,6 +61,7 @@ import {
   Globe,
   Lock,
   Check,
+  TrendingUp,
 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { useDeleteConfirm } from '../contexts/DeleteConfirmContext';
@@ -451,7 +452,17 @@ const FeedPost: React.FC<{
 // Tipos para Widgets
 interface WidgetConfig {
   id: string;
-  type: 'agenda' | 'tarefas' | 'djen' | 'confeccao' | 'financeiro' | 'navegacao';
+  type:
+    | 'agenda'
+    | 'tarefas'
+    | 'djen'
+    | 'confeccao'
+    | 'financeiro'
+    | 'prazos'
+    | 'navegacao'
+    | 'sugestoes'
+    | 'tendencias'
+    | 'eventos';
   title: string;
   visible: boolean;
 }
@@ -663,6 +674,7 @@ const Feed: React.FC<FeedProps> = ({ onNavigateToModule, params }) => {
   const [audienceUserIds, setAudienceUserIds] = useState<string[]>([]);
   const [audienceRoles, setAudienceRoles] = useState<string[]>([]);
   const [audienceSearch, setAudienceSearch] = useState('');
+  const [isMobileComposerActionsExpanded, setIsMobileComposerActionsExpanded] = useState(false);
 
   const availableAudienceRoles = useMemo(() => {
     const roles = Array.from(
@@ -851,10 +863,23 @@ const Feed: React.FC<FeedProps> = ({ onNavigateToModule, params }) => {
   const [pollQuestion, setPollQuestion] = useState('');
   const [pollOptions, setPollOptions] = useState<string[]>(['', '']);
   const [pollAllowMultiple, setPollAllowMultiple] = useState(true);
-  const [isMobileComposerActionsExpanded, setIsMobileComposerActionsExpanded] = useState(false);
   const [pollExpiresIn, setPollExpiresIn] = useState<string>('24h');
   const [pollParticipants, setPollParticipants] = useState<string[]>([]);
   const [postPolls, setPostPolls] = useState<Map<string, FeedPoll>>(new Map());
+
+  // Event creator state
+  const [showEventCreator, setShowEventCreator] = useState(false);
+  const [eventTitle, setEventTitle] = useState('');
+  const [eventDescription, setEventDescription] = useState('');
+  const [eventDate, setEventDate] = useState('');
+  const [eventTime, setEventTime] = useState('');
+  const [eventLocation, setEventLocation] = useState('');
+
+  // Article creator state
+  const [showArticleCreator, setShowArticleCreator] = useState(false);
+  const [articleTitle, setArticleTitle] = useState('');
+  const [articleContent, setArticleContent] = useState('');
+  const [articleCategory, setArticleCategory] = useState('');
 
   // Modal do acordo financeiro
   const [showFinancialModal, setShowFinancialModal] = useState(false);
@@ -878,9 +903,18 @@ const Feed: React.FC<FeedProps> = ({ onNavigateToModule, params }) => {
   const [selectedTagForRecords, setSelectedTagForRecords] = useState<string | null>(null);
   const [tagRecordSearch, setTagRecordSearch] = useState('');
 
-  // Widget order state
-  const [leftWidgets, setLeftWidgets] = useState<string[]>(['agenda', 'tarefas', 'djen', 'confeccao']);
-  const [rightWidgets, setRightWidgets] = useState<string[]>(['financeiro', 'prazos', 'navegacao']);
+  // Widget order state - Distribuição equilibrada entre sidebars
+  const [leftWidgets, setLeftWidgets] = useState<string[]>([
+    'metricas',
+    'topicos',
+    'destaque',
+  ]);
+  const [rightWidgets, setRightWidgets] = useState<string[]>([
+    'sugestoes',
+    'eventos',
+    'atividade',
+    'conexoes',
+  ]);
   const [preferencesLoaded, setPreferencesLoaded] = useState(false);
   const [isXlScreen, setIsXlScreen] = useState<boolean>(() => {
     if (typeof window === 'undefined') return true;
@@ -909,6 +943,12 @@ const Feed: React.FC<FeedProps> = ({ onNavigateToModule, params }) => {
     newComment: string;
     submitting: boolean;
   }>({ open: false, type: 'likes', postId: null, users: [], loading: false, newComment: '', submitting: false });
+
+  const [activeWidgetId, setActiveWidgetId] = useState<string | null>(null);
+  const [feedTagFilter, setFeedTagFilter] = useState<string | null>(null);
+  const [feedSortOrder, setFeedSortOrder] = useState<'relevant' | 'recent'>('relevant');
+  const [postReactions, setPostReactions] = useState<Record<string, { type: string; count: number }>>({});
+  const [savedPosts, setSavedPosts] = useState<Set<string>>(new Set());
 
   // Drag and drop sensors
   const sensors = useSensors(
@@ -1136,11 +1176,27 @@ const Feed: React.FC<FeedProps> = ({ onNavigateToModule, params }) => {
             .replace(/[\u0300-\u036f]/g, '') === 'administrador';
 
           const loadedLeft = Array.isArray(preferences.left_widgets)
-            ? preferences.left_widgets
-            : ['agenda', 'tarefas', 'djen', 'confeccao'];
+            ? preferences.left_widgets.filter(w => ['sugestoes', 'eventos', 'atividade', 'conexoes', 'metricas', 'topicos', 'destaque'].includes(w))
+            : ['metricas', 'topicos', 'destaque'];
           const loadedRight = Array.isArray(preferences.right_widgets)
-            ? preferences.right_widgets
-            : ['financeiro', 'prazos', 'navegacao'];
+            ? preferences.right_widgets.filter(w => ['sugestoes', 'eventos', 'atividade', 'conexoes', 'metricas', 'topicos', 'destaque'].includes(w))
+            : ['sugestoes', 'eventos', 'atividade', 'conexoes'];
+
+          // Garantir que widgets essenciais estejam presentes
+          const leftEssential = ['metricas', 'topicos', 'destaque'];
+          const rightEssential = ['sugestoes', 'eventos', 'atividade', 'conexoes'];
+          
+          leftEssential.forEach(widget => {
+            if (!loadedLeft.includes(widget)) {
+              loadedLeft.push(widget);
+            }
+          });
+          
+          rightEssential.forEach(widget => {
+            if (!loadedRight.includes(widget)) {
+              loadedRight.push(widget);
+            }
+          });
 
           if (isAdmin) {
             const all = new Set<string>([...loadedLeft, ...loadedRight]);
@@ -1149,10 +1205,17 @@ const Feed: React.FC<FeedProps> = ({ onNavigateToModule, params }) => {
 
           setLeftWidgets(loadedLeft);
           setRightWidgets(loadedRight);
+        } else {
+          // Fallback se não houver preferências salvas - sem duplicação
+          setLeftWidgets(['metricas', 'topicos', 'destaque']);
+          setRightWidgets(['sugestoes', 'eventos', 'atividade', 'conexoes']);
         }
         setPreferencesLoaded(true);
       } catch (error) {
         console.warn('Erro ao carregar preferências do dashboard:', error);
+        // Fallback em caso de erro - sem duplicação
+        setLeftWidgets(['metricas', 'topicos', 'destaque']);
+        setRightWidgets(['sugestoes', 'eventos', 'atividade', 'conexoes']);
         setPreferencesLoaded(true);
       }
     };
@@ -1161,51 +1224,148 @@ const Feed: React.FC<FeedProps> = ({ onNavigateToModule, params }) => {
 
   const canSeeWidget = useCallback(
     (widgetId: string) => {
-      if (permissionsLoading) return true;
-      if (isAdmin) return true;
-      switch (widgetId) {
-        case 'agenda':
-          return canView('agenda');
-        case 'tarefas':
-          return canView('tarefas');
-        case 'djen':
-          return canView('intimacoes');
-        case 'confeccao':
-          return canView('processos') || canView('requerimentos');
-        case 'financeiro':
-          return canView('financeiro');
-        case 'prazos':
-          return canView('prazos');
-        case 'navegacao':
-          return canView('processos') || canView('agenda') || canView('clientes') || canView('documentos');
-        default:
-          return true;
-      }
+      // Todos os widgets sociais são permitidos no feed (exceto tendências duplicado)
+      const socialWidgets = [
+        'sugestoes', 
+        'eventos',
+        'atividade',
+        'conexoes', 
+        'metricas',
+        'topicos',
+        'destaque'
+      ];
+      return socialWidgets.includes(widgetId);
     },
-    [permissionsLoading, isAdmin, canView]
+    []
   );
 
   const visibleLeftWidgets = useMemo(() => leftWidgets.filter(canSeeWidget), [leftWidgets, canSeeWidget]);
   const visibleRightWidgets = useMemo(() => rightWidgets.filter(canSeeWidget), [rightWidgets, canSeeWidget]);
 
-  useEffect(() => {
-    if (!user?.id) return;
-    if (!preferencesLoaded) return;
-    if (permissionsLoading) return;
-    if (isAdmin) return;
+  const suggestedPeople = useMemo(() => {
+    const self = user?.id;
+    return (allProfiles || [])
+      .filter((p) => p.user_id !== self)
+      .slice(0, 6);
+  }, [allProfiles, user?.id]);
 
-    const filteredLeft = leftWidgets.filter(canSeeWidget);
-    const filteredRight = rightWidgets.filter(canSeeWidget);
+  const trendingTags = useMemo(() => {
+    const counts = new Map<string, number>();
+    feedPosts.forEach((post) => {
+      (post.tags || []).forEach((tag) => {
+        counts.set(tag, (counts.get(tag) || 0) + 1);
+      });
+    });
+    const sorted = Array.from(counts.entries())
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 8);
 
-    const sameLeft = filteredLeft.length === leftWidgets.length && filteredLeft.every((x, i) => x === leftWidgets[i]);
-    const sameRight = filteredRight.length === rightWidgets.length && filteredRight.every((x, i) => x === rightWidgets[i]);
+    return sorted.map(([tagId, count]) => {
+      const tagConfig = availableTags.find((t) => t.id === tagId);
+      return {
+        id: tagId,
+        label: tagConfig?.label || tagId,
+        color: tagConfig?.color || 'bg-slate-100 text-slate-700',
+        count,
+      };
+    });
+  }, [feedPosts, availableTags]);
 
-    if (sameLeft && sameRight) return;
+  const displayedFeedPosts = useMemo(() => {
+    if (!feedTagFilter) return feedPosts;
+    return feedPosts.filter((p) => (p.tags || []).includes(feedTagFilter));
+  }, [feedPosts, feedTagFilter]);
 
-    setLeftWidgets(filteredLeft);
-    setRightWidgets(filteredRight);
-    dashboardPreferencesService.savePreferences(user.id, filteredLeft, filteredRight);
-  }, [user?.id, preferencesLoaded, permissionsLoading, isAdmin, leftWidgets, rightWidgets, canSeeWidget]);
+  const handleReaction = useCallback((postId: string, type: 'like' | 'love' | 'haha') => {
+    setPostReactions(prev => {
+      const current = prev[postId] || { type: '', count: 0 };
+      if (current.type === type) {
+        const { [postId]: removed, ...rest } = prev;
+        return rest;
+      }
+      return {
+        ...prev,
+        [postId]: { type, count: (current.type ? current.count : 0) + 1 }
+      };
+    });
+  }, []);
+
+  const toggleSavePost = useCallback((postId: string) => {
+    setSavedPosts(prev => {
+      const next = new Set(prev);
+      if (next.has(postId)) {
+        next.delete(postId);
+      } else {
+        next.add(postId);
+      }
+      return next;
+    });
+  }, []);
+
+  const sharePost = useCallback((postId: string) => {
+    toast.info('Compartilhar', 'Link copiado para a área de transferência.');
+  }, [toast]);
+
+  // Placeholder dinâmico baseado no contexto
+  const getDynamicPlaceholder = useCallback(() => {
+    const placeholders = [
+      "Compartilhe uma atualização importante...",
+      "O que está acontecendo no escritório?",
+      "Alguma novidade sobre algum processo?",
+      "Use @ para mencionar colegas e # para categorizar",
+      "Compartilhe uma vitória ou desafio recente...",
+      "Atualize a equipe sobre um projeto em andamento...",
+      "Dê uma dica útil para os colegas...",
+      "Celebre uma conquista da equipe!"
+    ];
+    
+    // Se há menções ou tags sendo digitadas, dar contexto específico
+    if (postText.includes('@') && postText.lastIndexOf('@') > postText.lastIndexOf(' ')) {
+      return "Digite o nome da pessoa para mencionar...";
+    }
+    if (postText.includes('#') && postText.lastIndexOf('#') > postText.lastIndexOf(' ')) {
+      return "Selecione uma categoria ou digite para buscar...";
+    }
+    
+    // Placeholder aleatório para engajamento
+    return placeholders[Math.floor(Math.random() * placeholders.length)];
+  }, [postText]);
+
+  // Preview de anexos
+  const getAttachmentPreview = useCallback((attachment: FeedAttachment) => {
+    if (attachment.file_type.startsWith('image/')) {
+      return (
+        <div className="relative group">
+          <img 
+            src={attachment.file_url} 
+            alt={attachment.file_name}
+            className="w-16 h-16 object-cover rounded-lg border border-slate-200"
+          />
+          <button
+            onClick={() => removeAttachment(attachment.id)}
+            className="absolute -top-2 -right-2 w-6 h-6 bg-red-500 text-white rounded-full opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center"
+          >
+            <X className="w-3 h-3" />
+          </button>
+        </div>
+      );
+    }
+    
+    return (
+      <div className="relative group flex items-center gap-2 bg-slate-100 rounded-lg px-3 py-2 border border-slate-200">
+        <Paperclip className="w-4 h-4 text-slate-500" />
+        <span className="text-xs text-slate-700 truncate max-w-[120px]">{attachment.file_name}</span>
+        <button
+          onClick={() => removeAttachment(attachment.id)}
+          className="absolute -top-1 -right-1 w-4 h-4 bg-red-500 text-white rounded-full opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center"
+        >
+          <X className="w-2 h-2" />
+        </button>
+      </div>
+    );
+  }, []);
+
+  // Removido o useEffect que estava filtrando widgets indevidamente
 
   // Handler único para drag-and-drop entre sidebars (salva no banco de dados)
   const handleDragEnd = (event: DragEndEvent) => {
@@ -2553,6 +2713,437 @@ const Feed: React.FC<FeedProps> = ({ onNavigateToModule, params }) => {
 
   // Função para renderizar widget por ID
   const renderWidget = (widgetId: string) => {
+    if (widgetId === 'sugestoes') {
+      return (
+        <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-3">
+          <div className="flex items-center justify-between mb-3">
+            <h3 className="text-slate-900 font-bold text-sm flex items-center gap-2">
+              <UserPlus className="w-4 h-4 text-indigo-500" />
+              Pessoas
+            </h3>
+            <span className="text-[10px] text-slate-500 font-medium">Sugestões</span>
+          </div>
+          {suggestedPeople.length === 0 ? (
+            <div className="text-center py-4 text-slate-500 text-sm">
+              <Users className="w-6 h-6 mx-auto mb-2 text-slate-300" />
+              Nenhuma sugestão
+            </div>
+          ) : (
+            <div className="space-y-2">
+              {suggestedPeople.slice(0, 5).map((p) => (
+                <div key={p.user_id} className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => onNavigateToModule?.('perfil', { userId: p.user_id })}
+                    className="flex items-center gap-2 flex-1 min-w-0 text-left hover:bg-slate-50 rounded-lg px-2 py-1.5 transition-colors"
+                  >
+                    <Avatar src={p.avatar_url} name={p.name} size="sm" />
+                    <div className="min-w-0">
+                      <div className="text-xs font-semibold text-slate-800 truncate">{p.name}</div>
+                      <div className="text-[10px] text-slate-500 truncate">{p.role || 'Membro'}</div>
+                    </div>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => toast.info('Conectar', 'Funcionalidade de conexão pode ser habilitada em seguida.')}
+                    className="px-2.5 py-1 rounded-lg text-[10px] font-bold bg-indigo-50 text-indigo-700 border border-indigo-200 hover:bg-indigo-100 transition-colors"
+                  >
+                    Conectar
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      );
+    }
+    if (widgetId === 'eventos') {
+      // Criar eventos de exemplo se não houver eventos reais
+      const exampleEvents = upcomingEvents.length === 0 ? [
+        {
+          id: 'example-1',
+          title: 'Reunião de equipe',
+          start_at: new Date(Date.now() + 86400000).toISOString(), // Amanhã
+          type: 'meeting' as const,
+        },
+        {
+          id: 'example-2', 
+          title: 'Revisão de processos',
+          start_at: new Date(Date.now() + 172800000).toISOString(), // Depois de amanhã
+          type: 'meeting' as const,
+        },
+        {
+          id: 'example-3',
+          title: 'Prazo final - Documentos',
+          start_at: new Date(Date.now() + 259200000).toISOString(), // 3 dias
+          type: 'deadline' as const,
+        }
+      ] : [];
+
+      const displayEvents = upcomingEvents.length > 0 ? upcomingEvents : exampleEvents;
+      
+      return (
+        <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-3">
+          <div className="flex items-center justify-between mb-3">
+            <h3 className="text-slate-900 font-bold text-sm flex items-center gap-2">
+              <Calendar className="w-4 h-4 text-blue-600" />
+              Próximos Eventos
+            </h3>
+            <button
+              type="button"
+              onClick={() => handleNavigate('agenda')}
+              className="text-[10px] font-bold text-blue-600 hover:underline"
+            >
+              Ver
+            </button>
+          </div>
+          <div className="space-y-2">
+            {displayEvents.slice(0, 4).map((event) => {
+              const eventDate = new Date(event.start_at);
+              const label = eventDate.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' });
+              const time = eventDate.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+              const isExample = event.id.toString().startsWith('example-');
+              
+              return (
+                <button
+                  key={event.id}
+                  type="button"
+                  onClick={() => handleNavigate('agenda')}
+                  className={`w-full text-left p-2 rounded-lg border transition-colors ${
+                    isExample 
+                      ? 'bg-blue-50 border-blue-200 hover:bg-blue-100' 
+                      : 'bg-slate-50 border-slate-200 hover:bg-slate-100'
+                  }`}
+                >
+                  <div className="flex items-center justify-between">
+                    <div className="min-w-0">
+                      <div className={`text-xs font-semibold truncate ${isExample ? 'text-blue-700' : 'text-slate-800'}`}>
+                        {event.title}
+                        {isExample && (
+                          <span className="ml-1 text-[10px] text-blue-600 font-normal">(Exemplo)</span>
+                        )}
+                      </div>
+                      <div className="text-[10px] text-slate-500">{label} • {time}</div>
+                    </div>
+                    <ChevronRight className={`w-4 h-4 ${isExample ? 'text-blue-400' : 'text-slate-400'}`} />
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+          {upcomingEvents.length === 0 && (
+            <div className="mt-2 pt-2 border-t border-slate-100">
+              <p className="text-[10px] text-slate-500 text-center">
+                Nenhum evento agendado. Adicione eventos na agenda para vê-los aqui.
+              </p>
+            </div>
+          )}
+        </div>
+      );
+    }
+    if (widgetId === 'atividade') {
+      // Posts recentes dos colegas da equipe
+      const teamActivity = feedPosts
+        .filter(post => post.author_id !== user?.id) // Excluir próprios posts
+        .slice(0, 5); // Últimos 5 posts
+
+      return (
+        <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-3">
+          <div className="flex items-center justify-between mb-3">
+            <h3 className="text-slate-900 font-bold text-sm flex items-center gap-2">
+              <MessageCircle className="w-4 h-4 text-purple-600" />
+              Atividade da Equipe
+            </h3>
+            <span className="text-[10px] text-slate-500 font-medium">Recente</span>
+          </div>
+          {teamActivity.length === 0 ? (
+            <div className="text-center py-4 text-slate-500 text-sm">
+              <MessageCircle className="w-6 h-6 mx-auto mb-2 text-slate-300" />
+              Nenhuma atividade recente
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {teamActivity.map((post) => (
+                <div key={post.id} className="flex gap-2 p-2 rounded-lg bg-slate-50 hover:bg-slate-100 transition-colors cursor-pointer"
+                     onClick={() => {
+                       setSelectedPostId(post.id);
+                       setShowPostModal(true);
+                     }}>
+                  <Avatar src={post.author?.avatar_url} name={post.author?.name || 'Usuário'} size="sm" />
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-1 mb-1">
+                      <span className="text-xs font-semibold text-slate-800 truncate">
+                        {post.author?.name || 'Usuário'}
+                      </span>
+                      <span className="text-[10px] text-slate-400">
+                        {formatTimeAgo(post.created_at)}
+                      </span>
+                    </div>
+                    <div className="text-xs text-slate-600 line-clamp-2">
+                      {post.content.length > 60 ? post.content.slice(0, 60) + '...' : post.content}
+                    </div>
+                    <div className="flex items-center gap-3 mt-1">
+                      <span className="text-[10px] text-slate-500 flex items-center gap-1">
+                        <ThumbsUp className="w-3 h-3" />
+                        {post.likes_count || 0}
+                      </span>
+                      <span className="text-[10px] text-slate-500 flex items-center gap-1">
+                        <MessageCircle className="w-3 h-3" />
+                        {post.comments_count || 0}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      );
+    }
+    if (widgetId === 'conexoes') {
+      // Pessoas com mais interações no feed
+      const topConnections = useMemo(() => {
+        const interactions = new Map<string, { name: string; avatar_url?: string; role?: string; interactions: number }>();
+        
+        feedPosts.forEach(post => {
+          if (post.author_id !== user?.id) {
+            const current = interactions.get(post.author_id) || { 
+              name: post.author?.name || 'Usuário', 
+              avatar_url: post.author?.avatar_url,
+              role: post.author?.role,
+              interactions: 0 
+            };
+            current.interactions += (post.likes_count || 0) + (post.comments_count || 0);
+            interactions.set(post.author_id, current);
+          }
+        });
+
+        return Array.from(interactions.values())
+          .sort((a, b) => b.interactions - a.interactions)
+          .slice(0, 4);
+      }, [feedPosts, user?.id]);
+
+      return (
+        <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-3">
+          <div className="flex items-center justify-between mb-3">
+            <h3 className="text-slate-900 font-bold text-sm flex items-center gap-2">
+              <Users className="w-4 h-4 text-green-600" />
+              Conexões em Destaque
+            </h3>
+            <span className="text-[10px] text-slate-500 font-medium">Top</span>
+          </div>
+          {topConnections.length === 0 ? (
+            <div className="text-center py-4 text-slate-500 text-sm">
+              <Users className="w-6 h-6 mx-auto mb-2 text-slate-300" />
+              Nenhuma conexão
+            </div>
+          ) : (
+            <div className="space-y-2">
+              {topConnections.map((person, index) => (
+                <div key={person.name} className="flex items-center gap-2 p-2 rounded-lg bg-gradient-to-r from-green-50 to-emerald-50 border border-green-100">
+                  <div className="flex items-center justify-center w-6 h-6 rounded-full bg-green-600 text-white text-[10px] font-bold">
+                    {index + 1}
+                  </div>
+                  <Avatar src={person.avatar_url} name={person.name} size="sm" />
+                  <div className="flex-1 min-w-0">
+                    <div className="text-xs font-semibold text-slate-800 truncate">{person.name}</div>
+                    <div className="text-[10px] text-slate-500">{person.role || 'Membro'}</div>
+                  </div>
+                  <div className="text-right">
+                    <div className="text-xs font-bold text-green-600">{person.interactions}</div>
+                    <div className="text-[9px] text-slate-400">interações</div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      );
+    }
+    if (widgetId === 'metricas') {
+      // Estatísticas do feed
+      const totalPosts = feedPosts.length;
+      const totalLikes = feedPosts.reduce((sum, post) => sum + (post.likes_count || 0), 0);
+      const totalComments = feedPosts.reduce((sum, post) => sum + (post.comments_count || 0), 0);
+      const avgEngagement = totalPosts > 0 ? Math.round(((totalLikes + totalComments) / totalPosts) * 10) / 10 : 0;
+
+      return (
+        <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-3">
+          <div className="flex items-center justify-between mb-3">
+            <h3 className="text-slate-900 font-bold text-sm flex items-center gap-2">
+              <BarChart2 className="w-4 h-4 text-indigo-600" />
+              Métricas do Feed
+            </h3>
+            <span className="text-[10px] text-slate-500 font-medium">Hoje</span>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div className="bg-gradient-to-br from-blue-50 to-indigo-50 rounded-lg p-3 border border-blue-100">
+              <div className="flex items-center justify-between mb-1">
+                <FileText className="w-4 h-4 text-blue-600" />
+                <span className="text-[10px] text-blue-600 font-medium">Posts</span>
+              </div>
+              <div className="text-lg font-bold text-blue-900">{totalPosts}</div>
+              <div className="text-[9px] text-slate-500">publicados</div>
+            </div>
+            <div className="bg-gradient-to-br from-red-50 to-pink-50 rounded-lg p-3 border border-red-100">
+              <div className="flex items-center justify-between mb-1">
+                <Heart className="w-4 h-4 text-red-600" />
+                <span className="text-[10px] text-red-600 font-medium">Curtidas</span>
+              </div>
+              <div className="text-lg font-bold text-red-900">{totalLikes}</div>
+              <div className="text-[9px] text-slate-500">totais</div>
+            </div>
+            <div className="bg-gradient-to-br from-green-50 to-emerald-50 rounded-lg p-3 border border-green-100">
+              <div className="flex items-center justify-between mb-1">
+                <MessageCircle className="w-4 h-4 text-green-600" />
+                <span className="text-[10px] text-green-600 font-medium">Coment.</span>
+              </div>
+              <div className="text-lg font-bold text-green-900">{totalComments}</div>
+              <div className="text-[9px] text-slate-500">totais</div>
+            </div>
+            <div className="bg-gradient-to-br from-purple-50 to-indigo-50 rounded-lg p-3 border border-purple-100">
+              <div className="flex items-center justify-between mb-1">
+                <TrendingUp className="w-4 h-4 text-purple-600" />
+                <span className="text-[10px] text-purple-600 font-medium">Engaj.</span>
+              </div>
+              <div className="text-lg font-bold text-purple-900">{avgEngagement}</div>
+              <div className="text-[9px] text-slate-500">médio</div>
+            </div>
+          </div>
+        </div>
+      );
+    }
+    if (widgetId === 'topicos') {
+      // Tópicos mais populares com visual gráfico
+      const topTopics = useMemo(() => {
+        const counts = new Map<string, number>();
+        feedPosts.forEach((post) => {
+          (post.tags || []).forEach((tag) => {
+            counts.set(tag, (counts.get(tag) || 0) + 1);
+          });
+        });
+        return Array.from(counts.entries())
+          .sort((a, b) => b[1] - a[1])
+          .slice(0, 5);
+      }, [feedPosts]);
+
+      const maxCount = Math.max(...topTopics.map(([, count]) => count), 1);
+
+      return (
+        <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-3">
+          <div className="flex items-center justify-between mb-3">
+            <h3 className="text-slate-900 font-bold text-sm flex items-center gap-2">
+              <Hash className="w-4 h-4 text-orange-600" />
+              Tópicos Quentes
+            </h3>
+            <span className="text-[10px] text-slate-500 font-medium">Top 5</span>
+          </div>
+          {topTopics.length === 0 ? (
+            <div className="text-center py-4 text-slate-500 text-sm">
+              <Hash className="w-6 h-6 mx-auto mb-2 text-slate-300" />
+              Sem tópicos
+            </div>
+          ) : (
+            <div className="space-y-2">
+              {topTopics.map(([tagId, count]) => {
+                const tagConfig = availableTags.find((t) => t.id === tagId);
+                const percentage = (count / maxCount) * 100;
+                
+                return (
+                  <button
+                    key={tagId}
+                    type="button"
+                    onClick={() => setFeedTagFilter(tagId)}
+                    className="w-full group"
+                  >
+                    <div className="flex items-center justify-between mb-1">
+                      <span className={`text-[10px] font-bold px-2 py-0.5 rounded-lg ${tagConfig?.color || 'bg-slate-100 text-slate-700'}`}>
+                        #{tagConfig?.label || tagId}
+                      </span>
+                      <span className="text-[10px] text-slate-500 font-medium">{count}</span>
+                    </div>
+                    <div className="w-full bg-slate-200 rounded-full h-2 overflow-hidden">
+                      <div 
+                        className={`h-full rounded-full transition-all duration-500 ${
+                          feedTagFilter === tagId 
+                            ? 'bg-gradient-to-r from-orange-500 to-red-500' 
+                            : 'bg-gradient-to-r from-orange-400 to-orange-500 group-hover:from-orange-500 group-hover:to-orange-600'
+                        }`}
+                        style={{ width: `${percentage}%` }}
+                      />
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      );
+    }
+    if (widgetId === 'destaque') {
+      // Post mais curtido da semana
+      const topPost = useMemo(() => {
+        const oneWeekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+        return feedPosts
+          .filter(post => new Date(post.created_at) >= oneWeekAgo)
+          .sort((a, b) => (b.likes_count || 0) - (a.likes_count || 0))[0];
+      }, [feedPosts]);
+
+      return (
+        <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-3">
+          <div className="flex items-center justify-between mb-3">
+            <h3 className="text-slate-900 font-bold text-sm flex items-center gap-2">
+              <Award className="w-4 h-4 text-yellow-600" />
+              Post em Destaque
+            </h3>
+            <span className="text-[10px] text-slate-500 font-medium">Semana</span>
+          </div>
+          {!topPost ? (
+            <div className="text-center py-4 text-slate-500 text-sm">
+              <Award className="w-6 h-6 mx-auto mb-2 text-slate-300" />
+              Nenhum post esta semana
+            </div>
+          ) : (
+            <div className="space-y-3">
+              <div className="flex items-start gap-2">
+                <div className="flex-shrink-0">
+                  <div className="w-8 h-8 rounded-full bg-gradient-to-br from-yellow-400 to-orange-500 flex items-center justify-center">
+                    <Award className="w-4 h-4 text-white" />
+                  </div>
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2 mb-1">
+                    <Avatar src={topPost.author?.avatar_url} name={topPost.author?.name || 'Usuário'} size="sm" />
+                    <span className="text-xs font-semibold text-slate-800">{topPost.author?.name || 'Usuário'}</span>
+                  </div>
+                  <div className="text-xs text-slate-600 line-clamp-3 mb-2">
+                    {topPost.content.length > 100 ? topPost.content.slice(0, 100) + '...' : topPost.content}
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <span className="text-[10px] text-red-600 font-medium flex items-center gap-1">
+                      <Heart className="w-3 h-3 fill-current" />
+                      {topPost.likes_count || 0} curtidas
+                    </span>
+                    <span className="text-[10px] text-slate-500">
+                      {formatTimeAgo(topPost.created_at)}
+                    </span>
+                  </div>
+                  <button
+                    onClick={() => {
+                      setSelectedPostId(topPost.id);
+                      setShowPostModal(true);
+                    }}
+                    className="mt-2 w-full text-xs text-blue-600 font-medium hover:text-blue-700 transition-colors"
+                  >
+                    Ver post completo
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+      );
+    }
     if (widgetId === 'agenda') {
       return (
         <div className="bg-white rounded-xl border border-slate-200 shadow-sm flex flex-col max-h-[320px]">
@@ -2938,91 +3529,43 @@ const Feed: React.FC<FeedProps> = ({ onNavigateToModule, params }) => {
   };
 
   return (
-    <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
-      <div className="space-y-3 sm:space-y-4">
-        {/* Main Content */}
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-3 sm:gap-4 lg:gap-6 items-start">
-          {/* Sidebar Esquerda - Widgets Arrastáveis */}
-          <aside className="hidden lg:flex lg:col-span-3 flex-col sticky top-4 order-1">
-            <SidebarDroppable id="sidebar-left">
-              <SortableContext items={visibleLeftWidgets} strategy={rectSortingStrategy}>
-                {visibleLeftWidgets.map((widgetId) => (
-                  <SortableWidget key={widgetId} id={widgetId}>
-                    {renderWidget(widgetId)}
-                  </SortableWidget>
-                ))}
-              </SortableContext>
-            </SidebarDroppable>
-          </aside>
+    <div className="space-y-3 sm:space-y-4">
+      {/* Main Content */}
+      <div className="w-full max-w-7xl mx-auto px-3 sm:px-6 lg:px-8">
+        <DndContext
+          sensors={sensors}
+          collisionDetection={closestCenter}
+          onDragStart={(event) => {
+            try {
+              setActiveWidgetId(String(event.active.id));
+            } catch {
+              setActiveWidgetId(null);
+            }
+          }}
+          onDragEnd={(event) => {
+            setActiveWidgetId(null);
+            handleDragEnd(event);
+          }}
+          onDragCancel={() => setActiveWidgetId(null)}
+        >
+          <div className="grid grid-cols-1 lg:grid-cols-[280px_minmax(0,1fr)_320px] gap-4 lg:items-start">
+            {/* Sidebar Esquerda - Widgets de Análise */}
+            <aside className="hidden lg:block">
+              <div className="sticky top-4 space-y-4">
+                <SidebarDroppable id="left-sidebar">
+                  <SortableContext items={visibleLeftWidgets} strategy={rectSortingStrategy}>
+                    {visibleLeftWidgets.map((id) => (
+                      <SortableWidget key={id} id={id}>
+                        {renderWidget(id)}
+                      </SortableWidget>
+                    ))}
+                  </SortableContext>
+                </SidebarDroppable>
+              </div>
+            </aside>
 
-          {/* Feed Central */}
-          <main className="col-span-1 lg:col-span-9 xl:col-span-6 flex flex-col gap-4 sm:gap-6 order-2 min-w-0">
-            {/* Barra de Indicadores - escondida no mobile */}
-            <div className="hidden sm:flex bg-white rounded-xl border border-slate-200 shadow-sm px-3 sm:px-4 py-2 sm:py-2.5 items-center justify-start flex-nowrap gap-2 sm:gap-3 overflow-x-auto scrollbar-hide">
-              {canSeeIndicators.clientes && (
-                <button
-                  onClick={() => handleNavigate('clientes')}
-                  className="flex items-center gap-1.5 hover:bg-slate-50 px-2 py-1 rounded-lg transition-colors whitespace-nowrap"
-                >
-                  <Users className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-blue-500" />
-                  <span className="text-xs font-bold text-slate-700">CLIENTES:</span>
-                  <span className="text-sm font-bold text-blue-600">{activeClients}</span>
-                </button>
-              )}
-              {canSeeIndicators.clientes && (canSeeIndicators.processos || canSeeIndicators.requerimentos || canSeeIndicators.prazos || canSeeIndicators.tarefas) && (
-                <div className="w-px h-4 bg-slate-200" />
-              )}
-              {canSeeIndicators.processos && (
-                <button
-                  onClick={() => handleNavigate('processos')}
-                  className="flex items-center gap-1.5 hover:bg-slate-50 px-2 py-1 rounded-lg transition-colors whitespace-nowrap"
-                >
-                  <Briefcase className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-indigo-500" />
-                  <span className="text-xs font-bold text-slate-700">PROCESSOS:</span>
-                  <span className="text-sm font-bold text-indigo-600">{activeProcesses}</span>
-                </button>
-              )}
-              {canSeeIndicators.processos && (canSeeIndicators.requerimentos || canSeeIndicators.prazos || canSeeIndicators.tarefas) && (
-                <div className="w-px h-4 bg-slate-200" />
-              )}
-              {canSeeIndicators.requerimentos && (
-                <button
-                  onClick={() => handleNavigate('requerimentos')}
-                  className="flex items-center gap-1.5 hover:bg-slate-50 px-2 py-1 rounded-lg transition-colors whitespace-nowrap"
-                >
-                  <FileText className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-amber-500" />
-                  <span className="text-xs font-bold text-slate-700">REQUERIMENTOS:</span>
-                  <span className="text-sm font-bold text-amber-600">{requirementsAwaiting.length}</span>
-                </button>
-              )}
-              {canSeeIndicators.requerimentos && (canSeeIndicators.prazos || canSeeIndicators.tarefas) && (
-                <div className="w-px h-4 bg-slate-200" />
-              )}
-              {canSeeIndicators.prazos && (
-                <button
-                  onClick={() => handleNavigate('prazos')}
-                  className="flex items-center gap-1.5 hover:bg-slate-50 px-2 py-1 rounded-lg transition-colors whitespace-nowrap"
-                >
-                  <Clock className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-red-500" />
-                  <span className="text-xs font-bold text-slate-700">PRAZOS:</span>
-                  <span className="text-sm font-bold text-red-600">{pendingDeadlines}</span>
-                </button>
-              )}
-              {canSeeIndicators.prazos && canSeeIndicators.tarefas && (
-                <div className="w-px h-4 bg-slate-200" />
-              )}
-              {canSeeIndicators.tarefas && (
-                <button
-                  onClick={() => handleNavigate('tarefas')}
-                  className="flex items-center gap-1.5 hover:bg-slate-50 px-2 py-1 rounded-lg transition-colors whitespace-nowrap"
-                >
-                  <CheckSquare className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-emerald-500" />
-                  <span className="text-xs font-bold text-slate-700">TAREFAS:</span>
-                  <span className="text-sm font-bold text-emerald-600">{pendingTasks}</span>
-                </button>
-              )}
-            </div>
-
+            {/* Feed Central */}
+            <main className="w-full min-w-0 max-w-2xl mx-auto flex flex-col gap-4 sm:gap-6">
           {/* Caixa de Postagem - Design Premium */}
           <div className="bg-gradient-to-br from-white to-slate-50 rounded-2xl border border-slate-200/80 shadow-lg shadow-slate-200/50 overflow-visible">
             {/* Header do Post */}
@@ -3039,7 +3582,7 @@ const Feed: React.FC<FeedProps> = ({ onNavigateToModule, params }) => {
                     onChange={handlePostTextChange}
                     rows={2}
                     className="w-full bg-white border border-slate-200 rounded-2xl px-3 sm:px-4 py-2.5 sm:py-3 text-slate-900 placeholder:text-slate-400 focus:ring-2 focus:ring-blue-500/30 focus:border-blue-400 focus:shadow-lg focus:shadow-blue-500/10 transition-all resize-none text-sm leading-relaxed"
-                    placeholder="O que você gostaria de compartilhar? Use @ para mencionar e # para tags..."
+                    placeholder={getDynamicPlaceholder()}
                   />
 
                   {showEmojiPicker && (
@@ -3203,18 +3746,37 @@ const Feed: React.FC<FeedProps> = ({ onNavigateToModule, params }) => {
                 <div className="mt-3 ml-[52px]">
                   <div className="flex flex-wrap gap-2">
                     {pendingAttachments.map((att) => (
-                      <div key={att.attachment.filePath} className="relative">
-                        <img src={att.localUrl} className="h-20 w-20 object-cover rounded-lg border border-slate-200" />
+                      <div key={att.attachment.filePath} className="relative group">
+                        {att.attachment.file_type.startsWith('image/') ? (
+                          <div className="relative">
+                            <img 
+                              src={att.localUrl} 
+                              alt={att.attachment.file_name}
+                              className="h-20 w-20 object-cover rounded-lg border border-slate-200 shadow-sm group-hover:shadow-md transition-shadow" 
+                            />
+                            <div className="absolute inset-0 bg-black/0 group-hover:bg-black/10 rounded-lg transition-colors" />
+                          </div>
+                        ) : (
+                          <div className="flex items-center gap-2 bg-slate-100 rounded-lg px-3 py-2 border border-slate-200 h-20 w-32 group-hover:bg-slate-200 transition-colors">
+                            <Paperclip className="w-4 h-4 text-slate-500 flex-shrink-0" />
+                            <div className="flex-1 min-w-0">
+                              <p className="text-xs text-slate-700 truncate font-medium">{att.attachment.file_name}</p>
+                              <p className="text-[10px] text-slate-500">
+                                {(att.attachment.file_size / 1024).toFixed(1)} KB
+                              </p>
+                            </div>
+                          </div>
+                        )}
                         <button
                           type="button"
-                          className="absolute -top-2 -right-2 bg-white rounded-full border border-slate-200 shadow p-1"
+                          className="absolute -top-2 -right-2 w-6 h-6 bg-red-500 text-white rounded-full opacity-0 group-hover:opacity-100 transition-all shadow-lg flex items-center justify-center hover:bg-red-600"
                           onClick={() => {
                             try { URL.revokeObjectURL(att.localUrl); } catch {}
                             setPendingAttachments((prev) => prev.filter((p) => p.attachment.filePath !== att.attachment.filePath));
                           }}
                           aria-label="Remover anexo"
                         >
-                          <X className="w-3 h-3 text-slate-600" />
+                          <X className="w-3 h-3" />
                         </button>
                       </div>
                     ))}
@@ -3328,6 +3890,22 @@ const Feed: React.FC<FeedProps> = ({ onNavigateToModule, params }) => {
                   >
                     <BarChart2 className="w-4 h-4 text-indigo-500" />
                     <span className="hidden sm:inline text-xs">Enquete</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setShowEventCreator((v) => !v)}
+                    className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg transition-colors text-xs sm:text-sm font-medium ${showEventCreator ? 'bg-green-100 text-green-700' : 'text-slate-600 hover:bg-slate-200'}`}
+                  >
+                    <Calendar className="w-4 h-4 text-green-500" />
+                    <span className="hidden sm:inline text-xs">Evento</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setShowArticleCreator((v) => !v)}
+                    className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg transition-colors text-xs sm:text-sm font-medium ${showArticleCreator ? 'bg-orange-100 text-orange-700' : 'text-slate-600 hover:bg-slate-200'}`}
+                  >
+                    <FileText className="w-4 h-4 text-orange-500" />
+                    <span className="hidden sm:inline text-xs">Artigo</span>
                   </button>
                   </div>
                   </div>
@@ -3745,34 +4323,78 @@ const Feed: React.FC<FeedProps> = ({ onNavigateToModule, params }) => {
             )}
           </div>
 
-          {/* Filtros do Feed - escondidos no mobile */}
-          <div className="hidden sm:flex gap-2 overflow-x-auto pb-2 sm:pb-3 scrollbar-hide -mx-1 px-1">
-            {availableTags.map((tag) => (
-              <button
-                key={tag.id}
-                onClick={() => toggleTag(tag.id)}
-                className={`px-4 py-2.5 rounded-xl text-sm font-semibold whitespace-nowrap transition-all duration-200 flex items-center gap-2 ${
-                  selectedTags.includes(tag.id)
-                    ? `${tag.color} shadow-md`
-                    : 'bg-white text-slate-600 border border-slate-200 hover:border-slate-300 hover:bg-slate-50 hover:shadow-sm'
-                }`}
-              >
-                <tag.icon className="w-4 h-4" />
-                #{tag.label}
-              </button>
-            ))}
-          </div>
-
           {/* Feed de Posts */}
           <div className="flex flex-col gap-4 sm:gap-5">
-            {loadingPosts && feedPosts.length === 0 ? (
-              <div className="bg-white rounded-2xl border border-slate-100 shadow-lg shadow-slate-200/40 p-8 text-center">
-                <div className="w-12 h-12 mx-auto mb-3 rounded-full bg-gradient-to-br from-blue-500 to-indigo-500 flex items-center justify-center">
-                  <Loader2 className="w-6 h-6 text-white animate-spin" />
+            {/* Filtro do Feed - Estilo LinkedIn */}
+            <div className="bg-white rounded-lg border border-slate-200/60 shadow-sm p-3">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <h3 className="text-slate-900 font-semibold text-[15px]">Feed</h3>
+                  <div className="flex items-center gap-1 bg-slate-100 rounded-lg p-1">
+                    <button
+                      className={`px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${
+                        feedSortOrder === 'relevant' 
+                          ? 'bg-white text-slate-900 shadow-sm' 
+                          : 'text-slate-600 hover:text-slate-900'
+                      }`}
+                      onClick={() => setFeedSortOrder('relevant')}
+                    >
+                      <span className="flex items-center gap-1">
+                        <TrendingUp className="w-3 h-3" />
+                        Mais Relevantes
+                      </span>
+                    </button>
+                    <button
+                      className={`px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${
+                        feedSortOrder === 'recent' 
+                          ? 'bg-white text-slate-900 shadow-sm' 
+                          : 'text-slate-600 hover:text-slate-900'
+                      }`}
+                      onClick={() => setFeedSortOrder('recent')}
+                    >
+                      <span className="flex items-center gap-1">
+                        <Clock className="w-3 h-3" />
+                        Recentes
+                      </span>
+                    </button>
+                  </div>
                 </div>
-                <p className="text-slate-600 text-sm font-medium">Carregando publicações...</p>
+                {feedTagFilter && (
+                  <button
+                    onClick={() => setFeedTagFilter(null)}
+                    className="flex items-center gap-1 px-2 py-1 bg-blue-50 text-blue-600 rounded-md text-sm font-medium hover:bg-blue-100 transition-colors"
+                  >
+                    <X className="w-3 h-3" />
+                    {availableTags.find(t => t.id === feedTagFilter)?.label || feedTagFilter}
+                  </button>
+                )}
               </div>
-            ) : feedPosts.length === 0 ? (
+            </div>
+            {loadingPosts ? (
+              <>
+                {[1, 2, 3].map((i) => (
+                  <div key={i} className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
+                    <div className="p-4 flex gap-3">
+                      <div className="w-12 h-12 rounded-full bg-slate-200 animate-pulse" />
+                      <div className="flex-1 space-y-2">
+                        <div className="h-4 bg-slate-200 rounded w-32 animate-pulse" />
+                        <div className="h-3 bg-slate-100 rounded w-24 animate-pulse" />
+                      </div>
+                    </div>
+                    <div className="px-4 pb-4 space-y-2">
+                      <div className="h-4 bg-slate-200 rounded animate-pulse" />
+                      <div className="h-4 bg-slate-200 rounded w-3/4 animate-pulse" />
+                      <div className="h-4 bg-slate-200 rounded w-1/2 animate-pulse" />
+                    </div>
+                    <div className="px-4 py-3 border-t border-slate-100 flex gap-4">
+                      <div className="h-8 w-20 bg-slate-100 rounded-lg animate-pulse" />
+                      <div className="h-8 w-20 bg-slate-100 rounded-lg animate-pulse" />
+                      <div className="h-8 w-20 bg-slate-100 rounded-lg animate-pulse" />
+                    </div>
+                  </div>
+                ))}
+              </>
+            ) : displayedFeedPosts.length === 0 ? (
               <div className="bg-gradient-to-br from-white to-slate-50 rounded-2xl border border-slate-100 shadow-lg shadow-slate-200/40 p-10 text-center">
                 <div className="mx-auto w-20 h-20 rounded-2xl bg-gradient-to-br from-blue-500 to-purple-500 flex items-center justify-center text-white mb-5 shadow-lg shadow-blue-500/25">
                   <MessageCircle className="w-10 h-10" />
@@ -3783,23 +4405,21 @@ const Feed: React.FC<FeedProps> = ({ onNavigateToModule, params }) => {
                 </p>
               </div>
             ) : (
-              feedPosts.map((post) => (
-                <div key={post.id} data-post-id={post.id} className="bg-white rounded-2xl border border-slate-100 shadow-lg shadow-slate-200/30 overflow-visible hover:shadow-xl hover:shadow-slate-300/40 hover:border-slate-200 transition-all duration-300 group">
+              displayedFeedPosts.map((post) => (
+                <div key={post.id} data-post-id={post.id} className="bg-white rounded-lg border border-slate-200/60 shadow-sm hover:shadow-md transition-shadow duration-200">
                   {/* Header do Post */}
-                  <div className="p-3 sm:p-5 pb-2 sm:pb-3 flex gap-3 sm:gap-4">
+                  <div className="p-4 pb-3 flex gap-3">
                     <button 
                       onClick={() => onNavigateToModule?.('perfil', { userId: post.author_id })}
                       className="cursor-pointer hover:scale-105 transition-transform duration-200"
                     >
-                      <div className="ring-2 ring-white shadow-md rounded-full">
-                        <Avatar src={post.author?.avatar_url} name={post.author?.name || 'Usuário'} size="md" />
-                      </div>
+                      <Avatar src={post.author?.avatar_url} name={post.author?.name || 'Usuário'} size="md" />
                     </button>
                     <div className="flex flex-col flex-1 min-w-0">
                       <div className="flex items-center gap-2 flex-wrap">
                         <button 
                           onClick={() => onNavigateToModule?.('perfil', { userId: post.author_id })}
-                          className="text-slate-900 font-bold text-sm sm:text-[15px] hover:text-blue-600 transition-colors cursor-pointer truncate max-w-[180px] sm:max-w-none"
+                          className="text-slate-900 font-semibold text-[15px] hover:text-blue-600 transition-colors cursor-pointer truncate max-w-[180px] sm:max-w-none"
                         >
                           {post.author?.name || 'Usuário'}
                         </button>
@@ -4265,7 +4885,7 @@ const Feed: React.FC<FeedProps> = ({ onNavigateToModule, params }) => {
                       </div>
                     ) : (
                       <>
-                        <div className="text-slate-800 text-sm leading-relaxed mb-3 whitespace-pre-wrap">
+                        <div className="text-slate-900 text-[15px] leading-[1.4] mb-3 whitespace-pre-wrap break-words">
                           {renderContentWithMentions(post.content, post.entity_references)}
                         </div>
                         {post.created_at !== post.updated_at && (
@@ -4662,55 +5282,103 @@ const Feed: React.FC<FeedProps> = ({ onNavigateToModule, params }) => {
                     )}
                   </div>
                   
-                  {/* Contadores - Design Premium */}
-                  <div className="px-5 py-3 flex items-center justify-between text-xs border-t border-slate-100 mt-3">
+                  {/* Contadores - Estilo LinkedIn */}
+                  <div className="px-4 py-2 flex items-center justify-between text-xs text-slate-500 border-t border-slate-100">
                     <div className="flex items-center gap-2">
                       <div className="flex -space-x-1">
-                        <div className="w-6 h-6 rounded-full bg-gradient-to-br from-blue-500 to-blue-600 border-2 border-white flex items-center justify-center shadow-sm">
-                          <ThumbsUp className="w-3 h-3 text-white" />
-                        </div>
+                        {postReactions[post.id]?.type === 'love' ? (
+                          <div className="w-5 h-5 rounded-full bg-gradient-to-br from-red-500 to-pink-500 border-2 border-white flex items-center justify-center">
+                            <Heart className="w-2.5 h-2.5 text-white" />
+                          </div>
+                        ) : postReactions[post.id]?.type === 'haha' ? (
+                          <div className="w-5 h-5 rounded-full bg-gradient-to-br from-amber-500 to-orange-500 border-2 border-white flex items-center justify-center">
+                            <span className="text-white text-[10px] font-bold">😂</span>
+                          </div>
+                        ) : (
+                          <div className="w-5 h-5 rounded-full bg-gradient-to-br from-blue-500 to-blue-600 border-2 border-white flex items-center justify-center">
+                            <ThumbsUp className="w-2.5 h-2.5 text-white" />
+                          </div>
+                        )}
                         {post.likes_count > 5 && (
-                          <div className="w-6 h-6 rounded-full bg-gradient-to-br from-red-500 to-pink-500 border-2 border-white flex items-center justify-center shadow-sm">
-                            <Heart className="w-3 h-3 text-white" />
+                          <div className="w-5 h-5 rounded-full bg-gradient-to-br from-red-500 to-pink-500 border-2 border-white flex items-center justify-center">
+                            <Heart className="w-2.5 h-2.5 text-white" />
                           </div>
                         )}
                       </div>
-                      <span className="hover:underline cursor-pointer font-semibold text-slate-600">
-                        {post.likes_count > 0 ? `${post.likes_count} curtida${post.likes_count !== 1 ? 's' : ''}` : 'Seja o primeiro'}
+                      <span className="hover:underline cursor-pointer text-slate-600 font-medium">
+                        {post.likes_count > 0 ? `${post.likes_count}` : ''}
                       </span>
                     </div>
                     <button
                       type="button"
                       onClick={() => toggleInlineComments(post.id)}
-                      className="hover:underline cursor-pointer font-semibold text-slate-500 hover:text-blue-600 transition-colors"
+                      className="hover:underline cursor-pointer text-slate-500 hover:text-blue-600 transition-colors"
                     >
-                      {post.comments_count} comentário{post.comments_count !== 1 ? 's' : ''}
+                      {post.comments_count > 0 && `${post.comments_count} comentário${post.comments_count !== 1 ? 's' : ''}`}
                     </button>
                   </div>
                   
-                  {/* Ações - Design Premium */}
-                  <div className="flex items-center gap-2 px-4 py-2 border-t border-slate-100">
-                    <button 
-                      onClick={() => handleToggleLike(post.id, post.liked_by_me || false)}
-                      className={`flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl text-sm font-semibold transition-all duration-200 ${
-                        post.liked_by_me 
-                          ? 'bg-blue-50 text-blue-600 hover:bg-blue-100' 
-                          : 'text-slate-600 hover:bg-slate-100'
-                      }`}
-                    >
-                      <ThumbsUp className={`w-5 h-5 transition-transform ${post.liked_by_me ? 'fill-current scale-110' : 'group-hover:scale-110'}`} />
-                      {post.liked_by_me ? 'Curtido' : 'Curtir'}
-                    </button>
-                    <button 
+                  {/* Ações - Estilo LinkedIn/Facebook */}
+                  <div className="flex items-center justify-around py-2 border-t border-slate-100">
+                    <div className="relative group/reaction">
+                      <button
+                        onClick={() => handleReaction(post.id, 'like')}
+                        className={`flex items-center gap-2 px-4 py-2 rounded-md text-sm font-medium transition-colors ${
+                          postReactions[post.id]?.type === 'like'
+                            ? 'text-blue-600 hover:bg-blue-50'
+                            : 'text-slate-600 hover:bg-slate-50'
+                        }`}
+                      >
+                        <ThumbsUp className={`w-4 h-4 ${postReactions[post.id]?.type === 'like' ? 'fill-current' : ''}`} />
+                        <span>Curtir</span>
+                      </button>
+                      <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 bg-white rounded-lg shadow-lg border border-slate-200 p-1 opacity-0 invisible group-hover/reaction:opacity-100 group-hover/reaction:visible transition-all z-10">
+                        <div className="flex gap-1">
+                          {[
+                            { type: 'like', icon: ThumbsUp, label: 'Curtir' },
+                            { type: 'love', icon: Heart, label: 'Amei' },
+                            { type: 'haha', icon: () => <span className="text-sm">😂</span>, label: 'Haha' },
+                          ].map(({ type, icon: Icon, label }) => (
+                            <button
+                              key={type}
+                              onClick={() => handleReaction(post.id, type as any)}
+                              className="p-2 hover:bg-slate-100 rounded transition-colors"
+                              title={label}
+                            >
+                              {typeof Icon === 'function' ? <Icon /> : <Icon className="w-4 h-4" />}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+                    <button
                       onClick={() => toggleInlineComments(post.id)}
-                      className={`flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl text-sm font-semibold transition-all duration-200 ${
-                        expandedComments[post.id] 
-                          ? 'bg-blue-50 text-blue-600 hover:bg-blue-100' 
-                          : 'text-slate-600 hover:bg-slate-100'
+                      className={`flex items-center gap-2 px-4 py-2 rounded-md text-sm font-medium transition-colors ${
+                        expandedComments[post.id]
+                          ? 'text-blue-600 hover:bg-blue-50'
+                          : 'text-slate-600 hover:bg-slate-50'
                       }`}
                     >
-                      <MessageCircle className="w-5 h-5" />
-                      Comentar
+                      <MessageCircle className="w-4 h-4" />
+                      <span>Comentar</span>
+                    </button>
+                    <button
+                      onClick={() => sharePost(post.id)}
+                      className="flex items-center gap-2 px-4 py-2 rounded-md text-sm font-medium text-slate-600 hover:bg-slate-50 transition-colors"
+                    >
+                      <Share2 className="w-4 h-4" />
+                      <span>Compartilhar</span>
+                    </button>
+                    <button
+                      onClick={() => toggleSavePost(post.id)}
+                      className={`flex items-center gap-2 px-4 py-2 rounded-md text-sm font-medium transition-colors ${
+                        savedPosts.has(post.id)
+                          ? 'text-amber-600 hover:bg-amber-50'
+                          : 'text-slate-600 hover:bg-slate-50'
+                      }`}
+                    >
+                      <Bookmark className={`w-4 h-4 ${savedPosts.has(post.id) ? 'fill-current' : ''}`} />
+                      <span>Salvar</span>
                     </button>
                   </div>
                   
@@ -4837,28 +5505,27 @@ const Feed: React.FC<FeedProps> = ({ onNavigateToModule, params }) => {
           </div>
         </main>
 
-        {/* Widgets da direita */}
-        {isXlScreen ? (
-          <aside className="xl:col-span-3 flex-col sticky top-4 order-3 hidden xl:flex">
-            <SidebarDroppable id="sidebar-right">
-              <SortableContext items={visibleRightWidgets} strategy={rectSortingStrategy}>
-                {visibleRightWidgets.map((widgetId) => (
-                  <SortableWidget key={widgetId} id={widgetId}>
-                    {renderWidget(widgetId)}
-                  </SortableWidget>
-                ))}
-              </SortableContext>
-            </SidebarDroppable>
-          </aside>
-        ) : (
-          <section className="xl:hidden col-span-1 lg:col-span-9 lg:col-start-4 order-3 space-y-3 sm:space-y-4">
-            {visibleRightWidgets.map((widgetId) => (
-              <div key={widgetId}>{renderWidget(widgetId)}</div>
-            ))}
-          </section>
-        )}
+            {/* Sidebar Direita */}
+            <aside className="hidden lg:block">
+              <div className="sticky top-4 space-y-4">
+                <SidebarDroppable id="right-sidebar">
+                  <SortableContext items={visibleRightWidgets} strategy={rectSortingStrategy}>
+                    {visibleRightWidgets.map((id) => (
+                      <SortableWidget key={id} id={id}>
+                        {renderWidget(id)}
+                      </SortableWidget>
+                    ))}
+                  </SortableContext>
+                </SidebarDroppable>
+              </div>
+            </aside>
+          </div>
+
+          <DragOverlay>
+            {activeWidgetId ? <div className="w-[320px]">{renderWidget(activeWidgetId)}</div> : null}
+          </DragOverlay>
+        </DndContext>
       </div>
-    </div>
 
     {/* Modal do Acordo Financeiro */}
     {showFinancialModal && selectedFinancialAgreementId && (
@@ -5128,7 +5795,7 @@ const Feed: React.FC<FeedProps> = ({ onNavigateToModule, params }) => {
         }}
       />
     )}
-    </DndContext>
+    </div>
   );
 };
 

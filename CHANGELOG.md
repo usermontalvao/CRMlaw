@@ -1,5 +1,22 @@
 # Changelog
 
+## 1.9.407
+- **Feed Redesign**: Implementação completa do feed estilo LinkedIn/Facebook
+  - **Layout 3 colunas**: Sidebar esquerda, feed central, sidebar direita com widgets arrastáveis
+  - **Novos Widgets**: Sugestões de Pessoas, Tendências por Tags, Próximos Eventos
+  - **Social Interactions**: Reactions (Curtir/Amei/Haha), Compartilhar, Salvar posts
+  - **Skeleton Loaders**: Animações suaves de carregamento para posts
+  - **Composer Aprimorado**: Placeholder dinâmico, preview de anexos com hover effects
+  - **Visual Moderno**: Cards refinados, animações suaves, shadows gradient
+  - **Drag-and-Drop**: Widgets reorganizáveis entre sidebars
+  - **Tags Filter**: Filtrar feed por tags através do widget de tendências
+
+## 1.9.406
+- **Feed**: Implementação inicial layout 3 colunas e widgets básicos
+
+## 1.9.405
+- **Feed**: Removidos os widgets do Dashboard do módulo Feed (Feed fica apenas social).
+
 ## 1.9.404
 - **Requerimentos (Mobile)**: Área superior (ações/abas/filtros) agora é retrátil, mantendo "Novo Requerimento" sempre visível.
 

@@ -46,6 +46,7 @@ import {
    ============================================================================ */
 
 const VERSION_CODENAMES: Record<string, { name: string; emoji: string }> = {
+  '1.9.405': { name: 'Café Feed Sem Widgets', emoji: '📰' },
   '1.9.404': { name: 'Café Requerimentos Retrátil', emoji: '🧩' },
   '1.9.403': { name: 'Café Assinatura Mobile', emoji: '✍️' },
   '1.9.402': { name: 'Café Header Sem Barra', emoji: '🧼' },
@@ -564,6 +565,98 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
    ============================================================================ */
 
 const releases: ReleaseNote[] = [
+  {
+    version: '1.9.407',
+    date: '25/01/2026',
+    summary: 'Feed Redesign: Implementação completa do feed estilo LinkedIn/Facebook com layout 3 colunas, widgets arrastáveis e social interactions.',
+    modules: [
+      {
+        moduleId: 'feed',
+        changes: [
+          {
+            type: 'feature',
+            title: 'Layout 3 colunas',
+            description: 'Sidebar esquerda, feed central, sidebar direita com widgets arrastáveis.',
+          },
+          {
+            type: 'feature',
+            title: 'Novos Widgets',
+            description: 'Sugestões de Pessoas, Tendências por Tags, Próximos Eventos.',
+          },
+          {
+            type: 'feature',
+            title: 'Social Interactions',
+            description: 'Reactions (Curtir/Amei/Haha), Compartilhar, Salvar posts.',
+          },
+          {
+            type: 'improvement',
+            title: 'Skeleton Loaders',
+            description: 'Animações suaves de carregamento para posts.',
+          },
+          {
+            type: 'improvement',
+            title: 'Composer Aprimorado',
+            description: 'Placeholder dinâmico, preview de anexos com hover effects.',
+          },
+          {
+            type: 'improvement',
+            title: 'Visual Moderno',
+            description: 'Cards refinados, animações suaves, shadows gradient.',
+          },
+          {
+            type: 'feature',
+            title: 'Drag-and-Drop',
+            description: 'Widgets reorganizáveis entre sidebars.',
+          },
+          {
+            type: 'feature',
+            title: 'Tags Filter',
+            description: 'Filtrar feed por tags através do widget de tendências.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.406',
+    date: '25/01/2026',
+    summary: 'Feed: Implementação inicial layout 3 colunas e widgets básicos.',
+    modules: [
+      {
+        moduleId: 'feed',
+        changes: [
+          {
+            type: 'feature',
+            title: 'Layout 3 colunas',
+            description: 'Estrutura inicial com sidebar esquerda, feed central e sidebar direita.',
+          },
+          {
+            type: 'feature',
+            title: 'Widgets básicos',
+            description: 'Implementação inicial dos widgets da sidebar direita.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.405',
+    date: '25/01/2026',
+    summary: 'Feed: removidos os widgets do Dashboard (dashboard restaurado como módulo próprio).',
+    modules: [
+      {
+        moduleId: 'feed',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Feed sem widgets do Dashboard',
+            description:
+              'O módulo Feed agora exibe apenas o feed social (composer, posts e interações). Os widgets (agenda/tarefas/prazos/financeiro etc.) voltam a ficar no Dashboard.',
+          },
+        ],
+      },
+    ],
+  },
   {
     version: '1.9.404',
     date: '25/01/2026',
