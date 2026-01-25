@@ -1,5 +1,158 @@
 # Changelog
 
+## 1.9.399
+- **Dashboard**: Corrigido backdrop dos modais para usar bg-transparent e forçar fundo branco com !bg-white no modo claro (removido backdrop escuro).
+
+## 1.9.398
+- **Dashboard**: Corrigido backdrop dos modais para usar bg-black/50 no modo claro (estava muito escuro com bg-slate-900/70).
+
+## 1.9.397
+- **Dashboard**: Modais de detalhes (Compromisso/Intimação) adequados ao padrão do tema (overlay + blur, container com ring/shadow, fita laranja e header/footer padronizados).
+
+## 1.9.396
+- **Dashboard**: Emoji de mão acenando (👋) agora com animação de movimento de um lado para o outro (como acenando).
+  - Animação CSS personalizada com rotação suave (0° → 20° → -10° → 0°)
+  - Origem da transformação ajustada para ponto de rotação no pulso
+  - Duração de 1 segundo com repetição infinita
+
+## 1.9.395
+- **Dashboard**: Emoji de mão acenando (👋) agora com animação de movimento.
+
+## 1.9.394
+- **Dashboard**: Saudação com emoji de mão acenando (👋) ao lado do nome do usuário.
+
+## 1.9.393
+- **Dashboard**: Ícone de mão acenando adicionado ao lado do nome do usuário no header.
+
+## 1.9.392
+- **Dashboard**: Widget "Intimações" melhorado - agora mostra tipo (badge), número do processo, vara/órgão, e partes (Autor/Réu).
+
+## 1.9.391
+- **Dashboard**: Widgets "Intimações", "Aguardando" e "Requerimentos" redesenhados - grid de 3 colunas, layout consistente com outros widgets.
+
+## 1.9.390
+- **Dashboard**: "Intimações" ajustado para mostrar 5 intimações em vez de 3.
+
+## 1.9.389
+- **Dashboard**: Botão "Criar Compromisso" adicionado ao estado vazio da Agenda.
+
+## 1.9.388
+- **Dashboard**: "Agenda" agora mostra 4 compromissos em vez de 2.
+
+## 1.9.387
+- **Dashboard**: "Agenda" ajustada para ficar com altura mais próxima dos demais widgets (layout mais compacto).
+
+## 1.9.386
+- **Dashboard**: Widget "Agenda" compactado para altura igual aos outros widgets.
+
+## 1.9.385
+- **Dashboard**: Widget "Tarefas" movido para abaixo da "Agenda".
+
+## 1.9.384
+- **Dashboard**: Widget "Prazos" movido para abaixo do Financeiro na coluna direita.
+
+## 1.9.383
+- **Dashboard**: Botões de alerta no header (Prazos/Intimações) redesenhados para estilo mais clean (chip com badge) e altura consistente.
+
+## 1.9.382
+- **Dashboard**: Widgets "Prazos" e "Intimações" redesenhados - layout mais limpo, espaçamento melhorado e tipografia aprimorada.
+
+## 1.9.381
+- **Dashboard**: Botão "Processo" reposicionado para ficar ao lado de "Requerimento" - melhor agrupamento lógico.
+
+## 1.9.380
+- **Dashboard**: Botão "Pagamento" adicionado de volta - agora abre modal de novo acordo no módulo Financeiro.
+
+## 1.9.379
+- **Dashboard**: "Ações Rápidas" limpo - removidos botões "Acordo", "Pagamento" e "Alerta" que não tinham módulos correspondentes.
+
+## 1.9.378
+- **Dashboard**: "Ações Rápidas" ajustado - título movido para cima dos botões, liberando mais espaço para os 9 botões em 2 linhas.
+
+## 1.9.377
+- **Dashboard**: "Ações Rápidas" reformulado para layout em 2 linhas com flex-wrap - botões menores e mais organizados.
+
+## 1.9.376
+- **Dashboard**: "Ações Rápidas" simplificado (UI mais clean) - removidas animações/CSS injetado e botões em estilo pill com scroll horizontal.
+
+## 1.9.375
+- **Dashboard**: "Ações Rápidas" otimizado com animações suaves, efeitos hover avançados, bordas dinâmicas e scrollbar customizado invisível.
+
+## 1.9.374
+- **Dashboard**: "Ações Rápidas" expandido com 9 opções: Cliente, Processo, Prazo, Tarefa, Compromisso, Requerimento, Acordo, Pagamento e Alerta.
+
+## 1.9.373
+- **Dashboard**: Botões de "Ações Rápidas" movidos para o lado do título - layout mais compacto e eficiente.
+
+## 1.9.372
+- **Dashboard**: Componente "Ações Rápidas" otimizado para layout de linha única com scroll horizontal.
+
+## 1.9.371
+- **Dashboard**: Widget "Intimações" otimizado para layout mais compacto - padding reduzido, ícones menores e espaçamento apertado.
+
+## 1.9.370
+- **Dashboard**: Widget "Ações Rápidas" movido para cima do Financeiro e otimizado para layout de linha única.
+
+## 1.9.369
+- **Dashboard**: Botões de alerta redesenhados - agora maiores com gradientes, ícones em containers, sombras e tipografia aprimorada.
+
+## 1.9.368
+- **Dashboard**: Botões de alerta movidos para o header ao lado do botão "Novo Cliente" - layout mais compacto e acessível.
+
+## 1.9.367
+- **Dashboard**: Header aprimorado com UI/UX moderna - estatísticas clicáveis com ícones, efeitos hover, gradientes e layout centralizado responsivo.
+
+## 1.9.366
+- **Dashboard**: Otimizado layout do header - estatísticas compactas agora ficam na mesma linha da saudação, removendo cards grandes duplicados.
+
+## 1.9.365
+- **Dashboard**: Corrigida extração do primeiro nome do usuário - agora mostra apenas "Pedro" em vez do nome completo.
+
+## 1.9.364
+- **Dashboard**: Header agora mostra apenas o primeiro nome do usuário com ícone ao lado (ex: "👤 Pedro").
+
+## 1.9.363
+- **Dashboard**: Header personalizado - agora mostra saudação ("Boa noite") no subtítulo e nome do usuário no título principal.
+
+## 1.9.362
+- **Dashboard**: Removido widget "Processos em Andamento" (redundante).
+- **Dashboard**: Widget Intimações agora mostra resumo do processo (número + partes: polo ativo × polo passivo).
+- **Dashboard**: Widget Prazos agora exibe badge de prioridade (alta/média/normal) ou dias restantes se urgente.
+
+## 1.9.361
+- **Dashboard**: Coluna direita do bloco "Agenda + Financeiro" agora empilha **Financeiro** + **Ações rápidas** para equilibrar a altura com a Agenda.
+
+## 1.9.360
+- **Dashboard**: Redesign dos cards de Intimações, Processos Aguardando, Requerimentos e Em Andamento com estilo consistente.
+- **Dashboard**: Card Financeiro redesenhado - mais compacto, sem espaço vazio, altura automática (`h-fit`).
+
+## 1.9.359
+- **Dashboard**: Redesign completo com estética moderna e hierarquia visual melhorada.
+  - Header minimalista com saudação e botão de ação
+  - Cards de estatísticas com design limpo e interativo (hover effects)
+  - Alertas urgentes em formato de badges discretos
+  - Seções de Agenda, Prazos e Tarefas com layout consistente
+  - Melhor espaçamento e tipografia
+
+## 1.9.358
+- **Dashboard**: Corrigido erro `QuotaExceededError` quando localStorage está cheio - agora limpa caches antigos automaticamente.
+
+## 1.9.357
+- **Dashboard**: Restaurado dashboard antigo como tela inicial (visão geral do escritório com métricas e estatísticas).
+- **Feed**: Movido para módulo separado, acessível via menu de navegação.
+
+## 1.9.356
+- **Editor de Petições**: Removido SpellChecker do Syncfusion (requer backend dedicado). Use o corretor ortográfico nativo do navegador (Chrome/Edge/Firefox já possuem correção pt-BR integrada).
+
+## 1.9.355
+- **Editor de Petições**: Corrigido erro "Inject SpellCheck module" - módulo SpellChecker agora é injetado corretamente no DocumentEditorContainerComponent.
+
+## 1.9.354
+- **Editor de Petições**: Ativado corretor ortográfico com sugestões (pt-BR) no Syncfusion, com toggle "Revisão" para ligar/desligar.
+
+## 1.9.353
+- **Feed**: UI/UX dos cards de preview melhorado (visual clean, sem gradientes fortes, melhor hierarquia e legibilidade), mantendo o comportamento de abrir o modal de detalhes.
+
 ## 1.9.352
 - **Feed**: Cards de preview agora abrem o modal de detalhes do registro (via `entityId`/`mode: details`) em vez de levar para a lista geral do módulo. Agenda e Financeiro agora suportam deep-link por ID.
 
@@ -1595,12 +1748,7 @@
 - **Editor de Petições**: painel de propriedades do Syncfusion agora é redimensionável por arraste e a largura fica persistida localmente.
 
 ## 1.4.6
-- **Editor de Petições**: melhorias no Syncfusion DocumentEditor:
-  - Régua (ruler) habilitada via `documentEditorSettings.showRuler`
-  - Toolbar completa com todas as opções de formatação (Header, Footer, PageSetup, etc.)
-  - Painel de propriedades habilitado (`showPropertiesPane`)
-  - Configuração automática de página A4 com margens de 3cm
-  - Novos métodos: `getSelectedText()`, `applyParagraphFormat()`, `applyCitationFormat()`
+- **Editor de Petições**: layout ajustado para a folha ocupar toda a área disponível, removendo o fundo ao redor e escalando a régua com a largura.
 
 ## 1.4.5
 - **Syncfusion**: licenciamento simplificado via `.env` (`VITE_SYNCFUSION_LICENSE_KEY`) registrado no `main.tsx`.
@@ -2412,6 +2560,15 @@
 - Versão anterior.
 
 ## Releases
+
+### 1.9.399
+- **Dashboard**: Corrigido backdrop dos modais para usar bg-transparent e forçar fundo branco com !bg-white no modo claro (removido backdrop escuro).
+
+### 1.9.398
+- **Dashboard**: Corrigido backdrop dos modais para usar bg-black/50 no modo claro (estava muito escuro com bg-slate-900/70).
+
+### 1.9.397
+- **Dashboard**: Modais de detalhes (Compromisso/Intimação) adequados ao padrão do tema (overlay + blur, container com ring/shadow, fita laranja e header/footer padronizados).
 
 ### 1.9.287
 - **Permissões**: Menu/Feed agora respeitam `can_view` (permite ver) e a navegação é bloqueada quando o usuário não possui permissão de visualização do módulo.

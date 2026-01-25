@@ -58,10 +58,11 @@ import { events, SYSTEM_EVENTS } from '../utils/events';
 
 interface FinancialModuleProps {
   entityId?: string;
+  mode?: string;
   onParamConsumed?: () => void;
 }
 
-const FinancialModule: React.FC<FinancialModuleProps> = ({ entityId, onParamConsumed }) => {
+const FinancialModule: React.FC<FinancialModuleProps> = ({ entityId, mode, onParamConsumed }) => {
   const toast = useToastContext();
   const { confirmDelete } = useDeleteConfirm();
   const { user } = useAuth();
@@ -232,6 +233,31 @@ const FinancialModule: React.FC<FinancialModuleProps> = ({ entityId, onParamCons
   useEffect(() => {
     loadData(activeMonth);
   }, [activeMonth, loadData]);
+
+  // Tratar modo payment para abrir modal de pagamento
+  useEffect(() => {
+    if (mode === 'payment' && !isModalOpen) {
+      setIsModalOpen(true);
+      setEditForm({
+        clientId: '',
+        processId: '',
+        title: '',
+        description: '',
+        notes: '',
+        agreementDate: today,
+        status: 'ativo' as AgreementStatus,
+        totalValue: '',
+        feeType: 'percentage' as 'percentage' | 'fixed',
+        feePercentage: '',
+        feeFixedValue: '',
+        paymentType: 'installments' as 'installments' | 'upfront',
+        installmentsCount: '1',
+        firstDueDate: today,
+        customInstallments: [] as { dueDate: string; value: string }[],
+      });
+      onParamConsumed?.();
+    }
+  }, [mode, isModalOpen, onParamConsumed]);
 
   // Escutar eventos globais de mudança de clientes
   useEffect(() => {

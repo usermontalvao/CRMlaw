@@ -4414,7 +4414,7 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToModule, params }) => 
                         {/* Preview Financeiro */}
                         {post.preview_data.financeiro && (
                           <div 
-                            className="bg-gradient-to-r from-emerald-500 to-emerald-600 rounded-lg p-3 cursor-pointer hover:shadow-md transition-shadow"
+                            className="bg-white border border-slate-200 border-l-4 border-l-emerald-500 rounded-lg p-3 cursor-pointer hover:bg-slate-50 hover:border-slate-300 transition-colors"
                             onClick={() => {
                               const agreementId = post.entity_references?.find((e) => e.type === 'financial')?.id;
                               if (agreementId) {
@@ -4424,22 +4424,32 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToModule, params }) => 
                               handleNavigate('financeiro');
                             }}
                           >
-                            <div className="flex items-center gap-2 mb-2">
-                              <DollarSign className="w-4 h-4 text-white" />
-                              <span className="text-white font-bold text-sm">Resumo Financeiro</span>
+                            <div className="flex items-start justify-between gap-3">
+                              <div className="flex items-start gap-2">
+                                <div className="w-9 h-9 rounded-lg bg-emerald-100 flex items-center justify-center text-emerald-700">
+                                  <DollarSign className="w-5 h-5" />
+                                </div>
+                                <div>
+                                  <p className="text-slate-900 font-semibold text-sm">Resumo Financeiro</p>
+                                  <p className="text-slate-500 text-xs">Clique para ver detalhes</p>
+                                </div>
+                              </div>
+                              <span className="shrink-0 text-[10px] font-medium px-2 py-0.5 rounded-full bg-emerald-50 border border-emerald-200 text-emerald-700">
+                                Financeiro
+                              </span>
                             </div>
                             <div className="grid grid-cols-3 gap-2">
-                              <div className="bg-white/20 rounded-lg p-2 text-center">
-                                <p className="text-white/80 text-[10px]">Recebido</p>
-                                <p className="text-white font-bold text-sm">{formatCurrency(post.preview_data.financeiro.recebido)}</p>
+                              <div className="bg-slate-50 border border-slate-200 rounded-lg p-2 text-center">
+                                <p className="text-slate-500 text-[10px] font-medium">Recebido</p>
+                                <p className="text-emerald-600 font-bold text-sm">{formatCurrency(post.preview_data.financeiro.recebido)}</p>
                               </div>
-                              <div className="bg-white/20 rounded-lg p-2 text-center">
-                                <p className="text-white/80 text-[10px]">Pendente</p>
-                                <p className="text-white font-bold text-sm">{formatCurrency(post.preview_data.financeiro.pendente)}</p>
+                              <div className="bg-slate-50 border border-slate-200 rounded-lg p-2 text-center">
+                                <p className="text-slate-500 text-[10px] font-medium">Pendente</p>
+                                <p className="text-amber-600 font-bold text-sm">{formatCurrency(post.preview_data.financeiro.pendente)}</p>
                               </div>
-                              <div className="bg-white/20 rounded-lg p-2 text-center">
-                                <p className="text-white/80 text-[10px]">Atrasado</p>
-                                <p className="text-white font-bold text-sm">{formatCurrency(post.preview_data.financeiro.atrasado)}</p>
+                              <div className="bg-slate-50 border border-slate-200 rounded-lg p-2 text-center">
+                                <p className="text-slate-500 text-[10px] font-medium">Atrasado</p>
+                                <p className="text-red-600 font-bold text-sm">{formatCurrency(post.preview_data.financeiro.atrasado)}</p>
                               </div>
                             </div>
                           </div>
@@ -4448,7 +4458,7 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToModule, params }) => 
                         {/* Preview Cliente */}
                         {post.preview_data.cliente && (
                           <div 
-                            className="bg-gradient-to-r from-blue-500 to-blue-600 rounded-lg p-3 cursor-pointer hover:shadow-md transition-shadow"
+                            className="bg-white border border-slate-200 border-l-4 border-l-blue-500 rounded-lg p-3 cursor-pointer hover:bg-slate-50 hover:border-slate-300 transition-colors"
                             onClick={() => {
                               const clientId = post.preview_data?.cliente?.id;
                               if (clientId) {
@@ -4459,12 +4469,12 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToModule, params }) => 
                             }}
                           >
                             <div className="flex items-center gap-3">
-                              <div className="w-10 h-10 rounded-full bg-white/20 flex items-center justify-center text-white">
+                              <div className="w-9 h-9 rounded-lg bg-blue-100 flex items-center justify-center text-blue-700">
                                 <Users className="w-5 h-5" />
                               </div>
                               <div>
-                                <p className="text-white font-bold text-sm">{post.preview_data.cliente.nome}</p>
-                                <p className="text-white/80 text-xs">{post.preview_data.cliente.cpf || post.preview_data.cliente.telefone || 'Cliente'}</p>
+                                <p className="text-slate-900 font-semibold text-sm">{post.preview_data.cliente.nome}</p>
+                                <p className="text-slate-500 text-xs">{post.preview_data.cliente.cpf || post.preview_data.cliente.telefone || 'Cliente'}</p>
                               </div>
                             </div>
                           </div>
@@ -4473,7 +4483,7 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToModule, params }) => 
                         {/* Preview Processo */}
                         {post.preview_data.processo && (
                           <div 
-                            className="bg-gradient-to-r from-purple-500 to-purple-600 rounded-lg p-3 cursor-pointer hover:shadow-md transition-shadow"
+                            className="bg-white border border-slate-200 border-l-4 border-l-indigo-500 rounded-lg p-3 cursor-pointer hover:bg-slate-50 hover:border-slate-300 transition-colors"
                             onClick={() => {
                               const processId = post.preview_data?.processo?.id;
                               if (processId) {
@@ -4484,12 +4494,12 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToModule, params }) => 
                             }}
                           >
                             <div className="flex items-center gap-3">
-                              <div className="w-10 h-10 rounded-full bg-white/20 flex items-center justify-center text-white">
+                              <div className="w-9 h-9 rounded-lg bg-indigo-100 flex items-center justify-center text-indigo-700">
                                 <Gavel className="w-5 h-5" />
                               </div>
                               <div>
-                                <p className="text-white font-bold text-sm">{post.preview_data.processo.numero}</p>
-                                <p className="text-white/80 text-xs">{post.preview_data.processo.cliente} • {post.preview_data.processo.status}</p>
+                                <p className="text-slate-900 font-semibold text-sm">{post.preview_data.processo.numero}</p>
+                                <p className="text-slate-500 text-xs">{post.preview_data.processo.cliente} • {post.preview_data.processo.status}</p>
                               </div>
                             </div>
                           </div>
@@ -4498,7 +4508,7 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToModule, params }) => 
                         {/* Preview Prazo */}
                         {post.preview_data.prazo && (
                           <div 
-                            className="bg-gradient-to-r from-red-500 to-red-600 rounded-lg p-3 cursor-pointer hover:shadow-md transition-shadow"
+                            className="bg-white border border-slate-200 border-l-4 border-l-red-500 rounded-lg p-3 cursor-pointer hover:bg-slate-50 hover:border-slate-300 transition-colors"
                             onClick={() => {
                               const deadlineId = post.preview_data?.prazo?.id;
                               if (deadlineId) {
@@ -4509,12 +4519,12 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToModule, params }) => 
                             }}
                           >
                             <div className="flex items-center gap-3">
-                              <div className="w-10 h-10 rounded-full bg-white/20 flex items-center justify-center text-white">
+                              <div className="w-9 h-9 rounded-lg bg-red-100 flex items-center justify-center text-red-700">
                                 <Clock className="w-5 h-5" />
                               </div>
                               <div>
-                                <p className="text-white font-bold text-sm">{post.preview_data.prazo.titulo}</p>
-                                <p className="text-white/80 text-xs">{post.preview_data.prazo.data} • {post.preview_data.prazo.tipo}</p>
+                                <p className="text-slate-900 font-semibold text-sm">{post.preview_data.prazo.titulo}</p>
+                                <p className="text-slate-500 text-xs">{post.preview_data.prazo.data} • {post.preview_data.prazo.tipo}</p>
                               </div>
                             </div>
                           </div>
@@ -4523,7 +4533,7 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToModule, params }) => 
                         {/* Preview Agenda */}
                         {post.preview_data.agenda && (
                           <div 
-                            className="bg-gradient-to-r from-amber-500 to-amber-600 rounded-lg p-3 cursor-pointer hover:shadow-md transition-shadow"
+                            className="bg-white border border-slate-200 border-l-4 border-l-amber-500 rounded-lg p-3 cursor-pointer hover:bg-slate-50 hover:border-slate-300 transition-colors"
                             onClick={() => {
                               const calendarEventId = post.preview_data?.agenda?.id;
                               if (calendarEventId) {
@@ -4534,12 +4544,12 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToModule, params }) => 
                             }}
                           >
                             <div className="flex items-center gap-3">
-                              <div className="w-10 h-10 bg-white/20 rounded-lg flex items-center justify-center text-white">
+                              <div className="w-9 h-9 bg-amber-100 rounded-lg flex items-center justify-center text-amber-700">
                                 <Calendar className="w-5 h-5" />
                               </div>
                               <div>
-                                <p className="text-white font-bold text-sm">{post.preview_data.agenda.titulo}</p>
-                                <p className="text-white/80 text-xs">{post.preview_data.agenda.data} {post.preview_data.agenda.hora && `às ${post.preview_data.agenda.hora}`}</p>
+                                <p className="text-slate-900 font-semibold text-sm">{post.preview_data.agenda.titulo}</p>
+                                <p className="text-slate-500 text-xs">{post.preview_data.agenda.data} {post.preview_data.agenda.hora && `às ${post.preview_data.agenda.hora}`}</p>
                               </div>
                             </div>
                           </div>
@@ -4548,7 +4558,7 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToModule, params }) => 
                         {/* Preview Documento */}
                         {post.preview_data.documento && (
                           <div 
-                            className="bg-gradient-to-r from-indigo-500 to-indigo-600 rounded-lg p-3 cursor-pointer hover:shadow-md transition-shadow"
+                            className="bg-white border border-slate-200 border-l-4 border-l-indigo-500 rounded-lg p-3 cursor-pointer hover:bg-slate-50 hover:border-slate-300 transition-colors"
                             onClick={() => {
                               const docId = post.preview_data?.documento?.id;
                               if (docId) {
@@ -4559,12 +4569,12 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToModule, params }) => 
                             }}
                           >
                             <div className="flex items-center gap-3">
-                              <div className="w-10 h-10 bg-white/20 rounded-lg flex items-center justify-center text-white">
+                              <div className="w-9 h-9 bg-indigo-100 rounded-lg flex items-center justify-center text-indigo-700">
                                 <FileText className="w-5 h-5" />
                               </div>
                               <div>
-                                <p className="text-white font-bold text-sm">{post.preview_data.documento.nome}</p>
-                                <p className="text-white/80 text-xs">{post.preview_data.documento.tipo || 'Documento'}</p>
+                                <p className="text-slate-900 font-semibold text-sm">{post.preview_data.documento.nome}</p>
+                                <p className="text-slate-500 text-xs">{post.preview_data.documento.tipo || 'Documento'}</p>
                               </div>
                             </div>
                           </div>
@@ -4573,7 +4583,7 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToModule, params }) => 
                         {/* Preview Petição */}
                         {post.preview_data.peticao && (
                           <div 
-                            className="bg-gradient-to-r from-cyan-500 to-cyan-600 rounded-lg p-3 cursor-pointer hover:shadow-md transition-shadow"
+                            className="bg-white border border-slate-200 border-l-4 border-l-cyan-500 rounded-lg p-3 cursor-pointer hover:bg-slate-50 hover:border-slate-300 transition-colors"
                             onClick={() => {
                               const petId = post.preview_data?.peticao?.id;
                               if (petId) {
@@ -4584,12 +4594,12 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToModule, params }) => 
                             }}
                           >
                             <div className="flex items-center gap-3">
-                              <div className="w-10 h-10 bg-white/20 rounded-lg flex items-center justify-center text-white">
+                              <div className="w-9 h-9 bg-cyan-100 rounded-lg flex items-center justify-center text-cyan-700">
                                 <ScrollText className="w-5 h-5" />
                               </div>
                               <div>
-                                <p className="text-white font-bold text-sm">{post.preview_data.peticao.nome}</p>
-                                <p className="text-white/80 text-xs">{post.preview_data.peticao.tipo || 'Petição'}</p>
+                                <p className="text-slate-900 font-semibold text-sm">{post.preview_data.peticao.nome}</p>
+                                <p className="text-slate-500 text-xs">{post.preview_data.peticao.tipo || 'Petição'}</p>
                               </div>
                             </div>
                           </div>
@@ -4598,7 +4608,7 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToModule, params }) => 
                         {/* Preview Assinatura */}
                         {post.preview_data.assinatura && (
                           <div 
-                            className="bg-gradient-to-r from-pink-500 to-pink-600 rounded-lg p-3 cursor-pointer hover:shadow-md transition-shadow"
+                            className="bg-white border border-slate-200 border-l-4 border-l-pink-500 rounded-lg p-3 cursor-pointer hover:bg-slate-50 hover:border-slate-300 transition-colors"
                             onClick={() => {
                               const requestId = post.preview_data?.assinatura?.id;
                               if (requestId) {
@@ -4609,12 +4619,12 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToModule, params }) => 
                             }}
                           >
                             <div className="flex items-center gap-3">
-                              <div className="w-10 h-10 bg-white/20 rounded-lg flex items-center justify-center text-white">
+                              <div className="w-9 h-9 bg-pink-100 rounded-lg flex items-center justify-center text-pink-700">
                                 <Pencil className="w-5 h-5" />
                               </div>
                               <div>
-                                <p className="text-white font-bold text-sm">{post.preview_data.assinatura.nome}</p>
-                                <p className="text-white/80 text-xs">
+                                <p className="text-slate-900 font-semibold text-sm">{post.preview_data.assinatura.nome}</p>
+                                <p className="text-slate-500 text-xs">
                                   {post.preview_data.assinatura.cliente || 'Assinatura'} • {post.preview_data.assinatura.status === 'signed' ? 'Assinado' : 'Pendente'}
                                 </p>
                               </div>
@@ -4625,7 +4635,7 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToModule, params }) => 
                         {/* Preview Requerimento */}
                         {post.preview_data.requerimento && (
                           <div 
-                            className="bg-gradient-to-r from-orange-500 to-orange-600 rounded-lg p-3 cursor-pointer hover:shadow-md transition-shadow"
+                            className="bg-white border border-slate-200 border-l-4 border-l-orange-500 rounded-lg p-3 cursor-pointer hover:bg-slate-50 hover:border-slate-300 transition-colors"
                             onClick={() => {
                               const reqId = post.preview_data?.requerimento?.id;
                               if (reqId) {
@@ -4636,12 +4646,12 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToModule, params }) => 
                             }}
                           >
                             <div className="flex items-center gap-3">
-                              <div className="w-10 h-10 bg-white/20 rounded-lg flex items-center justify-center text-white">
+                              <div className="w-9 h-9 bg-orange-100 rounded-lg flex items-center justify-center text-orange-700">
                                 <Briefcase className="w-5 h-5" />
                               </div>
                               <div>
-                                <p className="text-white font-bold text-sm">{post.preview_data.requerimento.protocolo || post.preview_data.requerimento.beneficiario}</p>
-                                <p className="text-white/80 text-xs">
+                                <p className="text-slate-900 font-semibold text-sm">{post.preview_data.requerimento.protocolo || post.preview_data.requerimento.beneficiario}</p>
+                                <p className="text-slate-500 text-xs">
                                   {post.preview_data.requerimento.beneficiario} • {post.preview_data.requerimento.tipo || post.preview_data.requerimento.status || 'Requerimento'}
                                 </p>
                               </div>

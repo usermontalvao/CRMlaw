@@ -560,6 +560,48 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
 
 const releases: ReleaseNote[] = [
   {
+    version: '1.9.399',
+    date: '24/01/2026',
+    summary: 'Dashboard: modais de detalhes adequados ao tema + correção de fundo/backdrop no modo claro.',
+    modules: [
+      {
+        moduleId: 'dashboard',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Modais de detalhes no padrão do tema',
+            description:
+              'Modais de detalhes do compromisso e da intimação foram padronizados com o tema (estrutura de overlay, container com shadow/ring, fita laranja e header/footer consistentes).',
+          },
+          {
+            type: 'fix',
+            title: 'Fundo/backdrop no modo claro',
+            description:
+              'Ajustado o backdrop e o fundo do container para evitar aparência escura no modo claro.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.353',
+    date: '17/01/2026',
+    summary: 'Feed: UI/UX dos cards de preview melhorado (visual clean e legível).',
+    modules: [
+      {
+        moduleId: 'feed',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Cards de preview com design mais profissional',
+            description:
+              'Cards de preview dentro dos posts foram padronizados para um visual clean (fundo branco, bordas sutis e destaque lateral por cor), removendo gradientes fortes e melhorando a hierarquia de informações, sem alterar a navegação para os modais de detalhes.',
+          },
+        ],
+      },
+    ],
+  },
+  {
     version: '1.9.352',
     date: '17/01/2026',
     summary: 'Feed: cards agora abrem direto o modal de detalhes (não a lista do módulo).',

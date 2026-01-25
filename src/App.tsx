@@ -25,6 +25,7 @@ import {
   Scale,
   Sun,
   PenTool,
+  Newspaper,
 } from 'lucide-react';
 import Login from './components/Login';
 import OfflinePage from './components/OfflinePage';
@@ -35,6 +36,7 @@ import ProfileModal, { type AppProfile, type UserRole } from './components/Profi
 
 // Lazy loading dos módulos principais (carrega apenas quando acessado)
 const Dashboard = lazy(() => import('./components/DashboardPage'));
+const Feed = lazy(() => import('./components/FeedPage'));
 const UserProfilePage = lazy(() => import('./components/UserProfilePage'));
 const ClientsModule = lazy(() => import('./components/ClientsModule'));
 const DocumentsModule = lazy(() => import('./components/DocumentsModule'));
@@ -996,6 +998,17 @@ const MainApp: React.FC = () => {
           >
             {activeModule === 'dashboard' && <div className="absolute left-0 top-1/2 -translate-y-1/2 w-0.5 h-6 bg-amber-500 rounded-r" />}
             <Layers className="w-5 h-5" />
+            <span className="text-[9px] mt-1">Dashboard</span>
+          </button>
+
+          <button
+            onClick={() => { setClientPrefill(null); setIsMobileNavOpen(false); navigateTo('feed'); }}
+            className={`relative flex flex-col items-center py-2.5 px-1 rounded-lg transition-colors ${
+              activeModule === 'feed' ? 'text-amber-500' : 'text-slate-400 hover:text-white hover:bg-slate-800/50'
+            }`}
+          >
+            {activeModule === 'feed' && <div className="absolute left-0 top-1/2 -translate-y-1/2 w-0.5 h-6 bg-amber-500 rounded-r" />}
+            <Newspaper className="w-5 h-5" />
             <span className="text-[9px] mt-1">Feed</span>
           </button>
 
@@ -1196,7 +1209,8 @@ const MainApp: React.FC = () => {
                 </button>
                 <div className="min-w-0 flex-1">
                   <h2 className="text-base sm:text-xl lg:text-2xl font-bold text-slate-900 truncate">
-                    {activeModule === 'dashboard' && 'Feed'}
+                    {activeModule === 'dashboard' && 'Dashboard'}
+                    {activeModule === 'feed' && 'Feed'}
                     {activeModule === 'leads' && 'Pipeline de Leads'}
                     {activeModule === 'clientes' && 'Gestão de Clientes'}
                     {activeModule === 'processos' && 'Gestão de Processos'}
@@ -1212,7 +1226,8 @@ const MainApp: React.FC = () => {
                     {activeModule === 'configuracoes' && 'Configurações'}
                   </h2>
                   <p className="hidden md:block text-xs sm:text-sm text-slate-600 mt-1 truncate">
-                    {activeModule === 'dashboard' && 'Acompanhe as novidades e publicações da equipe'}
+                    {activeModule === 'dashboard' && 'Visão geral do escritório e métricas'}
+                    {activeModule === 'feed' && 'Acompanhe as novidades e publicações da equipe'}
                     {activeModule === 'leads' && 'Gerencie leads e converta em clientes'}
                     {activeModule === 'clientes' && 'Gerencie todos os seus clientes e informações'}
                     {activeModule === 'processos' && 'Acompanhe processos e andamentos'}
@@ -1454,6 +1469,7 @@ const MainApp: React.FC = () => {
           {/* Renderização condicional baseada no módulo ativo com Lazy Loading */}
           <Suspense fallback={<div className="min-h-[200px]" />}>
             {activeModule === 'dashboard' && <Dashboard onNavigateToModule={handleNavigateToModule} params={moduleParams['dashboard'] ? JSON.parse(moduleParams['dashboard']) : undefined} />}
+            {activeModule === 'feed' && <Feed onNavigateToModule={handleNavigateToModule} params={moduleParams['feed'] ? JSON.parse(moduleParams['feed']) : undefined} />}
             {activeModule === 'leads' && <LeadsModule onConvertLead={handleConvertLead} />}
             {activeModule === 'clientes' && (
               <ClientsModule 
@@ -1539,6 +1555,7 @@ const MainApp: React.FC = () => {
             {activeModule === 'financeiro' && (
               <FinancialModule
                 entityId={financeiroParams?.entityId}
+                mode={financeiroParams?.mode}
                 onParamConsumed={() => clearModuleParams('financeiro')}
               />
             )}

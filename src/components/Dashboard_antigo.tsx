@@ -30,6 +30,7 @@ import {
   Plus,
   Eye,
   Sparkles,
+  User,
 } from 'lucide-react';
 import { clientService } from '../services/client.service';
 import { processService } from '../services/process.service';
@@ -50,10 +51,13 @@ import type { FinancialStats, Installment, Agreement } from '../types/financial.
 import type { DjenComunicacaoLocal } from '../types/djen.types';
 import { FinancialCard } from './dashboard/FinancialCard';
 import { DashboardHeader } from './dashboard/DashboardHeader';
+import { QuickActions } from './dashboard/QuickActions';
+import { profileService } from '../services/profile.service';
 import { events, SYSTEM_EVENTS } from '../utils/events';
 
 interface DashboardProps {
   onNavigateToModule?: (moduleKey: string, params?: Record<string, string>) => void;
+  params?: any;
 }
 
 type StatCardProps = {
@@ -165,6 +169,22 @@ interface DashboardCache {
 }
 
 const Dashboard: React.FC<DashboardProps> = ({ onNavigateToModule }) => {
+  // Adicionar animação CSS dinamicamente
+  useEffect(() => {
+    const style = document.createElement('style');
+    style.textContent = `
+      @keyframes wave {
+        0% { transform: rotate(0deg); }
+        25% { transform: rotate(20deg); }
+        75% { transform: rotate(-10deg); }
+        100% { transform: rotate(0deg); }
+      }
+    `;
+    document.head.appendChild(style);
+    return () => {
+      document.head.removeChild(style);
+    };
+  }, []);
   const [loading, setLoading] = useState(true);
   const [clients, setClients] = useState<Client[]>([]);
   const [processes, setProcesses] = useState<Process[]>([]);
@@ -184,6 +204,7 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToModule }) => {
     client_id?: string | null;
   } | null>(null);
   const [selectedIntimacao, setSelectedIntimacao] = useState<DjenComunicacaoLocal | null>(null);
+  const [userName, setUserName] = useState<string>('');
   const clientMap = useMemo(() => new Map(clients.map((client) => [client.id, client])), [clients]);
 
   const withTimeout = useCallback(<T,>(promise: Promise<T>, label: string): Promise<T> => {
@@ -395,8 +416,29 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToModule }) => {
           djenIntimacoes: djenIntimacoesData,
         },
       };
-      localStorage.setItem(DASHBOARD_CACHE_KEY, JSON.stringify(cacheData));
-      console.log(' Dashboard salvo no cache');
+      try {
+        localStorage.setItem(DASHBOARD_CACHE_KEY, JSON.stringify(cacheData));
+        console.log(' Dashboard salvo no cache');
+      } catch (cacheError) {
+        // Se localStorage estiver cheio, limpa caches antigos e tenta novamente
+        console.warn('Cache cheio, limpando dados antigos...');
+        try {
+          // Remove caches antigos do CRM
+          const keysToRemove: string[] = [];
+          for (let i = 0; i < localStorage.length; i++) {
+            const key = localStorage.key(i);
+            if (key && (key.startsWith('crm-') || key.startsWith('syncfusion-') || key.startsWith('petition-'))) {
+              keysToRemove.push(key);
+            }
+          }
+          keysToRemove.forEach(key => localStorage.removeItem(key));
+          // Tenta salvar novamente
+          localStorage.setItem(DASHBOARD_CACHE_KEY, JSON.stringify(cacheData));
+        } catch {
+          // Se ainda falhar, ignora o cache
+          console.warn('Não foi possível salvar cache do dashboard');
+        }
+      }
     } catch (error) {
       console.error('Erro ao carregar dados do dashboard:', error);
     } finally {
@@ -407,6 +449,21 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToModule }) => {
   useEffect(() => {
     loadDashboardData();
   }, [loadDashboardData]);
+
+  useEffect(() => {
+    const loadUserName = async () => {
+      try {
+        const profile = await profileService.getMyProfile();
+        const fullName = profile?.name || '';
+        const firstName = fullName.split(' ')[0];
+        setUserName(firstName);
+      } catch (error) {
+        console.warn('Não foi possível carregar o nome do usuário:', error);
+      }
+    };
+    
+    loadUserName();
+  }, []);
 
   useEffect(() => {
     const unsubscribe = events.on(SYSTEM_EVENTS.CLIENTS_CHANGED, () => {
@@ -619,16 +676,16 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToModule }) => {
         return diffDays <= 3 && diffDays >= 0;
       }).length;
       if (urgentDeadlines > 0) {
-        alerts.push({ type: 'Prazos Urgentes', count: urgentDeadlines, color: 'red', icon: <AlertTriangle className="w-5 h-5" />, action: 'prazos' });
+        alerts.push({ type: 'Prazos Urgentes', count: urgentDeadlines, color: 'red', icon: <AlertTriangle className="w-4 h-4" />, action: 'prazos' });
       }
     }
     
     if (djenIntimacoes.length > 0) {
-      alerts.push({ type: 'Intimações Não Lidas', count: djenIntimacoes.length, color: 'orange', icon: <Bell className="w-5 h-5" />, action: 'intimacoes' });
+      alerts.push({ type: 'Intimações Não Lidas', count: djenIntimacoes.length, color: 'orange', icon: <Bell className="w-4 h-4" />, action: 'intimacoes' });
     }
     
     if (financialStats && financialStats.overdue_installments > 0) {
-      alerts.push({ type: 'Parcelas Vencidas', count: financialStats.overdue_installments, color: 'amber', icon: <Wallet className="w-5 h-5" />, action: 'financeiro' });
+      alerts.push({ type: 'Parcelas Vencidas', count: financialStats.overdue_installments, color: 'amber', icon: <Wallet className="w-4 h-4" />, action: 'financeiro' });
     }
     
     return alerts;
@@ -646,532 +703,544 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToModule }) => {
   }
 
   return (
-    <div className="space-y-4 bg-slate-50 -m-6 p-4 sm:p-6 min-h-screen">
+    <div className="space-y-6 bg-slate-50/50 -m-6 p-4 sm:p-6 min-h-screen">
 
-      {/* Header repaginado */}
-      <DashboardHeader onNewClient={() => handleNavigate('clientes?mode=create')} />
-
-      {/* Barra de Atenção / Alertas Urgentes */}
-      {urgentAlerts.length > 0 && (
-        <div className="flex items-center justify-between gap-2 sm:gap-4 rounded-xl bg-gradient-to-r from-slate-800 to-slate-900 px-3 sm:px-5 py-2.5 sm:py-3 shadow-md">
-          {/* Header */}
-          <div className="flex items-center gap-2 sm:gap-3 min-w-0 flex-shrink-0">
-            <div className="relative flex-shrink-0">
-              <div className="flex items-center justify-center w-8 h-8 sm:w-10 sm:h-10 rounded-xl bg-orange-500 text-white">
-                <AlertTriangle className="w-4 h-4 sm:w-5 sm:h-5" />
-              </div>
-              <span className="absolute -top-1 -right-1 flex items-center justify-center w-4 h-4 sm:w-5 sm:h-5 rounded-full bg-red-500 text-white text-[9px] sm:text-[10px] font-bold border-2 border-slate-900">
-                {urgentAlerts.reduce((sum, a) => sum + a.count, 0)}
-              </span>
-            </div>
-            <div className="min-w-0 hidden sm:block">
-              <p className="text-sm font-semibold text-white">Centro de Atenção</p>
-              <p className="text-xs text-slate-400 truncate">
-                {urgentAlerts.reduce((sum, a) => sum + a.count, 0)} itens precisam da sua atenção
-              </p>
+      {/* Header Minimalista com Estatísticas */}
+      <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+        <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4">
+          <div>
+            <p className="text-xs font-medium text-slate-400 uppercase tracking-wider">{getGreeting()}</p>
+            <div className="flex items-center gap-2 mt-1">
+              {userName && <User className="w-5 h-5 text-slate-600" />}
+              <h1 className="text-xl sm:text-2xl font-bold text-slate-900">
+                {userName || 'Dashboard'}
+              </h1>
+              {userName && (
+                <span 
+                  className="text-xl leading-none select-none inline-block" 
+                  aria-label="mão acenando" 
+                  title="Olá"
+                  style={{
+                    animation: 'wave 1s ease-in-out infinite',
+                    transformOrigin: '70% 70%',
+                    display: 'inline-block'
+                  }}
+                >
+                  👋
+                </span>
+              )}
             </div>
           </div>
-
-          {/* Botões de alerta */}
-          <div className="flex items-center gap-1.5 sm:gap-2 overflow-x-auto no-scrollbar">
-            {urgentAlerts.map((alert, index) => {
-              const colorClass =
-                alert.action === 'prazos' ? 'bg-red-500 hover:bg-red-600' :
-                alert.action === 'intimacoes' ? 'bg-orange-500 hover:bg-orange-600' :
-                'bg-amber-500 hover:bg-amber-600';
-
-              return (
+          {/* Mini estatísticas clicáveis */}
+          <div className="hidden sm:flex items-center gap-3 text-xs">
+            <button
+              onClick={() => handleNavigate('clientes')}
+              className="group flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-blue-50 hover:bg-blue-100 text-blue-700 transition-all hover:scale-105"
+            >
+              <Users className="w-3.5 h-3.5" />
+              <span className="font-semibold">{activeClients}</span>
+              <span className="text-blue-600">clientes</span>
+              {newClientsThisMonth > 0 && (
+                <span className="text-blue-500 font-medium">+{newClientsThisMonth}</span>
+              )}
+            </button>
+            <button
+              onClick={() => handleNavigate('processos')}
+              className="group flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-purple-50 hover:bg-purple-100 text-purple-700 transition-all hover:scale-105"
+            >
+              <Gavel className="w-3.5 h-3.5" />
+              <span className="font-semibold">{activeProcesses}</span>
+              <span className="text-purple-600">processos</span>
+              {newProcessesThisMonth > 0 && (
+                <span className="text-purple-500 font-medium">+{newProcessesThisMonth}</span>
+              )}
+            </button>
+            <button
+              onClick={() => handleNavigate('prazos')}
+              className="group flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-red-50 hover:bg-red-100 text-red-700 transition-all hover:scale-105"
+            >
+              <CalendarDays className="w-3.5 h-3.5" />
+              <span className="font-semibold">{pendingDeadlines}</span>
+              <span className="text-red-600">prazos</span>
+            </button>
+            <button
+              onClick={() => handleNavigate('tarefas')}
+              className="group flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-50 hover:bg-emerald-100 text-emerald-700 transition-all hover:scale-105"
+            >
+              <CheckSquare className="w-3.5 h-3.5" />
+              <span className="font-semibold">{pendingTasks}</span>
+              <span className="text-emerald-600">tarefas</span>
+            </button>
+          </div>
+        </div>
+        <div className="flex items-center gap-2">
+          {urgentAlerts.length > 0 && (
+            <div className="hidden sm:flex items-center gap-2">
+              {urgentAlerts.slice(0, 2).map((alert, index) => (
                 <button
                   key={index}
                   onClick={() => handleNavigate(alert.action)}
-                  className={`inline-flex items-center gap-1 sm:gap-2 rounded-lg ${colorClass} px-2.5 sm:px-4 py-1.5 sm:py-2 text-white text-[11px] sm:text-sm font-medium transition-colors flex-shrink-0`}
+                  className={`inline-flex items-center gap-2 h-10 px-3 rounded-lg border text-sm font-semibold transition-colors ${
+                    alert.action === 'prazos'
+                      ? 'border-red-200 bg-red-50/70 text-red-700 hover:bg-red-100'
+                      : alert.action === 'intimacoes'
+                        ? 'border-orange-200 bg-orange-50/70 text-orange-700 hover:bg-orange-100'
+                        : 'border-amber-200 bg-amber-50/70 text-amber-700 hover:bg-amber-100'
+                  }`}
                 >
-                  <span className="font-bold">{alert.count}</span>
-                  <span className="hidden sm:inline truncate max-w-[180px]">{alert.type}</span>
-                  <ChevronRight className="w-3 h-3 sm:w-4 sm:h-4" />
+                  <div className="w-8 h-8 rounded-md bg-white/70 border border-white/60 flex items-center justify-center">
+                    {alert.icon}
+                  </div>
+                  <span className="leading-none">{alert.type.split(' ')[0]}</span>
+                  <span className="ml-1 inline-flex items-center justify-center h-6 min-w-6 px-2 rounded-full bg-white/80 border border-white/60 text-xs font-bold">
+                    {alert.count}
+                  </span>
+                  <ChevronRight className="w-4 h-4 opacity-60" />
                 </button>
-              );
-            })}
-          </div>
+              ))}
+              {urgentAlerts.length > 2 && (
+                <button
+                  onClick={() => handleNavigate('prazos')}
+                  className="inline-flex items-center gap-2 h-10 px-3 rounded-lg text-sm font-semibold text-slate-700 bg-slate-50 hover:bg-slate-100 border border-slate-200 transition-colors"
+                >
+                  <span className="inline-flex items-center justify-center h-6 min-w-6 px-2 rounded-full bg-white border border-slate-200 text-xs font-bold">
+                    +{urgentAlerts.length - 2}
+                  </span>
+                  <span className="hidden lg:inline">mais</span>
+                  <ChevronRight className="w-4 h-4 opacity-60" />
+                </button>
+              )}
+            </div>
+          )}
+          <button
+            onClick={() => handleNavigate('clientes?mode=create')}
+            className="inline-flex items-center gap-2 px-4 py-2.5 bg-gradient-to-r from-slate-900 to-slate-800 hover:from-slate-800 hover:to-slate-700 text-white text-sm font-medium rounded-lg transition-all shadow-sm hover:shadow-md hover:scale-105"
+          >
+            <Plus className="w-4 h-4" />
+            Novo Cliente
+          </button>
         </div>
-      )}
-
-      {/* Estatísticas em linha única */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 sm:gap-3">
-        <button
-          onClick={() => handleNavigate('clientes')}
-          className="bg-white rounded-xl p-3 sm:p-4 shadow-sm border border-slate-100 hover:shadow-md hover:border-blue-200 transition-all text-left"
-        >
-          <div className="flex items-center gap-2 sm:gap-3">
-            <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-lg bg-blue-500 flex items-center justify-center flex-shrink-0">
-              <Users className="w-4 h-4 sm:w-5 sm:h-5 text-white" />
-            </div>
-            <div className="min-w-0">
-              <p className="text-lg sm:text-xl font-bold text-slate-900">{activeClients}</p>
-              <p className="text-[10px] sm:text-xs text-slate-500">Clientes</p>
-            </div>
-          </div>
-        </button>
-
-        <button
-          onClick={() => handleNavigate('processos')}
-          className="bg-white rounded-xl p-3 sm:p-4 shadow-sm border border-slate-100 hover:shadow-md hover:border-purple-200 transition-all text-left"
-        >
-          <div className="flex items-center gap-2 sm:gap-3">
-            <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-lg bg-purple-500 flex items-center justify-center flex-shrink-0">
-              <Gavel className="w-4 h-4 sm:w-5 sm:h-5 text-white" />
-            </div>
-            <div className="min-w-0">
-              <p className="text-lg sm:text-xl font-bold text-slate-900">{activeProcesses}</p>
-              <p className="text-[10px] sm:text-xs text-slate-500">Processos</p>
-            </div>
-          </div>
-        </button>
-
-        <button
-          onClick={() => handleNavigate('prazos')}
-          className="bg-white rounded-xl p-3 sm:p-4 shadow-sm border border-slate-100 hover:shadow-md hover:border-red-200 transition-all text-left"
-        >
-          <div className="flex items-center gap-2 sm:gap-3">
-            <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-lg bg-red-500 flex items-center justify-center flex-shrink-0">
-              <CalendarDays className="w-4 h-4 sm:w-5 sm:h-5 text-white" />
-            </div>
-            <div className="min-w-0">
-              <p className="text-lg sm:text-xl font-bold text-slate-900">{pendingDeadlines}</p>
-              <p className="text-[10px] sm:text-xs text-slate-500">Prazos</p>
-            </div>
-          </div>
-        </button>
-
-        <button
-          onClick={() => handleNavigate('tarefas')}
-          className="bg-white rounded-xl p-3 sm:p-4 shadow-sm border border-slate-100 hover:shadow-md hover:border-amber-200 transition-all text-left"
-        >
-          <div className="flex items-center gap-2 sm:gap-3">
-            <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-lg bg-amber-500 flex items-center justify-center flex-shrink-0">
-              <CheckSquare className="w-4 h-4 sm:w-5 sm:h-5 text-white" />
-            </div>
-            <div className="min-w-0">
-              <p className="text-lg sm:text-xl font-bold text-slate-900">{pendingTasks}</p>
-              <p className="text-[10px] sm:text-xs text-slate-500">Tarefas</p>
-            </div>
-          </div>
-        </button>
       </div>
 
-      {/* Grid Principal - Agenda + Financeiro lado a lado */}
+      {/* Grid Principal - Agenda + Financeiro */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        {/* Widget de Agenda */}
-        <div className="bg-gradient-to-br from-slate-800 to-slate-900 rounded-xl shadow-lg overflow-hidden">
-        <div className="relative">
-          <div className="relative p-4">
-            <div className="flex items-center justify-between mb-4">
-              <div className="flex items-center gap-2">
-                <div className="w-9 h-9 rounded-lg bg-blue-600 flex items-center justify-center">
-                  <Calendar className="w-5 h-5 text-white" />
+        <div className="flex flex-col gap-4">
+          {/* Widget de Agenda - Design Limpo */}
+          <div className="bg-white rounded-2xl border border-slate-200/60 overflow-hidden">
+            <div className="p-4 border-b border-slate-100">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <div className="w-9 h-9 rounded-xl bg-blue-100 flex items-center justify-center">
+                    <Calendar className="w-4 h-4 text-blue-600" />
+                  </div>
+                  <div>
+                    <h3 className="text-sm font-semibold text-slate-900">Agenda</h3>
+                    <p className="text-xs text-slate-500">{upcomingEvents.length} próximo{upcomingEvents.length !== 1 ? 's' : ''}</p>
+                  </div>
                 </div>
-                <div>
-                  <h2 className="text-sm font-bold text-white">Agenda Jurídica</h2>
-                  <p className="text-[10px] text-white/60">{upcomingEvents.length} compromisso{upcomingEvents.length !== 1 ? 's' : ''}</p>
-                </div>
-              </div>
-            </div>
-
-            {upcomingEvents.length === 0 ? (
-              <div className="bg-white/5 rounded-lg p-6 text-center border border-white/10">
-                <Calendar className="w-10 h-10 text-white/30 mx-auto mb-2" />
-                <p className="text-white/60 text-sm">Nenhum compromisso agendado</p>
                 <button
                   onClick={() => handleNavigate('agenda')}
-                  className="mt-3 px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-semibold transition-all"
+                  className="text-xs text-blue-600 hover:text-blue-700 font-medium flex items-center gap-1"
                 >
-                  Criar Compromisso
+                  Ver todos
+                  <ChevronRight className="w-3 h-3" />
                 </button>
               </div>
-            ) : (
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
-                {upcomingEvents.slice(0, 6).map((event, index) => {
-                  const eventDate = new Date(event.start_at);
-                  const isToday = eventDate.toDateString() === new Date().toDateString();
-                  const isTomorrow = eventDate.toDateString() === new Date(Date.now() + 86400000).toDateString();
-                  
-                  return (
-                    <div 
-                      key={event.id} 
-                      className="group relative bg-white/10 hover:bg-white/15 rounded-lg p-3 border border-white/10 hover:border-white/20 transition-all cursor-pointer"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setSelectedEvent(event);
-                      }}
-                    >
-                      <div className="flex items-center gap-2">
-                        <div className={`w-8 h-8 rounded flex items-center justify-center flex-shrink-0 text-xs font-bold ${
-                          isToday ? 'bg-amber-500 text-white' : isTomorrow ? 'bg-blue-500 text-white' : 'bg-white/20 text-white'
+            </div>
+
+            <div className="p-3">
+              {upcomingEvents.length === 0 ? (
+                <div className="text-center py-6">
+                  <Calendar className="w-10 h-10 text-slate-200 mx-auto mb-2" />
+                  <p className="text-slate-500 text-xs">Nenhum compromisso</p>
+                  <button
+                    onClick={() => handleNavigate('agenda')}
+                    className="mt-3 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-medium transition-colors"
+                  >
+                    Criar Compromisso
+                  </button>
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  {upcomingEvents.slice(0, 4).map((event) => {
+                    const eventDate = new Date(event.start_at);
+                    const isToday = eventDate.toDateString() === new Date().toDateString();
+                    const isTomorrow = eventDate.toDateString() === new Date(Date.now() + 86400000).toDateString();
+                    
+                    return (
+                      <div 
+                        key={event.id} 
+                        className="group flex items-center gap-3 p-3 rounded-lg hover:bg-slate-50 cursor-pointer transition-colors border border-slate-100"
+                        onClick={() => setSelectedEvent(event)}
+                      >
+                        <div className={`w-10 h-10 rounded-lg flex flex-col items-center justify-center flex-shrink-0 ${
+                          isToday ? 'bg-blue-500 text-white' : isTomorrow ? 'bg-blue-100 text-blue-700' : 'bg-slate-100 text-slate-600'
                         }`}>
-                          {eventDate.getDate()}
+                          <span className="text-sm font-bold leading-none">{eventDate.getDate()}</span>
+                          <span className="text-[9px] uppercase">{eventDate.toLocaleDateString('pt-BR', { month: 'short' })}</span>
                         </div>
                         <div className="flex-1 min-w-0">
-                          <p className="text-xs font-medium text-white truncate">
-                            {event.title}
-                          </p>
-                          <p className="text-[10px] text-white/50">
+                          <p className="text-sm font-medium text-slate-900 truncate">{event.title}</p>
+                          <p className="text-xs text-slate-500">
                             {eventDate.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}
-                            {isToday && <span className="ml-1 text-amber-400">• Hoje</span>}
-                            {isTomorrow && <span className="ml-1 text-blue-400">• Amanhã</span>}
+                            {isToday && <span className="ml-2 text-blue-600 font-medium">Hoje</span>}
+                            {isTomorrow && <span className="ml-2 text-blue-500">Amanhã</span>}
                           </p>
                         </div>
+                        <ChevronRight className="w-4 h-4 text-slate-300 group-hover:text-slate-500 transition-colors" />
                       </div>
-                    </div>
-                  );
-                })}
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Tarefas Pendentes */}
+          <div className="bg-white rounded-2xl border border-slate-200/60 overflow-hidden">
+            <div className="p-5 border-b border-slate-100">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-xl bg-emerald-100 flex items-center justify-center">
+                    <CheckSquare className="w-5 h-5 text-emerald-600" />
+                  </div>
+                  <div>
+                    <h2 className="text-base font-semibold text-slate-900">Tarefas</h2>
+                    <p className="text-xs text-slate-500">{recentTasks.length} pendente{recentTasks.length !== 1 ? 's' : ''}</p>
+                  </div>
+                </div>
+                <button
+                  onClick={() => handleNavigate('tarefas')}
+                  className="text-sm text-emerald-600 hover:text-emerald-700 font-medium flex items-center gap-1"
+                >
+                  Ver todas
+                  <ChevronRight className="w-4 h-4" />
+                </button>
               </div>
-            )}
-            
-            {/* Botão Ver Agenda Completa */}
-            <div className="mt-4 pt-3 border-t border-white/10">
-              <button
-                onClick={() => handleNavigate('agenda')}
-                className="w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-blue-600 hover:bg-blue-500 text-white rounded-lg font-medium text-sm transition-all"
-              >
-                Ver Agenda Completa
-                <ArrowRight className="w-4 h-4" />
-              </button>
+            </div>
+            <div className="p-4">
+              {recentTasks.length === 0 ? (
+                <div className="text-center py-8">
+                  <CheckSquare className="w-12 h-12 text-slate-200 mx-auto mb-3" />
+                  <p className="text-slate-500 text-sm">Nenhuma tarefa pendente</p>
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  {recentTasks.map((task) => (
+                    <div 
+                      key={task.id} 
+                      onClick={() => handleNavigate('tarefas')}
+                      className="group flex items-center gap-3 p-3 rounded-xl hover:bg-slate-50 cursor-pointer transition-colors"
+                    >
+                      <div className="w-8 h-8 rounded-lg bg-emerald-100 flex items-center justify-center flex-shrink-0">
+                        <CheckSquare className="w-4 h-4 text-emerald-600" />
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-medium text-slate-900 truncate">{task.title}</p>
+                      </div>
+                      <ChevronRight className="w-4 h-4 text-slate-300 group-hover:text-slate-500 transition-colors" />
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
           </div>
         </div>
-        </div>
 
-        {/* Controle Financeiro */}
-        {financialStats && (
-          <FinancialCard 
-            stats={financialStats}
-            onNavigate={() => handleNavigate('financeiro')}
-          />
-        )}
-      </div>
-
-      {/* Grid de 2 Colunas - Prazos e Tarefas */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
-
-          {/* Próximos Prazos */}
-          <div className="bg-white rounded-2xl p-5 shadow-sm border border-slate-200 hover:shadow-md transition-shadow">
-            <div className="mb-4 flex items-center justify-between">
+        <div className="flex flex-col gap-4 h-full">
+          {/* Ações Rápidas - Botões com mais espaço */}
+          <div className="bg-white rounded-2xl border border-slate-200/60 overflow-hidden">
+            <div className="p-3 border-b border-slate-100">
               <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-red-500 to-red-600 flex items-center justify-center">
-                  <CalendarDays className="w-5 h-5 text-white" />
+                <div className="w-8 h-8 rounded-lg bg-indigo-100 flex items-center justify-center">
+                  <Zap className="w-4 h-4 text-indigo-600" />
                 </div>
                 <div>
-                  <h2 className="text-sm font-bold text-slate-800">Próximos Prazos</h2>
-                  <p className="text-xs text-slate-500">{upcomingDeadlines.length} pendente{upcomingDeadlines.length !== 1 ? 's' : ''}</p>
+                  <h3 className="text-sm font-semibold text-slate-900">Ações rápidas</h3>
+                  <p className="text-xs text-slate-500">Crie itens em 1 clique</p>
                 </div>
               </div>
-              <button
-                onClick={() => handleNavigate('prazos')}
-                className="flex items-center gap-1 text-red-500 hover:text-red-600 text-xs font-semibold"
-              >
-                Ver todos
-                <ChevronRight className="w-4 h-4" />
-              </button>
             </div>
-            {upcomingDeadlines.length === 0 ? (
-              <div className="text-center py-8">
-                <CalendarDays className="w-10 h-10 text-slate-300 mx-auto mb-2" />
-                <p className="text-sm text-slate-500">Nenhum prazo pendente</p>
+            <div className="p-3">
+              <QuickActions onNavigate={handleNavigate} />
+            </div>
+          </div>
+
+          {financialStats && (
+            <FinancialCard 
+              stats={financialStats}
+              onNavigate={() => handleNavigate('financeiro')}
+            />
+          )}
+
+          <div className="bg-white rounded-2xl border border-slate-200/60 overflow-hidden">
+            <div className="p-4 border-b border-slate-100">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <div className="w-9 h-9 rounded-xl bg-red-100 flex items-center justify-center">
+                    <CalendarDays className="w-4 h-4 text-red-600" />
+                  </div>
+                  <div>
+                    <h3 className="text-sm font-semibold text-slate-900">Prazos</h3>
+                    <p className="text-xs text-slate-500">{upcomingDeadlines.length} pendente{upcomingDeadlines.length !== 1 ? 's' : ''}</p>
+                  </div>
+                </div>
+                <button
+                  onClick={() => handleNavigate('prazos')}
+                  className="text-xs text-red-600 hover:text-red-700 font-medium flex items-center gap-1"
+                >
+                  Ver todos
+                  <ChevronRight className="w-3 h-3" />
+                </button>
               </div>
-            ) : (
-              <div className="space-y-2">
-                {upcomingDeadlines.map((deadline) => {
-                  const client = deadline.client_id ? clientMap.get(deadline.client_id) : null;
-                  const dueDate = new Date(deadline.due_date!);
-                  const today = new Date();
-                  const diffDays = Math.ceil((dueDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
-                  const isUrgent = diffDays <= 3;
-                  
-                  return (
-                    <div
-                      key={deadline.id}
-                      onClick={() => handleNavigate('prazos')}
-                      className={`flex items-center gap-3 rounded-xl p-3 cursor-pointer transition-all hover:scale-[1.02] ${
-                        isUrgent ? 'bg-red-50 border border-red-100' : 'bg-slate-50 border border-slate-100'
-                      }`}
-                    >
-                      <div className={`w-10 h-10 rounded-lg flex items-center justify-center flex-shrink-0 ${
-                        isUrgent ? 'bg-red-100' : 'bg-slate-200'
-                      }`}>
-                        <span className="text-sm font-bold text-slate-700">
-                          {dueDate.getDate()}
-                        </span>
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <p className="font-medium text-slate-900 text-sm truncate">{deadline.title}</p>
-                        <p className="text-xs text-slate-500 truncate">
-                          {client?.full_name || 'Sem cliente'}
-                        </p>
-                      </div>
-                      <div className="text-right flex-shrink-0">
-                        <span className={`inline-block px-2 py-1 rounded-full text-[10px] font-bold uppercase ${
-                          isUrgent ? 'bg-red-500 text-white' : 
+            </div>
+            <div className="p-3">
+              {upcomingDeadlines.length === 0 ? (
+                <div className="text-center py-6">
+                  <CalendarDays className="w-10 h-10 text-slate-200 mx-auto mb-2" />
+                  <p className="text-slate-500 text-xs">Nenhum prazo pendente</p>
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  {upcomingDeadlines.map((deadline) => {
+                    const client = deadline.client_id ? clientMap.get(deadline.client_id) : null;
+                    const dueDate = new Date(deadline.due_date!);
+                    const today = new Date();
+                    const diffDays = Math.ceil((dueDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+                    const isUrgent = diffDays <= 3 && diffDays >= 0;
+                    
+                    return (
+                      <div
+                        key={deadline.id}
+                        onClick={() => handleNavigate('prazos')}
+                        className="group flex items-center gap-3 p-3 rounded-lg hover:bg-slate-50 cursor-pointer transition-colors border border-slate-100"
+                      >
+                        <div className={`w-10 h-10 rounded-lg flex flex-col items-center justify-center flex-shrink-0 ${
+                          isUrgent ? 'bg-red-500 text-white' : 'bg-slate-100 text-slate-600'
+                        }`}>
+                          <span className="text-sm font-bold leading-none">{dueDate.getDate()}</span>
+                          <span className="text-[9px] uppercase">{dueDate.toLocaleDateString('pt-BR', { month: 'short' })}</span>
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-medium text-slate-900 truncate">{deadline.title}</p>
+                          <p className="text-xs text-slate-500 truncate">{client?.full_name || 'Sem cliente'}</p>
+                        </div>
+                        <span className={`px-2 py-1 text-[9px] font-semibold rounded-md ${
+                          isUrgent ? 'bg-red-500 text-white' :
                           deadline.priority === 'alta' ? 'bg-red-100 text-red-700' :
                           deadline.priority === 'media' ? 'bg-amber-100 text-amber-700' :
                           'bg-blue-100 text-blue-700'
                         }`}>
-                          {isUrgent ? `${diffDays}d` : deadline.priority}
+                          {isUrgent ? (diffDays === 0 ? 'Hoje' : `${diffDays}d`) : (deadline.priority || 'normal')}
                         </span>
+                        <ChevronRight className="w-4 h-4 text-slate-300 group-hover:text-slate-500 transition-colors" />
                       </div>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-          </div>
-
-          {/* Tarefas Recentes */}
-          <div className="bg-white rounded-2xl p-5 shadow-sm border border-slate-200 hover:shadow-md transition-shadow">
-            <div className="mb-4 flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-emerald-500 to-emerald-600 flex items-center justify-center">
-                  <CheckSquare className="w-5 h-5 text-white" />
+                    );
+                  })}
                 </div>
-                <div>
-                  <h2 className="text-sm font-bold text-slate-800">Tarefas Pendentes</h2>
-                  <p className="text-xs text-slate-500">{recentTasks.length} tarefa{recentTasks.length !== 1 ? 's' : ''}</p>
-                </div>
-              </div>
-              <button
-                onClick={() => handleNavigate('tarefas')}
-                className="flex items-center gap-1 text-emerald-500 hover:text-emerald-600 text-xs font-semibold"
-              >
-                Ver todas
-                <ChevronRight className="w-4 h-4" />
-              </button>
+              )}
             </div>
-            {recentTasks.length === 0 ? (
+          </div>
+        </div>
+      </div>
+
+      {/* Grid de 3 Colunas - Intimações, Aguardando, Requerimentos */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        {/* Widget de Intimações */}
+        <div className="bg-white rounded-2xl border border-slate-200/60 overflow-hidden">
+          <div className="p-4 border-b border-slate-100 flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-xl bg-orange-100 flex items-center justify-center">
+                <Bell className="w-5 h-5 text-orange-600" />
+              </div>
+              <div>
+                <h3 className="text-sm font-semibold text-slate-900">Intimações</h3>
+                <p className="text-xs text-slate-500">{djenIntimacoes.length} não lida{djenIntimacoes.length !== 1 ? 's' : ''}</p>
+              </div>
+            </div>
+            <button
+              onClick={() => handleNavigate('intimacoes')}
+              className="text-xs text-orange-600 hover:text-orange-700 font-medium flex items-center gap-1"
+            >
+              Ver todas
+              <ChevronRight className="w-3 h-3" />
+            </button>
+          </div>
+          <div className="p-3">
+            {djenIntimacoes.length === 0 ? (
               <div className="text-center py-8">
-                <CheckSquare className="w-10 h-10 text-slate-300 mx-auto mb-2" />
-                <p className="text-sm text-slate-500">Nenhuma tarefa pendente</p>
+                <Scale className="w-12 h-12 text-slate-200 mx-auto mb-3" />
+                <p className="text-slate-500 text-sm">Nenhuma intimação</p>
               </div>
             ) : (
               <div className="space-y-2">
-                {recentTasks.map((task) => (
-                  <div 
-                    key={task.id} 
-                    onClick={() => handleNavigate('tarefas')}
-                    className="flex items-center gap-3 p-3 rounded-xl bg-slate-50 border border-slate-100 hover:bg-emerald-50 hover:border-emerald-100 cursor-pointer transition-all hover:scale-[1.02]"
-                  >
-                    <div className="w-8 h-8 rounded-lg bg-emerald-100 flex items-center justify-center flex-shrink-0">
-                      <CheckSquare className="w-4 h-4 text-emerald-600" />
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm font-medium text-slate-900 truncate">{task.title}</p>
-                    </div>
-                    <ChevronRight className="w-4 h-4 text-slate-400" />
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-      </div>
-
-      {/* Grid de 4 Colunas - DJEN, Processos e Requerimentos */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
-        {/* Widget de Intimações DJEN */}
-        <div className="bg-gradient-to-br from-red-700 to-red-800 rounded-xl shadow-lg overflow-hidden">
-          <div className="p-4">
-            <div className="flex items-center justify-between mb-3">
-              <div className="flex items-center gap-2">
-                <div className="w-8 h-8 rounded-lg bg-red-600 flex items-center justify-center">
-                  <Bell className="w-4 h-4 text-white" />
-                </div>
-                <div>
-                  <h2 className="text-sm font-bold text-white">Intimações DJEN</h2>
-                  <p className="text-[10px] text-white/60">{djenIntimacoes.length} não lida{djenIntimacoes.length !== 1 ? 's' : ''}</p>
-                </div>
-              </div>
-            </div>
-            {djenIntimacoes.length === 0 ? (
-              <div className="bg-white/10 rounded-lg p-4 text-center border border-white/10">
-                <Scale className="w-6 h-6 text-white/30 mx-auto mb-1" />
-                <p className="text-white/60 text-xs">Nenhuma intimação</p>
-              </div>
-            ) : (
-              <div className="space-y-1.5">
-                {djenIntimacoes.slice(0, 2).map((intimacao) => (
+                {djenIntimacoes.slice(0, 3).map((intimacao) => (
                   <div 
                     key={intimacao.id} 
-                    className="bg-white/10 hover:bg-white/15 rounded-lg p-2 border border-white/10 cursor-pointer transition-all"
+                    className="group p-3 rounded-xl hover:bg-slate-50 cursor-pointer transition-colors border border-slate-100"
                     onClick={() => setSelectedIntimacao(intimacao)}
                   >
-                    <p className="text-xs font-medium text-white truncate">{intimacao.tipo_comunicacao || 'Comunicação'}</p>
-                    <p className="text-[10px] text-white/50 truncate">{intimacao.numero_processo_mascara}</p>
+                    <div className="flex items-center justify-between mb-2">
+                      <span className="px-2 py-0.5 text-[10px] font-semibold rounded-full bg-orange-100 text-orange-700">
+                        {intimacao.tipo_comunicacao || 'Intimação'}
+                      </span>
+                      <ChevronRight className="w-4 h-4 text-slate-300 group-hover:text-slate-500 transition-colors" />
+                    </div>
+                    <p className="text-xs font-medium text-slate-900 truncate mb-1">
+                      {intimacao.numero_processo_mascara || intimacao.numero_processo}
+                    </p>
+                    {intimacao.nome_orgao && (
+                      <p className="text-[10px] text-slate-500 truncate mb-1">
+                        {intimacao.nome_orgao}
+                      </p>
+                    )}
+                    {(intimacao.polo_ativo || intimacao.polo_passivo) && (
+                      <div className="text-[10px] text-slate-600 mt-1 pt-1 border-t border-slate-100">
+                        {intimacao.polo_ativo && (
+                          <p className="truncate"><span className="text-slate-400">Autor:</span> {intimacao.polo_ativo}</p>
+                        )}
+                        {intimacao.polo_passivo && (
+                          <p className="truncate"><span className="text-slate-400">Réu:</span> {intimacao.polo_passivo}</p>
+                        )}
+                      </div>
+                    )}
                   </div>
                 ))}
               </div>
             )}
-            <button
-              onClick={() => handleNavigate('intimacoes')}
-              className="w-full mt-3 flex items-center justify-center gap-1 px-3 py-1.5 bg-red-600 hover:bg-red-500 text-white rounded-lg font-medium text-xs transition-all"
-            >
-              Ver Todas <ArrowRight className="w-3 h-3" />
-            </button>
           </div>
         </div>
+
         {/* Processos Aguardando Confecção */}
-        <div className="bg-white rounded-2xl p-5 shadow-sm border border-slate-200 hover:shadow-md transition-shadow">
-          <div className="mb-4 flex items-center justify-between">
+        <div className="bg-white rounded-2xl border border-slate-200/60 overflow-hidden">
+          <div className="p-4 border-b border-slate-100 flex items-center justify-between">
             <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-amber-500 to-orange-500 flex items-center justify-center">
-                <FileText className="w-5 h-5 text-white" />
+              <div className="w-10 h-10 rounded-xl bg-amber-100 flex items-center justify-center">
+                <FileText className="w-5 h-5 text-amber-600" />
               </div>
               <div>
-                <h2 className="text-sm font-bold text-slate-800">Aguardando Confecção</h2>
+                <h3 className="text-sm font-semibold text-slate-900">Aguardando</h3>
                 <p className="text-xs text-slate-500">{awaitingDraftProcessesList.length} processo{awaitingDraftProcessesList.length !== 1 ? 's' : ''}</p>
               </div>
             </div>
             <button
               onClick={() => handleNavigate('processos')}
-              className="flex items-center gap-1 text-amber-500 hover:text-amber-600 text-xs font-semibold"
+              className="text-xs text-amber-600 hover:text-amber-700 font-medium flex items-center gap-1"
             >
-              Ver
-              <ChevronRight className="w-4 h-4" />
+              Ver todos
+              <ChevronRight className="w-3 h-3" />
             </button>
           </div>
-          {awaitingDraftProcessesList.length === 0 ? (
-            <div className="text-center py-6">
-              <FileText className="w-8 h-8 text-slate-300 mx-auto mb-2" />
-              <p className="text-sm text-slate-500">Nenhum processo aguardando</p>
-            </div>
-          ) : (
-            <div className="space-y-2 max-h-[200px] overflow-y-auto">
-              {awaitingDraftProcessesList.map((process) => {
-                const client = process.client_id ? clientMap.get(process.client_id) : null;
-                return (
-                  <div 
-                    key={process.id} 
-                    onClick={() => handleNavigate('processos')}
-                    className="p-3 rounded-xl bg-amber-50 border border-amber-100 hover:bg-amber-100 cursor-pointer transition-all"
-                  >
-                    <p className="text-sm font-medium text-slate-900 truncate">{client?.full_name || 'Cliente não informado'}</p>
-                    <p className="text-xs text-slate-500 truncate">{process.process_code || 'Sem código'}</p>
-                  </div>
-                );
-              })}
-            </div>
-          )}
+          <div className="p-3">
+            {awaitingDraftProcessesList.length === 0 ? (
+              <div className="text-center py-8">
+                <FileText className="w-12 h-12 text-slate-200 mx-auto mb-3" />
+                <p className="text-slate-500 text-sm">Nenhum processo</p>
+              </div>
+            ) : (
+              <div className="space-y-2">
+                {awaitingDraftProcessesList.slice(0, 4).map((process) => {
+                  const client = process.client_id ? clientMap.get(process.client_id) : null;
+                  return (
+                    <div 
+                      key={process.id} 
+                      onClick={() => handleNavigate('processos')}
+                      className="group flex items-center gap-3 p-3 rounded-xl hover:bg-slate-50 cursor-pointer transition-colors"
+                    >
+                      <div className="w-8 h-8 rounded-lg bg-amber-100 flex items-center justify-center flex-shrink-0">
+                        <FileText className="w-4 h-4 text-amber-600" />
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-medium text-slate-900 truncate">{client?.full_name || 'Cliente'}</p>
+                      </div>
+                      <ChevronRight className="w-4 h-4 text-slate-300 group-hover:text-slate-500 transition-colors" />
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
         </div>
 
-        {/* Requerimentos Aguardando Confecção */}
-        <div className="bg-white rounded-2xl p-5 shadow-sm border border-slate-200 hover:shadow-md transition-shadow">
-          <div className="mb-4 flex items-center justify-between">
+        {/* Requerimentos */}
+        <div className="bg-white rounded-2xl border border-slate-200/60 overflow-hidden">
+          <div className="p-4 border-b border-slate-100 flex items-center justify-between">
             <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-purple-500 to-violet-500 flex items-center justify-center">
-                <Target className="w-5 h-5 text-white" />
+              <div className="w-10 h-10 rounded-xl bg-purple-100 flex items-center justify-center">
+                <Target className="w-5 h-5 text-purple-600" />
               </div>
               <div>
-                <h2 className="text-sm font-bold text-slate-800">Requerimentos</h2>
+                <h3 className="text-sm font-semibold text-slate-900">Requerimentos</h3>
                 <p className="text-xs text-slate-500">{pendingRequirementsList.length} pendente{pendingRequirementsList.length !== 1 ? 's' : ''}</p>
               </div>
             </div>
             <button
               onClick={() => handleNavigate('requerimentos')}
-              className="flex items-center gap-1 text-purple-500 hover:text-purple-600 text-xs font-semibold"
+              className="text-xs text-purple-600 hover:text-purple-700 font-medium flex items-center gap-1"
             >
-              Ver
-              <ChevronRight className="w-4 h-4" />
+              Ver todos
+              <ChevronRight className="w-3 h-3" />
             </button>
           </div>
-          {pendingRequirementsList.length === 0 ? (
-            <div className="text-center py-6">
-              <Target className="w-8 h-8 text-slate-300 mx-auto mb-2" />
-              <p className="text-sm text-slate-500">Nenhum requerimento pendente</p>
-            </div>
-          ) : (
-            <div className="space-y-2 max-h-[200px] overflow-y-auto">
-              {pendingRequirementsList.map((requirement) => (
-                <div 
-                  key={requirement.id} 
-                  onClick={() => handleNavigate('requerimentos')}
-                  className="p-3 rounded-xl bg-purple-50 border border-purple-100 hover:bg-purple-100 cursor-pointer transition-all"
-                >
-                  <p className="text-sm font-medium text-slate-900 truncate">{requirement.beneficiary || 'Sem beneficiário'}</p>
-                  <p className="text-xs text-slate-500 truncate">Aguardando confecção</p>
-                </div>
-              ))}
-            </div>
-          )}
+          <div className="p-3">
+            {pendingRequirementsList.length === 0 ? (
+              <div className="text-center py-8">
+                <Target className="w-12 h-12 text-slate-200 mx-auto mb-3" />
+                <p className="text-slate-500 text-sm">Nenhum requerimento</p>
+              </div>
+            ) : (
+              <div className="space-y-2">
+                {pendingRequirementsList.slice(0, 4).map((requirement) => (
+                  <div 
+                    key={requirement.id} 
+                    onClick={() => handleNavigate('requerimentos')}
+                    className="group flex items-center gap-3 p-3 rounded-xl hover:bg-slate-50 cursor-pointer transition-colors"
+                  >
+                    <div className="w-8 h-8 rounded-lg bg-purple-100 flex items-center justify-center flex-shrink-0">
+                      <Target className="w-4 h-4 text-purple-600" />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-medium text-slate-900 truncate">{requirement.beneficiary || 'Beneficiário'}</p>
+                    </div>
+                    <ChevronRight className="w-4 h-4 text-slate-300 group-hover:text-slate-500 transition-colors" />
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
         </div>
 
-        {/* Processos em Andamento */}
-        <div className="bg-white rounded-2xl p-5 shadow-sm border border-slate-200 hover:shadow-md transition-shadow">
-          <div className="mb-4 flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-blue-500 to-indigo-500 flex items-center justify-center">
-                <Gavel className="w-5 h-5 text-white" />
-              </div>
-              <div>
-                <h2 className="text-sm font-bold text-slate-800">Em Andamento</h2>
-                <p className="text-xs text-slate-500">{pendingProcessesList.length} processo{pendingProcessesList.length !== 1 ? 's' : ''}</p>
-              </div>
-            </div>
-            <button
-              onClick={() => handleNavigate('processos')}
-              className="flex items-center gap-1 text-blue-500 hover:text-blue-600 text-xs font-semibold"
-            >
-              Ver
-              <ChevronRight className="w-4 h-4" />
-            </button>
-          </div>
-          {pendingProcessesList.length === 0 ? (
-            <div className="text-center py-6">
-              <Gavel className="w-8 h-8 text-slate-300 mx-auto mb-2" />
-              <p className="text-sm text-slate-500">Nenhum processo em andamento</p>
-            </div>
-          ) : (
-            <div className="space-y-2 max-h-[200px] overflow-y-auto">
-              {pendingProcessesList.map((process) => {
-                const client = process.client_id ? clientMap.get(process.client_id) : null;
-                return (
-                  <div 
-                    key={process.id} 
-                    onClick={() => handleNavigate('processos')}
-                    className="p-3 rounded-xl bg-blue-50 border border-blue-100 hover:bg-blue-100 cursor-pointer transition-all"
-                  >
-                    <p className="text-sm font-medium text-slate-900 truncate">{client?.full_name || 'Cliente não informado'}</p>
-                    <p className="text-xs text-slate-500 truncate">{process.process_code || 'Sem código'}</p>
-                  </div>
-                );
-              })}
-            </div>
-          )}
-        </div>
       </div>
 
       {/* Modal de Detalhes do Evento */}
       {selectedEvent && (
-        <div
-          className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4"
-          onClick={() => setSelectedEvent(null)}
-        >
+        <div className="fixed inset-0 z-[70] flex items-center justify-center px-3 sm:px-6 py-4">
           <div
-            className="bg-white rounded-3xl shadow-2xl max-w-lg w-full overflow-hidden"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="bg-gradient-to-r from-blue-50 to-white p-6 border-b border-slate-100">
-              <div className="flex items-start justify-between">
-                <div>
-                  <h3 className="text-xl font-bold text-slate-900">{selectedEvent.title}</h3>
-                  <span className="inline-flex items-center gap-1 mt-2 px-3 py-1 rounded-full bg-blue-100 text-blue-700 text-xs font-semibold">
-                    Compromisso
-                  </span>
-                </div>
-                <button
-                  onClick={() => setSelectedEvent(null)}
-                  className="text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-full p-2 transition-all"
-                >
-                  <X className="w-5 h-5" />
-                </button>
+            className="absolute inset-0 bg-transparent"
+            onClick={() => setSelectedEvent(null)}
+            aria-hidden="true"
+          />
+          <div className="relative w-full max-w-lg max-h-[92vh] bg-white !bg-white rounded-2xl shadow-2xl ring-1 ring-black/5 flex flex-col overflow-hidden">
+            <div className="h-2 w-full bg-orange-500" />
+            <div className="px-6 py-5 border-b border-slate-200 bg-white flex items-start justify-between gap-4">
+              <div className="min-w-0">
+                <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">
+                  Detalhes
+                </p>
+                <h3 className="mt-1 text-lg font-semibold text-slate-900 truncate">{selectedEvent.title}</h3>
+                <span className="inline-flex items-center gap-1 mt-3 px-3 py-1 rounded-full bg-blue-100 text-blue-700 text-xs font-semibold">
+                  Compromisso
+                </span>
               </div>
+              <button
+                onClick={() => setSelectedEvent(null)}
+                className="p-2 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-xl transition"
+                aria-label="Fechar modal"
+              >
+                <X className="w-5 h-5" />
+              </button>
             </div>
-            <div className="p-6 space-y-4">
+            <div className="p-6 space-y-4 overflow-y-auto">
               {/* Tipo de Evento */}
               <div className="flex items-center gap-2">
                 <div className={`w-2 h-2 rounded-full ${
@@ -1221,7 +1290,7 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToModule }) => {
                 </div>
               )}
 
-              <div className="mt-6 flex justify-end gap-3">
+              <div className="mt-6 pt-4 border-t border-slate-200 flex justify-end gap-3">
                 <button
                   onClick={() => setSelectedEvent(null)}
                   className="px-4 py-2 text-sm font-medium text-slate-600 hover:text-slate-800 transition"
@@ -1233,7 +1302,7 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToModule }) => {
                     setSelectedEvent(null);
                     handleNavigate('agenda');
                   }}
-                  className="px-4 py-2 text-sm font-semibold bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition"
+                  className="px-5 py-2.5 text-sm font-semibold bg-blue-600 hover:bg-blue-700 text-white rounded-xl transition"
                 >
                   Ver na Agenda
                 </button>
@@ -1245,31 +1314,33 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToModule }) => {
 
       {/* Modal de Detalhes da Intimação */}
       {selectedIntimacao && (
-        <div
-          className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4"
-          onClick={() => setSelectedIntimacao(null)}
-        >
+        <div className="fixed inset-0 z-[70] flex items-center justify-center px-3 sm:px-6 py-4">
           <div
-            className="bg-white rounded-3xl shadow-2xl max-w-lg w-full overflow-hidden"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="bg-gradient-to-r from-red-50 to-white p-6 border-b border-slate-100">
-              <div className="flex items-start justify-between">
-                <div>
-                  <h3 className="text-xl font-bold text-slate-900">{selectedIntimacao.tipo_comunicacao || 'Comunicação'}</h3>
-                  <span className="inline-flex items-center gap-1 mt-2 px-3 py-1 rounded-full bg-red-100 text-red-700 text-xs font-semibold uppercase">
-                    {selectedIntimacao.sigla_tribunal}
-                  </span>
-                </div>
-                <button
-                  onClick={() => setSelectedIntimacao(null)}
-                  className="text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-full p-2 transition-all"
-                >
-                  <X className="w-5 h-5" />
-                </button>
+            className="absolute inset-0 bg-transparent"
+            onClick={() => setSelectedIntimacao(null)}
+            aria-hidden="true"
+          />
+          <div className="relative w-full max-w-lg max-h-[92vh] bg-white !bg-white rounded-2xl shadow-2xl ring-1 ring-black/5 flex flex-col overflow-hidden">
+            <div className="h-2 w-full bg-orange-500" />
+            <div className="px-6 py-5 border-b border-slate-200 bg-white flex items-start justify-between gap-4">
+              <div className="min-w-0">
+                <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">
+                  DJEN
+                </p>
+                <h3 className="mt-1 text-lg font-semibold text-slate-900 truncate">{selectedIntimacao.tipo_comunicacao || 'Comunicação'}</h3>
+                <span className="inline-flex items-center gap-1 mt-3 px-3 py-1 rounded-full bg-orange-100 text-orange-700 text-xs font-semibold uppercase">
+                  {selectedIntimacao.sigla_tribunal}
+                </span>
               </div>
+              <button
+                onClick={() => setSelectedIntimacao(null)}
+                className="p-2 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-xl transition"
+                aria-label="Fechar modal"
+              >
+                <X className="w-5 h-5" />
+              </button>
             </div>
-            <div className="p-6 space-y-4">
+            <div className="p-6 space-y-4 overflow-y-auto">
               <div className="flex items-center gap-2">
                 <Calendar className="w-5 h-5 text-slate-600" />
                 <div>
@@ -1303,7 +1374,7 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToModule }) => {
                 </div>
               )}
 
-              <div className="mt-6 flex justify-end gap-3">
+              <div className="mt-6 pt-4 border-t border-slate-200 flex justify-end gap-3">
                 <button
                   onClick={() => setSelectedIntimacao(null)}
                   className="px-4 py-2 text-sm font-medium text-slate-600 hover:text-slate-800 transition"
@@ -1315,7 +1386,7 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToModule }) => {
                     setSelectedIntimacao(null);
                     handleNavigate('intimacoes');
                   }}
-                  className="px-4 py-2 text-sm font-semibold bg-red-600 hover:bg-red-700 text-white rounded-lg transition"
+                  className="px-5 py-2.5 text-sm font-semibold bg-blue-600 hover:bg-blue-700 text-white rounded-xl transition"
                 >
                   Ver Todas Intimações
                 </button>

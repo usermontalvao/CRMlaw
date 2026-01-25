@@ -35,79 +35,73 @@ export const FinancialCard: React.FC<FinancialCardProps> = ({ stats, onNavigate 
   };
 
   return (
-    <div className="rounded-xl border border-slate-200 bg-white shadow-sm overflow-hidden">
+    <div className="rounded-2xl border border-slate-200/60 bg-white overflow-hidden h-fit">
       {/* Header */}
-      <div className="p-3 border-b border-slate-100 flex items-center justify-between bg-gradient-to-r from-emerald-50 to-white">
-        <div className="flex items-center gap-2">
-          <div className="w-8 h-8 rounded-lg bg-emerald-100 flex items-center justify-center text-emerald-600">
-            <Wallet className="w-4 h-4" />
+      <div className="p-4 border-b border-slate-100 flex items-center justify-between">
+        <div className="flex items-center gap-3">
+          <div className="w-10 h-10 rounded-xl bg-emerald-100 flex items-center justify-center">
+            <Wallet className="w-5 h-5 text-emerald-600" />
           </div>
           <div>
-            <h3 className="text-sm font-bold text-slate-900">Saúde Financeira</h3>
-            <div className="flex items-center gap-1 text-[10px] text-emerald-600">
-              <span className="animate-pulse rounded-full bg-emerald-400 w-1.5 h-1.5" />
-              {isPlaceholder ? 'indisponível' : 'ativo'}
-            </div>
+            <h3 className="text-base font-semibold text-slate-900">Financeiro</h3>
+            <p className="text-xs text-slate-500">Resumo do mês</p>
           </div>
         </div>
         <button
           onClick={onNavigate}
-          className="text-xs font-medium text-emerald-600 hover:text-emerald-700 flex items-center gap-0.5"
+          className="text-sm font-medium text-emerald-600 hover:text-emerald-700 flex items-center gap-1"
         >
-          Abrir
-          <ChevronRight className="w-3.5 h-3.5" />
+          Ver
+          <ChevronRight className="w-4 h-4" />
         </button>
       </div>
 
-      {/* Stats Grid - Compacto */}
-      <div className="p-3 space-y-2">
+      {/* Stats - Compacto */}
+      <div className="p-4 space-y-3">
         {/* Recebido */}
-        <div className="flex items-center justify-between p-2 rounded-lg bg-emerald-50 border border-emerald-100">
+        <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
-            <TrendingUp className="w-4 h-4 text-emerald-600" />
-            <span className="text-xs font-medium text-slate-700">Recebido</span>
+            <TrendingUp className="w-4 h-4 text-emerald-500" />
+            <span className="text-sm text-slate-600">Recebido</span>
           </div>
-          <span className="text-sm font-bold text-emerald-700">
+          <span className="text-sm font-semibold text-emerald-600">
             {isPlaceholder ? '—' : formatCurrency(safeStats.monthly_fees_received)}
           </span>
         </div>
 
         {/* A Receber */}
-        <div className="flex items-center justify-between p-2 rounded-lg bg-amber-50 border border-amber-100">
+        <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
-            <PiggyBank className="w-4 h-4 text-amber-600" />
-            <span className="text-xs font-medium text-slate-700">A receber</span>
+            <PiggyBank className="w-4 h-4 text-amber-500" />
+            <span className="text-sm text-slate-600">A receber</span>
           </div>
-          <span className="text-sm font-bold text-amber-700">
+          <span className="text-sm font-semibold text-amber-600">
             {isPlaceholder ? '—' : formatCurrency(safeStats.monthly_fees_pending)}
           </span>
         </div>
 
         {/* Em Atraso */}
-        <div className="flex items-center justify-between p-2 rounded-lg bg-rose-50 border border-rose-100">
+        <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
-            <AlertTriangle className="w-4 h-4 text-rose-600" />
-            <span className="text-xs font-medium text-slate-700">Em atraso</span>
+            <AlertTriangle className="w-4 h-4 text-red-500" />
+            <span className="text-sm text-slate-600">Em atraso</span>
           </div>
-          <span className="text-sm font-bold text-rose-700">
+          <span className="text-sm font-semibold text-red-600">
             {isPlaceholder ? '—' : formatCurrency(safeStats.total_overdue)}
           </span>
         </div>
-      </div>
 
-      {/* Footer - Contadores */}
-      <div className="px-3 pb-3 flex items-center justify-between text-[10px]">
-        <div className="flex items-center gap-1 px-2 py-1 rounded-full bg-slate-100 text-slate-600">
-          <span>Recebidas</span>
-          <strong className="text-slate-900">{isPlaceholder ? '—' : safeStats.paid_installments}</strong>
-        </div>
-        <div className="flex items-center gap-1 px-2 py-1 rounded-full bg-amber-50 text-amber-700">
-          <span>Pendentes</span>
-          <strong>{isPlaceholder ? '—' : safeStats.pending_installments}</strong>
-        </div>
-        <div className="flex items-center gap-1 px-2 py-1 rounded-full bg-rose-50 text-rose-700">
-          <span>Vencidas</span>
-          <strong>{isPlaceholder ? '—' : safeStats.overdue_installments}</strong>
+        {/* Contadores em linha */}
+        <div className="pt-3 border-t border-slate-100 flex items-center justify-between text-xs">
+          <span className="text-slate-500">
+            <strong className="text-slate-700">{isPlaceholder ? '—' : safeStats.paid_installments}</strong> recebidas
+          </span>
+          <span className="text-amber-600">
+            <strong>{isPlaceholder ? '—' : safeStats.pending_installments}</strong> pendentes
+          </span>
+          <span className="text-red-600">
+            <strong>{isPlaceholder ? '—' : safeStats.overdue_installments}</strong> vencidas
+          </span>
         </div>
       </div>
     </div>

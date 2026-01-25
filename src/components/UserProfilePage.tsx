@@ -2389,14 +2389,23 @@ export const UserProfilePage: React.FC<UserProfilePageProps> = ({ userId, onClos
                         <div className="space-y-2 mt-3">
                           {post.preview_data.financeiro && (
                             <div
-                              className="bg-emerald-50 border border-emerald-200 border-l-4 border-l-emerald-500 rounded-lg p-3 cursor-pointer hover:bg-emerald-100/60 transition-colors"
-                              onClick={() => handleNavigate('financeiro')}
+                              className="bg-white border border-slate-200 border-l-4 border-l-emerald-500 rounded-lg p-3 cursor-pointer hover:bg-slate-50 hover:border-slate-300 transition-colors"
+                              onClick={() => {
+                                const agreementId = post.entity_references?.find((e) => e.type === 'financial')?.id;
+                                if (agreementId) {
+                                  handleNavigate('financeiro', { entityId: agreementId });
+                                  return;
+                                }
+                                handleNavigate('financeiro');
+                              }}
                             >
                               <div className="flex items-start justify-between gap-3">
                                 <div className="flex items-start gap-2">
-                                  <DollarSign className="w-4 h-4 text-emerald-600 mt-0.5" />
+                                  <div className="w-9 h-9 rounded-lg bg-emerald-100 flex items-center justify-center text-emerald-700">
+                                    <DollarSign className="w-5 h-5" />
+                                  </div>
                                   <div>
-                                    <p className="text-emerald-900 font-semibold text-sm">
+                                    <p className="text-slate-900 font-semibold text-sm">
                                       {financialDetailsByPostId[post.id]?.client_name ? `Acordo Financeiro • ${financialDetailsByPostId[post.id]?.client_name}` : 'Resumo Financeiro'}
                                     </p>
                                     {financialDetailsByPostId[post.id]?.description && (
@@ -2421,7 +2430,7 @@ export const UserProfilePage: React.FC<UserProfilePageProps> = ({ userId, onClos
                                   </div>
                                 </div>
                                 {financialDetailsByPostId[post.id]?.status && (
-                                  <span className="shrink-0 text-[10px] font-medium px-2 py-0.5 rounded-full bg-white/70 border border-emerald-200/80 text-emerald-700">
+                                  <span className="shrink-0 text-[10px] font-medium px-2 py-0.5 rounded-full bg-emerald-50 border border-emerald-200 text-emerald-700">
                                     {String(financialDetailsByPostId[post.id]?.status)}
                                   </span>
                                 )}
@@ -2431,11 +2440,18 @@ export const UserProfilePage: React.FC<UserProfilePageProps> = ({ userId, onClos
 
                           {post.preview_data.cliente && (
                             <div
-                              className="bg-blue-50 border border-blue-200 border-l-4 border-l-blue-500 rounded-lg p-3 cursor-pointer hover:bg-blue-100/60 transition-colors"
-                              onClick={() => handleNavigate('clientes', { selectedId: post.preview_data.cliente?.id || '' })}
+                              className="bg-white border border-slate-200 border-l-4 border-l-blue-500 rounded-lg p-3 cursor-pointer hover:bg-slate-50 hover:border-slate-300 transition-colors"
+                              onClick={() => {
+                                const clientId = post.preview_data?.cliente?.id;
+                                if (clientId) {
+                                  handleNavigate('clientes', { mode: 'details', entityId: clientId });
+                                  return;
+                                }
+                                handleNavigate('clientes');
+                              }}
                             >
                               <div className="flex items-center gap-3">
-                                <div className="w-9 h-9 rounded-lg bg-blue-100 flex items-center justify-center text-blue-600">
+                                <div className="w-9 h-9 rounded-lg bg-blue-100 flex items-center justify-center text-blue-700">
                                   <Users className="w-5 h-5" />
                                 </div>
                                 <div>
@@ -2450,11 +2466,18 @@ export const UserProfilePage: React.FC<UserProfilePageProps> = ({ userId, onClos
 
                           {post.preview_data.processo && (
                             <div
-                              className="bg-purple-50 border border-purple-200 border-l-4 border-l-purple-500 rounded-lg p-3 cursor-pointer hover:bg-purple-100/60 transition-colors"
-                              onClick={() => handleNavigate('processos', { selectedId: post.preview_data.processo?.id || '' })}
+                              className="bg-white border border-slate-200 border-l-4 border-l-indigo-500 rounded-lg p-3 cursor-pointer hover:bg-slate-50 hover:border-slate-300 transition-colors"
+                              onClick={() => {
+                                const processId = post.preview_data?.processo?.id;
+                                if (processId) {
+                                  handleNavigate('processos', { entityId: processId });
+                                  return;
+                                }
+                                handleNavigate('processos');
+                              }}
                             >
                               <div className="flex items-center gap-3">
-                                <div className="w-9 h-9 rounded-lg bg-purple-100 flex items-center justify-center text-purple-600">
+                                <div className="w-9 h-9 rounded-lg bg-indigo-100 flex items-center justify-center text-indigo-700">
                                   <Gavel className="w-5 h-5" />
                                 </div>
                                 <div>
@@ -2467,11 +2490,18 @@ export const UserProfilePage: React.FC<UserProfilePageProps> = ({ userId, onClos
 
                           {post.preview_data.prazo && (
                             <div
-                              className="bg-red-50 border border-red-200 border-l-4 border-l-red-500 rounded-lg p-3 cursor-pointer hover:bg-red-100/60 transition-colors"
-                              onClick={() => handleNavigate('prazos', { selectedId: post.preview_data.prazo?.id || '' })}
+                              className="bg-white border border-slate-200 border-l-4 border-l-red-500 rounded-lg p-3 cursor-pointer hover:bg-slate-50 hover:border-slate-300 transition-colors"
+                              onClick={() => {
+                                const deadlineId = post.preview_data?.prazo?.id;
+                                if (deadlineId) {
+                                  handleNavigate('prazos', { entityId: deadlineId });
+                                  return;
+                                }
+                                handleNavigate('prazos');
+                              }}
                             >
                               <div className="flex items-center gap-3">
-                                <div className="w-9 h-9 rounded-lg bg-red-100 flex items-center justify-center text-red-600">
+                                <div className="w-9 h-9 rounded-lg bg-red-100 flex items-center justify-center text-red-700">
                                   <Clock className="w-5 h-5" />
                                 </div>
                                 <div>
@@ -2484,11 +2514,18 @@ export const UserProfilePage: React.FC<UserProfilePageProps> = ({ userId, onClos
 
                           {post.preview_data.agenda && (
                             <div
-                              className="bg-amber-50 border border-amber-200 border-l-4 border-l-amber-500 rounded-lg p-3 cursor-pointer hover:bg-amber-100/60 transition-colors"
-                              onClick={() => handleNavigate('agenda', { selectedId: post.preview_data.agenda?.id || '' })}
+                              className="bg-white border border-slate-200 border-l-4 border-l-amber-500 rounded-lg p-3 cursor-pointer hover:bg-slate-50 hover:border-slate-300 transition-colors"
+                              onClick={() => {
+                                const calendarEventId = post.preview_data?.agenda?.id;
+                                if (calendarEventId) {
+                                  handleNavigate('agenda', { entityId: calendarEventId });
+                                  return;
+                                }
+                                handleNavigate('agenda');
+                              }}
                             >
                               <div className="flex items-center gap-3">
-                                <div className="w-9 h-9 bg-amber-100 rounded-lg flex items-center justify-center text-amber-600">
+                                <div className="w-9 h-9 bg-amber-100 rounded-lg flex items-center justify-center text-amber-700">
                                   <Calendar className="w-5 h-5" />
                                 </div>
                                 <div>
@@ -2501,11 +2538,18 @@ export const UserProfilePage: React.FC<UserProfilePageProps> = ({ userId, onClos
 
                           {post.preview_data.documento && (
                             <div
-                              className="bg-indigo-50 border border-indigo-200 border-l-4 border-l-indigo-500 rounded-lg p-3 cursor-pointer hover:bg-indigo-100/60 transition-colors"
-                              onClick={() => handleNavigate('documentos', { selectedId: post.preview_data.documento?.id || '' })}
+                              className="bg-white border border-slate-200 border-l-4 border-l-indigo-500 rounded-lg p-3 cursor-pointer hover:bg-slate-50 hover:border-slate-300 transition-colors"
+                              onClick={() => {
+                                const docId = post.preview_data?.documento?.id;
+                                if (docId) {
+                                  handleNavigate('documentos', { entityId: docId });
+                                  return;
+                                }
+                                handleNavigate('documentos');
+                              }}
                             >
                               <div className="flex items-center gap-3">
-                                <div className="w-9 h-9 bg-indigo-100 rounded-lg flex items-center justify-center text-indigo-600">
+                                <div className="w-9 h-9 bg-indigo-100 rounded-lg flex items-center justify-center text-indigo-700">
                                   <FileText className="w-5 h-5" />
                                 </div>
                                 <div>
@@ -2518,11 +2562,18 @@ export const UserProfilePage: React.FC<UserProfilePageProps> = ({ userId, onClos
 
                           {post.preview_data.peticao && (
                             <div
-                              className="bg-cyan-50 border border-cyan-200 border-l-4 border-l-cyan-500 rounded-lg p-3 cursor-pointer hover:bg-cyan-100/60 transition-colors"
-                              onClick={() => handleNavigate('peticoes', { selectedId: post.preview_data.peticao?.id || '' })}
+                              className="bg-white border border-slate-200 border-l-4 border-l-cyan-500 rounded-lg p-3 cursor-pointer hover:bg-slate-50 hover:border-slate-300 transition-colors"
+                              onClick={() => {
+                                const petId = post.preview_data?.peticao?.id;
+                                if (petId) {
+                                  handleNavigate('peticoes', { entityId: petId });
+                                  return;
+                                }
+                                handleNavigate('peticoes');
+                              }}
                             >
                               <div className="flex items-center gap-3">
-                                <div className="w-9 h-9 bg-cyan-100 rounded-lg flex items-center justify-center text-cyan-600">
+                                <div className="w-9 h-9 bg-cyan-100 rounded-lg flex items-center justify-center text-cyan-700">
                                   <FileSignature className="w-5 h-5" />
                                 </div>
                                 <div>
@@ -2535,11 +2586,18 @@ export const UserProfilePage: React.FC<UserProfilePageProps> = ({ userId, onClos
 
                           {post.preview_data.assinatura && (
                             <div
-                              className="bg-pink-50 border border-pink-200 border-l-4 border-l-pink-500 rounded-lg p-3 cursor-pointer hover:bg-pink-100/60 transition-colors"
-                              onClick={() => handleNavigate('assinaturas', { selectedId: post.preview_data.assinatura?.id || '' })}
+                              className="bg-white border border-slate-200 border-l-4 border-l-pink-500 rounded-lg p-3 cursor-pointer hover:bg-slate-50 hover:border-slate-300 transition-colors"
+                              onClick={() => {
+                                const requestId = post.preview_data?.assinatura?.id;
+                                if (requestId) {
+                                  handleNavigate('assinaturas', { mode: 'details', requestId });
+                                  return;
+                                }
+                                handleNavigate('assinaturas');
+                              }}
                             >
                               <div className="flex items-center gap-3">
-                                <div className="w-9 h-9 bg-pink-100 rounded-lg flex items-center justify-center text-pink-600">
+                                <div className="w-9 h-9 bg-pink-100 rounded-lg flex items-center justify-center text-pink-700">
                                   <PenTool className="w-5 h-5" />
                                 </div>
                                 <div>
@@ -2554,11 +2612,18 @@ export const UserProfilePage: React.FC<UserProfilePageProps> = ({ userId, onClos
 
                           {post.preview_data.requerimento && (
                             <div
-                              className="bg-orange-50 border border-orange-200 border-l-4 border-l-orange-500 rounded-lg p-3 cursor-pointer hover:bg-orange-100/60 transition-colors"
-                              onClick={() => handleNavigate('requerimentos', { selectedId: post.preview_data.requerimento?.id || '' })}
+                              className="bg-white border border-slate-200 border-l-4 border-l-orange-500 rounded-lg p-3 cursor-pointer hover:bg-slate-50 hover:border-slate-300 transition-colors"
+                              onClick={() => {
+                                const reqId = post.preview_data?.requerimento?.id;
+                                if (reqId) {
+                                  handleNavigate('requerimentos', { entityId: reqId });
+                                  return;
+                                }
+                                handleNavigate('requerimentos');
+                              }}
                             >
                               <div className="flex items-center gap-3">
-                                <div className="w-9 h-9 bg-orange-100 rounded-lg flex items-center justify-center text-orange-600">
+                                <div className="w-9 h-9 bg-orange-100 rounded-lg flex items-center justify-center text-orange-700">
                                   <Briefcase className="w-5 h-5" />
                                 </div>
                                 <div>

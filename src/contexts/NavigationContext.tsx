@@ -2,6 +2,7 @@ import React, { createContext, useContext, useState, ReactNode } from 'react';
 
 export type ModuleName = 
   | 'dashboard'
+  | 'feed'
   | 'leads'
   | 'clientes'
   | 'documentos'
