@@ -566,6 +566,23 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
 
 const releases: ReleaseNote[] = [
   {
+    version: '1.9.408',
+    date: '25/01/2026',
+    summary: 'Dashboard Header Redesign: Layout reorganizado com saudação/estatísticas à esquerda e botões de ação à direita.',
+    modules: [
+      {
+        moduleId: 'dashboard',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Header em linha única',
+            description: 'Reorganização completa do header do Dashboard para layout horizontal com elementos separados (esquerda: saudação + estatísticas, direita: alertas + botão novo cliente).',
+          },
+        ],
+      },
+    ],
+  },
+  {
     version: '1.9.407',
     date: '25/01/2026',
     summary: 'Feed Redesign: Implementação completa do feed estilo LinkedIn/Facebook com layout 3 colunas, widgets arrastáveis e social interactions.',

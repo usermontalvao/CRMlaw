@@ -705,100 +705,109 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToModule }) => {
   return (
     <div className="space-y-4 sm:space-y-6 bg-slate-50/50 -m-6 p-3 sm:p-6 min-h-screen">
 
-      {/* Header - Mobile First */}
-      <div className="space-y-3 sm:space-y-4">
-        <p className="text-[10px] sm:text-xs font-medium text-slate-400 uppercase tracking-wider">{getGreeting()}</p>
+      {/* Header - Tudo em uma linha */}
+      <div className="flex flex-wrap items-center justify-between gap-3 sm:gap-4">
+        {/* Esquerda: Saudação e Estatísticas */}
+        <div className="flex flex-wrap items-center gap-3 sm:gap-4">
+          {/* Saudação e Nome */}
+          <div className="flex items-center gap-2">
+            <p className="text-[10px] sm:text-xs font-medium text-slate-400 uppercase tracking-wider">{getGreeting()}</p>
+            <User className="w-4 h-4 sm:w-5 sm:h-5 text-slate-500" />
+            <h1 className="text-lg sm:text-2xl font-bold text-slate-900">
+              {userName || 'Dashboard'}
+            </h1>
+            {userName && (
+              <span
+                className="text-base sm:text-xl leading-none select-none"
+                style={{
+                  animation: 'wave 1s ease-in-out infinite',
+                  transformOrigin: '70% 70%',
+                  display: 'inline-block',
+                }}
+              >
+                👋
+              </span>
+            )}
+          </div>
 
-        <div className="flex flex-wrap items-center gap-2">
-          <User className="w-4 h-4 sm:w-5 sm:h-5 text-slate-500" />
-          <h1 className="text-lg sm:text-2xl font-bold text-slate-900">
-            {userName || 'Dashboard'}
-          </h1>
-          {userName && (
-            <span
-              className="text-base sm:text-xl leading-none select-none"
-              style={{
-                animation: 'wave 1s ease-in-out infinite',
-                transformOrigin: '70% 70%',
-                display: 'inline-block',
-              }}
+          {/* Estatísticas */}
+          <div className="flex items-center gap-2 sm:gap-3">
+            <button
+              onClick={() => handleNavigate('clientes')}
+              className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-blue-50 hover:bg-blue-100 text-blue-700 transition-all text-xs sm:text-sm"
             >
-              👋
-            </span>
+              <Users className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+              <span className="font-semibold">{activeClients}</span>
+              <span className="text-blue-600 hidden sm:inline">clientes</span>
+              {newClientsThisMonth > 0 && (
+                <span className="text-blue-500 font-medium">+{newClientsThisMonth}</span>
+              )}
+            </button>
+            <button
+              onClick={() => handleNavigate('processos')}
+              className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-purple-50 hover:bg-purple-100 text-purple-700 transition-all text-xs sm:text-sm"
+            >
+              <Gavel className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+              <span className="font-semibold">{activeProcesses}</span>
+              <span className="text-purple-600 hidden sm:inline">processos</span>
+            </button>
+            <button
+              onClick={() => handleNavigate('prazos')}
+              className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-red-50 hover:bg-red-100 text-red-700 transition-all text-xs sm:text-sm"
+            >
+              <CalendarDays className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+              <span className="font-semibold">{pendingDeadlines}</span>
+              <span className="text-red-600 hidden sm:inline">prazos</span>
+            </button>
+            <button
+              onClick={() => handleNavigate('tarefas')}
+              className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-emerald-50 hover:bg-emerald-100 text-emerald-700 transition-all text-xs sm:text-sm"
+            >
+              <CheckSquare className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+              <span className="font-semibold">{pendingTasks}</span>
+              <span className="text-emerald-600 hidden sm:inline">tarefas</span>
+            </button>
+          </div>
+        </div>
+
+        {/* Direita: Botão Novo Cliente e Badges de Alerta */}
+        <div className="flex items-center gap-2">
+          {/* Badges de Alerta */}
+          {urgentAlerts.length > 0 && (
+            <div className="flex items-center gap-2">
+              {urgentAlerts.map((alert, index) => (
+                <button
+                  key={index}
+                  onClick={() => handleNavigate(alert.action)}
+                  className={`inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border text-xs font-semibold transition-colors ${
+                    alert.action === 'prazos'
+                      ? 'border-red-200 bg-red-50/70 text-red-700 hover:bg-red-100'
+                      : alert.action === 'intimacoes'
+                        ? 'border-orange-200 bg-orange-50/70 text-orange-700 hover:bg-orange-100'
+                        : 'border-amber-200 bg-amber-50/70 text-amber-700 hover:bg-amber-100'
+                  }`}
+                >
+                  {alert.icon}
+                  <span>
+                    {alert.action === 'prazos'
+                      ? 'Prazos'
+                      : alert.action === 'intimacoes'
+                        ? 'Intimações'
+                        : 'Financeiro'}
+                  </span>
+                  <span className="font-bold">{alert.count}</span>
+                </button>
+              ))}
+            </div>
           )}
+
+          {/* Botão Novo Cliente */}
           <button
             onClick={() => handleNavigate('clientes?mode=create')}
-            className="ml-1 inline-flex items-center gap-1.5 px-2.5 py-1.5 sm:px-3 sm:py-2 bg-slate-900 hover:bg-slate-800 text-white text-xs sm:text-sm font-medium rounded-lg transition-all"
+            className="inline-flex items-center gap-1.5 px-2.5 py-1.5 sm:px-3 sm:py-2 bg-slate-900 hover:bg-slate-800 text-white text-xs sm:text-sm font-medium rounded-lg transition-all"
           >
             <Plus className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
             <span className="hidden sm:inline">Novo Cliente</span>
-          </button>
-        </div>
-
-        {urgentAlerts.length > 0 && (
-          <div className="flex flex-wrap items-center gap-2">
-            {urgentAlerts.map((alert, index) => (
-              <button
-                key={index}
-                onClick={() => handleNavigate(alert.action)}
-                className={`inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border text-xs font-semibold transition-colors ${
-                  alert.action === 'prazos'
-                    ? 'border-red-200 bg-red-50/70 text-red-700 hover:bg-red-100'
-                    : alert.action === 'intimacoes'
-                      ? 'border-orange-200 bg-orange-50/70 text-orange-700 hover:bg-orange-100'
-                      : 'border-amber-200 bg-amber-50/70 text-amber-700 hover:bg-amber-100'
-                }`}
-              >
-                {alert.icon}
-                <span>
-                  {alert.action === 'prazos'
-                    ? 'Prazos'
-                    : alert.action === 'intimacoes'
-                      ? 'Intimações'
-                      : 'Financeiro'}
-                </span>
-                <span className="font-bold">{alert.count}</span>
-              </button>
-            ))}
-          </div>
-        )}
-        
-        {/* Linha 2: Estatísticas - grid 2x2 no mobile, linha única no desktop */}
-        <div className="grid grid-cols-2 sm:flex sm:flex-wrap gap-2 sm:gap-3">
-          <button
-            onClick={() => handleNavigate('clientes')}
-            className="flex items-center gap-1.5 px-2.5 py-2 sm:px-3 sm:py-1.5 rounded-lg bg-blue-50 hover:bg-blue-100 text-blue-700 transition-all text-xs sm:text-sm"
-          >
-            <Users className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
-            <span className="font-semibold">{activeClients}</span>
-            <span className="text-blue-600 hidden sm:inline">clientes</span>
-            {newClientsThisMonth > 0 && (
-              <span className="text-blue-500 font-medium">+{newClientsThisMonth}</span>
-            )}
-          </button>
-          <button
-            onClick={() => handleNavigate('processos')}
-            className="flex items-center gap-1.5 px-2.5 py-2 sm:px-3 sm:py-1.5 rounded-lg bg-purple-50 hover:bg-purple-100 text-purple-700 transition-all text-xs sm:text-sm"
-          >
-            <Gavel className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
-            <span className="font-semibold">{activeProcesses}</span>
-            <span className="text-purple-600 hidden sm:inline">processos</span>
-          </button>
-          <button
-            onClick={() => handleNavigate('prazos')}
-            className="flex items-center gap-1.5 px-2.5 py-2 sm:px-3 sm:py-1.5 rounded-lg bg-red-50 hover:bg-red-100 text-red-700 transition-all text-xs sm:text-sm"
-          >
-            <CalendarDays className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
-            <span className="font-semibold">{pendingDeadlines}</span>
-            <span className="text-red-600 hidden sm:inline">prazos</span>
-          </button>
-          <button
-            onClick={() => handleNavigate('tarefas')}
-            className="flex items-center gap-1.5 px-2.5 py-2 sm:px-3 sm:py-1.5 rounded-lg bg-emerald-50 hover:bg-emerald-100 text-emerald-700 transition-all text-xs sm:text-sm"
-          >
-            <CheckSquare className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
-            <span className="font-semibold">{pendingTasks}</span>
-            <span className="text-emerald-600 hidden sm:inline">tarefas</span>
           </button>
         </div>
       </div>
