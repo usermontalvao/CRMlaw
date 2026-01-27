@@ -573,6 +573,23 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
 
 const releases: ReleaseNote[] = [
   {
+    version: '1.9.434',
+    date: '27/01/2026',
+    summary: 'Dashboard/Agenda: Corrigido filtro e marcação de "Hoje" para compromissos com data em formato YYYY-MM-DD.',
+    modules: [
+      {
+        moduleId: 'dashboard',
+        changes: [
+          {
+            type: 'fix',
+            title: 'Datas em fuso local',
+            description: 'Implementado parseLocalDateTime para tratar datas sem timezone (YYYY-MM-DD) como data local, evitando que eventos de hoje sumissem por interpretação UTC.',
+          },
+        ],
+      },
+    ],
+  },
+  {
     version: '1.9.433',
     date: '27/01/2026',
     summary: 'Feed: Correção de estrutura JSX e build para eliminar erro 500 no carregamento do módulo.',

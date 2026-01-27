@@ -1,5 +1,8 @@
 # Changelog
 
+## 1.9.434
+- **Dashboard / Agenda**: Corrigido o filtro/ordenação e marcação de "Hoje" para compromissos com `start_at` em formato de data (ex.: `YYYY-MM-DD`) que eram interpretados em UTC e podiam sumir no fuso local.
+
 ## 1.9.433
 - **Feed**: Correção de estrutura JSX e ajustes de build/TypeScript após remoção das ações/comentários, eliminando erro 500 no carregamento do módulo.
 - **Feed / Navegação**: Ajustado import do FeedPage para usar o casing correto (`./Feed`) e correções auxiliares de build.

@@ -28,6 +28,7 @@ import {
   CalendarDays,
   Gavel,
   Plus,
+  RefreshCw,
   Eye,
   Sparkles,
   User,
@@ -149,7 +150,7 @@ interface ModuleShortcut {
 // Cache keys e configuração
 const DASHBOARD_CACHE_KEY = 'crm-dashboard-cache';
 const DASHBOARD_CACHE_VERSION = 2;
-const CACHE_DURATION = 30 * 60 * 1000; // 30 minutos (reduzir requisições)
+const CACHE_DURATION = 5 * 60 * 1000; // 5 minutos (mais frequente para agenda)
 const REQUEST_TIMEOUT_MS = 15000; // 15s por requisição pesada
 
 interface DashboardCache {
@@ -167,6 +168,26 @@ interface DashboardCache {
     djenIntimacoes: DjenComunicacaoLocal[];
   };
 }
+
+const parseLocalDateTime = (value: string) => {
+  if (/^\d{4}-\d{2}-\d{2}$/.test(value)) {
+    const [y, m, d] = value.split('-').map(Number);
+    return new Date(y, (m || 1) - 1, d || 1, 0, 0, 0, 0);
+  }
+
+  const m = value.match(/^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})(?::(\d{2}))?$/);
+  if (m) {
+    const y = Number(m[1]);
+    const mo = Number(m[2]);
+    const d = Number(m[3]);
+    const hh = Number(m[4]);
+    const mm = Number(m[5]);
+    const ss = m[6] ? Number(m[6]) : 0;
+    return new Date(y, mo - 1, d, hh, mm, ss, 0);
+  }
+
+  return new Date(value);
+};
 
 const Dashboard: React.FC<DashboardProps> = ({ onNavigateToModule }) => {
   // Adicionar animação CSS dinamicamente
@@ -323,7 +344,7 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToModule }) => {
               return events
                 .filter((e) => {
                   if (!e.start_at) return false;
-                  const eventDate = new Date(e.start_at);
+                  const eventDate = parseLocalDateTime(e.start_at);
                   return eventDate >= now && eventDate <= futureDate;
                 })
                 .slice(0, 100);
@@ -502,7 +523,7 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToModule }) => {
     const manualEvents = calendarEvents
       .filter((e) => {
         if (!e.start_at) return false;
-        const eventDate = new Date(e.start_at);
+        const eventDate = parseLocalDateTime(e.start_at);
         return eventDate >= today;
       })
       .map((e) => ({
@@ -517,7 +538,7 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToModule }) => {
     const hearingEvents = processes
       .filter((p) => p.hearing_scheduled && p.hearing_date)
       .filter((p) => {
-        const hearingDate = new Date(p.hearing_date!);
+        const hearingDate = parseLocalDateTime(p.hearing_date!);
         return hearingDate >= today;
       })
       .map((p) => {
@@ -535,7 +556,7 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToModule }) => {
 
     // Combinar e ordenar
     return [...manualEvents, ...hearingEvents]
-      .sort((a, b) => new Date(a.start_at).getTime() - new Date(b.start_at).getTime())
+      .sort((a, b) => parseLocalDateTime(a.start_at).getTime() - parseLocalDateTime(b.start_at).getTime())
       .slice(0, 10);
   }, [calendarEvents, processes, clients]);
 
@@ -828,13 +849,22 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToModule }) => {
                     <p className="text-[10px] sm:text-xs text-slate-500">{upcomingEvents.length} próximo{upcomingEvents.length !== 1 ? 's' : ''}</p>
                   </div>
                 </div>
-                <button
-                  onClick={() => handleNavigate('agenda')}
-                  className="text-[10px] sm:text-xs text-blue-600 hover:text-blue-700 font-medium flex items-center gap-1"
-                >
-                  <span className="hidden sm:inline">Ver todos</span>
-                  <ChevronRight className="w-3 h-3" />
-                </button>
+                <div className="flex items-center gap-1 sm:gap-2">
+                  <button
+                    onClick={() => loadDashboardData(true)}
+                    className="text-[10px] sm:text-xs text-blue-600 hover:text-blue-700 font-medium flex items-center gap-1"
+                    title="Atualizar agenda"
+                  >
+                    <RefreshCw className="w-3 h-3" />
+                  </button>
+                  <button
+                    onClick={() => handleNavigate('agenda')}
+                    className="text-[10px] sm:text-xs text-blue-600 hover:text-blue-700 font-medium flex items-center gap-1"
+                  >
+                    <span className="hidden sm:inline">Ver todos</span>
+                    <ChevronRight className="w-3 h-3" />
+                  </button>
+                </div>
               </div>
             </div>
 
@@ -853,9 +883,12 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToModule }) => {
               ) : (
                 <div className="space-y-1.5 sm:space-y-2">
                   {upcomingEvents.slice(0, 4).map((event) => {
-                    const eventDate = new Date(event.start_at);
-                    const isToday = eventDate.toDateString() === new Date().toDateString();
-                    const isTomorrow = eventDate.toDateString() === new Date(Date.now() + 86400000).toDateString();
+                    const eventDate = parseLocalDateTime(event.start_at);
+                    const now = new Date();
+                    now.setHours(0, 0, 0, 0);
+                    const tomorrow = new Date(now.getTime() + 86400000);
+                    const isToday = eventDate >= now && eventDate < tomorrow;
+                    const isTomorrow = eventDate >= tomorrow && eventDate < new Date(tomorrow.getTime() + 86400000);
                     
                     return (
                       <div 
