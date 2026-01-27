@@ -387,8 +387,8 @@ const NotificationsModuleNew: React.FC<NotificationsModuleProps> = ({ onNavigate
     } else {
       const un = notification.data as UserNotification;
       if (un.metadata?.post_id) {
-        // Notificação de menção/post: abrir feed e rolar até o post
-        onNavigateToModule?.('dashboard', { scrollToPost: un.metadata.post_id } as any);
+        // Notificação de menção/post: abrir feed no post específico
+        onNavigateToModule?.('feed', { openPostModal: un.metadata.post_id } as any);
       } else if (un.deadline_id) onNavigateToModule?.('prazos', { entityId: un.deadline_id } as any);
       else if (un.process_id) onNavigateToModule?.('processos', { entityId: un.process_id } as any);
       else if (un.requirement_id) onNavigateToModule?.('requerimentos', { entityId: un.requirement_id } as any);

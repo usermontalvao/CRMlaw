@@ -3,6 +3,8 @@ import { UserPlus, FileText, CalendarDays, Calendar, CheckSquare, Target, Wallet
 
 interface QuickActionsProps {
   onNavigate: (moduleWithParams: string) => void;
+  canView?: (module: string) => boolean;
+  canCreate?: (module: string) => boolean;
 }
 
 interface ActionButton {
@@ -57,10 +59,26 @@ const actions: ActionButton[] = [
   },
 ];
 
-export const QuickActions: React.FC<QuickActionsProps> = ({ onNavigate }) => {
+export const QuickActions: React.FC<QuickActionsProps> = ({ onNavigate, canView, canCreate }) => {
+  
+  
+  const allowedActions = actions.filter((a) => {
+    const moduleKey = a.action.split('?')[0];
+    const isCreateAction = a.action.includes('mode=create');
+    const isPaymentAction = a.action.includes('mode=payment');
+
+    // If permission callbacks are not provided, keep current behavior (show all)
+    const canViewModule = typeof canView === 'function' ? canView(moduleKey) : true;
+    const canCreateModule = typeof canCreate === 'function' ? canCreate(moduleKey) : true;
+
+    if (isCreateAction) return canViewModule && canCreateModule;
+    if (isPaymentAction) return canViewModule;
+    return canViewModule;
+  });
+
   return (
     <div className="flex flex-wrap gap-2">
-      {actions.map((action) => (
+      {allowedActions.map((action) => (
         <button
           key={action.action}
           onClick={() => onNavigate(action.action)}

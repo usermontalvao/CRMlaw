@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import {
   X,
@@ -10,12 +10,19 @@ import {
   Loader2,
   ThumbsUp,
   Clock,
+  Calendar,
   Globe,
   Users,
   Lock,
   Shield,
   BarChart2,
-  CheckCircle
+  CheckCircle,
+  DollarSign,
+  FileText,
+  ScrollText,
+  Pencil,
+  Gavel,
+  Target
 } from 'lucide-react';
 import { feedPostsService, type FeedPost } from '../services/feedPosts.service';
 import { feedPollsService, type FeedPoll } from '../services/feedPolls.service';
@@ -103,6 +110,20 @@ export const PostModal: React.FC<PostModalProps> = ({
   const commentInputRef = useRef<HTMLInputElement>(null);
   const [poll, setPoll] = useState<FeedPoll | null>(null);
 
+  const tagLabelMap = useMemo(() => {
+    return {
+      financeiro: 'Financeiro',
+      processo: 'Processo',
+      prazo: 'Prazo',
+      cliente: 'Cliente',
+      agenda: 'Agenda',
+      documento: 'Documento',
+      peticao: 'Petição',
+      assinatura: 'Assinatura',
+      requerimento: 'Requerimento',
+    } as Record<string, string>;
+  }, []);
+
   // Carregar perfis
   useEffect(() => {
     const loadProfiles = async () => {
@@ -165,6 +186,35 @@ export const PostModal: React.FC<PostModalProps> = ({
 
     loadPost();
   }, [postId, isOpen, initialPost]);
+
+  // Carregar/atualizar enquete sempre que abrir o modal (mesmo com initialPost)
+  useEffect(() => {
+    const loadPoll = async () => {
+      if (!postId || !isOpen) return;
+      try {
+        const pollData = await feedPollsService.getPollByPostId(postId);
+        setPoll(pollData);
+      } catch {
+        setPoll(null);
+      }
+    };
+
+    loadPoll();
+  }, [postId, isOpen]);
+
+  const handlePollVote = useCallback(
+    async (optionIndex: number) => {
+      if (!poll || !postId) return;
+      try {
+        await feedPollsService.vote(poll.id, optionIndex);
+        const refreshed = await feedPollsService.getPollByPostId(postId);
+        setPoll(refreshed);
+      } catch (err) {
+        console.error('Erro ao votar na enquete:', err);
+      }
+    },
+    [poll, postId]
+  );
 
   // Carregar comentários
   useEffect(() => {
@@ -238,6 +288,13 @@ export const PostModal: React.FC<PostModalProps> = ({
 
   // Renderizar conteúdo com menções clicáveis
   const renderContentWithMentions = useCallback((content: string) => {
+    const normalize = (value: string) =>
+      value
+        .toLowerCase()
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .trim();
+
     const mentionRegex = /@([A-Za-zÀ-ÖØ-öø-ÿ]+(?:\s+[A-Za-zÀ-ÖØ-öø-ÿ]+)*)/g;
     const parts: React.ReactNode[] = [];
     let lastIndex = 0;
@@ -249,17 +306,27 @@ export const PostModal: React.FC<PostModalProps> = ({
       }
       const matchName = match[1];
       const mentionedProfile = allProfiles.find(p => {
-        const profileName = (p.name || '').toLowerCase().trim();
-        const mentionName = matchName.toLowerCase().trim();
-        return profileName === mentionName || 
-               profileName.includes(mentionName) || 
-               mentionName.includes(profileName);
+        const profileName = normalize(p.name || '');
+        const mentionName = normalize(matchName);
+        return profileName === mentionName || profileName.includes(mentionName) || mentionName.includes(profileName);
       });
       
       parts.push(
         <span
           key={`mention-${match.index}`}
-          className="text-blue-600 font-semibold cursor-pointer hover:underline"
+          style={{ 
+            color: '#2563eb',
+            fontWeight: '600',
+            cursor: 'pointer',
+            textDecoration: 'none',
+            transition: 'text-decoration 0.2s ease'
+          }}
+          onMouseEnter={(e) => {
+            e.currentTarget.style.textDecoration = 'underline';
+          }}
+          onMouseLeave={(e) => {
+            e.currentTarget.style.textDecoration = 'none';
+          }}
           onClick={(e) => {
             e.stopPropagation();
             if (mentionedProfile && onNavigateToProfile) {
@@ -399,9 +466,23 @@ export const PostModal: React.FC<PostModalProps> = ({
                   </div>
                 ) : (
                   <>
-                    <div className="mt-3 text-[15px] leading-relaxed whitespace-pre-wrap" style={{ color: '#1e293b' }}>
+                    <div className="mt-3 text-[15px] leading-relaxed whitespace-pre-wrap text-slate-900">
                       {renderContentWithMentions(post.content)}
                     </div>
+
+                    {/* Tags (#) */}
+                    {Array.isArray(post.tags) && post.tags.length > 0 && (
+                      <div className="mt-3 flex flex-wrap gap-1.5">
+                        {post.tags.slice(0, 6).map((tag) => (
+                          <span
+                            key={tag}
+                            className="bg-slate-100 text-slate-600 text-[10px] font-bold px-2 py-0.5 rounded-lg"
+                          >
+                            #{tagLabelMap[tag] || tag}
+                          </span>
+                        ))}
+                      </div>
+                    )}
 
                     {/* Imagens/Anexos */}
                     {post.attachments && post.attachments.length > 0 && (
@@ -445,6 +526,7 @@ export const PostModal: React.FC<PostModalProps> = ({
                                 <button
                                   key={idx}
                                   disabled={!canVote || (hasVoted && !isMultiple)}
+                                  onClick={() => handlePollVote(idx)}
                                   className={`w-full relative overflow-hidden rounded-lg border transition-all ${
                                     hasVoted 
                                       ? 'border-indigo-400 bg-indigo-50' 
@@ -495,6 +577,156 @@ export const PostModal: React.FC<PostModalProps> = ({
                         </div>
                       );
                     })()}
+
+                    {/* Cards de Preview (resumo) */}
+                    {!post.banned_at && post.preview_data && Object.keys(post.preview_data).length > 0 && (
+                      <div className="mt-3 space-y-2">
+                        {(post.preview_data as any).financeiro && (
+                          <div className="bg-white border border-slate-200 border-l-4 border-l-emerald-500 rounded-lg p-3">
+                            <div className="flex items-start justify-between gap-3">
+                              <div className="flex items-start gap-2">
+                                <div className="w-9 h-9 rounded-lg bg-emerald-100 flex items-center justify-center text-emerald-700">
+                                  <DollarSign className="w-5 h-5" />
+                                </div>
+                                <div>
+                                  <p className="text-slate-900 font-semibold text-sm">Resumo Financeiro</p>
+                                  <p className="text-slate-500 text-xs">Financeiro</p>
+                                </div>
+                              </div>
+                              <span className="shrink-0 text-[10px] font-medium px-2 py-0.5 rounded-full bg-emerald-50 border border-emerald-200 text-emerald-700">
+                                Financeiro
+                              </span>
+                            </div>
+                            <div className="grid grid-cols-3 gap-2 mt-2">
+                              <div className="bg-slate-50 border border-slate-200 rounded-lg p-2 text-center">
+                                <p className="text-slate-500 text-[10px] font-medium">Recebido</p>
+                                <p className="text-emerald-600 font-bold text-sm">{(post.preview_data as any).financeiro.recebido}</p>
+                              </div>
+                              <div className="bg-slate-50 border border-slate-200 rounded-lg p-2 text-center">
+                                <p className="text-slate-500 text-[10px] font-medium">Pendente</p>
+                                <p className="text-amber-600 font-bold text-sm">{(post.preview_data as any).financeiro.pendente}</p>
+                              </div>
+                              <div className="bg-slate-50 border border-slate-200 rounded-lg p-2 text-center">
+                                <p className="text-slate-500 text-[10px] font-medium">Atrasado</p>
+                                <p className="text-red-600 font-bold text-sm">{(post.preview_data as any).financeiro.atrasado}</p>
+                              </div>
+                            </div>
+                          </div>
+                        )}
+
+                        {(post.preview_data as any).cliente && (
+                          <div className="bg-white border border-slate-200 border-l-4 border-l-blue-500 rounded-lg p-3">
+                            <div className="flex items-center gap-3">
+                              <div className="w-9 h-9 rounded-lg bg-blue-100 flex items-center justify-center text-blue-700">
+                                <Users className="w-5 h-5" />
+                              </div>
+                              <div>
+                                <p className="text-slate-900 font-semibold text-sm">{(post.preview_data as any).cliente.nome}</p>
+                                <p className="text-slate-500 text-xs">{(post.preview_data as any).cliente.cpf || (post.preview_data as any).cliente.telefone || 'Cliente'}</p>
+                              </div>
+                            </div>
+                          </div>
+                        )}
+
+                        {(post.preview_data as any).processo && (
+                          <div className="bg-white border border-slate-200 border-l-4 border-l-indigo-500 rounded-lg p-3">
+                            <div className="flex items-center gap-3">
+                              <div className="w-9 h-9 rounded-lg bg-indigo-100 flex items-center justify-center text-indigo-700">
+                                <Gavel className="w-5 h-5" />
+                              </div>
+                              <div>
+                                <p className="text-slate-900 font-semibold text-sm">{(post.preview_data as any).processo.numero}</p>
+                                <p className="text-slate-500 text-xs">{(post.preview_data as any).processo.cliente} • {(post.preview_data as any).processo.status}</p>
+                              </div>
+                            </div>
+                          </div>
+                        )}
+
+                        {(post.preview_data as any).prazo && (
+                          <div className="bg-white border border-slate-200 border-l-4 border-l-red-500 rounded-lg p-3">
+                            <div className="flex items-center gap-3">
+                              <div className="w-9 h-9 rounded-lg bg-red-100 flex items-center justify-center text-red-700">
+                                <Clock className="w-5 h-5" />
+                              </div>
+                              <div>
+                                <p className="text-slate-900 font-semibold text-sm">{(post.preview_data as any).prazo.titulo}</p>
+                                <p className="text-slate-500 text-xs">{(post.preview_data as any).prazo.data} • {(post.preview_data as any).prazo.tipo}</p>
+                              </div>
+                            </div>
+                          </div>
+                        )}
+
+                        {(post.preview_data as any).agenda && (
+                          <div className="bg-white border border-slate-200 border-l-4 border-l-amber-500 rounded-lg p-3">
+                            <div className="flex items-center gap-3">
+                              <div className="w-9 h-9 bg-amber-100 rounded-lg flex items-center justify-center text-amber-700">
+                                <Calendar className="w-5 h-5" />
+                              </div>
+                              <div>
+                                <p className="text-slate-900 font-semibold text-sm">{(post.preview_data as any).agenda.titulo}</p>
+                                <p className="text-slate-500 text-xs">{(post.preview_data as any).agenda.data} {(post.preview_data as any).agenda.hora ? `às ${(post.preview_data as any).agenda.hora}` : ''}</p>
+                              </div>
+                            </div>
+                          </div>
+                        )}
+
+                        {(post.preview_data as any).documento && (
+                          <div className="bg-white border border-slate-200 border-l-4 border-l-indigo-500 rounded-lg p-3">
+                            <div className="flex items-center gap-3">
+                              <div className="w-9 h-9 bg-indigo-100 rounded-lg flex items-center justify-center text-indigo-700">
+                                <FileText className="w-5 h-5" />
+                              </div>
+                              <div>
+                                <p className="text-slate-900 font-semibold text-sm">{(post.preview_data as any).documento.nome}</p>
+                                <p className="text-slate-500 text-xs">{(post.preview_data as any).documento.tipo || 'Documento'}</p>
+                              </div>
+                            </div>
+                          </div>
+                        )}
+
+                        {(post.preview_data as any).peticao && (
+                          <div className="bg-white border border-slate-200 border-l-4 border-l-cyan-500 rounded-lg p-3">
+                            <div className="flex items-center gap-3">
+                              <div className="w-9 h-9 bg-cyan-100 rounded-lg flex items-center justify-center text-cyan-700">
+                                <ScrollText className="w-5 h-5" />
+                              </div>
+                              <div>
+                                <p className="text-slate-900 font-semibold text-sm">{(post.preview_data as any).peticao.nome}</p>
+                                <p className="text-slate-500 text-xs">{(post.preview_data as any).peticao.tipo || 'Petição'}</p>
+                              </div>
+                            </div>
+                          </div>
+                        )}
+
+                        {(post.preview_data as any).assinatura && (
+                          <div className="bg-white border border-slate-200 border-l-4 border-l-pink-500 rounded-lg p-3">
+                            <div className="flex items-center gap-3">
+                              <div className="w-9 h-9 bg-pink-100 rounded-lg flex items-center justify-center text-pink-700">
+                                <Pencil className="w-5 h-5" />
+                              </div>
+                              <div>
+                                <p className="text-slate-900 font-semibold text-sm">{(post.preview_data as any).assinatura.nome}</p>
+                                <p className="text-slate-500 text-xs">{(post.preview_data as any).assinatura.cliente || 'Assinatura'} • {String((post.preview_data as any).assinatura.status) === 'signed' ? 'Assinado' : 'Pendente'}</p>
+                              </div>
+                            </div>
+                          </div>
+                        )}
+
+                        {(post.preview_data as any).requerimento && (
+                          <div className="bg-white border border-slate-200 border-l-4 border-l-orange-500 rounded-lg p-3">
+                            <div className="flex items-center gap-3">
+                              <div className="w-9 h-9 bg-orange-100 rounded-lg flex items-center justify-center text-orange-700">
+                                <Target className="w-5 h-5" />
+                              </div>
+                              <div>
+                                <p className="text-slate-900 font-semibold text-sm">{(post.preview_data as any).requerimento.protocolo || 'Requerimento'}</p>
+                                <p className="text-slate-500 text-xs">{(post.preview_data as any).requerimento.beneficiario || 'Beneficiário'}</p>
+                              </div>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    )}
 
                     {/* Contadores */}
                     <div className="flex items-center justify-between mt-4 pt-3 border-t border-slate-100">

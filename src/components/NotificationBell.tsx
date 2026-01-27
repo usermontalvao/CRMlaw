@@ -246,9 +246,9 @@ export const NotificationBell: React.FC<NotificationBellProps> = ({ onNavigateTo
       const postId = notification.metadata?.post_id;
       console.log('➡️ Abrindo modal do post:', postId);
       if (postId) {
-        onNavigateToModule('dashboard', { openPostModal: postId });
+        onNavigateToModule('feed', { openPostModal: postId });
       } else {
-        onNavigateToModule('dashboard');
+        onNavigateToModule('feed');
       }
     } else if (notification.process_id) {
       console.log('➡️ Navegando para processos');

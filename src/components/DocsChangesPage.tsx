@@ -573,6 +573,125 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
 
 const releases: ReleaseNote[] = [
   {
+    version: '1.9.461',
+    date: '27/01/2026',
+    summary: 'Feed: hover das menções corrigido.',
+    modules: [
+      {
+        moduleId: 'feed',
+        changes: [
+          {
+            type: 'fix',
+            title: 'Hover das menções funciona',
+            description: 'Corrigido hover das menções (@Nome) no PostModal - agora ficam azuis e sublinhadas ao passar o mouse.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.460',
+    date: '27/01/2026',
+    summary: 'Feed: menções clicáveis no single post.',
+    modules: [
+      {
+        moduleId: 'feed',
+        changes: [
+          {
+            type: 'fix',
+            title: 'Menção (@) abre perfil',
+            description: 'Menções (@Nome) no PostModal (single post) voltaram a ter comportamento de link e navegam corretamente para o perfil.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.459',
+    date: '27/01/2026',
+    summary: 'Feed: single post com cards completos.',
+    modules: [
+      {
+        moduleId: 'feed',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Cards do PostModal completos',
+            description: 'Cards de preview no PostModal (single post) agora exibem as informações completas, igual ao Feed (ex.: Cliente com nome e telefone/CPF).',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.458',
+    date: '27/01/2026',
+    summary: 'Feed: cor do conteúdo no single post.',
+    modules: [
+      {
+        moduleId: 'feed',
+        changes: [
+          {
+            type: 'fix',
+            title: 'Menções sem azul no PostModal',
+            description: 'Ajustada cor das menções (@) no PostModal para não deixar o conteúdo azul no single post.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.457',
+    date: '27/01/2026',
+    summary: 'Feed: single post completo.',
+    modules: [
+      {
+        moduleId: 'feed',
+        changes: [
+          {
+            type: 'fix',
+            title: 'PostModal com # e enquete',
+            description: 'Ao abrir um post individual (single post), o PostModal agora carrega/enxerga tags (#), cards de preview_data e enquetes corretamente.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.456',
+    date: '27/01/2026',
+    summary: 'Notificações: abrir post no Feed.',
+    modules: [
+      {
+        moduleId: 'feed',
+        changes: [
+          {
+            type: 'fix',
+            title: 'Clique na notificação abre o post',
+            description: 'Notificações de menção/curtida/comentário agora abrem o post específico (single post) no Feed.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.455',
+    date: '27/01/2026',
+    summary: 'Dashboard: permissões aplicadas nos widgets.',
+    modules: [
+      {
+        moduleId: 'dashboard',
+        changes: [
+          {
+            type: 'fix',
+            title: 'Widgets respeitam permissões',
+            description: 'Dashboard agora oculta widgets/contadores/atalhos de módulos sem permissão (ex.: Auxiliar não visualiza Financeiro/Intimações/Requerimentos quando não tem acesso).',
+          },
+        ],
+      },
+    ],
+  },
+  {
     version: '1.9.454',
     date: '27/01/2026',
     summary: 'Feed: layout do composer reorganizado.',

@@ -55,6 +55,7 @@ import { DashboardHeader } from './dashboard/DashboardHeader';
 import { QuickActions } from './dashboard/QuickActions';
 import { profileService } from '../services/profile.service';
 import { events, SYSTEM_EVENTS } from '../utils/events';
+import { usePermissions } from '../hooks/usePermissions';
 
 interface DashboardProps {
   onNavigateToModule?: (moduleKey: string, params?: Record<string, string>) => void;
@@ -492,6 +493,8 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToModule }) => {
     return () => unsubscribe();
   }, [loadDashboardData]);
 
+  const { canView, canCreate, loading: permissionsLoading } = usePermissions();
+
   const activeClients = clients.filter((c) => c.status === 'ativo').length;
   const activeProcesses = processes.length;
   // ... (rest of the code remains the same)
@@ -709,7 +712,7 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToModule }) => {
     return alerts;
   }, [pendingDeadlines, deadlines, djenIntimacoes, financialStats]);
 
-  if (loading) {
+  if (loading || permissionsLoading) {
     return (
       <div className="flex min-h-[400px] items-center justify-center">
         <div className="text-center">
@@ -750,41 +753,49 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToModule }) => {
 
           {/* Estatísticas */}
           <div className="flex items-center gap-2 sm:gap-3">
-            <button
-              onClick={() => handleNavigate('clientes')}
-              className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-blue-50 hover:bg-blue-100 text-blue-700 transition-all text-xs sm:text-sm"
-            >
-              <Users className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
-              <span className="font-semibold">{activeClients}</span>
-              <span className="text-blue-600 hidden sm:inline">clientes</span>
-              {newClientsThisMonth > 0 && (
-                <span className="text-blue-500 font-medium">+{newClientsThisMonth}</span>
-              )}
-            </button>
-            <button
-              onClick={() => handleNavigate('processos')}
-              className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-purple-50 hover:bg-purple-100 text-purple-700 transition-all text-xs sm:text-sm"
-            >
-              <Gavel className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
-              <span className="font-semibold">{activeProcesses}</span>
-              <span className="text-purple-600 hidden sm:inline">processos</span>
-            </button>
-            <button
-              onClick={() => handleNavigate('prazos')}
-              className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-red-50 hover:bg-red-100 text-red-700 transition-all text-xs sm:text-sm"
-            >
-              <CalendarDays className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
-              <span className="font-semibold">{pendingDeadlines}</span>
-              <span className="text-red-600 hidden sm:inline">prazos</span>
-            </button>
-            <button
-              onClick={() => handleNavigate('tarefas')}
-              className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-emerald-50 hover:bg-emerald-100 text-emerald-700 transition-all text-xs sm:text-sm"
-            >
-              <CheckSquare className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
-              <span className="font-semibold">{pendingTasks}</span>
-              <span className="text-emerald-600 hidden sm:inline">tarefas</span>
-            </button>
+            {canView('clientes') && (
+              <button
+                onClick={() => handleNavigate('clientes')}
+                className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-blue-50 hover:bg-blue-100 text-blue-700 transition-all text-xs sm:text-sm"
+              >
+                <Users className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+                <span className="font-semibold">{activeClients}</span>
+                <span className="text-blue-600 hidden sm:inline">clientes</span>
+                {newClientsThisMonth > 0 && (
+                  <span className="text-blue-500 font-medium">+{newClientsThisMonth}</span>
+                )}
+              </button>
+            )}
+            {canView('processos') && (
+              <button
+                onClick={() => handleNavigate('processos')}
+                className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-purple-50 hover:bg-purple-100 text-purple-700 transition-all text-xs sm:text-sm"
+              >
+                <Gavel className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+                <span className="font-semibold">{activeProcesses}</span>
+                <span className="text-purple-600 hidden sm:inline">processos</span>
+              </button>
+            )}
+            {canView('prazos') && (
+              <button
+                onClick={() => handleNavigate('prazos')}
+                className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-red-50 hover:bg-red-100 text-red-700 transition-all text-xs sm:text-sm"
+              >
+                <CalendarDays className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+                <span className="font-semibold">{pendingDeadlines}</span>
+                <span className="text-red-600 hidden sm:inline">prazos</span>
+              </button>
+            )}
+            {canView('tarefas') && (
+              <button
+                onClick={() => handleNavigate('tarefas')}
+                className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-emerald-50 hover:bg-emerald-100 text-emerald-700 transition-all text-xs sm:text-sm"
+              >
+                <CheckSquare className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+                <span className="font-semibold">{pendingTasks}</span>
+                <span className="text-emerald-600 hidden sm:inline">tarefas</span>
+              </button>
+            )}
           </div>
         </div>
 
@@ -793,7 +804,7 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToModule }) => {
           {/* Badges de Alerta */}
           {urgentAlerts.length > 0 && (
             <div className="flex items-center gap-2">
-              {urgentAlerts.map((alert, index) => (
+              {urgentAlerts.filter((a) => canView(a.action)).map((alert, index) => (
                 <button
                   key={index}
                   onClick={() => handleNavigate(alert.action)}
@@ -820,13 +831,15 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToModule }) => {
           )}
 
           {/* Botão Novo Cliente */}
-          <button
-            onClick={() => handleNavigate('clientes?mode=create')}
-            className="inline-flex items-center gap-1.5 px-2.5 py-1.5 sm:px-3 sm:py-2 bg-slate-900 hover:bg-slate-800 text-white text-xs sm:text-sm font-medium rounded-lg transition-all"
-          >
-            <Plus className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
-            <span className="hidden sm:inline">Novo Cliente</span>
-          </button>
+          {canView('clientes') && canCreate('clientes') && (
+            <button
+              onClick={() => handleNavigate('clientes?mode=create')}
+              className="inline-flex items-center gap-1.5 px-2.5 py-1.5 sm:px-3 sm:py-2 bg-slate-900 hover:bg-slate-800 text-white text-xs sm:text-sm font-medium rounded-lg transition-all"
+            >
+              <Plus className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+              <span>Novo Cliente</span>
+            </button>
+          )}
         </div>
       </div>
 
@@ -834,6 +847,7 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToModule }) => {
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
         <div className="flex flex-col gap-4">
           {/* Widget de Agenda - Design Limpo */}
+          {canView('agenda') && (
           <div className="bg-white rounded-xl sm:rounded-2xl border border-slate-200/60 overflow-hidden">
             <div className="p-3 sm:p-4 border-b border-slate-100">
               <div className="flex items-center justify-between">
@@ -915,8 +929,10 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToModule }) => {
               )}
             </div>
           </div>
+          )}
 
           {/* Tarefas Pendentes */}
+          {canView('tarefas') && (
           <div className="bg-white rounded-xl sm:rounded-2xl border border-slate-200/60 overflow-hidden">
             <div className="p-3 sm:p-4 border-b border-slate-100">
               <div className="flex items-center justify-between">
@@ -965,10 +981,12 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToModule }) => {
               )}
             </div>
           </div>
+          )}
         </div>
 
         <div className="flex flex-col gap-3 sm:gap-4 h-full">
           {/* Ações Rápidas - Botões com mais espaço */}
+          {(canView('clientes') || canView('prazos') || canView('tarefas') || canView('agenda') || canView('requerimentos') || canView('processos') || canView('financeiro')) && (
           <div className="bg-white rounded-xl sm:rounded-2xl border border-slate-200/60 overflow-hidden">
             <div className="p-2.5 sm:p-3 border-b border-slate-100">
               <div className="flex items-center gap-2 sm:gap-3">
@@ -982,17 +1000,19 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToModule }) => {
               </div>
             </div>
             <div className="p-2 sm:p-3">
-              <QuickActions onNavigate={handleNavigate} />
+              <QuickActions onNavigate={handleNavigate} canView={canView} canCreate={canCreate} />
             </div>
           </div>
+          )}
 
-          {financialStats && (
+          {canView('financeiro') && financialStats && (
             <FinancialCard 
               stats={financialStats}
               onNavigate={() => handleNavigate('financeiro')}
             />
           )}
 
+          {canView('prazos') && (
           <div className="bg-white rounded-xl sm:rounded-2xl border border-slate-200/60 overflow-hidden">
             <div className="p-3 sm:p-4 border-b border-slate-100">
               <div className="flex items-center justify-between">
@@ -1061,12 +1081,14 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToModule }) => {
               )}
             </div>
           </div>
+          )}
         </div>
       </div>
 
       {/* Grid de 3 Colunas - Intimações, Aguardando, Requerimentos */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-4">
         {/* Widget de Intimações */}
+        {canView('intimacoes') && (
         <div className="bg-white rounded-xl sm:rounded-2xl border border-slate-200/60 overflow-hidden">
           <div className="p-3 sm:p-4 border-b border-slate-100 flex items-center justify-between">
             <div className="flex items-center gap-2 sm:gap-3">
@@ -1130,8 +1152,10 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToModule }) => {
             )}
           </div>
         </div>
+        )}
 
         {/* Processos Aguardando Confecção */}
+        {canView('processos') && (
         <div className="bg-white rounded-xl sm:rounded-2xl border border-slate-200/60 overflow-hidden">
           <div className="p-3 sm:p-4 border-b border-slate-100 flex items-center justify-between">
             <div className="flex items-center gap-2 sm:gap-3">
@@ -1181,8 +1205,10 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToModule }) => {
             )}
           </div>
         </div>
+        )}
 
         {/* Requerimentos */}
+        {canView('requerimentos') && (
         <div className="bg-white rounded-xl sm:rounded-2xl border border-slate-200/60 overflow-hidden">
           <div className="p-3 sm:p-4 border-b border-slate-100 flex items-center justify-between">
             <div className="flex items-center gap-2 sm:gap-3">
@@ -1229,6 +1255,7 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToModule }) => {
             )}
           </div>
         </div>
+        )}
 
       </div>
 

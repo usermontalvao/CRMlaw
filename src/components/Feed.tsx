@@ -2487,7 +2487,19 @@ const Feed: React.FC<FeedProps> = ({ onNavigateToModule, params }) => {
         parts.push(
           <span
             key={`mention-${match.index}`}
-            className="text-blue-600 font-semibold cursor-pointer hover:underline"
+            style={{ 
+              color: '#2563eb',
+              fontWeight: '600',
+              cursor: 'pointer',
+              textDecoration: 'none',
+              transition: 'text-decoration 0.2s ease'
+            }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.textDecoration = 'underline';
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.textDecoration = 'none';
+            }}
             onClick={(e) => {
               e.stopPropagation();
               console.log('🔵 Clique em menção:', match.name, 'Perfil encontrado:', mentionedProfile);
@@ -5255,7 +5267,7 @@ const Feed: React.FC<FeedProps> = ({ onNavigateToModule, params }) => {
                             );
                           }
                           return (
-                            <div className="text-slate-900 text-[15px] leading-[1.4] mb-3 whitespace-pre-wrap break-words">
+                            <div className="text-[15px] leading-[1.4] mb-3 whitespace-pre-wrap break-words" style={{ color: '#1e293b' }}>
                               {renderContentWithMentions(post.content, post.entity_references)}
                             </div>
                           );

@@ -1,5 +1,26 @@
 # Changelog
 
+## 1.9.461
+- **Feed (Single Post)**: Corrigido hover das menções (@Nome) no PostModal (agora ficam azuis/sublinhadas ao passar o mouse).
+
+## 1.9.460
+- **Feed (Single Post)**: Menções (@Nome) no PostModal voltaram a ter comportamento de link (hover) e navegam para o perfil.
+
+## 1.9.459
+- **Feed (Single Post)**: Cards de preview no PostModal agora exibem as informações completas (layout igual ao Feed).
+
+## 1.9.458
+- **Feed (Single Post)**: Ajustada cor das menções no PostModal para não deixar o conteúdo azul.
+
+## 1.9.457
+- **Feed (Single Post)**: PostModal agora exibe tags (#), cards de preview e enquetes corretamente ao abrir um post individual.
+
+## 1.9.456
+- **Notificações (Feed)**: Clique em notificação de menção/curtida/comentário agora abre o post específico (single post) no Feed.
+
+## 1.9.455
+- **Dashboard (Permissões)**: Widgets/contadores/atalhos agora respeitam permissões do cargo (ex.: Auxiliar não vê Financeiro/Intimações/Requerimentos se não tiver acesso).
+
 ## 1.9.454
 - **Feed (UI/UX)**: Composer reorganizado: dropdown de visibilidade (Público/Equipe/Privado) movido para a linha principal de ações e botão "Publicar" alinhado à direita.
 
