@@ -46,6 +46,13 @@ import {
    ============================================================================ */
 
 const VERSION_CODENAMES: Record<string, { name: string; emoji: string }> = {
+  '1.9.425': { name: 'Café Intimações DJEN', emoji: '⚖️' },
+  '1.9.424': { name: 'Café Feed UTF-8', emoji: '🔤' },
+  '1.9.417': { name: 'Café Enquetes Visíveis', emoji: '📊' },
+  '1.9.416': { name: 'Café Grid Perfeito', emoji: '📐' },
+  '1.9.415': { name: 'Café Feed Turbinado', emoji: '🚀' },
+  '1.9.414': { name: 'Café Feed Alinhado', emoji: '📐' },
+  '1.9.413': { name: 'Café Feed Corporativo', emoji: '🏢' },
   '1.9.405': { name: 'Café Feed Sem Widgets', emoji: '📰' },
   '1.9.404': { name: 'Café Requerimentos Retrátil', emoji: '🧩' },
   '1.9.403': { name: 'Café Assinatura Mobile', emoji: '✍️' },
@@ -566,17 +573,290 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
 
 const releases: ReleaseNote[] = [
   {
-    version: '1.9.408',
-    date: '25/01/2026',
-    summary: 'Dashboard Header Redesign: Layout reorganizado com saudação/estatísticas à esquerda e botões de ação à direita.',
+    version: '1.9.419',
+    date: '26/01/2026',
+    summary: 'Feed: Correção de encoding para exibir acentos corretamente.',
     modules: [
       {
-        moduleId: 'dashboard',
+        moduleId: 'feed',
+        changes: [
+          {
+            type: 'fix',
+            title: 'Texto do feed com acentuação corrigida',
+            description: 'Aplicada correção de encoding no script para evitar caracteres corrompidos na exibição de posts e comentários.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.417',
+    date: '26/01/2026',
+    summary: 'Feed: Correção para exibição de enquetes e anexos (cards) nos posts.',
+    modules: [
+      {
+        moduleId: 'feed',
+        changes: [
+          {
+            type: 'fix',
+            title: 'Enquetes voltaram a aparecer nos posts',
+            description: 'O card de post no feed foi atualizado para renderizar enquetes associadas ao post, incluindo votação e estado de encerramento.',
+          },
+          {
+            type: 'fix',
+            title: 'Anexos (imagens/arquivos) voltaram a aparecer nos posts',
+            description: 'O card de post no feed agora exibe novamente anexos do post (galeria de imagens e arquivos para download).',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.416',
+    date: '25/01/2026',
+    summary: 'Feed: Refatoração completa do grid e alinhamento com layout profissional.',
+    modules: [
+      {
+        moduleId: 'feed',
         changes: [
           {
             type: 'improvement',
-            title: 'Header em linha única',
-            description: 'Reorganização completa do header do Dashboard para layout horizontal com elementos separados (esquerda: saudação + estatísticas, direita: alertas + botão novo cliente).',
+            title: 'Grid de 12 colunas (3-6-3)',
+            description: 'Implementado grid fixo de 12 colunas com distribuição equilibrada: sidebar esquerda (3), feed central (6), sidebar direita (3).',
+          },
+          {
+            type: 'improvement',
+            title: 'Top-alignment consistente',
+            description: 'Todas as colunas iniciam exatamente no mesmo eixo vertical com items-start, eliminando desalinhamento.',
+          },
+          {
+            type: 'improvement',
+            title: 'Padronização de widgets',
+            description: 'Todos os widgets agora usam padding consistente (p-4), margin-bottom consistente (mb-4) e espaçamento uniforme.',
+          },
+          {
+            type: 'improvement',
+            title: 'Cards de métricas padronizados',
+            description: 'Cards de métricas com altura idêntica (min-h-[80px]), centralização vertical e tipografia hierárquica.',
+          },
+          {
+            type: 'improvement',
+            title: 'Alinhamento interno corrigido',
+            description: 'Ícones e textos centralizados verticalmente, títulos e ícones na mesma linha base, botões com alinhamento horizontal consistente.',
+          },
+          {
+            type: 'fix',
+            title: 'Remoção de sticky positioning',
+            description: 'Removido lg:sticky das sidebars que causava desalinhamento vertical entre colunas.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.415',
+    date: '25/01/2026',
+    summary: 'Feed: Melhorias de UX com filtros, posts fixados, resumo semanal e modo compacto.',
+    modules: [
+      {
+        moduleId: 'feed',
+        changes: [
+          {
+            type: 'feature',
+            title: 'Filtro rápido por tags',
+            description: 'Barra de filtros com chips clicáveis para filtrar posts por categoria (Financeiro, Processo, Prazo, etc).',
+          },
+          {
+            type: 'feature',
+            title: 'Posts fixados (Comunicados)',
+            description: 'Posts marcados como fixados aparecem no topo com badge "Comunicado" para comunicações importantes do escritório.',
+          },
+          {
+            type: 'feature',
+            title: 'Destaques da Semana',
+            description: 'Seção com os 3 posts mais curtidos da semana, exibida quando não há filtro ativo.',
+          },
+          {
+            type: 'feature',
+            title: 'Modo compacto',
+            description: 'Toggle para reduzir espaçamento entre posts, permitindo visualizar mais conteúdo na tela.',
+          },
+          {
+            type: 'feature',
+            title: 'Ordenação por popularidade',
+            description: 'Opção de ordenar posts por "Recentes" ou "Populares" (mais curtidos).',
+          },
+          {
+            type: 'improvement',
+            title: 'Preview de anexos melhorado',
+            description: 'Anexos PDF, DOC e XLS agora exibem ícones coloridos e extensão do arquivo para fácil identificação.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.425',
+    date: '26/01/2026',
+    summary: 'Intimações DJEN: Reorganização completa, busca estendida e notificações urgentes.',
+    modules: [
+      {
+        moduleId: 'intimacoes',
+        changes: [
+          {
+            type: 'feature',
+            title: 'Interface reorganizada com abas',
+            description: 'Módulo completamente reorganizado com 4 abas: Visão Geral, Lista, Análise e Configurações. Header compacto com menu dropdown de ferramentas.',
+          },
+          {
+            type: 'feature',
+            title: 'Busca estendida para 7 dias',
+            description: 'Período de busca estendido de 3 para 7 dias para capturar intimações de fins de semana e feriados.',
+          },
+          {
+            type: 'feature',
+            title: 'Notificações push para intimações urgentes',
+            description: 'Criação automática de notificação quando IA detecta urgência alta ou prazo ≤ 5 dias. Tipo intimation_urgent adicionado.',
+          },
+          {
+            type: 'feature',
+            title: 'Filtro por tribunal',
+            description: 'Novo dropdown com lista dinâmica de tribunais únicos para filtrar intimações por tribunal específico.',
+          },
+          {
+            type: 'improvement',
+            title: 'Estatísticas corrigidas (apenas não lidas)',
+            description: 'Correção crítica: badges de urgência agora mostram apenas intimações não lidas, eliminando contagem incorreta.',
+          },
+          {
+            type: 'improvement',
+            title: 'Modal de prazo com aviso destacado',
+            description: 'Box amarelo com prazo final detectado pela IA e explicação sobre margem de segurança de 1 dia.',
+          },
+          {
+            type: 'improvement',
+            title: 'Otimizações mobile completas',
+            description: 'Interface totalmente responsiva com botões 100% largura em mobile, layout empilhado e touch targets adequados.',
+          },
+          {
+            type: 'feature',
+            title: 'Exportação de relatórios',
+            description: 'Botão Exportar Relatório com opções CSV, Excel e PDF. Cores por urgência nos relatórios gerados.',
+          },
+          {
+            type: 'feature',
+            title: 'Histórico de sincronizações',
+            description: 'Sistema de histórico local com até 50 entradas de sincronizações manuais e automáticas.',
+          },
+          {
+            type: 'fix',
+            title: 'Correção de runtime e tipagem',
+            description: 'Corrigidos erros de coluna no banco (run_started_at → created_at), variáveis não definidas e propriedades incorretas.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.414',
+    date: '25/01/2026',
+    summary: 'Feed: Alinhamento do conteúdo com os widgets laterais.',
+    modules: [
+      {
+        moduleId: 'feed',
+        changes: [
+          {
+            type: 'fix',
+            title: 'Alinhamento do feed central',
+            description: 'Removido o max-width e centralização que deslocavam o feed central, alinhando o conteúdo à grade com as sidebars.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.413',
+    date: '25/01/2026',
+    summary: 'Feed: Layout com widgets fixos e interface corporativa refinada.',
+    modules: [
+      {
+        moduleId: 'feed',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Layout com widgets laterais fixos',
+            description: 'Reorganizado layout para que widgets esquerdo/direito permaneçam fixos enquanto apenas o feed central rola.',
+          },
+          {
+            type: 'improvement',
+            title: 'Interface corporativa refinada',
+            description: 'Aplicado design corporativo sóbrio ao post composer: cards brancos com bordas sutis, sombras leves e cores neutras.',
+          },
+          {
+            type: 'fix',
+            title: 'Correção de handlers e imports',
+            description: 'Corrigidos handlers de upload de arquivo e opções de enquete, além de imports faltantes (Paperclip, BarChart3).',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.412',
+    date: '25/01/2026',
+    summary: 'Feed: Padronização da largura com os demais módulos.',
+    modules: [
+      {
+        moduleId: 'feed',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Container do Feed padronizado',
+            description: 'Removido wrapper interno com max-width/padding próprio para alinhar a largura do Feed ao container global usado nas demais páginas.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.411',
+    date: '25/01/2026',
+    summary: 'Feed: Correções de UI/UX (overflow de largura, botão Publicar e menu de reações).',
+    modules: [
+      {
+        moduleId: 'feed',
+        changes: [
+          {
+            type: 'fix',
+            title: 'Correção de overflow horizontal',
+            description: 'Ajustado layout do Feed para evitar scroll horizontal/estouro de largura (containers com min-w-0 e overflow-x-hidden).',
+          },
+          {
+            type: 'fix',
+            title: 'Botão Publicar corrigido',
+            description: 'Ajustado layout da barra de ações e comportamento do botão Publicar para funcionar corretamente (inclusive em telas menores).',
+          },
+          {
+            type: 'fix',
+            title: 'Menu de reações sem erro de build',
+            description: 'Corrigida renderização do menu de reações e tipagens para evitar erros de JSX/TypeScript.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.410',
+    date: '25/01/2026',
+    summary: 'Feed: Remoção completa do widget Próximos Eventos para simplificar interface social.',
+    modules: [
+      {
+        moduleId: 'feed',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Widget Próximos Eventos removido',
+            description: 'Removido completamente o widget "Próximos Eventos" do módulo Feed para focar nas interações sociais e reduzir distrações.',
           },
         ],
       },
