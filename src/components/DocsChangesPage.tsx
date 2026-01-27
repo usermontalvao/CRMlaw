@@ -573,6 +573,184 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
 
 const releases: ReleaseNote[] = [
   {
+    version: '1.9.443',
+    date: '27/01/2026',
+    summary: 'Intimações: pacote de melhorias UI/UX.',
+    modules: [
+      {
+        moduleId: 'intimacoes',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Indicadores visuais de vinculação',
+            description: 'Badges "Vinc" (verde) e "Sem Vínc" (cinza) nos cards para identificar rapidamente intimações com/sem vínculo.',
+          },
+          {
+            type: 'improvement',
+            title: 'Filtros avançados',
+            description: 'Novos filtros por urgência (alta/média/baixa) e por estado de vinculação (vinculadas/não vinculadas).',
+          },
+          {
+            type: 'improvement',
+            title: 'Busca por nº de processo normalizado',
+            description: 'Busca agora ignora pontuação (.) e traços (-) ao procurar por números de processo.',
+          },
+          {
+            type: 'improvement',
+            title: 'Ações em lote',
+            description: 'Opções para vincular em lote, exportar apenas selecionadas e marcar todas como lidas.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.442',
+    date: '27/01/2026',
+    summary: 'Intimações: vinculação automática por processo/partes.',
+    modules: [
+      {
+        moduleId: 'intimacoes',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Auto-vinculação (processo/cliente)',
+            description: 'Ao sincronizar, intimações sem vínculo passam por match automático por número do processo (normalizado, ignorando pontuação) e por nomes das partes (inclui fallback pelo texto).',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.441',
+    date: '27/01/2026',
+    summary: 'Intimações: área de visualização otimizada (~95% para conteúdo).',
+    modules: [
+      {
+        moduleId: 'intimacoes',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Header e filtros compactos',
+            description: 'Redução de padding e altura da barra superior e botões para maximizar espaço de visualização das intimações.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.440',
+    date: '27/01/2026',
+    summary: 'Intimações: texto em largura total no agrupado por processo.',
+    modules: [
+      {
+        moduleId: 'intimacoes',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Texto em largura total (desktop)',
+            description: 'Na visualização agrupada por processo, as ações foram movidas para abaixo do texto para liberar a largura completa do conteúdo.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.439',
+    date: '27/01/2026',
+    summary: 'Intimações: refinamento visual (paleta corporativa e seleção).',
+    modules: [
+      {
+        moduleId: 'intimacoes',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Design mais corporativo',
+            description: 'Ajustes de paleta e estados de seleção para reduzir cores fortes, com destaque discreto e melhor consistência visual.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.438',
+    date: '27/01/2026',
+    summary: 'Intimações: cards mais profissionais e botões de ação lado a lado.',
+    modules: [
+      {
+        moduleId: 'intimacoes',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'UI mais neutra e organizada',
+            description: 'Botões de ação ajustados para ficarem lado a lado e estilos revisados para reduzir cores fortes no card e na área de análise.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.437',
+    date: '27/01/2026',
+    summary: 'Correções: Intimações (erro de runtime) e Dashboard (remoção de logs).',
+    modules: [
+      {
+        moduleId: 'intimacoes',
+        changes: [
+          {
+            type: 'fix',
+            title: 'Erro de runtime ao abrir Intimações',
+            description: 'Corrigido ReferenceError ao adicionar botões no topo (import do ícone Settings).',
+          },
+        ],
+      },
+      {
+        moduleId: 'dashboard',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Console mais limpo',
+            description: 'Removidos logs de debug no console relacionados a cache/eventos.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.436',
+    date: '27/01/2026',
+    summary: 'Intimações: Barra superior do desktop com botões rápidos e painel de filtros avançados.',
+    modules: [
+      {
+        moduleId: 'intimacoes',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Botões rápidos no desktop',
+            description: 'Adicionados botões rápidos para status (Não lidas/Lidas/Todas) e período (30/60/90) e botão "Mais filtros" para opções avançadas.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.435',
+    date: '27/01/2026',
+    summary: 'Intimações: Filtros/controles colapsados por padrão no desktop para dar mais espaço às intimações.',
+    modules: [
+      {
+        moduleId: 'intimacoes',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Filtros colapsados no desktop',
+            description: 'A área de filtros/controles do topo agora fica recolhida por padrão também no desktop, podendo ser expandida pelo botão "Filtros".',
+          },
+        ],
+      },
+    ],
+  },
+  {
     version: '1.9.434',
     date: '27/01/2026',
     summary: 'Dashboard/Agenda: Corrigido filtro e marcação de "Hoje" para compromissos com data em formato YYYY-MM-DD.',

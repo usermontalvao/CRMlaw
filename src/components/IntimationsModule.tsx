@@ -16,6 +16,7 @@ import {
   Calendar as CalendarIcon,
   UserCircle,
   UserCog,
+  Settings,
   ChevronDown,
   ChevronRight,
   Eye,
@@ -27,6 +28,7 @@ import {
   Download,
   Info,
   FileCog,
+  Unlink,
 } from 'lucide-react';
 import { djenService } from '../services/djen.service';
 import { djenLocalService } from '../services/djenLocal.service';
@@ -44,7 +46,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { exportToCSV, exportToExcel, exportToPDF } from '../utils/exportIntimations';
 import { djenSyncStatusService, type DjenSyncLog } from '../services/djenSyncStatus.service';
 import { supabase } from '../config/supabase';
-import type { DjenComunicacaoLocal, DjenConsultaParams } from '../types/djen.types';
+import type { DjenComunicacaoLocal, DjenConsultaParams, UpdateDjenComunicacaoDTO } from '../types/djen.types';
 import type { Client } from '../types/client.types';
 import type { Process } from '../types/process.types';
 import type { CreateDeadlineDTO, DeadlineType, DeadlinePriority } from '../types/deadline.types';
@@ -129,9 +131,10 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
 
   // Filtros e busca
   const [searchTerm, setSearchTerm] = useState('');
-  const [statusFilter, setStatusFilter] = useState<'all' | 'unread' | 'read'>('unread');
+  const [statusFilter, setStatusFilter] = useState<'all' | 'unread' | 'read' | 'linked' | 'unlinked'>('unread');
   const [tribunalFilter, setTribunalFilter] = useState<string>('all');
   const [dateFilter, setDateFilter] = useState<'30days' | '60days' | '90days' | 'all'>('30days');
+  const [urgencyFilter, setUrgencyFilter] = useState<'all' | 'alta' | 'media' | 'baixa'>('all');
   const [customDateStart, setCustomDateStart] = useState('');
   const [customDateEnd, setCustomDateEnd] = useState('');
   const [showFilters, setShowFilters] = useState(false);
@@ -183,6 +186,11 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
   const filterSectionRef = useRef<HTMLDivElement | null>(null);
   const listSectionRef = useRef<HTMLDivElement | null>(null);
   const autoSyncTriggeredRef = useRef(false);
+
+  // Helpers
+  const normalizeProcessNumber = (value: string) => value ? value.replace(/\D/g, '') : '';
+  const isLinked = (int: DjenComunicacaoLocal) => int.process_id || int.client_id;
+  const isUnlinked = (int: DjenComunicacaoLocal) => !int.process_id && !int.client_id;
 
   // Carregar configurações salvas
   useEffect(() => {
@@ -734,6 +742,48 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
     }
   };
 
+  // Marcar todas como lidas
+  const handleMarkAllAsRead = async () => {
+    try {
+      const unreadIds = intimations.filter(int => !int.lida).map(int => int.id);
+      if (unreadIds.length === 0) {
+        toast.info('Info', 'Nenhuma intimação não lida encontrada');
+        return;
+      }
+      for (const id of unreadIds) {
+        await djenLocalService.marcarComoLida(id);
+      }
+      await reloadIntimations();
+      toast.success('Sucesso', `${unreadIds.length} intimações marcadas como lidas`);
+    } catch (err: any) {
+      toast.error('Erro', err.message);
+    }
+  };
+
+  // Vincular em lote
+  const handleBatchLink = async () => {
+    if (!selectedProcessId && !selectedClientId) {
+      toast.error('Erro', 'Selecione um processo ou cliente para vincular');
+      return;
+    }
+    try {
+      let updated = 0;
+      for (const id of Array.from(selectedIds)) {
+        const payload: UpdateDjenComunicacaoDTO = {};
+        if (selectedProcessId) payload.process_id = selectedProcessId;
+        if (selectedClientId) payload.client_id = selectedClientId;
+        await djenLocalService.updateComunicacao(id, payload);
+        updated++;
+      }
+      await reloadIntimations();
+      setSelectedIds(new Set());
+      setSelectionMode(false);
+      toast.success('Sucesso', `${updated} intimações vinculadas`);
+    } catch (err: any) {
+      toast.error('Erro', err.message);
+    }
+  };
+
   // Marcar selecionadas como lidas
   const handleMarkSelectedAsRead = async () => {
     if (selectedIds.size === 0) return;
@@ -745,6 +795,18 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
     
     setSelectedIds(new Set());
     setSelectionMode(false);
+  };
+
+  // Exportar selecionadas
+  const handleExportSelected = () => {
+    const selected = intimations.filter(int => selectedIds.has(int.id));
+    if (selected.length === 0) {
+      toast.error('Erro', 'Nenhuma intimação selecionada');
+      return;
+    }
+    exportToCSV(selected, aiAnalysis);
+    toast.success('Exportado', `${selected.length} intimações exportadas`);
+    setShowExportMenu(false);
   };
 
   const toggleExpanded = (id: string) => {
@@ -803,11 +865,23 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
       filtered = filtered.filter((i) => !i.lida);
     } else if (statusFilter === 'read') {
       filtered = filtered.filter((i) => i.lida);
+    } else if (statusFilter === 'linked') {
+      filtered = filtered.filter(isLinked);
+    } else if (statusFilter === 'unlinked') {
+      filtered = filtered.filter(isUnlinked);
     }
 
     // Filtro de tribunal
     if (tribunalFilter !== 'all') {
       filtered = filtered.filter((i) => i.sigla_tribunal === tribunalFilter);
+    }
+
+    // Filtro de urgência
+    if (urgencyFilter !== 'all') {
+      filtered = filtered.filter((i) => {
+        const analysis = aiAnalysis.get(i.id);
+        return analysis && analysis.urgency === urgencyFilter;
+      });
     }
 
     // Filtro de data
@@ -845,7 +919,7 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
       });
     }
 
-    // Busca
+    // Busca (melhorada para normalizar número do processo e incluir cliente)
     if (searchTerm.trim()) {
       const term = searchTerm.toLowerCase();
       const termDigits = normalizeDigits(term);
@@ -861,12 +935,17 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
           const numeroProcessoDigits = i.numero_processo ? normalizeDigits(i.numero_processo) : '';
           const numeroProcessoMascaraDigits = i.numero_processo_mascara ? normalizeDigits(i.numero_processo_mascara) : '';
 
+          // Busca por nome do cliente
+          const clientName = getClientName(i.client_id);
+          const clientMatch = clientName?.toLowerCase().includes(term);
+
           return (
             numeroProcessoLower?.includes(term) ||
             numeroProcessoMascaraLower?.includes(term) ||
             processCodeLower?.includes(term) ||
             i.texto?.toLowerCase().includes(term) ||
             i.nome_orgao?.toLowerCase().includes(term) ||
+            clientMatch ||
             (Boolean(termDigits) && (numeroProcessoDigits.includes(termDigits) || numeroProcessoMascaraDigits.includes(termDigits) || processCodeDigits.includes(termDigits)))
           );
         }
@@ -874,7 +953,7 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
     }
 
     return filtered;
-  }, [intimations, processes, statusFilter, tribunalFilter, dateFilter, customDateStart, customDateEnd, searchTerm]);
+  }, [intimations, processes, statusFilter, tribunalFilter, dateFilter, customDateStart, customDateEnd, searchTerm, urgencyFilter, aiAnalysis, clients]);
 
   // Lista de tribunais únicos
   const availableTribunals = useMemo(() => {
@@ -1236,9 +1315,9 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
                   <label className="text-xs font-semibold text-slate-500 uppercase mb-2 block">Partes</label>
                   <div className="flex flex-wrap gap-2">
                     {partes.map((parte, idx) => (
-                      <span key={idx} className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-blue-50 text-blue-700 rounded-lg text-sm border border-blue-100">
+                      <span key={idx} className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-slate-50 text-slate-700 rounded-lg text-sm border border-slate-200">
                         <span className="font-medium">{parte.nome}</span>
-                        {parte.polo && <span className="text-blue-500 text-xs">({parte.polo})</span>}
+                        {parte.polo && <span className="text-slate-500 text-xs">({parte.polo})</span>}
                       </span>
                     ))}
                   </div>
@@ -1256,15 +1335,15 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
             </div>
 
             <div className="space-y-3 pt-6 border-t border-gray-200">
-              <div className="flex flex-wrap gap-3">
+              <div className="flex flex-wrap gap-2">
                 <button
                   onClick={() => {
                     handleCreateDeadline(selectedIntimation);
                     setSelectedIntimation(null);
                   }}
-                  className="inline-flex items-center justify-center gap-2 bg-amber-600 hover:bg-amber-700 text-white font-medium px-3 sm:px-5 py-2 sm:py-2.5 rounded-lg transition text-xs sm:text-sm w-full sm:w-auto"
+                  className="inline-flex items-center justify-center gap-2 bg-white hover:bg-slate-50 text-slate-700 font-semibold px-3 py-2 rounded-lg transition text-xs border border-slate-200 flex-1 sm:flex-none min-w-[160px]"
                 >
-                  <Clock className="w-4 h-4" />
+                  <Clock className="w-4 h-4 text-amber-600" />
                   Novo Prazo
                 </button>
                 <button
@@ -1272,9 +1351,9 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
                     handleCreateAppointment(selectedIntimation);
                     setSelectedIntimation(null);
                   }}
-                  className="inline-flex items-center justify-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white font-medium px-3 sm:px-5 py-2 sm:py-2.5 rounded-lg transition text-xs sm:text-sm w-full sm:w-auto"
+                  className="inline-flex items-center justify-center gap-2 bg-white hover:bg-slate-50 text-slate-700 font-semibold px-3 py-2 rounded-lg transition text-xs border border-slate-200 flex-1 sm:flex-none min-w-[160px]"
                 >
-                  <CalendarIcon className="w-4 h-4" />
+                  <CalendarIcon className="w-4 h-4 text-indigo-600" />
                   Adicionar Compromisso
                 </button>
                 {!selectedIntimation.lida && (
@@ -1283,22 +1362,22 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
                       handleMarkAsRead(selectedIntimation.id);
                       setSelectedIntimation(null);
                     }}
-                    className="inline-flex items-center justify-center gap-2 bg-emerald-600 hover:bg-emerald-700 text-white font-medium px-3 sm:px-5 py-2 sm:py-2.5 rounded-lg transition text-xs sm:text-sm w-full sm:w-auto"
+                    className="inline-flex items-center justify-center gap-2 bg-white hover:bg-slate-50 text-slate-700 font-semibold px-3 py-2 rounded-lg transition text-xs border border-slate-200 flex-1 sm:flex-none min-w-[160px]"
                   >
-                    <CheckCircle className="w-4 h-4" />
+                    <CheckCircle className="w-4 h-4 text-emerald-600" />
                     Marcar como Lida
                   </button>
                 )}
               </div>
-              <div className="flex flex-wrap gap-3">
+              <div className="flex flex-wrap gap-2">
                 <button
                   onClick={() => {
                     handleOpenLinkModal(selectedIntimation);
                     setSelectedIntimation(null);
                   }}
-                  className="inline-flex items-center justify-center gap-2 border-2 border-purple-600 text-purple-600 hover:bg-purple-50 font-medium px-3 sm:px-5 py-2 sm:py-2.5 rounded-lg transition text-xs sm:text-sm w-full sm:w-auto"
+                  className="inline-flex items-center justify-center gap-2 bg-white hover:bg-slate-50 text-slate-700 font-semibold px-3 py-2 rounded-lg transition text-xs border border-slate-200 flex-1 sm:flex-none min-w-[160px]"
                 >
-                  <Link2 className="w-4 h-4" />
+                  <Link2 className="w-4 h-4 text-blue-600" />
                   Vincular
                 </button>
                 {selectedIntimation.link && (
@@ -1306,9 +1385,9 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
                     href={selectedIntimation.link}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="inline-flex items-center justify-center gap-2 border-2 border-blue-600 text-blue-600 hover:bg-blue-50 font-medium px-3 sm:px-5 py-2 sm:py-2.5 rounded-lg transition text-xs sm:text-sm w-full sm:w-auto"
+                    className="inline-flex items-center justify-center gap-2 bg-white hover:bg-slate-50 text-slate-700 font-semibold px-3 py-2 rounded-lg transition text-xs border border-slate-200 flex-1 sm:flex-none min-w-[160px]"
                   >
-                    <ExternalLink className="w-4 h-4" />
+                    <ExternalLink className="w-4 h-4 text-purple-600" />
                     Ver Diário
                   </a>
                 )}
@@ -1329,9 +1408,9 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
         </div>
       )}
       {/* Barra única: Header + Filtros + Ações */}
-      <div className="bg-white border border-slate-100 rounded-lg p-3">
+      <div className="bg-white border border-slate-100 rounded-lg p-2">
         {/* Linha 1: Título, indicadores e sincronizar */}
-        <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
+        <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
           <div className="flex flex-wrap items-center gap-2 text-xs text-slate-500 flex-1 min-w-0">
             <Bell className="w-4 h-4 text-amber-600" />
             <span className="font-semibold text-slate-800 text-sm">Intimações</span>
@@ -1352,64 +1431,222 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
           <button
             onClick={handleSync}
             disabled={syncing}
-            className="inline-flex items-center gap-1.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-medium px-3 py-1.5 rounded-lg transition disabled:opacity-50"
+            className="inline-flex items-center gap-1.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-medium px-2.5 py-1 rounded-md transition disabled:opacity-50"
           >
-            {syncing ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5" />}
+            {syncing ? <Loader2 className="w-3 h-3 animate-spin" /> : <RefreshCw className="w-3 h-3" />}
             <span className="hidden sm:inline">{syncing ? 'Sincronizando...' : 'Sincronizar'}</span>
           </button>
         </div>
 
         {/* Linha 2: Busca, filtros e ações */}
-        <div className="flex flex-col gap-2">
+        <div className="flex flex-col gap-1.5">
           <div className="relative w-full">
-            <Search className="absolute left-2.5 top-1/2 transform -translate-y-1/2 text-slate-400 w-4 h-4" />
+            <Search className="absolute left-2 top-1/2 transform -translate-y-1/2 text-slate-400 w-3.5 h-3.5" />
             <input
               type="text"
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
               placeholder="Pesquisar por cliente, OAB ou processo..."
-              className="w-full pl-8 pr-3 py-1.5 border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-blue-500 text-sm"
+              className="w-full pl-7 pr-2.5 py-1 border border-gray-200 rounded-md focus:outline-none focus:ring-1 focus:ring-blue-500 text-xs sm:text-sm"
             />
           </div>
 
-          <button
-            type="button"
-            onClick={() => {
-              setMobileControlsExpanded((prev) => {
-                const next = !prev;
-                if (!next) {
-                  setShowClearMenu(false);
-                  setShowExportMenu(false);
-                  setShowSettingsMenu(false);
-                }
-                return next;
-              });
-            }}
-            className="sm:hidden inline-flex items-center justify-between gap-2 w-full px-3 py-2 border border-gray-200 rounded-lg text-sm text-slate-700 hover:bg-slate-50 transition"
-          >
-            <span className="font-medium">Filtros e ações</span>
-            <ChevronDown
-              className={`w-4 h-4 text-slate-500 transition-transform ${mobileControlsExpanded ? 'rotate-180' : ''}`}
-            />
-          </button>
+          <div className="flex items-center justify-between gap-1.5">
+            <div className="flex flex-wrap items-center gap-2">
+              <div className="inline-flex rounded-lg border border-gray-200 bg-white p-0.5">
+                <button
+                  type="button"
+                  onClick={() => setStatusFilter('unread')}
+                  className={`px-2.5 py-1 rounded-md text-xs font-medium transition ${
+                    statusFilter === 'unread'
+                      ? 'bg-blue-600 text-white'
+                      : 'text-slate-700 hover:bg-slate-50'
+                  }`}
+                >
+                  Não lidas ({unreadCount})
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setStatusFilter('read')}
+                  className={`px-2.5 py-1 rounded-md text-xs font-medium transition ${
+                    statusFilter === 'read'
+                      ? 'bg-blue-600 text-white'
+                      : 'text-slate-700 hover:bg-slate-50'
+                  }`}
+                >
+                  Lidas ({readCount})
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setStatusFilter('linked')}
+                  className={`px-2.5 py-1 rounded-md text-xs font-medium transition ${
+                    statusFilter === 'linked'
+                      ? 'bg-emerald-600 text-white'
+                      : 'text-slate-700 hover:bg-slate-50'
+                  }`}
+                >
+                  Vinculadas ({intimations.filter(isLinked).length})
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setStatusFilter('unlinked')}
+                  className={`px-2.5 py-1 rounded-md text-xs font-medium transition ${
+                    statusFilter === 'unlinked'
+                      ? 'bg-amber-600 text-white'
+                      : 'text-slate-700 hover:bg-slate-50'
+                  }`}
+                >
+                  Não Vinc ({intimations.filter(isUnlinked).length})
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setStatusFilter('all')}
+                  className={`px-2.5 py-1 rounded-md text-xs font-medium transition ${
+                    statusFilter === 'all'
+                      ? 'bg-blue-600 text-white'
+                      : 'text-slate-700 hover:bg-slate-50'
+                  }`}
+                >
+                  Todas ({intimations.length})
+                </button>
+              </div>
+
+              <div className="inline-flex rounded-lg border border-gray-200 bg-white p-0.5">
+                <button
+                  type="button"
+                  onClick={() => setUrgencyFilter('all')}
+                  className={`px-2.5 py-1 rounded-md text-xs font-medium transition ${
+                    urgencyFilter === 'all'
+                      ? 'bg-slate-900 text-white'
+                      : 'text-slate-700 hover:bg-slate-50'
+                  }`}
+                >
+                  Todas
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setUrgencyFilter('alta')}
+                  className={`px-2.5 py-1 rounded-md text-xs font-medium transition ${
+                    urgencyFilter === 'alta'
+                      ? 'bg-red-600 text-white'
+                      : 'text-slate-700 hover:bg-slate-50'
+                  }`}
+                >
+                  Alta
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setUrgencyFilter('media')}
+                  className={`px-2.5 py-1 rounded-md text-xs font-medium transition ${
+                    urgencyFilter === 'media'
+                      ? 'bg-amber-600 text-white'
+                      : 'text-slate-700 hover:bg-slate-50'
+                  }`}
+                >
+                  Média
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setUrgencyFilter('baixa')}
+                  className={`px-2.5 py-1 rounded-md text-xs font-medium transition ${
+                    urgencyFilter === 'baixa'
+                      ? 'bg-emerald-600 text-white'
+                      : 'text-slate-700 hover:bg-slate-50'
+                  }`}
+                >
+                  Baixa
+                </button>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setMobileControlsExpanded((prev) => {
+                    const next = !prev;
+                    if (!next) {
+                      setShowClearMenu(false);
+                      setShowExportMenu(false);
+                      setShowSettingsMenu(false);
+                    }
+                    return next;
+                  });
+                }}
+                className={`inline-flex items-center gap-2 px-3 py-2 rounded-lg border text-xs font-medium transition ${
+                  mobileControlsExpanded
+                    ? 'bg-slate-100 text-slate-800 border-slate-300'
+                    : 'border-gray-200 text-slate-700 hover:bg-slate-50'
+                }`}
+              >
+                <Filter className="w-3.5 h-3.5" />
+                Mais filtros
+                <ChevronDown className={`w-3.5 h-3.5 text-slate-500 transition-transform ${mobileControlsExpanded ? 'rotate-180' : ''}`} />
+              </button>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  setMobileControlsExpanded(true);
+                  setShowClearMenu((prev) => !prev);
+                }}
+                disabled={syncing}
+                className="inline-flex items-center justify-center gap-1.5 border border-gray-200 text-slate-700 hover:bg-slate-50 text-xs px-2.5 py-1.5 rounded-md transition disabled:opacity-50"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+                Limpar
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setMobileControlsExpanded(true);
+                  setShowExportMenu((prev) => !prev);
+                }}
+                disabled={filteredIntimations.length === 0}
+                className="inline-flex items-center justify-center gap-1.5 border border-gray-200 text-slate-700 hover:bg-slate-50 text-xs px-2.5 py-1.5 rounded-md transition disabled:opacity-50"
+              >
+                <Download className="w-3.5 h-3.5" />
+                Exportar
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setMobileControlsExpanded(true);
+                  setShowSettingsMenu((prev) => !prev);
+                }}
+                className="inline-flex items-center justify-center gap-1.5 border border-gray-200 text-slate-700 hover:bg-slate-50 text-xs px-2.5 py-1.5 rounded-md transition"
+              >
+                <Settings className="w-3.5 h-3.5" />
+                Config
+              </button>
+            </div>
+          </div>
 
           <div
-            className={`${mobileControlsExpanded ? 'grid' : 'hidden'} grid-cols-2 sm:flex sm:flex-wrap items-center gap-2`}
+            className={
+              mobileControlsExpanded
+                ? 'grid grid-cols-2 sm:flex sm:flex-wrap items-center gap-2'
+                : 'hidden'
+            }
           >
             <select
               value={statusFilter}
               onChange={(e) => setStatusFilter(e.target.value as any)}
-              className="w-full px-2.5 py-1.5 border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-blue-500 text-xs sm:text-sm"
+              className="w-full px-2 py-1 border border-gray-200 rounded-md focus:outline-none focus:ring-1 focus:ring-blue-500 text-xs"
             >
               <option value="all">Todas ({intimations.length})</option>
               <option value="unread">Não Lidas ({unreadCount})</option>
               <option value="read">Lidas ({readCount})</option>
+              <option value="linked">Vinculadas ({intimations.filter(isLinked).length})</option>
+              <option value="unlinked">Não Vinc ({intimations.filter(isUnlinked).length})</option>
             </select>
 
             <select
               value={tribunalFilter}
               onChange={(e) => setTribunalFilter(e.target.value)}
-              className="w-full px-2.5 py-1.5 border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-blue-500 text-xs sm:text-sm"
+              className="w-full px-2 py-1 border border-gray-200 rounded-md focus:outline-none focus:ring-1 focus:ring-blue-500 text-xs"
             >
               <option value="all">Todos os Tribunais</option>
               {availableTribunals.map((tribunal) => (
@@ -1422,7 +1659,7 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
             <select
               value={dateFilter}
               onChange={(e) => setDateFilter(e.target.value as any)}
-              className="w-full px-2.5 py-1.5 border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-blue-500 text-xs sm:text-sm"
+              className="w-full px-2 py-1 border border-gray-200 rounded-md focus:outline-none focus:ring-1 focus:ring-blue-500 text-xs"
             >
               <option value="30days">Últimos 30 dias</option>
               <option value="60days">Últimos 60 dias</option>
@@ -1430,15 +1667,26 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
               <option value="all">Todas as datas</option>
             </select>
 
+            <select
+              value={urgencyFilter}
+              onChange={(e) => setUrgencyFilter(e.target.value as any)}
+              className="w-full px-2 py-1 border border-gray-200 rounded-md focus:outline-none focus:ring-1 focus:ring-blue-500 text-xs"
+            >
+              <option value="all">Todas urgências</option>
+              <option value="alta">Alta</option>
+              <option value="media">Média</option>
+              <option value="baixa">Baixa</option>
+            </select>
+
             <button
               onClick={() => setShowFilters(!showFilters)}
-              className={`inline-flex items-center justify-center gap-1.5 px-2.5 py-1.5 rounded-lg transition text-xs sm:text-sm w-full sm:w-auto ${
+              className={`inline-flex items-center justify-center gap-1.5 px-2 py-1 rounded-md transition text-xs w-full sm:w-auto ${
                 showFilters
                   ? 'bg-slate-100 text-slate-700 border border-slate-300'
                   : 'border border-gray-200 text-slate-600 hover:bg-slate-50'
               }`}
             >
-              <Filter className="w-3.5 h-3.5" />
+              <Filter className="w-3 h-3" />
               <span className="sm:hidden">Filtros</span>
               <span className="hidden sm:inline">Filtros</span>
             </button>
@@ -1465,6 +1713,12 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
                     className="w-full text-left px-4 py-2.5 hover:bg-gray-50 flex items-center gap-2"
                   >
                     <EyeOff className="w-4 h-4" /> Remover lidas
+                  </button>
+                  <button
+                    onClick={handleMarkAllAsRead}
+                    className="w-full text-left px-4 py-2.5 hover:bg-gray-50 flex items-center gap-2"
+                  >
+                    <CheckCircle className="w-4 h-4 text-emerald-600" /> Marcar todas como lidas
                   </button>
                   <button
                     onClick={handleClearAllIntimations}
@@ -1549,9 +1803,9 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
                           setSelectionMode(e.target.checked);
                           if (!e.target.checked) setSelectedIds(new Set());
                         }}
-                        className="rounded border-slate-300 text-purple-600 focus:ring-purple-500"
+                        className="rounded border-slate-300 text-slate-600 focus:ring-slate-500"
                       />
-                      Modo seleção múltipla
+                      Selecionar múltiplas
                     </label>
                     <div className="pt-2 border-t border-gray-100">
                       <label className="block text-xs font-medium text-slate-600 mb-1">Filtro padrão</label>
@@ -1616,24 +1870,48 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
         )}
 
         {selectionMode && selectedIds.size > 0 && (
-          <div className="mt-4 pt-4 border-t border-gray-200 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-            <span className="text-sm text-slate-600">
-              <strong>{selectedIds.size}</strong> intimação(ões) selecionada(s)
+          <div className="mt-4 p-3 sm:p-4 border border-slate-200 bg-slate-50 rounded-xl flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+            <span className="text-sm text-slate-700">
+              <strong className="text-slate-900">{selectedIds.size}</strong> selecionada(s)
             </span>
             <div className="flex flex-wrap gap-2">
               <button
                 onClick={handleMarkSelectedAsRead}
-                className="inline-flex items-center gap-2 bg-emerald-600 hover:bg-emerald-700 text-white font-medium px-4 py-2 rounded-lg transition text-sm"
+                className="inline-flex items-center gap-2 bg-white hover:bg-slate-50 text-slate-700 font-semibold px-3 py-2 rounded-lg transition text-sm border border-slate-200"
               >
-                <CheckCircle className="w-4 h-4" />
-                Marcar como Lidas
+                <CheckCircle className="w-4 h-4 text-emerald-600" />
+                Marcar como lidas
+              </button>
+              <button
+                onClick={handleBatchLink}
+                className="inline-flex items-center gap-2 bg-white hover:bg-slate-50 text-slate-700 font-semibold px-3 py-2 rounded-lg transition text-sm border border-slate-200"
+              >
+                <Link2 className="w-4 h-4 text-blue-600" />
+                Vincular em lote
+              </button>
+              <button
+                onClick={handleExportSelected}
+                className="inline-flex items-center gap-2 bg-white hover:bg-slate-50 text-slate-700 font-semibold px-3 py-2 rounded-lg transition text-sm border border-slate-200"
+              >
+                <Download className="w-4 h-4 text-purple-600" />
+                Exportar selecionadas
               </button>
               <button
                 onClick={handleDeleteSelected}
-                className="inline-flex items-center gap-2 bg-red-600 hover:bg-red-700 text-white font-medium px-4 py-2 rounded-lg transition text-sm"
+                className="inline-flex items-center gap-2 bg-white hover:bg-slate-50 text-slate-700 font-semibold px-3 py-2 rounded-lg transition text-sm border border-slate-200"
               >
-                <Trash2 className="w-4 h-4" />
-                Remover selecionadas
+                <Trash2 className="w-4 h-4 text-red-600" />
+                Remover
+              </button>
+              <button
+                onClick={() => {
+                  setSelectedIds(new Set());
+                  setSelectionMode(false);
+                }}
+                className="inline-flex items-center gap-2 bg-transparent hover:bg-white text-slate-600 font-semibold px-3 py-2 rounded-lg transition text-sm border border-transparent"
+              >
+                <X className="w-4 h-4" />
+                Cancelar
               </button>
             </div>
           </div>
@@ -1694,7 +1972,7 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
                     className={`border rounded-lg overflow-hidden transition ${
                       intimation.lida
                         ? 'border-slate-200 hover:border-slate-300 bg-slate-50'
-                        : 'border-amber-200 hover:border-amber-300 bg-amber-50/30'
+                        : 'border-slate-200 hover:border-slate-300 bg-white border-l-4 border-l-amber-400'
                     }`}
                   >
                     {/* Header clicável para expandir */}
@@ -1710,9 +1988,9 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
                         setExpandedIntimationIds(newExpanded);
                       }}
                     >
-                      <div className="flex items-start gap-2 sm:gap-3 flex-wrap">
-                        <div className="flex items-center">
-                          {isExpanded ? <ChevronDown className="w-4 h-4 text-slate-600 flex-shrink-0" /> : <ChevronRight className="w-4 h-4 text-slate-600 flex-shrink-0" />}
+                      <div className="flex items-start gap-2 sm:gap-3">
+                        <div className="flex items-center flex-shrink-0">
+                          {isExpanded ? <ChevronDown className="w-4 h-4 text-slate-600" /> : <ChevronRight className="w-4 h-4 text-slate-600" />}
                         </div>
                         <div className="flex-1 min-w-0">
                           {/* Mobile: Layout compacto */}
@@ -1723,13 +2001,25 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
                             <span className="text-[10px] sm:text-xs text-slate-500">
                               {formatDate(intimation.data_disponibilizacao)}
                             </span>
+                            {/* Indicador de vinculação */}
+                            {isLinked(intimation) ? (
+                              <span className="inline-flex items-center px-1.5 sm:px-2 py-0.5 rounded-full text-[10px] sm:text-xs font-semibold bg-emerald-100 text-emerald-700 border border-emerald-200">
+                                <Link2 className="w-3 h-3 sm:w-3.5 sm:h-3.5 mr-1" />
+                                Vinc
+                              </span>
+                            ) : (
+                              <span className="inline-flex items-center px-1.5 sm:px-2 py-0.5 rounded-full text-[10px] sm:text-xs font-semibold bg-slate-100 text-slate-600 border border-slate-200">
+                                <Unlink className="w-3 h-3 sm:w-3.5 sm:h-3.5 mr-1" />
+                                Sem Vínc
+                              </span>
+                            )}
                             {!intimation.lida && (
                               <span className="inline-flex items-center px-1.5 sm:px-2 py-0.5 rounded-full text-[10px] sm:text-xs font-semibold bg-amber-100 text-amber-700">
                                 NÃO LIDA
                               </span>
                             )}
                             {intimation.tipo_comunicacao && (
-                              <span className="hidden sm:inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-purple-100 text-purple-800">
+                              <span className="hidden sm:inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-slate-100 text-slate-700 border border-slate-200">
                                 {intimation.tipo_comunicacao}
                               </span>
                             )}
@@ -1744,9 +2034,9 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
                               <div className="flex flex-wrap items-center gap-1.5 text-xs text-slate-600">
                                 <span className="font-medium text-slate-500">Partes:</span>
                                 {partes.map((parte, idx) => (
-                                  <span key={idx} className="inline-flex items-center gap-1 px-1.5 py-0.5 bg-blue-50 text-blue-700 rounded text-[11px]">
+                                  <span key={idx} className="inline-flex items-center gap-1 px-1.5 py-0.5 bg-slate-50 text-slate-700 rounded text-[11px] border border-slate-200">
                                     {parte.nome}
-                                    {parte.polo && <span className="text-blue-500">({parte.polo})</span>}
+                                    {parte.polo && <span className="text-slate-500">({parte.polo})</span>}
                                   </span>
                                 ))}
                               </div>
@@ -1756,43 +2046,46 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
                           <p className={`text-xs sm:text-sm text-slate-700 ${!isExpanded ? 'line-clamp-1 sm:line-clamp-2' : ''}`}>
                             {intimation.texto}
                           </p>
-                        </div>
-                        {/* Botões de ação - ocultos em mobile quando não expandido */}
-                        <div className={`hidden sm:flex items-center gap-1.5 sm:gap-2 flex-shrink-0 ${!isExpanded ? '' : ''}`}>
-                          {!intimation.lida && (
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                handleMarkAsRead(intimation.id);
-                              }}
-                              className="inline-flex items-center gap-1 px-2 py-1 text-xs font-medium text-emerald-600 hover:text-emerald-700 border border-emerald-200 rounded hover:bg-emerald-50 transition"
-                            >
-                              <CheckCircle className="w-3 h-3" />
-                              Marcar
-                            </button>
+
+                          {/* Botões de ação (desktop) - abaixo do texto para largura total */}
+                          {!selectionMode && (
+                            <div className="hidden sm:flex items-center justify-end gap-2 mt-2">
+                              {!intimation.lida && (
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleMarkAsRead(intimation.id);
+                                  }}
+                                  className="inline-flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-semibold text-slate-700 bg-white hover:bg-slate-50 border border-slate-200 rounded-lg transition"
+                                >
+                                  <CheckCircle className="w-3.5 h-3.5 text-emerald-600" />
+                                  Marcar
+                                </button>
+                              )}
+                              {intimation.link && (
+                                <a
+                                  href={intimation.link}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  onClick={(e) => e.stopPropagation()}
+                                  className="inline-flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-semibold text-slate-700 bg-white hover:bg-slate-50 border border-slate-200 rounded-lg transition"
+                                >
+                                  <ExternalLink className="w-3.5 h-3.5 text-purple-600" />
+                                  Diário
+                                </a>
+                              )}
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setSelectedIntimation(intimation);
+                                }}
+                                className="inline-flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-semibold text-slate-700 bg-white hover:bg-slate-50 border border-slate-200 rounded-lg transition"
+                              >
+                                <Eye className="w-3.5 h-3.5 text-blue-600" />
+                                Detalhes
+                              </button>
+                            </div>
                           )}
-                          {intimation.link && (
-                            <a
-                              href={intimation.link}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              onClick={(e) => e.stopPropagation()}
-                              className="inline-flex items-center gap-1 px-2 py-1 text-xs font-medium text-purple-600 hover:text-purple-700 border border-purple-200 rounded hover:bg-purple-50 transition"
-                            >
-                              <ExternalLink className="w-3 h-3" />
-                              Diário
-                            </a>
-                          )}
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              setSelectedIntimation(intimation);
-                            }}
-                            className="inline-flex items-center gap-1 px-2 py-1 text-xs font-medium text-blue-600 hover:text-blue-700 border border-blue-200 rounded hover:bg-blue-50 transition"
-                          >
-                            <Eye className="w-3 h-3" />
-                            Detalhes
-                          </button>
                         </div>
                       </div>
                     </div>
@@ -1801,19 +2094,19 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
                     {isExpanded && (
                       <div className="px-4 pb-4 border-t border-slate-200">
                         {aiAnalysis.has(intimation.id) && (
-                          <div className="mt-3 bg-gradient-to-r from-purple-50 to-blue-50 border border-purple-200 rounded-lg p-3 space-y-2">
+                          <div className="mt-3 bg-slate-50 border border-slate-200 rounded-lg p-3 space-y-2">
                             <div className="flex items-center justify-between gap-3">
                               <div className="flex items-center gap-2 min-w-0">
-                                <Sparkles className="w-4 h-4 text-purple-600 flex-shrink-0" />
-                                <h6 className="text-xs font-bold text-purple-900 truncate">Análise IA</h6>
+                                <Sparkles className="w-4 h-4 text-slate-700 flex-shrink-0" />
+                                <h6 className="text-xs font-bold text-slate-900 truncate">Análise IA</h6>
                               </div>
                               {(() => {
                                 const analysis = aiAnalysis.get(intimation.id)!;
                                 const urgencyColors = {
-                                  'critica': 'bg-red-100 text-red-800 border-red-300',
-                                  'alta': 'bg-orange-100 text-orange-800 border-orange-300',
-                                  'media': 'bg-yellow-100 text-yellow-800 border-yellow-300',
-                                  'baixa': 'bg-green-100 text-green-800 border-green-300',
+                                  'critica': 'bg-red-50 text-red-700 border-red-200',
+                                  'alta': 'bg-orange-50 text-orange-700 border-orange-200',
+                                  'media': 'bg-amber-50 text-amber-700 border-amber-200',
+                                  'baixa': 'bg-emerald-50 text-emerald-700 border-emerald-200',
                                 };
                                 return (
                                   <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-semibold border ${urgencyColors[analysis.urgency]}`}>
@@ -1828,7 +2121,7 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
                                 <>
                                   <p className="text-xs text-slate-700 line-clamp-3"><strong>Resumo:</strong> {analysis.summary}</p>
                                   {analysis.deadline && (
-                                    <div className="bg-white/70 border border-amber-200 rounded-lg p-2 text-xs">
+                                    <div className="bg-white border border-slate-200 rounded-lg p-2 text-xs">
                                       <p className="font-semibold text-slate-900">{analysis.deadline.days} dias úteis</p>
                                       <p className="text-slate-700">{analysis.deadline.description}</p>
                                       {analysis.deadline.dueDate && (
@@ -1843,16 +2136,16 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
                         )}
                         
                         {/* Botões de Ação - Visualização Agrupada */}
-                        <div className="mt-3 grid grid-cols-2 sm:flex sm:flex-wrap gap-2">
+                        <div className="mt-3 flex flex-wrap gap-2">
                           <button
                             onClick={(e) => {
                               e.stopPropagation();
                               setCurrentIntimationForAction(intimation);
                               setDeadlineModalOpen(true);
                             }}
-                            className="inline-flex items-center justify-center gap-2 px-3 py-2 text-xs font-semibold text-amber-800 bg-amber-50 hover:bg-amber-100 border border-amber-200 rounded-lg transition w-full"
+                            className="inline-flex items-center justify-center gap-2 px-3 py-2 text-xs font-semibold text-slate-700 bg-white hover:bg-slate-50 border border-slate-200 rounded-lg transition flex-1 sm:flex-none min-w-[140px]"
                           >
-                            <Clock className="w-4 h-4" />
+                            <Clock className="w-4 h-4 text-amber-600" />
                             Novo Prazo
                           </button>
                           <button
@@ -1861,9 +2154,9 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
                               setCurrentIntimationForAction(intimation);
                               setAppointmentModalOpen(true);
                             }}
-                            className="inline-flex items-center justify-center gap-2 px-3 py-2 text-xs font-semibold text-indigo-800 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 rounded-lg transition w-full"
+                            className="inline-flex items-center justify-center gap-2 px-3 py-2 text-xs font-semibold text-slate-700 bg-white hover:bg-slate-50 border border-slate-200 rounded-lg transition flex-1 sm:flex-none min-w-[140px]"
                           >
-                            <CalendarIcon className="w-4 h-4" />
+                            <CalendarIcon className="w-4 h-4 text-indigo-600" />
                             Compromisso
                           </button>
                           {!intimation.lida && (
@@ -1872,9 +2165,9 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
                                 e.stopPropagation();
                                 handleMarkAsRead(intimation.id);
                               }}
-                              className="inline-flex items-center justify-center gap-2 px-3 py-2 text-xs font-semibold text-emerald-800 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 rounded-lg transition w-full"
+                              className="inline-flex items-center justify-center gap-2 px-3 py-2 text-xs font-semibold text-slate-700 bg-white hover:bg-slate-50 border border-slate-200 rounded-lg transition flex-1 sm:flex-none min-w-[140px]"
                             >
-                              <CheckCircle className="w-4 h-4" />
+                              <CheckCircle className="w-4 h-4 text-emerald-600" />
                               Marcar Lida
                             </button>
                           )}
@@ -1886,9 +2179,9 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
                               setSelectedProcessId(intimation.process_id || '');
                               setLinkModalOpen(true);
                             }}
-                            className="inline-flex items-center justify-center gap-2 px-3 py-2 text-xs font-semibold text-blue-800 bg-blue-50 hover:bg-blue-100 border border-blue-200 rounded-lg transition w-full"
+                            className="inline-flex items-center justify-center gap-2 px-3 py-2 text-xs font-semibold text-slate-700 bg-white hover:bg-slate-50 border border-slate-200 rounded-lg transition flex-1 sm:flex-none min-w-[140px]"
                           >
-                            <Link2 className="w-4 h-4" />
+                            <Link2 className="w-4 h-4 text-blue-600" />
                             Vincular
                           </button>
                           {intimation.link && (
@@ -1897,9 +2190,9 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
                               target="_blank"
                               rel="noopener noreferrer"
                               onClick={(e) => e.stopPropagation()}
-                              className="inline-flex items-center justify-center gap-2 px-3 py-2 text-xs font-semibold text-purple-800 bg-purple-50 hover:bg-purple-100 border border-purple-200 rounded-lg transition w-full"
+                              className="inline-flex items-center justify-center gap-2 px-3 py-2 text-xs font-semibold text-slate-700 bg-white hover:bg-slate-50 border border-slate-200 rounded-lg transition flex-1 sm:flex-none min-w-[140px]"
                             >
-                              <ExternalLink className="w-4 h-4" />
+                              <ExternalLink className="w-4 h-4 text-purple-600" />
                               Ver Diário
                             </a>
                           )}
@@ -1908,7 +2201,7 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
                               e.stopPropagation();
                               setSelectedIntimation(intimation);
                             }}
-                            className="inline-flex items-center justify-center gap-2 px-3 py-2 text-xs font-semibold text-slate-800 bg-white hover:bg-slate-50 border border-slate-200 rounded-lg transition w-full sm:w-auto"
+                            className="inline-flex items-center justify-center gap-2 px-3 py-2 text-xs font-semibold text-slate-700 bg-white hover:bg-slate-50 border border-slate-200 rounded-lg transition flex-1 sm:flex-none min-w-[140px]"
                           >
                             <Eye className="w-4 h-4" />
                             Detalhes
@@ -1932,8 +2225,8 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
               className={`bg-white border rounded-xl p-3 sm:p-5 transition ${
                 intimation.lida
                   ? 'border-slate-200 hover:border-slate-300'
-                  : 'border-amber-200 hover:border-amber-300 bg-amber-50/30'
-              } ${selectionMode && selectedIds.has(intimation.id) ? 'ring-2 ring-purple-500' : ''}`}
+                  : 'border-slate-200 hover:border-slate-300 border-l-4 border-l-amber-400'
+              } ${selectionMode && selectedIds.has(intimation.id) ? 'ring-2 ring-blue-500' : ''}`}
             >
               <div className="flex items-start gap-2 sm:gap-4">
                 {selectionMode && (
@@ -1942,7 +2235,7 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
                     checked={selectedIds.has(intimation.id)}
                     onChange={() => toggleSelection(intimation.id)}
                     onClick={(e) => e.stopPropagation()}
-                    className="mt-1 w-4 h-4 sm:w-5 sm:h-5 text-purple-600 border-slate-300 rounded focus:ring-purple-500"
+                    className="mt-1 w-4 h-4 sm:w-5 sm:h-5 text-blue-600 border-slate-300 rounded focus:ring-blue-500"
                   />
                 )}
 
@@ -1966,19 +2259,31 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
                     <span className="text-[10px] sm:text-xs text-slate-500">
                       {formatDate(intimation.data_disponibilizacao)}
                     </span>
+                    {/* Indicador de vinculação */}
+                    {isLinked(intimation) ? (
+                      <span className="inline-flex items-center px-1.5 sm:px-2 py-0.5 rounded-full text-[10px] sm:text-xs font-semibold bg-emerald-100 text-emerald-700 border border-emerald-200">
+                        <Link2 className="w-3 h-3 sm:w-3.5 sm:h-3.5 mr-1" />
+                        Vinc
+                      </span>
+                    ) : (
+                      <span className="inline-flex items-center px-1.5 sm:px-2 py-0.5 rounded-full text-[10px] sm:text-xs font-semibold bg-slate-100 text-slate-600 border border-slate-200">
+                        <Unlink className="w-3 h-3 sm:w-3.5 sm:h-3.5 mr-1" />
+                        Sem Vínc
+                      </span>
+                    )}
                     {!intimation.lida && (
                       <span className="inline-flex items-center px-1.5 sm:px-2 py-0.5 rounded-full text-[10px] sm:text-xs font-semibold bg-amber-100 text-amber-700">
                         NÃO LIDA
                       </span>
                     )}
                     {intimation.tipo_comunicacao && (
-                      <span className="hidden sm:inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-purple-100 text-purple-800">
+                      <span className="hidden sm:inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-slate-100 text-slate-700 border border-slate-200">
                         {intimation.tipo_comunicacao}
                       </span>
                     )}
                     {aiAnalysis.has(intimation.id) && (
-                      <span className="hidden sm:inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-gradient-to-r from-violet-100 to-purple-100 text-violet-700 border border-violet-200">
-                        <Sparkles className="w-3 h-3" />
+                      <span className="hidden sm:inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-slate-50 text-slate-700 border border-slate-200">
+                        <Sparkles className="w-3 h-3 text-violet-600" />
                         Analisado
                       </span>
                     )}
@@ -2148,9 +2453,9 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
                               e.stopPropagation();
                               handleCreateDeadline(intimation);
                             }}
-                            className="inline-flex items-center justify-center gap-2 px-3 py-2 text-xs font-semibold text-amber-800 bg-amber-50 hover:bg-amber-100 border border-amber-200 rounded-lg transition w-full"
+                            className="inline-flex items-center justify-center gap-2 px-3 py-2 text-xs font-semibold text-slate-700 bg-white hover:bg-slate-50 border border-slate-200 rounded-lg transition"
                           >
-                            <Clock className="w-4 h-4" />
+                            <Clock className="w-4 h-4 text-amber-600" />
                             Novo Prazo
                           </button>
 
@@ -2159,9 +2464,9 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
                               e.stopPropagation();
                               handleCreateAppointment(intimation);
                             }}
-                            className="inline-flex items-center justify-center gap-2 px-3 py-2 text-xs font-semibold text-indigo-800 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 rounded-lg transition w-full"
+                            className="inline-flex items-center justify-center gap-2 px-3 py-2 text-xs font-semibold text-slate-700 bg-white hover:bg-slate-50 border border-slate-200 rounded-lg transition"
                           >
-                            <CalendarIcon className="w-4 h-4" />
+                            <CalendarIcon className="w-4 h-4 text-indigo-600" />
                             Compromisso
                           </button>
 
@@ -2171,9 +2476,9 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
                                 e.stopPropagation();
                                 handleMarkAsRead(intimation.id);
                               }}
-                              className="inline-flex items-center justify-center gap-2 px-3 py-2 text-xs font-semibold text-emerald-800 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 rounded-lg transition w-full"
+                              className="inline-flex items-center justify-center gap-2 px-3 py-2 text-xs font-semibold text-slate-700 bg-white hover:bg-slate-50 border border-slate-200 rounded-lg transition"
                             >
-                              <CheckCircle className="w-4 h-4" />
+                              <CheckCircle className="w-4 h-4 text-emerald-600" />
                               Marcar Lida
                             </button>
                           )}
@@ -2183,9 +2488,9 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
                               e.stopPropagation();
                               handleOpenLinkModal(intimation);
                             }}
-                            className="inline-flex items-center justify-center gap-2 px-3 py-2 text-xs font-semibold text-blue-800 bg-blue-50 hover:bg-blue-100 border border-blue-200 rounded-lg transition w-full"
+                            className="inline-flex items-center justify-center gap-2 px-3 py-2 text-xs font-semibold text-slate-700 bg-white hover:bg-slate-50 border border-slate-200 rounded-lg transition"
                           >
-                            <Link2 className="w-4 h-4" />
+                            <Link2 className="w-4 h-4 text-blue-600" />
                             Vincular
                           </button>
 
@@ -2195,9 +2500,9 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
                               target="_blank"
                               rel="noopener noreferrer"
                               onClick={(e) => e.stopPropagation()}
-                              className="col-span-2 inline-flex items-center justify-center gap-2 px-3 py-2 text-xs font-semibold text-purple-800 bg-purple-50 hover:bg-purple-100 border border-purple-200 rounded-lg transition w-full"
+                              className="col-span-2 inline-flex items-center justify-center gap-2 px-3 py-2 text-xs font-semibold text-slate-700 bg-white hover:bg-slate-50 border border-slate-200 rounded-lg transition"
                             >
-                              <ExternalLink className="w-4 h-4" />
+                              <ExternalLink className="w-4 h-4 text-purple-600" />
                               Ver Diário
                             </a>
                           )}

@@ -280,7 +280,6 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToModule }) => {
             
             // Verificar se o cache ainda é válido
             if (cacheValid && now - cache.timestamp < CACHE_DURATION) {
-              console.log(' Carregando Dashboard do cache');
               setClients(cache.data.clients);
               setProcesses(cache.data.processes);
               setDeadlines(cache.data.deadlines);
@@ -300,7 +299,6 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToModule }) => {
       }
 
       // Carregar dados da API com limites para reduzir egress
-      console.log(' Carregando Dashboard da API (com limites)');
       const today = new Date().toISOString().split('T')[0];
       const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
       
@@ -439,7 +437,6 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToModule }) => {
       };
       try {
         localStorage.setItem(DASHBOARD_CACHE_KEY, JSON.stringify(cacheData));
-        console.log(' Dashboard salvo no cache');
       } catch (cacheError) {
         // Se localStorage estiver cheio, limpa caches antigos e tenta novamente
         console.warn('Cache cheio, limpando dados antigos...');

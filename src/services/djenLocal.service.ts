@@ -128,9 +128,12 @@ class DjenLocalService {
       clients?: Client[];
       processes?: Process[];
     },
-  ): Promise<{ saved: number; skipped: number }> {
+  ): Promise<{ saved: number; skipped: number; linked: number }> {
     let saved = 0;
     let skipped = 0;
+    let linked = 0;
+
+    console.log(`📦 saveComunicacoes: ${comunicacoes.length} comunicações, clients=${options?.clients?.length || 0}, processes=${options?.processes?.length || 0}`);
 
     const normalizeName = (value: string) =>
       value
@@ -143,6 +146,38 @@ class DjenLocalService {
         : '';
 
     const normalizeProcessNumber = (value: string) => (value ? value.replace(/\D/g, '') : '');
+
+    const extractCandidateNamesFromText = (value: string): string[] => {
+      if (!value) return [];
+
+      const candidates: string[] = [];
+      const patterns: RegExp[] = [
+        /(REQUERENTE|REQUERIDO|AUTOR|R[EÉ]U|EXEQUENTE|EXECUTADO|IMPETRANTE|IMPETRADO)\s*[:\-]\s*([^\n;\r]+)/gi,
+      ];
+
+      for (const pattern of patterns) {
+        let match: RegExpExecArray | null;
+        while ((match = pattern.exec(value)) !== null) {
+          const raw = (match[2] || '')
+            .replace(/\s+/g, ' ')
+            .trim();
+
+          if (!raw) continue;
+
+          raw
+            .split(/\s+(?:E|E\/OU)\s+|\s*[,;]\s*/i)
+            .map((s) => s.trim())
+            .filter(Boolean)
+            .forEach((part) => {
+              if (part.length >= 5) {
+                candidates.push(part);
+              }
+            });
+        }
+      }
+
+      return Array.from(new Set(candidates)).slice(0, 10);
+    };
 
     const clientMapByName = new Map<string, Client>();
     options?.clients?.forEach((client) => {
@@ -173,8 +208,17 @@ class DjenLocalService {
       const trimmed = numero.trim();
       const normalized = normalizeProcessNumber(trimmed);
 
+      console.log(`🔎 getProcessMatch: trimmed="${trimmed}" normalized="${normalized}"`);
+      console.log(`🔎 processMapByOriginal.size=${processMapByOriginal.size}, processMapByNormalized.size=${processMapByNormalized.size}`);
+
       let foundProcess = (trimmed && processMapByOriginal.get(trimmed)) ||
         (normalized && processMapByNormalized.get(normalized));
+
+      if (foundProcess) {
+        console.log(`✅ getProcessMatch: encontrado em cache (process_id=${foundProcess.id})`);
+      } else {
+        console.log(`🔍 getProcessMatch: não encontrado em cache, buscando no Supabase...`);
+      }
 
       if (!foundProcess && trimmed) {
         const { data, error } = await supabase
@@ -183,8 +227,11 @@ class DjenLocalService {
           .eq('process_code', trimmed)
           .maybeSingle();
 
+        console.log(`🔍 Supabase (exato): data=${data ? 'found' : 'null'}, error=${error || 'null'}`);
+
         if (!error && data) {
           foundProcess = data as Process;
+          console.log(`✅ getProcessMatch: encontrado no Supabase (exato)`);
         }
       }
 
@@ -195,8 +242,11 @@ class DjenLocalService {
           .ilike('process_code', `%${trimmed}%`)
           .limit(1);
 
+        console.log(`🔍 Supabase (ilike): data=${data?.length || 0} rows, error=${error || 'null'}`);
+
         if (!error && data && data.length > 0) {
           foundProcess = data[0] as Process;
+          console.log(`✅ getProcessMatch: encontrado no Supabase (ilike)`);
         }
       }
 
@@ -218,6 +268,7 @@ class DjenLocalService {
         };
       }
 
+      console.log(`❌ getProcessMatch: nenhum processo encontrado`);
       return { processId: null, clientId: null };
     };
 
@@ -226,23 +277,31 @@ class DjenLocalService {
         const normalized = normalizeName(rawName);
         if (!normalized) continue;
 
+        console.log(`👤 getClientMatch: trying raw="${rawName}" normalized="${normalized}"`);
+
         const cached = clientMapByName.get(normalized);
         if (cached) {
+          console.log(`✅ getClientMatch: encontrado em cache (client_id=${cached.id})`);
           return cached.id;
         }
 
+        console.log(`🔍 getClientMatch: não encontrado em cache, buscando no Supabase...`);
         const { data, error } = await supabase
           .from('clients')
           .select('id, full_name')
           .ilike('full_name', `%${rawName.trim()}%`)
           .limit(1);
 
+        console.log(`👤 Supabase: data=${data?.length || 0} rows, error=${error || 'null'}`);
+
         if (!error && data && data.length > 0) {
           clientMapByName.set(normalized, data[0] as Client);
+          console.log(`✅ getClientMatch: encontrado no Supabase (client_id=${data[0].id})`);
           return data[0].id;
         }
       }
 
+      console.log(`❌ getClientMatch: nenhum cliente encontrado`);
       return null;
     };
 
@@ -250,7 +309,54 @@ class DjenLocalService {
       try {
         const existing = await this.getComunicacaoByHash(comunicacao.hash);
         if (existing) {
-          skipped++;
+          const needsLink = !existing.process_id || !existing.client_id;
+          if (!needsLink) {
+            skipped++;
+            continue;
+          }
+
+          console.log(`🔗 Auto-link: intimação existente sem vínculo [${existing.id}] process_id=${existing.process_id} client_id=${existing.client_id}`);
+
+          const updatePayload: UpdateDjenComunicacaoDTO = {};
+
+          if (!existing.process_id) {
+            const processMatch = await getProcessMatch(comunicacao.numero_processo);
+            console.log(`🔍 Process match para [${comunicacao.numero_processo}]:`, processMatch);
+            if (processMatch.processId) {
+              updatePayload.process_id = processMatch.processId;
+              if (!existing.client_id && processMatch.clientId) {
+                updatePayload.client_id = processMatch.clientId;
+              }
+            }
+          }
+
+          if (!existing.client_id && !updatePayload.client_id) {
+            const candidateNames = (
+              comunicacao.destinatarios?.map((dest) => dest.nome).filter(Boolean) as string[] | undefined
+            ) ?? [];
+
+            const fromText = extractCandidateNamesFromText(comunicacao.texto || '');
+            const mergedCandidates = Array.from(new Set([...candidateNames, ...fromText]));
+            console.log(`👤 Client match candidates:`, mergedCandidates.slice(0, 5));
+            if (mergedCandidates.length > 0) {
+              const matchedClientId = await getClientMatch(mergedCandidates);
+              console.log(`👤 Client match result:`, matchedClientId);
+              if (matchedClientId) {
+                updatePayload.client_id = matchedClientId;
+              }
+            }
+          }
+
+          if (Object.keys(updatePayload).length > 0) {
+            console.log(`💾 Atualizando intimação [${existing.id}] com payload:`, updatePayload);
+            await this.updateComunicacao(existing.id, updatePayload);
+            linked++;
+            console.log(`✅ Intimação [${existing.id}] vinculada com sucesso!`);
+          } else {
+            console.log(`⚠️ Intimação [${existing.id}] sem match para vincular.`);
+            skipped++;
+          }
+
           continue;
         }
 
@@ -295,9 +401,13 @@ class DjenLocalService {
         let matchedClientId = processMatch.clientId;
 
         if (!matchedClientId) {
-          const candidateNames = comunicacao.destinatarios?.map((dest) => dest.nome).filter(Boolean) ?? [];
-          if (candidateNames.length > 0) {
-            matchedClientId = await getClientMatch(candidateNames as string[]);
+          const candidateNames = (
+            comunicacao.destinatarios?.map((dest) => dest.nome).filter(Boolean) as string[] | undefined
+          ) ?? [];
+          const fromText = extractCandidateNamesFromText(comunicacao.texto || '');
+          const mergedCandidates = Array.from(new Set([...candidateNames, ...fromText]));
+          if (mergedCandidates.length > 0) {
+            matchedClientId = await getClientMatch(mergedCandidates);
           }
         }
 
@@ -337,11 +447,11 @@ class DjenLocalService {
     }
 
     // Após salvar, propaga vínculos para intimações do mesmo processo
-    if (saved > 0) {
+    if (saved > 0 || linked > 0) {
       await this.propagarVinculosDoMesmoProcesso();
     }
 
-    return { saved, skipped };
+    return { saved, skipped, linked };
   }
 
   /**

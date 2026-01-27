@@ -1,5 +1,33 @@
 # Changelog
 
+## 1.9.443
+- **Intimações (UI/UX)**: Pacote de melhorias: indicadores visuais de vinculação (Vinc/Sem Vínc), filtros por urgência e estado de vínculo, busca por nº de processo normalizado (ignora `.`/`-), ações em lote (vincular em lote, exportar selecionadas, marcar todas como lidas).
+
+## 1.9.442
+- **Intimações (DJEN)**: Vinculação automática de intimações sem vínculo (match por número do processo ignorando `.`/`-` e por nomes das partes, incluindo fallback pelo texto da intimação).
+
+## 1.9.441
+- **Intimações (UI)**: Otimização da área de visualização: header/filtros mais compactos para maximizar espaço (~95% de view para conteúdo).
+
+## 1.9.440
+- **Intimações (UI)**: Na visualização agrupada por processo, o texto da intimação agora ocupa largura total no desktop (ações movidas para abaixo do texto).
+
+## 1.9.439
+- **Intimações (UI)**: Refinos de design para um visual mais corporativo (seleção em azul, cards agrupados com destaque discreto e chips/labels mais neutros).
+
+## 1.9.438
+- **Intimações (UI)**: Botões de ação ajustados para ficarem lado a lado e cards/áreas de análise com visual mais neutro e profissional (menos cores fortes).
+
+## 1.9.437
+- **Intimações (UI)**: Corrigido erro de runtime ao abrir o módulo após adicionar botões no topo (import do ícone `Settings`).
+- **Dashboard**: Removidos logs de debug no console (cache/eventos) para reduzir ruído durante o desenvolvimento.
+
+## 1.9.436
+- **Intimações (UI)**: Barra superior do desktop melhorada com botões rápidos (Não lidas/Lidas/Todas e período 30/60/90), e painel "Mais filtros" para ações avançadas.
+
+## 1.9.435
+- **Intimações (UI)**: Filtros/controles do topo agora ficam colapsados por padrão também no desktop, liberando mais espaço para visualizar as intimações.
+
 ## 1.9.434
 - **Dashboard / Agenda**: Corrigido o filtro/ordenação e marcação de "Hoje" para compromissos com `start_at` em formato de data (ex.: `YYYY-MM-DD`) que eram interpretados em UTC e podiam sumir no fuso local.
 
