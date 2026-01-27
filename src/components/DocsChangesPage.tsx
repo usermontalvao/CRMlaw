@@ -46,6 +46,7 @@ import {
    ============================================================================ */
 
 const VERSION_CODENAMES: Record<string, { name: string; emoji: string }> = {
+  '1.9.476': { name: 'Café Chat Móvel', emoji: '📱' },
   '1.9.475': { name: 'Café Facebook Sticky', emoji: '📌' },
   '1.9.425': { name: 'Café Intimações DJEN', emoji: '⚖️' },
   '1.9.424': { name: 'Café Feed UTF-8', emoji: '🔤' },
@@ -573,6 +574,23 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
    ============================================================================ */
 
 const releases: ReleaseNote[] = [
+  {
+    version: '1.9.476',
+    date: '27/01/2026',
+    summary: 'Chat: Responsividade mobile completa.',
+    modules: [
+      {
+        moduleId: 'chat',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Chat 100% Responsivo',
+            description: 'Implementada navegação entre lista de conversas e chat ativo no mobile, com botão de voltar e ajustes de interface para telas pequenas.',
+          },
+        ],
+      },
+    ],
+  },
   {
     version: '1.9.475',
     date: '27/01/2026',

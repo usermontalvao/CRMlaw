@@ -1,5 +1,8 @@
 # Changelog
 
+## 1.9.476
+- **Chat (Mobile)**: Implementada responsividade completa para dispositivos móveis. Adicionada navegação entre lista de conversas e chat ativo, botão de voltar e ajustes de layout para telas pequenas.
+
 ## 1.9.475
 - **Feed (Layout)**: Corrigido o comportamento "sticky" das sidebars laterais para seguir o padrão do Facebook. Agora as sidebars rolam junto com o feed até o final do seu conteúdo e permanecem fixas, evitando espaços vazios indesejados.
 

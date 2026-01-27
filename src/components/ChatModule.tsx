@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { Bell, BellOff, CheckCheck, Download, FileText, Image, MessageCircle, Mic, Paperclip, Plus, Search, Send, Smile, Square, X, Users } from 'lucide-react';
+import { ArrowLeft, Bell, BellOff, CheckCheck, Download, FileText, Image, MessageCircle, Mic, Paperclip, Plus, Search, Send, Smile, Square, X, Users } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { useNavigation } from '../contexts/NavigationContext';
 import { chatService } from '../services/chat.service';
@@ -261,6 +261,7 @@ const ChatModule: React.FC = () => {
   const [typingUsers, setTypingUsers] = useState<Map<string, { name: string; timestamp: number }>>(new Map());
   const [isRecording, setIsRecording] = useState(false);
   const [recordingTime, setRecordingTime] = useState(0);
+  const [showMobileChat, setShowMobileChat] = useState(false);
 
   useEffect(() => {
     if (!initialRoomId) return;
@@ -936,6 +937,7 @@ const ChatModule: React.FC = () => {
       setRoomMembers(prev => new Map(prev).set(room.id, memberIds));
       setRooms(prev => [room, ...prev]);
       setSelectedRoomId(room.id);
+      setShowMobileChat(true);
       setShowNewChatModal(false);
     } catch (err: any) {
       console.error('Erro ao criar DM:', err);
@@ -944,9 +946,9 @@ const ChatModule: React.FC = () => {
   };
 
   return (
-    <div className="w-full overflow-hidden text-slate-800 dark:text-slate-100 flex flex-col" style={{ height: 'calc(100vh - 7rem)' }}>
+    <div className="w-full overflow-hidden text-slate-800 dark:text-slate-100 flex flex-col" style={{ height: 'calc(100dvh - 7rem)' }}>
       <main className="w-full h-full min-h-0 bg-white dark:bg-[#202c33] rounded-xl shadow-xl flex overflow-hidden border border-[#e2e8f0] dark:border-[#2a3942]">
-        <aside className="w-full md:w-[350px] lg:w-[400px] min-h-0 flex flex-col border-r border-[#e2e8f0] dark:border-[#2a3942] bg-white dark:bg-[#111b21]">
+        <aside className={`${showMobileChat ? 'hidden' : 'flex'} w-full md:w-[350px] lg:w-[400px] md:flex min-h-0 flex-col border-r border-[#e2e8f0] dark:border-[#2a3942] bg-white dark:bg-[#111b21]`}>
           <div className="px-4 py-3 flex items-center justify-between bg-white dark:bg-[#202c33] border-b border-[#e2e8f0] dark:border-[#2a3942]">
             <div className="flex items-center gap-3">
               <div className="relative">
@@ -1032,7 +1034,10 @@ const ChatModule: React.FC = () => {
                 <button
                   key={room.id}
                   type="button"
-                  onClick={() => setSelectedRoomId(room.id)}
+                  onClick={() => {
+                    setSelectedRoomId(room.id);
+                    setShowMobileChat(true);
+                  }}
                   className={`flex items-center gap-3 p-3 cursor-pointer transition ${
                     isActive
                       ? 'bg-indigo-600/10 dark:bg-[#2a3942]/50 border-l-4 border-indigo-600'
@@ -1078,16 +1083,24 @@ const ChatModule: React.FC = () => {
           </div>
         </aside>
 
-        <section className="hidden md:flex flex-1 min-h-0 flex-col bg-[#efeae2] dark:bg-[#0b141a] relative">
+        <section className={`${showMobileChat ? 'flex' : 'hidden'} md:flex flex-1 min-h-0 flex-col bg-[#efeae2] dark:bg-[#0b141a] relative`}>
           {selectedRoom ? (
             <>
               <header className="h-[64px] px-4 py-2 bg-white dark:bg-[#202c33] border-b border-[#e2e8f0] dark:border-[#2a3942] flex items-center justify-between z-10 shadow-sm">
-                <button
-                  type="button"
-                  onClick={() => setShowContactInfo(true)}
-                  className="flex items-center gap-3 cursor-pointer text-left"
-                  title="Ver informações"
-                >
+                <div className="flex items-center gap-3 flex-1 min-w-0">
+                  <button
+                    type="button"
+                    onClick={() => setShowMobileChat(false)}
+                    className="md:hidden p-2 -ml-2 text-gray-500 hover:text-indigo-600 transition rounded-full"
+                  >
+                    <ArrowLeft className="w-6 h-6" />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setShowContactInfo(true)}
+                    className="flex items-center gap-3 cursor-pointer text-left min-w-0"
+                    title="Ver informações"
+                  >
                   {selectedRoom.is_public ? (
                     <div className="w-10 h-10 rounded-full bg-indigo-600 flex items-center justify-center text-white text-sm font-bold shadow-sm">
                       {getInitials(selectedRoom.name).slice(0, 1) || 'G'}
@@ -1121,7 +1134,8 @@ const ChatModule: React.FC = () => {
                     </p>
                   </div>
                 </button>
-              </header>
+              </div>
+            </header>
 
               <div
                 ref={scrollRef}
@@ -1215,8 +1229,8 @@ const ChatModule: React.FC = () => {
                 </div>
               </div>
 
-              <footer className="p-3 bg-white dark:bg-[#202c33] border-t border-[#e2e8f0] dark:border-[#2a3942] z-10">
-                <div className="relative flex items-center gap-2 max-w-4xl mx-auto">
+              <footer className="p-2 md:p-3 bg-white dark:bg-[#202c33] border-t border-[#e2e8f0] dark:border-[#2a3942] z-10">
+                <div className="relative flex items-center gap-1.5 md:gap-2 w-full min-w-0 md:max-w-4xl md:mx-auto">
                   {showEmojiPicker && (
                     <div className="absolute bottom-14 left-0 z-20 w-[280px] rounded-2xl border border-slate-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 shadow-xl p-3">
                       <p className="text-xs font-semibold text-slate-500 dark:text-slate-400 mb-2">Emojis</p>
@@ -1239,7 +1253,7 @@ const ChatModule: React.FC = () => {
                   <button
                     type="button"
                     onClick={() => setShowEmojiPicker((v) => !v)}
-                    className="p-2 text-gray-500 hover:text-indigo-600 dark:text-gray-400 dark:hover:text-indigo-400 transition rounded-full hover:bg-gray-100 dark:hover:bg-gray-700"
+                    className="p-2 md:p-2 text-gray-500 hover:text-indigo-600 dark:text-gray-400 dark:hover:text-indigo-400 transition rounded-full hover:bg-gray-100 dark:hover:bg-gray-700 shrink-0"
                     title="Emoji"
                   >
                     <Smile className="w-5 h-5" />
@@ -1248,7 +1262,7 @@ const ChatModule: React.FC = () => {
                     type="button"
                     onClick={handleAttachClick}
                     disabled={!selectedRoomId || uploadingAttachment}
-                    className="p-2 text-gray-500 hover:text-indigo-600 disabled:text-gray-300 disabled:hover:text-gray-300 dark:text-gray-400 dark:hover:text-indigo-400 transition rounded-full hover:bg-gray-100 dark:hover:bg-gray-700"
+                    className="p-2 md:p-2 text-gray-500 hover:text-indigo-600 disabled:text-gray-300 disabled:hover:text-gray-300 dark:text-gray-400 dark:hover:text-indigo-400 transition rounded-full hover:bg-gray-100 dark:hover:bg-gray-700 shrink-0"
                     title="Anexar"
                   >
                     <Paperclip className="w-5 h-5" />
@@ -1263,7 +1277,7 @@ const ChatModule: React.FC = () => {
                       handleUploadAttachment(file);
                     }}
                   />
-                  <div className="flex-1 relative">
+                  <div className="flex-1 relative min-w-0">
                     <input
                       ref={messageInputRef}
                       type="text"
@@ -1274,7 +1288,7 @@ const ChatModule: React.FC = () => {
                       }}
                       placeholder={selectedRoomId ? 'Digite uma mensagem...' : 'Selecione uma conversa...'}
                       disabled={!selectedRoomId || isRecording}
-                      className="w-full py-3 px-4 bg-gray-100 dark:bg-[#2a3942] border-none rounded-2xl text-sm focus:ring-1 focus:ring-indigo-600 outline-none transition placeholder-gray-500 dark:placeholder-gray-400 text-gray-900 dark:text-gray-100 shadow-inner"
+                      className="w-full py-2.5 md:py-3 px-3 md:px-4 bg-gray-100 dark:bg-[#2a3942] border-none rounded-xl md:rounded-2xl text-sm focus:ring-1 focus:ring-indigo-600 outline-none transition placeholder-gray-500 dark:placeholder-gray-400 text-gray-900 dark:text-gray-100 shadow-inner"
                       onKeyDown={(e) => {
                         if (e.key === 'Enter' && !e.shiftKey) {
                           e.preventDefault();
@@ -1287,7 +1301,7 @@ const ChatModule: React.FC = () => {
                     <button
                       type="button"
                       onClick={handleToggleRecording}
-                      className="p-3 bg-red-500 hover:bg-red-600 text-white rounded-full shadow-md transition transform active:scale-95 flex items-center justify-center animate-pulse"
+                      className="p-2.5 md:p-3 bg-red-500 hover:bg-red-600 text-white rounded-full shadow-md transition transform active:scale-95 flex items-center justify-center animate-pulse shrink-0"
                       title="Parar gravação"
                     >
                       <Square className="w-5 h-5" />
@@ -1297,7 +1311,7 @@ const ChatModule: React.FC = () => {
                       type="button"
                       onClick={handleToggleRecording}
                       disabled={!selectedRoomId}
-                      className="p-3 bg-gray-500 hover:bg-gray-600 disabled:bg-gray-400 text-white rounded-full shadow-md transition transform active:scale-95 flex items-center justify-center"
+                      className="p-2.5 md:p-3 bg-gray-500 hover:bg-gray-600 disabled:bg-gray-400 text-white rounded-full shadow-md transition transform active:scale-95 flex items-center justify-center shrink-0"
                       title="Gravar áudio"
                     >
                       <Mic className="w-5 h-5" />
@@ -1312,7 +1326,7 @@ const ChatModule: React.FC = () => {
                     type="button"
                     onClick={handleSend}
                     disabled={!selectedRoomId || !messageText.trim() || isRecording}
-                    className="p-3 bg-indigo-600 hover:bg-indigo-700 disabled:bg-gray-400 text-white rounded-full shadow-md transition transform active:scale-95 flex items-center justify-center"
+                    className="p-2.5 md:p-3 bg-indigo-600 hover:bg-indigo-700 disabled:bg-gray-400 text-white rounded-full shadow-md transition transform active:scale-95 flex items-center justify-center shrink-0"
                     title="Enviar"
                   >
                     <Send className="w-5 h-5" />
@@ -1468,7 +1482,7 @@ const ChatModule: React.FC = () => {
             onClick={() => setShowContactInfo(false)}
             aria-label="Fechar"
           />
-          <aside className="absolute right-0 top-0 h-full w-[420px] max-w-[calc(100%-32px)] bg-white dark:bg-[#202c33] border-l border-[#e2e8f0] dark:border-[#2a3942] shadow-2xl">
+                <aside className="absolute right-0 top-0 h-full w-full md:w-[420px] bg-white dark:bg-[#202c33] border-l border-[#e2e8f0] dark:border-[#2a3942] shadow-2xl">
             <div className="p-5 border-b border-[#e2e8f0] dark:border-[#2a3942] flex items-center justify-between">
               <h3 className="text-base font-bold text-slate-900 dark:text-slate-100">Informações</h3>
               <button
