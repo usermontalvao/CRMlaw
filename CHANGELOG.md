@@ -1,5 +1,38 @@
 # Changelog
 
+## 1.9.454
+- **Feed (UI/UX)**: Composer reorganizado: dropdown de visibilidade (Público/Equipe/Privado) movido para a linha principal de ações e botão "Publicar" alinhado à direita.
+
+## 1.9.453
+- **Feed (Fix)**: Corrigido erro ao postar foto com `file_type` undefined (adicionado optional chaining).
+
+## 1.9.452
+- **Feed (UI/UX)**: Corrigido z-index do emoji picker e dropdown de visibilidade para aparecerem acima do menu de navegação.
+
+## 1.9.451
+- **Feed (UI/UX)**: Botão "Publicar" movido para a linha dos ícones de ações, otimizando espaço e deixando o layout mais compacto.
+
+## 1.9.450
+- **Feed (UI/UX)**: Botão "Agendar" movido para a linha dos ícones de ações, economizando espaço e deixando a barra mais compacta.
+
+## 1.9.449
+- **Feed (UI/UX)**: Botões de visibilidade (Público/Equipe/Privado) unificados em único botão com dropdown para seleção.
+
+## 1.9.448
+- **Feed (UI/UX)**: Barra do composer simplificada (ações/visibilidade/agendar) para um visual mais minimalista: botões compactos (ícone), cores neutras e menos ruído visual.
+
+## 1.9.447
+- **Feed (Performance)**: Carregamento verdadeiramente em segundo plano: `loadDashboardData` e `loadFeedPosts` agora usam `requestIdleCallback`/`setTimeout` para renderizar layout primeiro; enquetes e preferências também carregam em background.
+
+## 1.9.446
+- **Feed (UI)**: Removida mensagem/banner de "atualizando em segundo plano".
+
+## 1.9.445
+- **Feed (Performance)**: Carregamento não bloqueante (sem tela inteira de loading), banner discreto de atualização em background e carregamento de perfis sob demanda (menções/audiência) para reduzir tempo inicial.
+
+## 1.9.444
+- **Feed (UI/UX)**: Avatar/foto do usuário agora usa renderização via `<img>` (mesmo padrão do Nav) para carregamento mais rápido e consistente.
+
 ## 1.9.443
 - **Intimações (UI/UX)**: Pacote de melhorias: indicadores visuais de vinculação (Vinc/Sem Vínc), filtros por urgência e estado de vínculo, busca por nº de processo normalizado (ignora `.`/`-), ações em lote (vincular em lote, exportar selecionadas, marcar todas como lidas).
 

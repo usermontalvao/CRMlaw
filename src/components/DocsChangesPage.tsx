@@ -573,6 +573,193 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
 
 const releases: ReleaseNote[] = [
   {
+    version: '1.9.454',
+    date: '27/01/2026',
+    summary: 'Feed: layout do composer reorganizado.',
+    modules: [
+      {
+        moduleId: 'feed',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Visibilidade na linha principal e Publicar à direita',
+            description: 'Dropdown de visibilidade (Público/Equipe/Privado) movido para a linha principal de ações; botão "Publicar" alinhado à direita para melhor uso do espaço.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.453',
+    date: '27/01/2026',
+    summary: 'Feed: erro ao postar foto corrigido.',
+    modules: [
+      {
+        moduleId: 'feed',
+        changes: [
+          {
+            type: 'fix',
+            title: 'file_type undefined',
+            description: 'Corrigido erro "Cannot read properties of undefined (reading \'startsWith\')" ao postar fotos, adicionando optional chaining em file_type.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.452',
+    date: '27/01/2026',
+    summary: 'Feed: z-index corrigido.',
+    modules: [
+      {
+        moduleId: 'feed',
+        changes: [
+          {
+            type: 'fix',
+            title: 'Emoji picker acima do nav',
+            description: 'Ajustado z-index do emoji picker e dropdown de visibilidade de z-20 para z-50 para garantir que apareçam acima do menu de navegação.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.451',
+    date: '27/01/2026',
+    summary: 'Feed: botão Publicar otimizado.',
+    modules: [
+      {
+        moduleId: 'feed',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Botão Publicar movido',
+            description: 'Botão "Publicar" movido para a linha dos ícones de ações, otimizando espaço e deixando o layout do composer mais compacto e eficiente.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.450',
+    date: '27/01/2026',
+    summary: 'Feed: botão Agendar otimizado.',
+    modules: [
+      {
+        moduleId: 'feed',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Botão Agendar movido',
+            description: 'Botão "Agendar" movido da linha 2 para a linha dos ícones de ações, economizando espaço e deixando a barra do composer mais compacta.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.449',
+    date: '27/01/2026',
+    summary: 'Feed: dropdown de visibilidade.',
+    modules: [
+      {
+        moduleId: 'feed',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Botões de visibilidade unificados',
+            description: 'Três botões (Público/Equipe/Privado) substituídos por único botão com dropdown para seleção, economizando espaço e simplificando interface.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.448',
+    date: '27/01/2026',
+    summary: 'Feed: barra do composer minimalista.',
+    modules: [
+      {
+        moduleId: 'feed',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Barra do composer simplificada',
+            description: 'Barra de ações/visibilidade/agendar com botões compactos (ícone), cores neutras e menos ruído visual.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.447',
+    date: '27/01/2026',
+    summary: 'Feed: carregamento em segundo plano otimizado.',
+    modules: [
+      {
+        moduleId: 'feed',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Background loading com requestIdleCallback',
+            description: 'loadDashboardData e loadFeedPosts agora usam requestIdleCallback/setTimeout para renderizar layout primeiro; enquetes e preferências também carregam em background.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.446',
+    date: '27/01/2026',
+    summary: 'Feed: ajuste de UI.',
+    modules: [
+      {
+        moduleId: 'feed',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Remoção de banner de atualização',
+            description: 'Removida a mensagem de "atualizando em segundo plano" durante o carregamento.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.445',
+    date: '27/01/2026',
+    summary: 'Feed: melhorias de performance.',
+    modules: [
+      {
+        moduleId: 'feed',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Carregamento mais rápido do Feed',
+            description: 'Removido loader em tela cheia; atualização ocorre em background com banner discreto. Perfis (menções/audiência) passam a carregar sob demanda.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.444',
+    date: '27/01/2026',
+    summary: 'Feed: melhoria de carregamento de avatar.',
+    modules: [
+      {
+        moduleId: 'feed',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Avatar mais rápido no Feed',
+            description: 'O avatar/foto agora usa renderização via <img> (mesmo padrão do Nav), melhorando velocidade e consistência do carregamento.',
+          },
+        ],
+      },
+    ],
+  },
+  {
     version: '1.9.443',
     date: '27/01/2026',
     summary: 'Intimações: pacote de melhorias UI/UX.',

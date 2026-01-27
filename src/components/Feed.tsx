@@ -57,6 +57,7 @@ import {
   ScrollText,
   ChevronLeft,
   ChevronRight,
+  ChevronDown,
   UserPlus,
   Globe,
   Lock,
@@ -230,9 +231,12 @@ const Avatar: React.FC<{ src?: string | null; name: string; size?: 'xs' | 'sm' |
 
   if (src) {
     return (
-      <div
-        className={`${sizeClasses[size]} rounded-full bg-cover bg-center bg-no-repeat border-2 border-white shadow-sm shrink-0`}
-        style={{ backgroundImage: `url(${src})` }}
+      <img
+        src={src}
+        alt={name}
+        loading="eager"
+        decoding="async"
+        className={`${sizeClasses[size]} rounded-full object-cover border-2 border-slate-200 shrink-0`}
       />
     );
   }
@@ -535,7 +539,7 @@ const Feed: React.FC<FeedProps> = ({ onNavigateToModule, params }) => {
   const instantCache = useMemo(() => getInstantCache(), []);
   const hasInstantCache = !!instantCache;
   
-  const [loading, setLoading] = useState(!hasInstantCache); // Sem loading se tiver cache
+  const [loading, setLoading] = useState(false);
   const [clients, setClients] = useState<Client[]>(instantCache?.clients || []);
   const [processes, setProcesses] = useState<Process[]>(instantCache?.processes || []);
   const [deadlines, setDeadlines] = useState<Deadline[]>(instantCache?.deadlines || []);
@@ -688,6 +692,7 @@ const Feed: React.FC<FeedProps> = ({ onNavigateToModule, params }) => {
   const [showScheduler, setShowScheduler] = useState(false);
   const [scheduledDate, setScheduledDate] = useState('');
   const [scheduledTime, setScheduledTime] = useState('');
+  const [showVisibilityDropdown, setShowVisibilityDropdown] = useState(false);
 
   // Audiência (destinatários) para posts privados/equipe
   const [audienceUserIds, setAudienceUserIds] = useState<string[]>([]);
@@ -1017,14 +1022,16 @@ const Feed: React.FC<FeedProps> = ({ onNavigateToModule, params }) => {
           profileService.getProfile(user.id).then(setCurrentProfile).catch(() => {});
         }
 
-        // Carregar última enquete SEMPRE (independente do cache)
-        try {
-          const poll = await feedPollsService.getLatestPoll();
-          setLatestPoll(poll);
-        } catch (error) {
-          console.error('❌ Erro ao carregar última enquete:', error);
-          setLatestPoll(null);
-        }
+        // Carregar última enquete em background (não bloqueia)
+        void (async () => {
+          try {
+            const poll = await feedPollsService.getLatestPoll();
+            setLatestPoll(poll);
+          } catch (error) {
+            console.error('❌ Erro ao carregar última enquete:', error);
+            setLatestPoll(null);
+          }
+        })();
 
         // Se já carregou do cache instantâneo e não é forceRefresh, 
         // verifica se precisa atualizar em background
@@ -1154,7 +1161,15 @@ const Feed: React.FC<FeedProps> = ({ onNavigateToModule, params }) => {
   );
 
   useEffect(() => {
-    loadDashboardData();
+    // Defer data loading to background so layout renders first
+    const startBackgroundLoad = () => {
+      if (typeof requestIdleCallback !== 'undefined') {
+        requestIdleCallback(() => loadDashboardData(), { timeout: 200 });
+      } else {
+        setTimeout(() => loadDashboardData(), 0);
+      }
+    };
+    startBackgroundLoad();
   }, [loadDashboardData]);
 
   useEffect(() => {
@@ -1175,8 +1190,17 @@ const Feed: React.FC<FeedProps> = ({ onNavigateToModule, params }) => {
     return () => unsubscribe();
   }, [loadDashboardData]);
 
-  // Carregar todos os perfis para menções
+  // Carregar perfis apenas quando necessário (menções / audiência)
   useEffect(() => {
+    const needsProfiles =
+      showMentionDropdown ||
+      showMentionDropdownInline ||
+      postVisibility !== 'public' ||
+      editingVisibility !== 'public';
+
+    if (!needsProfiles) return;
+    if (allProfiles.length > 0) return;
+
     const loadProfiles = async () => {
       try {
         const profiles = await profileService.listMembers();
@@ -1186,7 +1210,7 @@ const Feed: React.FC<FeedProps> = ({ onNavigateToModule, params }) => {
       }
     };
     loadProfiles();
-  }, []);
+  }, [showMentionDropdown, showMentionDropdownInline, postVisibility, editingVisibility, allProfiles.length]);
 
   // Carregar preferências do dashboard do banco de dados
   useEffect(() => {
@@ -2539,9 +2563,16 @@ const Feed: React.FC<FeedProps> = ({ onNavigateToModule, params }) => {
     return parts.length > 0 ? parts : content;
   }, [allProfiles, handleOpenFinancialModal, handleNavigate]);
 
-  // Carregar posts do feed ao montar
+  // Carregar posts do feed em background (não bloqueia render)
   useEffect(() => {
-    loadFeedPosts();
+    const startFeedLoad = () => {
+      if (typeof requestIdleCallback !== 'undefined') {
+        requestIdleCallback(() => loadFeedPosts(), { timeout: 200 });
+      } else {
+        setTimeout(() => loadFeedPosts(), 0);
+      }
+    };
+    startFeedLoad();
   }, [loadFeedPosts]);
 
   // Abrir modal do post quando params?.openPostModal for passado
@@ -2867,16 +2898,7 @@ const Feed: React.FC<FeedProps> = ({ onNavigateToModule, params }) => {
     return new Date(parsed.getFullYear(), parsed.getMonth(), parsed.getDate());
   };
 
-  if (loading) {
-    return (
-      <div className="min-h-screen bg-slate-100 flex items-center justify-center">
-        <div className="flex flex-col items-center gap-4">
-          <Loader2 className="w-10 h-10 text-blue-600 animate-spin" />
-          <p className="text-slate-600 font-medium">Carregando dashboard...</p>
-        </div>
-      </div>
-    );
-  }
+  // Não bloqueia a UI com loader full-screen: carrega em background
 
   // Função para renderizar widget por ID
   const renderWidget = (widgetId: string) => {
@@ -3769,7 +3791,7 @@ const Feed: React.FC<FeedProps> = ({ onNavigateToModule, params }) => {
                   />
 
                   {showEmojiPicker && (
-                    <div className="absolute bottom-14 left-0 z-20 w-[280px] rounded-2xl border border-slate-200 bg-white shadow-xl p-3">
+                    <div className="absolute bottom-14 left-0 z-50 w-[280px] rounded-2xl border border-slate-200 bg-white shadow-xl p-3">
                       <p className="text-xs font-semibold text-slate-500 mb-2">Emojis</p>
                       <div className="grid grid-cols-8 gap-1">
                         {['😀','😄','😁','😂','🤣','😊','😍','😘','😎','🤔','😅','😭','😡','👍','👎','🙏','👏','💪','🔥','🎉','✅','❌','⚠️','📌','📎','📞','💬','❤️','🧠','📄','🗂️','🕒'].map((e) => (
@@ -3930,7 +3952,7 @@ const Feed: React.FC<FeedProps> = ({ onNavigateToModule, params }) => {
                   <div className="flex flex-wrap gap-2">
                     {pendingAttachments.map((att) => (
                       <div key={att.attachment.filePath} className="relative group">
-                        {att.attachment.file_type.startsWith('image/') ? (
+                        {att.attachment.file_type?.startsWith('image/') ? (
                           <div className="relative">
                             <img 
                               src={att.localUrl} 
@@ -3968,8 +3990,7 @@ const Feed: React.FC<FeedProps> = ({ onNavigateToModule, params }) => {
               )}
             </div>
 
-            {/* Barra de Ações - Layout responsivo em 2 linhas */}
-            <div className="px-3 sm:px-4 py-2.5 sm:py-3 bg-gradient-to-r from-slate-50 to-slate-100/50 border-t border-slate-200/80 space-y-2">
+            <div className="px-3 sm:px-4 py-2 sm:py-2.5 bg-slate-50 border-t border-slate-200 space-y-1.5">
               {/* Linha 1: Ações principais */}
               <div className="flex items-center justify-between">
                 <div className="flex flex-col gap-2">
@@ -3980,10 +4001,11 @@ const Feed: React.FC<FeedProps> = ({ onNavigateToModule, params }) => {
                       insertTextAtCursor('@');
                       setShowMentionDropdown(true);
                     }}
-                    className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-slate-600 hover:bg-slate-200 transition-colors text-xs sm:text-sm font-medium"
+                    className="inline-flex items-center justify-center h-9 w-9 rounded text-slate-600 hover:bg-slate-100 transition-colors"
+                    title="Mencionar"
                   >
-                    <AtSign className="w-4 h-4 text-blue-500" />
-                    <span className="hidden sm:inline text-xs">Mencionar</span>
+                    <AtSign className="w-4 h-4" />
+                    <span className="sr-only">Mencionar</span>
                   </button>
                   <button
                     type="button"
@@ -3991,16 +4013,17 @@ const Feed: React.FC<FeedProps> = ({ onNavigateToModule, params }) => {
                       insertTextAtCursor('#');
                       setShowTagDropdown(true);
                     }}
-                    className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-slate-600 hover:bg-slate-200 transition-colors text-xs sm:text-sm font-medium"
+                    className="inline-flex items-center justify-center h-9 w-9 rounded text-slate-600 hover:bg-slate-100 transition-colors"
+                    title="Tag"
                   >
-                    <Hash className="w-4 h-4 text-emerald-500" />
-                    <span className="hidden sm:inline text-xs">Tag</span>
+                    <Hash className="w-4 h-4" />
+                    <span className="sr-only">Tag</span>
                   </button>
 
                   <button
                     type="button"
                     onClick={() => setIsMobileComposerActionsExpanded((v) => !v)}
-                    className="sm:hidden flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-slate-600 hover:bg-slate-200 transition-colors text-xs font-medium"
+                    className="sm:hidden inline-flex items-center justify-center h-9 w-9 rounded text-slate-600 hover:bg-slate-100 transition-colors"
                     aria-label={isMobileComposerActionsExpanded ? 'Recolher ações' : 'Expandir ações'}
                     title={isMobileComposerActionsExpanded ? 'Recolher' : 'Expandir'}
                   >
@@ -4016,12 +4039,10 @@ const Feed: React.FC<FeedProps> = ({ onNavigateToModule, params }) => {
                     onClick={() =>
                       setPostVisibility((prev) => (prev === 'public' ? 'team' : prev === 'team' ? 'private' : 'public'))
                     }
-                    className={`sm:hidden flex items-center gap-1 px-2.5 py-1.5 rounded-lg transition-colors text-xs font-medium whitespace-nowrap border ${
-                      postVisibility === 'public'
-                        ? 'bg-emerald-100 text-emerald-700 border-emerald-200'
-                        : postVisibility === 'team'
-                          ? 'bg-blue-100 text-blue-700 border-blue-200'
-                          : 'bg-amber-100 text-amber-700 border-amber-200'
+                    className={`sm:hidden inline-flex items-center justify-center h-9 w-9 rounded border transition-colors ${
+                      postVisibility === 'public' || postVisibility === 'team' || postVisibility === 'private'
+                        ? 'bg-slate-200 text-slate-800 border-slate-200'
+                        : 'bg-white text-slate-600 border-slate-200'
                     }`}
                     title={`Visibilidade: ${postVisibility === 'public' ? 'Público' : postVisibility === 'team' ? 'Equipe' : 'Privado'}`}
                   >
@@ -4032,16 +4053,16 @@ const Feed: React.FC<FeedProps> = ({ onNavigateToModule, params }) => {
                     ) : (
                       <Lock className="w-3.5 h-3.5" />
                     )}
-                    <span>{postVisibility === 'public' ? 'Público' : postVisibility === 'team' ? 'Equipe' : 'Privado'}</span>
+                    <span className="sr-only">{postVisibility === 'public' ? 'Público' : postVisibility === 'team' ? 'Equipe' : 'Privado'}</span>
                   </button>
 
                   <button
                     type="button"
                     onClick={() => setShowScheduler((v) => !v)}
-                    className={`sm:hidden flex items-center justify-center p-2 rounded-lg transition-colors text-xs font-medium border flex-none ${
+                    className={`sm:hidden inline-flex items-center justify-center h-9 w-9 rounded border transition-colors ${
                       showScheduler
-                        ? 'bg-orange-100 text-orange-700 border-orange-200'
-                        : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'
+                        ? 'bg-slate-200 text-slate-800 border-slate-200'
+                        : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-100'
                     }`}
                     aria-label="Agendar publicação"
                     title="Agendar publicação"
@@ -4054,17 +4075,20 @@ const Feed: React.FC<FeedProps> = ({ onNavigateToModule, params }) => {
                     type="button"
                     onClick={handleAttachClick}
                     disabled={uploadingAttachment}
-                    className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-slate-600 hover:bg-slate-200 transition-colors text-xs sm:text-sm font-medium"
+                    className="inline-flex items-center justify-center h-9 w-9 rounded text-slate-600 hover:bg-slate-100 transition-colors disabled:opacity-50"
+                    title="Foto"
                   >
-                    <Image className="w-4 h-4 text-purple-500" />
-                    <span className="hidden sm:inline text-xs">Foto</span>
+                    <Image className="w-4 h-4" />
+                    <span className="sr-only">Foto</span>
                   </button>
                   <button
                     type="button"
                     onClick={() => setShowEmojiPicker((v) => !v)}
-                    className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-slate-600 hover:bg-slate-200 transition-colors text-xs sm:text-sm font-medium"
+                    className="inline-flex items-center justify-center h-9 w-9 rounded text-slate-600 hover:bg-slate-100 transition-colors"
+                    title="Emojis"
                   >
-                    <Smile className="w-4 h-4 text-amber-500" />
+                    <Smile className="w-4 h-4" />
+                    <span className="sr-only">Emojis</span>
                   </button>
                   <button
                     type="button"
@@ -4073,10 +4097,11 @@ const Feed: React.FC<FeedProps> = ({ onNavigateToModule, params }) => {
                       setShowEventCreator(false);
                       setShowArticleCreator(false);
                     }}
-                    className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg transition-colors text-xs sm:text-sm font-medium ${showPollCreator ? 'bg-indigo-100 text-indigo-700' : 'text-slate-600 hover:bg-slate-200'}`}
+                    className={`inline-flex items-center justify-center h-9 w-9 rounded transition-colors ${showPollCreator ? 'bg-slate-200 text-slate-800' : 'text-slate-600 hover:bg-slate-100'}`}
+                    title="Enquete"
                   >
-                    <BarChart2 className="w-4 h-4 text-indigo-500" />
-                    <span className="hidden sm:inline text-xs">Enquete</span>
+                    <BarChart2 className="w-4 h-4" />
+                    <span className="sr-only">Enquete</span>
                   </button>
                   <button
                     type="button"
@@ -4085,10 +4110,11 @@ const Feed: React.FC<FeedProps> = ({ onNavigateToModule, params }) => {
                       setShowPollCreator(false);
                       setShowArticleCreator(false);
                     }}
-                    className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg transition-colors text-xs sm:text-sm font-medium ${showEventCreator ? 'bg-green-100 text-green-700' : 'text-slate-600 hover:bg-slate-200'}`}
+                    className={`inline-flex items-center justify-center h-9 w-9 rounded transition-colors ${showEventCreator ? 'bg-slate-200 text-slate-800' : 'text-slate-600 hover:bg-slate-100'}`}
+                    title="Evento"
                   >
-                    <Calendar className="w-4 h-4 text-green-500" />
-                    <span className="hidden sm:inline text-xs">Evento</span>
+                    <Calendar className="w-4 h-4" />
+                    <span className="sr-only">Evento</span>
                   </button>
                   <button
                     type="button"
@@ -4097,11 +4123,95 @@ const Feed: React.FC<FeedProps> = ({ onNavigateToModule, params }) => {
                       setShowPollCreator(false);
                       setShowEventCreator(false);
                     }}
-                    className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg transition-colors text-xs sm:text-sm font-medium ${showArticleCreator ? 'bg-orange-100 text-orange-700' : 'text-slate-600 hover:bg-slate-200'}`}
+                    className={`inline-flex items-center justify-center h-9 w-9 rounded transition-colors ${showArticleCreator ? 'bg-slate-200 text-slate-800' : 'text-slate-600 hover:bg-slate-100'}`}
+                    title="Artigo"
                   >
-                    <FileText className="w-4 h-4 text-orange-500" />
-                    <span className="hidden sm:inline text-xs">Artigo</span>
+                    <FileText className="w-4 h-4" />
+                    <span className="sr-only">Artigo</span>
                   </button>
+                  <button
+                    type="button"
+                    onClick={() => setShowScheduler((v) => !v)}
+                    className={`inline-flex items-center justify-center h-9 w-9 rounded border transition-colors ${
+                      showScheduler 
+                        ? 'bg-slate-200 text-slate-800 border-slate-200' 
+                        : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-100'
+                    }`}
+                    title="Agendar"
+                  >
+                    <Clock className="w-4 h-4" />
+                    <span className="sr-only">Agendar</span>
+                  </button>
+                  <div className="relative">
+                    <button
+                      type="button"
+                      onClick={() => setShowVisibilityDropdown((v) => !v)}
+                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-slate-200 bg-white text-slate-600 hover:bg-slate-50 transition-colors text-xs font-medium whitespace-nowrap"
+                      title="Visibilidade"
+                    >
+                      {postVisibility === 'public' ? (
+                        <>
+                          <Globe className="w-3.5 h-3.5" />
+                          <span>Público</span>
+                        </>
+                      ) : postVisibility === 'team' ? (
+                        <>
+                          <Users className="w-3.5 h-3.5" />
+                          <span>Equipe</span>
+                        </>
+                      ) : (
+                        <>
+                          <Lock className="w-3.5 h-3.5" />
+                          <span>Privado</span>
+                        </>
+                      )}
+                      <ChevronDown className="w-3 h-3" />
+                    </button>
+
+                    {showVisibilityDropdown && (
+                      <div className="absolute bottom-full left-0 mb-2 bg-white rounded-lg border border-slate-200 shadow-lg p-1 z-50 min-w-[140px]">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setPostVisibility('public');
+                            setShowVisibilityDropdown(false);
+                          }}
+                          className={`w-full flex items-center gap-2 px-3 py-2 rounded-md text-xs font-medium transition-colors ${
+                            postVisibility === 'public' ? 'bg-slate-100 text-slate-900' : 'text-slate-600 hover:bg-slate-50'
+                          }`}
+                        >
+                          <Globe className="w-3.5 h-3.5" />
+                          <span>Público</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setPostVisibility('team');
+                            setShowVisibilityDropdown(false);
+                          }}
+                          className={`w-full flex items-center gap-2 px-3 py-2 rounded-md text-xs font-medium transition-colors ${
+                            postVisibility === 'team' ? 'bg-slate-100 text-slate-900' : 'text-slate-600 hover:bg-slate-50'
+                          }`}
+                        >
+                          <Users className="w-3.5 h-3.5" />
+                          <span>Equipe</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setPostVisibility('private');
+                            setShowVisibilityDropdown(false);
+                          }}
+                          className={`w-full flex items-center gap-2 px-3 py-2 rounded-md text-xs font-medium transition-colors ${
+                            postVisibility === 'private' ? 'bg-slate-100 text-slate-900' : 'text-slate-600 hover:bg-slate-50'
+                          }`}
+                        >
+                          <Lock className="w-3.5 h-3.5" />
+                          <span>Privado</span>
+                        </button>
+                      </div>
+                    )}
+                  </div>
                   </div>
                   </div>
 
@@ -4111,20 +4221,20 @@ const Feed: React.FC<FeedProps> = ({ onNavigateToModule, params }) => {
                         type="button"
                         onClick={handleAttachClick}
                         disabled={uploadingAttachment}
-                        className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-slate-600 hover:bg-slate-200 transition-colors text-xs font-medium"
+                        className="inline-flex items-center justify-center h-9 w-9 rounded text-slate-600 hover:bg-slate-100 transition-colors disabled:opacity-50"
                         aria-label="Adicionar foto"
                         title="Foto"
                       >
-                        <Image className="w-4 h-4 text-purple-500" />
+                        <Image className="w-4 h-4" />
                       </button>
                       <button
                         type="button"
                         onClick={() => setShowEmojiPicker((v) => !v)}
-                        className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-slate-600 hover:bg-slate-200 transition-colors text-xs font-medium"
+                        className="inline-flex items-center justify-center h-9 w-9 rounded text-slate-600 hover:bg-slate-100 transition-colors"
                         aria-label="Emojis"
                         title="Emojis"
                       >
-                        <Smile className="w-4 h-4 text-amber-500" />
+                        <Smile className="w-4 h-4" />
                       </button>
                       <button
                         type="button"
@@ -4133,17 +4243,16 @@ const Feed: React.FC<FeedProps> = ({ onNavigateToModule, params }) => {
                           setShowEventCreator(false);
                           setShowArticleCreator(false);
                         }}
-                        className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg transition-colors text-xs font-medium ${showPollCreator ? 'bg-indigo-100 text-indigo-700' : 'text-slate-600 hover:bg-slate-200'}`}
+                        className={`inline-flex items-center justify-center h-9 w-9 rounded transition-colors ${showPollCreator ? 'bg-slate-200 text-slate-800' : 'text-slate-600 hover:bg-slate-100'}`}
                         aria-label="Enquete"
                         title="Enquete"
                       >
-                        <BarChart2 className="w-4 h-4 text-indigo-500" />
+                        <BarChart2 className="w-4 h-4" />
                       </button>
                     </div>
                   )}
                 </div>
 
-                {/* Botão Publicar */}
                 <button
                   type="button"
                   onClick={handlePublishPost}
@@ -4153,7 +4262,7 @@ const Feed: React.FC<FeedProps> = ({ onNavigateToModule, params }) => {
                     (showEventCreator && eventTitle.trim() && eventDate.trim()) ||
                     (showArticleCreator && articleTitle.trim() && articleContent.trim())
                   ) || postingInProgress}
-                  className="flex items-center gap-2 bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 disabled:from-slate-300 disabled:to-slate-400 disabled:cursor-not-allowed text-white px-3 sm:px-4 py-2 rounded-xl text-sm font-bold transition-all shadow-md shadow-blue-500/25 hover:shadow-lg hover:shadow-blue-500/30 hover:-translate-y-0.5"
+                  className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 disabled:bg-slate-300 disabled:cursor-not-allowed text-white px-3 sm:px-4 py-2 rounded text-sm font-medium transition-colors"
                 >
                   {postingInProgress ? (
                     <Loader2 className="w-4 h-4 animate-spin" />
@@ -4166,76 +4275,20 @@ const Feed: React.FC<FeedProps> = ({ onNavigateToModule, params }) => {
                     {postingInProgress ? 'Publicando...' : showScheduler && scheduledDate && scheduledTime ? 'Agendar' : 'Publicar'}
                   </span>
                 </button>
+
               </div>
 
-              {/* Linha 2: Visibilidade e Agendamento */}
-              <div className="hidden sm:flex items-center gap-2">
-                {/* Visibilidade */}
-                <div className="flex items-center gap-1 bg-white rounded-lg border border-slate-200 px-1 py-0.5 flex-none">
-                  <div className="flex items-center gap-1">
-                    <button
-                      type="button"
-                      onClick={() => setPostVisibility('public')}
-                      className={`flex items-center gap-1 px-2 py-1 rounded-md transition-colors text-xs font-medium whitespace-nowrap ${
-                        postVisibility === 'public' ? 'bg-emerald-100 text-emerald-700' : 'text-slate-500 hover:bg-slate-100'
-                      }`}
-                      title="Público - todos veem"
-                    >
-                      <Globe className="w-3.5 h-3.5" />
-                      <span>Público</span>
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setPostVisibility('team')}
-                      className={`flex items-center gap-1 px-2 py-1 rounded-md transition-colors text-xs font-medium whitespace-nowrap ${
-                        postVisibility === 'team' ? 'bg-blue-100 text-blue-700' : 'text-slate-500 hover:bg-slate-100'
-                      }`}
-                      title="Equipe - só colaboradores"
-                    >
-                      <Users className="w-3.5 h-3.5" />
-                      <span>Equipe</span>
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setPostVisibility('private')}
-                      className={`flex items-center gap-1 px-2 py-1 rounded-md transition-colors text-xs font-medium whitespace-nowrap ${
-                        postVisibility === 'private' ? 'bg-amber-100 text-amber-700' : 'text-slate-500 hover:bg-slate-100'
-                      }`}
-                      title="Privado - selecione quem pode ver"
-                    >
-                      <Lock className="w-3.5 h-3.5" />
-                      <span>Privado</span>
-                    </button>
-                  </div>
-                </div>
-
-                {/* Agendar */}
-                <button
-                  type="button"
-                  onClick={() => setShowScheduler((v) => !v)}
-                  className={`flex items-center gap-1.5 p-2 sm:px-2.5 sm:py-1.5 rounded-lg transition-colors text-xs font-medium border whitespace-nowrap flex-none ${
-                    showScheduler 
-                      ? 'bg-orange-100 text-orange-700 border-orange-200' 
-                      : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'
-                  }`}
-                  title="Agendar publicação"
-                >
-                  <Clock className="w-3.5 h-3.5" />
-                  <span className="hidden sm:inline">Agendar</span>
-                </button>
-
-                <input
-                  ref={fileInputRef}
-                  type="file"
-                  accept="image/*"
-                  className="hidden"
-                  onChange={(e) => {
-                    const file = e.target.files?.[0];
-                    if (!file) return;
-                    handleUploadAttachment(file);
-                  }}
-                />
-              </div>
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept="image/*"
+                className="hidden"
+                onChange={(e) => {
+                  const file = e.target.files?.[0];
+                  if (!file) return;
+                  handleUploadAttachment(file);
+                }}
+              />
 
               {/* Destinatários (Privado/Equipe) */}
               {postVisibility !== 'public' && (
