@@ -257,7 +257,7 @@ const BadgeIcon: React.FC<{ badge?: string | null; className?: string }> = ({ ba
   switch (badge) {
     case 'administrador':
       return (
-        <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-gradient-to-r from-amber-500 to-orange-500 text-white text-[10px] font-bold shadow-sm ${className}`}>
+        <span className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-gradient-to-r from-amber-500 via-orange-500 to-red-500 text-white text-[10px] font-bold shadow-md shadow-orange-500/30 ring-2 ring-orange-200 ${className}`}>
           <Shield className="w-3 h-3" />
           Admin
         </span>
@@ -2299,13 +2299,15 @@ const Feed: React.FC<FeedProps> = ({ onNavigateToModule, params }) => {
       }));
       try {
         const comments = await feedPostsService.getComments(postId);
+        
         const mappedComments = comments.map(c => ({
           user_id: c.author_id,
-          name: c.author?.name || 'Usuário',
+          name: c.author?.name || c.author?.id || 'Usuário',
           avatar_url: c.author?.avatar_url || undefined,
           content: c.content,
           created_at: c.created_at,
         }));
+        
         setExpandedComments(prev => ({
           ...prev,
           [postId]: { ...prev[postId], comments: mappedComments, loading: false, showMentionDropdown: false, mentionSearch: '' }
@@ -3765,10 +3767,10 @@ const Feed: React.FC<FeedProps> = ({ onNavigateToModule, params }) => {
           }}
           onDragCancel={() => setActiveWidgetId(null)}
         >
-          <div className="grid grid-cols-1 lg:grid-cols-[280px_minmax(0,1fr)_320px] gap-4 lg:items-start">
+          <div className="grid grid-cols-1 lg:grid-cols-[280px_minmax(0,1fr)_320px] gap-4">
             {/* Sidebar Esquerda - Widgets de Análise */}
             <aside className="hidden lg:block">
-              <div className="space-y-4">
+              <div className="sticky top-4 space-y-4">
                 <SidebarDroppable id="left-sidebar">
                   <SortableContext items={visibleLeftWidgets} strategy={rectSortingStrategy}>
                     {visibleLeftWidgets.map((id) => (
@@ -4763,69 +4765,57 @@ const Feed: React.FC<FeedProps> = ({ onNavigateToModule, params }) => {
               </div>
             ) : (
               displayedFeedPosts.map((post) => (
-                <div key={post.id} data-post-id={post.id} className="bg-white rounded-lg border border-slate-200/60 shadow-sm hover:shadow-md transition-shadow duration-200">
-                  {/* Header do Post */}
-                  <div className="p-4 pb-3 flex gap-3">
+                <div key={post.id} data-post-id={post.id} className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+                  {/* Header do Post - Estilo Instagram/Facebook */}
+                  <div className="px-4 py-3 flex items-center gap-3">
                     <button 
                       onClick={() => onNavigateToModule?.('perfil', { userId: post.author_id })}
-                      className="cursor-pointer hover:scale-105 transition-transform duration-200"
+                      className="flex-shrink-0"
                     >
-                      <Avatar src={post.author?.avatar_url} name={post.author?.name || 'Usuário'} size="md" />
+                      <div className="w-10 h-10 rounded-full ring-2 ring-slate-100 overflow-hidden">
+                        <Avatar src={post.author?.avatar_url} name={post.author?.name || 'Usuário'} size="md" />
+                      </div>
                     </button>
-                    <div className="flex flex-col flex-1 min-w-0">
+                    <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2 flex-wrap">
                         <button 
                           onClick={() => onNavigateToModule?.('perfil', { userId: post.author_id })}
-                          className="text-slate-900 font-semibold text-[15px] hover:text-blue-600 transition-colors cursor-pointer truncate max-w-[180px] sm:max-w-none"
+                          className="text-slate-900 font-semibold text-sm hover:underline truncate"
                         >
                           {post.author?.name || 'Usuário'}
                         </button>
+                        <span className="text-slate-500 text-xs font-medium">
+                          {post.author?.role || 'Membro'}
+                        </span>
                         <BadgeIcon badge={post.author?.badge} />
-                        {/* Badge de visibilidade */}
                         {post.visibility && post.visibility !== 'public' && (
-                          <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-lg text-[10px] font-semibold ${
-                            post.visibility === 'private' ? 'bg-amber-50 text-amber-600 border border-amber-200' : 'bg-blue-50 text-blue-600 border border-blue-200'
+                          <span className={`inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[10px] font-medium ${
+                            post.visibility === 'private' ? 'bg-amber-100 text-amber-700' : 'bg-blue-100 text-blue-700'
                           }`}>
                             {post.visibility === 'private' ? <Lock className="w-2.5 h-2.5" /> : <Users className="w-2.5 h-2.5" />}
-                            {post.visibility === 'private' ? 'Privado' : 'Equipe'}
                           </span>
                         )}
                       </div>
-                      <div className="flex items-center gap-2 mt-0.5">
-                        <span className="text-slate-400 text-xs font-medium">{post.author?.role || 'Membro'}</span>
-                        <span className="text-slate-300">•</span>
+                      <div className="flex items-center gap-1.5 text-xs text-slate-500">
                         <button 
                           onClick={() => {
                             setSelectedPostId(post.id);
                             setShowPostModal(true);
                           }}
-                          className="text-slate-400 text-xs hover:text-blue-500 transition-colors"
+                          className="hover:underline"
                         >
                           {formatTimeAgo(post.created_at)}
                         </button>
-                        {post.tags.length > 0 && (
-                          <>
-                            <span className="text-slate-300">•</span>
-                            <div className="flex gap-1">
-                              {post.tags.slice(0, 2).map(tag => {
-                                const tagConfig = availableTags.find(t => t.id === tag);
-                                return tagConfig ? (
-                                  <span key={tag} className={`${tagConfig.color} text-[10px] font-bold px-2 py-0.5 rounded-lg`}>
-                                    #{tagConfig.label}
-                                  </span>
-                                ) : null;
-                              })}
-                            </div>
-                          </>
-                        )}
+                        <span>•</span>
+                        <Globe className="w-3 h-3" />
                       </div>
                     </div>
                     {/* Menu de ações do post (autor ou admin) */}
                     {(user?.id === post.author_id || isAdmin) && (
-                      <div className="ml-auto relative">
+                      <div className="relative">
                         <button 
                           onClick={() => setOpenPostMenu(openPostMenu === post.id ? null : post.id)}
-                          className="text-slate-400 hover:text-slate-600 p-1 rounded-full hover:bg-slate-100"
+                          className="w-8 h-8 flex items-center justify-center rounded-full hover:bg-slate-100 text-slate-500"
                         >
                           <MoreHorizontal className="w-5 h-5" />
                         </button>
@@ -5246,22 +5236,35 @@ const Feed: React.FC<FeedProps> = ({ onNavigateToModule, params }) => {
                           const article = parseInstitutionalArticleContent(post.content);
                           if (article) {
                             return (
-                              <div className="bg-gradient-to-br from-orange-50 to-white rounded-xl p-4 border border-orange-200/60">
-                                <div className="flex items-start justify-between gap-3 mb-2">
-                                  <div className="min-w-0">
-                                    <div className="flex items-center gap-2">
-                                      <Newspaper className="w-4 h-4 text-orange-600" />
-                                      <p className="text-slate-900 font-bold text-[15px] truncate">{article.title}</p>
-                                    </div>
+                              <div className="bg-white border border-slate-200 rounded-xl overflow-hidden shadow-sm">
+                                {/* Header */}
+                                <div className="px-5 py-4 border-b border-slate-100 bg-slate-50/50">
+                                  <div className="flex items-center gap-2 mb-1">
+                                    <Newspaper className="w-4 h-4 text-slate-500" />
+                                    <span className="text-xs font-semibold text-slate-500 uppercase tracking-wide">Artigo</span>
                                     {article.category && (
-                                      <span className="inline-flex mt-2 text-[10px] font-semibold px-2 py-0.5 rounded-full bg-orange-100 text-orange-700 border border-orange-200">
-                                        {article.category}
-                                      </span>
+                                      <span className="text-xs text-slate-400">•</span>
+                                    )}
+                                    {article.category && (
+                                      <span className="text-xs font-medium text-slate-600">{article.category}</span>
                                     )}
                                   </div>
+                                  <h3 className="text-slate-900 font-bold text-lg leading-tight">{article.title}</h3>
                                 </div>
-                                <div className="text-slate-800 text-[14px] leading-relaxed whitespace-pre-wrap break-words">
-                                  {article.body}
+                                
+                                {/* Body */}
+                                <div className="p-5">
+                                  <div className="text-slate-700 text-[15px] leading-relaxed whitespace-pre-wrap break-words">
+                                    {article.body}
+                                  </div>
+                                </div>
+                                
+                                {/* Footer */}
+                                <div className="px-5 py-3 border-t border-slate-100 flex items-center justify-between bg-slate-50/30">
+                                  <div className="flex items-center gap-1.5 text-xs text-slate-400">
+                                    <Clock className="w-3.5 h-3.5" />
+                                    <span>{formatTimeAgo(post.created_at)}</span>
+                                  </div>
                                 </div>
                               </div>
                             );
@@ -5666,71 +5669,201 @@ const Feed: React.FC<FeedProps> = ({ onNavigateToModule, params }) => {
                     )}
                   </div>
                   
-                  {/* Contadores - Estilo LinkedIn */}
-                  <div className="px-4 py-2 flex items-center justify-between text-xs text-slate-500 border-t border-slate-100">
-                    <div className="flex items-center gap-2">
-                      <div className="flex -space-x-1">
-                        {postReactions[post.id]?.type === 'love' ? (
-                          <div className="w-5 h-5 rounded-full bg-gradient-to-br from-red-500 to-pink-500 border-2 border-white flex items-center justify-center">
-                            <Heart className="w-2.5 h-2.5 text-white" />
-                          </div>
-                        ) : postReactions[post.id]?.type === 'haha' ? (
-                          <div className="w-5 h-5 rounded-full bg-gradient-to-br from-amber-500 to-orange-500 border-2 border-white flex items-center justify-center">
-                            <span className="text-white text-[10px] font-bold">😂</span>
-                          </div>
-                        ) : (
-                          <div className="w-5 h-5 rounded-full bg-gradient-to-br from-blue-500 to-blue-600 border-2 border-white flex items-center justify-center">
-                            <ThumbsUp className="w-2.5 h-2.5 text-white" />
-                          </div>
-                        )}
-                        {post.likes_count > 5 && (
-                          <div className="w-5 h-5 rounded-full bg-gradient-to-br from-red-500 to-pink-500 border-2 border-white flex items-center justify-center">
-                            <Heart className="w-2.5 h-2.5 text-white" />
-                          </div>
-                        )}
+                  {/* Contadores - Estilo Instagram */}
+                  {(post.likes_count > 0 || (post.comments_count || 0) > 0) && (
+                    <div className="px-4 py-2 flex items-center justify-between text-sm text-slate-600">
+                      {post.likes_count > 0 ? (
                         <div className="flex items-center gap-2">
-                          <span className="hover:underline cursor-pointer text-slate-600 font-medium">
-                            {post.likes_count > 0 ? `${post.likes_count}` : ''}
-                          </span>
+                          <div className="flex -space-x-1">
+                            <div className="w-5 h-5 rounded-full bg-blue-500 border-2 border-white flex items-center justify-center">
+                              <ThumbsUp className="w-2.5 h-2.5 text-white" />
+                            </div>
+                            {post.likes_count > 3 && (
+                              <div className="w-5 h-5 rounded-full bg-red-500 border-2 border-white flex items-center justify-center">
+                                <Heart className="w-2.5 h-2.5 text-white" />
+                              </div>
+                            )}
+                          </div>
+                          <span className="text-slate-600 text-sm">{post.likes_count}</span>
                         </div>
-                      </div>
+                      ) : <div />}
+                      {(post.comments_count || 0) > 0 && (
+                        <button 
+                          onClick={() => toggleInlineComments(post.id)}
+                          className="text-slate-500 text-sm hover:underline"
+                        >
+                          {post.comments_count} comentário{(post.comments_count || 0) !== 1 ? 's' : ''}
+                        </button>
+                      )}
                     </div>
-                  </div>
+                  )}
                   
-                  {/* Ações - Estilo LinkedIn/Facebook */}
-                  <div className="flex items-center justify-around py-2 border-t border-slate-100">
-                    <div className="relative group/reaction">
-                      <button
-                        onClick={() => handleReaction(post.id, 'like')}
-                        className={`flex items-center gap-2 px-4 py-2 rounded-md text-sm font-medium transition-colors ${
-                          postReactions[post.id]?.type === 'like'
-                            ? 'text-blue-600 hover:bg-blue-50'
-                            : 'text-slate-600 hover:bg-slate-50'
-                        }`}
-                      >
-                        <ThumbsUp className={`w-4 h-4 ${postReactions[post.id]?.type === 'like' ? 'fill-current' : ''}`} />
-                        <span>Curtir</span>
-                      </button>
-                      <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 bg-white rounded-lg shadow-lg border border-slate-200 p-1 opacity-0 invisible group-hover/reaction:opacity-100 group-hover/reaction:visible transition-all z-10">
-                        <div className="flex gap-1">
-                          {[
-                            { type: 'like', icon: ThumbsUp, label: 'Curtir' },
-                            { type: 'love', icon: Heart, label: 'Amei' },
-                            { type: 'haha', icon: null, label: 'Haha', emoji: '😂' },
-                          ].map(({ type, icon: Icon, label, emoji }) => (
-                            <button
-                              key={type}
-                              onClick={() => handleReaction(post.id, type as any)}
-                              className="p-2 hover:bg-slate-100 rounded transition-colors"
-                              title={label}
-                            >
-                              {emoji ? <span className="text-sm">{emoji}</span> : Icon ? <Icon className="w-4 h-4" /> : null}
-                            </button>
-                          ))}
+                  {/* Ações - Estilo Facebook/Instagram */}
+                  <div className="flex items-center border-t border-slate-100">
+                    <button
+                      onClick={() => handleReaction(post.id, 'like')}
+                      className={`flex-1 flex items-center justify-center gap-2 py-3 text-sm font-semibold transition-colors ${
+                        postReactions[post.id]?.type === 'like'
+                          ? 'text-blue-600'
+                          : 'text-slate-600 hover:bg-slate-50'
+                      }`}
+                    >
+                      <ThumbsUp className={`w-5 h-5 ${postReactions[post.id]?.type === 'like' ? 'fill-current' : ''}`} />
+                      <span>Curtir</span>
+                    </button>
+                    <button
+                      onClick={() => toggleInlineComments(post.id)}
+                      className={`flex-1 flex items-center justify-center gap-2 py-3 text-sm font-semibold transition-colors ${
+                        expandedComments[post.id]
+                          ? 'text-blue-600'
+                          : 'text-slate-600 hover:bg-slate-50'
+                      }`}
+                    >
+                      <MessageCircle className={`w-5 h-5 ${expandedComments[post.id] ? 'fill-current' : ''}`} />
+                      <span>Comentar</span>
+                    </button>
+                  </div>
+
+                  {/* Seção de comentários inline - igual ao PostModal */}
+                  {expandedComments[post.id] && !post.banned_at && (
+                    <div style={{ borderTop: '1px solid #e2e8f0', backgroundColor: '#f8fafc' }} className="relative">
+                      {/* Dropdown de menções - fora do container com overflow */}
+                      {expandedComments[post.id].showMentionDropdown && allProfiles.length > 0 && (
+                        <div className="absolute left-4 right-4 bottom-16 bg-white rounded-lg border border-slate-200 shadow-lg z-[100] max-h-48 overflow-y-auto">
+                          <div className="p-2 border-b border-slate-100">
+                            <span className="text-xs text-slate-500 font-medium flex items-center gap-1">
+                              <AtSign className="w-3 h-3" /> Mencionar usuário
+                            </span>
+                          </div>
+                          {allProfiles
+                            .filter(p => 
+                              expandedComments[post.id].mentionSearch
+                                ? p.name.toLowerCase().includes(expandedComments[post.id].mentionSearch.toLowerCase())
+                                : true
+                            )
+                            .slice(0, 8)
+                            .map((profile) => (
+                              <button
+                                key={profile.id}
+                                onClick={() => handleSelectCommentMention(post.id, profile)}
+                                className="w-full flex items-center gap-3 px-3 py-2 hover:bg-slate-50 transition-colors text-left"
+                              >
+                                <Avatar src={profile.avatar_url} name={profile.name} size="sm" />
+                                <div>
+                                  <p className="text-sm font-medium text-slate-900">{profile.name}</p>
+                                  <p className="text-xs text-slate-500">{profile.role}</p>
+                                </div>
+                              </button>
+                            ))}
+                        </div>
+                      )}
+                      
+                      {/* Lista de comentários */}
+                      <div className="p-4 space-y-3 max-h-[400px] overflow-y-auto">
+                        {expandedComments[post.id].loading ? (
+                          <div className="flex justify-center py-4">
+                            <Loader2 className="w-5 h-5 animate-spin" style={{ color: '#94a3b8' }} />
+                          </div>
+                        ) : expandedComments[post.id].comments.length === 0 ? (
+                          <p className="text-center text-sm py-4" style={{ color: '#94a3b8' }}>
+                            Seja o primeiro a comentar!
+                          </p>
+                        ) : (
+                          expandedComments[post.id].comments.map((c) => (
+                            <div key={`${c.user_id}-${c.created_at}`} className="flex gap-2">
+                              <button
+                                onClick={() => handleNavigate('perfil', { userId: c.user_id })}
+                                className="flex-shrink-0"
+                              >
+                                <Avatar src={c.avatar_url} name={c.name} size="sm" />
+                              </button>
+                              <div className="flex-1">
+                                <div className="rounded-2xl px-3 py-2 shadow-sm" style={{ backgroundColor: '#ffffff' }}>
+                                  <button
+                                    onClick={() => handleNavigate('perfil', { userId: c.user_id })}
+                                    className="text-sm font-semibold hover:underline"
+                                    style={{ color: '#0f172a' }}
+                                  >
+                                    {c.name}
+                                  </button>
+                                  <p className="text-sm" style={{ color: '#334155' }}>
+                                    {renderContentWithMentions(c.content)}
+                                  </p>
+                                </div>
+                                <div className="flex items-center gap-3 mt-1 ml-3">
+                                  <span className="text-xs" style={{ color: '#94a3b8' }}>
+                                    {formatTimeAgo(c.created_at)}
+                                  </span>
+                                  <button className="text-xs font-semibold" style={{ color: '#64748b' }}>
+                                    Curtir
+                                  </button>
+                                  <button 
+                                    onClick={() => {
+                                      setExpandedComments(prev => ({
+                                        ...prev,
+                                        [post.id]: {
+                                          ...prev[post.id],
+                                          newComment: `@${c.name} `
+                                        }
+                                      }));
+                                    }}
+                                    className="text-xs font-semibold"
+                                    style={{ color: '#64748b' }}
+                                  >
+                                    Responder
+                                  </button>
+                                </div>
+                              </div>
+                            </div>
+                          ))
+                        )}
+                      </div>
+
+                      {/* Input de comentário */}
+                      <div className="p-4 relative" style={{ borderTop: '1px solid #e2e8f0', backgroundColor: '#ffffff' }}>
+                        <div className="flex gap-2 items-center">
+                          <Avatar 
+                            src={currentProfile?.avatar_url} 
+                            name={currentProfile?.name || 'Você'} 
+                            size="sm" 
+                          />
+                          <div className="flex-1 relative">
+                            <div className="flex gap-2">
+                              <input
+                                type="text"
+                                value={expandedComments[post.id].newComment}
+                                onChange={(e) => {
+                                  handleCommentInputChange(post.id, e.target.value);
+                                }}
+                                onKeyDown={(e) => {
+                                  if (e.key === 'Enter' && !e.shiftKey) {
+                                    e.preventDefault();
+                                    handleCreateInlineComment(post.id);
+                                  }
+                                }}
+                                placeholder="Escreva um comentário... Use @ para mencionar"
+                                className="flex-1 rounded-full px-4 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 border border-transparent focus:border-blue-500"
+                                style={{ backgroundColor: '#f1f5f9', color: '#1e293b' }}
+                                disabled={expandedComments[post.id].submitting}
+                              />
+                              <button
+                                onClick={() => handleCreateInlineComment(post.id)}
+                                disabled={!expandedComments[post.id].newComment.trim() || expandedComments[post.id].submitting}
+                                className="p-2 rounded-full disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                                style={{ color: '#2563eb' }}
+                              >
+                                {expandedComments[post.id].submitting ? (
+                                  <Loader2 className="w-5 h-5 animate-spin" />
+                                ) : (
+                                  <Send className="w-5 h-5" />
+                                )}
+                              </button>
+                            </div>
+                          </div>
                         </div>
                       </div>
                     </div>
-                  </div>
+                  )}
                 </div>
             )))}
           </div>
@@ -5738,7 +5871,7 @@ const Feed: React.FC<FeedProps> = ({ onNavigateToModule, params }) => {
 
           {/* Sidebar Direita */}
           <aside className="hidden lg:block">
-            <div className="space-y-4">
+            <div className="sticky top-4 space-y-4">
               <SidebarDroppable id="right-sidebar">
                 <SortableContext items={visibleRightWidgets} strategy={rectSortingStrategy}>
                   {visibleRightWidgets.map((id) => (

@@ -22,7 +22,8 @@ import {
   ScrollText,
   Pencil,
   Gavel,
-  Target
+  Target,
+  AtSign
 } from 'lucide-react';
 import { feedPostsService, type FeedPost } from '../services/feedPosts.service';
 import { feedPollsService, type FeedPoll } from '../services/feedPolls.service';
@@ -109,6 +110,10 @@ export const PostModal: React.FC<PostModalProps> = ({
   const [liking, setLiking] = useState(false);
   const commentInputRef = useRef<HTMLInputElement>(null);
   const [poll, setPoll] = useState<FeedPoll | null>(null);
+  
+  // Estados para menções nos comentários
+  const [showMentionDropdown, setShowMentionDropdown] = useState(false);
+  const [mentionSearch, setMentionSearch] = useState('');
 
   const tagLabelMap = useMemo(() => {
     return {
@@ -285,6 +290,30 @@ export const PostModal: React.FC<PostModalProps> = ({
       setSubmittingComment(false);
     }
   }, [newComment, submittingComment, postId, currentProfile]);
+
+  // Handler para mudança no input de comentário (detectar @)
+  const handleCommentInputChange = useCallback((value: string) => {
+    const lastAtIndex = value.lastIndexOf('@');
+    const afterAt = lastAtIndex >= 0 ? value.slice(lastAtIndex + 1) : '';
+    
+    // Detectar se está digitando uma menção
+    const isMentioning = lastAtIndex >= 0 && (afterAt === '' || !afterAt.includes(' '));
+    
+    setNewComment(value);
+    setShowMentionDropdown(isMentioning);
+    setMentionSearch(afterAt);
+  }, []);
+
+  // Handler para selecionar perfil mencionado
+  const handleSelectMention = useCallback((profile: Profile) => {
+    const lastAtIndex = newComment.lastIndexOf('@');
+    const newText = newComment.slice(0, lastAtIndex) + `@${profile.name} `;
+    
+    setNewComment(newText);
+    setShowMentionDropdown(false);
+    setMentionSearch('');
+    commentInputRef.current?.focus();
+  }, [newComment]);
 
   // Renderizar conteúdo com menções clicáveis
   const renderContentWithMentions = useCallback((content: string) => {
@@ -830,7 +859,38 @@ export const PostModal: React.FC<PostModalProps> = ({
                 </div>
 
                 {/* Input de comentário */}
-                <div className="p-4" style={{ borderTop: '1px solid #e2e8f0', backgroundColor: '#ffffff' }}>
+                <div className="p-4 relative" style={{ borderTop: '1px solid #e2e8f0', backgroundColor: '#ffffff' }}>
+                  {/* Dropdown de menções */}
+                  {showMentionDropdown && allProfiles.length > 0 && (
+                    <div className="absolute left-4 right-4 bottom-full mb-2 bg-white rounded-lg border border-slate-200 shadow-lg z-[100] max-h-48 overflow-y-auto">
+                      <div className="p-2 border-b border-slate-100">
+                        <span className="text-xs text-slate-500 font-medium flex items-center gap-1">
+                          <AtSign className="w-3 h-3" /> Mencionar usuário
+                        </span>
+                      </div>
+                      {allProfiles
+                        .filter(p => 
+                          mentionSearch
+                            ? p.name.toLowerCase().includes(mentionSearch.toLowerCase())
+                            : true
+                        )
+                        .slice(0, 8)
+                        .map((profile) => (
+                          <button
+                            key={profile.id}
+                            onClick={() => handleSelectMention(profile)}
+                            className="w-full flex items-center gap-3 px-3 py-2 hover:bg-slate-50 transition-colors text-left"
+                          >
+                            <Avatar src={profile.avatar_url} name={profile.name} size="sm" />
+                            <div>
+                              <p className="text-sm font-medium text-slate-900">{profile.name}</p>
+                              <p className="text-xs text-slate-500">{profile.role}</p>
+                            </div>
+                          </button>
+                        ))}
+                    </div>
+                  )}
+                  
                   <div className="flex gap-2 items-center">
                     <Avatar 
                       src={currentProfile?.avatar_url} 
@@ -842,14 +902,14 @@ export const PostModal: React.FC<PostModalProps> = ({
                         ref={commentInputRef}
                         type="text"
                         value={newComment}
-                        onChange={(e) => setNewComment(e.target.value)}
+                        onChange={(e) => handleCommentInputChange(e.target.value)}
                         onKeyDown={(e) => {
                           if (e.key === 'Enter' && !e.shiftKey) {
                             e.preventDefault();
                             handleSubmitComment();
                           }
                         }}
-                        placeholder="Escreva um comentário..."
+                        placeholder="Escreva um comentário... Use @ para mencionar"
                         className="flex-1 rounded-full px-4 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 border border-transparent focus:border-blue-500"
                         style={{ backgroundColor: '#f1f5f9', color: '#1e293b' }}
                         disabled={submittingComment}

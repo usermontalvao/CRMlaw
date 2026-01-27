@@ -46,6 +46,7 @@ import {
    ============================================================================ */
 
 const VERSION_CODENAMES: Record<string, { name: string; emoji: string }> = {
+  '1.9.475': { name: 'Café Facebook Sticky', emoji: '📌' },
   '1.9.425': { name: 'Café Intimações DJEN', emoji: '⚖️' },
   '1.9.424': { name: 'Café Feed UTF-8', emoji: '🔤' },
   '1.9.417': { name: 'Café Enquetes Visíveis', emoji: '📊' },
@@ -572,6 +573,210 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
    ============================================================================ */
 
 const releases: ReleaseNote[] = [
+  {
+    version: '1.9.475',
+    date: '27/01/2026',
+    summary: 'Feed: Comportamento sticky corrigido estilo Facebook.',
+    modules: [
+      {
+        moduleId: 'feed',
+        changes: [
+          {
+            type: 'fix',
+            title: 'Sidebars com rolagem estilo Facebook',
+            description: 'Corrigido o comportamento "sticky" das sidebars laterais para seguir o padrão do Facebook. Agora as sidebars rolam junto com o feed até o final do seu conteúdo e permanecem fixas, evitando espaços vazios indesejados.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.474',
+    date: '27/01/2026',
+    summary: 'Feed: Ajustado comportamento das sidebars laterais.',
+    modules: [
+      {
+        moduleId: 'feed',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Sidebars estilo Facebook',
+            description: 'Ajustado comportamento das sidebars laterais para seguir o padrão do Facebook - rolam até o fim do conteúdo e permanecem fixas, sem criar espaços vazios.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.473',
+    date: '27/01/2026',
+    summary: 'Feed: Layout das sidebars corrigido.',
+    modules: [
+      {
+        moduleId: 'feed',
+        changes: [
+          {
+            type: 'fix',
+            title: 'Sidebars com items-start',
+            description: 'Corrigido layout das sidebars com items-start no grid container - sidebars ficam alinhadas ao topo e param quando o conteúdo acaba.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.472',
+    date: '27/01/2026',
+    summary: 'Feed: Layout das sidebars corrigido.',
+    modules: [
+      {
+        moduleId: 'feed',
+        changes: [
+          {
+            type: 'fix',
+            title: 'Sidebars com items-start',
+            description: 'Corrigido layout das sidebars com items-start no grid container - sidebars ficam alinhadas ao topo e param quando o conteúdo acaba.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.471',
+    date: '27/01/2026',
+    summary: 'Feed: Removido sticky das sidebars.',
+    modules: [
+      {
+        moduleId: 'feed',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Sidebars sem sticky',
+            description: 'Removido sticky das sidebars - agora usam self-start para ficarem alinhadas ao topo e pararem quando o conteúdo acabar. Feed central é o único eixo de rolagem.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.470',
+    date: '27/01/2026',
+    summary: 'Feed: Widgets laterais fixos no topo.',
+    modules: [
+      {
+        moduleId: 'feed',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Widgets fixos com altura máxima',
+            description: 'Widgets laterais agora ficam fixos no topo com altura máxima (100vh - 2rem) e scroll interno próprio - evita áreas vazias e mantém foco no feed central.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.469',
+    date: '27/01/2026',
+    summary: 'Feed: Comportamento de rolagem corrigido.',
+    modules: [
+      {
+        moduleId: 'feed',
+        changes: [
+          {
+            type: 'fix',
+            title: 'Widgets laterais param no fim do conteúdo',
+            description: 'Implementado comportamento correto de rolagem dos widgets laterais - rolam até o fim do conteúdo e depois ficam fixos, evitando áreas vazias e poluição visual.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.468',
+    date: '27/01/2026',
+    summary: 'Feed: Header do post melhorado.',
+    modules: [
+      {
+        moduleId: 'feed',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Cargo e badge no header',
+            description: 'Adicionado cargo/função do usuário e badge na mesma linha do nome - layout mais informativo estilo Instagram/Facebook.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.467',
+    date: '27/01/2026',
+    summary: 'Feed: Badge de administrador destacado.',
+    modules: [
+      {
+        moduleId: 'feed',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Badge do admin mais vibrante',
+            description: 'Badge de administrador agora mais destacado com gradiente vibrante (amber → orange → red), sombra forte e ring ao redor para diferenciar dos outros badges.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.466',
+    date: '27/01/2026',
+    summary: 'Feed: Redesign completo dos posts.',
+    modules: [
+      {
+        moduleId: 'feed',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Posts estilo Instagram/Facebook',
+            description: 'Redesign completo dos posts estilo Instagram/Facebook - header limpo com avatar, nome e tempo; contadores de likes/comentários separados; botões de ação centralizados e maiores.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.465',
+    date: '27/01/2026',
+    summary: 'Feed: Card de artigo redesenhado.',
+    modules: [
+      {
+        moduleId: 'feed',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Artigo minimalista',
+            description: 'Redesenhado card de artigo com visual minimalista e elegante - removido gradiente, design limpo estilo Medium/LinkedIn.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.464',
+    date: '27/01/2026',
+    summary: 'Feed: Layout do post de artigo redesenhado.',
+    modules: [
+      {
+        moduleId: 'feed',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Artigo institucional profissional',
+            description: 'Layout do post de artigo institucional redesenhado com visual mais profissional - header com gradiente laranja, ícone destacado, corpo com melhor espaçamento e footer com informações.',
+          },
+        ],
+      },
+    ],
+  },
   {
     version: '1.9.461',
     date: '27/01/2026',

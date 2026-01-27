@@ -1,5 +1,48 @@
 # Changelog
 
+## 1.9.475
+- **Feed (Layout)**: Corrigido o comportamento "sticky" das sidebars laterais para seguir o padrão do Facebook. Agora as sidebars rolam junto com o feed até o final do seu conteúdo e permanecem fixas, evitando espaços vazios indesejados.
+
+## 1.9.474
+- **Feed (Layout)**: Ajustado comportamento das sidebars laterais para seguir o padrão do Facebook - rolam até o fim do conteúdo e permanecem fixas, sem criar espaços vazios.
+
+## 1.9.473
+- **Feed (Layout)**: Corrigido layout das sidebars com `items-start` no grid container - sidebars ficam alinhadas ao topo e param quando o conteúdo acaba.
+
+## 1.9.472
+- **Feed (Layout)**: Corrigido layout das sidebars com `items-start` no grid container - sidebars ficam alinhadas ao topo e param quando o conteúdo acaba.
+
+## 1.9.471
+- **Feed (Layout)**: Removido sticky das sidebars - agora usam `self-start` para ficarem alinhadas ao topo e pararem quando o conteúdo acabar. Feed central é o único eixo de rolagem.
+
+## 1.9.470
+- **Feed (Layout)**: Widgets laterais agora ficam fixos no topo com altura máxima (100vh - 2rem) e scroll interno próprio - evita áreas vazias e mantém foco no feed central.
+
+## 1.9.469
+- **Feed (Layout)**: Implementado comportamento correto de rolagem dos widgets laterais - rolam até o fim do conteúdo e depois ficam fixos, evitando áreas vazias e poluição visual.
+
+## 1.9.468
+- **Feed (Header)**: Adicionado cargo/função do usuário e badge na mesma linha do nome - layout mais informativo estilo Instagram/Facebook.
+
+## 1.9.467
+- **Feed (Badges)**: Badge de administrador agora mais destacado com gradiente vibrante (amber → orange → red), sombra forte e ring ao redor para diferenciar dos outros badges.
+
+## 1.9.466
+- **Feed (Posts)**: Redesign completo dos posts estilo Instagram/Facebook - header limpo com avatar, nome e tempo; contadores de likes/comentários separados; botões de ação centralizados e maiores.
+
+## 1.9.465
+- **Feed (Artigo)**: Redesenhado card de artigo com visual minimalista e elegante - removido gradiente, design limpo estilo Medium/LinkedIn.
+
+## 1.9.464
+- **Feed (Artigo)**: Layout do post de artigo institucional redesenhado com visual mais profissional - header com gradiente laranja, ícone destacado, corpo com melhor espaçamento e footer com informações.
+
+## 1.9.463
+- **Feed (UI)**: Removido botão "Ver todos" da barra de ações - contador de comentários agora aparece no botão "Comentar".
+- **PostModal (Comentários)**: Adicionado suporte a menções (@) nos comentários do single post com dropdown de seleção de usuários.
+
+## 1.9.462
+- **Feed (Comentários)**: Corrigido dropdown de menções (@) nos comentários inline - agora funciona igual ao composer de posts.
+
 ## 1.9.461
 - **Feed (Single Post)**: Corrigido hover das menções (@Nome) no PostModal (agora ficam azuis/sublinhadas ao passar o mouse).
 
