@@ -1,16 +1,33 @@
 // Service Worker para Push Notifications
 
-const CACHE_NAME = 'crm-cache-v4'; // Incrementado para forçar atualização
+const CACHE_NAME = 'crm-cache-v5'; // Incrementado para forçar atualização
 
 // Install event
 self.addEventListener('install', (event) => {
-  console.log('Service Worker instalado - v3');
+  console.log('Service Worker instalado - v5');
+  
+  // Pré-cache dos arquivos essenciais
+  event.waitUntil(
+    caches.open(CACHE_NAME).then((cache) => {
+      console.log('Cache aberto, pré-carregando arquivos essenciais');
+      return cache.addAll([
+        '/',
+        '/index.html',
+        '/manifest.webmanifest',
+        '/favicon.ico'
+      ]).catch((error) => {
+        console.log('Falha no pré-cache:', error);
+        // Não falhar a instalação se o pré-cache falhar
+      });
+    })
+  );
+  
   self.skipWaiting();
 });
 
 // Activate event
 self.addEventListener('activate', (event) => {
-  console.log('Service Worker ativado - v3');
+  console.log('Service Worker ativado - v5');
   event.waitUntil(
     caches.keys().then((cacheNames) => {
       return Promise.all(
@@ -30,16 +47,51 @@ self.addEventListener('activate', (event) => {
 
 // Fetch event - estratégia de fallback para navegação SPA
 self.addEventListener('fetch', (event) => {
+  // Não interceptar requisições de API ou outros recursos
+  if (event.request.url.includes('/api/') || 
+      event.request.url.includes('/functions/v1/') ||
+      event.request.mode !== 'navigate') {
+    return; // Deixa o navegador lidar normalmente
+  }
+  
   // Apenas interceptar requisições de navegação (HTML)
   if (event.request.mode === 'navigate') {
     event.respondWith(
-      // Sempre redirecionar para / (raiz) e buscar index.html
-      fetch('/').catch(() => {
-        // Se falhar (offline ou erro), retornar index.html do cache ou network
-        return caches.match('/index.html').then((response) => {
-          return response || fetch('/index.html');
-        });
-      })
+      (async () => {
+        try {
+          // Tenta buscar a requisição original primeiro
+          const response = await fetch(event.request);
+          return response;
+        } catch (error) {
+          console.log('Fetch falhou, tentando fallback para index.html:', error);
+          
+          try {
+            // Fallback: tenta buscar index.html diretamente
+            const indexResponse = await fetch('/index.html');
+            return indexResponse;
+          } catch (indexError) {
+            console.log('Index.html falhou, tentando cache:', indexError);
+            
+            // Último recurso: tenta do cache
+            const cachedResponse = await caches.match('/index.html');
+            if (cachedResponse) {
+              console.log('Usando index.html do cache');
+              return cachedResponse;
+            }
+            
+            // Se nada funcionar, retorna uma resposta básica
+            console.log('Nenhuma opção funcionou, retornando resposta básica');
+            return new Response(
+              '<html><body><h1>Offline - App Indisponível</h1><p>Verifique sua conexão e recarregue a página.</p></body></html>',
+              {
+                status: 503,
+                statusText: 'Service Unavailable',
+                headers: { 'Content-Type': 'text/html' }
+              }
+            );
+          }
+        }
+      })()
     );
   }
 });

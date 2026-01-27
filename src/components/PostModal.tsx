@@ -13,9 +13,12 @@ import {
   Globe,
   Users,
   Lock,
-  Shield
+  Shield,
+  BarChart2,
+  CheckCircle
 } from 'lucide-react';
 import { feedPostsService, type FeedPost } from '../services/feedPosts.service';
+import { feedPollsService, type FeedPoll } from '../services/feedPolls.service';
 import { profileService, type Profile } from '../services/profile.service';
 import { useAuth } from '../contexts/AuthContext';
 
@@ -98,6 +101,7 @@ export const PostModal: React.FC<PostModalProps> = ({
   const [submittingComment, setSubmittingComment] = useState(false);
   const [liking, setLiking] = useState(false);
   const commentInputRef = useRef<HTMLInputElement>(null);
+  const [poll, setPoll] = useState<FeedPoll | null>(null);
 
   // Carregar perfis
   useEffect(() => {
@@ -142,15 +146,18 @@ export const PostModal: React.FC<PostModalProps> = ({
       setError(null);
       
       try {
-        const fetchedPost = await feedPostsService.getPostById(postId);
-        if (fetchedPost) {
-          setPost(fetchedPost);
+        const postData = await feedPostsService.getPostById(postId);
+        if (postData) {
+          setPost(postData);
+          // Carregar enquete se existir
+          const pollData = await feedPollsService.getPollByPostId(postId);
+          setPoll(pollData);
         } else {
           setError('Post não encontrado');
         }
       } catch (err) {
         console.error('Erro ao carregar post:', err);
-        setError('Erro ao carregar o post');
+        setError('Não foi possível carregar este post');
       } finally {
         setLoading(false);
       }
@@ -416,6 +423,78 @@ export const PostModal: React.FC<PostModalProps> = ({
                         ))}
                       </div>
                     )}
+
+                    {/* Enquete */}
+                    {poll && !post.banned_at && (() => {
+                      const totalVotes = poll.total_votes || 0;
+                      return (
+                        <div className="mt-3 bg-gradient-to-br from-indigo-50 to-purple-50 rounded-xl p-4 border border-indigo-100">
+                          <div className="flex items-center gap-2 mb-3">
+                            <BarChart2 className="w-5 h-5 text-indigo-600" />
+                            <span className="font-bold text-indigo-900">{poll.question}</span>
+                          </div>
+                          
+                          <div className="space-y-2">
+                            {poll.options.map((opt, idx) => {
+                              const percentage = totalVotes > 0 ? Math.round((opt.votes / totalVotes) * 100) : 0;
+                              const hasVoted = poll.user_votes?.includes(idx);
+                              const canVote = !poll.is_expired && (poll.participants.length === 0 || poll.participants.includes(user?.id || ''));
+                              const isMultiple = poll.allow_multiple;
+                              
+                              return (
+                                <button
+                                  key={idx}
+                                  disabled={!canVote || (hasVoted && !isMultiple)}
+                                  className={`w-full relative overflow-hidden rounded-lg border transition-all ${
+                                    hasVoted 
+                                      ? 'border-indigo-400 bg-indigo-50' 
+                                      : canVote 
+                                        ? 'border-slate-200 bg-white hover:border-indigo-300 hover:bg-indigo-50/50 cursor-pointer' 
+                                        : 'border-slate-200 bg-slate-50 cursor-not-allowed'
+                                  }`}
+                                >
+                                  {/* Barra de progresso */}
+                                  <div 
+                                    className={`absolute inset-y-0 left-0 transition-all ${hasVoted ? 'bg-indigo-200' : 'bg-slate-100'}`}
+                                    style={{ width: `${percentage}%` }}
+                                  />
+                                  
+                                  <div className="relative flex items-center justify-between px-3 py-2.5">
+                                    <div className="flex items-center gap-2">
+                                      {/* Checkbox para múltiplas, Radio para única */}
+                                      <span className={`w-5 h-5 ${isMultiple ? 'rounded-md' : 'rounded-full'} border-2 flex items-center justify-center ${
+                                        hasVoted ? 'border-indigo-500 bg-indigo-500' : 'border-slate-300'
+                                      }`}>
+                                        {hasVoted && <CheckCircle className="w-3 h-3 text-white" />}
+                                      </span>
+                                      <span className={`text-sm font-medium ${hasVoted ? 'text-indigo-900' : 'text-slate-700'}`}>
+                                        {opt.text}
+                                      </span>
+                                    </div>
+                                    <span className={`text-sm font-bold ${hasVoted ? 'text-indigo-600' : 'text-slate-500'}`}>
+                                      {percentage}%
+                                    </span>
+                                  </div>
+                                </button>
+                              );
+                            })}
+                          </div>
+                          
+                          <div className="flex items-center justify-between mt-3 text-xs text-slate-500">
+                            {totalVotes > 0 ? (
+                              <span>{totalVotes} voto{totalVotes !== 1 ? 's' : ''}</span>
+                            ) : (
+                              <span>{totalVotes} voto{totalVotes !== 1 ? 's' : ''}</span>
+                            )}
+                            {poll.expires_at && (
+                              <span className={poll.is_expired ? 'text-red-500' : ''}>
+                                {poll.is_expired ? 'Encerrada' : `Encerra em ${formatTimeAgo(poll.expires_at)}`}
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })()}
 
                     {/* Contadores */}
                     <div className="flex items-center justify-between mt-4 pt-3 border-t border-slate-100">

@@ -1,3 +1,3 @@
-import Feed from './feed';
+import Feed from './Feed';
 
 export default Feed;

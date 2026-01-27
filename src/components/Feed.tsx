@@ -62,6 +62,9 @@ import {
   Lock,
   Check,
   TrendingUp,
+  BarChart3,
+  Trophy,
+  Paperclip,
 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { useDeleteConfirm } from '../contexts/DeleteConfirmContext';
@@ -119,6 +122,15 @@ interface DashboardCache {
     requirementsAwaiting: Requirement[];
   };
 }
+
+type FeedAttachment = {
+  id?: string;
+  filePath?: string;
+  file_type: string;
+  file_url?: string;
+  file_name: string;
+  file_size?: number;
+};
 
 // Função para carregar cache instantaneamente (síncrono)
 const getInstantCache = (): DashboardCache['data'] | null => {
@@ -437,32 +449,25 @@ const FeedPost: React.FC<{
         <ThumbsUp className="w-5 h-5" />
         Curtir
       </button>
-      <button className="flex-1 flex items-center justify-center gap-2 py-2 hover:bg-slate-100 rounded-lg text-slate-600 text-sm font-medium transition-colors">
-        <MessageCircle className="w-5 h-5" />
-        Comentar
-      </button>
-      <button className="flex-1 flex items-center justify-center gap-2 py-2 hover:bg-slate-100 rounded-lg text-slate-600 text-sm font-medium transition-colors">
-        <Share2 className="w-5 h-5" />
-        Compartilhar
-      </button>
     </div>
   </div>
 );
 
 // Tipos para Widgets
+type FeedWidgetId = 
+  | 'destaque'
+  | 'topicos'
+  | 'metricas'
+  | 'atividade'
+  | 'conexoes'
+  | 'tendencias'
+  | 'navegacao'
+  | 'financeiro'
+  | 'prazos'
+  | 'ultima_enquete';
+
 interface WidgetConfig {
-  id: string;
-  type:
-    | 'agenda'
-    | 'tarefas'
-    | 'djen'
-    | 'confeccao'
-    | 'financeiro'
-    | 'prazos'
-    | 'navegacao'
-    | 'sugestoes'
-    | 'tendencias'
-    | 'eventos';
+  id: FeedWidgetId;
   title: string;
   visible: boolean;
 }
@@ -540,6 +545,7 @@ const Feed: React.FC<FeedProps> = ({ onNavigateToModule, params }) => {
   const [financialStats, setFinancialStats] = useState<FinancialStats | null>(instantCache?.financialStats || null);
   const [requirementsAwaiting, setRequirementsAwaiting] = useState<Requirement[]>(instantCache?.requirementsAwaiting || []);
   const [currentProfile, setCurrentProfile] = useState<Profile | null>(null);
+  const [latestPoll, setLatestPoll] = useState<FeedPoll | null>(null);
   const [postText, setPostText] = useState('');
   const [allProfiles, setAllProfiles] = useState<Profile[]>([]);
   const [showMentionDropdown, setShowMentionDropdown] = useState(false);
@@ -551,6 +557,19 @@ const Feed: React.FC<FeedProps> = ({ onNavigateToModule, params }) => {
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
   const [uploadingAttachment, setUploadingAttachment] = useState(false);
   const [pendingAttachments, setPendingAttachments] = useState<Array<{ localUrl: string; attachment: any }>>([]);
+
+  const removeAttachment = useCallback((attachmentId?: string) => {
+    if (!attachmentId) return;
+    setPendingAttachments((prev) => {
+      const toRemove = prev.find((p) => p.attachment?.id === attachmentId);
+      if (toRemove?.localUrl) {
+        try {
+          URL.revokeObjectURL(toRemove.localUrl);
+        } catch {}
+      }
+      return prev.filter((p) => p.attachment?.id !== attachmentId);
+    });
+  }, []);
 
   const resolvedCurrentAvatarUrl = useMemo(() => {
     const meta: any = (user as any)?.user_metadata || {};
@@ -908,12 +927,11 @@ const Feed: React.FC<FeedProps> = ({ onNavigateToModule, params }) => {
     'metricas',
     'topicos',
     'destaque',
+    'conexoes',
   ]);
   const [rightWidgets, setRightWidgets] = useState<string[]>([
-    'sugestoes',
-    'eventos',
+    'ultima_enquete',
     'atividade',
-    'conexoes',
   ]);
   const [preferencesLoaded, setPreferencesLoaded] = useState(false);
   const [isXlScreen, setIsXlScreen] = useState<boolean>(() => {
@@ -999,6 +1017,15 @@ const Feed: React.FC<FeedProps> = ({ onNavigateToModule, params }) => {
           profileService.getProfile(user.id).then(setCurrentProfile).catch(() => {});
         }
 
+        // Carregar última enquete SEMPRE (independente do cache)
+        try {
+          const poll = await feedPollsService.getLatestPoll();
+          setLatestPoll(poll);
+        } catch (error) {
+          console.error('❌ Erro ao carregar última enquete:', error);
+          setLatestPoll(null);
+        }
+
         // Se já carregou do cache instantâneo e não é forceRefresh, 
         // verifica se precisa atualizar em background
         if (!forceRefresh && hasInstantCache) {
@@ -1018,7 +1045,6 @@ const Feed: React.FC<FeedProps> = ({ onNavigateToModule, params }) => {
 
         // Atualizar dados em background (sem mostrar loading se já tem cache)
         console.log('📊 Dashboard: atualizando em background');
-
         const [clientsData, processesData, deadlinesData, tasksData, calendarEventsData, djenIntimacoesData, financialStatsData, requirementsAwaitingData] =
           await Promise.all([
             safeFetch(
@@ -1176,15 +1202,15 @@ const Feed: React.FC<FeedProps> = ({ onNavigateToModule, params }) => {
             .replace(/[\u0300-\u036f]/g, '') === 'administrador';
 
           const loadedLeft = Array.isArray(preferences.left_widgets)
-            ? preferences.left_widgets.filter(w => ['sugestoes', 'eventos', 'atividade', 'conexoes', 'metricas', 'topicos', 'destaque'].includes(w))
-            : ['metricas', 'topicos', 'destaque'];
+            ? preferences.left_widgets.filter(w => ['ultima_enquete', 'atividade', 'conexoes', 'metricas', 'topicos', 'destaque'].includes(w))
+            : ['metricas', 'topicos', 'destaque', 'conexoes'];
           const loadedRight = Array.isArray(preferences.right_widgets)
-            ? preferences.right_widgets.filter(w => ['sugestoes', 'eventos', 'atividade', 'conexoes', 'metricas', 'topicos', 'destaque'].includes(w))
-            : ['sugestoes', 'eventos', 'atividade', 'conexoes'];
+            ? preferences.right_widgets.filter(w => ['ultima_enquete', 'atividade', 'conexoes', 'metricas', 'topicos', 'destaque'].includes(w))
+            : ['ultima_enquete', 'atividade'];
 
           // Garantir que widgets essenciais estejam presentes
-          const leftEssential = ['metricas', 'topicos', 'destaque'];
-          const rightEssential = ['sugestoes', 'eventos', 'atividade', 'conexoes'];
+          const leftEssential = ['metricas', 'topicos', 'destaque', 'conexoes'];
+          const rightEssential = ['ultima_enquete', 'atividade'];
           
           leftEssential.forEach(widget => {
             if (!loadedLeft.includes(widget)) {
@@ -1207,15 +1233,15 @@ const Feed: React.FC<FeedProps> = ({ onNavigateToModule, params }) => {
           setRightWidgets(loadedRight);
         } else {
           // Fallback se não houver preferências salvas - sem duplicação
-          setLeftWidgets(['metricas', 'topicos', 'destaque']);
-          setRightWidgets(['sugestoes', 'eventos', 'atividade', 'conexoes']);
+          setLeftWidgets(['metricas', 'topicos', 'destaque', 'conexoes']);
+          setRightWidgets(['ultima_enquete', 'atividade']);
         }
         setPreferencesLoaded(true);
       } catch (error) {
         console.warn('Erro ao carregar preferências do dashboard:', error);
         // Fallback em caso de erro - sem duplicação
-        setLeftWidgets(['metricas', 'topicos', 'destaque']);
-        setRightWidgets(['sugestoes', 'eventos', 'atividade', 'conexoes']);
+        setLeftWidgets(['metricas', 'topicos', 'destaque', 'conexoes']);
+        setRightWidgets(['ultima_enquete', 'atividade']);
         setPreferencesLoaded(true);
       }
     };
@@ -1226,8 +1252,7 @@ const Feed: React.FC<FeedProps> = ({ onNavigateToModule, params }) => {
     (widgetId: string) => {
       // Todos os widgets sociais são permitidos no feed (exceto tendências duplicado)
       const socialWidgets = [
-        'sugestoes', 
-        'eventos',
+        'ultima_enquete',
         'atividade',
         'conexoes', 
         'metricas',
@@ -1682,11 +1707,50 @@ const Feed: React.FC<FeedProps> = ({ onNavigateToModule, params }) => {
     return now.toISOString();
   }, []);
 
+  const computeStartAt = useCallback((date: string, time?: string) => {
+    const safeDate = (date || '').trim();
+    const safeTime = (time || '').trim();
+    if (!safeDate) return '';
+    const normalizedTime = safeTime ? safeTime : '00:00';
+    return `${safeDate}T${normalizedTime}:00`;
+  }, []);
+
+  const buildInstitutionalArticleContent = useCallback(() => {
+    const title = articleTitle.trim();
+    const category = articleCategory.trim();
+    const body = articleContent.trim();
+
+    const lines: string[] = [];
+    lines.push(`📰 ${title}`);
+    if (category) lines.push(`🏷️ ${category}`);
+    lines.push('');
+    lines.push(body);
+    return lines.join('\n');
+  }, [articleTitle, articleCategory, articleContent]);
+
+  const parseInstitutionalArticleContent = useCallback((content: string) => {
+    if (!content?.startsWith('📰 ')) return null;
+    const lines = String(content).split('\n');
+    const title = (lines[0] || '').replace(/^📰\s*/, '').trim();
+    let category = '';
+    let i = 1;
+    if ((lines[1] || '').startsWith('🏷️ ')) {
+      category = (lines[1] || '').replace(/^🏷️\s*/, '').trim();
+      i = 2;
+    }
+    if ((lines[i] || '').trim() === '') i += 1;
+    const body = lines.slice(i).join('\n').trim();
+    if (!title || !body) return null;
+    return { title, category, body };
+  }, []);
+
   // Publicar post
   const handlePublishPost = useCallback(async () => {
-    // Permitir publicar se tem texto OU se tem enquete válida
+    // Permitir publicar se tem texto OU se tem enquete válida OU se tem evento/artigo válidos
     const hasPoll = showPollCreator && pollQuestion.trim() && pollOptions.filter(o => o.trim()).length >= 2;
-    if ((!postText.trim() && !hasPoll) || postingInProgress) return;
+    const hasEvent = showEventCreator && eventTitle.trim() && eventDate.trim();
+    const hasArticle = showArticleCreator && articleTitle.trim() && articleContent.trim();
+    if ((!postText.trim() && !hasPoll && !hasEvent && !hasArticle) || postingInProgress) return;
 
     setPostingInProgress(true);
     try {
@@ -1731,19 +1795,64 @@ const Feed: React.FC<FeedProps> = ({ onNavigateToModule, params }) => {
         }
       }
 
-      // Conteúdo do post (se não tiver texto mas tiver enquete, usar a pergunta)
-      const postContent = postText.trim() || (hasPoll ? `📊 ${pollQuestion}` : '');
+      // Conteúdo do post (prioridade: artigo > evento > texto > enquete)
+      const postContent = hasArticle
+        ? buildInstitutionalArticleContent()
+        : hasEvent
+          ? `📅 ${eventTitle.trim()}`
+          : postText.trim() || (hasPoll ? `📊 ${pollQuestion}` : '');
 
       // Montar data de agendamento se definida
       const scheduledAt = showScheduler && scheduledDate && scheduledTime
         ? `${scheduledDate}T${scheduledTime}:00`
         : null;
 
+      let createdCalendarEventId: string | null = null;
+      if (hasEvent) {
+        const startAt = computeStartAt(eventDate, eventTime);
+        if (!startAt) {
+          alert('Informe a data do evento.');
+          return;
+        }
+
+        const descriptionParts: string[] = [];
+        if (eventDescription.trim()) descriptionParts.push(eventDescription.trim());
+        if (eventLocation.trim()) descriptionParts.push(`Local: ${eventLocation.trim()}`);
+
+        const createdEvent = await calendarService.createEvent({
+          title: eventTitle.trim(),
+          description: descriptionParts.length > 0 ? descriptionParts.join('\n') : null,
+          event_type: 'meeting',
+          status: 'pendente',
+          start_at: startAt,
+        });
+
+        createdCalendarEventId = createdEvent.id;
+        const startDate = createdEvent.start_at ? new Date(createdEvent.start_at) : null;
+        const hora = startDate
+          ? startDate.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })
+          : '';
+
+        finalPreviewData = {
+          ...finalPreviewData,
+          agenda: {
+            id: createdEvent.id,
+            titulo: createdEvent.title,
+            data: createdEvent.start_at,
+            hora,
+          },
+        };
+      }
+
+      const finalEntityReferences: EntityReference[] = createdCalendarEventId
+        ? [...selectedEntities, { type: 'calendar', id: createdCalendarEventId, name: eventTitle.trim() }]
+        : selectedEntities;
+
       const newPost = await feedPostsService.createPost({
         content: postContent,
         tags: selectedTags,
         mentions: mentionedIds,
-        entity_references: selectedEntities,
+        entity_references: finalEntityReferences,
         preview_data: finalPreviewData,
         attachments: pendingAttachments.map((p) => p.attachment),
         visibility: postVisibility,
@@ -1783,6 +1892,22 @@ const Feed: React.FC<FeedProps> = ({ onNavigateToModule, params }) => {
       });
 
       // Limpar formulário
+      if (hasEvent) {
+        setShowEventCreator(false);
+        setEventTitle('');
+        setEventDescription('');
+        setEventDate('');
+        setEventTime('');
+        setEventLocation('');
+      }
+
+      if (hasArticle) {
+        setShowArticleCreator(false);
+        setArticleTitle('');
+        setArticleContent('');
+        setArticleCategory('');
+      }
+
       setPostText('');
       setSelectedTags([]);
       setSelectedEntities([]);
@@ -1812,7 +1937,7 @@ const Feed: React.FC<FeedProps> = ({ onNavigateToModule, params }) => {
     } finally {
       setPostingInProgress(false);
     }
-  }, [postText, selectedTags, selectedEntities, previewData, allProfiles, postingInProgress, pendingAttachments, showPollCreator, pollQuestion, pollOptions, pollAllowMultiple, pollExpiresIn, pollParticipants, calculatePollExpiration, postVisibility, showScheduler, scheduledDate, scheduledTime, audienceUserIds, audienceRoles]);
+  }, [postText, selectedTags, selectedEntities, previewData, allProfiles, postingInProgress, pendingAttachments, showPollCreator, pollQuestion, pollOptions, pollAllowMultiple, pollExpiresIn, pollParticipants, calculatePollExpiration, postVisibility, showScheduler, scheduledDate, scheduledTime, audienceUserIds, audienceRoles, showEventCreator, eventTitle, eventDescription, eventDate, eventTime, eventLocation, computeStartAt, calendarService, showArticleCreator, articleTitle, articleContent, articleCategory, buildInstitutionalArticleContent]);
 
   // Votar em enquete
   const handlePollVote = useCallback(async (pollId: string, optionIndex: number) => {
@@ -2669,6 +2794,48 @@ const Feed: React.FC<FeedProps> = ({ onNavigateToModule, params }) => {
     return Array.from(postPolls.values()).find((p) => p.id === pollVotersModal.pollId) || null;
   }, [pollVotersModal.pollId, postPolls]);
 
+  // Memoized data for widgets (move hooks outside renderWidget)
+  const topConnections = useMemo(() => {
+    const interactions = new Map<string, { name: string; avatar_url?: string; role?: string; interactions: number }>();
+    
+    feedPosts.forEach(post => {
+      if (post.author_id === user?.id) return;
+
+      const authorId = post.author_id;
+      const current = interactions.get(authorId) || {
+        name: post.author?.name || 'Usuário',
+        avatar_url: post.author?.avatar_url || undefined,
+        role: post.author?.role || undefined,
+        interactions: 0,
+      };
+      current.interactions += (post.likes_count || 0) + (post.comments_count || 0);
+      interactions.set(authorId, current);
+    });
+    
+    return Array.from(interactions.values())
+      .sort((a, b) => b.interactions - a.interactions)
+      .slice(0, 5);
+  }, [feedPosts, user?.id]);
+
+  const topTopics = useMemo(() => {
+    const counts = new Map<string, number>();
+    feedPosts.forEach((post) => {
+      (post.tags || []).forEach((tag) => {
+        counts.set(tag, (counts.get(tag) || 0) + 1);
+      });
+    });
+    return Array.from(counts.entries())
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 5);
+  }, [feedPosts]);
+
+  const topPost = useMemo(() => {
+    const oneWeekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+    return feedPosts
+      .filter(post => new Date(post.created_at) >= oneWeekAgo)
+      .sort((a, b) => (b.likes_count || 0) - (a.likes_count || 0))[0] || null;
+  }, [feedPosts]);
+
   const getDateLabel = (date: Date) => {
     return date.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' });
   };
@@ -2713,131 +2880,183 @@ const Feed: React.FC<FeedProps> = ({ onNavigateToModule, params }) => {
 
   // Função para renderizar widget por ID
   const renderWidget = (widgetId: string) => {
-    if (widgetId === 'sugestoes') {
-      return (
-        <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-3">
-          <div className="flex items-center justify-between mb-3">
-            <h3 className="text-slate-900 font-bold text-sm flex items-center gap-2">
-              <UserPlus className="w-4 h-4 text-indigo-500" />
-              Pessoas
-            </h3>
-            <span className="text-[10px] text-slate-500 font-medium">Sugestões</span>
-          </div>
-          {suggestedPeople.length === 0 ? (
+    if (widgetId === 'ultima_enquete') {
+      if (!latestPoll) {
+        return (
+          <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-3">
+            <div className="flex items-center justify-between mb-3">
+              <h3 className="text-slate-900 font-bold text-sm flex items-center gap-2">
+                <BarChart3 className="w-4 h-4 text-purple-600" />
+                Última Enquete
+              </h3>
+              <span className="text-[10px] text-slate-500 font-medium">Nenhuma</span>
+            </div>
             <div className="text-center py-4 text-slate-500 text-sm">
-              <Users className="w-6 h-6 mx-auto mb-2 text-slate-300" />
-              Nenhuma sugestão
+              <BarChart3 className="w-6 h-6 mx-auto mb-2 text-slate-300" />
+              Nenhuma enquete encontrada
+              <p className="text-[10px] text-slate-400 mt-2">
+                Crie um post com enquete para ver aqui
+              </p>
+              <div className="mt-2">
+                <button
+                  onClick={() => {
+                    console.log('🔍 Verificando posts disponíveis...');
+                    feedPostsService.getPosts().then(posts => {
+                      console.log('Posts encontrados:', posts.length);
+                      console.log('IDs:', posts.map(p => p.id));
+                      feedPollsService.getLatestPoll().then((poll) => {
+                        console.log('Última enquete:', poll);
+                      });
+                    }).catch(err => {
+                      console.error('Erro ao buscar posts:', err);
+                    });
+                  }}
+                  className="text-xs text-blue-600 hover:underline"
+                >
+                  Debug: Verificar posts
+                </button>
+              </div>
             </div>
-          ) : (
-            <div className="space-y-2">
-              {suggestedPeople.slice(0, 5).map((p) => (
-                <div key={p.user_id} className="flex items-center gap-2">
-                  <button
-                    type="button"
-                    onClick={() => onNavigateToModule?.('perfil', { userId: p.user_id })}
-                    className="flex items-center gap-2 flex-1 min-w-0 text-left hover:bg-slate-50 rounded-lg px-2 py-1.5 transition-colors"
-                  >
-                    <Avatar src={p.avatar_url} name={p.name} size="sm" />
-                    <div className="min-w-0">
-                      <div className="text-xs font-semibold text-slate-800 truncate">{p.name}</div>
-                      <div className="text-[10px] text-slate-500 truncate">{p.role || 'Membro'}</div>
-                    </div>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => toast.info('Conectar', 'Funcionalidade de conexão pode ser habilitada em seguida.')}
-                    className="px-2.5 py-1 rounded-lg text-[10px] font-bold bg-indigo-50 text-indigo-700 border border-indigo-200 hover:bg-indigo-100 transition-colors"
-                  >
-                    Conectar
-                  </button>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-      );
-    }
-    if (widgetId === 'eventos') {
-      // Criar eventos de exemplo se não houver eventos reais
-      const exampleEvents = upcomingEvents.length === 0 ? [
-        {
-          id: 'example-1',
-          title: 'Reunião de equipe',
-          start_at: new Date(Date.now() + 86400000).toISOString(), // Amanhã
-          type: 'meeting' as const,
-        },
-        {
-          id: 'example-2', 
-          title: 'Revisão de processos',
-          start_at: new Date(Date.now() + 172800000).toISOString(), // Depois de amanhã
-          type: 'meeting' as const,
-        },
-        {
-          id: 'example-3',
-          title: 'Prazo final - Documentos',
-          start_at: new Date(Date.now() + 259200000).toISOString(), // 3 dias
-          type: 'deadline' as const,
-        }
-      ] : [];
+          </div>
+        );
+      }
 
-      const displayEvents = upcomingEvents.length > 0 ? upcomingEvents : exampleEvents;
-      
+      const handleVote = async (optionIndex: number) => {
+        if (latestPoll.is_expired) return;
+        if (latestPoll.user_votes?.includes(optionIndex)) return;
+
+        try {
+          await feedPollsService.vote(latestPoll.id, optionIndex);
+          // Recarregar a enquete para atualizar resultados
+          const updatedPoll = await feedPollsService.getPollByPostId(latestPoll.post_id);
+          setLatestPoll(updatedPoll);
+          toast.success('Voto registrado com sucesso!');
+        } catch (error: any) {
+          console.error('Erro ao votar:', error);
+          toast.error(error.message || 'Erro ao registrar voto');
+        }
+      };
+
+      const getPercentage = (votes: number) => {
+        if (!latestPoll.total_votes || latestPoll.total_votes === 0) return 0;
+        return Math.round((votes / latestPoll.total_votes) * 100);
+      };
+
+      const isExpired = latestPoll.is_expired || (latestPoll.expires_at && new Date(latestPoll.expires_at) <= new Date());
+      const hasVoted = latestPoll.user_votes && latestPoll.user_votes.length > 0;
+
       return (
         <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-3">
           <div className="flex items-center justify-between mb-3">
             <h3 className="text-slate-900 font-bold text-sm flex items-center gap-2">
-              <Calendar className="w-4 h-4 text-blue-600" />
-              Próximos Eventos
+              <BarChart3 className="w-4 h-4 text-purple-600" />
+              Última Enquete
             </h3>
-            <button
-              type="button"
-              onClick={() => handleNavigate('agenda')}
-              className="text-[10px] font-bold text-blue-600 hover:underline"
-            >
-              Ver
-            </button>
+            <span className={`text-[10px] font-medium ${
+              isExpired ? 'text-red-500' : hasVoted ? 'text-green-500' : 'text-blue-500'
+            }`}>
+              {isExpired ? 'Encerrada' : hasVoted ? 'Votado' : 'Aberta'}
+            </span>
           </div>
-          <div className="space-y-2">
-            {displayEvents.slice(0, 4).map((event) => {
-              const eventDate = new Date(event.start_at);
-              const label = eventDate.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' });
-              const time = eventDate.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
-              const isExample = event.id.toString().startsWith('example-');
+          
+          <div className="space-y-3">
+            <div>
+              <p className="text-xs font-semibold text-slate-800 mb-2 leading-relaxed">
+                {latestPoll.question}
+              </p>
               
-              return (
-                <button
-                  key={event.id}
-                  type="button"
-                  onClick={() => handleNavigate('agenda')}
-                  className={`w-full text-left p-2 rounded-lg border transition-colors ${
-                    isExample 
-                      ? 'bg-blue-50 border-blue-200 hover:bg-blue-100' 
-                      : 'bg-slate-50 border-slate-200 hover:bg-slate-100'
-                  }`}
-                >
-                  <div className="flex items-center justify-between">
-                    <div className="min-w-0">
-                      <div className={`text-xs font-semibold truncate ${isExample ? 'text-blue-700' : 'text-slate-800'}`}>
-                        {event.title}
-                        {isExample && (
-                          <span className="ml-1 text-[10px] text-blue-600 font-normal">(Exemplo)</span>
-                        )}
-                      </div>
-                      <div className="text-[10px] text-slate-500">{label} • {time}</div>
+              {latestPoll.expires_at && (
+                <p className="text-[10px] text-slate-500 mb-2">
+                  {isExpired 
+                    ? `Encerrou em ${new Date(latestPoll.expires_at).toLocaleDateString('pt-BR')}`
+                    : `Encerra em ${new Date(latestPoll.expires_at).toLocaleDateString('pt-BR')}`
+                  }
+                </p>
+              )}
+            </div>
+
+            <div className="space-y-2">
+              {latestPoll.options.map((option, index) => {
+                const percentage = getPercentage(option.votes);
+                const hasVotedOption = latestPoll.user_votes?.includes(index);
+                const totalVotes = latestPoll.total_votes || 0;
+                const isWinning = totalVotes > 0 && option.votes === Math.max(...latestPoll.options.map(o => o.votes));
+                
+                return (
+                  <button
+                    key={index}
+                    type="button"
+                    onClick={() => handleVote(index)}
+                    disabled={isExpired || hasVoted}
+                    className={`w-full text-left p-2 rounded-lg border transition-all ${
+                      isExpired || hasVoted
+                        ? 'cursor-default'
+                        : 'hover:border-purple-300 hover:bg-purple-50 cursor-pointer'
+                    } ${
+                      hasVotedOption
+                        ? 'border-purple-300 bg-purple-50'
+                        : 'border-slate-200 bg-slate-50'
+                    } ${
+                      isWinning && totalVotes > 0
+                        ? 'ring-1 ring-purple-200'
+                        : ''
+                    }`}
+                  >
+                    <div className="flex items-center justify-between mb-1">
+                      <span className={`text-xs font-medium truncate ${
+                        hasVotedOption ? 'text-purple-700' : 'text-slate-700'
+                      }`}>
+                        {option.text}
+                      </span>
+                      {isWinning && totalVotes > 0 && (
+                        <Trophy className="w-3 h-3 text-yellow-500 flex-shrink-0" />
+                      )}
                     </div>
-                    <ChevronRight className={`w-4 h-4 ${isExample ? 'text-blue-400' : 'text-slate-400'}`} />
-                  </div>
-                </button>
-              );
-            })}
-          </div>
-          {upcomingEvents.length === 0 && (
-            <div className="mt-2 pt-2 border-t border-slate-100">
+                    
+                    <div className="flex items-center gap-2">
+                      <div className="flex-1 bg-slate-100 rounded-full h-2 overflow-hidden">
+                        <div
+                          className={`h-full transition-all duration-300 ${
+                            hasVotedOption
+                              ? 'bg-purple-500'
+                              : isWinning
+                              ? 'bg-yellow-400'
+                              : 'bg-slate-300'
+                          }`}
+                          style={{ width: `${percentage}%` }}
+                        />
+                      </div>
+                      <span className={`text-[10px] font-medium min-w-[35px] text-right ${
+                        hasVotedOption ? 'text-purple-600' : 'text-slate-600'
+                      }`}>
+                        {percentage}%
+                      </span>
+                    </div>
+                    
+                    <div className="flex items-center justify-between mt-1">
+                      <span className={`text-[9px] ${
+                        hasVotedOption ? 'text-purple-500' : 'text-slate-400'
+                      }`}>
+                        {option.votes} voto{option.votes !== 1 ? 's' : ''}
+                      </span>
+                      {hasVotedOption && (
+                        <CheckCircle className="w-3 h-3 text-purple-500" />
+                      )}
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+
+            <div className="pt-2 border-t border-slate-100">
               <p className="text-[10px] text-slate-500 text-center">
-                Nenhum evento agendado. Adicione eventos na agenda para vê-los aqui.
+                {latestPoll.total_votes} voto{latestPoll.total_votes !== 1 ? 's' : ''} total
+                {latestPoll.participants && latestPoll.participants.length > 0 && (
+                  <> • {latestPoll.participants.length} participante{latestPoll.participants.length !== 1 ? 's' : ''}</>
+                )}
               </p>
             </div>
-          )}
+          </div>
         </div>
       );
     }
@@ -2845,7 +3064,7 @@ const Feed: React.FC<FeedProps> = ({ onNavigateToModule, params }) => {
       // Posts recentes dos colegas da equipe
       const teamActivity = feedPosts
         .filter(post => post.author_id !== user?.id) // Excluir próprios posts
-        .slice(0, 5); // Últimos 5 posts
+        .slice(0, 4); // Últimos 4 posts
 
       return (
         <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-3">
@@ -2902,26 +3121,7 @@ const Feed: React.FC<FeedProps> = ({ onNavigateToModule, params }) => {
     }
     if (widgetId === 'conexoes') {
       // Pessoas com mais interações no feed
-      const topConnections = useMemo(() => {
-        const interactions = new Map<string, { name: string; avatar_url?: string; role?: string; interactions: number }>();
-        
-        feedPosts.forEach(post => {
-          if (post.author_id !== user?.id) {
-            const current = interactions.get(post.author_id) || { 
-              name: post.author?.name || 'Usuário', 
-              avatar_url: post.author?.avatar_url,
-              role: post.author?.role,
-              interactions: 0 
-            };
-            current.interactions += (post.likes_count || 0) + (post.comments_count || 0);
-            interactions.set(post.author_id, current);
-          }
-        });
-
-        return Array.from(interactions.values())
-          .sort((a, b) => b.interactions - a.interactions)
-          .slice(0, 4);
-      }, [feedPosts, user?.id]);
+      const maxCount = Math.max(...topConnections.map(c => c.interactions), 1);
 
       return (
         <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-3">
@@ -2944,7 +3144,7 @@ const Feed: React.FC<FeedProps> = ({ onNavigateToModule, params }) => {
                   <div className="flex items-center justify-center w-6 h-6 rounded-full bg-green-600 text-white text-[10px] font-bold">
                     {index + 1}
                   </div>
-                  <Avatar src={person.avatar_url} name={person.name} size="sm" />
+                  <Avatar src={person.avatar_url || undefined} name={person.name} size="sm" />
                   <div className="flex-1 min-w-0">
                     <div className="text-xs font-semibold text-slate-800 truncate">{person.name}</div>
                     <div className="text-[10px] text-slate-500">{person.role || 'Membro'}</div>
@@ -2962,9 +3162,10 @@ const Feed: React.FC<FeedProps> = ({ onNavigateToModule, params }) => {
     }
     if (widgetId === 'metricas') {
       // Estatísticas do feed
-      const totalPosts = feedPosts.length;
-      const totalLikes = feedPosts.reduce((sum, post) => sum + (post.likes_count || 0), 0);
-      const totalComments = feedPosts.reduce((sum, post) => sum + (post.comments_count || 0), 0);
+      const myPosts = feedPosts.filter(post => post.author_id === user?.id);
+      const totalPosts = myPosts.length;
+      const totalLikes = myPosts.reduce((sum, post) => sum + (post.likes_count || 0), 0);
+      const totalComments = myPosts.reduce((sum, post) => sum + (post.comments_count || 0), 0);
       const avgEngagement = totalPosts > 0 ? Math.round(((totalLikes + totalComments) / totalPosts) * 10) / 10 : 0;
 
       return (
@@ -2974,7 +3175,7 @@ const Feed: React.FC<FeedProps> = ({ onNavigateToModule, params }) => {
               <BarChart2 className="w-4 h-4 text-indigo-600" />
               Métricas do Feed
             </h3>
-            <span className="text-[10px] text-slate-500 font-medium">Hoje</span>
+            <span className="text-[10px] text-slate-500 font-medium">Minhas</span>
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div className="bg-gradient-to-br from-blue-50 to-indigo-50 rounded-lg p-3 border border-blue-100">
@@ -3015,18 +3216,6 @@ const Feed: React.FC<FeedProps> = ({ onNavigateToModule, params }) => {
     }
     if (widgetId === 'topicos') {
       // Tópicos mais populares com visual gráfico
-      const topTopics = useMemo(() => {
-        const counts = new Map<string, number>();
-        feedPosts.forEach((post) => {
-          (post.tags || []).forEach((tag) => {
-            counts.set(tag, (counts.get(tag) || 0) + 1);
-          });
-        });
-        return Array.from(counts.entries())
-          .sort((a, b) => b[1] - a[1])
-          .slice(0, 5);
-      }, [feedPosts]);
-
       const maxCount = Math.max(...topTopics.map(([, count]) => count), 1);
 
       return (
@@ -3082,12 +3271,6 @@ const Feed: React.FC<FeedProps> = ({ onNavigateToModule, params }) => {
     }
     if (widgetId === 'destaque') {
       // Post mais curtido da semana
-      const topPost = useMemo(() => {
-        const oneWeekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
-        return feedPosts
-          .filter(post => new Date(post.created_at) >= oneWeekAgo)
-          .sort((a, b) => (b.likes_count || 0) - (a.likes_count || 0))[0];
-      }, [feedPosts]);
 
       return (
         <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-3">
@@ -3531,7 +3714,7 @@ const Feed: React.FC<FeedProps> = ({ onNavigateToModule, params }) => {
   return (
     <div className="space-y-3 sm:space-y-4">
       {/* Main Content */}
-      <div className="w-full max-w-7xl mx-auto px-3 sm:px-6 lg:px-8">
+      <div className="w-full">
         <DndContext
           sensors={sensors}
           collisionDetection={closestCenter}
@@ -3551,7 +3734,7 @@ const Feed: React.FC<FeedProps> = ({ onNavigateToModule, params }) => {
           <div className="grid grid-cols-1 lg:grid-cols-[280px_minmax(0,1fr)_320px] gap-4 lg:items-start">
             {/* Sidebar Esquerda - Widgets de Análise */}
             <aside className="hidden lg:block">
-              <div className="sticky top-4 space-y-4">
+              <div className="space-y-4">
                 <SidebarDroppable id="left-sidebar">
                   <SortableContext items={visibleLeftWidgets} strategy={rectSortingStrategy}>
                     {visibleLeftWidgets.map((id) => (
@@ -3565,9 +3748,9 @@ const Feed: React.FC<FeedProps> = ({ onNavigateToModule, params }) => {
             </aside>
 
             {/* Feed Central */}
-            <main className="w-full min-w-0 max-w-2xl mx-auto flex flex-col gap-4 sm:gap-6">
-          {/* Caixa de Postagem - Design Premium */}
-          <div className="bg-gradient-to-br from-white to-slate-50 rounded-2xl border border-slate-200/80 shadow-lg shadow-slate-200/50 overflow-visible">
+            <main className="w-full min-w-0 flex flex-col gap-4 sm:gap-6">
+              {/* Caixa de Postagem - Design Premium */}
+              <div className="bg-gradient-to-br from-white to-slate-50 rounded-2xl border border-slate-200/80 shadow-lg shadow-slate-200/50 overflow-visible">
             {/* Header do Post */}
             <div className="p-3 sm:p-4 pb-2 sm:pb-3">
               <div className="flex gap-3">
@@ -3885,7 +4068,11 @@ const Feed: React.FC<FeedProps> = ({ onNavigateToModule, params }) => {
                   </button>
                   <button
                     type="button"
-                    onClick={() => setShowPollCreator((v) => !v)}
+                    onClick={() => {
+                      setShowPollCreator((v) => !v);
+                      setShowEventCreator(false);
+                      setShowArticleCreator(false);
+                    }}
                     className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg transition-colors text-xs sm:text-sm font-medium ${showPollCreator ? 'bg-indigo-100 text-indigo-700' : 'text-slate-600 hover:bg-slate-200'}`}
                   >
                     <BarChart2 className="w-4 h-4 text-indigo-500" />
@@ -3893,7 +4080,11 @@ const Feed: React.FC<FeedProps> = ({ onNavigateToModule, params }) => {
                   </button>
                   <button
                     type="button"
-                    onClick={() => setShowEventCreator((v) => !v)}
+                    onClick={() => {
+                      setShowEventCreator((v) => !v);
+                      setShowPollCreator(false);
+                      setShowArticleCreator(false);
+                    }}
                     className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg transition-colors text-xs sm:text-sm font-medium ${showEventCreator ? 'bg-green-100 text-green-700' : 'text-slate-600 hover:bg-slate-200'}`}
                   >
                     <Calendar className="w-4 h-4 text-green-500" />
@@ -3901,7 +4092,11 @@ const Feed: React.FC<FeedProps> = ({ onNavigateToModule, params }) => {
                   </button>
                   <button
                     type="button"
-                    onClick={() => setShowArticleCreator((v) => !v)}
+                    onClick={() => {
+                      setShowArticleCreator((v) => !v);
+                      setShowPollCreator(false);
+                      setShowEventCreator(false);
+                    }}
                     className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg transition-colors text-xs sm:text-sm font-medium ${showArticleCreator ? 'bg-orange-100 text-orange-700' : 'text-slate-600 hover:bg-slate-200'}`}
                   >
                     <FileText className="w-4 h-4 text-orange-500" />
@@ -3933,7 +4128,11 @@ const Feed: React.FC<FeedProps> = ({ onNavigateToModule, params }) => {
                       </button>
                       <button
                         type="button"
-                        onClick={() => setShowPollCreator((v) => !v)}
+                        onClick={() => {
+                          setShowPollCreator((v) => !v);
+                          setShowEventCreator(false);
+                          setShowArticleCreator(false);
+                        }}
                         className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg transition-colors text-xs font-medium ${showPollCreator ? 'bg-indigo-100 text-indigo-700' : 'text-slate-600 hover:bg-slate-200'}`}
                         aria-label="Enquete"
                         title="Enquete"
@@ -3950,7 +4149,9 @@ const Feed: React.FC<FeedProps> = ({ onNavigateToModule, params }) => {
                   onClick={handlePublishPost}
                   disabled={!(
                     postText.trim() ||
-                    (showPollCreator && pollQuestion.trim() && pollOptions.filter((o) => o.trim()).length >= 2)
+                    (showPollCreator && pollQuestion.trim() && pollOptions.filter((o) => o.trim()).length >= 2) ||
+                    (showEventCreator && eventTitle.trim() && eventDate.trim()) ||
+                    (showArticleCreator && articleTitle.trim() && articleContent.trim())
                   ) || postingInProgress}
                   className="flex items-center gap-2 bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 disabled:from-slate-300 disabled:to-slate-400 disabled:cursor-not-allowed text-white px-3 sm:px-4 py-2 rounded-xl text-sm font-bold transition-all shadow-md shadow-blue-500/25 hover:shadow-lg hover:shadow-blue-500/30 hover:-translate-y-0.5"
                 >
@@ -4321,55 +4522,146 @@ const Feed: React.FC<FeedProps> = ({ onNavigateToModule, params }) => {
                 </div>
               </div>
             )}
+
+            {showEventCreator && (
+              <div className="px-4 pb-4 border-t border-slate-100 pt-4 mt-2">
+                <div className="bg-gradient-to-br from-white to-green-50 rounded-2xl p-5 border border-green-100 shadow-lg shadow-green-100/30">
+                  <div className="flex items-center justify-between mb-4">
+                    <div className="flex items-center gap-2.5">
+                      <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-green-500 to-emerald-500 flex items-center justify-center shadow-md shadow-green-500/25">
+                        <Calendar className="w-5 h-5 text-white" />
+                      </div>
+                      <div>
+                        <span className="font-bold text-slate-900 text-base">Criar Evento</span>
+                        <p className="text-xs text-slate-500">Publica no feed e salva na agenda</p>
+                      </div>
+                    </div>
+                    <button
+                      onClick={() => setShowEventCreator(false)}
+                      className="w-8 h-8 rounded-lg bg-white/80 hover:bg-white text-slate-500 hover:text-slate-700 flex items-center justify-center transition-all shadow-sm hover:shadow-md"
+                    >
+                      <X className="w-4 h-4" />
+                    </button>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div className="sm:col-span-2">
+                      <label className="block text-xs font-semibold text-slate-600 mb-1.5">Título *</label>
+                      <input
+                        type="text"
+                        value={eventTitle}
+                        onChange={(e) => setEventTitle(e.target.value)}
+                        placeholder="Ex: Reunião com cliente"
+                        className="w-full bg-white border-2 border-green-100 rounded-xl px-4 py-2.5 text-sm focus:ring-2 focus:ring-green-500/20 focus:border-green-400 transition-all placeholder:text-slate-400"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-600 mb-1.5">Data *</label>
+                      <input
+                        type="date"
+                        value={eventDate}
+                        onChange={(e) => setEventDate(e.target.value)}
+                        className="w-full bg-white border-2 border-green-100 rounded-xl px-4 py-2.5 text-sm focus:ring-2 focus:ring-green-500/20 focus:border-green-400 transition-all"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-600 mb-1.5">Hora</label>
+                      <input
+                        type="time"
+                        value={eventTime}
+                        onChange={(e) => setEventTime(e.target.value)}
+                        className="w-full bg-white border-2 border-green-100 rounded-xl px-4 py-2.5 text-sm focus:ring-2 focus:ring-green-500/20 focus:border-green-400 transition-all"
+                      />
+                    </div>
+
+                    <div className="sm:col-span-2">
+                      <label className="block text-xs font-semibold text-slate-600 mb-1.5">Local</label>
+                      <input
+                        type="text"
+                        value={eventLocation}
+                        onChange={(e) => setEventLocation(e.target.value)}
+                        placeholder="Ex: Escritório / Online"
+                        className="w-full bg-white border-2 border-green-100 rounded-xl px-4 py-2.5 text-sm focus:ring-2 focus:ring-green-500/20 focus:border-green-400 transition-all placeholder:text-slate-400"
+                      />
+                    </div>
+
+                    <div className="sm:col-span-2">
+                      <label className="block text-xs font-semibold text-slate-600 mb-1.5">Descrição</label>
+                      <textarea
+                        value={eventDescription}
+                        onChange={(e) => setEventDescription(e.target.value)}
+                        placeholder="Detalhes do evento (opcional)"
+                        className="w-full min-h-[90px] resize-none bg-white border-2 border-green-100 rounded-xl px-4 py-2.5 text-sm focus:ring-2 focus:ring-green-500/20 focus:border-green-400 transition-all placeholder:text-slate-400"
+                      />
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {showArticleCreator && (
+              <div className="px-4 pb-4 border-t border-slate-100 pt-4 mt-2">
+                <div className="bg-gradient-to-br from-white to-orange-50 rounded-2xl p-5 border border-orange-100 shadow-lg shadow-orange-100/30">
+                  <div className="flex items-center justify-between mb-4">
+                    <div className="flex items-center gap-2.5">
+                      <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-orange-500 to-amber-500 flex items-center justify-center shadow-md shadow-orange-500/25">
+                        <FileText className="w-5 h-5 text-white" />
+                      </div>
+                      <div>
+                        <span className="font-bold text-slate-900 text-base">Artigo Institucional</span>
+                        <p className="text-xs text-slate-500">Post com formatação própria</p>
+                      </div>
+                    </div>
+                    <button
+                      onClick={() => setShowArticleCreator(false)}
+                      className="w-8 h-8 rounded-lg bg-white/80 hover:bg-white text-slate-500 hover:text-slate-700 flex items-center justify-center transition-all shadow-sm hover:shadow-md"
+                    >
+                      <X className="w-4 h-4" />
+                    </button>
+                  </div>
+
+                  <div className="space-y-3">
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-600 mb-1.5">Título *</label>
+                      <input
+                        type="text"
+                        value={articleTitle}
+                        onChange={(e) => setArticleTitle(e.target.value)}
+                        placeholder="Ex: Comunicado Institucional"
+                        className="w-full bg-white border-2 border-orange-100 rounded-xl px-4 py-2.5 text-sm focus:ring-2 focus:ring-orange-500/20 focus:border-orange-400 transition-all placeholder:text-slate-400"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-600 mb-1.5">Categoria</label>
+                      <input
+                        type="text"
+                        value={articleCategory}
+                        onChange={(e) => setArticleCategory(e.target.value)}
+                        placeholder="Ex: Institucional"
+                        className="w-full bg-white border-2 border-orange-100 rounded-xl px-4 py-2.5 text-sm focus:ring-2 focus:ring-orange-500/20 focus:border-orange-400 transition-all placeholder:text-slate-400"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-600 mb-1.5">Conteúdo *</label>
+                      <textarea
+                        value={articleContent}
+                        onChange={(e) => setArticleContent(e.target.value)}
+                        placeholder="Escreva o artigo..."
+                        className="w-full min-h-[140px] resize-none bg-white border-2 border-orange-100 rounded-xl px-4 py-2.5 text-sm focus:ring-2 focus:ring-orange-500/20 focus:border-orange-400 transition-all placeholder:text-slate-400"
+                      />
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
 
           {/* Feed de Posts */}
           <div className="flex flex-col gap-4 sm:gap-5">
-            {/* Filtro do Feed - Estilo LinkedIn */}
-            <div className="bg-white rounded-lg border border-slate-200/60 shadow-sm p-3">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <h3 className="text-slate-900 font-semibold text-[15px]">Feed</h3>
-                  <div className="flex items-center gap-1 bg-slate-100 rounded-lg p-1">
-                    <button
-                      className={`px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${
-                        feedSortOrder === 'relevant' 
-                          ? 'bg-white text-slate-900 shadow-sm' 
-                          : 'text-slate-600 hover:text-slate-900'
-                      }`}
-                      onClick={() => setFeedSortOrder('relevant')}
-                    >
-                      <span className="flex items-center gap-1">
-                        <TrendingUp className="w-3 h-3" />
-                        Mais Relevantes
-                      </span>
-                    </button>
-                    <button
-                      className={`px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${
-                        feedSortOrder === 'recent' 
-                          ? 'bg-white text-slate-900 shadow-sm' 
-                          : 'text-slate-600 hover:text-slate-900'
-                      }`}
-                      onClick={() => setFeedSortOrder('recent')}
-                    >
-                      <span className="flex items-center gap-1">
-                        <Clock className="w-3 h-3" />
-                        Recentes
-                      </span>
-                    </button>
-                  </div>
-                </div>
-                {feedTagFilter && (
-                  <button
-                    onClick={() => setFeedTagFilter(null)}
-                    className="flex items-center gap-1 px-2 py-1 bg-blue-50 text-blue-600 rounded-md text-sm font-medium hover:bg-blue-100 transition-colors"
-                  >
-                    <X className="w-3 h-3" />
-                    {availableTags.find(t => t.id === feedTagFilter)?.label || feedTagFilter}
-                  </button>
-                )}
-              </div>
-            </div>
             {loadingPosts ? (
               <>
                 {[1, 2, 3].map((i) => (
@@ -4885,9 +5177,36 @@ const Feed: React.FC<FeedProps> = ({ onNavigateToModule, params }) => {
                       </div>
                     ) : (
                       <>
-                        <div className="text-slate-900 text-[15px] leading-[1.4] mb-3 whitespace-pre-wrap break-words">
-                          {renderContentWithMentions(post.content, post.entity_references)}
-                        </div>
+                        {(() => {
+                          const article = parseInstitutionalArticleContent(post.content);
+                          if (article) {
+                            return (
+                              <div className="bg-gradient-to-br from-orange-50 to-white rounded-xl p-4 border border-orange-200/60">
+                                <div className="flex items-start justify-between gap-3 mb-2">
+                                  <div className="min-w-0">
+                                    <div className="flex items-center gap-2">
+                                      <Newspaper className="w-4 h-4 text-orange-600" />
+                                      <p className="text-slate-900 font-bold text-[15px] truncate">{article.title}</p>
+                                    </div>
+                                    {article.category && (
+                                      <span className="inline-flex mt-2 text-[10px] font-semibold px-2 py-0.5 rounded-full bg-orange-100 text-orange-700 border border-orange-200">
+                                        {article.category}
+                                      </span>
+                                    )}
+                                  </div>
+                                </div>
+                                <div className="text-slate-800 text-[14px] leading-relaxed whitespace-pre-wrap break-words">
+                                  {article.body}
+                                </div>
+                              </div>
+                            );
+                          }
+                          return (
+                            <div className="text-slate-900 text-[15px] leading-[1.4] mb-3 whitespace-pre-wrap break-words">
+                              {renderContentWithMentions(post.content, post.entity_references)}
+                            </div>
+                          );
+                        })()}
                         {post.created_at !== post.updated_at && (
                           <div className="flex items-center gap-1 text-xs text-slate-400 mb-3">
                             <Pencil className="w-3 h-3" />
@@ -5304,18 +5623,13 @@ const Feed: React.FC<FeedProps> = ({ onNavigateToModule, params }) => {
                             <Heart className="w-2.5 h-2.5 text-white" />
                           </div>
                         )}
+                        <div className="flex items-center gap-2">
+                          <span className="hover:underline cursor-pointer text-slate-600 font-medium">
+                            {post.likes_count > 0 ? `${post.likes_count}` : ''}
+                          </span>
+                        </div>
                       </div>
-                      <span className="hover:underline cursor-pointer text-slate-600 font-medium">
-                        {post.likes_count > 0 ? `${post.likes_count}` : ''}
-                      </span>
                     </div>
-                    <button
-                      type="button"
-                      onClick={() => toggleInlineComments(post.id)}
-                      className="hover:underline cursor-pointer text-slate-500 hover:text-blue-600 transition-colors"
-                    >
-                      {post.comments_count > 0 && `${post.comments_count} comentário${post.comments_count !== 1 ? 's' : ''}`}
-                    </button>
                   </div>
                   
                   {/* Ações - Estilo LinkedIn/Facebook */}
@@ -5337,189 +5651,41 @@ const Feed: React.FC<FeedProps> = ({ onNavigateToModule, params }) => {
                           {[
                             { type: 'like', icon: ThumbsUp, label: 'Curtir' },
                             { type: 'love', icon: Heart, label: 'Amei' },
-                            { type: 'haha', icon: () => <span className="text-sm">😂</span>, label: 'Haha' },
-                          ].map(({ type, icon: Icon, label }) => (
+                            { type: 'haha', icon: null, label: 'Haha', emoji: '😂' },
+                          ].map(({ type, icon: Icon, label, emoji }) => (
                             <button
                               key={type}
                               onClick={() => handleReaction(post.id, type as any)}
                               className="p-2 hover:bg-slate-100 rounded transition-colors"
                               title={label}
                             >
-                              {typeof Icon === 'function' ? <Icon /> : <Icon className="w-4 h-4" />}
+                              {emoji ? <span className="text-sm">{emoji}</span> : Icon ? <Icon className="w-4 h-4" /> : null}
                             </button>
                           ))}
                         </div>
                       </div>
                     </div>
-                    <button
-                      onClick={() => toggleInlineComments(post.id)}
-                      className={`flex items-center gap-2 px-4 py-2 rounded-md text-sm font-medium transition-colors ${
-                        expandedComments[post.id]
-                          ? 'text-blue-600 hover:bg-blue-50'
-                          : 'text-slate-600 hover:bg-slate-50'
-                      }`}
-                    >
-                      <MessageCircle className="w-4 h-4" />
-                      <span>Comentar</span>
-                    </button>
-                    <button
-                      onClick={() => sharePost(post.id)}
-                      className="flex items-center gap-2 px-4 py-2 rounded-md text-sm font-medium text-slate-600 hover:bg-slate-50 transition-colors"
-                    >
-                      <Share2 className="w-4 h-4" />
-                      <span>Compartilhar</span>
-                    </button>
-                    <button
-                      onClick={() => toggleSavePost(post.id)}
-                      className={`flex items-center gap-2 px-4 py-2 rounded-md text-sm font-medium transition-colors ${
-                        savedPosts.has(post.id)
-                          ? 'text-amber-600 hover:bg-amber-50'
-                          : 'text-slate-600 hover:bg-slate-50'
-                      }`}
-                    >
-                      <Bookmark className={`w-4 h-4 ${savedPosts.has(post.id) ? 'fill-current' : ''}`} />
-                      <span>Salvar</span>
-                    </button>
                   </div>
-                  
-                  {/* Seção de comentários inline - Design Premium */}
-                  {expandedComments[post.id] && (
-                    <div className="border-t border-slate-100 overflow-visible bg-gradient-to-b from-slate-50/50 to-white">
-                      {/* Lista de comentários */}
-                      <div className="px-5 py-4 space-y-4 max-h-72 overflow-y-auto overflow-x-visible">
-                        {expandedComments[post.id].loading ? (
-                          <div className="flex items-center justify-center py-6">
-                            <div className="w-8 h-8 rounded-full bg-gradient-to-br from-blue-500 to-indigo-500 flex items-center justify-center">
-                              <Loader2 className="w-4 h-4 text-white animate-spin" />
-                            </div>
-                          </div>
-                        ) : expandedComments[post.id].comments.length === 0 ? (
-                          <div className="text-center py-4">
-                            <MessageCircle className="w-8 h-8 text-slate-300 mx-auto mb-2" />
-                            <p className="text-slate-400 text-sm font-medium">Seja o primeiro a comentar!</p>
-                          </div>
-                        ) : (
-                          expandedComments[post.id].comments.map((c, idx) => (
-                            <div key={`${c.user_id}-${idx}`} className="flex gap-3 group">
-                              <button
-                                onClick={() => handleNavigate('perfil', { userId: c.user_id })}
-                                className="flex-shrink-0 hover:scale-105 transition-transform"
-                              >
-                                <Avatar src={c.avatar_url} name={c.name} size="sm" />
-                              </button>
-                              <div className="flex-1">
-                                <div className="bg-slate-100/80 rounded-2xl px-4 py-2.5 hover:bg-slate-100 transition-colors">
-                                  <button
-                                    onClick={() => handleNavigate('perfil', { userId: c.user_id })}
-                                    className="text-[13px] font-bold text-slate-900 hover:text-blue-600 transition-colors"
-                                  >
-                                    {c.name}
-                                  </button>
-                                  <p className="text-sm text-slate-700 leading-relaxed">{renderContentWithMentions(c.content)}</p>
-                                </div>
-                                {/* Ações do comentário */}
-                                <div className="flex items-center gap-3 mt-1 ml-2">
-                                  <span className="text-[10px] text-slate-400">
-                                    {new Date(c.created_at).toLocaleDateString('pt-BR', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })}
-                                  </span>
-                                  <button 
-                                    onClick={() => {
-                                      setExpandedComments(prev => ({
-                                        ...prev,
-                                        [post.id]: { ...prev[post.id], newComment: `@${c.name} ` }
-                                      }));
-                                    }}
-                                    className="text-[11px] font-semibold text-slate-500 hover:text-slate-700"
-                                  >
-                                    Responder
-                                  </button>
-                                </div>
-                              </div>
-                            </div>
-                          ))
-                        )}
-                      </div>
-                      
-                      {/* Input para novo comentário */}
-                      <div className="px-4 py-3 border-t border-slate-100 bg-slate-50/50">
-                        <div className="flex gap-2 items-center">
-                          <Avatar src={resolvedCurrentAvatarUrl} name={currentProfile?.name || 'Você'} size="xs" />
-                          <div className="flex-1">
-                            <input
-                              type="text"
-                              value={expandedComments[post.id]?.newComment || ''}
-                              onChange={(e) => handleCommentInputChange(post.id, e.target.value)}
-                              onKeyDown={(e) => {
-                                if (e.key === 'Enter' && !e.shiftKey) {
-                                  e.preventDefault();
-                                  handleCreateInlineComment(post.id);
-                                }
-                              }}
-                              placeholder={`Comente como ${currentProfile?.name || 'você'}... Use @ para mencionar`}
-                              className="w-full px-3 py-2 bg-white border border-slate-200 rounded-full text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-400"
-                              disabled={expandedComments[post.id]?.submitting}
-                            />
-                          </div>
-                          {expandedComments[post.id]?.submitting && (
-                            <Loader2 className="w-4 h-4 text-blue-600 animate-spin" />
-                          )}
-                        </div>
-                      </div>
-                      
-                      {/* Dropdown de Menções no Comentário - fora do container com overflow */}
-                      {expandedComments[post.id]?.showMentionDropdown && allProfiles.length > 0 && (
-                        <div className="px-4 pb-2">
-                          <div className="bg-white rounded-lg border border-slate-200 shadow-lg max-h-48 overflow-y-auto">
-                            <div className="p-2 border-b border-slate-100">
-                              <span className="text-xs text-slate-500 font-medium flex items-center gap-1">
-                                <AtSign className="w-3 h-3" /> Mencionar usuário
-                              </span>
-                            </div>
-                            {allProfiles
-                              .filter(p => {
-                                const search = (expandedComments[post.id]?.mentionSearch || '').toLowerCase();
-                                return search === '' || p.name.toLowerCase().includes(search);
-                              })
-                              .slice(0, 10)
-                              .map((profile) => (
-                                <button
-                                  key={profile.id}
-                                  onClick={() => handleSelectCommentMention(post.id, profile)}
-                                  className="w-full flex items-center gap-3 px-3 py-2 hover:bg-slate-50 transition-colors text-left"
-                                >
-                                  <Avatar src={profile.avatar_url} name={profile.name} size="sm" />
-                                  <div>
-                                    <p className="text-sm font-medium text-slate-900">{profile.name}</p>
-                                    <p className="text-xs text-slate-500">{profile.role}</p>
-                                  </div>
-                                </button>
-                              ))}
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                  )}
                 </div>
-              ))
-            )}
+            )))}
           </div>
         </main>
 
-            {/* Sidebar Direita */}
-            <aside className="hidden lg:block">
-              <div className="sticky top-4 space-y-4">
-                <SidebarDroppable id="right-sidebar">
-                  <SortableContext items={visibleRightWidgets} strategy={rectSortingStrategy}>
-                    {visibleRightWidgets.map((id) => (
-                      <SortableWidget key={id} id={id}>
-                        {renderWidget(id)}
-                      </SortableWidget>
-                    ))}
-                  </SortableContext>
-                </SidebarDroppable>
-              </div>
-            </aside>
-          </div>
+          {/* Sidebar Direita */}
+          <aside className="hidden lg:block">
+            <div className="space-y-4">
+              <SidebarDroppable id="right-sidebar">
+                <SortableContext items={visibleRightWidgets} strategy={rectSortingStrategy}>
+                  {visibleRightWidgets.map((id) => (
+                    <SortableWidget key={id} id={id}>
+                      {renderWidget(id)}
+                    </SortableWidget>
+                  ))}
+                </SortableContext>
+              </SidebarDroppable>
+            </div>
+          </aside>
+        </div>
 
           <DragOverlay>
             {activeWidgetId ? <div className="w-[320px]">{renderWidget(activeWidgetId)}</div> : null}

@@ -1,5 +1,34 @@
 # Changelog
 
+## 1.9.433
+- **Feed**: Correção de estrutura JSX e ajustes de build/TypeScript após remoção das ações/comentários, eliminando erro 500 no carregamento do módulo.
+- **Feed / Navegação**: Ajustado import do FeedPage para usar o casing correto (`./Feed`) e correções auxiliares de build.
+
+## 1.9.432
+- **Feed (Evento)**: Publicação de eventos agora cria um compromisso real na Agenda e gera post com preview clicável.
+- **Feed (Artigo)**: Novo modo de post institucional com formulário dedicado e renderização formatada (título/categoria/conteúdo).
+
+## 1.9.426
+- **Feed / Enquetes**: Widget "Última Enquete" agora busca a enquete mais recente diretamente da tabela `feed_polls` (não depende de flags no post).
+- **Feed / Enquetes**: Debug do widget ajustado para não imprimir payloads grandes (ex.: avatar base64).
+- **Feed**: Correção de violação das Rules of Hooks ao remover `useMemo` de dentro de `renderWidget` ("Conexões em Destaque").
+
+## 1.9.431
+- **Feed (UI)**: Removidos botões "Compartilhar" e "Salvar" dos posts. Agora só mantém "Curtir" e "Comentar".
+
+## 1.9.430
+- **Feed (Enquetes)**: Corrigido renderização de enquetes nos posts individuais (modal PostModal). Agora enquetes aparecem corretamente ao abrir um post.
+
+## 1.9.429
+- **Feed (Layout)**: Widget "Conexões em Destaque" movido para a sidebar esquerda para equilibrar layout.
+- **Feed (Atividade)**: Widget "Atividade da Equipe" agora mostra os últimos 4 posts (em vez de 5).
+
+## 1.9.428
+- **Feed (Métricas)**: Widget "Métricas do Feed" agora mostra apenas posts, curtidas e comentários do usuário logado (rótulo "Minhas").
+
+## 1.9.427
+- **Feed (Layout)**: Ajuste de largura para ficar consistente com os demais módulos (remoção de `max-w` internos que limitavam o conteúdo).
+
 ## 1.9.407
 - **Feed Redesign**: Implementação completa do feed estilo LinkedIn/Facebook
   - **Layout 3 colunas**: Sidebar esquerda, feed central, sidebar direita com widgets arrastáveis

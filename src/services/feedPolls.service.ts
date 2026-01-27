@@ -88,6 +88,23 @@ class FeedPollsService {
     return this.hydratePoll(data);
   }
 
+  async getLatestPoll(): Promise<FeedPoll | null> {
+    const { data, error } = await supabase
+      .from('feed_polls')
+      .select('*')
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (error) {
+      console.error('Erro ao buscar última enquete:', error);
+      return null;
+    }
+
+    if (!data) return null;
+    return this.hydratePoll(data);
+  }
+
   async getPollByPostId(postId: string): Promise<FeedPoll | null> {
     const { data, error } = await supabase
       .from('feed_polls')

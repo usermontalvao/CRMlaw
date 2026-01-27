@@ -573,6 +573,23 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
 
 const releases: ReleaseNote[] = [
   {
+    version: '1.9.433',
+    date: '27/01/2026',
+    summary: 'Feed: Correção de estrutura JSX e build para eliminar erro 500 no carregamento do módulo.',
+    modules: [
+      {
+        moduleId: 'feed',
+        changes: [
+          {
+            type: 'fix',
+            title: 'Estrutura JSX e build corrigidos',
+            description: 'Ajustados fechamentos de tags/parênteses no ternário de posts e imports com casing correto. Removidos tipos/funções ausentes (FeedAttachment, removeAttachment, Paperclip) e corrigidos acessos opcionais (likes_count, total_votes).',
+          },
+        ],
+      },
+    ],
+  },
+  {
     version: '1.9.419',
     date: '26/01/2026',
     summary: 'Feed: Correção de encoding para exibir acentos corretamente.',
