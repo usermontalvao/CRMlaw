@@ -1617,10 +1617,17 @@ const Feed: React.FC<FeedProps> = ({ onNavigateToModule, params }) => {
   }, [selectedTagForRecords, loadTagRecords]);
 
   // Carregar posts do feed - atualiza em background se já tem cache
-  const loadFeedPosts = useCallback(async () => {
+  const loadFeedPosts = useCallback(async (forceRefresh = false) => {
     if (feedPostsInFlightRef.current) return;
     feedPostsInFlightRef.current = true;
     try {
+      // Se for forceRefresh, limpa o cache
+      if (forceRefresh) {
+        localStorage.removeItem(FEED_POSTS_CACHE_KEY);
+        setFeedPosts([]);
+        feedPostsCountRef.current = 0;
+      }
+
       // Só mostra loading se não tem cache e ainda não há posts no estado
       if (!hasInstantPostsCache && feedPostsCountRef.current === 0) {
         setLoadingPosts(true);

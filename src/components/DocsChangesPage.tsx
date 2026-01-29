@@ -577,6 +577,28 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
 
 const releases: ReleaseNote[] = [
   {
+    version: '1.9.488',
+    date: '29/01/2026',
+    summary: 'Editor: busca de CNPJ via OpenAI + correção de CORS no proxy.',
+    modules: [
+      {
+        moduleId: 'editor',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Busca de CNPJ no editor usando OpenAI',
+            description: 'Substituída a IA do Groq pela OpenAI na compilação/normalização de dados de empresa (CNPJ), usando a Edge Function openai-proxy para evitar CORS.',
+          },
+          {
+            type: 'fix',
+            title: 'CORS/preflight do openai-proxy',
+            description: 'Ajustados headers e resposta do OPTIONS para permitir chamadas do frontend para a Edge Function sem bloqueio de CORS.',
+          },
+        ],
+      },
+    ],
+  },
+  {
     version: '1.9.487',
     date: '29/01/2026',
     summary: 'Processos: validação robusta de data da audiência.',

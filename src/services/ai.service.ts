@@ -5,8 +5,8 @@ import { supabase } from '../config/supabase';
 class AIService {
   private openai: OpenAI | null = null;
   private enabled: boolean = false;
-  private useEdgeFunction: boolean = false; // TEMPORÁRIO: Desabilitado até implantar Edge Function
-  private useGroq: boolean = true; // Usar Groq como provider principal
+  private useEdgeFunction: boolean = true; // Usar Edge Function para evitar CORS
+  private useGroq: boolean = false; // Usar OpenAI como provider principal
   private groqApiKey: string | null = null;
   private openaiApiKey: string | null = null;
   private lastGroqError: number = 0; // Timestamp do último erro 429
@@ -51,19 +51,19 @@ class AIService {
       console.log('✅ OpenAI configurado como fallback');
     }
     
-    // Groq é o provider principal
-    if (this.groqApiKey) {
-      this.useGroq = true;
-      this.enabled = true;
-      console.log('✅ Groq AI Service inicializado (provider principal)');
-      return;
-    }
-    
-    // Se não tem Groq mas tem OpenAI, usa OpenAI como principal
+    // OpenAI é o provider principal
     if (this.openaiApiKey && this.openai) {
       this.useGroq = false;
       this.enabled = true;
       console.log('✅ OpenAI AI Service inicializado (provider principal)');
+      return;
+    }
+    
+    // Se não tem OpenAI mas tem Groq, usa Groq como fallback
+    if (this.groqApiKey) {
+      this.useGroq = true;
+      this.enabled = true;
+      console.log('✅ Groq AI Service inicializado (provider fallback)');
       return;
     }
     
@@ -84,11 +84,21 @@ class AIService {
       { role: 'user', content: userPrompt },
     ];
 
+    // Usar OpenAI primeiro
+    if (this.openai && this.openaiApiKey) {
+      if (this.useEdgeFunction) {
+        return this.callOpenAIViaEdgeFunction(messages, 'gpt-4o-mini');
+      } else {
+        return this.callOpenAIDirectly(messages, maxTokens);
+      }
+    }
+
+    // Fallback para Groq
     if (this.useGroq && this.groqApiKey) {
       return this.callGroqAPI(messages, maxTokens);
     }
 
-    return this.callOpenAIDirectly(messages, maxTokens);
+    throw new Error('Nenhum provedor de IA disponível');
   }
 
   /**
@@ -180,7 +190,7 @@ class AIService {
   /**
    * Chama a OpenAI API através da Edge Function do Supabase (evita CORS)
    */
-  private async callOpenAIViaEdgeFunction(messages: any[], model: string = 'gpt-4o-mini'): Promise<any> {
+  private async callOpenAIViaEdgeFunction(messages: any[], model: string = 'gpt-4o-mini'): Promise<string> {
     const { data, error } = await supabase.functions.invoke('openai-proxy', {
       body: { messages, model },
     });
@@ -189,7 +199,7 @@ class AIService {
       throw new Error(`Edge Function error: ${error.message}`);
     }
 
-    return data;
+    return data?.choices?.[0]?.message?.content || '';
   }
 
   /**
@@ -241,34 +251,36 @@ Tipo de Comunicação: ${tipoComunicacao || 'Não especificado'}
 Texto da Intimação:
 ${texto}`;
 
-      let content: string | null;
+      let content: string | null = null;
 
-      if (this.useGroq && this.groqApiKey) {
-        // Usa Groq API (mais barato e sem rate limit agressivo)
+      // Usar OpenAI primeiro
+      if (this.openai && this.openaiApiKey) {
+        if (this.useEdgeFunction) {
+          // Usa Edge Function para evitar CORS
+          content = await this.callOpenAIViaEdgeFunction([
+            { role: 'system', content: systemPrompt },
+            { role: 'user', content: userPrompt },
+          ], 'gpt-4o-mini');
+        } else {
+          // Usa OpenAI diretamente
+          const response = await this.openai!.chat.completions.create({
+            model: 'gpt-4o-mini',
+            messages: [
+              { role: 'system', content: systemPrompt },
+              { role: 'user', content: userPrompt },
+            ],
+            temperature: 0.3,
+            max_tokens: 1000,
+            response_format: { type: 'json_object' },
+          });
+          content = response.choices[0].message.content;
+        }
+      } else if (this.useGroq && this.groqApiKey) {
+        // Usa Groq API como fallback
         content = await this.callGroqAPI([
           { role: 'system', content: systemPrompt },
           { role: 'user', content: userPrompt },
         ], 1000);
-      } else if (this.useEdgeFunction) {
-        // Usa Edge Function para evitar CORS
-        const response = await this.callOpenAIViaEdgeFunction([
-          { role: 'system', content: systemPrompt },
-          { role: 'user', content: userPrompt },
-        ], 'gpt-4o-mini');
-        content = response.choices[0].message.content;
-      } else {
-        // Usa OpenAI diretamente (pode ter problema de CORS)
-        const response = await this.openai!.chat.completions.create({
-          model: 'gpt-4o-mini',
-          messages: [
-            { role: 'system', content: systemPrompt },
-            { role: 'user', content: userPrompt },
-          ],
-          temperature: 0.3,
-          max_tokens: 1000,
-          response_format: { type: 'json_object' },
-        });
-        content = response.choices[0].message.content;
       }
       if (!content) {
         throw new Error('Resposta vazia da API');
@@ -317,25 +329,33 @@ Analise o texto e identifique se há algum prazo. Responda APENAS com JSON:
 
 Se não houver prazo, retorne null para days e dueDate.`;
 
-      let content: string | null;
+      let content: string | null = null;
       
-      if (this.useGroq && this.groqApiKey) {
+      // Usar OpenAI primeiro
+      if (this.openai && this.openaiApiKey) {
+        if (this.useEdgeFunction) {
+          content = await this.callOpenAIViaEdgeFunction([
+            { role: 'system', content: systemPrompt },
+            { role: 'user', content: texto },
+          ], 'gpt-4o-mini');
+        } else {
+          const response = await this.openai!.chat.completions.create({
+            model: 'gpt-4o-mini',
+            messages: [
+              { role: 'system', content: systemPrompt },
+              { role: 'user', content: texto },
+            ],
+            temperature: 0.2,
+            max_tokens: 300,
+            response_format: { type: 'json_object' },
+          });
+          content = response.choices[0].message.content;
+        }
+      } else if (this.useGroq && this.groqApiKey) {
         content = await this.callGroqAPI([
           { role: 'system', content: systemPrompt },
           { role: 'user', content: texto },
         ], 300);
-      } else {
-        const response = await this.openai!.chat.completions.create({
-          model: 'gpt-4o-mini',
-          messages: [
-            { role: 'system', content: systemPrompt },
-            { role: 'user', content: texto },
-          ],
-          temperature: 0.2,
-          max_tokens: 300,
-          response_format: { type: 'json_object' },
-        });
-        content = response.choices[0].message.content;
       }
 
       if (!content) return null;
@@ -376,23 +396,34 @@ Se não houver prazo, retorne null para days e dueDate.`;
       const systemPrompt = `Você é um assistente que resume textos jurídicos de forma clara e objetiva em no máximo ${maxWords} palavras.`;
       const userPrompt = `Resuma este texto:\n\n${texto}`;
       
-      if (this.useGroq && this.groqApiKey) {
+      // Usar OpenAI primeiro
+      if (this.openai && this.openaiApiKey) {
+        if (this.useEdgeFunction) {
+          const content = await this.callOpenAIViaEdgeFunction([
+            { role: 'system', content: systemPrompt },
+            { role: 'user', content: userPrompt },
+          ], 'gpt-4o-mini');
+          return content || texto.substring(0, 200) + '...';
+        } else {
+          const response = await this.openai!.chat.completions.create({
+            model: 'gpt-4o-mini',
+            messages: [
+              { role: 'system', content: systemPrompt },
+              { role: 'user', content: userPrompt },
+            ],
+            temperature: 0.3,
+            max_tokens: 200,
+          });
+          return response.choices[0].message.content || texto.substring(0, 200) + '...';
+        }
+      } else if (this.useGroq && this.groqApiKey) {
         const content = await this.callGroqAPI([
           { role: 'system', content: systemPrompt },
           { role: 'user', content: userPrompt },
         ], 200);
         return content || texto.substring(0, 200) + '...';
       } else {
-        const response = await this.openai!.chat.completions.create({
-          model: 'gpt-4o-mini',
-          messages: [
-            { role: 'system', content: systemPrompt },
-            { role: 'user', content: userPrompt },
-          ],
-          temperature: 0.3,
-          max_tokens: 200,
-        });
-        return response.choices[0].message.content || texto.substring(0, 200) + '...';
+        return texto.substring(0, 200) + '...';
       }
     } catch (error) {
       console.error('Erro ao gerar resumo:', error);
@@ -431,22 +462,32 @@ Responda APENAS com uma palavra.`;
       
       let urgency: string;
       
-      if (this.useGroq && this.groqApiKey) {
+      // Usar OpenAI primeiro
+      if (this.openai && this.openaiApiKey) {
+        if (this.useEdgeFunction) {
+          urgency = await this.callOpenAIViaEdgeFunction([
+            { role: 'system', content: systemPrompt },
+            { role: 'user', content: userPrompt },
+          ], 'gpt-4o-mini');
+        } else {
+          const response = await this.openai!.chat.completions.create({
+            model: 'gpt-4o-mini',
+            messages: [
+              { role: 'system', content: systemPrompt },
+              { role: 'user', content: userPrompt },
+            ],
+            temperature: 0.2,
+            max_tokens: 10,
+          });
+          urgency = response.choices[0].message.content || 'media';
+        }
+      } else if (this.useGroq && this.groqApiKey) {
         urgency = await this.callGroqAPI([
           { role: 'system', content: systemPrompt },
           { role: 'user', content: userPrompt },
         ], 10);
       } else {
-        const response = await this.openai!.chat.completions.create({
-          model: 'gpt-4o-mini',
-          messages: [
-            { role: 'system', content: systemPrompt },
-            { role: 'user', content: userPrompt },
-          ],
-          temperature: 0.2,
-          max_tokens: 10,
-        });
-        urgency = response.choices[0].message.content || 'media';
+        urgency = 'media';
       }
 
       const normalizedUrgency = urgency.toLowerCase().trim() as any;
@@ -470,25 +511,33 @@ Responda APENAS com uma palavra.`;
 Responda com um JSON: {"actions": ["ação 1", "ação 2", "ação 3"]}`;
       const userPrompt = `Intimação: ${texto}\nPrazo: ${prazo || 'Não especificado'}`;
       
-      let content: string | null;
+      let content: string | null = null;
       
-      if (this.useGroq && this.groqApiKey) {
+      // Usar OpenAI primeiro
+      if (this.openai && this.openaiApiKey) {
+        if (this.useEdgeFunction) {
+          content = await this.callOpenAIViaEdgeFunction([
+            { role: 'system', content: systemPrompt },
+            { role: 'user', content: userPrompt },
+          ], 'gpt-4o-mini');
+        } else {
+          const response = await this.openai!.chat.completions.create({
+            model: 'gpt-4o-mini',
+            messages: [
+              { role: 'system', content: systemPrompt },
+              { role: 'user', content: userPrompt },
+            ],
+            temperature: 0.4,
+            max_tokens: 300,
+            response_format: { type: 'json_object' },
+          });
+          content = response.choices[0].message.content;
+        }
+      } else if (this.useGroq && this.groqApiKey) {
         content = await this.callGroqAPI([
           { role: 'system', content: systemPrompt },
           { role: 'user', content: userPrompt },
         ], 300);
-      } else {
-        const response = await this.openai!.chat.completions.create({
-          model: 'gpt-4o-mini',
-          messages: [
-            { role: 'system', content: systemPrompt },
-            { role: 'user', content: userPrompt },
-          ],
-          temperature: 0.4,
-          max_tokens: 300,
-          response_format: { type: 'json_object' },
-        });
-        content = response.choices[0].message.content;
       }
 
       if (!content) return [];
