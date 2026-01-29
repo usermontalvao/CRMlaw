@@ -112,12 +112,12 @@ serve(async (req) => {
         .not('lawyer_full_name', 'is', null)
         .neq('lawyer_full_name', '')
 
-      // Buscar processos em andamento
+      // Buscar processos para tentativa de vinculação (não restringir apenas a status "andamento")
+      // Importante: a vinculação por número do processo precisa funcionar também para processos arquivados, em recurso, etc.
       const { data: processes } = await supabaseClient
         .from('processes')
         .select('*')
-        .eq('status', 'andamento')
-        .limit(50)
+        .limit(1000)
 
       console.log(`\n📊 [${executionId}] DADOS ENCONTRADOS:`)
       console.log(`   👤 Perfis com advogado: ${profiles?.length || 0}`)

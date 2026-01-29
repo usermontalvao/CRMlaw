@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.9.478
+- **Chat**: Impedida a criação de múltiplas conversas (DM) com a mesma pessoa. Ao iniciar chat, o sistema reutiliza a conversa existente.
+
+## 1.9.477
+- **Chat (Mobile)**: Melhorada a usabilidade no celular com ajustes no composer (input e botões) e correção de altura usando `100dvh` para evitar problemas de viewport.
+
 ## 1.9.476
 - **Chat (Mobile)**: Implementada responsividade completa para dispositivos móveis. Adicionada navegação entre lista de conversas e chat ativo, botão de voltar e ajustes de layout para telas pequenas.
 

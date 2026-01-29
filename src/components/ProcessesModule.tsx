@@ -36,6 +36,8 @@ import { processDjenSyncService } from '../services/processDjenSync.service';
 import { processTimelineService, type TimelineEvent } from '../services/processTimeline.service';
 import { deadlineService } from '../services/deadline.service';
 import { userNotificationService } from '../services/userNotification.service';
+import { calendarService } from '../services/calendar.service';
+import { aiService } from '../services/ai.service';
 import { ProcessTimeline } from './ProcessTimeline';
 import { ProcessTimelineInline } from './ProcessTimelineInline';
 import { ClientSearchSelect } from './ClientSearchSelect';
@@ -107,6 +109,27 @@ const formatDate = (value?: string | null) => {
     console.error('Erro ao formatar data:', value, error);
     return 'Data inválida';
   }
+};
+
+const formatLocalDateTime = (date: Date, hour: number, minute: number = 0) => {
+  const d = new Date(date);
+  d.setHours(hour, minute, 0, 0);
+  const yyyy = d.getFullYear();
+  const mm = String(d.getMonth() + 1).padStart(2, '0');
+  const dd = String(d.getDate()).padStart(2, '0');
+  const hh = String(d.getHours()).padStart(2, '0');
+  const mi = String(d.getMinutes()).padStart(2, '0');
+  return `${yyyy}-${mm}-${dd}T${hh}:${mi}`;
+};
+
+const addMonths = (date: Date, months: number) => {
+  const d = new Date(date);
+  const day = d.getDate();
+  d.setDate(1);
+  d.setMonth(d.getMonth() + months);
+  const lastDayOfTargetMonth = new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate();
+  d.setDate(Math.min(day, lastDayOfTargetMonth));
+  return d;
 };
 
 const formatDateTime = (value?: string | null) => {
@@ -341,6 +364,15 @@ const ProcessesModule: React.FC<ProcessesModuleProps> = ({ forceCreate, entityId
   const [analyzingTimeline, setAnalyzingTimeline] = useState(false);
   const [analyzeProgress, setAnalyzeProgress] = useState({ current: 0, total: 0 });
   const [expandedTimelineEvents, setExpandedTimelineEvents] = useState<Set<string>>(new Set());
+
+  // Prescrição execução sobrestada
+  const [stayBaseDate, setStayBaseDate] = useState('');
+  const [stayReason, setStayReason] = useState<'prescricao' | 'acordo_pagamento' | 'outro'>('prescricao');
+  const [staySectionExpanded, setStaySectionExpanded] = useState(false);
+  const [schedulingStay, setSchedulingStay] = useState(false);
+  const [stayScheduleError, setStayScheduleError] = useState<string | null>(null);
+  const [stayScheduleSuccess, setStayScheduleSuccess] = useState<string | null>(null);
+
   const [showTimelineModal, setShowTimelineModal] = useState(false);
   const [timelineProcessCode, setTimelineProcessCode] = useState<string | null>(null);
   const [timelineProcessId, setTimelineProcessId] = useState<string | null>(null);
@@ -918,6 +950,19 @@ const ProcessesModule: React.FC<ProcessesModuleProps> = ({ forceCreate, entityId
         }
       }
 
+      // Validar data da audiência não seja anterior a hoje
+      if (formData.hearing_scheduled === 'sim' && formData.hearing_date) {
+        const hearingDate = new Date(formData.hearing_date);
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        hearingDate.setHours(0, 0, 0, 0);
+        
+        if (hearingDate < today) {
+          setError('Data da audiência não pode ser anterior à data atual.');
+          return;
+        }
+      }
+
       const hasDjenData = djenData && !djenData._noData;
 
       const payloadBase = {
@@ -1076,6 +1121,157 @@ const ProcessesModule: React.FC<ProcessesModuleProps> = ({ forceCreate, entityId
     setViewMode('list');
     setNoteDraft('');
     setNoteError(null);
+    setStayBaseDate('');
+    setStayReason('prescricao');
+    setStaySectionExpanded(false);
+    setStayScheduleError(null);
+    setStayScheduleSuccess(null);
+  };
+
+  const createStayPrescriptionCalendarEvent = async (params: {
+    process: Process;
+    baseDateISO: string;
+    source: 'manual' | 'ai';
+  }) => {
+    const { process, baseDateISO, source } = params;
+    const base = new Date(baseDateISO);
+    if (Number.isNaN(base.getTime())) {
+      throw new Error('Data-base inválida.');
+    }
+    const prescriptionDate = addMonths(base, 24);
+    const alertDate = addMonths(base, 18);
+    const title = `Prescrição (Execução Sobrestada) • ${process.process_code || 'Processo'}`;
+    const description =
+      `Data-base do sobrestamento: ${formatDate(baseDateISO)}\n` +
+      `Prescrição estimada: ${formatDate(prescriptionDate.toISOString())}\n` +
+      `Aviso (6 meses antes): ${formatDate(alertDate.toISOString())}\n` +
+      `Origem: ${source === 'ai' ? 'IA' : 'Manual'}`;
+    await calendarService.createEvent({
+      title,
+      description,
+      event_type: 'deadline',
+      status: 'pendente',
+      start_at: formatLocalDateTime(alertDate, 9, 0),
+      notify_minutes_before: null,
+      process_id: process.id,
+      client_id: process.client_id || null,
+    });
+  };
+
+  const scheduleStayManual = async () => {
+    if (!selectedProcessForView) return;
+    setStayScheduleSuccess(null);
+    setStayScheduleError(null);
+    if (stayReason !== 'prescricao') {
+      setStayScheduleError('Agendamento disponível apenas para sobrestamento por risco de prescrição.');
+      return;
+    }
+    const trimmed = stayBaseDate.trim();
+    if (!trimmed) {
+      setStayScheduleError('Informe a data-base do sobrestamento.');
+      return;
+    }
+    try {
+      setSchedulingStay(true);
+      await createStayPrescriptionCalendarEvent({
+        process: selectedProcessForView,
+        baseDateISO: trimmed,
+        source: 'manual',
+      });
+      setStayScheduleSuccess('Compromisso criado na agenda com sucesso.');
+    } catch (err: any) {
+      setStayScheduleError(err?.message || 'Não foi possível criar o compromisso.');
+    } finally {
+      setSchedulingStay(false);
+    }
+  };
+
+  const scheduleStayWithAI = async () => {
+    if (!selectedProcessForView) return;
+    setStayScheduleSuccess(null);
+    setStayScheduleError(null);
+    try {
+      setSchedulingStay(true);
+      if (!selectedProcessForView.process_code) {
+        throw new Error('Processo sem número para consultar timeline.');
+      }
+      const events = timeline.length > 0 ? timeline : await processTimelineService.fetchProcessTimeline(selectedProcessForView.process_code);
+      const timelineText = events
+        .slice(0, 30)
+        .map((e) => {
+          const date = e.date ? (e.date.includes('T') ? e.date.split('T')[0] : e.date) : '';
+          const title = e.title || '';
+          const description = (e.description || '').replace(/\s+/g, ' ').trim();
+          return `DATA: ${date}\nTITULO: ${title}\nTEXTO: ${description.substring(0, 800)}`;
+        })
+        .join('\n\n---\n\n');
+      let baseDate: string | null = null;
+      let reason: 'prescricao' | 'acordo_pagamento' | 'outro' | null = null;
+      if (aiService.isEnabled()) {
+        const systemPrompt = 'Você é um assistente jurídico. Identifique se há sobrestamento/suspensão e classifique o motivo (prescrição vs acordo/pagamento vs outro). Retorne JSON.';
+        const userPrompt =
+          `Analise as movimentações abaixo e responda APENAS com JSON no formato:\n` +
+          `{\n  "hasStay": true|false,\n  "baseDate": "YYYY-MM-DD"|null,\n  "stayReason": "prescricao"|"acordo_pagamento"|"outro"|null,\n  "reason": "..."\n}\n\n` +
+          `Regras:\n- baseDate deve ser a DATA do evento que indica sobrestamento/suspensão (se existir).\n- stayReason deve ser "prescricao" somente quando o sobrestamento está ligado a risco de prescrição intercorrente/arquivamento provisório por inércia.\n- Se for sobrestamento por acordo/pagamento/cumprimento, use "acordo_pagamento".\n- Se não houver, hasStay=false.\n\n` +
+          `Importante:\n- NÃO considere como sobrestamento quando o texto for apenas um AVISO CONDICIONAL, por exemplo: "pode ser sobrestado", "caso não haja manifestação será sobrestado", "poderá ser sobrestado", "sob pena de sobrestamento".\n- Considere hasStay=true apenas quando houver determinação/ato efetivo de sobrestamento/suspensão/arquivamento provisório (ex.: "sobresto/sobrestar", "determino o sobrestamento", "processo sobrestado", "arquivamento provisório", "remessa ao arquivo provisório").\n\n` +
+          `MOVIMENTAÇÕES:\n${timelineText}`;
+        const content = await aiService.generateText(systemPrompt, userPrompt, 500);
+        const jsonMatch = content.match(/\{[\s\S]*\}/);
+        const parsed = jsonMatch ? JSON.parse(jsonMatch[0]) : null;
+        if (parsed?.hasStay && typeof parsed.baseDate === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(parsed.baseDate)) {
+          baseDate = parsed.baseDate;
+        }
+        if (parsed?.stayReason === 'prescricao' || parsed?.stayReason === 'acordo_pagamento' || parsed?.stayReason === 'outro') {
+          reason = parsed.stayReason;
+        }
+      }
+      if (!baseDate) {
+        const paymentKeywords = ['acordo', 'pagamento', 'parcel', 'cumprimento do acordo', 'quit', 'homolog'];
+        const prescriptionKeywords = ['prescri', 'arquivamento provis', 'arquivo provis', 'inércia', 'inercia', 'intercorrente'];
+        const stayKeywords = ['sobrestad', 'suspens', 'suspenso', 'suspensão', 'sobrestamento'];
+        const stayEffectiveKeywords = ['determino o sobrestamento', 'sobresto', 'sobrestar', 'processo sobrestado', 'autos sobrestados', 'arquivamento provis', 'arquivo provis', 'remessa ao arquivo provis', 'remetam-se ao arquivo provis'];
+        const stayConditionalKeywords = ['pode ser sobrest', 'poderá ser sobrest', 'caso não', 'na ausência', 'se não houver', 'sob pena', 'ensejar'];
+        const hit = events.find((e) => {
+          const text = `${e.title || ''} ${e.description || ''}`.toLowerCase();
+          const hasStaySignal = stayKeywords.some((k) => text.includes(k));
+          if (!hasStaySignal) return false;
+          const hasEffectiveStay = stayEffectiveKeywords.some((k) => text.includes(k));
+          const hasConditionalStay = stayConditionalKeywords.some((k) => text.includes(k));
+          if (!hasEffectiveStay && hasConditionalStay) return false;
+          const isPaymentStay = paymentKeywords.some((k) => text.includes(k));
+          const isPrescriptionStay = prescriptionKeywords.some((k) => text.includes(k));
+          if (isPrescriptionStay) {
+            reason = 'prescricao';
+          } else if (isPaymentStay) {
+            reason = 'acordo_pagamento';
+          } else {
+            reason = 'outro';
+          }
+          return true;
+        });
+        if (hit?.date) {
+          baseDate = hit.date.includes('T') ? hit.date.split('T')[0] : hit.date;
+        }
+      }
+      if (!baseDate) {
+        throw new Error('IA não identificou sobrestamento na timeline. Use o cadastro manual.');
+      }
+      if (reason !== 'prescricao') {
+        throw new Error('Sobrestamento identificado, mas não é por prescrição. Nenhum compromisso foi criado.');
+      }
+      await createStayPrescriptionCalendarEvent({
+        process: selectedProcessForView,
+        baseDateISO: baseDate,
+        source: 'ai',
+      });
+      setStayBaseDate(baseDate);
+      setStayReason('prescricao');
+      setStayScheduleSuccess('Compromisso criado na agenda com sucesso (via IA).');
+    } catch (err: any) {
+      setStayScheduleError(err?.message || 'Não foi possível criar o compromisso.');
+    } finally {
+      setSchedulingStay(false);
+    }
   };
 
   const getStatusBadge = (status: ProcessStatus) => {
@@ -1760,6 +1956,11 @@ const ProcessesModule: React.FC<ProcessesModuleProps> = ({ forceCreate, entityId
         </div>
 
         <div className="flex-1 overflow-y-auto bg-white dark:bg-zinc-900">
+          {error && (
+            <div className="mx-6 mt-6 bg-red-50 border border-red-200 text-red-600 px-4 py-3 rounded-lg text-sm relative z-[90]">
+              {error}
+            </div>
+          )}
           <form onSubmit={handleSubmit} className="p-6 space-y-4">
             <ClientSearchSelect
               value={formData.client_id}
@@ -1893,6 +2094,7 @@ const ProcessesModule: React.FC<ProcessesModuleProps> = ({ forceCreate, entityId
                       value={formData.hearing_date}
                       onChange={(e) => handleFormChange('hearing_date', e.target.value)}
                       className={inputStyle}
+                      min={new Date().toISOString().split('T')[0]}
                     />
                   </div>
                   <div>
@@ -2054,6 +2256,82 @@ const ProcessesModule: React.FC<ProcessesModuleProps> = ({ forceCreate, entityId
                 )}
               </div>
             </div>
+
+            {/* Seção Prescrição Execução Sobrestada */}
+            <div className="mt-8 pt-6 border-t border-gray-200">
+              <button
+                type="button"
+                onClick={() => setStaySectionExpanded((prev) => !prev)}
+                className="w-full flex items-start justify-between gap-3 text-left"
+              >
+                <div>
+                  <h3 className="text-sm font-semibold text-slate-900">Execução Sobrestada (Prescrição 2 anos)</h3>
+                  <p className="text-xs text-slate-500 mt-1">O sistema cria um compromisso 6 meses antes da prescrição estimada (data-base + 18 meses).</p>
+                </div>
+                <div className="mt-0.5 text-slate-400">
+                  {staySectionExpanded ? <ChevronUp className="w-5 h-5" /> : <ChevronDown className="w-5 h-5" />}
+                </div>
+              </button>
+
+              {staySectionExpanded && (
+                <>
+                  <div className="mt-4 grid grid-cols-1 md:grid-cols-3 gap-3">
+                    <div>
+                      <label className="text-xs font-semibold text-slate-500 uppercase">Data-base do sobrestamento</label>
+                      <input
+                        type="date"
+                        value={stayBaseDate}
+                        onChange={(e) => setStayBaseDate(e.target.value)}
+                        className="mt-1 w-full h-10 px-3 rounded-lg text-sm bg-white dark:bg-zinc-800 border border-slate-200 dark:border-zinc-700 text-slate-900 dark:text-white"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-xs font-semibold text-slate-500 uppercase">Motivo</label>
+                      <select
+                        value={stayReason}
+                        onChange={(e) => setStayReason(e.target.value as 'prescricao' | 'acordo_pagamento' | 'outro')}
+                        className="mt-1 w-full h-10 px-3 rounded-lg text-sm bg-white dark:bg-zinc-800 border border-slate-200 dark:border-zinc-700 text-slate-900 dark:text-white"
+                      >
+                        <option value="prescricao">Prescrição</option>
+                        <option value="acordo_pagamento">Cumprimento / Pagamento de acordo</option>
+                        <option value="outro">Outro</option>
+                      </select>
+                    </div>
+                    <div className="flex items-end gap-2">
+                      <button
+                        type="button"
+                        onClick={scheduleStayManual}
+                        disabled={schedulingStay}
+                        className="h-10 px-4 rounded-lg bg-orange-600 hover:bg-orange-700 text-white text-sm font-medium transition disabled:opacity-60"
+                      >
+                        {schedulingStay ? 'Criando...' : 'Criar na Agenda'}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={scheduleStayWithAI}
+                        disabled={schedulingStay}
+                        className="h-10 px-4 rounded-lg bg-slate-900 hover:bg-slate-800 text-white text-sm font-medium transition disabled:opacity-60"
+                      >
+                        {schedulingStay ? 'Analisando...' : 'IA identificar'}
+                      </button>
+                    </div>
+                  </div>
+
+                  {(stayScheduleError || stayScheduleSuccess) && (
+                    <div
+                      className={`mt-3 w-full px-3 py-2 rounded-lg text-xs border ${
+                        stayScheduleError
+                          ? 'bg-red-50 text-red-700 border-red-200'
+                          : 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                      }`}
+                    >
+                      {stayScheduleError || stayScheduleSuccess}
+                    </div>
+                  )}
+                </>
+              )}
+            </div>
+
             <div className="flex flex-wrap gap-3 mt-8 pt-6 border-t border-gray-200">
               {selectedProcessForView.process_code && (
                 <button
@@ -2600,7 +2878,6 @@ const ProcessesModule: React.FC<ProcessesModuleProps> = ({ forceCreate, entityId
         </div>
 
         <div className="p-4">
-          {error && <div className="bg-red-50 border border-red-200 text-red-600 px-4 py-3 rounded-lg text-sm mb-4">{error}</div>}
 
           {loading ? (
             <div className="py-16 flex flex-col items-center gap-4">

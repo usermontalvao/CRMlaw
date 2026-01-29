@@ -574,7 +574,25 @@ const ChatModule: React.FC = () => {
         return displayName.toLowerCase().includes(term);
       });
     }
-    return filtered;
+    const unique = new Map<string, ChatRoom>();
+    for (const room of filtered) {
+      if (room.is_public) {
+        unique.set(`public:${room.id}`, room);
+        continue;
+      }
+
+      const memberIds = roomMembers.get(room.id) || [];
+      const otherUserId = memberIds.find(id => id !== user?.id);
+      if (!otherUserId) {
+        unique.set(`room:${room.id}`, room);
+        continue;
+      }
+      if (!unique.has(`dm:${otherUserId}`)) {
+        unique.set(`dm:${otherUserId}`, room);
+      }
+    }
+
+    return Array.from(unique.values());
   }, [rooms, searchTerm, roomMembers, membersByUserId, user]);
 
   const scrollToBottom = () => {
@@ -928,6 +946,21 @@ const ChatModule: React.FC = () => {
 
   const handleStartDirectMessage = async (targetUserId: string) => {
     if (!user || user.id === targetUserId) return;
+
+    const existingRoom = rooms.find((r) => {
+      if (r.is_public) return false;
+      const memberIds = roomMembers.get(r.id);
+      if (!memberIds || memberIds.length !== 2) return false;
+      return memberIds.includes(user.id) && memberIds.includes(targetUserId);
+    });
+
+    if (existingRoom) {
+      setSelectedRoomId(existingRoom.id);
+      setShowMobileChat(true);
+      setShowNewChatModal(false);
+      return;
+    }
+
     try {
       const room = await chatService.createDirectMessage({
         userId1: user.id,

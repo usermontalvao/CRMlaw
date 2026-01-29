@@ -41,6 +41,7 @@ import { profileService } from '../services/profile.service';
 import { settingsService, type DjenConfig } from '../services/settings.service';
 import { userNotificationService } from '../services/userNotification.service';
 import { intimationAnalysisService } from '../services/intimationAnalysis.service';
+import { aiService } from '../services/ai.service';
 import { useToastContext } from '../contexts/ToastContext';
 import { useAuth } from '../contexts/AuthContext';
 import { exportToCSV, exportToExcel, exportToPDF } from '../utils/exportIntimations';
@@ -152,9 +153,14 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
   // Modais de criação
   const [deadlineModalOpen, setDeadlineModalOpen] = useState(false);
   const [appointmentModalOpen, setAppointmentModalOpen] = useState(false);
+  const [prescriptionModalOpen, setPrescriptionModalOpen] = useState(false);
   const [currentIntimationForAction, setCurrentIntimationForAction] = useState<DjenComunicacaoLocal | null>(null);
   const [savingDeadline, setSavingDeadline] = useState(false);
   const [savingAppointment, setSavingAppointment] = useState(false);
+  const [savingPrescription, setSavingPrescription] = useState(false);
+  const [prescriptionBaseDate, setPrescriptionBaseDate] = useState('');
+  const [prescriptionError, setPrescriptionError] = useState<string | null>(null);
+  const [prescriptionSuccess, setPrescriptionSuccess] = useState<string | null>(null);
 
   // Seleção múltipla
   const [selectionMode, setSelectionMode] = useState(false);
@@ -1207,6 +1213,97 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
     setAppointmentModalOpen(true);
   };
 
+  // Abrir modal de prescrição
+  const handleOpenPrescriptionModal = (intimation: DjenComunicacaoLocal) => {
+    setCurrentIntimationForAction(intimation);
+    setPrescriptionBaseDate('');
+    setPrescriptionError(null);
+    setPrescriptionSuccess(null);
+    setPrescriptionModalOpen(true);
+  };
+
+  // Criar evento de prescrição na agenda
+  const handleCreatePrescriptionEvent = async () => {
+    if (!currentIntimationForAction) return;
+    setPrescriptionError(null);
+    setPrescriptionSuccess(null);
+
+    const trimmed = prescriptionBaseDate.trim();
+    if (!trimmed) {
+      setPrescriptionError('Informe a data-base do sobrestamento.');
+      return;
+    }
+
+    const base = new Date(trimmed);
+    if (Number.isNaN(base.getTime())) {
+      setPrescriptionError('Data-base inválida.');
+      return;
+    }
+
+    try {
+      setSavingPrescription(true);
+
+      // Calcular datas: prescrição = base + 24 meses, alerta = base + 18 meses
+      const addMonths = (date: Date, months: number) => {
+        const d = new Date(date);
+        const day = d.getDate();
+        d.setDate(1);
+        d.setMonth(d.getMonth() + months);
+        const lastDay = new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate();
+        d.setDate(Math.min(day, lastDay));
+        return d;
+      };
+
+      const prescriptionDate = addMonths(base, 24);
+      const alertDate = addMonths(base, 18);
+
+      const formatDateBR = (d: Date) => {
+        const dd = String(d.getDate()).padStart(2, '0');
+        const mm = String(d.getMonth() + 1).padStart(2, '0');
+        const yyyy = d.getFullYear();
+        return `${dd}/${mm}/${yyyy}`;
+      };
+
+      const formatLocalDateTime = (d: Date, hour: number, minute: number = 0) => {
+        d.setHours(hour, minute, 0, 0);
+        const yyyy = d.getFullYear();
+        const mm = String(d.getMonth() + 1).padStart(2, '0');
+        const dd = String(d.getDate()).padStart(2, '0');
+        const hh = String(d.getHours()).padStart(2, '0');
+        const mi = String(d.getMinutes()).padStart(2, '0');
+        return `${yyyy}-${mm}-${dd}T${hh}:${mi}`;
+      };
+
+      const processCode = currentIntimationForAction.numero_processo_mascara || currentIntimationForAction.numero_processo;
+      const title = `Prescrição (Execução Sobrestada) • ${processCode}`;
+      const description =
+        `Data-base do sobrestamento: ${formatDateBR(base)}\n` +
+        `Prescrição estimada: ${formatDateBR(prescriptionDate)}\n` +
+        `Aviso (6 meses antes): ${formatDateBR(alertDate)}\n` +
+        `Origem: Intimação DJEN`;
+
+      await calendarService.createEvent({
+        title,
+        description,
+        event_type: 'deadline',
+        status: 'pendente',
+        start_at: formatLocalDateTime(alertDate, 9, 0),
+        notify_minutes_before: null,
+        process_id: currentIntimationForAction.process_id || null,
+        client_id: currentIntimationForAction.client_id || null,
+      });
+
+      setPrescriptionSuccess('Compromisso de prescrição criado na agenda com sucesso.');
+      toast.success('Sucesso', 'Compromisso de prescrição criado na agenda.');
+      setPrescriptionModalOpen(false);
+      setCurrentIntimationForAction(null);
+    } catch (err: any) {
+      setPrescriptionError(err?.message || 'Não foi possível criar o compromisso.');
+    } finally {
+      setSavingPrescription(false);
+    }
+  };
+
   if (!initialSnapshotLoaded) {
     return (
       <div className="flex items-center justify-center h-96">
@@ -1355,6 +1452,16 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
                 >
                   <CalendarIcon className="w-4 h-4 text-indigo-600" />
                   Adicionar Compromisso
+                </button>
+                <button
+                  onClick={() => {
+                    handleOpenPrescriptionModal(selectedIntimation);
+                    setSelectedIntimation(null);
+                  }}
+                  className="inline-flex items-center justify-center gap-2 bg-white hover:bg-slate-50 text-slate-700 font-semibold px-3 py-2 rounded-lg transition text-xs border border-slate-200 flex-1 sm:flex-none min-w-[160px]"
+                >
+                  <AlertTriangle className="w-4 h-4 text-orange-600" />
+                  Prescrição
                 </button>
                 {!selectedIntimation.lida && (
                   <button
@@ -2724,6 +2831,140 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
           }}
         />
       )}
+
+      {/* Modal de Prescrição */}
+      {prescriptionModalOpen && currentIntimationForAction && (
+        <div className="fixed inset-0 z-[70] flex items-center justify-center px-3 sm:px-6 py-4">
+          <div
+            className="absolute inset-0 bg-slate-900/70 backdrop-blur-sm"
+            onClick={() => {
+              setPrescriptionModalOpen(false);
+              setCurrentIntimationForAction(null);
+            }}
+            aria-hidden="true"
+          />
+          <div className="relative w-full max-w-lg bg-white dark:bg-zinc-900 rounded-2xl shadow-2xl ring-1 ring-black/5 flex flex-col overflow-hidden">
+            <div className="h-2 w-full bg-orange-500" />
+            <div className="px-5 sm:px-8 py-5 border-b border-slate-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 flex items-start justify-between gap-4">
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400 dark:text-slate-500">Prescrição</p>
+                <h2 className="text-xl font-semibold text-slate-900 dark:text-white">Execução Sobrestada</h2>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setPrescriptionModalOpen(false);
+                  setCurrentIntimationForAction(null);
+                }}
+                className="p-2 text-slate-400 hover:text-slate-600 dark:text-slate-300 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-white/10 rounded-xl transition"
+                aria-label="Fechar modal"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="flex-1 overflow-y-auto bg-white dark:bg-zinc-900 p-6 space-y-4">
+              <div className="bg-amber-50 border border-amber-200 rounded-lg p-3">
+                <p className="text-xs text-amber-800">
+                  <strong>Processo:</strong> {currentIntimationForAction.numero_processo_mascara || currentIntimationForAction.numero_processo}
+                </p>
+                <p className="text-xs text-amber-700 mt-1">
+                  O sistema criará um compromisso na agenda 6 meses antes da prescrição estimada (data-base + 18 meses).
+                </p>
+              </div>
+
+              <div>
+                <label className="block text-sm font-semibold text-slate-900 mb-2">
+                  Data-base do sobrestamento *
+                </label>
+                <input
+                  type="date"
+                  value={prescriptionBaseDate}
+                  onChange={(e) => setPrescriptionBaseDate(e.target.value)}
+                  className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent"
+                  required
+                />
+                <p className="text-xs text-slate-500 mt-1">
+                  Data em que o processo foi sobrestado por risco de prescrição.
+                </p>
+              </div>
+
+              {/* Projeção de datas */}
+              {prescriptionBaseDate && (
+                <div className="bg-amber-50 border border-amber-200 rounded-lg p-3">
+                  <p className="text-xs font-semibold text-amber-800 mb-2">Projeção de Datas</p>
+                  <div className="space-y-1">
+                    <p className="text-xs text-amber-700">
+                      <strong>Prescrição estimada:</strong> {(() => {
+                        const addMonths = (date: Date, months: number) => {
+                          const d = new Date(date);
+                          const day = d.getDate();
+                          d.setDate(1);
+                          d.setMonth(d.getMonth() + months);
+                          const lastDay = new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate();
+                          d.setDate(Math.min(day, lastDay));
+                          return d;
+                        };
+                        return addMonths(new Date(prescriptionBaseDate), 24).toLocaleDateString('pt-BR');
+                      })()}
+                    </p>
+                    <p className="text-xs text-amber-700">
+                      <strong>Aviso na agenda:</strong> {(() => {
+                        const addMonths = (date: Date, months: number) => {
+                          const d = new Date(date);
+                          const day = d.getDate();
+                          d.setDate(1);
+                          d.setMonth(d.getMonth() + months);
+                          const lastDay = new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate();
+                          d.setDate(Math.min(day, lastDay));
+                          return d;
+                        };
+                        return addMonths(new Date(prescriptionBaseDate), 18).toLocaleDateString('pt-BR');
+                      })()} (6 meses antes)
+                    </p>
+                  </div>
+                </div>
+              )}
+
+              {prescriptionError && (
+                <div className="bg-red-50 border border-red-200 rounded-lg p-3">
+                  <p className="text-sm text-red-800">{prescriptionError}</p>
+                </div>
+              )}
+
+              {prescriptionSuccess && (
+                <div className="bg-emerald-50 border border-emerald-200 rounded-lg p-3">
+                  <p className="text-sm text-emerald-800">{prescriptionSuccess}</p>
+                </div>
+              )}
+            </div>
+
+            <div className="border-t border-slate-200 dark:border-zinc-800 bg-slate-50 dark:bg-zinc-900 px-5 sm:px-8 py-4">
+              <div className="flex justify-end gap-3">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setPrescriptionModalOpen(false);
+                    setCurrentIntimationForAction(null);
+                  }}
+                  className="px-4 py-2 text-sm text-slate-600 dark:text-zinc-400 hover:text-slate-900 dark:hover:text-white transition"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="button"
+                  onClick={handleCreatePrescriptionEvent}
+                  disabled={savingPrescription}
+                  className="px-4 py-2 bg-orange-500 hover:bg-orange-600 text-white text-sm font-medium rounded-lg flex items-center gap-2 transition disabled:opacity-50"
+                >
+                  {savingPrescription && <Loader2 className="w-4 h-4 animate-spin" />}
+                  Criar na Agenda
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
@@ -2921,6 +3162,7 @@ const DeadlineCreationModal: React.FC<DeadlineCreationModalProps> = ({
               value={formData.due_date}
               onChange={(e) => setFormData({ ...formData, due_date: e.target.value })}
               className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-transparent"
+              min={new Date().toISOString().split('T')[0]}
               required
             />
             {analysis?.deadline?.dueDate && (
@@ -3275,6 +3517,7 @@ const AppointmentCreationModal: React.FC<AppointmentCreationModalProps> = ({
                 value={formData.date}
                 onChange={(e) => setFormData({ ...formData, date: e.target.value })}
                 className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                min={new Date().toISOString().split('T')[0]}
                 required
               />
               {analysis?.deadline?.dueDate && (

@@ -46,6 +46,8 @@ import {
    ============================================================================ */
 
 const VERSION_CODENAMES: Record<string, { name: string; emoji: string }> = {
+  '1.9.478': { name: 'Café DM Única', emoji: '👤' },
+  '1.9.477': { name: 'Café Chat Usável', emoji: '✅' },
   '1.9.476': { name: 'Café Chat Móvel', emoji: '📱' },
   '1.9.475': { name: 'Café Facebook Sticky', emoji: '📌' },
   '1.9.425': { name: 'Café Intimações DJEN', emoji: '⚖️' },
@@ -574,6 +576,219 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
    ============================================================================ */
 
 const releases: ReleaseNote[] = [
+  {
+    version: '1.9.487',
+    date: '29/01/2026',
+    summary: 'Processos: validação robusta de data da audiência.',
+    modules: [
+      {
+        moduleId: 'processos',
+        changes: [
+          {
+            type: 'fix',
+            title: 'Validação dupla para data da audiência',
+            description: 'Adicionada validação no frontend (atributo min) e backend (verificação no submit) para garantir que datas anteriores a hoje não sejam aceitas, mesmo que o usuário consiga contornar a validação do input.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.486',
+    date: '29/01/2026',
+    summary: 'Validação de datas em todo o sistema: bloqueio de datas passadas.',
+    modules: [
+      {
+        moduleId: 'processos',
+        changes: [
+          {
+            type: 'fix',
+            title: 'Data da audiência não pode ser anterior a hoje',
+            description: 'Adicionada validação no campo de data da audiência para impedir seleção de datas anteriores à data atual.',
+          },
+        ],
+      },
+      {
+        moduleId: 'intimacoes',
+        changes: [
+          {
+            type: 'fix',
+            title: 'Datas de vencimento e compromissos não podem ser anteriores a hoje',
+            description: 'Adicionada validação nos campos de data de vencimento de prazos e data de compromissos para impedir datas passadas.',
+          },
+        ],
+      },
+      {
+        moduleId: 'calendario',
+        changes: [
+          {
+            type: 'fix',
+            title: 'Data de eventos não pode ser anterior a hoje',
+            description: 'Adicionada validação no campo de data de criação de eventos para impedir datas passadas.',
+          },
+        ],
+      },
+      {
+        moduleId: 'exigencias',
+        changes: [
+          {
+            type: 'fix',
+            title: 'Datas de vencimento e perícias não podem ser anteriores a hoje',
+            description: 'Adicionada validação nos campos de data de vencimento de exigências e datas de perícias (médica e social) para impedir datas passadas.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.485',
+    date: '29/01/2026',
+    summary: 'Processos: bloqueio de datas anteriores para audiência.',
+    modules: [
+      {
+        moduleId: 'processos',
+        changes: [
+          {
+            type: 'fix',
+            title: 'Data da audiência não pode ser anterior a hoje',
+            description: 'Adicionada validação no campo de data da audiência para impedir seleção de datas anteriores à data atual, evitando agendamentos retroativos.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.484',
+    date: '29/01/2026',
+    summary: 'Intimações: correção de vinculação automática por número do processo.',
+    modules: [
+      {
+        moduleId: 'intimacoes',
+        changes: [
+          {
+            type: 'fix',
+            title: 'Vinculação automática funciona para processos fora de "andamento"',
+            description: 'Corrigido o sync do DJEN (run-djen-sync) para considerar todos os processos cadastrados ao tentar vincular intimações por número do processo, incluindo processos arquivados e outros status. Também realizado backfill para vincular intimações já importadas sem vínculo quando houver match pelo número do processo.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.483',
+    date: '29/01/2026',
+    summary: 'Prescrição: modal fecha ao criar compromisso e conversão automática ativada.',
+    modules: [
+      {
+        moduleId: 'intimacoes',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Modal de prescrição fecha após criar compromisso',
+            description: 'Ao criar o compromisso de prescrição na agenda a partir da intimação, o modal é fechado automaticamente após sucesso.',
+          },
+        ],
+      },
+      {
+        moduleId: 'calendario',
+        changes: [
+          {
+            type: 'feature',
+            title: 'Conversão automática de compromisso de prescrição em prazo',
+            description: 'Criada e deployada a Edge Function (convert-prescription-deadlines) e configurado pg_cron para executar diariamente às 08:00, convertendo automaticamente compromissos de prescrição em prazos quando chega a data do aviso.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.482',
+    date: '29/01/2026',
+    summary: 'Prescrição: projeção de datas restaurada e conversão automática em prazo.',
+    modules: [
+      {
+        moduleId: 'intimacoes',
+        changes: [
+          {
+            type: 'fix',
+            title: 'Projeção de datas restaurada no modal de prescrição',
+            description: 'Restaurada a exibição das datas projetadas (prescrição estimada e aviso na agenda) no modal de prescrição das intimações.',
+          },
+        ],
+      },
+      {
+        moduleId: 'calendario',
+        changes: [
+          {
+            type: 'feature',
+            title: 'Conversão automática de compromisso de prescrição em prazo',
+            description: 'Criada Edge Function (convert-prescription-deadlines) que converte automaticamente compromissos de prescrição em prazos quando chega a data do aviso. A função pode ser executada via cron diário para automatizar o processo.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.479',
+    date: '29/01/2026',
+    summary: 'Processos e Intimações: monitoramento de prescrição para execução sobrestada.',
+    modules: [
+      {
+        moduleId: 'processos',
+        changes: [
+          {
+            type: 'feature',
+            title: 'Execução sobrestada: criar compromisso 6 meses antes da prescrição',
+            description: 'Nos detalhes do processo, adicionada seção expansível para criar um compromisso na agenda 6 meses antes da prescrição estimada (data-base + 18 meses). Inclui cadastro manual da data-base com seleção de motivo e identificação via IA/timeline. O agendamento é realizado apenas quando o motivo for prescrição.',
+          },
+        ],
+      },
+      {
+        moduleId: 'intimacoes',
+        changes: [
+          {
+            type: 'feature',
+            title: 'Ação de prescrição nas intimações',
+            description: 'Adicionado botão "Prescrição" nas ações da intimação para criar compromisso de alerta de prescrição diretamente a partir de uma intimação DJEN.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.478',
+    date: '27/01/2026',
+    summary: 'Chat: DM única por pessoa.',
+    modules: [
+      {
+        moduleId: 'chat',
+        changes: [
+          {
+            type: 'fix',
+            title: 'Uma conversa por pessoa',
+            description: 'Impedida a criação de múltiplas conversas (DM) com a mesma pessoa. Ao iniciar chat, o sistema reutiliza a conversa existente e evita duplicidades na lista.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.477',
+    date: '27/01/2026',
+    summary: 'Chat: Usabilidade melhorada no mobile.',
+    modules: [
+      {
+        moduleId: 'chat',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Composer do chat usável no celular',
+            description: 'Ajustes no composer (input e botões) para caber e operar bem no mobile, além de correção de altura usando 100dvh para evitar problemas de viewport no celular.',
+          },
+        ],
+      },
+    ],
+  },
   {
     version: '1.9.476',
     date: '27/01/2026',

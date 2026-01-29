@@ -2636,6 +2636,7 @@ const RequirementsModule: React.FC<RequirementsModuleProps> = ({ forceCreate, en
                       value={formData.exigency_due_date}
                       onChange={(event) => handleFormChange('exigency_due_date', event.target.value)}
                       className={inputClass}
+                      min={new Date().toISOString().split('T')[0]}
                     />
                   </label>
                 )}
@@ -2769,6 +2770,7 @@ const RequirementsModule: React.FC<RequirementsModuleProps> = ({ forceCreate, en
                 value={exigencyForm.due_date}
                 onChange={(event) => handleExigencyFormChange('due_date', event.target.value)}
                 className="input-field"
+                min={new Date().toISOString().split('T')[0]}
               />
             </div>
             <div>
@@ -2886,6 +2888,7 @@ const RequirementsModule: React.FC<RequirementsModuleProps> = ({ forceCreate, en
                   value={periciaForm.medicaDate}
                   onChange={(e) => handlePericiaFormChange('medicaDate', e.target.value)}
                   className="input-field"
+                  min={new Date().toISOString().split('T')[0]}
                 />
               </div>
               <div>
@@ -2909,6 +2912,7 @@ const RequirementsModule: React.FC<RequirementsModuleProps> = ({ forceCreate, en
                   value={periciaForm.socialDate}
                   onChange={(e) => handlePericiaFormChange('socialDate', e.target.value)}
                   className="input-field"
+                  min={new Date().toISOString().split('T')[0]}
                 />
               </div>
               <div>

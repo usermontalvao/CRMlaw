@@ -1959,6 +1959,8 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({
                     value={newEventForm.date}
                     onChange={(e) => setNewEventForm({ ...newEventForm, date: e.target.value })}
                     className="w-full px-2 sm:px-4 py-2 sm:py-2.5 bg-slate-50 border border-slate-200 rounded-lg sm:rounded-xl text-sm sm:text-base text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
+                    min={new Date().toISOString().split('T')[0]}
+                    required
                   />
                 </div>
                 <div>
