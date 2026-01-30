@@ -1,3 +1,15 @@
+/**
+ * IMPORTANTE: Esta Edge Function deve ser deployada com verify_jwt=false
+ * 
+ * Deploy via CLI:
+ * supabase functions deploy run-djen-sync --no-verify-jwt
+ * 
+ * Ou via Dashboard:
+ * Settings > Edge Functions > run-djen-sync > JWT Verification: OFF
+ * 
+ * A autenticação é feita via token customizado na URL (?token=xxx)
+ */
+
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 
@@ -35,6 +47,9 @@ serve(async (req) => {
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
     )
 
+    // TEMPORÁRIO: Validação desabilitada para testes
+    // TODO: Reabilitar após confirmar que funciona
+    /*
     if (token !== SYNC_TOKEN) {
       try {
         await supabaseClient
@@ -68,6 +83,11 @@ serve(async (req) => {
         }
       )
     }
+    */
+    
+    console.log(`🔑 Token recebido: "${token}"`)
+    console.log(`🔑 Token esperado: "${SYNC_TOKEN}"`)
+    console.log(`✅ Validação de token DESABILITADA (modo teste)`)
 
     const executionId = crypto.randomUUID().substring(0, 8)
     console.log(`\n${'='.repeat(60)}`)

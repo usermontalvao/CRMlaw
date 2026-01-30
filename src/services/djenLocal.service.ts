@@ -665,6 +665,25 @@ class DjenLocalService {
   }
 
   /**
+   * Apaga intimações de uma data específica
+   * @param date Data no formato YYYY-MM-DD
+   */
+  async deleteIntimationsByDate(date: string): Promise<{ deleted: number }> {
+    const { data, error } = await supabase
+      .from(this.tableName)
+      .delete()
+      .eq('data_disponibilizacao', date)
+      .select('id');
+
+    if (error) {
+      console.error('Erro ao apagar intimações por data:', error);
+      throw new Error(error.message);
+    }
+
+    return { deleted: data?.length || 0 };
+  }
+
+  /**
    * Remove intimações antigas (mais de X dias)
    * @param days Número de dias para manter (padrão: 30)
    */

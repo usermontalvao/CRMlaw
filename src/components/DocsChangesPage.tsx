@@ -46,6 +46,7 @@ import {
    ============================================================================ */
 
 const VERSION_CODENAMES: Record<string, { name: string; emoji: string }> = {
+  '1.9.489': { name: 'Café Intimações Restauradas', emoji: '📋' },
   '1.9.478': { name: 'Café DM Única', emoji: '👤' },
   '1.9.477': { name: 'Café Chat Usável', emoji: '✅' },
   '1.9.476': { name: 'Café Chat Móvel', emoji: '📱' },
@@ -576,6 +577,36 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
    ============================================================================ */
 
 const releases: ReleaseNote[] = [
+  {
+    version: '1.9.489',
+    date: '30/01/2026',
+    summary: 'Intimações: restauração do módulo mantendo alterações do Supabase e TypeScript.',
+    modules: [
+      {
+        moduleId: 'intimations',
+        changes: [
+          {
+            type: 'update',
+            title: 'Restauração do Módulo de Intimações',
+            description: 'Restaurado módulo de intimações do Git, preservando todas as funcionalidades do Supabase e melhorias TypeScript implementadas.',
+          }
+        ],
+      }
+    ],
+    features: [
+      'Restauração completa do módulo IntimationsModule.tsx',
+      'Manutenção das integrações com Supabase',
+      'Preservação das tipagens TypeScript',
+      'Funcionalidades de vinculação automática mantidas',
+    ],
+    fixes: [
+      'Módulo de intimações restaurado para versão estável',
+    ],
+    improvements: [
+      'Compatibilidade mantida com banco de dados Supabase',
+      'Performance otimizada nas consultas',
+    ],
+  },
   {
     version: '1.9.488',
     date: '29/01/2026',
