@@ -46,6 +46,7 @@ import {
    ============================================================================ */
 
 const VERSION_CODENAMES: Record<string, { name: string; emoji: string }> = {
+  '1.9.491': { name: 'Café Vinculação Automática', emoji: '🔗' },
   '1.9.490': { name: 'Café Chat Duplicado', emoji: '💬' },
   '1.9.489': { name: 'Café Intimações Restauradas', emoji: '📋' },
   '1.9.478': { name: 'Café DM Única', emoji: '👤' },
@@ -579,6 +580,33 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
 
 const releases: ReleaseNote[] = [
   {
+    version: '1.9.491',
+    date: '30/01/2026',
+    summary: 'Intimações: vinculação automática no carregamento e botão de vinculação direta.',
+    modules: [
+      {
+        moduleId: 'intimations',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Vinculação Automática no Carregamento',
+            description: 'Implementada vinculação automática de intimações ao carregar o módulo, não apenas na sincronização manual.',
+          },
+          {
+            type: 'improvement',
+            title: 'Botão de Vinculação Direta',
+            description: 'Transformado "Sem Vínc" em botão clicável para abrir modal de vinculação diretamente da lista.',
+          },
+          {
+            type: 'fix',
+            title: 'Correção de Sintaxe e Tipos',
+            description: 'Corrigidos erros de sintaxe no IntimationsModule e tipos no changelog.',
+          }
+        ],
+      }
+    ],
+  },
+  {
     version: '1.9.490',
     date: '30/01/2026',
     summary: 'Chat: correção de múltiplas caixas para o mesmo usuário no widget.',
@@ -594,19 +622,6 @@ const releases: ReleaseNote[] = [
         ],
       }
     ],
-    features: [
-      'Função findDirectMessage para verificar salas existentes',
-      'Modificação em createDirectMessage para reutilizar salas existentes',
-      'Limpeza de salas duplicadas no banco de dados',
-    ],
-    fixes: [
-      'Widget de chat agora mostra apenas 1 caixa por usuário',
-      'Removidas 3 salas DM duplicadas do banco de dados',
-    ],
-    improvements: [
-      'Performance otimizada ao evitar consultas duplicadas',
-      'Melhor experiência do usuário no widget de mensagens',
-    ],
   },
   {
     version: '1.9.489',
@@ -617,25 +632,12 @@ const releases: ReleaseNote[] = [
         moduleId: 'intimations',
         changes: [
           {
-            type: 'update',
+            type: 'improvement',
             title: 'Restauração do Módulo de Intimações',
             description: 'Restaurado módulo de intimações do Git, preservando todas as funcionalidades do Supabase e melhorias TypeScript implementadas.',
           }
         ],
       }
-    ],
-    features: [
-      'Restauração completa do módulo IntimationsModule.tsx',
-      'Manutenção das integrações com Supabase',
-      'Preservação das tipagens TypeScript',
-      'Funcionalidades de vinculação automática mantidas',
-    ],
-    fixes: [
-      'Módulo de intimações restaurado para versão estável',
-    ],
-    improvements: [
-      'Compatibilidade mantida com banco de dados Supabase',
-      'Performance otimizada nas consultas',
     ],
   },
   {

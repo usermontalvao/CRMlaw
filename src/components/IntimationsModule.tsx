@@ -299,10 +299,14 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
     }
   };
 
-
   // Vinculação automática: se nome da parte = nome do cliente, vincula automaticamente
-  const autoLinkIntimations = useCallback(async (intimationsData: DjenComunicacaoLocal[], clientsData: Client[]) => {
-    if (!clientsData.length) return;
+  const autoLinkIntimations = useCallback(async (intimationsData: DjenComunicacaoLocal[], clientsData: Client[], processesData?: Process[]) => {
+    console.log(`🔗 Iniciando vinculação automática: ${intimationsData.length} intimações, ${clientsData.length} clientes, ${processesData?.length || 0} processos`);
+    
+    if (!clientsData.length && !processesData?.length) {
+      console.log(`❌ Sem dados para vinculação: clientes=${clientsData.length}, processos=${processesData?.length || 0}`);
+      return 0;
+    }
     
     // Criar mapa de nomes de clientes (normalizado) -> client_id
     const clientNameMap = new Map<string, string>();
@@ -310,24 +314,39 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
       const normalizedName = client.full_name.trim().toUpperCase();
       clientNameMap.set(normalizedName, client.id);
     });
+    console.log(`👥 Mapa de clientes criado com ${clientNameMap.size} nomes`);
+
+    // Criar mapa de números de processos (normalizado) -> process_id
+    const processNumberMap = new Map<string, string>();
+    if (processesData) {
+      processesData.forEach(process => {
+        const normalizedNumber = process.process_code.trim().toUpperCase();
+        processNumberMap.set(normalizedNumber, process.id);
+      });
+      console.log(`⚖️ Mapa de processos criado com ${processNumberMap.size} números`);
+    }
 
     let linkedCount = 0;
     
     for (const intimation of intimationsData) {
-      // Pular se já tem cliente vinculado
-      if (intimation.client_id) continue;
+      // Pular se já tem cliente ou processo vinculado
+      if (intimation.client_id && intimation.process_id) {
+        continue;
+      }
       
       // Buscar partes: primeiro dos destinatários, depois do texto
       const partes = intimation.djen_destinatarios && intimation.djen_destinatarios.length > 0
         ? intimation.djen_destinatarios.map(d => d.nome)
         : extractPartesFromTexto(intimation.texto || '').map(p => p.nome);
       
+      console.log(`📋 Intimação ${intimation.id.substring(0, 8)}: ${partes.length} partes encontradas`, partes.slice(0, 2));
+      
       // Verificar se alguma parte corresponde a um cliente
       for (const parteNome of partes) {
         const normalizedParte = parteNome.trim().toUpperCase();
         const matchedClientId = clientNameMap.get(normalizedParte);
         
-        if (matchedClientId) {
+        if (matchedClientId && !intimation.client_id) {
           try {
             await djenLocalService.vincularCliente(intimation.id, matchedClientId);
             linkedCount++;
@@ -338,15 +357,34 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
           }
         }
       }
+
+      // Verificar se o número do processo corresponde a algum processo cadastrado
+      if (intimation.numero_processo && !intimation.process_id) {
+        const normalizedProcessNumber = intimation.numero_processo.trim().toUpperCase();
+        const matchedProcessId = processNumberMap.get(normalizedProcessNumber);
+        
+        if (matchedProcessId) {
+          try {
+            await djenLocalService.vincularProcesso(intimation.id, matchedProcessId);
+            linkedCount++;
+            console.log(`🔗 Vinculação automática: processo "${intimation.numero_processo}" -> ${matchedProcessId.substring(0, 8)}`);
+          } catch (err) {
+            console.error(`Erro ao vincular processo automaticamente:`, err);
+          }
+        }
+      }
     }
     
     if (linkedCount > 0) {
       console.log(`✅ ${linkedCount} intimação(ões) vinculada(s) automaticamente`);
+    } else {
+      console.log(`ℹ️ Nenhuma intimação vinculada automaticamente`);
     }
     
     return linkedCount;
   }, []);
 
+// ...
   // Recarregar apenas intimações (sem flash/reload)
   const reloadIntimations = useCallback(async () => {
     try {
@@ -411,6 +449,18 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
       setMembers(membersData);
       setCurrentUserProfile(userProfile);
       setGlobalDjenConfig(djenSettings);
+      
+      // Vinculação automática após carregar os dados
+      if ((clientsData.length > 0 || processesData.length > 0) && intimationsData.length > 0) {
+        console.log(`🔗 Iniciando vinculação automática no carregamento...`);
+        const linked = await autoLinkIntimations(intimationsData, clientsData, processesData);
+        if (linked && linked > 0) {
+          console.log(`✅ ${linked} intimação(ões) vinculada(s) automaticamente`);
+          // Recarregar para pegar os vínculos atualizados
+          const updatedData = await djenLocalService.listComunicacoes();
+          setIntimations(updatedData);
+        }
+      }
       
       // Integrar nomes dos advogados dos perfis com lawyers_to_monitor
       const lawyerNamesFromProfiles = membersData
@@ -2115,10 +2165,17 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
                                 Vinc
                               </span>
                             ) : (
-                              <span className="inline-flex items-center px-1.5 sm:px-2 py-0.5 rounded-full text-[10px] sm:text-xs font-semibold bg-slate-100 text-slate-600 border border-slate-200">
-                                <Unlink className="w-3 h-3 sm:w-3.5 sm:h-3.5 mr-1" />
+                              <button
+                                onClick={() => {
+                                  setLinkingIntimation(intimation);
+                                  setLinkModalOpen(true);
+                                }}
+                                className="inline-flex items-center px-1.5 sm:px-2 py-0.5 rounded-full text-[10px] sm:text-xs font-semibold bg-blue-100 text-blue-700 border border-blue-200 hover:bg-blue-200 transition-colors cursor-pointer"
+                                title="Vincular a cliente/processo"
+                              >
+                                <Link2 className="w-3 h-3 sm:w-3.5 sm:h-3.5 mr-1" />
                                 Sem Vínc
-                              </span>
+                              </button>
                             )}
                             {!intimation.lida && (
                               <span className="inline-flex items-center px-1.5 sm:px-2 py-0.5 rounded-full text-[10px] sm:text-xs font-semibold bg-amber-100 text-amber-700">
@@ -2373,10 +2430,17 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
                         Vinc
                       </span>
                     ) : (
-                      <span className="inline-flex items-center px-1.5 sm:px-2 py-0.5 rounded-full text-[10px] sm:text-xs font-semibold bg-slate-100 text-slate-600 border border-slate-200">
-                        <Unlink className="w-3 h-3 sm:w-3.5 sm:h-3.5 mr-1" />
+                      <button
+                        onClick={() => {
+                          setLinkingIntimation(intimation);
+                          setLinkModalOpen(true);
+                        }}
+                        className="inline-flex items-center px-1.5 sm:px-2 py-0.5 rounded-full text-[10px] sm:text-xs font-semibold bg-blue-100 text-blue-700 border border-blue-200 hover:bg-blue-200 transition-colors cursor-pointer"
+                        title="Vincular a cliente/processo"
+                      >
+                        <Link2 className="w-3 h-3 sm:w-3.5 sm:h-3.5 mr-1" />
                         Sem Vínc
-                      </span>
+                      </button>
                     )}
                     {!intimation.lida && (
                       <span className="inline-flex items-center px-1.5 sm:px-2 py-0.5 rounded-full text-[10px] sm:text-xs font-semibold bg-amber-100 text-amber-700">
