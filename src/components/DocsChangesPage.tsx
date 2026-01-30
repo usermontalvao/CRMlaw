@@ -46,6 +46,7 @@ import {
    ============================================================================ */
 
 const VERSION_CODENAMES: Record<string, { name: string; emoji: string }> = {
+  '1.9.490': { name: 'Café Chat Duplicado', emoji: '💬' },
   '1.9.489': { name: 'Café Intimações Restauradas', emoji: '📋' },
   '1.9.478': { name: 'Café DM Única', emoji: '👤' },
   '1.9.477': { name: 'Café Chat Usável', emoji: '✅' },
@@ -577,6 +578,36 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
    ============================================================================ */
 
 const releases: ReleaseNote[] = [
+  {
+    version: '1.9.490',
+    date: '30/01/2026',
+    summary: 'Chat: correção de múltiplas caixas para o mesmo usuário no widget.',
+    modules: [
+      {
+        moduleId: 'chat',
+        changes: [
+          {
+            type: 'fix',
+            title: 'Eliminação de Salas DM Duplicadas',
+            description: 'Implementada verificação para evitar criação de múltiplas salas DM para o mesmo par de usuários no widget de chat.',
+          }
+        ],
+      }
+    ],
+    features: [
+      'Função findDirectMessage para verificar salas existentes',
+      'Modificação em createDirectMessage para reutilizar salas existentes',
+      'Limpeza de salas duplicadas no banco de dados',
+    ],
+    fixes: [
+      'Widget de chat agora mostra apenas 1 caixa por usuário',
+      'Removidas 3 salas DM duplicadas do banco de dados',
+    ],
+    improvements: [
+      'Performance otimizada ao evitar consultas duplicadas',
+      'Melhor experiência do usuário no widget de mensagens',
+    ],
+  },
   {
     version: '1.9.489',
     date: '30/01/2026',

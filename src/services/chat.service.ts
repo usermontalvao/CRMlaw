@@ -56,10 +56,73 @@ class ChatService {
     return room as ChatRoom;
   }
 
+  async findDirectMessage(userId1: string, userId2: string): Promise<ChatRoom | null> {
+    // Primeiro, buscar todos os IDs de salas DM do userId1
+    const { data: userRooms, error: userRoomsError } = await supabase
+      .from(this.membersTable)
+      .select('room_id')
+      .eq('user_id', userId1);
+
+    if (userRoomsError) {
+      console.error('Erro ao buscar salas do usuário:', userRoomsError);
+      return null;
+    }
+
+    if (!userRooms || userRooms.length === 0) {
+      return null;
+    }
+
+    // Depois, verificar quais dessas salas são do tipo DM e contêm userId2
+    const roomIds = userRooms.map(row => row.room_id);
+    const { data: dmRooms, error: dmError } = await supabase
+      .from(this.roomsTable)
+      .select('id, type')
+      .in('id', roomIds)
+      .eq('type', 'dm');
+
+    if (dmError) {
+      console.error('Erro ao buscar salas DM:', dmError);
+      return null;
+    }
+
+    if (!dmRooms || dmRooms.length === 0) {
+      return null;
+    }
+
+    // Finalmente, verificar se alguma sala DM contém userId2
+    for (const dmRoom of dmRooms) {
+      const { data: otherMember } = await supabase
+        .from(this.membersTable)
+        .select('user_id')
+        .eq('room_id', dmRoom.id)
+        .eq('user_id', userId2)
+        .single();
+
+      if (otherMember) {
+        // Buscar a sala completa
+        const { data: fullRoom } = await supabase
+          .from(this.roomsTable)
+          .select('*')
+          .eq('id', dmRoom.id)
+          .single();
+
+        return fullRoom as ChatRoom;
+      }
+    }
+
+    return null;
+  }
+
   async createDirectMessage(params: {
     userId1: string;
     userId2: string;
   }): Promise<ChatRoom> {
+    // Verificar se já existe uma sala DM entre estes usuários
+    const existingRoom = await this.findDirectMessage(params.userId1, params.userId2);
+    if (existingRoom) {
+      return existingRoom;
+    }
+
     // Buscar nomes dos usuários para criar nome da sala
     const { data: profile1 } = await supabase
       .from('profiles')
