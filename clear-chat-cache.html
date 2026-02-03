@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Limpar Cache do Chat</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            margin: 0;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        }
+        .container {
+            background: white;
+            padding: 40px;
+            border-radius: 12px;
+            box-shadow: 0 10px 40px rgba(0,0,0,0.2);
+            text-align: center;
+            max-width: 400px;
+        }
+        h1 {
+            color: #333;
+            margin-bottom: 20px;
+        }
+        button {
+            background: #667eea;
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 6px;
+            font-size: 16px;
+            cursor: pointer;
+            margin: 10px;
+            transition: all 0.3s;
+        }
+        button:hover {
+            background: #5568d3;
+            transform: translateY(-2px);
+        }
+        .success {
+            color: #10b981;
+            margin-top: 20px;
+            font-weight: bold;
+        }
+        .info {
+            color: #666;
+            margin-top: 10px;
+            font-size: 14px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🧹 Limpar Cache do Chat</h1>
+        <p>Clique no botão abaixo para limpar o cache do widget de chat</p>
+        
+        <button onclick="clearChatCache()">Limpar Cache</button>
+        
+        <div id="result"></div>
+        
+        <p class="info">Após limpar, recarregue a página do CRM</p>
+    </div>
+
+    <script>
+        function clearChatCache() {
+            try {
+                // Limpar todas as chaves relacionadas ao chat
+                localStorage.removeItem('chat-floating-widget-open');
+                localStorage.removeItem('chat-floating-widget-notify-count');
+                localStorage.removeItem('chat-floating-widget-room-unread');
+                localStorage.removeItem('chat-floating-widget-last-image-sender');
+                
+                // Mostrar resultado
+                document.getElementById('result').innerHTML = 
+                    '<div class="success">✅ Cache limpo com sucesso!<br>Recarregue a página do CRM</div>';
+                
+                console.log('Cache do chat limpo com sucesso');
+            } catch (error) {
+                document.getElementById('result').innerHTML = 
+                    '<div style="color: red;">❌ Erro ao limpar cache: ' + error.message + '</div>';
+                console.error('Erro ao limpar cache:', error);
+            }
+        }
+    </script>
+</body>
+</html>

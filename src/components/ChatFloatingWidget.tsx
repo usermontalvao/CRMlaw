@@ -337,6 +337,9 @@ const ChatFloatingWidget: React.FC = () => {
   const [uploadingAttachment, setUploadingAttachment] = useState(false);
   const [isRecording, setIsRecording] = useState(false);
   const [recordingTime, setRecordingTime] = useState(0);
+  
+  const [showNewChatModal, setShowNewChatModal] = useState(false);
+  const [searchMember, setSearchMember] = useState('');
 
   const openRef = useRef(open);
   const selectedRoomIdRef = useRef<string | null>(selectedRoomId);
@@ -700,6 +703,54 @@ const ChatFloatingWidget: React.FC = () => {
       const list = await chatService.listRooms(user.id);
       setRooms(list);
 
+      // 🔥 Limpar cache se não houver salas
+      if (list.length === 0) {
+        try {
+          localStorage.removeItem(WIDGET_NOTIFY_COUNT_KEY);
+          localStorage.removeItem(WIDGET_ROOM_UNREAD_KEY);
+          localStorage.removeItem(WIDGET_LAST_IMAGE_SENDER_KEY);
+          setNotifyCount(0);
+          setRoomUnreadCounts(new Map());
+          setLastUnreadImageSender(null);
+          console.log('🧹 Cache do chat limpo automaticamente (sem salas)');
+        } catch (e) {
+          console.error('Erro ao limpar cache:', e);
+        }
+      }
+
+      // 🔥 Buscar última mensagem de salas sem preview
+      const roomsNeedingPreview = list.filter(
+        (r) => !!r.last_message_at && !(r.last_message_preview && r.last_message_preview.trim())
+      );
+
+      if (roomsNeedingPreview.length > 0) {
+        const lastMessages = await Promise.all(
+          roomsNeedingPreview.map(async (r) => {
+            const last = await chatService.getLastMessage({ roomId: r.id });
+            return { roomId: r.id, last };
+          })
+        );
+
+        const lastByRoom = new Map(lastMessages.map((x) => [x.roomId, x.last] as const));
+
+        setRooms((prev) => {
+          const updated = prev.map((r) => {
+            const last = lastByRoom.get(r.id);
+            if (!last) return r;
+            return {
+              ...r,
+              last_message_preview: getPreview(last.content),
+            };
+          });
+
+          return updated.sort((a, b) => {
+            const aTime = a.last_message_at ?? a.created_at;
+            const bTime = b.last_message_at ?? b.created_at;
+            return bTime.localeCompare(aTime);
+          });
+        });
+      }
+
       const membersMap = new Map<string, string[]>();
       for (const room of list) {
         if (!room.is_public) {
@@ -785,20 +836,56 @@ const ChatFloatingWidget: React.FC = () => {
   const markRoomAsRead = useCallback(
     async (roomId: string) => {
       if (!user) return;
+      console.log(`📖 Marcando sala ${roomId.substring(0, 8)} como lida`);
       try {
         await chatService.markAsRead({ roomId, userId: user.id });
-      } catch {
-        // ignore
+        console.log(`✅ Sala marcada como lida no banco`);
+      } catch (error) {
+        console.error('❌ Erro ao marcar sala como lida:', error);
       } finally {
         setRoomUnreadCounts((prev) => {
           const next = new Map(prev);
           next.set(roomId, 0);
+          console.log(`🔢 Contador da sala zerado localmente`);
           return next;
         });
-        loadUnread();
+        await loadUnread();
+        console.log(`🔄 Contador global atualizado`);
       }
     },
     [user, loadUnread]
+  );
+
+  const handleStartNewChat = useCallback(
+    async (targetUserId: string) => {
+      if (!user || targetUserId === user.id) return;
+      
+      try {
+        // Verificar se já existe uma conversa DM
+        let dmRoom = await chatService.findDirectMessage(user.id, targetUserId);
+        
+        // Se não existir, criar nova
+        if (!dmRoom) {
+          dmRoom = await chatService.createDirectMessage({ userId1: user.id, userId2: targetUserId });
+        }
+        
+        // Atualizar lista de salas
+        const list = await chatService.listRooms(user.id);
+        setRooms(list);
+        
+        // Atualizar membros da sala
+        const memberIds = await chatService.getRoomMembers(dmRoom.id);
+        setRoomMembers(prev => new Map(prev).set(dmRoom!.id, memberIds));
+        
+        // Selecionar a sala
+        setSelectedRoomId(dmRoom.id);
+        setShowNewChatModal(false);
+        setSearchMember('');
+      } catch (error) {
+        console.error('Erro ao iniciar nova conversa:', error);
+      }
+    },
+    [user]
   );
 
   useEffect(() => {
@@ -873,6 +960,16 @@ const ChatFloatingWidget: React.FC = () => {
     }
     loadMessages(selectedRoomId);
     markRoomAsRead(selectedRoomId);
+    
+    // 🔥 Zerar contador de notificações ao visualizar conversa
+    console.log(`👁️ Visualizando sala ${selectedRoomId.substring(0, 8)}, zerando contadores`);
+    setNotifyCount(0);
+    setRoomUnreadCounts((prev) => {
+      const next = new Map(prev);
+      next.set(selectedRoomId, 0);
+      console.log(`🔢 Contadores zerados: notifyCount=0, roomUnread[${selectedRoomId.substring(0, 8)}]=0`);
+      return next;
+    });
 
     const unsubscribe = chatService.subscribeToRoomMessages({
       roomId: selectedRoomId,
@@ -1094,6 +1191,21 @@ const ChatFloatingWidget: React.FC = () => {
                     {headerVerified && <VerifiedBadge variant={headerVerified} />}
                   </div>
                 </>
+              ) : showNewChatModal ? (
+                <>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowNewChatModal(false);
+                      setSearchMember('');
+                    }}
+                    className="h-8 w-8 rounded-lg hover:bg-white/10 transition flex items-center justify-center shrink-0"
+                    title="Voltar"
+                  >
+                    <ArrowLeft className="w-4 h-4" />
+                  </button>
+                  <span className="text-sm font-bold truncate">Nova Conversa</span>
+                </>
               ) : (
                 <>
                   <span className="text-sm font-bold truncate">Mensagens</span>
@@ -1106,6 +1218,16 @@ const ChatFloatingWidget: React.FC = () => {
               )}
             </div>
             <div className="flex items-center gap-2">
+              {!selectedRoomId && !showNewChatModal && (
+                <button
+                  type="button"
+                  onClick={() => setShowNewChatModal(true)}
+                  className="h-8 w-8 rounded-lg hover:bg-white/10 transition flex items-center justify-center"
+                  title="Nova Conversa"
+                >
+                  <MessageCircle className="w-4 h-4" />
+                </button>
+              )}
               <button
                 type="button"
                 onClick={() => {
@@ -1136,13 +1258,68 @@ const ChatFloatingWidget: React.FC = () => {
           </div>
 
           {!selectedRoomId ? (
-            <div className="flex-1 overflow-y-auto">
-              {loadingRooms && rooms.length === 0 ? (
-                <div className="p-4 text-sm text-white/70">Carregando...</div>
-              ) : rooms.length === 0 ? (
-                <div className="p-4 text-sm text-white/70">Nenhuma conversa</div>
-              ) : (
-                rooms.map((room) => {
+            showNewChatModal ? (
+              <>
+                <div className="px-4 py-3 border-b border-white/10">
+                  <input
+                    type="text"
+                    value={searchMember}
+                    onChange={(e) => setSearchMember(e.target.value)}
+                    placeholder="Buscar pessoa..."
+                    className="w-full px-3 py-2 bg-white/5 border border-white/10 rounded-lg text-sm text-white placeholder-white/40 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                  />
+                </div>
+                <div className="flex-1 overflow-y-auto">
+                  {members
+                    .filter((m) => m.user_id !== user?.id)
+                    .filter((m) => {
+                      if (!searchMember.trim()) return true;
+                      const search = searchMember.toLowerCase();
+                      return (
+                        m.name?.toLowerCase().includes(search) ||
+                        m.email?.toLowerCase().includes(search) ||
+                        m.role?.toLowerCase().includes(search)
+                      );
+                    })
+                    .map((member) => {
+                      const online = onlineUserIds.has(member.user_id);
+                      const verified = getVerifiedVariant(member);
+                      
+                      return (
+                        <button
+                          key={member.user_id}
+                          type="button"
+                          onClick={() => handleStartNewChat(member.user_id)}
+                          className="w-full px-4 py-3 flex items-center gap-3 text-left hover:bg-white/5 transition"
+                        >
+                          <Avatar src={member.avatar_url} name={member.name} online={online} />
+                          <div className="min-w-0 flex-1">
+                            <div className="flex items-center gap-1.5 min-w-0">
+                              <div className="text-sm font-semibold truncate">{member.name}</div>
+                              {verified && <VerifiedBadge variant={verified} />}
+                            </div>
+                            <div className="text-xs text-white/60 truncate">
+                              {online ? 'Online' : member.role || 'Offline'}
+                            </div>
+                          </div>
+                        </button>
+                      );
+                    })}
+                  {members.filter((m) => m.user_id !== user?.id).length === 0 && (
+                    <div className="p-4 text-sm text-white/70 text-center">
+                      Nenhuma pessoa cadastrada
+                    </div>
+                  )}
+                </div>
+              </>
+            ) : (
+              <div className="flex-1 overflow-y-auto">
+                {loadingRooms && rooms.length === 0 ? (
+                  <div className="p-4 text-sm text-white/70">Carregando...</div>
+                ) : rooms.length === 0 ? (
+                  <div className="p-4 text-sm text-white/70">Nenhuma conversa</div>
+                ) : (
+                  rooms.map((room) => {
                   const otherUser = getOtherUserForRoom(room);
                   const displayName = otherUser?.name || room.name;
                   const avatarUrl = otherUser?.avatar_url;
@@ -1198,8 +1375,9 @@ const ChatFloatingWidget: React.FC = () => {
                     </button>
                   );
                 })
-              )}
-            </div>
+                )}
+              </div>
+            )
           ) : (
             <div className="flex flex-col flex-1 overflow-hidden">
               <div

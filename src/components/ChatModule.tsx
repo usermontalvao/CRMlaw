@@ -617,7 +617,9 @@ const ChatModule: React.FC = () => {
     if (!user) return;
     setLoadingRooms(true);
     try {
-      await chatService.getOrCreatePublicRoomByName({ name: DEFAULT_ROOM_NAME, createdBy: user.id });
+      // 🔥 REMOVIDO: Não criar automaticamente sala "Geral"
+      // await chatService.getOrCreatePublicRoomByName({ name: DEFAULT_ROOM_NAME, createdBy: user.id });
+      
       const list = await chatService.listRooms(user.id);
       setRooms(list);
 

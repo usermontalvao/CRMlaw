@@ -580,6 +580,23 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
 
 const releases: ReleaseNote[] = [
   {
+    version: '1.9.515',
+    date: '02/02/2026',
+    summary: 'Chat: melhorias na interface e funcionalidades do módulo.',
+    modules: [
+      {
+        moduleId: 'chat',
+        changes: [
+          {
+            type: 'feature',
+            title: 'Interface Otimizada',
+            description: 'Melhorias na interface e funcionalidades do módulo de chat.',
+          },
+        ],
+      },
+    ],
+  },
+  {
     version: '1.9.491',
     date: '30/01/2026',
     summary: 'Intimações: vinculação automática no carregamento e botão de vinculação direta.',
