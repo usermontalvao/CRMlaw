@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.9.518
+- **Requerimentos**: Adicionado badge "MS" nos requerimentos que possuem processo de Mandado de Segurança vinculado.
+
+## 1.9.517
+- **Requerimentos**: Corrigida a data de entrada no documento MS gerado para evitar deslocamento por fuso horário.
+
 ## 1.9.516
 - **Requerimentos**: Corrigida a data de entrada no modal de edição/visualização e na geração do MS para evitar deslocamento por fuso horário.
 

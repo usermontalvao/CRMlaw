@@ -46,6 +46,8 @@ import {
    ============================================================================ */
 
 const VERSION_CODENAMES: Record<string, { name: string; emoji: string }> = {
+  '1.9.518': { name: 'Café Badge MS', emoji: '🏷️' },
+  '1.9.517': { name: 'Café MS Corrigido', emoji: '📄' },
   '1.9.516': { name: 'Café Data Corrigida', emoji: '📅' },
   '1.9.491': { name: 'Café Vinculação Automática', emoji: '🔗' },
   '1.9.490': { name: 'Café Chat Duplicado', emoji: '💬' },
@@ -580,6 +582,40 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
    ============================================================================ */
 
 const releases: ReleaseNote[] = [
+  {
+    version: '1.9.518',
+    date: '04/02/2026',
+    summary: 'Requerimentos: badge "MS" para processos vinculados.',
+    modules: [
+      {
+        moduleId: 'requirements',
+        changes: [
+          {
+            type: 'feature',
+            title: 'Badge MS',
+            description: 'Adicionado badge "MS" nos requerimentos que possuem processo de Mandado de Segurança vinculado, exibido ao lado da data de entrada.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.517',
+    date: '04/02/2026',
+    summary: 'Requerimentos: correção da data de entrada no documento MS gerado.',
+    modules: [
+      {
+        moduleId: 'requirements',
+        changes: [
+          {
+            type: 'fix',
+            title: 'Data no Documento MS',
+            description: 'Corrigida a data de entrada no documento MS gerado para evitar deslocamento por fuso horário.',
+          },
+        ],
+      },
+    ],
+  },
   {
     version: '1.9.516',
     date: '04/02/2026',

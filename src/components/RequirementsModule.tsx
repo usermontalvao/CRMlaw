@@ -572,6 +572,7 @@ const RequirementsModule: React.FC<RequirementsModuleProps> = ({ forceCreate, en
     ms: null,
   });
   const [loadingLinkedProcesses, setLoadingLinkedProcesses] = useState(false);
+  const [requirementsWithMs, setRequirementsWithMs] = useState<Set<string>>(new Set());
   const [exportingExcel, setExportingExcel] = useState(false);
   const [currentProfile, setCurrentProfile] = useState<Profile | null>(null);
   const [members, setMembers] = useState<Profile[]>([]);
@@ -678,6 +679,11 @@ const RequirementsModule: React.FC<RequirementsModuleProps> = ({ forceCreate, en
       const principal = processes.find((p) => p.requirement_role === 'principal') || null;
       const ms = processes.find((p) => p.requirement_role === 'ms') || null;
       setLinkedProcesses({ principal, ms });
+
+      // Atualizar lista de requerimentos com MS
+      if (ms && !requirementsWithMs.has(selectedRequirementForView.id)) {
+        setRequirementsWithMs(prev => new Set([...prev, selectedRequirementForView.id]));
+      }
 
       toast.success(role === 'ms' ? 'Processo de MS criado com sucesso.' : 'Processo criado com sucesso.');
       handleOpenProcessDetails(created.id);
@@ -1027,7 +1033,7 @@ const RequirementsModule: React.FC<RequirementsModuleProps> = ({ forceCreate, en
     const benefitLabel = getMsBenefitTypeLabel(requirement.benefit_type);
     const primaryPhone = client.mobile || client.phone || requirement.phone || '';
 
-    const entryDate = requirement.entry_date ? new Date(requirement.entry_date) : null;
+    const entryDate = requirement.entry_date ? new Date(requirement.entry_date.includes('Z') ? requirement.entry_date : requirement.entry_date + 'Z') : null;
     const entryDateLabel = entryDate ? formatDateLong(entryDate) : '';
 
     const analysisDays = typeof getAnalysisDays(requirement) === 'number' ? String(getAnalysisDays(requirement)) : '';
@@ -1193,6 +1199,17 @@ const RequirementsModule: React.FC<RequirementsModuleProps> = ({ forceCreate, en
     void handleGenerateMsPdf();
   };
 
+  const fetchRequirementsWithMs = async () => {
+    try {
+      const allProcesses = await processService.listProcesses();
+      const msProcesses = allProcesses.filter(p => p.requirement_role === 'ms' && p.requirement_id);
+      const requirementIdsWithMs = new Set(msProcesses.map(p => p.requirement_id!));
+      setRequirementsWithMs(requirementIdsWithMs);
+    } catch (err) {
+      console.error('Erro ao buscar processos MS:', err);
+    }
+  };
+
   const filteredRequirements = useMemo(() => {
     let filtered = requirements;
 
@@ -1294,6 +1311,7 @@ const RequirementsModule: React.FC<RequirementsModuleProps> = ({ forceCreate, en
         const data = await requirementService.listRequirements();
         setRequirements(data);
         await autoUpdatePericiaStatuses(data);
+        await fetchRequirementsWithMs(); // Carregar processos MS vinculados
       } catch (err: any) {
         setError(err.message || 'Não foi possível carregar os requerimentos.');
       } finally {
@@ -3810,7 +3828,14 @@ const RequirementsModule: React.FC<RequirementsModuleProps> = ({ forceCreate, en
                         )}
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                        {formatDate(requirement.entry_date)}
+                        <div className="flex items-center gap-2">
+                          {formatDate(requirement.entry_date)}
+                          {requirementsWithMs.has(requirement.id) && (
+                            <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-semibold bg-purple-100 text-purple-800 border border-purple-200">
+                              MS
+                            </span>
+                          )}
+                        </div>
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
                         <div className="flex items-center justify-end gap-2">
@@ -3891,7 +3916,14 @@ const RequirementsModule: React.FC<RequirementsModuleProps> = ({ forceCreate, en
                   </div>
                   <div>
                     <span className="text-slate-500">Entrada:</span>
-                    <span className="ml-1 text-slate-700">{formatDate(requirement.entry_date)}</span>
+                    <div className="flex items-center gap-1">
+                      <span className="ml-1 text-slate-700">{formatDate(requirement.entry_date)}</span>
+                      {requirementsWithMs.has(requirement.id) && (
+                        <span className="inline-flex items-center px-1.5 py-0.5 rounded-full text-xs font-semibold bg-purple-100 text-purple-800 border border-purple-200">
+                          MS
+                        </span>
+                      )}
+                    </div>
                   </div>
                   <div className="col-span-2">
                     <span className="text-slate-500">Benefício:</span>
