@@ -229,7 +229,19 @@ const formatDate = (value?: string | null) => {
   if (!value) return 'Não informado';
   const parsed = new Date(value);
   if (Number.isNaN(parsed.getTime())) return value;
-  return parsed.toLocaleDateString('pt-BR');
+  
+  // Se a data está em UTC midnight (ex: 2026-02-04T00:00:00.000Z)
+  // e queremos exibir a mesma data independentemente do timezone
+  const utcDate = parsed.getUTCDate();
+  const utcMonth = parsed.getUTCMonth();
+  const utcYear = parsed.getUTCFullYear();
+  
+  // Formatar como dd/mm/yyyy usando os valores UTC
+  const day = String(utcDate).padStart(2, '0');
+  const month = String(utcMonth + 1).padStart(2, '0');
+  const year = utcYear;
+  
+  return `${day}/${month}/${year}`;
 };
 
 const formatDateTime = (value: string) => {
@@ -337,10 +349,15 @@ const buildNoteThreads = (notes: RequirementNote[]): RequirementNote[] => {
 
 const toDateInputValue = (value?: string | null) => {
   if (!value) return '';
+  if (/^\d{4}-\d{2}-\d{2}$/.test(value)) return value;
   if (value.includes('T')) return value.split('T')[0];
   const parsed = new Date(value);
   if (!Number.isNaN(parsed.getTime())) {
-    return parsed.toISOString().split('T')[0];
+    // Usar timezone local em vez de UTC para evitar mudança de data
+    const year = parsed.getFullYear();
+    const month = String(parsed.getMonth() + 1).padStart(2, '0');
+    const day = String(parsed.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
   }
   return value;
 };
@@ -369,10 +386,20 @@ const removeDiacritics = (value: string) =>
 
 const formatDateLong = (date: Date) => {
   try {
-    const dtf = new Intl.DateTimeFormat('pt-BR', { day: '2-digit', month: 'long', year: 'numeric' });
-    return dtf.format(date);
+    // Usar valores UTC para manter consistência com a data salva
+    const day = String(date.getUTCDate()).padStart(2, '0');
+    const monthNames = ['janeiro', 'fevereiro', 'março', 'abril', 'maio', 'junho',
+                        'julho', 'agosto', 'setembro', 'outubro', 'novembro', 'dezembro'];
+    const month = monthNames[date.getUTCMonth()];
+    const year = date.getUTCFullYear();
+    
+    return `${day} de ${month} de ${year}`;
   } catch {
-    return date.toLocaleDateString('pt-BR');
+    // Fallback usando valores UTC
+    const day = String(date.getUTCDate()).padStart(2, '0');
+    const month = String(date.getUTCMonth() + 1).padStart(2, '0');
+    const year = date.getUTCFullYear();
+    return `${day}/${month}/${year}`;
   }
 };
 
@@ -1660,10 +1687,10 @@ const RequirementsModule: React.FC<RequirementsModuleProps> = ({ forceCreate, en
         cpf: formData.cpf.trim(),
         benefit_type: formData.benefit_type as BenefitType,
         status: formData.status,
-        entry_date: formData.entry_date ? new Date(formData.entry_date).toISOString() : null,
+        entry_date: formData.entry_date ? toUtcMidnightIso(formData.entry_date) : null,
         exigency_due_date:
           formData.status === 'em_exigencia' && formData.exigency_due_date
-            ? new Date(formData.exigency_due_date).toISOString()
+            ? toUtcMidnightIso(formData.exigency_due_date)
             : null,
         phone: formData.phone?.trim() || null,
         inss_password: formData.inss_password?.trim() || null,
@@ -2106,9 +2133,10 @@ const RequirementsModule: React.FC<RequirementsModuleProps> = ({ forceCreate, en
   };
 
   const toUtcMidnightIso = (dateOnly: string) => {
-    const date = new Date(`${dateOnly}T00:00:00`);
-    const utcTime = date.getTime() - date.getTimezoneOffset() * 60000;
-    return new Date(utcTime).toISOString();
+    // Criar data como UTC meia-noite para evitar problemas de timezone
+    const [year, month, day] = dateOnly.split('-').map(Number);
+    const utcDate = new Date(Date.UTC(year, month - 1, day, 0, 0, 0));
+    return utcDate.toISOString();
   };
 
   const handleCreateExigencyDeadline = async () => {
@@ -2617,7 +2645,7 @@ const RequirementsModule: React.FC<RequirementsModuleProps> = ({ forceCreate, en
                 </label>
 
                 {/* Data de Entrada */}
-                <label className="flex flex-col w-full">
+                <label className="block">
                   <p className={labelClass}>Data de Entrada</p>
                   <input
                     type="date"
@@ -3168,7 +3196,9 @@ const RequirementsModule: React.FC<RequirementsModuleProps> = ({ forceCreate, en
                     <dl className="divide-y divide-slate-100 dark:divide-zinc-800 px-5">
                       <div className="flex items-center justify-between gap-4 py-3">
                         <dt className="text-sm text-slate-500 dark:text-slate-400">Data de Entrada</dt>
-                        <dd className="text-sm font-semibold text-slate-900 dark:text-white">{formatDate(selectedRequirementForView.entry_date)}</dd>
+                        <dd className="text-sm font-semibold text-slate-900 dark:text-white">
+                          {formatDate(selectedRequirementForView.entry_date)}
+                        </dd>
                       </div>
                       <div className="flex items-center justify-between gap-4 py-3">
                         <dt className="text-sm text-slate-500 dark:text-slate-400">Telefone</dt>

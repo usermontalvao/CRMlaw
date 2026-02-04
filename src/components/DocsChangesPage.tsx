@@ -46,6 +46,7 @@ import {
    ============================================================================ */
 
 const VERSION_CODENAMES: Record<string, { name: string; emoji: string }> = {
+  '1.9.516': { name: 'Café Data Corrigida', emoji: '📅' },
   '1.9.491': { name: 'Café Vinculação Automática', emoji: '🔗' },
   '1.9.490': { name: 'Café Chat Duplicado', emoji: '💬' },
   '1.9.489': { name: 'Café Intimações Restauradas', emoji: '📋' },
@@ -579,6 +580,23 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
    ============================================================================ */
 
 const releases: ReleaseNote[] = [
+  {
+    version: '1.9.516',
+    date: '04/02/2026',
+    summary: 'Requerimentos: correção da data de entrada para evitar deslocamento por fuso horário.',
+    modules: [
+      {
+        moduleId: 'requirements',
+        changes: [
+          {
+            type: 'fix',
+            title: 'Data de Entrada',
+            description: 'Corrigida a data de entrada no modal de edição/visualização e na geração do MS para evitar deslocamento por fuso horário.',
+          },
+        ],
+      },
+    ],
+  },
   {
     version: '1.9.515',
     date: '02/02/2026',

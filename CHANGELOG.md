@@ -1,5 +1,8 @@
 # Changelog
 
+## 1.9.516
+- **Requerimentos**: Corrigida a data de entrada no modal de edição/visualização e na geração do MS para evitar deslocamento por fuso horário.
+
 ## 1.9.478
 - **Chat**: Impedida a criação de múltiplas conversas (DM) com a mesma pessoa. Ao iniciar chat, o sistema reutiliza a conversa existente.
 
