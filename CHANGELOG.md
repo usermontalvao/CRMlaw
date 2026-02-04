@@ -1,5 +1,8 @@
 # Changelog
 
+## 1.9.519
+- **Requerimentos**: Corrigido tempo em análise zerado ao editar requerimento (mantido cálculo baseado na data de entrada original).
+
 ## 1.9.518
 - **Requerimentos**: Adicionado badge "MS" nos requerimentos que possuem processo de Mandado de Segurança vinculado.
 

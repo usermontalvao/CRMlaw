@@ -741,7 +741,25 @@ const RequirementsModule: React.FC<RequirementsModuleProps> = ({ forceCreate, en
   };
 
   const getAnalysisDays = (requirement: Requirement) => {
-    const base = requirement.analysis_started_at || requirement.entry_date || requirement.created_at;
+    // Se já tem analysis_started_at e o status é em_analise, usar essa data
+    // Caso contrário, usar entry_date ou created_at
+    let base: string;
+    
+    if (requirement.status === 'em_analise' && requirement.analysis_started_at) {
+      // Verificar se analysis_started_at é mais antigo que entry_date (possível erro)
+      const analysisTime = new Date(requirement.analysis_started_at).getTime();
+      const entryTime = requirement.entry_date ? new Date(requirement.entry_date).getTime() : 0;
+      
+      // Se analysis_started_at for mais recente que entry_date, usar entry_date
+      if (analysisTime > entryTime && entryTime > 0) {
+        base = requirement.entry_date || requirement.created_at;
+      } else {
+        base = requirement.analysis_started_at;
+      }
+    } else {
+      base = requirement.entry_date || requirement.created_at;
+    }
+    
     const t = new Date(base).getTime();
     if (Number.isNaN(t)) return null;
     return Math.floor((Date.now() - t) / (1000 * 60 * 60 * 24));

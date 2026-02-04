@@ -46,6 +46,7 @@ import {
    ============================================================================ */
 
 const VERSION_CODENAMES: Record<string, { name: string; emoji: string }> = {
+  '1.9.519': { name: 'Café Tempo Preservado', emoji: '⏰' },
   '1.9.518': { name: 'Café Badge MS', emoji: '🏷️' },
   '1.9.517': { name: 'Café MS Corrigido', emoji: '📄' },
   '1.9.516': { name: 'Café Data Corrigida', emoji: '📅' },
@@ -582,6 +583,23 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
    ============================================================================ */
 
 const releases: ReleaseNote[] = [
+  {
+    version: '1.9.519',
+    date: '04/02/2026',
+    summary: 'Requerimentos: correção do tempo em análise ao editar.',
+    modules: [
+      {
+        moduleId: 'requirements',
+        changes: [
+          {
+            type: 'fix',
+            title: 'Tempo em Análise',
+            description: 'Corrigido tempo em análise zerado ao editar requerimento, mantendo cálculo baseado na data de entrada original.',
+          },
+        ],
+      },
+    ],
+  },
   {
     version: '1.9.518',
     date: '04/02/2026',
