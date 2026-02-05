@@ -374,16 +374,38 @@ const LeadsModule: React.FC<LeadsModuleProps> = ({ onConvertLead }) => {
 
       {/* Modal Visualizar/Editar Lead */}
       {isViewModalOpen && selectedLead && (
-        <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center z-50 p-3 sm:p-4">
-          <div className="bg-white rounded-2xl shadow-2xl max-w-xl w-full max-h-[88vh] overflow-y-auto">
-            <div className="sticky top-0 bg-white px-4 sm:px-6 py-3 sm:py-4 border-b border-gray-200 flex items-center justify-between z-10">
+        <div className="fixed inset-0 z-[70] flex items-center justify-center px-3 sm:px-6 py-4">
+          <div
+            className="absolute inset-0 bg-slate-900/70 backdrop-blur-sm"
+            onClick={() => {
+              setIsViewModalOpen(false);
+              setSelectedLead(null);
+              setEditMode(false);
+            }}
+            aria-hidden="true"
+          />
+          <div className="relative w-full max-w-2xl max-h-[92vh] bg-white rounded-2xl shadow-2xl ring-1 ring-black/5 flex flex-col overflow-hidden">
+            <div className="h-2 w-full bg-orange-500" />
+            
+            {/* Header padrão do sistema */}
+            <div className="px-5 sm:px-8 py-5 border-b border-slate-200 bg-white flex items-start justify-between gap-4">
               <div>
-                <h3 className="text-xl font-semibold text-slate-900">
-                  {editMode ? 'Editar Lead' : 'Detalhes do Lead'}
-                </h3>
-                <p className="text-sm text-slate-600 mt-1">
-                  {STAGES.find(s => s.key === selectedLead.stage)?.label}
+                <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">
+                  {editMode ? 'Editando Lead' : 'Detalhes do Lead'}
                 </p>
+                <h2 className="text-xl font-semibold text-slate-900">{selectedLead.name}</h2>
+                <div className="flex flex-wrap items-center gap-x-4 gap-y-1 mt-1 text-sm text-slate-600">
+                  <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-bold ${STAGES.find(s => s.key === selectedLead.stage)?.accent || 'text-slate-600'}`}>
+                    {STAGES.find(s => s.key === selectedLead.stage)?.icon}
+                    {STAGES.find(s => s.key === selectedLead.stage)?.label}
+                  </span>
+                  {selectedLead.email && (
+                    <span className="text-slate-500">{selectedLead.email}</span>
+                  )}
+                  {selectedLead.phone && (
+                    <span className="text-slate-500">{selectedLead.phone}</span>
+                  )}
+                </div>
               </div>
               <div className="flex items-center gap-2">
                 {!editMode && (
@@ -401,14 +423,15 @@ const LeadsModule: React.FC<LeadsModuleProps> = ({ onConvertLead }) => {
                     setSelectedLead(null);
                     setEditMode(false);
                   }}
-                  className="text-slate-400 hover:text-slate-600"
+                  className="p-2 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-xl transition"
+                  aria-label="Fechar modal"
                 >
                   <X className="w-5 h-5" />
                 </button>
               </div>
             </div>
 
-            <form onSubmit={handleUpdateLead} className="p-4 sm:p-6 space-y-4 sm:space-y-5">
+            <form onSubmit={handleUpdateLead} className="p-4 sm:p-6 space-y-4 sm:space-y-5 bg-white">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div className="md:col-span-2">
                   <label className="block text-sm font-medium text-slate-700 mb-2">Nome *</label>
@@ -417,7 +440,7 @@ const LeadsModule: React.FC<LeadsModuleProps> = ({ onConvertLead }) => {
                       type="text"
                       value={formData.name}
                       onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                      className="input-field"
+                      className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
                       required
                     />
                   ) : (
@@ -432,7 +455,7 @@ const LeadsModule: React.FC<LeadsModuleProps> = ({ onConvertLead }) => {
                       type="email"
                       value={formData.email}
                       onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-                      className="input-field"
+                      className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
                     />
                   ) : (
                     <div className="flex items-center gap-2 text-sm text-slate-700 bg-slate-50 px-4 py-3 rounded-lg">
@@ -449,7 +472,7 @@ const LeadsModule: React.FC<LeadsModuleProps> = ({ onConvertLead }) => {
                       type="text"
                       value={formData.phone}
                       onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
-                      className="input-field"
+                      className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
                     />
                   ) : (
                     selectedLead.phone ? (
@@ -476,7 +499,7 @@ const LeadsModule: React.FC<LeadsModuleProps> = ({ onConvertLead }) => {
                       type="text"
                       value={formData.source}
                       onChange={(e) => setFormData({ ...formData, source: e.target.value })}
-                      className="input-field"
+                      className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
                       placeholder="Ex: Indicação, Site, Instagram"
                     />
                   ) : (
@@ -490,7 +513,7 @@ const LeadsModule: React.FC<LeadsModuleProps> = ({ onConvertLead }) => {
                     <select
                       value={formData.stage}
                       onChange={(e) => setFormData({ ...formData, stage: e.target.value as LeadStage })}
-                      className="input-field"
+                      className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
                     >
                       {STAGES.map((stage) => (
                         <option key={stage.key} value={stage.key}>
@@ -514,7 +537,7 @@ const LeadsModule: React.FC<LeadsModuleProps> = ({ onConvertLead }) => {
                     <textarea
                       value={formData.notes}
                       onChange={(e) => setFormData({ ...formData, notes: e.target.value })}
-                      className="input-field"
+                      className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 resize-none transition-all"
                       rows={4}
                     />
                   ) : (
@@ -526,55 +549,48 @@ const LeadsModule: React.FC<LeadsModuleProps> = ({ onConvertLead }) => {
               </div>
 
               {editMode && (
-                <div className="flex gap-3 pt-4 border-t border-gray-200">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setEditMode(false);
-                      setFormData({
-                        name: selectedLead.name,
-                        email: selectedLead.email || '',
-                        phone: selectedLead.phone || '',
-                        source: selectedLead.source || '',
-                        stage: selectedLead.stage,
-                        notes: selectedLead.notes || '',
-                      });
-                    }}
-                    className="flex-1 bg-slate-100 hover:bg-slate-200 text-slate-700 font-medium px-4 py-2.5 rounded-lg transition-colors"
-                  >
-                    Cancelar
-                  </button>
-                  <button
-                    type="submit"
-                    disabled={saving}
-                    className="flex-1 bg-gradient-to-r from-amber-600 to-amber-500 hover:from-amber-700 hover:to-amber-600 text-white font-semibold px-4 py-2.5 rounded-lg flex items-center justify-center gap-2 disabled:opacity-50 transition-all shadow-lg"
-                  >
-                    {saving ? (
-                      <>
-                        <Loader2 className="w-4 h-4 animate-spin" />
-                        Salvando...
-                      </>
-                    ) : (
-                      <>
-                        <Save className="w-4 h-4" />
-                        Salvar Alterações
-                      </>
-                    )}
-                  </button>
+                <div className="border-t border-slate-200 bg-slate-50 px-4 sm:px-6 py-3">
+                  <div className="flex justify-end items-center gap-4">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setEditMode(false);
+                        setFormData({
+                          name: selectedLead.name,
+                          email: selectedLead.email || '',
+                          phone: selectedLead.phone || '',
+                          source: selectedLead.source || '',
+                          stage: selectedLead.stage,
+                          notes: selectedLead.notes || '',
+                        });
+                      }}
+                      className="px-6 py-2.5 rounded-lg text-sm font-semibold bg-slate-200 text-slate-700 hover:bg-slate-300 transition-colors"
+                    >
+                      Cancelar
+                    </button>
+                    <button
+                      type="submit"
+                      disabled={saving}
+                      className="flex items-center justify-center gap-2 px-6 py-2.5 rounded-lg text-sm font-semibold text-white bg-gradient-to-r from-orange-500 to-orange-600 hover:from-orange-600 hover:to-orange-700 border border-orange-600/60 shadow-md shadow-orange-500/25 focus:outline-none focus:ring-2 focus:ring-orange-500/40 focus:ring-offset-1 focus:ring-offset-white transition-all disabled:from-orange-300 disabled:to-orange-300 disabled:border-orange-300/60 disabled:shadow-none disabled:cursor-not-allowed"
+                    >
+                      {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+                      {saving ? 'Salvando...' : 'Salvar Alterações'}
+                    </button>
+                  </div>
                 </div>
               )}
 
               {!editMode && (
-                <div className="flex gap-3 pt-4 border-t border-gray-200">
+                <div className="border-t border-slate-200 bg-slate-50 px-4 sm:px-6 py-3">
                   <button
                     type="button"
                     onClick={() => {
                       setIsViewModalOpen(false);
                       onConvertLead(selectedLead);
                     }}
-                    className="flex-1 bg-gradient-to-r from-amber-600 to-amber-500 hover:from-amber-700 hover:to-amber-600 text-white font-semibold px-4 py-3 rounded-lg flex items-center justify-center gap-2 transition-all shadow-lg hover:shadow-xl"
+                    className="w-full flex items-center justify-center gap-2 px-6 py-2.5 rounded-lg text-sm font-semibold text-white bg-gradient-to-r from-amber-600 to-amber-500 hover:from-amber-700 hover:to-amber-600 border border-amber-600/60 shadow-md shadow-amber-500/25 focus:outline-none focus:ring-2 focus:ring-amber-500/40 focus:ring-offset-1 focus:ring-offset-white transition-all"
                   >
-                    <CheckCircle2 className="w-5 h-5" />
+                    <CheckCircle2 className="w-4 h-4" />
                     Converter em Cliente
                   </button>
                 </div>

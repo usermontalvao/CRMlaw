@@ -46,6 +46,7 @@ import {
    ============================================================================ */
 
 const VERSION_CODENAMES: Record<string, { name: string; emoji: string }> = {
+  '1.9.520': { name: 'Café Modal Laranja', emoji: '🟠' },
   '1.9.519': { name: 'Café Tempo Preservado', emoji: '⏰' },
   '1.9.518': { name: 'Café Badge MS', emoji: '🏷️' },
   '1.9.517': { name: 'Café MS Corrigido', emoji: '📄' },
@@ -583,6 +584,23 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
    ============================================================================ */
 
 const releases: ReleaseNote[] = [
+  {
+    version: '1.9.520',
+    date: '05/02/2026',
+    summary: 'Leads: modal de detalhes padronizado.',
+    modules: [
+      {
+        moduleId: 'leads',
+        changes: [
+          {
+            type: 'fix',
+            title: 'Design do Modal',
+            description: 'Corrigido modal de detalhes do lead para seguir design padrão do sistema com faixa laranja, fundo branco e estilos consistentes.',
+          },
+        ],
+      },
+    ],
+  },
   {
     version: '1.9.519',
     date: '04/02/2026',

@@ -1,5 +1,8 @@
 # Changelog
 
+## 1.9.520
+- **Leads**: Corrigido modal de detalhes para seguir design padrão do sistema (faixa laranja, fundo branco e estilos consistentes).
+
 ## 1.9.519
 - **Requerimentos**: Corrigido tempo em análise zerado ao editar requerimento (mantido cálculo baseado na data de entrada original).
 
