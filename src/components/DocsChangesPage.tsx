@@ -578,12 +578,27 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
   security: { label: 'Segurança', icon: Shield, color: 'text-red-600 bg-red-50' },
   breaking: { label: 'Breaking', icon: GitBranch, color: 'text-purple-600 bg-purple-50' },
 };
-
-/* ============================================================================
    HISTÓRICO DE VERSÕES (CHANGELOG)
    ============================================================================ */
 
 const releases: ReleaseNote[] = [
+  {
+    version: '1.9.521',
+    date: '15/02/2026',
+    summary: 'Sistema: atualização de versões de componentes.',
+    modules: [
+      {
+        moduleId: 'system',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Versões de Componentes',
+            description: 'Atualizadas versões de componentes e incrementada versão do sistema com registro no changelog.',
+          },
+        ],
+      },
+    ],
+  },
   {
     version: '1.9.520',
     date: '05/02/2026',

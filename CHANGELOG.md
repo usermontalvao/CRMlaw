@@ -1,5 +1,8 @@
 # Changelog
 
+## 1.9.521
+- **Sistema**: Atualização de versões de componentes e incremento da versão do sistema com registro no changelog.
+
 ## 1.9.520
 - **Leads**: Corrigido modal de detalhes para seguir design padrão do sistema (faixa laranja, fundo branco e estilos consistentes).
 
