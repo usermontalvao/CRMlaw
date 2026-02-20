@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.9.523
+- **Petições**: Nova funcionalidade "Formatar com IA" no menu de contexto do editor. Funciona com QUALQUER tipo de texto selecionado: qualificações, endereços, textos jurídicos, listas, etc. A IA detecta automaticamente o tipo de texto e aplica a formatação apropriada. Inclui correção ortográfica completa, remoção de espaços extras, correção de pontuação, padronização de CPF/CEP, formatação de datas e uso de linguagem jurídica formal. Para qualificações, preserva negrito no nome. Usa modelos econômicos (Groq Llama 3.3 como principal, OpenAI GPT-4o-mini como fallback). Corrigido delay ao vincular cliente para garantir que o auto-save funcione corretamente. Adicionada animação de loading com overlay visual durante a formatação.
+
+## 1.9.522
+- **Petições**: Corrigido bug onde ao inserir bloco e depois vincular cliente, o botão Salvar não funcionava. Causa: estado `saving` era compartilhado entre salvar documento e operações de modal (criar tipo padrão, salvar bloco), bloqueando o botão. Solução: separado em `savingDoc` (exclusivo do documento) e `saving` (modais/blocos). Também corrigida closure desatualizada do `selectedClient` no auto-save após vincular cliente.
+
 ## 1.9.521
 - **Sistema**: Atualização de versões de componentes e incremento da versão do sistema com registro no changelog.
 

@@ -583,6 +583,48 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
 
 const releases: ReleaseNote[] = [
   {
+    version: '1.9.523',
+    date: '20/02/2026',
+    summary: 'Petições: formatação inteligente com IA e correções de salvamento.',
+    modules: [
+      {
+        moduleId: 'peticoes',
+        changes: [
+          {
+            type: 'feature',
+            title: 'Formatar com IA',
+            description: 'Nova funcionalidade no menu de contexto para formatar qualquer texto com IA. Detecta automaticamente tipo de texto (qualificações, endereços, textos jurídicos, listas) e aplica formatação apropriada com correção ortográfica completa, remoção de espaços extras e padronização de CPF/CEP.',
+          },
+          {
+            type: 'improvement',
+            title: 'Modelos Econômicos',
+            description: 'Configurado para usar Groq Llama 3.3 (mais barato) como principal e OpenAI GPT-4o-mini como fallback, otimizando custos de formatação.',
+          },
+          {
+            type: 'improvement',
+            title: 'Animação de Loading',
+            description: 'Adicionada animação elegante durante formatação com IA, com overlay visual e feedback claro do processamento.',
+          },
+        ],
+      },
+      {
+        moduleId: 'peticoes',
+        changes: [
+          {
+            type: 'fix',
+            title: 'Bug de Salvamento',
+            description: 'Corrigido bug onde inserir bloco e depois vincular cliente bloqueava o botão Salvar. Causa: estado saving compartilhado entre documento e modais. Solução: separado em savingDoc (documento) e saving (modais).',
+          },
+          {
+            type: 'fix',
+            title: 'Closure Desatualizada',
+            description: 'Corrigido stale closure ao vincular cliente que causava erro no auto-save. Agora usa savePetitionActionRef com delay adequado.',
+          },
+        ],
+      },
+    ],
+  },
+  {
     version: '1.9.521',
     date: '15/02/2026',
     summary: 'Sistema: atualização de versões de componentes.',

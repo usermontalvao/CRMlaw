@@ -555,6 +555,106 @@ Responda com um JSON: {"actions": ["ação 1", "ação 2", "ação 3"]}`;
       return [];
     }
   }
+
+  /**
+   * Formata texto usando IA - funciona para qualquer tipo de texto
+   * Detecta automaticamente o tipo de texto e aplica formatação apropriada
+   */
+  async formatQualification(rawText: string): Promise<string> {
+    if (!this.isEnabled()) {
+      throw new Error('Serviço de IA não está disponível');
+    }
+
+    const systemPrompt = `Você é um assistente jurídico especializado em formatação e correção de documentos. Analise o texto fornecido e aplique as melhorias necessárias:
+
+TIPOS DE TEXTO E FORMATAÇÃO:
+
+1. QUALIFICAÇÃO DE PARTE:
+   - Formato: NOME COMPLETO EM MAIÚSCULAS, nacionalidade, estado civil, profissão, inscrito(a) no CPF sob o nº XXX.XXX.XXX-XX, residente e domiciliado(a) na [logradouro] [nome], nº [número], Bairro [bairro], [cidade] – [UF], CEP [cep]
+   - Exemplo: ADAILTON GOMES LUCINDO, brasileiro, solteiro, atendente de balcão, inscrito no CPF sob o nº 123.456.789-00, residente e domiciliado na Rua das Flores, nº 123, Bairro Centro, São Paulo – SP, CEP 01234-567
+
+2. ENDEREÇO SIMPLES:
+   - Formato: [logradouro] [nome], nº [número], Bairro [bairro], [cidade] – [UF], CEP [cep]
+   - Exemplo: Rua das Flores, nº 123, Bairro Centro, São Paulo – SP, CEP 01234-567
+
+3. TEXTO JURÍDICO GERAL:
+   - Mantenha a estrutura mas melhore gramática e pontuação
+   - Use linguagem formal e técnica jurídica
+   - Organize parágrafos se necessário
+
+4. LISTAS OU ENUMERAÇÕES:
+   - Use numeração adequada (1., 2., 3. ou a), b), c))
+   - Mantenha coerência na formatação
+
+CORREÇÕES OBRIGATÓRIAS (PARA QUALQUER TEXTO):
+- Correção ortográfica completa
+- Remoção de espaços extras no início, fim e entre palavras
+- Correção de pontuação (vírgulas, pontos, acentos)
+- Padronização de maiúsculas/minúsculas
+- Remoção de linhas em branco desnecessárias
+- Consistência em abreviações (Ex: nº, art., §)
+
+FORMATAÇÃO:
+- Use espaços simples após pontuação (vírgula, ponto, dois pontos)
+- Mantenha um espaço entre números e unidades (ex: 5 cm, 10 dias)
+- Use travessão (–) para separar cidade-UF
+- Formate CPF como XXX.XXX.XXX-XX e CEP como XXXXX-XXX
+- Use negrito apenas para nomes em qualificações (o editor cuidará disso)
+
+REGRAS GERAIS:
+- Preserve informações importantes (nomes, números, datas)
+- Use português brasileiro padrão
+- Mantenha coesão e coerência
+- Seja conciso mas completo
+
+Retorne APENAS o texto corrigido e formatado, sem explicações.`;
+
+    const userPrompt = `Texto para formatar:
+${rawText}`;
+
+    let content = '';
+
+    try {
+      // Usar Groq primeiro (mais barato)
+      if (this.useGroq && this.groqApiKey) {
+        // Usa Groq API como principal
+        content = await this.callGroqAPI([
+          { role: 'system', content: systemPrompt },
+          { role: 'user', content: userPrompt },
+        ], 300);
+      } else if (this.openai && this.openaiApiKey) {
+        // Usa OpenAI como fallback
+        if (this.useEdgeFunction) {
+          // Usa Edge Function para evitar CORS
+          content = await this.callOpenAIViaEdgeFunction([
+            { role: 'system', content: systemPrompt },
+            { role: 'user', content: userPrompt },
+          ], 'gpt-4o-mini');
+        } else {
+          // Usa OpenAI diretamente
+          const response = await this.openai!.chat.completions.create({
+            model: 'gpt-4o-mini',
+            messages: [
+              { role: 'system', content: systemPrompt },
+              { role: 'user', content: userPrompt },
+            ],
+            temperature: 0.1,
+            max_tokens: 300,
+          });
+          content = response.choices[0].message.content || '';
+        }
+      }
+
+      if (!content) {
+        throw new Error('IA não retornou resposta');
+      }
+
+      return content.trim();
+    } catch (error) {
+      console.error('Erro ao formatar qualificação:', error);
+      throw new Error('Falha ao formatar qualificação com IA');
+    }
+  }
 }
 
 export const aiService = new AIService();

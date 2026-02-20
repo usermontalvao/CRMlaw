@@ -590,6 +590,8 @@ const PetitionEditorModule: React.FC<PetitionEditorModuleProps> = ({
   // Estados principais
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [savingDoc, setSavingDoc] = useState(false);
+  const [formattingWithAI, setFormattingWithAI] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
 
@@ -780,8 +782,8 @@ const PetitionEditorModule: React.FC<PetitionEditorModuleProps> = ({
   }, [hasUnsavedChanges]);
 
   useEffect(() => {
-    savingRef.current = saving;
-  }, [saving]);
+    savingRef.current = savingDoc;
+  }, [savingDoc]);
 
   useEffect(() => {
     isOnlineRef.current = isOnline;
@@ -1996,8 +1998,8 @@ Regras:
       if (!window.__autoSaving) setError('Aguarde o carregamento do documento antes de salvar');
       return;
     }
-    if (saving) return;
-    setSaving(true);
+    if (savingDoc) return;
+    setSavingDoc(true);
     setError(null);
 
     try {
@@ -2054,7 +2056,7 @@ Regras:
       console.error('Erro ao salvar:', err);
       setError(err instanceof Error ? err.message : 'Erro ao salvar documento');
     } finally {
-      setSaving(false);
+      setSavingDoc(false);
     }
   };
 
@@ -3475,7 +3477,6 @@ Regras:
       return;
     }
     setSelectedClient(client);
-    window.setTimeout(() => savePetition(), 0);
     const editor = editorRef.current;
     if (!editor) return;
 
@@ -3490,7 +3491,7 @@ Regras:
     editor.insertText(rest);
     setHasUnsavedChanges(true);
     showSuccessMessage('DAS QUESTÕES INICIAIS inseridas');
-    window.setTimeout(() => savePetition(), 0);
+    window.setTimeout(() => savePetitionActionRef.current?.(), 300);
     window.setTimeout(() => {
       const ed = editorRef.current;
       if (ed) {
@@ -3502,6 +3503,68 @@ Regras:
         }
       }
     }, 0);
+  };
+
+  // Formatar qualificação com IA
+  const handleFormatQualification = async (selectedText: string) => {
+    if (!isOnlineRef.current) {
+      setError('Você está offline. O Peticionamento é 100% online: reconecte para editar/salvar.');
+      return;
+    }
+
+    try {
+      setFormattingWithAI(true);
+      setError(null);
+
+      // Chamar IA para formatar
+      const formatted = await aiService.formatQualification(selectedText);
+
+      // Substituir o texto selecionado pelo texto formatado
+      const editor = editorRef.current;
+      if (editor) {
+        // Primeiro deleta o texto selecionado
+        const selection = (editor as any).containerRef?.current?.documentEditor?.selection;
+        if (selection) {
+          selection.delete();
+        }
+        
+        // Verifica se é uma qualificação (tem padrão de nome, nacionalidade, etc.)
+        const isQualification = /[A-Z\s]{5,},\s*(brasileiro|brasileira)/i.test(formatted);
+        
+        if (isQualification) {
+          // Aplica negrito apenas para qualificações (nome até a primeira vírgula)
+          const nameEndIndex = formatted.indexOf(',');
+          if (nameEndIndex > 0) {
+            const name = formatted.substring(0, nameEndIndex);
+            const rest = formatted.substring(nameEndIndex);
+            
+            editor.setBold(true);
+            editor.insertText(name);
+            editor.setBold(false);
+            editor.insertText(rest);
+          } else {
+            // Se não encontrar vírgula, insere tudo em negrito
+            editor.setBold(true);
+            editor.insertText(formatted);
+            editor.setBold(false);
+          }
+        } else {
+          // Para outros tipos de texto, insere sem formatação especial
+          editor.insertText(formatted);
+        }
+        
+        setHasUnsavedChanges(true);
+        showSuccessMessage('Texto formatado com IA');
+        
+        // Salvar automaticamente após formatar
+        window.setTimeout(() => savePetitionActionRef.current?.(), 500);
+      }
+    } catch (err) {
+      console.error('Erro ao formatar qualificação:', err);
+      setError(err instanceof Error ? err.message : 'Erro ao formatar qualificação com IA');
+    } finally {
+      setFormattingWithAI(false);
+    }
   };
 
   // ========== RENDER ==========
@@ -3891,10 +3954,10 @@ Regras:
         </button>
         <button
           onClick={savePetition}
-          disabled={saving}
+          disabled={savingDoc}
           className="px-3 py-1 text-xs bg-amber-500 text-white rounded hover:bg-amber-600 transition-colors flex items-center gap-1 disabled:opacity-50"
         >
-          {saving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5" />}
+          {savingDoc ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5" />}
           Salvar
         </button>
         <button
@@ -4558,6 +4621,41 @@ Regras:
 
         {/* Área do Editor Syncfusion */}
         <div className="syncfusion-editor-wrapper relative">
+          {/* Overlay de formatação com IA */}
+          {formattingWithAI && (
+            <div className="absolute inset-0 z-[60] flex items-center justify-center bg-black/40 backdrop-blur-sm">
+              <div className="bg-white rounded-2xl border border-slate-200 shadow-2xl p-8 max-w-xs w-full mx-4">
+                <div className="flex flex-col items-center text-center space-y-4">
+                  {/* Ícone animado */}
+                  <div className="relative">
+                    <div className="w-16 h-16 rounded-full bg-gradient-to-br from-orange-400 to-amber-500 flex items-center justify-center">
+                      <div className="w-8 h-8 text-white">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="animate-spin">
+                          <path d="M21 12a9 9 0 11-6.219-8.56"/>
+                        </svg>
+                      </div>
+                    </div>
+                    {/* Anéis de onda */}
+                    <div className="absolute inset-0 rounded-full border-2 border-orange-400/30 animate-ping"></div>
+                    <div className="absolute inset-0 rounded-full border-2 border-orange-400/20 animate-ping" style={{ animationDelay: '200ms' }}></div>
+                  </div>
+                  
+                  {/* Texto */}
+                  <div className="space-y-2">
+                    <h3 className="text-lg font-semibold text-slate-900">Formatando com IA</h3>
+                    <p className="text-sm text-slate-600">Aplicando formatação inteligente...</p>
+                  </div>
+                  
+                  {/* Dots animados */}
+                  <div className="flex space-x-1">
+                    <div className="w-2 h-2 rounded-full bg-orange-400 animate-bounce"></div>
+                    <div className="w-2 h-2 rounded-full bg-orange-400 animate-bounce" style={{ animationDelay: '100ms' }}></div>
+                    <div className="w-2 h-2 rounded-full bg-orange-400 animate-bounce" style={{ animationDelay: '200ms' }}></div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
           <SyncfusionEditor
             ref={editorRef}
             id="petition-main-editor"
@@ -4583,6 +4681,7 @@ Regras:
             onRequestCreateBlockFromSelection={(selectedText, selectedSfdt) => {
               openCreateBlockFromSelection(selectedText || '', selectedSfdt || '');
             }}
+            onRequestFormatQualification={handleFormatQualification}
           />
 
           {!isOnline && (

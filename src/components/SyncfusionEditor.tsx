@@ -109,6 +109,7 @@ interface SyncfusionEditorProps {
   onRequestInsertBlock?: () => void;
   onRequestCreateBlockFromSelection?: (selectedText: string, selectedSfdt?: string) => void;
   onRequestCompanyLookup?: () => void;
+  onRequestFormatQualification?: (selectedText: string) => void;
   showPropertiesPane?: boolean;
   enableToolbar?: boolean;
   toolbarItems?: any;
@@ -131,6 +132,7 @@ const SyncfusionEditor = forwardRef<SyncfusionEditorRef, SyncfusionEditorProps>(
       onRequestInsertBlock,
       onRequestCreateBlockFromSelection,
       onRequestCompanyLookup,
+      onRequestFormatQualification,
       showPropertiesPane = true,
       enableToolbar = true,
       toolbarItems,
@@ -697,6 +699,11 @@ const SyncfusionEditor = forwardRef<SyncfusionEditorRef, SyncfusionEditorProps>(
           id: 'crm_company_lookup',
           iconCss: 'e-icons e-de-ctnr-find',
         },
+        {
+          text: 'Formatar com IA...',
+          id: 'crm_format_qualification',
+          iconCss: 'e-icons e-de-copypaste',
+        },
       ];
 
       // Mantém os itens padrão e adiciona nossos itens (o 3º parâmetro ajuda a posicionar como grupo)
@@ -724,6 +731,15 @@ const SyncfusionEditor = forwardRef<SyncfusionEditorRef, SyncfusionEditorProps>(
 
         if (clickedId === `${prefix}crm_company_lookup`) {
           onRequestCompanyLookup?.();
+          return;
+        }
+
+        if (clickedId === `${prefix}crm_format_qualification`) {
+          const selectedText = String(editor?.selection?.text || '');
+          const hasSelection = !editor?.selection?.isEmpty && /\S/.test(selectedText);
+          if (hasSelection) {
+            onRequestFormatQualification?.(selectedText);
+          }
           return;
         }
 
