@@ -333,9 +333,12 @@ interface DeadlinesModuleProps {
     process_code?: string;
     client_name?: string;
   };
+  calendarMonth?: number;
+  calendarYear?: number;
+  onCalendarChange?: (month: number, year: number) => void;
 }
 
-const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId, onParamConsumed, prefillData }) => {
+const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId, onParamConsumed, prefillData, calendarMonth: propCalendarMonth, calendarYear: propCalendarYear, onCalendarChange }) => {
   const { confirmDelete } = useDeleteConfirm();
   const { user } = useAuth();
 
@@ -374,8 +377,8 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
   const [currentUser, setCurrentUser] = useState<Profile | null>(null);
   const [filtersExpanded, setFiltersExpanded] = useState(false);
   const [calendarExpanded, setCalendarExpanded] = useState(false);
-  const [calendarMonth, setCalendarMonth] = useState(new Date().getMonth());
-  const [calendarYear, setCalendarYear] = useState(new Date().getFullYear());
+  const [internalCalendarMonth, setInternalCalendarMonth] = useState(propCalendarMonth || new Date().getMonth());
+  const [internalCalendarYear, setInternalCalendarYear] = useState(propCalendarYear || new Date().getFullYear());
   
   // Estados para calculadora de prazo
   const [dataPublicacao, setDataPublicacao] = useState('');
@@ -618,11 +621,18 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
 
   const monthlyDeadlines = useMemo(() => {
     return deadlines.filter((deadline) => {
+      // Se o prazo foi concluído, considerar o mês da conclusão
+      if (deadline.status === 'cumprido' && deadline.completed_at) {
+        const completed = new Date(deadline.completed_at);
+        return completed.getMonth() === internalCalendarMonth && completed.getFullYear() === internalCalendarYear;
+      }
+      
+      // Para prazos pendentes, vencidos ou cancelados, considerar o mês de vencimento
       const due = parseDateOnly(deadline.due_date);
       if (!due) return false;
-      return due.getMonth() === calendarMonth && due.getFullYear() === calendarYear;
+      return due.getMonth() === internalCalendarMonth && due.getFullYear() === internalCalendarYear;
     });
-  }, [deadlines, calendarMonth, calendarYear]);
+  }, [deadlines, internalCalendarMonth, internalCalendarYear]);
 
   const monthlyPending = useMemo(
     () => monthlyDeadlines.filter((deadline) => deadline.status === 'pendente'),
@@ -633,9 +643,9 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
     return deadlines.filter((deadline) => {
       if (deadline.status !== 'cumprido' || !deadline.completed_at) return false;
       const completed = new Date(deadline.completed_at);
-      return completed.getMonth() === calendarMonth && completed.getFullYear() === calendarYear;
+      return completed.getMonth() === internalCalendarMonth && completed.getFullYear() === internalCalendarYear;
     });
-  }, [deadlines, calendarMonth, calendarYear]);
+  }, [deadlines, internalCalendarMonth, internalCalendarYear]);
 
   const monthlyDueToday = useMemo(() => {
     const today = new Date();
@@ -663,8 +673,8 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
   );
 
   const currentMonthLabel = useMemo(
-    () => new Date(calendarYear, calendarMonth).toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' }),
-    [calendarMonth, calendarYear],
+    () => new Date(internalCalendarYear, internalCalendarMonth).toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' }),
+    [internalCalendarMonth, internalCalendarYear],
   );
 
   const memberMap = useMemo(() => new Map(members.map((member) => [member.id, member])), [members]);
@@ -2656,51 +2666,7 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
 
   return (
     <div className="space-y-4">
-      {/* Header Principal */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-bold text-slate-900">Gestão de Prazos</h1>
-          <p className="text-sm text-slate-500">Controle compromissos e prazos vinculados aos seus casos</p>
-        </div>
-        
-        {/* Seletor de Mês */}
-        <div className="flex items-center gap-2">
-          <button
-            onClick={() => {
-              if (calendarMonth === 0) {
-                setCalendarMonth(11);
-                setCalendarYear(calendarYear - 1);
-              } else {
-                setCalendarMonth(calendarMonth - 1);
-              }
-            }}
-            className="p-2 hover:bg-slate-100 rounded-lg transition-colors text-slate-600"
-          >
-            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
-            </svg>
-          </button>
-          <span className="text-sm font-semibold text-slate-800 capitalize min-w-[140px] text-center">
-            {new Date(calendarYear, calendarMonth).toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' })}
-          </span>
-          <button
-            onClick={() => {
-              if (calendarMonth === 11) {
-                setCalendarMonth(0);
-                setCalendarYear(calendarYear + 1);
-              } else {
-                setCalendarMonth(calendarMonth + 1);
-              }
-            }}
-            className="p-2 hover:bg-slate-100 rounded-lg transition-colors text-slate-600"
-          >
-            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-            </svg>
-          </button>
-        </div>
-      </div>
-
+      
       {/* Cards de Estatísticas - Layout Horizontal */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 sm:gap-3">
         <button
@@ -2780,80 +2746,100 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
         </div>
       )}
 
-      {/* Abas de Navegação e Ações */}
-      <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-4 border-b border-slate-100">
+      {/* Toolbar Compacta - Tudo em Uma Linha */}
+      <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-1.5">
+        <div className="flex items-center gap-2">
           {/* Abas de Visualização */}
-          <div className="flex items-center gap-1 bg-slate-100 rounded-lg p-1 overflow-x-auto">
+          <div className="flex items-center gap-1 bg-slate-100 rounded-lg p-1">
             <button
               onClick={() => setViewMode('list')}
-              className={`flex items-center gap-1 sm:gap-1.5 px-2 sm:px-3 py-1.5 rounded-md text-xs font-medium transition-all whitespace-nowrap ${
+              className={`flex items-center justify-center w-8 h-8 rounded-md text-xs font-medium transition-all ${
                 viewMode === 'list' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-700'
               }`}
+              title="Lista"
             >
-              <List className="w-3.5 h-3.5" />
-              <span className="hidden xs:inline">Lista</span>
+              <List className="w-4 h-4" />
             </button>
             <button
               onClick={() => setViewMode('kanban')}
-              className={`flex items-center gap-1 sm:gap-1.5 px-2 sm:px-3 py-1.5 rounded-md text-xs font-medium transition-all whitespace-nowrap ${
+              className={`flex items-center justify-center w-8 h-8 rounded-md text-xs font-medium transition-all ${
                 viewMode === 'kanban' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-700'
               }`}
+              title="Kanban"
             >
-              <LayoutGrid className="w-3.5 h-3.5" />
-              <span className="hidden xs:inline">Kanban</span>
-            </button>
-            <button
-              onClick={() => setViewMode('map')}
-              className={`flex items-center gap-1 sm:gap-1.5 px-2 sm:px-3 py-1.5 rounded-md text-xs font-medium transition-all whitespace-nowrap ${
-                viewMode === 'map' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-700'
-              }`}
-            >
-              <Calendar className="w-3.5 h-3.5" />
-              <span className="hidden xs:inline">Mapa</span>
+              <LayoutGrid className="w-4 h-4" />
             </button>
             <button
               onClick={() => setCalendarExpanded(!calendarExpanded)}
-              className={`flex items-center gap-1 sm:gap-1.5 px-2 sm:px-3 py-1.5 rounded-md text-xs font-medium transition-all whitespace-nowrap ${
+              className={`flex items-center justify-center w-8 h-8 rounded-md text-xs font-medium transition-all ${
                 calendarExpanded ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-700'
               }`}
+              title="Calendário"
             >
-              <Calendar className="w-3.5 h-3.5" />
-              <span className="hidden sm:inline">Calendário</span>
+              <Calendar className="w-4 h-4" />
             </button>
           </div>
 
-          {/* Botões de Ação */}
-          <div className="flex items-center gap-1.5 sm:gap-2">
+          <div className="h-6 w-px bg-slate-200"></div>
+
+          {/* Seletor de Mês */}
+          <div className="flex items-center gap-1">
             <button
-              onClick={() => setShowReportModal(true)}
-              className="flex items-center gap-1 sm:gap-1.5 px-2 sm:px-3 py-2 border border-slate-200 hover:bg-slate-50 text-slate-700 rounded-lg text-xs font-medium transition-all"
+              onClick={() => {
+                if (internalCalendarMonth === 0) {
+                  const newMonth = 11;
+                  const newYear = internalCalendarYear - 1;
+                  setInternalCalendarMonth(newMonth);
+                  setInternalCalendarYear(newYear);
+                  onCalendarChange?.(newMonth, newYear);
+                } else {
+                  const newMonth = internalCalendarMonth - 1;
+                  setInternalCalendarMonth(newMonth);
+                  onCalendarChange?.(newMonth, internalCalendarYear);
+                }
+              }}
+              className="p-1.5 hover:bg-slate-100 rounded-lg transition-colors text-slate-600"
             >
-              <BarChart3 className="w-3.5 h-3.5" />
-              <span className="hidden sm:inline">Relatórios</span>
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+              </svg>
             </button>
+            <span className="text-sm font-semibold text-slate-800 capitalize min-w-[140px] text-center">
+              {new Date(internalCalendarYear, internalCalendarMonth).toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' })}
+            </span>
             <button
-              onClick={() => handleOpenModal()}
-              className="flex items-center gap-1 sm:gap-1.5 px-3 sm:px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-semibold transition-all shadow-sm"
+              onClick={() => {
+                if (internalCalendarMonth === 11) {
+                  const newMonth = 0;
+                  const newYear = internalCalendarYear + 1;
+                  setInternalCalendarMonth(newMonth);
+                  setInternalCalendarYear(newYear);
+                  onCalendarChange?.(newMonth, newYear);
+                } else {
+                  const newMonth = internalCalendarMonth + 1;
+                  setInternalCalendarMonth(newMonth);
+                  onCalendarChange?.(newMonth, internalCalendarYear);
+                }
+              }}
+              className="p-1.5 hover:bg-slate-100 rounded-lg transition-colors text-slate-600"
             >
-              <Plus className="w-3.5 h-3.5" />
-              <span className="hidden xs:inline">Novo</span>
-              <span className="hidden sm:inline">Prazo</span>
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+              </svg>
             </button>
           </div>
-        </div>
 
-        {/* Barra de Filtros */}
-        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 p-3 bg-slate-50/50 border-b border-slate-100">
+          <div className="h-6 w-px bg-slate-200"></div>
+
           {/* Busca */}
-          <div className="relative flex-1">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+          <div className="relative flex-grow max-w-xs">
+            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" />
             <input
               type="text"
               value={filterSearch}
-              onChange={(event) => setFilterSearch(event.target.value)}
-              className="w-full pl-9 pr-3 py-2 bg-white border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
+              onChange={(e) => setFilterSearch(e.target.value)}
               placeholder="Buscar prazo..."
+              className="w-full h-9 pl-9 pr-3 bg-slate-50 border-none rounded-lg text-sm placeholder:text-slate-400 focus:ring-1 focus:ring-blue-500/40 transition-all"
             />
           </div>
 
@@ -2861,42 +2847,83 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
           <div className="flex items-center gap-2">
             <select
               value={filterType}
-              onChange={(event) => setFilterType(event.target.value as DeadlineType | '')}
-              className="px-3 py-2 bg-white border border-slate-200 rounded-lg text-xs focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
+              onChange={(e) => setFilterType(e.target.value as DeadlineType | '')}
+              className="h-9 pl-3 pr-8 bg-white border border-slate-200 rounded-lg text-sm text-slate-600 focus:outline-none focus:ring-1 focus:ring-blue-500/30 cursor-pointer hover:bg-slate-50 transition-colors appearance-none"
             >
               <option value="">Tipo</option>
-              {TYPE_OPTIONS.map((type) => (
-                <option key={type.key} value={type.key}>{type.label}</option>
-              ))}
+              <option value="processo">Processo</option>
+              <option value="requerimento">Requerimento</option>
+              <option value="outro">Outro</option>
             </select>
-
             <select
               value={filterPriority}
-              onChange={(event) => setFilterPriority(event.target.value as DeadlinePriority | '')}
-              className="px-3 py-2 bg-white border border-slate-200 rounded-lg text-xs focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
+              onChange={(e) => setFilterPriority(e.target.value as DeadlinePriority | '')}
+              className="h-9 pl-3 pr-8 bg-white border border-slate-200 rounded-lg text-sm text-slate-600 focus:outline-none focus:ring-1 focus:ring-blue-500/30 cursor-pointer hover:bg-slate-50 transition-colors appearance-none"
             >
               <option value="">Prioridade</option>
-              {PRIORITY_OPTIONS.map((priority) => (
-                <option key={priority.key} value={priority.key}>{priority.label}</option>
-              ))}
+              <option value="urgente">Urgente</option>
+              <option value="alta">Alta</option>
+              <option value="media">Média</option>
+              <option value="baixa">Baixa</option>
             </select>
+          </div>
 
-            {(filterSearch || filterType || filterPriority) && (
-              <button
-                onClick={() => {
-                  setFilterSearch('');
-                  setFilterType('');
-                  setFilterPriority('');
-                }}
-                className="px-2 py-2 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-lg transition-all"
-                title="Limpar filtros"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            )}
+          <div className="flex-grow"></div>
+
+          {/* Filtros Avançados - Dropdown na mesma linha */}
+          <button
+            onClick={() => setFiltersExpanded(!filtersExpanded)}
+            className={`flex items-center gap-1.5 h-9 px-3 border border-slate-200 rounded-lg text-sm font-medium transition-all ${
+              filtersExpanded ? 'bg-slate-100 text-slate-900' : 'text-slate-600 hover:bg-slate-50'
+            }`}
+            title="Filtros Avançados"
+          >
+            <Filter className="w-4 h-4" />
+            <span className="hidden lg:inline">Filtros Avançados</span>
+            <svg className={`w-3 h-3 transition-transform ${filtersExpanded ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+            </svg>
+          </button>
+
+          {/* Botões de Ação */}
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setShowReportModal(true)}
+              className="flex items-center gap-2 h-9 px-3 text-sm font-medium text-slate-600 hover:bg-slate-100 rounded-lg transition-colors"
+              title="Relatórios"
+            >
+              <BarChart3 className="w-4 h-4" />
+              <span className="hidden lg:inline">Relatórios</span>
+            </button>
+            <button
+              onClick={() => handleOpenModal()}
+              className="flex items-center gap-1.5 h-9 px-4 bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold rounded-lg shadow-md shadow-blue-600/20 transition-all active:scale-95"
+            >
+              <Plus className="w-4 h-4" />
+              <span>Prazo</span>
+            </button>
           </div>
         </div>
       </div>
+
+      {/* Dropdown de Filtros Avançados */}
+      {filtersExpanded && (
+        <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-3">
+          <div className="flex items-center gap-2">
+            <select
+              value={filterResponsible}
+              onChange={(event) => setFilterResponsible(event.target.value)}
+              className="h-9 px-3 bg-white border border-slate-200 rounded-lg text-sm text-slate-600 focus:outline-none focus:ring-1 focus:ring-blue-500/30 cursor-pointer hover:bg-slate-50 transition-colors"
+            >
+              <option value="">Responsável</option>
+              <option value={UNASSIGNED_FILTER_VALUE}>Sem responsável</option>
+              {members.map((member) => (
+                <option key={member.id} value={member.id}>{member.name}</option>
+              ))}
+            </select>
+          </div>
+        </div>
+      )}
 
       {/* Calendário Mensal de Prazos - Retrátil */}
       {calendarExpanded && (
@@ -2906,11 +2933,16 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
             <div className="flex items-center justify-between mb-3">
               <button
                 onClick={() => {
-                  if (calendarMonth === 0) {
-                    setCalendarMonth(11);
-                    setCalendarYear(calendarYear - 1);
+                  if (internalCalendarMonth === 0) {
+                    const newMonth = 11;
+                    const newYear = internalCalendarYear - 1;
+                    setInternalCalendarMonth(newMonth);
+                    setInternalCalendarYear(newYear);
+                    onCalendarChange?.(newMonth, newYear);
                   } else {
-                    setCalendarMonth(calendarMonth - 1);
+                    const newMonth = internalCalendarMonth - 1;
+                    setInternalCalendarMonth(newMonth);
+                    onCalendarChange?.(newMonth, internalCalendarYear);
                   }
                 }}
                 className="p-1.5 hover:bg-slate-100 rounded-lg transition-colors"
@@ -2922,13 +2954,16 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
               
               <div className="flex items-center gap-2">
                 <span className="text-sm font-semibold text-slate-800 capitalize">
-                  {new Date(calendarYear, calendarMonth).toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' })}
+                  {new Date(internalCalendarYear, internalCalendarMonth).toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' })}
                 </span>
-                {(calendarMonth !== new Date().getMonth() || calendarYear !== new Date().getFullYear()) && (
+                {(internalCalendarMonth !== new Date().getMonth() || internalCalendarYear !== new Date().getFullYear()) && (
                   <button
                     onClick={() => {
-                      setCalendarMonth(new Date().getMonth());
-                      setCalendarYear(new Date().getFullYear());
+                      const currentMonth = new Date().getMonth();
+                      const currentYear = new Date().getFullYear();
+                      setInternalCalendarMonth(currentMonth);
+                      setInternalCalendarYear(currentYear);
+                      onCalendarChange?.(currentMonth, currentYear);
                     }}
                     className="text-[10px] text-blue-600 hover:text-blue-800 font-medium"
                   >
@@ -2939,11 +2974,16 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
               
               <button
                 onClick={() => {
-                  if (calendarMonth === 11) {
-                    setCalendarMonth(0);
-                    setCalendarYear(calendarYear + 1);
+                  if (internalCalendarMonth === 11) {
+                    const newMonth = 0;
+                    const newYear = internalCalendarYear + 1;
+                    setInternalCalendarMonth(newMonth);
+                    setInternalCalendarYear(newYear);
+                    onCalendarChange?.(newMonth, newYear);
                   } else {
-                    setCalendarMonth(calendarMonth + 1);
+                    const newMonth = internalCalendarMonth + 1;
+                    setInternalCalendarMonth(newMonth);
+                    onCalendarChange?.(newMonth, internalCalendarYear);
                   }
                 }}
                 className="p-1.5 hover:bg-slate-100 rounded-lg transition-colors"
@@ -2969,8 +3009,8 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
             <div className="grid grid-cols-7 gap-1">
               {(() => {
                 const today = new Date();
-                const year = calendarYear;
-                const month = calendarMonth;
+                const year = internalCalendarYear;
+                const month = internalCalendarMonth;
                 const firstDay = new Date(year, month, 1).getDay();
                 const daysInMonth = new Date(year, month + 1, 0).getDate();
                 const cells = [];

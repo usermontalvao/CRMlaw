@@ -19,27 +19,45 @@ serve(async (req) => {
 
   try {
     console.log(`📥 UPDATE-PROCESS-STATUS request: ${req.method} ${req.url}`)
-    
-    // Verificar token de segurança
-    const url = new URL(req.url)
-    const token = url.searchParams.get('token')
-
-    if (token !== SYNC_TOKEN) {
-      return new Response(
-        JSON.stringify({ error: 'Token inválido' }),
-        {
-          status: 401,
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-        }
-      )
-    }
 
     const supabaseClient = createClient(
       Deno.env.get('SUPABASE_URL') ?? '',
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
     )
+    
+    // Validação de token desabilitada para cron do Supabase
+    // const url = new URL(req.url)
+    // const token = url.searchParams.get('token')
+    // if (token !== SYNC_TOKEN) { ... }
 
     const executionId = crypto.randomUUID().substring(0, 8)
+    const syncStartTime = new Date().toISOString()
+    let syncLogId: string | null = null
+
+    try {
+      const { data: logRow } = await supabaseClient
+        .from('djen_sync_history')
+        .insert({
+          id: crypto.randomUUID(),
+          source: 'process_status_cron',
+          origin: 'scheduled_trigger',
+          trigger_type: 'update_process_status',
+          status: 'running',
+          run_started_at: syncStartTime,
+          synced_at: syncStartTime,
+          items_found: 0,
+          items_saved: 0,
+          success: false,
+          message: `[${executionId}] Atualização automática de status iniciada`
+        })
+        .select('id')
+        .single()
+
+      syncLogId = logRow?.id ?? null
+    } catch (logErr) {
+      console.error('Falha ao criar log inicial de update-process-status:', logErr)
+    }
+
     console.log(`\n${'='.repeat(60)}`)
     console.log(`🚀 [${executionId}] UPDATE-PROCESS-STATUS - INICIANDO`)
     console.log(`📅 Data/Hora: ${new Date().toISOString()}`)
@@ -187,6 +205,26 @@ serve(async (req) => {
     console.log(`   ❌ Erros: ${errors}`)
     console.log(`${'='.repeat(60)}\n`)
 
+    if (syncLogId) {
+      try {
+        await supabaseClient
+          .from('djen_sync_history')
+          .update({
+            status: errors > 0 ? 'error' : 'success',
+            run_finished_at: new Date().toISOString(),
+            synced_at: new Date().toISOString(),
+            items_found: checked,
+            items_saved: updated,
+            success: errors === 0,
+            error_message: errors > 0 ? `${errors} erro(s) durante a execução` : null,
+            message: `[${executionId}] Verificados: ${checked} | Atualizados: ${updated} | Erros: ${errors}`
+          })
+          .eq('id', syncLogId)
+      } catch (logErr) {
+        console.error('Falha ao finalizar log de update-process-status:', logErr)
+      }
+    }
+
     return new Response(
       JSON.stringify({
         success: true,
@@ -208,6 +246,33 @@ serve(async (req) => {
 
   } catch (error: any) {
     console.error('❌ Erro no endpoint:', error)
+
+    try {
+      const supabaseClient = createClient(
+        Deno.env.get('SUPABASE_URL') ?? '',
+        Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
+      )
+      const now = new Date().toISOString()
+      await supabaseClient
+        .from('djen_sync_history')
+        .insert({
+          id: crypto.randomUUID(),
+          source: 'process_status_cron',
+          origin: 'scheduled_trigger',
+          trigger_type: 'update_process_status',
+          status: 'error',
+          run_started_at: now,
+          run_finished_at: now,
+          synced_at: now,
+          items_found: 0,
+          items_saved: 0,
+          success: false,
+          error_message: error.message || 'Erro interno do servidor',
+          message: 'Falha na atualização automática de status'
+        })
+    } catch (logErr) {
+      console.error('Falha ao registrar erro no djen_sync_history:', logErr)
+    }
     
     return new Response(
       JSON.stringify({

@@ -1588,14 +1588,7 @@ const DocumentsModule: React.FC<DocumentsModuleProps> = ({ onNavigateToModule })
     <div className="space-y-6">
       {/* Header com tabs */}
       <div className="rounded-2xl border border-slate-200 bg-white">
-        <div className="border-b border-slate-200 px-4 py-4 sm:px-6">
-          <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
-            <FileText className="h-4 w-4 text-slate-400" />
-            Modelos de documentos
-          </div>
-          <h3 className="mt-1 text-xl font-semibold text-slate-900 sm:text-2xl">Gerencie templates e documentos</h3>
-        </div>
-        <div className="flex flex-col gap-2 border-b border-slate-200 px-4 py-3 sm:flex-row sm:px-6">
+                <div className="flex flex-col gap-2 border-b border-slate-200 px-4 py-3 sm:flex-row sm:px-6">
           <button
             onClick={() => setActiveView('new-doc')}
             className={`inline-flex items-center justify-center gap-2 rounded-lg px-4 py-2 text-sm font-medium transition ${

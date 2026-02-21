@@ -9,12 +9,15 @@ export function useDjenSync() {
   const syncIntervalRef = useRef<NodeJS.Timeout | null>(null);
 
   useEffect(() => {
+    console.log('🚀 [DJEN SYNC] Hook inicializado - primeira sync em 5 segundos...');
     // Função de sincronização
     const runSync = async () => {
       try {
-        await processDjenSyncService.syncPendingProcesses();
+        console.log('🔄 [DJEN SYNC] Iniciando sincronização automática...');
+        const result = await processDjenSyncService.syncPendingProcesses();
+        console.log('✅ [DJEN SYNC] Sincronização concluída:', result);
       } catch (error) {
-        console.error('Erro na sincronização automática:', error);
+        console.error('❌ [DJEN SYNC] Erro na sincronização automática:', error);
       }
     };
 

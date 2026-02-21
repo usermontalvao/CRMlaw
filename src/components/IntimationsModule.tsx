@@ -224,7 +224,7 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
   const fetchSyncLogs = useCallback(async () => {
     try {
       setSyncStatusLoading(true);
-      const logs = await djenSyncStatusService.listRecent(5);
+      const logs = await djenSyncStatusService.listRecent(30);
       setSyncLogs(logs);
     } catch (error) {
       console.error('Erro ao carregar histórico do cron DJEN:', error);
@@ -232,6 +232,14 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
       setSyncStatusLoading(false);
     }
   }, []);
+
+  const djenRunSyncCronLog = useMemo(() => {
+    return (
+      syncLogs.find(
+        (log) => log.source === 'cron_supabase' || log.trigger_type === 'pg_cron' || log.trigger_type === 'run_djen_sync',
+      ) ?? null
+    );
+  }, [syncLogs]);
 
   // Pré-carregar snapshot local para evitar tela em branco
   useEffect(() => {
@@ -700,8 +708,8 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
   );
 
   const getLastSyncDate = useCallback((): Date | null => {
-    if (syncLogs.length === 0) return null;
-    const lastLog = syncLogs[0];
+    if (!djenRunSyncCronLog) return null;
+    const lastLog = djenRunSyncCronLog;
     const value = lastLog.run_finished_at || lastLog.run_started_at || lastLog.created_at;
     if (value) {
       const date = new Date(value);
@@ -710,7 +718,7 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
       }
     }
     return null;
-  }, [syncLogs]);
+  }, [djenRunSyncCronLog]);
 
   // Sincronização automática é feita pelo cron do Supabase (2x/dia)
 
@@ -1198,7 +1206,7 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
     return stats;
   }, [intimations, aiAnalysis]);
 
-  const lastCronRun = syncLogs[0] || null;
+  const lastCronRun = djenRunSyncCronLog;
   const lastRunDateValue = lastCronRun
     ? lastCronRun.run_finished_at || lastCronRun.run_started_at || lastCronRun.created_at || null
     : null;
@@ -1985,6 +1993,44 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
                   </div>
                 </div>
               )}
+            </div>
+          </div>
+        </div>
+
+        <div className="mt-2 rounded-lg border border-slate-200 bg-slate-50/70 px-3 py-2">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div className="flex items-center gap-2 min-w-0">
+              <RefreshCw className="w-3.5 h-3.5 text-blue-500" />
+              <span className="text-xs font-semibold text-slate-700">Run DJEN Sync (07h e 19h)</span>
+              <span className="text-xs text-slate-600 truncate">
+                {lastRunDateObj
+                  ? `${lastRunRelative ?? 'agora'} — ${lastRunDateObj.toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}`
+                  : 'Nunca executado'}
+              </span>
+            </div>
+
+            <div className="flex items-center gap-2 text-xs">
+              {lastCronRun?.status ? (
+                <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full font-semibold ${getStatusBadgeClass(lastCronRun.status)}`}>
+                  {lastCronRun.status.toLowerCase().includes('success') ? (
+                    <><CheckCircle className="w-3 h-3" /> Sucesso</>
+                  ) : lastCronRun.status.toLowerCase().includes('error') ? (
+                    <><AlertCircle className="w-3 h-3" /> Erro</>
+                  ) : (
+                    <><Loader2 className="w-3 h-3 animate-spin" /> Executando</>
+                  )}
+                </span>
+              ) : (
+                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full font-semibold bg-slate-100 text-slate-600">
+                  Nunca executado
+                </span>
+              )}
+              <span className="text-slate-600">
+                <span className="font-semibold text-slate-800">{lastCronRun?.items_found ?? 0}</span> encontradas
+              </span>
+              <span className="text-slate-600">
+                <span className="font-semibold text-slate-800">{lastCronRun?.items_saved ?? 0}</span> salvas
+              </span>
             </div>
           </div>
         </div>

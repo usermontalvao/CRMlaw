@@ -27,6 +27,7 @@ const TasksModule = ({ focusNewTask = false, onParamConsumed, onPendingTasksChan
   const [editingTaskId, setEditingTaskId] = useState<string | null>(null);
   const [editingTitle, setEditingTitle] = useState('');
   const [completedSearch, setCompletedSearch] = useState('');
+  const [addingTask, setAddingTask] = useState(false);
   const newTaskInputRef = useRef<HTMLInputElement | null>(null);
   const { user } = useAuth();
   const fallbackCreatorName =
@@ -63,9 +64,10 @@ const TasksModule = ({ focusNewTask = false, onParamConsumed, onPendingTasksChan
 
   const handleAddTask = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newTaskTitle.trim()) return;
+    if (!newTaskTitle.trim() || addingTask) return;
 
     try {
+      setAddingTask(true);
       await taskService.createTask({
         title: newTaskTitle.trim(),
         priority: 'medium',
@@ -74,6 +76,8 @@ const TasksModule = ({ focusNewTask = false, onParamConsumed, onPendingTasksChan
       await loadTasks();
     } catch (error: any) {
       alert(error.message || 'Erro ao criar tarefa');
+    } finally {
+      setAddingTask(false);
     }
   };
 
@@ -201,12 +205,6 @@ const TasksModule = ({ focusNewTask = false, onParamConsumed, onPendingTasksChan
 
   return (
     <div className="space-y-4 sm:space-y-6 p-3 sm:p-0">
-      {/* Header */}
-      <div>
-        <h2 className="text-xl sm:text-2xl font-bold text-slate-900">Tarefas</h2>
-        <p className="text-xs sm:text-sm text-slate-600 mt-1">Gerencie suas tarefas e lembretes</p>
-      </div>
-
       {/* Add Task Form */}
       <form onSubmit={handleAddTask} className="flex flex-col sm:flex-row gap-2">
         <input
@@ -219,10 +217,21 @@ const TasksModule = ({ focusNewTask = false, onParamConsumed, onPendingTasksChan
         />
         <button
           type="submit"
-          disabled={!newTaskTitle.trim()}
-          className="w-full sm:w-auto px-4 sm:px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition disabled:opacity-50 disabled:cursor-not-allowed font-medium text-sm"
+          disabled={!newTaskTitle.trim() || addingTask}
+          className={`w-full sm:w-auto px-4 sm:px-6 py-2 text-white rounded-lg font-medium text-sm transition-all transform active:scale-95 ${
+            addingTask 
+              ? 'bg-emerald-600 hover:bg-emerald-700 cursor-not-allowed' 
+              : 'bg-blue-600 hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed'
+          }`}
         >
-          Adicionar
+          {addingTask ? (
+            <div className="flex items-center gap-2">
+              <Loader2 className="w-4 h-4 animate-spin" />
+              <span>Adicionando...</span>
+            </div>
+          ) : (
+            <span>Adicionar</span>
+          )}
         </button>
       </form>
 

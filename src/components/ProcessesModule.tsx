@@ -111,6 +111,32 @@ const formatDate = (value?: string | null) => {
   }
 };
 
+const formatLastSync = (syncDate?: string | null) => {
+  if (!syncDate) return null;
+  
+  try {
+    const date = new Date(syncDate);
+    const now = new Date();
+    const diffMs = now.getTime() - date.getTime();
+    const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
+    const diffDays = Math.floor(diffHours / 24);
+    
+    if (diffHours < 1) {
+      return 'há poucos minutos';
+    } else if (diffHours < 24) {
+      return `há ${diffHours}h`;
+    } else if (diffDays === 1) {
+      return 'ontem';
+    } else if (diffDays < 7) {
+      return `há ${diffDays} dias`;
+    } else {
+      return date.toLocaleDateString('pt-BR');
+    }
+  } catch (error) {
+    return null;
+  }
+};
+
 const formatLocalDateTime = (date: Date, hour: number, minute: number = 0) => {
   const d = new Date(date);
   d.setHours(hour, minute, 0, 0);
@@ -286,6 +312,8 @@ interface ProcessesModuleProps {
 const ProcessesModule: React.FC<ProcessesModuleProps> = ({ forceCreate, entityId, prefillData, initialStatusFilter, onParamConsumed }) => {
   const { user } = useAuth();
   const { confirmDelete } = useDeleteConfirm();
+  
+  // Sincronização DJEN removida - agora apenas via Edge Function (cron)
   const [processes, setProcesses] = useState<Process[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -323,31 +351,8 @@ const ProcessesModule: React.FC<ProcessesModuleProps> = ({ forceCreate, entityId
   const [isDragging, setIsDragging] = useState(false);
   const [exportingExcel, setExportingExcel] = useState(false);
   const [currentProfile, setCurrentProfile] = useState<Profile | null>(null);
-  const [syncingDjen, setSyncingDjen] = useState(false);
   const [djenCronLogs, setDjenCronLogs] = useState<DjenSyncLog[]>([]);
   const [djenCronLoading, setDjenCronLoading] = useState(false);
-  const [syncResult, setSyncResult] = useState<{
-    total: number;
-    synced: number;
-    updated: number;
-    errors: number;
-    intimationsFound: number;
-    notificationsSent: number;
-    details: Array<{
-      processId: string;
-      processCode: string;
-      success: boolean;
-      updated: boolean;
-      intimationsCount: number;
-      error?: string;
-      message?: string;
-      actionRequired?: boolean;
-      urgency?: string;
-      deadlineFound?: boolean;
-      notified?: boolean;
-    }>;
-  } | null>(null);
-  const [syncDetailsOpen, setSyncDetailsOpen] = useState(false);
 
   // Quick add form for Aguardando Confecção
   const [quickAddClientId, setQuickAddClientId] = useState('');
@@ -390,6 +395,17 @@ const ProcessesModule: React.FC<ProcessesModuleProps> = ({ forceCreate, entityId
     clientName: string;
     deadlineCount: number;
   }>>([]);
+
+  // Modal de exportação
+  const [showExportModal, setShowExportModal] = useState(false);
+  const [exportFilters, setExportFilters] = useState({
+    status: 'todos' as ProcessStatus | 'todos',
+    practiceArea: 'todas' as ProcessPracticeArea | 'todas',
+    responsibleLawyer: 'todos',
+    dateFrom: '',
+    dateTo: '',
+    orderBy: 'recent' as 'recent' | 'oldest',
+  });
 
   const clientMap = useMemo(() => new Map(clients.map((client) => [client.id, client])), [clients]);
 
@@ -532,7 +548,7 @@ const ProcessesModule: React.FC<ProcessesModuleProps> = ({ forceCreate, entityId
   const fetchDjenCronLogs = useCallback(async () => {
     try {
       setDjenCronLoading(true);
-      const logs = await djenSyncStatusService.listRecent(5);
+      const logs = await djenSyncStatusService.listRecent(30);
       setDjenCronLogs(logs);
     } catch (err) {
       console.error('Erro ao carregar histórico do cron DJEN:', err);
@@ -540,6 +556,14 @@ const ProcessesModule: React.FC<ProcessesModuleProps> = ({ forceCreate, entityId
       setDjenCronLoading(false);
     }
   }, []);
+
+  const processStatusCronLog = useMemo(() => {
+    return (
+      djenCronLogs.find(
+        (log) => log.source === 'process_status_cron' || log.trigger_type === 'update_process_status',
+      ) ?? null
+    );
+  }, [djenCronLogs]);
 
   useEffect(() => {
     fetchDjenCronLogs();
@@ -1535,214 +1559,93 @@ const ProcessesModule: React.FC<ProcessesModuleProps> = ({ forceCreate, entityId
     }
   };
 
-  const handleSyncAllDjen = async () => {
-    if (syncingDjen) return;
+  // handleSyncAllDjen removido - sincronização agora apenas via Edge Function
 
-    const classifyActionRequiredFallback = (event: TimelineEvent) => {
-      const text = (event.description || '').toLowerCase();
-      const hasDeadlineSignal =
-        text.includes('prazo') ||
-        text.includes('intime-se') ||
-        text.includes('intima') ||
-        text.includes('manifest') ||
-        text.includes('apresent') ||
-        text.includes('contest') ||
-        text.includes('cumpr') ||
-        text.includes('no prazo');
-      return hasDeadlineSignal;
-    };
+  // Aplicar filtros de exportação
+  const getFilteredExportProcesses = () => {
+    let filtered = [...processes];
 
-    try {
-      setSyncingDjen(true);
-      setSyncResult(null);
-      setSyncDetailsOpen(false);
-
-      const pendingProcesses = processes.filter(
-        (p) => !p.djen_synced || (p.djen_synced && !p.djen_has_data),
-      );
-
-      if (pendingProcesses.length === 0) {
-        setSyncResult({ total: 0, synced: 0, updated: 0, errors: 0, intimationsFound: 0, notificationsSent: 0, details: [] });
-        return;
-      }
-
-      let synced = 0;
-      let updated = 0;
-      let errors = 0;
-      let intimationsFound = 0;
-      let notificationsSent = 0;
-      const details: Array<{
-        processId: string;
-        processCode: string;
-        success: boolean;
-        updated: boolean;
-        intimationsCount: number;
-        error?: string;
-        message?: string;
-        actionRequired?: boolean;
-        urgency?: string;
-        deadlineFound?: boolean;
-        notified?: boolean;
-      }> = [];
-
-      for (const process of pendingProcesses) {
-        const detail: {
-          processId: string;
-          processCode: string;
-          success: boolean;
-          updated: boolean;
-          intimationsCount: number;
-          error?: string;
-          message?: string;
-          actionRequired?: boolean;
-          urgency?: string;
-          deadlineFound?: boolean;
-          notified?: boolean;
-        } = {
-          processId: process.id,
-          processCode: process.process_code,
-          success: false,
-          updated: false,
-          intimationsCount: 0,
-        };
-        try {
-          const result = await processDjenSyncService.syncProcessWithDjen(process);
-
-          detail.success = result.success;
-          detail.updated = Boolean(result.updated);
-          detail.intimationsCount = result.intimationsCount ?? 0;
-          if (!result.success) {
-            detail.error = result.error || 'Erro desconhecido';
-          } else if (result.error) {
-            detail.message = result.error;
-          }
-
-          if (result.success) {
-            synced++;
-            if (result.updated) {
-              updated++;
-            }
-            if (result.intimationsCount) {
-              intimationsFound += result.intimationsCount;
-            }
-
-            if (result.intimationsCount && result.intimationsCount > 0) {
-              try {
-                const events = await processTimelineService.fetchProcessTimeline(process.process_code);
-                const lastEvent = events[0];
-                if (lastEvent) {
-                  const analysis = await processTimelineService.analyzeTimelineEvent(lastEvent);
-                  const actionRequired = analysis?.actionRequired ?? classifyActionRequiredFallback(lastEvent);
-                  const urgency = analysis?.urgency ?? (actionRequired ? 'alta' : 'baixa');
-
-                  detail.actionRequired = actionRequired;
-                  detail.urgency = urgency;
-
-                  if (actionRequired && process.responsible_lawyer_id) {
-                    const deadlines = await deadlineService.listDeadlines({ process_id: process.id });
-                    const eventDate = new Date(lastEvent.date || 0);
-
-                    const deadlineFound = deadlines.some((d) => {
-                      const refDate = new Date(d.completed_at || d.created_at || 0);
-                      if (Number.isNaN(refDate.getTime())) return false;
-                      if (Number.isNaN(eventDate.getTime())) return d.status === 'pendente' || d.status === 'cumprido';
-                      return (d.status === 'pendente' || d.status === 'cumprido') && refDate.getTime() >= eventDate.getTime();
-                    });
-                    detail.deadlineFound = deadlineFound;
-
-                    if (!deadlineFound) {
-                      const dedupeKey = `process_action_required_${process.id}_${lastEvent.hash || lastEvent.id}`;
-                      const created = await userNotificationService.createNotificationDeduped({
-                        payload: {
-                          user_id: process.responsible_lawyer_id,
-                          type: 'process_updated',
-                          title: 'Ação necessária no processo',
-                          message: `${process.process_code}: ${analysis?.summary || lastEvent.title}`,
-                          process_id: process.id,
-                          metadata: {
-                            event_hash: lastEvent.hash || null,
-                            urgency,
-                          },
-                        },
-                        dedupeKey,
-                      });
-                      if (created) {
-                        notificationsSent++;
-                        detail.notified = true;
-                      }
-                    }
-                  }
-                }
-              } catch (err: any) {
-                detail.message = detail.message || `Falha na análise: ${err?.message || 'erro'}`;
-              }
-            }
-          } else {
-            errors++;
-          }
-
-          details.push(detail);
-
-          await new Promise((resolve) => setTimeout(resolve, 1000));
-        } catch (err: any) {
-          errors++;
-          detail.error = err?.message || 'Erro desconhecido';
-          details.push(detail);
-        }
-      }
-
-      setSyncResult({
-        total: pendingProcesses.length,
-        synced,
-        updated,
-        errors,
-        intimationsFound,
-        notificationsSent,
-        details,
-      });
-
-      if (errors > 0 || notificationsSent > 0) {
-        setSyncDetailsOpen(true);
-      }
-
-      await handleReload();
-    } catch (err: any) {
-      console.error('Erro na sincronização em massa:', err);
-      setError(err.message || 'Erro ao sincronizar processos com DJEN.');
-    } finally {
-      setSyncingDjen(false);
+    // Filtro de status
+    if (exportFilters.status !== 'todos') {
+      filtered = filtered.filter(p => p.status === exportFilters.status);
     }
+
+    // Filtro de tipo/área
+    if (exportFilters.practiceArea !== 'todas') {
+      filtered = filtered.filter(p => p.practice_area === exportFilters.practiceArea);
+    }
+
+    // Filtro de advogado responsável
+    if (exportFilters.responsibleLawyer !== 'todos') {
+      filtered = filtered.filter(p => p.responsible_lawyer_id === exportFilters.responsibleLawyer);
+    }
+
+    // Filtro de data (criação/atualização)
+    if (exportFilters.dateFrom) {
+      const fromDate = new Date(exportFilters.dateFrom);
+      filtered = filtered.filter(p => {
+        const processDate = new Date(p.updated_at || p.created_at || 0);
+        return processDate >= fromDate;
+      });
+    }
+
+    if (exportFilters.dateTo) {
+      const toDate = new Date(exportFilters.dateTo);
+      toDate.setHours(23, 59, 59, 999);
+      filtered = filtered.filter(p => {
+        const processDate = new Date(p.updated_at || p.created_at || 0);
+        return processDate <= toDate;
+      });
+    }
+
+    // Ordenação
+    filtered.sort((a, b) => {
+      const dateA = new Date(a.updated_at || a.created_at || 0).getTime();
+      const dateB = new Date(b.updated_at || b.created_at || 0).getTime();
+      return exportFilters.orderBy === 'recent' ? dateB - dateA : dateA - dateB;
+    });
+
+    return filtered;
   };
 
   const handleExportExcel = async () => {
-    if (!processes.length) {
-      alert('Não há processos disponíveis para exportar.');
+    const processesToExport = getFilteredExportProcesses();
+
+    if (!processesToExport.length) {
+      alert('Não há processos disponíveis para exportar com os filtros selecionados.');
       return;
     }
 
     try {
       setExportingExcel(true);
+      setShowExportModal(false);
 
-      const excelData = processes.map((process) => {
+      const sortedProcesses = processesToExport;
+
+      const excelData = sortedProcesses.map((process, index) => {
         const client = clientMap.get(process.client_id);
         const lawyer = process.responsible_lawyer_id ? memberMap.get(process.responsible_lawyer_id) : null;
 
         return {
-          'Código do Processo': process.process_code,
+          '#': index + 1,
+          'Código do Processo': process.process_code || 'Não informado',
+          'Tipo de Processo': getPracticeAreaLabel(process.practice_area),
+          'Status do Processo': getStatusLabel(process.status),
           Cliente: client?.full_name || 'Cliente removido',
           'CPF/CNPJ': client?.cpf_cnpj || '',
           Email: client?.email || '',
           Telefone: client?.phone || '',
           Celular: client?.mobile || '',
-          Status: getStatusLabel(process.status),
-          Área: getPracticeAreaLabel(process.practice_area),
-          'Distribuído em': formatDate(process.distributed_at),
-          'Vara/Comarca': process.court || '',
           'Advogado Responsável': lawyer?.name || process.responsible_lawyer || '',
+          'Vara/Comarca': process.court || '',
+          'Distribuído em': formatDate(process.distributed_at),
           'Audiência Agendada': process.hearing_scheduled ? 'Sim' : 'Não',
           'Data da Audiência': process.hearing_date ? formatDate(process.hearing_date) : '',
           'Horário da Audiência': process.hearing_time || '',
           'Modo da Audiência': process.hearing_mode ? HEARING_MODE_LABELS[process.hearing_mode] : '',
+          'DJEN Sincronizado': process.djen_synced ? 'Sim' : 'Não',
+          'DJEN Tem Dados': process.djen_has_data ? 'Sim' : 'Não',
+          'Última Sync DJEN': process.djen_last_sync ? new Date(process.djen_last_sync).toLocaleDateString('pt-BR') : '',
           'Criado em': process.created_at ? new Date(process.created_at).toLocaleDateString('pt-BR') : '',
           'Atualizado em': process.updated_at ? new Date(process.updated_at).toLocaleDateString('pt-BR') : '',
         };
@@ -1751,24 +1654,29 @@ const ProcessesModule: React.FC<ProcessesModuleProps> = ({ forceCreate, entityId
       const wb = XLSX.utils.book_new();
       const ws = XLSX.utils.json_to_sheet(excelData);
 
+      // Larguras de colunas otimizadas
       const colWidths = [
-        { wch: 20 },
-        { wch: 30 },
-        { wch: 15 },
-        { wch: 25 },
-        { wch: 15 },
-        { wch: 15 },
-        { wch: 15 },
-        { wch: 15 },
-        { wch: 15 },
-        { wch: 20 },
-        { wch: 20 },
-        { wch: 15 },
-        { wch: 15 },
-        { wch: 15 },
-        { wch: 15 },
-        { wch: 12 },
-        { wch: 12 },
+        { wch: 5 },  // #
+        { wch: 25 }, // Código
+        { wch: 18 }, // Tipo
+        { wch: 18 }, // Status
+        { wch: 30 }, // Cliente
+        { wch: 15 }, // CPF/CNPJ
+        { wch: 25 }, // Email
+        { wch: 15 }, // Telefone
+        { wch: 15 }, // Celular
+        { wch: 25 }, // Advogado
+        { wch: 25 }, // Vara
+        { wch: 15 }, // Distribuído
+        { wch: 12 }, // Audiência Agendada
+        { wch: 15 }, // Data Audiência
+        { wch: 12 }, // Horário
+        { wch: 15 }, // Modo
+        { wch: 12 }, // DJEN Sync
+        { wch: 12 }, // DJEN Dados
+        { wch: 15 }, // Última Sync
+        { wch: 15 }, // Criado
+        { wch: 15 }, // Atualizado
       ];
       ws['!cols'] = colWidths;
 
@@ -1776,7 +1684,9 @@ const ProcessesModule: React.FC<ProcessesModuleProps> = ({ forceCreate, entityId
 
       const now = new Date();
       const dateSlug = now.toISOString().split('T')[0];
-      const filename = `processos_${dateSlug}.xlsx`;
+      const timeSlug = now.toTimeString().split(' ')[0].replace(/:/g, '-');
+      const statusSuffix = statusFilter !== 'todos' ? `_${statusFilter}` : '';
+      const filename = `processos${statusSuffix}_${dateSlug}_${timeSlug}.xlsx`;
 
       XLSX.writeFile(wb, filename);
     } catch (err: any) {
@@ -2201,8 +2111,22 @@ const ProcessesModule: React.FC<ProcessesModuleProps> = ({ forceCreate, entityId
                 <div className="flex items-center gap-2 mt-1">
                   <p className="text-base text-slate-900 font-mono">{selectedProcessForView.process_code}</p>
                   {selectedProcessForView.djen_has_data ? (
-                    <span className="px-2 py-1 text-xs font-medium bg-green-100 text-green-800 rounded-full">✓ Sincronizado</span>
+                    <div className="flex items-center gap-2">
+                      <span className="px-2 py-1 text-xs font-medium bg-green-100 text-green-800 rounded-full">✓ Sincronizado</span>
+                      {formatLastSync(selectedProcessForView.djen_last_sync) && (
+                        <span className="text-xs text-slate-500">
+                          {formatLastSync(selectedProcessForView.djen_last_sync)}
+                        </span>
+                      )}
+                    </div>
                   ) : null}
+                </div>
+                {/* Timer de última atualização do registro */}
+                <div className="flex items-center gap-1.5 mt-1.5">
+                  <Clock className="w-3 h-3 text-slate-400" />
+                  <span className="text-xs text-slate-400">
+                    Atualizado {formatLastSync(selectedProcessForView.updated_at) ?? formatDate(selectedProcessForView.updated_at)}
+                  </span>
                 </div>
               </div>
               <div>
@@ -2374,88 +2298,171 @@ const ProcessesModule: React.FC<ProcessesModuleProps> = ({ forceCreate, entityId
     );
   })() : null;
 
-  return (
-    <div className="space-y-4">
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-        <div className="flex-1">
-          <h1 className="text-2xl font-bold text-slate-900">Gestão de Processos</h1>
-          <p className="text-sm text-slate-500">Cadastre e acompanhe todos os processos jurídicos</p>
-          <div className="mt-3 p-3 bg-gradient-to-r from-slate-50 to-slate-100 rounded-lg border border-slate-200">
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <div className="flex items-center gap-2">
-                <Clock className="w-4 h-4 text-slate-500" />
-                <span className="text-xs font-medium text-slate-600">Última atualização DJEN (cron):</span>
-                {djenCronLoading ? (
-                  <span className="inline-flex items-center gap-1 text-xs text-slate-500">
-                    <Loader2 className="w-3 h-3 animate-spin" /> Carregando...
-                  </span>
-                ) : djenCronLogs.length > 0 && djenCronLogs[0]?.run_finished_at ? (
-                  <span className="text-xs font-semibold text-slate-800">
-                    {new Date(djenCronLogs[0].run_finished_at).toLocaleString('pt-BR', {
-                      day: '2-digit',
-                      month: '2-digit',
-                      year: 'numeric',
-                      hour: '2-digit',
-                      minute: '2-digit',
-                    })}
-                  </span>
-                ) : (
-                  <span className="text-xs text-slate-500">Nunca executado</span>
-                )}
+  // Modal de Exportação com Filtros Avançados
+  const exportModal = showExportModal ? (() => {
+    const filteredCount = getFilteredExportProcesses().length;
+
+    return createPortal(
+      <div className="fixed inset-0 z-[70] flex items-center justify-center px-3 sm:px-6 py-4">
+        <div className="absolute inset-0 bg-slate-900/70 backdrop-blur-sm" onClick={() => setShowExportModal(false)} aria-hidden="true" />
+        <div className="relative w-full max-w-md bg-white rounded-2xl shadow-2xl ring-1 ring-black/5 flex flex-col overflow-hidden">
+          <div className="h-2 w-full bg-orange-500" />
+          <div className="px-5 sm:px-8 py-5 border-b border-slate-200 bg-white flex items-start justify-between gap-4">
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">Exportação</p>
+              <h2 className="text-xl font-semibold text-slate-900">Exportar Processos</h2>
+              <p className="text-sm text-slate-500 mt-0.5">Configure os filtros para exportação</p>
+            </div>
+            <button
+              type="button"
+              onClick={() => setShowExportModal(false)}
+              className="p-2 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-xl transition"
+              aria-label="Fechar modal"
+            >
+              <X className="w-5 h-5" />
+            </button>
+          </div>
+          <div className="p-6 bg-white overflow-y-auto max-h-[calc(90vh-180px)]">
+            <div className="space-y-4">
+              {/* Filtro de Status */}
+              <div className="space-y-2">
+                <label className="block text-xs font-bold uppercase tracking-wider text-slate-700">
+                  📊 Status do Processo
+                </label>
+                <select
+                  value={exportFilters.status}
+                  onChange={(e) => setExportFilters({ ...exportFilters, status: e.target.value as ProcessStatus | 'todos' })}
+                  className="w-full px-3 py-2.5 rounded-lg border-2 border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-transparent"
+                >
+                  <option value="todos">Todos os status</option>
+                  {STATUS_OPTIONS.map((status) => (
+                    <option key={status.key} value={status.key}>{status.label}</option>
+                  ))}
+                </select>
               </div>
 
-              <div className="flex items-center gap-2">
-                {djenCronLogs.length > 0 && djenCronLogs[0]?.status && (
-                  <span
-                    className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold ${
-                      djenCronLogs[0].status === 'success'
-                        ? 'bg-emerald-100 text-emerald-700'
-                        : djenCronLogs[0].status === 'error'
-                          ? 'bg-red-100 text-red-700'
-                          : 'bg-amber-100 text-amber-700'
-                    }`}
-                  >
-                    {djenCronLogs[0].status === 'success' ? (
-                      <>
-                        <CheckCircle2 className="w-3 h-3" /> Sucesso
-                      </>
-                    ) : djenCronLogs[0].status === 'error' ? (
-                      <>
-                        <AlertCircle className="w-3 h-3" /> Erro
-                      </>
-                    ) : (
-                      <>
-                        <Loader2 className="w-3 h-3 animate-spin" /> Executando
-                      </>
-                    )}
-                  </span>
-                )}
+              {/* Filtro de Tipo/Área */}
+              <div className="space-y-2">
+                <label className="block text-xs font-bold uppercase tracking-wider text-slate-700">
+                  ⚖️ Tipo de Processo
+                </label>
+                <select
+                  value={exportFilters.practiceArea}
+                  onChange={(e) => setExportFilters({ ...exportFilters, practiceArea: e.target.value as ProcessPracticeArea | 'todas' })}
+                  className="w-full px-3 py-2.5 rounded-lg border-2 border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-transparent"
+                >
+                  <option value="todas">Todas as áreas</option>
+                  {PRACTICE_AREAS.map((area) => (
+                    <option key={area.key} value={area.key}>{area.label}</option>
+                  ))}
+                </select>
+              </div>
 
+              {/* Filtro de Advogado Responsável */}
+              <div className="space-y-2">
+                <label className="block text-xs font-bold uppercase tracking-wider text-slate-700">
+                  👤 Advogado Responsável
+                </label>
+                <select
+                  value={exportFilters.responsibleLawyer}
+                  onChange={(e) => setExportFilters({ ...exportFilters, responsibleLawyer: e.target.value })}
+                  className="w-full px-3 py-2.5 rounded-lg border-2 border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-transparent"
+                >
+                  <option value="todos">Todos os advogados</option>
+                  {members.map((member) => (
+                    <option key={member.id} value={member.id}>{member.name}</option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Filtro de Período */}
+              <div className="space-y-2">
+                <label className="block text-xs font-bold uppercase tracking-wider text-slate-700">
+                  📅 Período
+                </label>
+                <div className="grid grid-cols-2 gap-3 p-4 bg-orange-50 rounded-lg border border-orange-200">
+                  <div>
+                    <label className="block text-xs font-semibold text-orange-900 mb-1.5">
+                      Data Início
+                    </label>
+                    <input
+                      type="date"
+                      value={exportFilters.dateFrom}
+                      onChange={(e) => setExportFilters({ ...exportFilters, dateFrom: e.target.value })}
+                      className="w-full px-3 py-2 rounded-lg border-2 border-orange-200 text-sm focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-transparent"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-semibold text-orange-900 mb-1.5">
+                      Data Fim
+                    </label>
+                    <input
+                      type="date"
+                      value={exportFilters.dateTo}
+                      onChange={(e) => setExportFilters({ ...exportFilters, dateTo: e.target.value })}
+                      className="w-full px-3 py-2 rounded-lg border-2 border-orange-200 text-sm focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-transparent"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* Ordenação */}
+              <div className="space-y-2">
+                <label className="block text-xs font-bold uppercase tracking-wider text-slate-700">
+                  🔄 Ordenação
+                </label>
+                <select
+                  value={exportFilters.orderBy}
+                  onChange={(e) => setExportFilters({ ...exportFilters, orderBy: e.target.value as 'recent' | 'oldest' })}
+                  className="w-full px-3 py-2.5 rounded-lg border-2 border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-transparent"
+                >
+                  <option value="recent">Mais recentes primeiro</option>
+                  <option value="oldest">Mais antigos primeiro</option>
+                </select>
+              </div>
+
+              {/* Prévia */}
+              <div className="bg-slate-50 border border-slate-200 rounded-lg p-3">
+                <p className="text-xs text-slate-600">
+                  💡 <strong>Prévia:</strong> {filteredCount} processo{filteredCount !== 1 ? 's' : ''} será{filteredCount !== 1 ? 'ão' : ''} exportado{filteredCount !== 1 ? 's' : ''} com os filtros selecionados.
+                </p>
+              </div>
+
+              {/* Botões */}
+              <div className="flex gap-3 pt-2">
                 <button
                   type="button"
-                  onClick={fetchDjenCronLogs}
-                  className="inline-flex items-center gap-1.5 border border-slate-200 text-slate-600 hover:text-slate-900 hover:bg-white px-2.5 py-1 rounded-lg text-xs font-medium"
+                  onClick={() => setShowExportModal(false)}
+                  className="flex-1 px-4 py-2.5 rounded-lg border-2 border-slate-300 text-slate-700 font-semibold hover:bg-slate-50 transition-colors"
                 >
-                  <RefreshCw className="w-3.5 h-3.5" /> Atualizar
+                  Cancelar
+                </button>
+                <button
+                  type="button"
+                  onClick={handleExportExcel}
+                  disabled={exportingExcel || filteredCount === 0}
+                  className="flex-1 px-4 py-2.5 rounded-lg text-white font-bold shadow-lg hover:shadow-xl transition-all transform hover:-translate-y-0.5 border border-transparent whitespace-nowrap bg-emerald-600 hover:bg-emerald-500 bg-gradient-to-r from-emerald-600 to-emerald-700 disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none"
+                >
+                  {exportingExcel ? (
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin inline mr-2" />
+                      Exportando...
+                    </>
+                  ) : (
+                    '📥 Exportar Excel'
+                  )}
                 </button>
               </div>
             </div>
-
-            {djenCronLogs.length > 0 && djenCronLogs[0]?.items_saved !== undefined && (
-              <div className="mt-2 flex flex-wrap gap-3 text-xs text-slate-600">
-                <span className="inline-flex items-center gap-1">
-                  <FileText className="w-3 h-3" />
-                  {djenCronLogs[0].items_found || 0} encontradas
-                </span>
-                <span className="inline-flex items-center gap-1">
-                  <FileText className="w-3 h-3" />
-                  {djenCronLogs[0].items_saved || 0} salvas
-                </span>
-              </div>
-            )}
           </div>
         </div>
-      </div>
+      </div>,
+      document.body
+    );
+  })() : null;
+
+  return (
+    <div className="space-y-4">
 
       {/* Alerta: Processos arquivados com prazos pendentes */}
       {archivedWithDeadlines.length > 0 && (
@@ -2510,68 +2517,72 @@ const ProcessesModule: React.FC<ProcessesModuleProps> = ({ forceCreate, entityId
         </div>
       )}
 
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2 sm:gap-3">
+      {/* Cards de Estatísticas - Design Compacto */}
+      <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
         <button
           onClick={() => setStatusFilter('todos')}
-          className={`flex items-center gap-2 sm:gap-3 p-3 sm:p-4 rounded-xl transition-all hover:shadow-md border ${statusFilter === 'todos' ? 'ring-2 ring-amber-500 bg-amber-50 border-amber-200' : 'bg-white border-slate-200'}`}
+          className={`bg-white p-3 rounded-xl shadow-sm flex items-center gap-3 transition-all hover:shadow-md ${statusFilter === 'todos' ? 'border-2 border-primary' : 'border border-slate-200 hover:border-slate-300'}`}
         >
-          <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-full bg-amber-500 flex items-center justify-center flex-shrink-0">
-            <Building2 className="w-4 h-4 sm:w-5 sm:h-5 text-white" />
+          <div className="w-10 h-10 bg-orange-100 text-primary rounded-lg flex items-center justify-center">
+            <Building2 className="w-5 h-5" />
           </div>
-          <div className="text-left min-w-0">
-            <p className="text-lg sm:text-2xl font-bold text-slate-900">{statusCounts.todos}</p>
-            <p className="text-[10px] sm:text-xs text-slate-500 truncate">Total</p>
+          <div>
+            <div className="text-xl font-bold">{statusCounts.todos}</div>
+            <div className="text-[10px] font-semibold text-slate-500 uppercase tracking-tighter">Processos Total</div>
           </div>
         </button>
 
         <button
           onClick={() => setStatusFilter('aguardando_confeccao')}
-          className={`flex items-center gap-2 sm:gap-3 p-3 sm:p-4 rounded-xl transition-all hover:shadow-md border ${statusFilter === 'aguardando_confeccao' ? 'ring-2 ring-orange-500 bg-orange-50 border-orange-200' : 'bg-white border-slate-200'}`}
+          className={`bg-white p-3 rounded-xl shadow-sm flex items-center gap-3 transition-all hover:shadow-md ${statusFilter === 'aguardando_confeccao' ? 'border-2 border-orange-500' : 'border border-slate-200 hover:border-slate-300'}`}
         >
-          <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-full bg-orange-500 flex items-center justify-center flex-shrink-0">
-            <FileText className="w-4 h-4 sm:w-5 sm:h-5 text-white" />
+          <div className="w-10 h-10 bg-orange-100 text-orange-600 rounded-lg flex items-center justify-center">
+            <FileText className="w-5 h-5" />
           </div>
-          <div className="text-left min-w-0">
-            <p className="text-lg sm:text-2xl font-bold text-slate-900">{statusCounts.aguardando_confeccao || 0}</p>
-            <p className="text-[10px] sm:text-xs text-slate-500 truncate">Aguardando</p>
+          <div>
+            <div className="text-xl font-bold">{statusCounts.aguardando_confeccao || 0}</div>
+            <div className="text-[10px] font-semibold text-slate-500 uppercase tracking-tighter">Aguardando</div>
           </div>
         </button>
 
         <button
           onClick={() => setStatusFilter('andamento')}
-          className={`flex items-center gap-2 sm:gap-3 p-3 sm:p-4 rounded-xl transition-all hover:shadow-md border ${statusFilter === 'andamento' ? 'ring-2 ring-blue-500 bg-blue-50 border-blue-200' : 'bg-white border-slate-200'}`}
+          className={`bg-white p-3 rounded-xl shadow-sm flex items-center gap-3 transition-all hover:shadow-md ${statusFilter === 'andamento' ? 'border-2 border-blue-500' : 'border border-slate-200 hover:border-slate-300'}`}
         >
-          <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-full bg-blue-500 flex items-center justify-center flex-shrink-0">
-            <Clock className="w-4 h-4 sm:w-5 sm:h-5 text-white" />
+          <div className="w-10 h-10 bg-blue-100 text-blue-600 rounded-lg flex items-center justify-center">
+            <Clock className="w-5 h-5" />
           </div>
-          <div className="text-left min-w-0">
-            <p className="text-lg sm:text-2xl font-bold text-slate-900">{statusCounts.andamento || 0}</p>
-            <p className="text-[10px] sm:text-xs text-slate-500 truncate">Andamento</p>
+          <div>
+            <div className="text-xl font-bold">{statusCounts.andamento || 0}</div>
+            <div className="text-[10px] font-semibold text-slate-500 uppercase tracking-tighter">Em Andamento</div>
           </div>
         </button>
 
         <button
           onClick={() => setStatusFilter('distribuido')}
-          className={`flex items-center gap-2 sm:gap-3 p-3 sm:p-4 rounded-xl transition-all hover:shadow-md border ${statusFilter === 'distribuido' ? 'ring-2 ring-purple-500 bg-purple-50 border-purple-200' : 'bg-white border-slate-200'}`}
+          className={`bg-white p-3 rounded-xl shadow-sm flex items-center gap-3 transition-all hover:shadow-md ${statusFilter === 'distribuido' ? 'border-2 border-purple-500' : 'border border-slate-200 hover:border-slate-300'}`}
         >
-          <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-full bg-purple-500 flex items-center justify-center flex-shrink-0">
-            <FileText className="w-4 h-4 sm:w-5 sm:h-5 text-white" />
+          <div className="w-10 h-10 bg-purple-100 text-purple-600 rounded-lg flex items-center justify-center">
+            <FileText className="w-5 h-5" />
           </div>
-          <div className="text-left min-w-0">
-            <p className="text-lg sm:text-2xl font-bold text-slate-900">{statusCounts.distribuido || 0}</p>
-            <p className="text-[10px] sm:text-xs text-slate-500 truncate">Distribuídos</p>
+          <div>
+            <div className="text-xl font-bold">{statusCounts.distribuido || 0}</div>
+            <div className="text-[10px] font-semibold text-slate-500 uppercase tracking-tighter">Distribuídos</div>
           </div>
         </button>
 
-        <div className="flex items-center gap-2 sm:gap-3 p-3 sm:p-4 rounded-xl bg-white border border-slate-200 col-span-2 sm:col-span-1">
-          <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-full bg-emerald-500 flex items-center justify-center flex-shrink-0">
-            <CheckCircle2 className="w-4 h-4 sm:w-5 sm:h-5 text-white" />
+        <button
+          onClick={() => setStatusFilter('arquivado')}
+          className={`bg-white p-3 rounded-xl shadow-sm flex items-center gap-3 transition-all hover:shadow-md ${statusFilter === 'arquivado' ? 'border-2 border-green-500' : 'border border-slate-200 hover:border-slate-300'}`}
+        >
+          <div className="w-10 h-10 bg-green-100 text-green-600 rounded-lg flex items-center justify-center">
+            <CheckCircle2 className="w-5 h-5" />
           </div>
-          <div className="text-left min-w-0">
-            <p className="text-lg sm:text-2xl font-bold text-slate-900">{statusCounts.arquivado || 0}</p>
-            <p className="text-[10px] sm:text-xs text-slate-500 truncate">Arquivados</p>
+          <div>
+            <div className="text-xl font-bold">{statusCounts.arquivado || 0}</div>
+            <div className="text-[10px] font-semibold text-slate-500 uppercase tracking-tighter">Arquivados</div>
           </div>
-        </div>
+        </button>
       </div>
 
       {/* Seção Aguardando Confecção - Compacta */}
@@ -2734,62 +2745,6 @@ const ProcessesModule: React.FC<ProcessesModuleProps> = ({ forceCreate, entityId
         </div>
       )}
 
-      {syncResult && (
-        <div className={`flex items-start gap-3 px-4 py-3 rounded-xl text-sm ${syncResult.errors > 0 ? 'bg-amber-50 border border-amber-200 text-amber-800' : 'bg-green-50 border border-green-200 text-green-800'}`}>
-          {syncResult.errors > 0 ? <AlertCircle className="w-5 h-5 flex-shrink-0 mt-0.5" /> : <CheckCircle2 className="w-5 h-5 flex-shrink-0 mt-0.5" />}
-          <div className="flex-1">
-            <p className="font-semibold mb-1">Sincronização DJEN concluída</p>
-            {syncResult.total === 0 ? (
-              <p>Todos os processos já estão sincronizados!</p>
-            ) : (
-              <div className="space-y-1">
-                <p>
-                  <span className="font-medium">{syncResult.synced}</span> de <span className="font-medium">{syncResult.total}</span> processos verificados
-                </p>
-                {syncResult.updated > 0 && <p className="text-green-700">✓ {syncResult.updated} processos atualizados</p>}
-                {syncResult.errors > 0 && <p className="text-red-600">⚠ {syncResult.errors} erros</p>}
-                {syncResult.notificationsSent > 0 && <p className="text-blue-700">🔔 {syncResult.notificationsSent} avisos enviados ao responsável</p>}
-                {(syncResult.errors > 0 || syncResult.notificationsSent > 0) && (
-                  <button
-                    type="button"
-                    onClick={() => setSyncDetailsOpen((prev) => !prev)}
-                    className="mt-2 text-xs font-semibold text-slate-700 hover:text-slate-900 underline"
-                  >
-                    {syncDetailsOpen ? 'Ocultar detalhes' : 'Ver detalhes'}
-                  </button>
-                )}
-                {syncDetailsOpen && (syncResult.errors > 0 || syncResult.notificationsSent > 0) && (
-                  <div className="mt-2 space-y-2">
-                    {syncResult.details
-                      .filter((d) => d.error || d.notified)
-                      .slice(0, 10)
-                      .map((d) => (
-                        <div
-                          key={d.processId}
-                          className={`rounded-lg px-3 py-2 border ${d.error ? 'bg-red-50 border-red-200 text-red-700' : 'bg-blue-50 border-blue-200 text-blue-800'}`}
-                        >
-                          <div className="text-xs font-mono font-semibold">{d.processCode}</div>
-                          {d.error ? (
-                            <div className="text-xs mt-0.5">{d.error}</div>
-                          ) : (
-                            <div className="text-xs mt-0.5">Aviso enviado: publicação com ação requerida sem prazo associado</div>
-                          )}
-                        </div>
-                      ))}
-                    {syncResult.details.filter((d) => d.error || d.notified).length > 10 && (
-                      <div className="text-[11px] text-slate-600">Mostrando 10 itens. Refine e rode novamente para ver novos detalhes.</div>
-                    )}
-                  </div>
-                )}
-              </div>
-            )}
-          </div>
-          <button onClick={() => setSyncResult(null)} className="text-slate-400 hover:text-slate-600 flex-shrink-0">
-            <X className="w-4 h-4" />
-          </button>
-        </div>
-      )}
-
       <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-4 border-b border-slate-100">
           <div className="flex items-center gap-1 bg-slate-100 rounded-lg p-1">
@@ -2822,23 +2777,25 @@ const ProcessesModule: React.FC<ProcessesModuleProps> = ({ forceCreate, entityId
               <Clock className="w-3.5 h-3.5" />
               <span className="hidden sm:inline">Mapa de Fases</span>
             </button>
+            {processStatusCronLog?.status === 'success' && (
+              <button
+                onClick={fetchDjenCronLogs}
+                disabled={djenCronLoading}
+                className="flex items-center gap-2 px-3 py-1.5 bg-green-50 text-green-600 rounded-full border border-green-100 text-[11px] font-semibold hover:bg-green-100 transition-colors"
+              >
+                {djenCronLoading ? (
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                ) : (
+                  <RefreshCw className="w-3.5 h-3.5" />
+                )}
+                CRON ATIVO (03h)
+              </button>
+            )}
             <button
-              onClick={handleSyncAllDjen}
-              disabled={syncingDjen || pendingDjenCount === 0}
-              className={`relative flex items-center gap-1 sm:gap-1.5 px-2 sm:px-3 py-2 rounded-lg text-xs font-medium transition-all ${pendingDjenCount > 0 ? 'bg-blue-600 hover:bg-blue-700 text-white' : 'border border-slate-200 text-slate-400'}`}
-            >
-              {syncingDjen ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5" />}
-              <span className="hidden sm:inline">Sync DJEN</span>
-              {pendingDjenCount > 0 && !syncingDjen && (
-                <span className="absolute -top-1.5 -right-1.5 bg-red-500 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full min-w-[18px] text-center">{pendingDjenCount}</span>
-              )}
-            </button>
-            <button
-              onClick={handleExportExcel}
-              disabled={exportingExcel}
+              onClick={() => setShowExportModal(true)}
               className="flex items-center gap-1 sm:gap-1.5 px-2 sm:px-3 py-2 border border-slate-200 hover:bg-slate-50 text-slate-700 rounded-lg text-xs font-medium transition-all"
             >
-              {exportingExcel ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <FileSpreadsheet className="w-3.5 h-3.5" />}
+              <FileSpreadsheet className="w-3.5 h-3.5" />
               <span className="hidden sm:inline">Exportar</span>
             </button>
             <button onClick={() => handleOpenModal()} className="flex items-center gap-1 sm:gap-1.5 px-3 sm:px-4 py-2 bg-amber-600 hover:bg-amber-700 text-white rounded-lg text-xs font-semibold transition-all shadow-sm">
@@ -2951,6 +2908,16 @@ const ProcessesModule: React.FC<ProcessesModuleProps> = ({ forceCreate, entityId
                                 <div className="flex-1 min-w-0">
                                   <p className="text-xs font-semibold text-slate-900 truncate">{client?.full_name || 'Cliente removido'}</p>
                                   <p className="text-xs text-slate-500 font-mono truncate">{process.process_code}</p>
+                                  {process.djen_has_data && (
+                                    <div className="flex items-center gap-1 mt-1">
+                                      <span className="px-1.5 py-0.5 text-[10px] font-medium bg-green-100 text-green-800 rounded-full">✓ DJEN</span>
+                                      {formatLastSync(process.djen_last_sync) && (
+                                        <span className="text-[10px] text-slate-500">
+                                          {formatLastSync(process.djen_last_sync)}
+                                        </span>
+                                      )}
+                                    </div>
+                                  )}
                                 </div>
                               </div>
                             </div>
@@ -3114,9 +3081,16 @@ const ProcessesModule: React.FC<ProcessesModuleProps> = ({ forceCreate, entityId
                               <div className="flex items-center gap-2">
                                 <div className="text-sm font-mono text-gray-900">{process.process_code}</div>
                                 {process.djen_has_data && (
-                                  <span className="px-2 py-0.5 text-xs font-medium bg-green-100 text-green-800 rounded-full" title="Dados sincronizados com DJEN">
-                                    ✓ DJEN
-                                  </span>
+                                  <div className="flex items-center gap-1">
+                                    <span className="px-2 py-0.5 text-xs font-medium bg-green-100 text-green-800 rounded-full" title="Dados sincronizados com DJEN">
+                                      ✓ DJEN
+                                    </span>
+                                    {formatLastSync(process.djen_last_sync) && (
+                                      <span className="text-xs text-slate-500" title={`Última sincronização: ${process.djen_last_sync}`}>
+                                        {formatLastSync(process.djen_last_sync)}
+                                      </span>
+                                    )}
+                                  </div>
                                 )}
                               </div>
                               {process.court && <div className="text-xs text-gray-500 mt-1">{process.court}</div>}
@@ -3175,6 +3149,7 @@ const ProcessesModule: React.FC<ProcessesModuleProps> = ({ forceCreate, entityId
 
       {processModal}
       {detailsModal}
+      {exportModal}
 
       {showStageMapModal && createPortal(
         <div className="fixed inset-0 z-[80] flex items-center justify-center px-4 py-6">

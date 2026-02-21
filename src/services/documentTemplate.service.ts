@@ -25,23 +25,8 @@ class DocumentTemplateService {
     }
   }
 
-  private async ensureGeneratedBucket() {
-    try {
-      const { data } = await supabase.storage.getBucket(GENERATED_STORAGE_BUCKET);
-      if (data) return;
-
-      await supabase.storage.createBucket(GENERATED_STORAGE_BUCKET, {
-        public: false,
-        fileSizeLimit: 50 * 1024 * 1024,
-        allowedMimeTypes: ['application/vnd.openxmlformats-officedocument.wordprocessingml.document', 'application/pdf'],
-      });
-    } catch (error) {
-      console.warn('Bucket check/creation skipped:', error);
-    }
-  }
-
   async uploadGeneratedDocument(blob: Blob, originalName: string) {
-    await this.ensureGeneratedBucket();
+    // Bucket 'generated-documents' já existe e está configurado no Supabase
 
     const extension = originalName.split('.').pop() ?? 'docx';
     const filePath = `${crypto.randomUUID()}.${extension}`;

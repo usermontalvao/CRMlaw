@@ -139,8 +139,11 @@ class ProcessDjenSyncService {
       if (error) throw error;
 
       if (!processes || processes.length === 0) {
+        console.log('📊 [DJEN SYNC] Nenhum processo pendente para sincronizar');
         return { total: 0, synced: 0, updated: 0, errors: 0 };
       }
+
+      console.log(`📊 [DJEN SYNC] Encontrados ${processes.length} processos para sincronizar`);
 
       let synced = 0;
       let updated = 0;

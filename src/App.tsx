@@ -26,6 +26,8 @@ import {
   Sun,
   PenTool,
   Newspaper,
+  RefreshCw,
+  Plus,
 } from 'lucide-react';
 import Login from './components/Login';
 import OfflinePage from './components/OfflinePage';
@@ -93,6 +95,10 @@ const MainApp: React.FC = () => {
   const [isMobileNavOpen, setIsMobileNavOpen] = useState(false);
   const [isOnline, setIsOnline] = useState(navigator.onLine);
   const { canView, canCreate, canEdit, canDelete, loading: permissionsLoading, isAdmin } = usePermissions();
+  
+  // Estados para o seletor de mês do módulo Prazos
+  const [calendarMonth, setCalendarMonth] = useState(new Date().getMonth());
+  const [calendarYear, setCalendarYear] = useState(new Date().getFullYear());
 
   useEffect(() => {
     if (!('serviceWorker' in navigator)) return;
@@ -1142,19 +1148,6 @@ const MainApp: React.FC = () => {
             </button>
           )}
 
-          {!permissionsLoading && canAccessModule('tarefas') && (
-            <button
-              onClick={() => { setClientPrefill(null); setIsMobileNavOpen(false); safeNavigateTo('tarefas'); }}
-              className={`relative flex flex-col items-center py-2.5 px-1 rounded-lg transition-colors ${
-                activeModule === 'tarefas' ? 'text-amber-500' : 'text-slate-400 hover:text-white hover:bg-slate-800/50'
-              }`}
-            >
-              {activeModule === 'tarefas' && <div className="absolute left-0 top-1/2 -translate-y-1/2 w-0.5 h-6 bg-amber-500 rounded-r" />}
-              <CheckSquare className="w-5 h-5" />
-              <span className="text-[9px] mt-1">Tarefas</span>
-            </button>
-          )}
-
           {!permissionsLoading && canAccessModule('chat') && (
             <button
               onClick={() => { setClientPrefill(null); setIsMobileNavOpen(false); safeNavigateTo('chat'); }}
@@ -1515,6 +1508,12 @@ const MainApp: React.FC = () => {
                 entityId={moduleParams['prazos'] ? JSON.parse(moduleParams['prazos']).entityId : undefined}
                 prefillData={moduleParams['prazos'] ? JSON.parse(moduleParams['prazos']).prefill : undefined}
                 onParamConsumed={() => clearModuleParams('prazos')}
+                calendarMonth={calendarMonth}
+                calendarYear={calendarYear}
+                onCalendarChange={(month, year) => {
+                  setCalendarMonth(month);
+                  setCalendarYear(year);
+                }}
               />
             )}
             {activeModule === 'intimacoes' && (

@@ -55,7 +55,7 @@ const getMessagePreview = (content: string) => {
   if (isAttachmentMessage(content)) {
     const attachment = parseAttachment(content);
     if (attachment?.mimeType?.startsWith('image/')) return '�️ Imagem';
-    if (attachment?.mimeType?.startsWith('audio/')) return '🎤 Áudio';
+    if (attachment?.mimeType?.startsWith('audio/')) return '🎤';
     return '� Anexo';
   }
   const trimmed = (content ?? '').trim();
@@ -432,7 +432,7 @@ const ChatModule: React.FC = () => {
             isMine
               ? 'border-white/20 bg-white/10'
               : 'border-slate-200 dark:border-zinc-700 bg-white dark:bg-zinc-900'
-          } p-3`}
+          } p-3 ${isAudio ? 'w-[260px] sm:w-[320px]' : ''}`}
         >
           <div className="flex items-center gap-3">
             <div
@@ -446,15 +446,17 @@ const ChatModule: React.FC = () => {
                 <Mic className={`w-5 h-5 ${isMine ? 'text-white' : 'text-indigo-600'}`} />
               )}
             </div>
-            <div className="min-w-0 flex-1">
-              <p className={`text-sm font-semibold truncate ${isMine ? 'text-white' : 'text-slate-900 dark:text-white'}`}>
-                {attachment.fileName}
-              </p>
-              <p className={`text-xs ${isMine ? 'text-white/80' : 'text-slate-500 dark:text-slate-400'}`}>
-                {formatFileSize(attachment.size)}
-                {expired ? ' • Expirado (6 meses)' : ''}
-              </p>
-            </div>
+            {!isAudio && (
+              <div className="min-w-0 flex-1">
+                <p className={`text-sm font-semibold truncate ${isMine ? 'text-white' : 'text-slate-900 dark:text-white'}`}>
+                  {attachment.fileName}
+                </p>
+                <p className={`text-xs ${isMine ? 'text-white/80' : 'text-slate-500 dark:text-slate-400'}`}>
+                  {formatFileSize(attachment.size)}
+                  {expired ? ' • Expirado (6 meses)' : ''}
+                </p>
+              </div>
+            )}
             <button
               type="button"
               disabled={expired}
@@ -981,10 +983,10 @@ const ChatModule: React.FC = () => {
   };
 
   return (
-    <div className="w-full overflow-hidden text-slate-800 dark:text-slate-100 flex flex-col" style={{ height: 'calc(100dvh - 7rem)' }}>
-      <main className="w-full h-full min-h-0 bg-white dark:bg-[#202c33] rounded-xl shadow-xl flex overflow-hidden border border-[#e2e8f0] dark:border-[#2a3942]">
-        <aside className={`${showMobileChat ? 'hidden' : 'flex'} w-full md:w-[350px] lg:w-[400px] md:flex min-h-0 flex-col border-r border-[#e2e8f0] dark:border-[#2a3942] bg-white dark:bg-[#111b21]`}>
-          <div className="px-4 py-3 flex items-center justify-between bg-white dark:bg-[#202c33] border-b border-[#e2e8f0] dark:border-[#2a3942]">
+    <div className="w-full overflow-hidden text-gray-700 dark:text-gray-200 flex flex-col" style={{ height: 'calc(100dvh - 7rem)' }}>
+      <main className="w-full h-full min-h-0 bg-[#f0f2f5] dark:bg-[#111b21] rounded-xl shadow-xl flex overflow-hidden border-0">
+        <aside className={`${showMobileChat ? 'hidden' : 'flex'} w-full md:w-[350px] lg:w-[400px] md:flex min-h-0 flex-col border-r border-[#e9edef] dark:border-[#2a3942] bg-white dark:bg-[#202c33]`}>
+          <div className="px-4 py-3 flex items-center justify-between border-b border-[#e9edef] dark:border-[#2a3942]">
             <div className="flex items-center gap-3">
               <div className="relative">
                 <Avatar
@@ -997,8 +999,8 @@ const ChatModule: React.FC = () => {
                 />
               </div>
               <div>
-                <h2 className="font-bold text-lg leading-tight dark:text-gray-100">Chat</h2>
-                <span className="text-xs text-gray-500 dark:text-gray-400">{rooms.length} conversas</span>
+                <p className="text-sm font-semibold text-gray-700 dark:text-gray-100">Conversas</p>
+                <p className="text-xs text-gray-500 dark:text-gray-400">{rooms.length} ativas</p>
               </div>
             </div>
             <div className="flex gap-2">
@@ -1016,7 +1018,7 @@ const ChatModule: React.FC = () => {
                   setNewChatSearch('');
                   setShowNewChatModal(true);
                 }}
-                className="p-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-full shadow-md transition transform active:scale-95 flex items-center justify-center w-10 h-10"
+                className="p-2.5 bg-[#25d366] hover:bg-[#128c7e] text-white rounded-full shadow-md transition-all active:scale-95 flex items-center justify-center"
                 title="Nova conversa"
               >
                 <Plus className="w-5 h-5" />
@@ -1024,13 +1026,13 @@ const ChatModule: React.FC = () => {
             </div>
           </div>
 
-          <div className="p-3 border-b border-[#e2e8f0] dark:border-[#2a3942] bg-white dark:bg-[#111b21]">
+          <div className="p-3 border-b border-[#e9edef] dark:border-[#2a3942]">
             <div className="relative">
-              <Search className="absolute inset-y-0 left-0 ml-3 my-auto w-5 h-5 text-gray-400 pointer-events-none" />
+              <Search className="absolute inset-y-0 left-0 ml-3 my-auto w-4 h-4 text-slate-400 pointer-events-none" />
               <input
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
-                className="w-full pl-10 pr-4 py-2 bg-gray-100 dark:bg-[#202c33] border-none rounded-lg text-sm focus:ring-2 focus:ring-indigo-600 focus:bg-white dark:focus:bg-[#2a3942] transition-all placeholder-gray-500 dark:placeholder-gray-400 text-gray-900 dark:text-gray-100"
+                className="w-full pl-10 pr-4 py-2.5 bg-[#f0f2f5] dark:bg-[#2a3942] border border-transparent rounded-lg text-sm focus:ring-2 focus:ring-[#25d366]/25 focus:border-[#25d366] outline-none transition-all placeholder:text-gray-400"
                 placeholder="Buscar conversa..."
                 type="text"
               />
@@ -1075,13 +1077,13 @@ const ChatModule: React.FC = () => {
                   }}
                   className={`flex items-center gap-3 p-3 cursor-pointer transition ${
                     isActive
-                      ? 'bg-indigo-600/10 dark:bg-[#2a3942]/50 border-l-4 border-indigo-600'
-                      : 'hover:bg-gray-50 dark:hover:bg-[#202c33] border-b border-[#e2e8f0]/50 dark:border-[#2a3942]/50 border-l-4 border-transparent'
+                      ? 'bg-[#e9edef] dark:bg-[#2a3942] border-l-4 border-[#25d366]'
+                      : 'hover:bg-[#f0f2f5] dark:hover:bg-[#2a3942] border-b border-[#e9edef]/60 dark:border-[#2a3942]/60 border-l-4 border-transparent'
                   }`}
                 >
                   <div className="relative flex-shrink-0">
                     {room.is_public ? (
-                      <div className="w-12 h-12 rounded-full bg-indigo-600 flex items-center justify-center text-white text-lg font-bold shadow-sm">
+                      <div className="w-12 h-12 rounded-full bg-[#25d366] flex items-center justify-center text-white text-lg font-bold shadow-sm">
                         {getInitials(room.name).slice(0, 1) || 'G'}
                       </div>
                     ) : (
@@ -1108,7 +1110,7 @@ const ChatModule: React.FC = () => {
                     </div>
                   </div>
                   {roomUnreadCount > 0 && (
-                    <div className="w-5 h-5 bg-indigo-600 text-white text-[10px] font-bold rounded-full flex items-center justify-center">
+                    <div className="w-5 h-5 bg-[#25d366] text-white text-[10px] font-bold rounded-full flex items-center justify-center">
                       {roomUnreadCount}
                     </div>
                   )}
@@ -1118,10 +1120,10 @@ const ChatModule: React.FC = () => {
           </div>
         </aside>
 
-        <section className={`${showMobileChat ? 'flex' : 'hidden'} md:flex flex-1 min-h-0 flex-col bg-[#efeae2] dark:bg-[#0b141a] relative`}>
+        <section className={`${showMobileChat ? 'flex' : 'hidden'} md:flex flex-1 min-h-0 flex-col bg-[#f0f2f5] dark:bg-[#0b141a] relative`}>
           {selectedRoom ? (
             <>
-              <header className="h-[64px] px-4 py-2 bg-white dark:bg-[#202c33] border-b border-[#e2e8f0] dark:border-[#2a3942] flex items-center justify-between z-10 shadow-sm">
+              <header className="h-[64px] px-4 py-2 bg-[#f0f2f5] dark:bg-[#202c33] border-b border-[#e9edef] dark:border-[#2a3942] flex items-center justify-between z-10 shadow-sm">
                 <div className="flex items-center gap-3 flex-1 min-w-0">
                   <button
                     type="button"
@@ -1137,7 +1139,7 @@ const ChatModule: React.FC = () => {
                     title="Ver informações"
                   >
                   {selectedRoom.is_public ? (
-                    <div className="w-10 h-10 rounded-full bg-indigo-600 flex items-center justify-center text-white text-sm font-bold shadow-sm">
+                    <div className="w-10 h-10 rounded-full bg-[#25d366] flex items-center justify-center text-white text-sm font-bold shadow-sm">
                       {getInitials(selectedRoom.name).slice(0, 1) || 'G'}
                     </div>
                   ) : (
@@ -1174,33 +1176,32 @@ const ChatModule: React.FC = () => {
 
               <div
                 ref={scrollRef}
-                className="flex-1 min-h-0 overflow-y-auto p-4 md:p-8 custom-scrollbar relative"
+                className="flex-1 min-h-0 overflow-y-auto p-4 md:p-6 custom-scrollbar"
                 style={{
-                  backgroundImage:
-                    "url('data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAgAAAAICAYAAADED76LAAAAH0lEQVQoU2NkYGAwZWBgqGcEk4xQBSBF6AAkQx9PCQBuBwT9/1cWUAAAAABJRU5ErkJggg==')",
+                  backgroundImage: "url('data:image/svg+xml,%3Csvg width=\"536\" height=\"113\" xmlns=\"http://www.w3.org/2000/svg\"%3E%3Cdefs%3E%3Cpattern id=\"whatsapp-pattern\" x=\"0\" y=\"0\" width=\"536\" height=\"113\" patternUnits=\"userSpaceOnUse\"%3E%3Cpath fill=\"%23ece5dd\" d=\"M0 0h536v113H0z\"/%3E%3Cpath fill=\"%23e9dfd9\" d=\"M0 0h536v113H0z\" opacity=\".5\"/%3E%3Cpath fill=\"%23e9dfd9\" d=\"M0 0h536v113H0z\" opacity=\".3\"/%3E%3C/pattern%3E%3C/defs%3E%3Crect width=\"100%25\" height=\"100%25\" fill=\"url(%23whatsapp-pattern)\"/%3E%3C/svg%3E')",
                   backgroundRepeat: 'repeat',
-                  backgroundBlendMode: 'soft-light',
+                  backgroundSize: '536px 113px',
+                  backgroundPosition: 'center',
                 }}
               >
-                <div className="absolute inset-0 bg-[#efeae2]/90 dark:bg-[#0b141a]/95 pointer-events-none"></div>
 
                 {loadingMessages && (
-                  <div className="relative z-0 text-sm text-gray-500 dark:text-gray-400 text-center">Carregando mensagens...</div>
+                  <div className="text-sm text-gray-500 dark:text-gray-400 text-center">Carregando mensagens...</div>
                 )}
 
                 {!loadingMessages && selectedRoomId && messages.length === 0 && (
-                  <div className="relative z-0 text-sm text-gray-500 dark:text-gray-400 text-center py-8">Nenhuma mensagem ainda</div>
+                  <div className="text-sm text-gray-500 dark:text-gray-400 text-center py-8">Nenhuma mensagem ainda</div>
                 )}
 
                 {messages.length > 0 && (
-                  <div className="relative z-0 flex justify-center mb-6">
-                    <span className="bg-white dark:bg-[#202c33] text-gray-500 dark:text-gray-300 text-xs py-1 px-3 rounded-lg shadow-sm border border-[#e2e8f0] dark:border-[#2a3942]">
+                  <div className="flex justify-center mb-6">
+                    <span className="bg-white dark:bg-[#2a3942] text-gray-500 dark:text-gray-300 text-xs py-1 px-3 rounded-lg shadow-sm border border-[#e9edef] dark:border-[#2a3942]">
                       Hoje
                     </span>
                   </div>
                 )}
 
-                <div className="relative z-0">
+                <div>
                   {messages.map((msg) => {
                     const isMine = user?.id === msg.user_id;
                     const author = membersByUserId.get(msg.user_id);
@@ -1218,7 +1219,7 @@ const ChatModule: React.FC = () => {
                             imageClassName="object-cover shadow-sm"
                           />
                           <div className="flex flex-col gap-1 max-w-[70%]">
-                            <div className="bg-white dark:bg-[#202c33] p-3 rounded-2xl rounded-bl-none shadow-[0_1px_0.5px_rgba(0,0,0,0.13)] text-sm text-gray-800 dark:text-gray-100 relative">
+                            <div className="bg-white dark:bg-[#2a3942] p-3 rounded-2xl rounded-bl-none border border-[#e9edef] dark:border-[#2a3942] text-sm text-gray-800 dark:text-gray-100">
                               {selectedRoom.is_public && (
                                 <span className="block font-bold text-xs text-indigo-600 mb-1">{authorName}</span>
                               )}
@@ -1249,7 +1250,7 @@ const ChatModule: React.FC = () => {
                             </div>
                           </div>
                         ) : (
-                          <div className="bg-indigo-600 dark:bg-indigo-700 p-3 rounded-2xl rounded-br-none shadow-[0_1px_0.5px_rgba(0,0,0,0.13)] text-sm text-white max-w-[70%]">
+                          <div className="bg-[#dcf8c6] dark:bg-[#005c4b] p-3 rounded-2xl rounded-br-none shadow-[0_1px_0.5px_rgba(0,0,0,0.13)] text-sm text-gray-800 dark:text-white max-w-[70%]">
                             <p>{msg.content}</p>
                             <div className="flex justify-end items-center gap-1 mt-1 select-none opacity-80">
                               <span className="text-[10px]">{formatTime(msg.created_at)}</span>
@@ -1264,8 +1265,8 @@ const ChatModule: React.FC = () => {
                 </div>
               </div>
 
-              <footer className="p-2 md:p-3 bg-white dark:bg-[#202c33] border-t border-[#e2e8f0] dark:border-[#2a3942] z-10">
-                <div className="relative flex items-center gap-1.5 md:gap-2 w-full min-w-0 md:max-w-4xl md:mx-auto">
+              <footer className="p-3 bg-[#f0f2f5] dark:bg-[#202c33] border-t border-[#e9edef] dark:border-[#2a3942] z-10">
+                <div className="relative flex items-center gap-1.5 md:gap-2 w-full min-w-0 md:max-w-4xl md:mx-auto rounded-xl bg-white dark:bg-[#2a3942] border border-[#e9edef] dark:border-[#2a3942] px-2 py-1.5">
                   {showEmojiPicker && (
                     <div className="absolute bottom-14 left-0 z-20 w-[280px] rounded-2xl border border-slate-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 shadow-xl p-3">
                       <p className="text-xs font-semibold text-slate-500 dark:text-slate-400 mb-2">Emojis</p>
@@ -1323,7 +1324,7 @@ const ChatModule: React.FC = () => {
                       }}
                       placeholder={selectedRoomId ? 'Digite uma mensagem...' : 'Selecione uma conversa...'}
                       disabled={!selectedRoomId || isRecording}
-                      className="w-full py-2.5 md:py-3 px-3 md:px-4 bg-gray-100 dark:bg-[#2a3942] border-none rounded-xl md:rounded-2xl text-sm focus:ring-1 focus:ring-indigo-600 outline-none transition placeholder-gray-500 dark:placeholder-gray-400 text-gray-900 dark:text-gray-100 shadow-inner"
+                      className="w-full py-2.5 md:py-3 px-3 md:px-4 bg-transparent border-none rounded-xl md:rounded-2xl text-sm focus:ring-1 focus:ring-[#25d366] outline-none transition placeholder-gray-500 dark:placeholder-gray-400 text-gray-900 dark:text-gray-100"
                       onKeyDown={(e) => {
                         if (e.key === 'Enter' && !e.shiftKey) {
                           e.preventDefault();
@@ -1336,7 +1337,7 @@ const ChatModule: React.FC = () => {
                     <button
                       type="button"
                       onClick={handleToggleRecording}
-                      className="p-2.5 md:p-3 bg-red-500 hover:bg-red-600 text-white rounded-full shadow-md transition transform active:scale-95 flex items-center justify-center animate-pulse shrink-0"
+                      className="p-2.5 md:p-3 bg-[#e5385b] hover:bg-[#d63031] text-white rounded-full shadow-md transition transform active:scale-95 flex items-center justify-center animate-pulse shrink-0"
                       title="Parar gravação"
                     >
                       <Square className="w-5 h-5" />
@@ -1346,7 +1347,7 @@ const ChatModule: React.FC = () => {
                       type="button"
                       onClick={handleToggleRecording}
                       disabled={!selectedRoomId}
-                      className="p-2.5 md:p-3 bg-gray-500 hover:bg-gray-600 disabled:bg-gray-400 text-white rounded-full shadow-md transition transform active:scale-95 flex items-center justify-center shrink-0"
+                      className="p-2.5 md:p-3 bg-[#7289da] hover:bg-[#5f6dcf] disabled:bg-gray-400 text-white rounded-full shadow-md transition transform active:scale-95 flex items-center justify-center shrink-0"
                       title="Gravar áudio"
                     >
                       <Mic className="w-5 h-5" />
@@ -1361,7 +1362,7 @@ const ChatModule: React.FC = () => {
                     type="button"
                     onClick={handleSend}
                     disabled={!selectedRoomId || !messageText.trim() || isRecording}
-                    className="p-2.5 md:p-3 bg-indigo-600 hover:bg-indigo-700 disabled:bg-gray-400 text-white rounded-full shadow-md transition transform active:scale-95 flex items-center justify-center shrink-0"
+                    className="p-2.5 md:p-3 bg-[#25d366] hover:bg-[#128c7e] disabled:opacity-50 text-white rounded-full shadow-md transition transform active:scale-95 flex items-center justify-center shrink-0"
                     title="Enviar"
                   >
                     <Send className="w-5 h-5" />

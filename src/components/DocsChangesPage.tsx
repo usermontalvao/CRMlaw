@@ -277,6 +277,13 @@ const CHANGELOG_MODULES: ModuleConfig[] = [
     color: { bg: 'bg-emerald-600', text: 'text-emerald-700', border: 'border-emerald-200', light: 'bg-emerald-50' },
   },
   {
+    id: 'peticoes',
+    name: 'Petições',
+    description: 'Editor de petições, blocos, templates e formatação inteligente',
+    icon: FileText,
+    color: { bg: 'bg-orange-600', text: 'text-orange-700', border: 'border-orange-200', light: 'bg-orange-50' },
+  },
+  {
     id: 'docs',
     name: 'Documentação',
     description: 'Changelog, documentação e guias do sistema',
@@ -578,10 +585,1015 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
   security: { label: 'Segurança', icon: Shield, color: 'text-red-600 bg-red-50' },
   breaking: { label: 'Breaking', icon: GitBranch, color: 'text-purple-600 bg-purple-50' },
 };
-   HISTÓRICO DE VERSÕES (CHANGELOG)
-   ============================================================================ */
 
 const releases: ReleaseNote[] = [
+  {
+    version: '1.9.586',
+    date: '21/02/2026',
+    summary: 'Chat: card de áudio com tamanho mais confortável.',
+    modules: [
+      {
+        moduleId: 'chat',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Widget de áudio mais largo',
+            description: 'Ajustada largura do card de áudio para evitar visual compacto. Definida largura mínima responsiva (260px no mobile e 320px no desktop), mantendo o layout limpo com player mais confortável.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.585',
+    date: '21/02/2026',
+    summary: 'Chat: card de áudio sem nome/tamanho de arquivo.',
+    modules: [
+      {
+        moduleId: 'chat',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Card de áudio mais limpo',
+            description: 'Removida a exibição do nome e tamanho do arquivo nos cards de áudio (ex.: audio_*.webm e KB). Agora o card mostra apenas ícone + player de áudio.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.584',
+    date: '21/02/2026',
+    summary: 'Chat: widget de áudio simplificado.',
+    modules: [
+      {
+        moduleId: 'chat',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Preview minimalista de áudio',
+            description: 'Removido texto "Áudio" do preview de mensagens. Agora exibe apenas o emoji 🎤 para mensagens de áudio, mantendo visual limpo e minimalista sem informações de arquivo.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.583',
+    date: '21/02/2026',
+    summary: 'Chat: widget de áudio redesenhado.',
+    modules: [
+      {
+        moduleId: 'chat',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Player de áudio estilo WhatsApp',
+            description: 'Widget de áudio completamente redesenhado com player customizado. Controles play/pause, barra de progresso interativa, botão de download, visual moderno com ícone de áudio e design consistente com o tema WhatsApp.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.582',
+    date: '21/02/2026',
+    summary: 'Chat: fundo WhatsApp na área de conversa.',
+    modules: [
+      {
+        moduleId: 'chat',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Background idêntico ao WhatsApp',
+            description: 'Adicionado fundo exato do WhatsApp na área de conversa. Pattern SVG com cores #ece5dd e #e9dfd9, dimensões 536x113px, repetição centralizada para visual idêntico ao app original.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.581',
+    date: '21/02/2026',
+    summary: 'Chat: redesign completo estilo WhatsApp.',
+    modules: [
+      {
+        moduleId: 'chat',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Visual idêntico ao WhatsApp',
+            description: 'Redesign completo com cores verde/teal (#25d366), mensagens enviadas com fundo verde claro (#dcf8c6), recebidas com fundo branco, layout limpo e pattern de fundo sutil na área de mensagens. Botões e elementos seguem paleta WhatsApp.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.580',
+    date: '21/02/2026',
+    summary: 'Tarefas: animação no botão Adicionar.',
+    modules: [
+      {
+        moduleId: 'tarefas',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Loading animado e prevenção de cliques',
+            description: 'Botão "Adicionar" agora exibe spinner animado e muda para cor verde durante o processo. Previne múltiplos cliques e mostra feedback visual claro com texto "Adicionando...".',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.579',
+    date: '21/02/2026',
+    summary: 'Tarefas: removido do menu lateral.',
+    modules: [
+      {
+        moduleId: 'tarefas',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Acesso apenas pelo header',
+            description: 'Removido o botão Tarefas do menu lateral de navegação. O módulo continua acessível através do botão no header principal, que exibe o contador de tarefas pendentes em um badge verde.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.578',
+    date: '21/02/2026',
+    summary: 'Tarefas: header completamente removido.',
+    modules: [
+      {
+        moduleId: 'tarefas',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Header completamente removido',
+            description: 'Removido todo o header do módulo Tarefas (título e descrição). Agora exibe diretamente o formulário de adicionar tarefas e a lista, mantendo apenas o título no navbar para máxima economia de espaço visual.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.577',
+    date: '21/02/2026',
+    summary: 'Tarefas: título duplicado removido.',
+    modules: [
+      {
+        moduleId: 'tarefas',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Título duplicado removido',
+            description: 'Removido título "Tarefas" duplicado do módulo. Mantido apenas no navbar para evitar redundância visual. A descrição "Gerencie suas tarefas e lembretes" continua sendo exibida.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.576',
+    date: '20/02/2026',
+    summary: 'Chat: redesign visual limpo e consistente com o sistema.',
+    modules: [
+      {
+        moduleId: 'chat',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Visual limpo e hierarquia refinada',
+            description: 'Removidos efeitos visuais pesados, com padronização de fundos e bordas em slate, melhor contraste e organização da interface para leitura e navegação mais confortáveis.',
+          },
+          {
+            type: 'improvement',
+            title: 'Lista e composer reorganizados',
+            description: 'Lista de conversas com estados ativos mais claros e campo de mensagem redesenhado com estrutura mais limpa, mantendo as cores do sistema (indigo/slate).',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.575',
+    date: '20/02/2026',
+    summary: 'Chat: título duplicado removido e cores ajustadas.',
+    modules: [
+      {
+        moduleId: 'chat',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Título duplicado removido',
+            description: 'Removido título "Chat da Equipe" duplicado do módulo. Mantido apenas no navbar para evitar redundância visual.',
+          },
+          {
+            type: 'improvement',
+            title: 'Cores ajustadas ao padrão do sistema',
+            description: 'Botões e elementos de destaque agora usam a cor indigo padrão do sistema (indigo-600) em vez de gradientes purple, mantendo consistência visual com o resto da aplicação.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.574',
+    date: '20/02/2026',
+    summary: 'Chat: tema glassmorphism premium aplicado.',
+    modules: [
+      {
+        moduleId: 'chat',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Design glassmorphism premium',
+            description: 'Aplicado tema moderno com painéis translúcidos (backdrop-filter blur), gradientes indigo/purple nos botões de ação, bordas suaves com transparência, sombras modernas e espaçamentos refinados. Visual inspirado em designs premium com efeito de vidro fosco.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.571',
+    date: '20/02/2026',
+    summary: 'Prazos: correção de filtro mensal para concluídos.',
+    modules: [
+      {
+        moduleId: 'prazos',
+        changes: [
+          {
+            type: 'fix',
+            title: 'Filtro mensal corrigido',
+            description: 'Prazos concluídos agora são contabilizados no mês em que foram finalizados (completed_at), não no mês de vencimento original (due_date). Isso evita que prazos concluídos em fevereiro apareçam nas estatísticas de março.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.570',
+    date: '20/02/2026',
+    summary: 'Prazos: filtros avançados na mesma linha da toolbar.',
+    modules: [
+      {
+        moduleId: 'prazos',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Filtros Avançados inline',
+            description: 'Botão de Filtros Avançados agora está na mesma linha da toolbar principal, com dropdown para expandir. Texto oculto em telas menores (lg:inline) mostrando apenas ícone de filtro.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.569',
+    date: '20/02/2026',
+    summary: 'Prazos: filtros avançados integrados na toolbar.',
+    modules: [
+      {
+        moduleId: 'prazos',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Filtros Avançados integrados',
+            description: 'Seção de Filtros Avançados agora está integrada diretamente na toolbar principal, com botão de expansão/recolhimento. Design limpo e moderno seguindo padrão da imagem fornecida.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.568',
+    date: '20/02/2026',
+    summary: 'Prazos: toolbar compacta em uma linha.',
+    modules: [
+      {
+        moduleId: 'prazos',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Toolbar premium compactada',
+            description: 'Toolbar redesenhada para caber tudo em uma única linha: botões de visualização, seletor de mês, busca, filtros (Tipo/Prioridade), botões de ação. Design inspirado em dashboards modernos com melhor uso do espaço.',
+          },
+          {
+            type: 'improvement',
+            title: 'Seletor de mês ao lado do calendário',
+            description: 'Seletor de mês reposicionado para ficar ao lado dos botões de visualização dentro do módulo, facilitando navegação entre meses.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.567',
+    date: '20/02/2026',
+    summary: 'Prazos: remoção de duplicidade e seletor no navbar.',
+    modules: [
+      {
+        moduleId: 'prazos',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Títulos duplicados removidos',
+            description: 'Removidos títulos "Gestão de Prazos" e "Controle compromissos..." duplicados no módulo. Mantidos apenas no navbar para evitar redundância visual.',
+          },
+          {
+            type: 'improvement',
+            title: 'Seletor de mês no navbar',
+            description: 'Seletor de mês movido para o cabeçalho ao lado do calendário, visível apenas quando o módulo Prazos está ativo. Melhora usabilidade e centraliza controles.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.566',
+    date: '20/02/2026',
+    summary: 'Requerimentos: header da barra de controle refinado.',
+    modules: [
+      {
+        moduleId: 'requerimentos',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Header mais limpo e alinhado',
+            description: 'Refino visual do header da barra de controles com melhor hierarquia, espaçamento consistente, chips de status mais harmonizados e botões de ação com acabamento mais uniforme.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.565',
+    date: '20/02/2026',
+    summary: 'Requerimentos: correção de erro 400 ao gerar MS.',
+    modules: [
+      {
+        moduleId: 'requerimentos',
+        changes: [
+          {
+            type: 'fix',
+            title: 'Erro 400 ao gerar MS corrigido',
+            description: 'Removida verificação desnecessária de bucket via client que causava erro 400. O bucket generated-documents já existe e está configurado corretamente no Supabase.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.564',
+    date: '20/02/2026',
+    summary: 'Requerimentos: modal simples de seleção de template MS.',
+    modules: [
+      {
+        moduleId: 'requerimentos',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Modal simples de seleção de template',
+            description: 'Ao clicar em "Gerar MS", agora abre um modal simples e direto onde basta clicar no modelo desejado para gerar automaticamente o documento. Não é mais necessário abrir o modal completo de gerenciamento.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.563',
+    date: '20/02/2026',
+    summary: 'Requerimentos: preservação do nome original do arquivo MS.',
+    modules: [
+      {
+        moduleId: 'requerimentos',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Nome original do arquivo preservado',
+            description: 'Ao enviar template MS, o sistema agora preserva o nome original do arquivo (sem a extensão .docx) em vez de adicionar data automaticamente.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.562',
+    date: '20/02/2026',
+    summary: 'Requerimentos: correção de import.',
+    modules: [
+      {
+        moduleId: 'requerimentos',
+        changes: [
+          {
+            type: 'fix',
+            title: 'Import do ícone Download',
+            description: 'Corrigido erro de import do ícone Download do lucide-react que impedia o carregamento do módulo.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.561',
+    date: '20/02/2026',
+    summary: 'Requerimentos: download e seleção de modelo MS aprimorados.',
+    modules: [
+      {
+        moduleId: 'requerimentos',
+        changes: [
+          {
+            type: 'feature',
+            title: 'Botão Baixar modelo MS',
+            description: 'Adicionado botão "Baixar" no modal de templates MS para fazer download do modelo Word (DOCX) hospedado no sistema.',
+          },
+          {
+            type: 'improvement',
+            title: 'Seleção de modelo ao gerar MS',
+            description: 'Ao clicar em "Gerar MS", agora abre o modal para selecionar qual modelo usar antes de gerar. Botão "Gerar MS" disponível diretamente no modal quando há requerimento selecionado.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.560',
+    date: '20/02/2026',
+    summary: 'Requerimentos: botão Gerenciar MS corrigido.',
+    modules: [
+      {
+        moduleId: 'requerimentos',
+        changes: [
+          {
+            type: 'fix',
+            title: 'Botão Gerenciar MS corrigido',
+            description: 'Corrigido botão "Gerenciar MS" que estava tentando navegar para módulo inexistente (ms-management). Agora abre diretamente o modal de gerenciamento de templates MS.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.559',
+    date: '20/02/2026',
+    summary: 'Requerimentos: alinhamento e refinamento visual da barra.',
+    modules: [
+      {
+        moduleId: 'requerimentos',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Barra compacta alinhada',
+            description: 'A barra de status e ações foi alinhada com melhor distribuição entre chips e botões, reduzindo ruído visual e mantendo o layout compacto e consistente.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.558',
+    date: '20/02/2026',
+    summary: 'Requerimentos/MS: filtro de templates e remoção de modelo.',
+    modules: [
+      {
+        moduleId: 'requerimentos',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Template MS filtrado + remoção',
+            description: 'No modal Template MS, a lista agora exibe somente modelos do contexto MS (Requerimentos). Adicionada ação Remover para excluir o modelo selecionado com confirmação.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.557',
+    date: '20/02/2026',
+    summary: 'Requerimentos: barra compacta sem scroll lateral.',
+    modules: [
+      {
+        moduleId: 'requerimentos',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Controles compactos e organizados',
+            description: 'Barra superior reorganizada para remover scroll lateral: chips de status menores com quebra de linha, botões de ação compactos e botão Gerenciar MS fixo na área de ações.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.556',
+    date: '20/02/2026',
+    summary: 'Requerimentos: header duplicado removido.',
+    modules: [
+      {
+        moduleId: 'requerimentos',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Header duplicado removido',
+            description: 'Removido header duplicado do módulo Requerimentos (mantido apenas título no nav). Interface mais limpa sem repetição de "Sistema de Requerimentos" e "Gerencie requerimentos administrativos do INSS".',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.555',
+    date: '20/02/2026',
+    summary: 'Assinaturas: modo cards em estilo pasta.',
+    modules: [
+      {
+        moduleId: 'assinaturas',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Cards com visual de pasta',
+            description: 'Modo cards atualizado para visual estilo pasta, com aba superior, ícone FolderOpen e cartões com identidade documental para melhorar leitura e percepção de organização.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.554',
+    date: '20/02/2026',
+    summary: 'Requerimentos: header duplicado removido.',
+    modules: [
+      {
+        moduleId: 'requerimentos',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Header duplicado removido',
+            description: 'Removido header duplicado do módulo Requerimentos (mantido apenas título no nav). Interface mais limpa sem repetição de "Sistema de Requerimentos" e "Gerencie requerimentos administrativos do INSS".',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.553',
+    date: '20/02/2026',
+    summary: 'Assinaturas: modo cards em estilo pasta.',
+    modules: [
+      {
+        moduleId: 'assinaturas',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Cards com visual de pasta',
+            description: 'Modo cards atualizado para visual estilo pasta, com aba superior, ícone FolderOpen e cartões com identidade documental para melhorar leitura e percepção de organização.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.552',
+    date: '20/02/2026',
+    summary: 'Assinaturas: modo cards redesenhado.',
+    modules: [
+      {
+        moduleId: 'assinaturas',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Modo cards redesenhado',
+            description: 'Modo cards completamente redesenhado com layout moderno. Grid responsiva (xl:grid-cols-4), header com ícone e percentual, conteúdo organizado em seções, footer com status e progresso visual melhorado, hover effects e transições suaves.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.551',
+    date: '20/02/2026',
+    summary: 'Assinaturas: cards simplificados.',
+    modules: [
+      {
+        moduleId: 'assinaturas',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Design dos cards simplificado',
+            description: 'Cards da lista simplificados para melhor UX. Removida complexidade desnecessária, layout mais limpo com cards compactos, informações essenciais apenas e interação mais direta.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.550',
+    date: '20/02/2026',
+    summary: 'Assinaturas: cards da lista redesenhados.',
+    modules: [
+      {
+        moduleId: 'assinaturas',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Design dos cards redesenhado',
+            description: 'Cards da lista completamente redesenhados com layout moderno. Melhor hierarquia visual, organização de informações, badges compactos para Processo/Req., progress bar integrada no status e botão "Ver detalhes" explícito para melhor UX.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.549',
+    date: '20/02/2026',
+    summary: 'Assinaturas: header vazio removido.',
+    modules: [
+      {
+        moduleId: 'assinaturas',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Header vazio removido',
+            description: 'Removida barra header vazia onde estava o botão Novo documento. Interface mais limpa com apenas a toolbar principal contendo filtros e ações de forma organizada.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.548',
+    date: '20/02/2026',
+    summary: 'Assinaturas: botão Novo documento reposicionado.',
+    modules: [
+      {
+        moduleId: 'assinaturas',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Botão Novo documento reposicionado',
+            description: 'Botão "Novo documento" reposicionado ao lado do botão "Público" no módulo Assinaturas. Removido do navigation para evitar duplicação e melhorar organização visual.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.547',
+    date: '20/02/2026',
+    summary: 'Assinaturas: erro de Hooks corrigido.',
+    modules: [
+      {
+        moduleId: 'assinaturas',
+        changes: [
+          {
+            type: 'fix',
+            title: 'Erro de Hooks corrigido',
+            description: 'Corrigido erro "Rendered more hooks than during the previous render" movendo useEffect para o topo do componente. Hooks devem sempre ser chamados na mesma ordem.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.546',
+    date: '20/02/2026',
+    summary: 'Assinaturas: botão Novo documento integrado ao nav.',
+    modules: [
+      {
+        moduleId: 'assinaturas',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Botão Novo documento no navigation',
+            description: 'Botão "Novo documento" integrado ao navigation ao lado do perfil. Aparece apenas quando módulo Assinaturas está ativo, com acesso direto ao wizard de upload via DOM para melhor UX.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.545',
+    date: '20/02/2026',
+    summary: 'Assinaturas: header duplicado removido.',
+    modules: [
+      {
+        moduleId: 'assinaturas',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Header duplicado removido',
+            description: 'Removido header duplicado do módulo Assinaturas (mantido apenas título no nav). Interface mais limpa sem repetição de "Assinatura Digital" e "Envie documentos e acompanhe o progresso das assinaturas".',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.544',
+    date: '20/02/2026',
+    summary: 'Documentos: header duplicado removido.',
+    modules: [
+      {
+        moduleId: 'documentos',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Header duplicado removido',
+            description: 'Removido header duplicado do módulo Documentos (mantido apenas título no nav). Interface mais limpa sem repetição de "Modelos de documentos" e "Gerencie templates e documentos".',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.543',
+    date: '20/02/2026',
+    summary: 'Processos: botão X adicionado ao header do modal.',
+    modules: [
+      {
+        moduleId: 'processos',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Botão de fechar no header',
+            description: 'Adicionado botão X no header do modal de exportação para fechar, seguindo exatamente o padrão da Agenda. Header agora com layout flex e botão de fechar no canto superior direito com hover effects.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.542',
+    date: '20/02/2026',
+    summary: 'Processos: layout dos botões do modal alinhado à Agenda.',
+    modules: [
+      {
+        moduleId: 'processos',
+        changes: [
+          {
+            type: 'fix',
+            title: 'Estrutura dos botões do modal corrigida',
+            description: 'Botões "Cancelar" e "Exportar Excel" foram movidos para dentro do mesmo container interno do conteúdo, replicando a estrutura da Agenda e corrigindo espaçamento/alinhamento visual.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.541',
+    date: '20/02/2026',
+    summary: 'Processos: botão Exportar Excel corrigido.',
+    modules: [
+      {
+        moduleId: 'processos',
+        changes: [
+          {
+            type: 'fix',
+            title: 'Botão Exportar Excel corrigido',
+            description: 'Botão "Exportar Excel" corrigido para usar disabled:opacity-50 em vez de bg-gray-400, mantendo o gradiente verde esmeralda visível mesmo quando desabilitado, exatamente igual ao da Agenda.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.540',
+    date: '20/02/2026',
+    summary: 'Processos: botões do modal corrigidos.',
+    modules: [
+      {
+        moduleId: 'processos',
+        changes: [
+          {
+            type: 'fix',
+            title: 'Botões do modal de exportação corrigidos',
+            description: 'Corrigidos botões do modal de exportação para ficar idênticos aos da Agenda. Removidas classes CSS duplicadas e ajustado estado disabled para consistência visual e comportamento idêntico.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.539',
+    date: '20/02/2026',
+    summary: 'Processos: modal de exportação redesenhado.',
+    modules: [
+      {
+        moduleId: 'processos',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Design do modal de exportação melhorado',
+            description: 'Modal de exportação redesenhado seguindo o mesmo padrão visual da Agenda: labels com emojis e uppercase tracking, border-2 nos campos, cores consistentes, botões com gradiente verde esmeralda e hover effects com transform. Interface mais profissional e consistente.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.538',
+    date: '20/02/2026',
+    summary: 'Processos: exportação profissional com filtros avançados.',
+    modules: [
+      {
+        moduleId: 'processos',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Modal de exportação com filtros avançados',
+            description: 'Botão "Exportar" agora abre modal profissional com filtros avançados: status do processo, tipo de processo, advogado responsável, período (data inicial/final), ordenação (mais recente/mais antigo). Prévia em tempo real mostra quantos processos serão exportados. Não baixa automaticamente - usuário configura filtros antes de exportar.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.537',
+    date: '20/02/2026',
+    summary: 'Processos: exportação Excel completamente melhorada.',
+    modules: [
+      {
+        moduleId: 'processos',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Exportação Excel aprimorada',
+            description: 'Exportação de processos completamente reformulada: adicionadas colunas "Tipo de Processo", "Status do Processo", numeração sequencial, DJEN Sincronizado, DJEN Tem Dados, Última Sync DJEN. Processos automaticamente ordenados por data de atualização (mais recente primeiro). Nome do arquivo inclui filtro de status aplicado e timestamp completo. Exporta apenas processos filtrados (respeita busca e filtros ativos).',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.536',
+    date: '20/02/2026',
+    summary: 'Processos: badge CRON reposicionado e correção de detecção de status.',
+    modules: [
+      {
+        moduleId: 'processos',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Badge CRON reposicionado',
+            description: 'Badge "CRON ATIVO (03h)" movido para ao lado do botão "Mapa de Fases" no módulo Processos, melhorando a organização visual.',
+          },
+          {
+            type: 'fix',
+            title: 'Detecção de status de Recurso corrigida',
+            description: 'Corrigida lógica de detecção automática de status - Recurso agora tem prioridade sobre Instrução. Inclusos termos: "sessão de julgamento", "pauta de julgamento", "turma recursal", "tribunal", "recurso inominado". Processos com intimações de tribunais superiores serão corretamente identificados como "Recurso".',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.535',
+    date: '20/02/2026',
+    summary: 'Processos: restaurada seção Aguardando Confecção.',
+    modules: [
+      {
+        moduleId: 'processos',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Seção Aguardando Confecção restaurada',
+            description: 'Restaurada seção expandida "Aguardando Confecção" com formulário inline para adicionar clientes rapidamente e lista de processos aguardando confecção. Removido botão do nav principal.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.534',
+    date: '20/02/2026',
+    summary: 'Processos: correções de UI e acesso rápido no nav.',
+    modules: [
+      {
+        moduleId: 'processos',
+        changes: [
+          {
+            type: 'fix',
+            title: 'Título duplicado removido',
+            description: 'Removido título duplicado do módulo Processos (mantido apenas no nav principal).',
+          },
+          {
+            type: 'improvement',
+            title: 'Badge CRON e Aguardando Confecção no nav',
+            description: 'Badge "CRON ATIVO (03h)" e botão "AGUARDANDO CONFECÇÃO" adicionados ao nav principal, visíveis apenas quando módulo Processos está ativo. Acesso rápido ao filtro de processos aguardando confecção.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.533',
+    date: '20/02/2026',
+    summary: 'Processos: módulo reorganizado com design limpo e moderno.',
+    modules: [
+      {
+        moduleId: 'processos',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Interface redesenhada e simplificada',
+            description: 'Módulo Processos reorganizado com design mais limpo: header compacto com badge de cron discreto, remoção da seção expandida "Aguardando Confecção", cards de estatísticas redesenhados com layout mais compacto e visual seguindo padrões modernos de UI/UX.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.532',
+    date: '20/02/2026',
+    summary: 'Processos: sincronização DJEN agora apenas via Edge Function.',
+    modules: [
+      {
+        moduleId: 'processos',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Sincronização DJEN exclusivamente via cron',
+            description: 'Removida sincronização DJEN via navegador (hook useDjenSync e função handleSyncAllDjen). A sincronização agora é realizada exclusivamente via Edge Function no cron do Supabase, reduzindo carga no navegador e melhorando performance.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.531',
+    date: '20/02/2026',
+    summary: 'Processos: correção do erro de token no cron de status.',
+    modules: [
+      {
+        moduleId: 'processos',
+        changes: [
+          {
+            type: 'fix',
+            title: 'Erro "Token inválido" no Update Process Status',
+            description: 'Desabilitada validação de token na Edge Function update-process-status para permitir execução via cron do Supabase, seguindo o mesmo padrão do run-djen-sync.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.530',
+    date: '20/02/2026',
+    summary: 'Intimações: monitor do cron Run DJEN Sync exibido no módulo correto.',
+    modules: [
+      {
+        moduleId: 'intimacoes',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Card Run DJEN Sync no módulo de Intimações',
+            description: 'O status do cron de intimações (07h e 19h) foi realocado para o módulo Intimações com última execução, status, encontradas e salvas.',
+          },
+        ],
+      },
+      {
+        moduleId: 'processos',
+        changes: [
+          {
+            type: 'fix',
+            title: 'Processos mostra apenas cron de status',
+            description: 'O módulo Processos agora mantém somente o monitor do Update Process Status (03h), sem duplicar o monitor de Run DJEN Sync.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.529',
+    date: '20/02/2026',
+    summary: 'Processos: monitor de cron separado por rotina (status x intimações).',
+    modules: [
+      {
+        moduleId: 'processos',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Monitor de Crons separado por rotina',
+            description: 'O painel do módulo Processos agora exibe dois blocos distintos: Update Process Status (03h) e Run DJEN Sync (07h e 19h), cada um com última execução, status, contadores e erro da rotina.',
+          },
+          {
+            type: 'improvement',
+            title: 'Rastreabilidade do cron de status',
+            description: 'A Edge Function update-process-status passou a registrar execuções no djen_sync_history (source: process_status_cron, trigger_type: update_process_status), permitindo exibição fiel no painel.',
+          },
+          {
+            type: 'fix',
+            title: 'Leitura correta dos crons no painel',
+            description: 'Corrigida a leitura incorreta em que o painel mostrava apenas o cron DJEN. Agora o operador visualiza separadamente a saúde de cada automação.',
+          },
+        ],
+      },
+    ],
+  },
   {
     version: '1.9.523',
     date: '20/02/2026',

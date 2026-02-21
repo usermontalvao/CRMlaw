@@ -40,6 +40,7 @@ import {
   TrendingUp,
   Zap,
   RefreshCw,
+  Download,
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { saveAs } from 'file-saver';
@@ -414,6 +415,19 @@ const replacePlaceholdersInString = (templateString: string, placeholders: Recor
   return result;
 };
 
+const REQUIREMENTS_MS_TEMPLATE_TAG = '[REQUERIMENTOS_MS]';
+
+const isRequirementsMsTemplate = (template: DocumentTemplate) => {
+  const name = (template.name || '').toLowerCase();
+  const description = (template.description || '').toUpperCase();
+
+  return (
+    description.includes(REQUIREMENTS_MS_TEMPLATE_TAG)
+    || name.includes('modelo ms (requerimentos)')
+    || name.includes('modelo ms requerimentos')
+  );
+};
+
 const buildFullAddress = (client: Client) => {
   const parts: string[] = [];
   const street = (client.address_street || '').trim();
@@ -587,6 +601,7 @@ const RequirementsModule: React.FC<RequirementsModuleProps> = ({ forceCreate, en
   const [requirementDocumentsLoading, setRequirementDocumentsLoading] = useState(false);
   const [generatingMsPdf, setGeneratingMsPdf] = useState(false);
   const [msTemplateModalOpen, setMsTemplateModalOpen] = useState(false);
+  const [msSelectTemplateModalOpen, setMsSelectTemplateModalOpen] = useState(false);
   const [msTemplateLoading, setMsTemplateLoading] = useState(false);
   const [msTemplateSaving, setMsTemplateSaving] = useState(false);
   const [msTemplateId, setMsTemplateId] = useState<string>('');
@@ -950,7 +965,10 @@ const RequirementsModule: React.FC<RequirementsModuleProps> = ({ forceCreate, en
     setMsTemplateLoading(true);
     try {
       const list = await documentTemplateService.listTemplates();
-      setMsTemplates(list);
+      const filtered = list.filter((template) => (
+        isRequirementsMsTemplate(template) || template.id === msTemplateId
+      ));
+      setMsTemplates(filtered);
     } catch (e: any) {
       console.error(e);
       toast.error(e?.message || 'Erro ao carregar templates.');
@@ -983,9 +1001,10 @@ const RequirementsModule: React.FC<RequirementsModuleProps> = ({ forceCreate, en
     try {
       setMsTemplateSaving(true);
 
+      const originalFileName = msTemplateUploadFile.name.replace(/\.docx$/i, '');
       const payload: CreateDocumentTemplateDTO = {
-        name: `Modelo MS (Requerimentos) - ${new Date().toLocaleDateString('pt-BR')}`,
-        description: '[REQUERIMENTOS_MS] Template DOCX usado pelo módulo de Requerimentos para gerar MS em Word (DOCX).',
+        name: originalFileName,
+        description: `${REQUIREMENTS_MS_TEMPLATE_TAG} Template DOCX usado pelo módulo de Requerimentos para gerar MS em Word (DOCX).`,
         content: MS_PETITION_TEMPLATE,
         enable_defendant: false,
       };
@@ -1025,6 +1044,68 @@ const RequirementsModule: React.FC<RequirementsModuleProps> = ({ forceCreate, en
       toast.error(e?.message || 'Erro ao salvar template.');
     } finally {
       setMsTemplateSaving(false);
+    }
+  };
+
+  const handleRemoveMsTemplate = async () => {
+    const targetId = (msTemplateId || msTemplate?.id || '').trim();
+    if (!targetId) {
+      toast.error('Selecione um modelo para remover.');
+      return;
+    }
+
+    const templateToDelete = msTemplates.find((item) => item.id === targetId) || msTemplate;
+    const confirmed = await confirmDelete({
+      title: 'Remover modelo MS',
+      entityName: templateToDelete?.name,
+      message: 'Deseja remover permanentemente este modelo MS? Esta ação não pode ser desfeita.',
+      confirmLabel: 'Remover',
+    });
+
+    if (!confirmed) return;
+
+    try {
+      setMsTemplateSaving(true);
+      await documentTemplateService.deleteTemplate(targetId);
+
+      const currentSetting = (msTemplateId || '').trim();
+      if (currentSetting === targetId) {
+        await settingsService.updateSetting('requirements_ms_template_id', '');
+        setMsTemplateId('');
+        setMsTemplate(null);
+      }
+
+      await loadMsTemplates();
+      toast.success('Modelo removido com sucesso.');
+    } catch (e: any) {
+      console.error(e);
+      toast.error(e?.message || 'Erro ao remover modelo.');
+    } finally {
+      setMsTemplateSaving(false);
+    }
+  };
+
+  const handleDownloadMsTemplate = async () => {
+    const targetId = (msTemplateId || msTemplate?.id || '').trim();
+    if (!targetId) {
+      toast.error('Selecione um modelo para baixar.');
+      return;
+    }
+
+    const templateToDownload = msTemplates.find((item) => item.id === targetId) || msTemplate;
+    if (!templateToDownload) {
+      toast.error('Modelo não encontrado.');
+      return;
+    }
+
+    try {
+      const blob = await documentTemplateService.downloadTemplateFile(templateToDownload);
+      const fileName = templateToDownload.file_name || `${templateToDownload.name}.docx`;
+      saveAs(blob, fileName);
+      toast.success('Download iniciado');
+    } catch (e: any) {
+      console.error(e);
+      toast.error(e?.message || 'Erro ao baixar modelo.');
     }
   };
 
@@ -1139,10 +1220,20 @@ const RequirementsModule: React.FC<RequirementsModuleProps> = ({ forceCreate, en
       return;
     }
 
-    if (!msTemplate) {
-      await loadMsTemplates();
-      setMsTemplateModalOpen(true);
-      toast.info('Selecione um template', 'Escolha ou envie um modelo Word (DOCX) para gerar o MS.');
+    await loadMsTemplates();
+    setMsSelectTemplateModalOpen(true);
+  };
+
+  const handleGenerateMsWithSelectedTemplate = async () => {
+    if (!selectedRequirementForView) return;
+    if (!selectedRequirementForView.client_id) {
+      toast.error('Vincule um cliente ao requerimento antes de gerar o MS.');
+      return;
+    }
+
+    const templateToUse = msTemplateId ? msTemplates.find(t => t.id === msTemplateId) : msTemplate;
+    if (!templateToUse) {
+      toast.error('Selecione um modelo para gerar o MS.');
       return;
     }
 
@@ -1155,7 +1246,7 @@ const RequirementsModule: React.FC<RequirementsModuleProps> = ({ forceCreate, en
       }
 
       const placeholders = buildMsPlaceholders(selectedRequirementForView, client);
-      const docxBlob = await generateMsDocxFromTemplate(msTemplate, placeholders);
+      const docxBlob = await generateMsDocxFromTemplate(templateToUse, placeholders);
 
       const safeProtocol = (selectedRequirementForView.protocol || 'sem-protocolo').replace(/[^a-zA-Z0-9._-]/g, '_');
       const safeName = removeDiacritics(client.full_name || 'cliente').replace(/\s+/g, '-').replace(/[^a-zA-Z0-9._-]/g, '');
@@ -2502,8 +2593,8 @@ const RequirementsModule: React.FC<RequirementsModuleProps> = ({ forceCreate, en
             />
           </div>
         </div>
-      </div>
-    </div>,
+        </div>
+      </div>,
     document.body,
   );
 
@@ -3532,155 +3623,136 @@ const RequirementsModule: React.FC<RequirementsModuleProps> = ({ forceCreate, en
         </div>
       )}
 
-      <div className="bg-white border border-gray-200 rounded-xl p-3 sm:p-4">
-        <div className="flex items-start justify-between gap-2 sm:gap-3 mb-3 sm:mb-4">
-          <div>
-            <h3 className="text-lg sm:text-xl font-semibold text-slate-900">Sistema de Requerimentos</h3>
-            <p className="text-xs sm:text-sm text-slate-600 mt-1 hidden sm:block">Gerencie requerimentos administrativos do INSS</p>
-          </div>
-
+      <div className="relative overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+        <div className="pointer-events-none absolute inset-x-0 top-0 h-10 bg-gradient-to-r from-blue-50 via-white to-amber-50" />
+        <div className="relative p-3 sm:p-4">
+        <div className="flex items-center justify-between gap-2 mb-2 sm:hidden">
           <button
             type="button"
             onClick={() => setMobileControlsOpen((prev) => !prev)}
-            className="sm:hidden inline-flex items-center gap-2 text-xs font-semibold text-slate-700 hover:text-slate-900"
+            className="inline-flex items-center gap-1 text-[11px] font-semibold text-slate-700"
           >
-            <span>{mobileControlsOpen ? 'Ocultar' : 'Mostrar'}</span>
-            <ChevronDown className={`w-4 h-4 transition-transform ${mobileControlsOpen ? 'rotate-180' : ''}`} />
+            {mobileControlsOpen ? 'Ocultar controles' : 'Mostrar controles'}
+            <ChevronDown className={`w-3 h-3 transition-transform ${mobileControlsOpen ? 'rotate-180' : ''}`} />
+          </button>
+          <button
+            onClick={() => handleOpenModal(undefined)}
+            className="inline-flex items-center gap-1 rounded-md bg-blue-600 px-2 py-1 text-[11px] font-semibold text-white"
+          >
+            <Plus className="w-3 h-3" /> Novo
           </button>
         </div>
 
-        <button
-          onClick={() => handleOpenModal(undefined)}
-          className="sm:hidden inline-flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-700 text-white font-medium px-3 py-2 rounded-lg shadow-sm transition text-xs w-full"
-        >
-          <Plus className="w-4 h-4" />
-          <span>Novo Requerimento</span>
-        </button>
-
         <div className={`${mobileControlsOpen ? 'block' : 'hidden'} sm:block`}>
-          <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3 w-full sm:w-auto sm:justify-end">
-            <button
-              onClick={handleExportExcel}
-              disabled={exportingExcel}
-              className="inline-flex items-center justify-center gap-2 border border-green-600 text-green-700 hover:bg-green-50 disabled:border-green-300 disabled:text-green-400 bg-white font-medium px-3 sm:px-4 py-2 sm:py-2.5 rounded-lg shadow-sm transition disabled:cursor-not-allowed text-xs sm:text-sm w-full sm:w-auto"
-            >
-              {exportingExcel ? <Loader2 className="w-4 h-4 animate-spin" /> : <FileSpreadsheet className="w-4 h-4" />}
-              <span>{exportingExcel ? 'Gerando Excel...' : 'Exportar Excel'}</span>
-            </button>
+          <div className="mb-3 flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+            <div className="flex min-w-0 flex-wrap items-center gap-1.5">
+              <button
+                onClick={() => setActiveStatusTab('todos')}
+                className={`inline-flex items-center rounded-lg px-2.5 py-1.5 text-[11px] font-semibold leading-none transition ${
+                  activeStatusTab === 'todos'
+                    ? 'bg-blue-600 text-white shadow-sm'
+                    : 'border border-slate-200 bg-slate-50 text-slate-700 hover:bg-slate-100'
+                }`}
+              >
+                Todos ({statusCounts.todos})
+              </button>
+              {STATUS_OPTIONS.map((status) => (
+                <button
+                  key={status.key}
+                  onClick={() => setActiveStatusTab(status.key)}
+                  className={`inline-flex items-center gap-1 rounded-lg px-2.5 py-1.5 text-[11px] font-medium leading-none transition ${
+                    activeStatusTab === status.key
+                      ? `${status.badge} shadow-sm`
+                      : 'border border-slate-200 bg-slate-50 text-slate-700 hover:bg-slate-100'
+                  }`}
+                >
+                  {status.icon && <status.icon className="h-3 w-3" />}
+                  <span className="whitespace-nowrap">{status.label.replace('Aguardando ', '')} ({statusCounts[status.key]})</span>
+                </button>
+              ))}
+            </div>
 
-            <button
-              type="button"
-              onClick={handleOpenMsTemplateModal}
-              className="inline-flex items-center justify-center gap-2 border border-slate-300 text-slate-700 hover:bg-slate-50 bg-white font-medium px-3 sm:px-4 py-2 sm:py-2.5 rounded-lg shadow-sm transition text-xs sm:text-sm w-full sm:w-auto"
-              title="Selecionar/enviar modelo Word (DOCX) para o MS"
-            >
-              <Settings className="w-4 h-4" />
-              <span>Template MS</span>
-            </button>
+            <div className="flex flex-wrap items-center gap-1.5 lg:justify-end">
+              <button
+                onClick={handleExportExcel}
+                disabled={exportingExcel}
+                className="inline-flex h-8 items-center gap-1 rounded-lg border border-green-500/40 bg-green-50/50 px-2.5 text-[11px] font-semibold text-green-700 hover:bg-green-50 disabled:opacity-50"
+              >
+                {exportingExcel ? <Loader2 className="h-3 w-3 animate-spin" /> : <FileSpreadsheet className="h-3 w-3" />}
+                Excel
+              </button>
 
-            <button
-              onClick={() => handleOpenModal(undefined)}
-              className="hidden sm:inline-flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-700 text-white font-medium px-3 sm:px-5 py-2 sm:py-2.5 rounded-lg shadow-sm transition text-xs sm:text-sm w-full sm:w-auto"
-            >
-              <Plus className="w-4 h-4" />
-              <span>Novo Requerimento</span>
-            </button>
+              <button
+                type="button"
+                onClick={handleOpenMsTemplateModal}
+                className="inline-flex h-8 items-center gap-1 rounded-lg border border-amber-400/40 bg-amber-50/50 px-2.5 text-[11px] font-semibold text-amber-700 hover:bg-amber-50"
+                title="Gerenciar modelo Word (DOCX) para o MS"
+              >
+                <Settings className="h-3 w-3" />
+                Gerenciar MS
+              </button>
+
+              <button
+                onClick={() => handleOpenModal(undefined)}
+                className="hidden sm:inline-flex h-8 items-center gap-1 rounded-lg bg-blue-600 px-2.5 text-[11px] font-semibold text-white hover:bg-blue-700"
+              >
+                <Plus className="h-3 w-3" />
+                Novo Requerimento
+              </button>
+            </div>
           </div>
 
-          <div className="flex flex-wrap gap-1.5 sm:gap-2 mb-4 sm:mb-6 overflow-x-auto pb-2 mt-3">
-          <button
-            onClick={() => setActiveStatusTab('todos')}
-            className={`px-2.5 sm:px-4 py-1.5 sm:py-2 rounded-lg text-xs sm:text-sm font-medium transition whitespace-nowrap ${
-              activeStatusTab === 'todos'
-                ? 'bg-blue-600 text-white animate-pulse'
-                : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
-            }`}
-            style={activeStatusTab === 'todos' ? { animationDuration: '2.4s' } : undefined}
-          >
-            Todos ({statusCounts.todos})
-          </button>
-          {STATUS_OPTIONS.map((status) => (
-            <button
-              key={status.key}
-              onClick={() => setActiveStatusTab(status.key)}
-              className={`px-3 sm:px-4 py-2 rounded-lg text-xs sm:text-sm font-medium transition-all whitespace-nowrap ${
-                activeStatusTab === status.key
-                  ? `${status.badge} shadow-md transform scale-105`
-                  : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
-              }`}
-            >
-              <span className="inline-flex items-center gap-2">
-                {status.icon && (
-                  <status.icon 
-                    className={`w-4 h-4 ${
-                      status.key === 'em_exigencia' ? 'animate-pulse text-white drop-shadow-sm' :
-                      status.key === 'aguardando_pericia' ? 'animate-bounce text-white drop-shadow-sm' :
-                      status.key === 'aguardando_confeccao' ? 'animate-pulse text-white drop-shadow-sm' :
-                      status.key === 'deferido' ? 'animate-pulse text-white drop-shadow-sm' :
-                      'text-white'
-                    }`} 
-                  />
-                )}
-                {status.label}
-                <span className="text-xs opacity-75">
-                  ({statusCounts[status.key]})
-                </span>
-              </span>
-            </button>
-          ))}
-          </div>
-
-          <div className="mt-2 sm:mt-3 space-y-2">
-          <div className="flex items-center justify-between">
-            <span className="text-xs sm:text-sm text-slate-600">Filtros avançados</span>
+          <div className="flex items-center justify-between rounded-xl border border-slate-200 bg-slate-50/70 px-3 py-2">
+            <span className="text-[11px] font-semibold uppercase tracking-wide text-slate-600">Filtros avançados</span>
             <button
               type="button"
               onClick={() => setShowFilters((prev) => !prev)}
-              className="text-xs sm:text-sm font-medium text-blue-600 hover:text-blue-700 underline-offset-2 hover:underline"
+              className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-[11px] font-semibold text-blue-600 hover:bg-blue-50"
             >
               {showFilters ? 'Ocultar filtros' : 'Mostrar filtros'}
+              <ChevronDown className={`w-3 h-3 transition-transform ${showFilters ? 'rotate-180' : ''}`} />
             </button>
           </div>
 
           {showFilters && (
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
+            <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-4">
               <div className="relative">
-                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-slate-400 w-4 h-4" />
+                <Search className="absolute left-2.5 top-1/2 w-3.5 h-3.5 -translate-y-1/2 text-slate-400" />
                 <input
                   type="text"
                   value={filterProtocol}
                   onChange={(event) => setFilterProtocol(event.target.value)}
-                  className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
-                  placeholder="Buscar por protocolo..."
+                  className="w-full rounded-md border border-gray-300 py-1.5 pl-8 pr-3 text-xs focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  placeholder="Protocolo"
                 />
               </div>
 
               <div className="relative">
-                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-slate-400 w-4 h-4" />
+                <Search className="absolute left-2.5 top-1/2 w-3.5 h-3.5 -translate-y-1/2 text-slate-400" />
                 <input
                   type="text"
                   value={filterBeneficiary}
                   onChange={(event) => setFilterBeneficiary(event.target.value)}
-                  className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
-                  placeholder="Buscar por beneficiário..."
+                  className="w-full rounded-md border border-gray-300 py-1.5 pl-8 pr-3 text-xs focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  placeholder="Beneficiário"
                 />
               </div>
 
               <div className="relative">
-                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-slate-400 w-4 h-4" />
+                <Search className="absolute left-2.5 top-1/2 w-3.5 h-3.5 -translate-y-1/2 text-slate-400" />
                 <input
                   type="text"
                   value={filterCPF}
                   onChange={(event) => setFilterCPF(event.target.value)}
-                  className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
-                  placeholder="Buscar por CPF..."
+                  className="w-full rounded-md border border-gray-300 py-1.5 pl-8 pr-3 text-xs focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  placeholder="CPF"
                 />
               </div>
 
               <select
                 value={filterBenefitType}
                 onChange={(event) => setFilterBenefitType(event.target.value as BenefitType | '')}
-                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+                className="w-full rounded-md border border-gray-300 px-2.5 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-blue-500"
               >
                 <option value="">Todos os tipos</option>
                 {BENEFIT_TYPES.map((type) => (
@@ -3690,7 +3762,7 @@ const RequirementsModule: React.FC<RequirementsModuleProps> = ({ forceCreate, en
                 ))}
               </select>
 
-              <label className="flex items-center gap-2 px-4 py-2 border border-gray-300 rounded-lg bg-white text-sm text-slate-700">
+              <label className="flex items-center gap-2 rounded-md border border-gray-300 bg-white px-2.5 py-1.5 text-xs text-slate-700">
                 <input
                   type="checkbox"
                   checked={filterOnlyMsRisk}
@@ -4125,7 +4197,28 @@ const RequirementsModule: React.FC<RequirementsModuleProps> = ({ forceCreate, en
                     {msTemplateLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Search className="w-4 h-4" />}
                     Atualizar
                   </button>
+                  <button
+                    type="button"
+                    onClick={handleDownloadMsTemplate}
+                    disabled={!(msTemplateId || msTemplate?.id)}
+                    className="inline-flex items-center gap-2 px-3 py-2 text-sm font-semibold bg-blue-50 hover:bg-blue-100 text-blue-700 rounded-lg transition disabled:opacity-60"
+                  >
+                    <Download className="w-4 h-4" />
+                    Baixar
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleRemoveMsTemplate}
+                    disabled={msTemplateSaving || !(msTemplateId || msTemplate?.id)}
+                    className="inline-flex items-center gap-2 px-3 py-2 text-sm font-semibold bg-red-50 hover:bg-red-100 text-red-700 rounded-lg transition disabled:opacity-60"
+                  >
+                    {msTemplateSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
+                    Remover
+                  </button>
                 </div>
+                <p className="mt-2 text-[11px] text-slate-500">
+                  A lista exibe apenas modelos do contexto <span className="font-semibold">MS (Requerimentos)</span>.
+                </p>
                 {msTemplate?.id && (
                   <p className="mt-2 text-xs text-slate-500">
                     Selecionado: <span className="font-semibold">{msTemplate.name}</span>
@@ -4177,11 +4270,25 @@ const RequirementsModule: React.FC<RequirementsModuleProps> = ({ forceCreate, en
               <button
                 type="button"
                 onClick={handleCloseMsTemplateModal}
-                disabled={msTemplateSaving}
+                disabled={msTemplateSaving || generatingMsPdf}
                 className="px-4 py-2 text-sm font-semibold text-slate-600 hover:text-slate-900 transition disabled:opacity-60 w-full sm:w-auto"
               >
                 Cancelar
               </button>
+              {selectedRequirementForView && (
+                <button
+                  type="button"
+                  onClick={async () => {
+                    await handleGenerateMsWithSelectedTemplate();
+                    setMsTemplateModalOpen(false);
+                  }}
+                  disabled={generatingMsPdf || !msTemplateId}
+                  className="inline-flex items-center gap-2 px-4 py-2 text-sm font-semibold bg-amber-600 hover:bg-amber-700 text-white rounded-lg transition disabled:opacity-60 w-full sm:w-auto justify-center"
+                >
+                  {generatingMsPdf ? <Loader2 className="w-4 h-4 animate-spin" /> : <FileText className="w-4 h-4" />}
+                  Gerar MS
+                </button>
+              )}
               <button
                 type="button"
                 onClick={handleSaveSelectedMsTemplate}
@@ -4190,6 +4297,121 @@ const RequirementsModule: React.FC<RequirementsModuleProps> = ({ forceCreate, en
               >
                 {msTemplateSaving && <Loader2 className="w-4 h-4 animate-spin" />}
                 Salvar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {msSelectTemplateModalOpen && (
+        <div className="fixed inset-0 z-[80] flex items-center justify-center px-3 sm:px-6 py-4">
+          <div className="absolute inset-0 bg-slate-900/55 backdrop-blur-sm" onClick={() => setMsSelectTemplateModalOpen(false)} />
+          <div className="relative w-full max-w-md !bg-white rounded-2xl shadow-2xl ring-1 ring-black/5 overflow-hidden flex flex-col">
+            <div className="h-1 bg-gradient-to-r from-amber-400 via-amber-500 to-amber-600" />
+            <div className="px-5 py-4 border-b border-slate-200">
+              <h3 className="text-lg font-semibold text-slate-900">Selecionar Modelo MS</h3>
+              <p className="text-xs text-slate-500 mt-1">Escolha o modelo para gerar o Mandado de Segurança</p>
+            </div>
+
+            <div className="px-5 py-5 space-y-4">
+              {msTemplateLoading ? (
+                <div className="flex items-center justify-center py-8">
+                  <Loader2 className="w-6 h-6 animate-spin text-slate-400" />
+                </div>
+              ) : msTemplates.length === 0 ? (
+                <div className="text-center py-8">
+                  <p className="text-sm text-slate-500">Nenhum modelo MS disponível</p>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setMsSelectTemplateModalOpen(false);
+                      handleOpenMsTemplateModal();
+                    }}
+                    className="mt-3 text-sm text-blue-600 hover:text-blue-700 font-medium"
+                  >
+                    Gerenciar modelos
+                  </button>
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  {msTemplates.map((template) => (
+                    <button
+                      key={template.id}
+                      type="button"
+                      onClick={async () => {
+                        setMsTemplateId(template.id);
+                        setMsTemplate(template);
+                        setMsSelectTemplateModalOpen(false);
+                        setGeneratingMsPdf(true);
+                        try {
+                          if (!selectedRequirementForView?.client_id) {
+                            toast.error('Cliente não vinculado ao requerimento.');
+                            return;
+                          }
+                          const client = selectedClientForRequirement ?? (await clientService.getClientById(selectedRequirementForView.client_id));
+                          if (!client) {
+                            toast.error('Cliente não encontrado.');
+                            return;
+                          }
+                          const placeholders = buildMsPlaceholders(selectedRequirementForView, client);
+                          const docxBlob = await generateMsDocxFromTemplate(template, placeholders);
+                          const safeProtocol = (selectedRequirementForView.protocol || 'sem-protocolo').replace(/[^a-zA-Z0-9._-]/g, '_');
+                          const safeName = removeDiacritics(client.full_name || 'cliente').replace(/\s+/g, '-').replace(/[^a-zA-Z0-9._-]/g, '');
+                          const fileName = `MS-${safeProtocol}-${safeName}.docx`;
+                          const uploaded = await documentTemplateService.uploadGeneratedDocument(docxBlob, fileName);
+                          await requirementDocumentService.create({
+                            requirement_id: selectedRequirementForView.id,
+                            document_type: 'mandado_seguranca',
+                            file_name: fileName,
+                            file_path: uploaded.filePath,
+                            mime_type: uploaded.mimeType || 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+                          });
+                          const docs = await requirementDocumentService.listByRequirementId(selectedRequirementForView.id);
+                          setRequirementDocuments(docs);
+                          toast.success('MS gerado', 'Word (DOCX) do Mandado de Segurança gerado e anexado ao requerimento.');
+                        } catch (e: any) {
+                          console.error(e);
+                          toast.error(e?.message || 'Erro ao gerar MS em Word.');
+                        } finally {
+                          setGeneratingMsPdf(false);
+                        }
+                      }}
+                      disabled={generatingMsPdf}
+                      className="w-full text-left px-4 py-3 rounded-lg border border-slate-200 hover:border-amber-400 hover:bg-amber-50/50 transition disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      <div className="flex items-center gap-3">
+                        <FileText className="w-5 h-5 text-amber-600 flex-shrink-0" />
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-medium text-slate-900 truncate">{template.name}</p>
+                          {template.description && (
+                            <p className="text-xs text-slate-500 truncate mt-0.5">{template.description.replace(REQUIREMENTS_MS_TEMPLATE_TAG, '').trim()}</p>
+                          )}
+                        </div>
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            <div className="px-5 py-4 border-t border-slate-200 flex items-center justify-between gap-3 bg-slate-50">
+              <button
+                type="button"
+                onClick={() => {
+                  setMsSelectTemplateModalOpen(false);
+                  handleOpenMsTemplateModal();
+                }}
+                className="text-sm text-slate-600 hover:text-slate-900 font-medium"
+              >
+                Gerenciar modelos
+              </button>
+              <button
+                type="button"
+                onClick={() => setMsSelectTemplateModalOpen(false)}
+                disabled={generatingMsPdf}
+                className="px-4 py-2 text-sm font-semibold text-slate-600 hover:text-slate-900 transition disabled:opacity-60"
+              >
+                Cancelar
               </button>
             </div>
           </div>

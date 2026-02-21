@@ -693,12 +693,21 @@ Regras:
       return 'cumprimento';
     }
 
-    // Recurso
+    // Recurso - PRIORIDADE ALTA (antes de instrução)
+    // Incluir termos específicos de recursos e julgamentos em tribunais superiores
     if (recentTypes.includes('recurso') ||
-        recentText.includes('recurso') ||
+        recentText.includes('recurso inominado') ||
+        recentText.includes('recurso especial') ||
+        recentText.includes('recurso extraordinário') ||
+        recentText.includes('recurso ordinário') ||
         recentText.includes('apelação') ||
         recentText.includes('agravo') ||
-        recentText.includes('embargos de declaração')) {
+        recentText.includes('embargos de declaração') ||
+        recentText.includes('sessão de julgamento') ||
+        recentText.includes('pauta de julgamento') ||
+        recentText.includes('turma recursal') ||
+        recentText.includes('tribunal') ||
+        (recentText.includes('recurso') && !recentText.includes('sem recurso'))) {
       return 'recurso';
     }
 
@@ -713,12 +722,15 @@ Regras:
     }
 
     // Instrução (audiência de instrução, produção de provas)
-    if (recentText.includes('audiência de instrução') ||
+    // Apenas se NÃO for relacionado a recurso
+    if ((recentText.includes('audiência de instrução') ||
         recentText.includes('audiencia de instrucao') ||
         recentText.includes('instrução e julgamento') ||
         recentText.includes('produção de provas') ||
         recentText.includes('oitiva de testemunhas') ||
-        recentText.includes('perícia')) {
+        recentText.includes('perícia')) &&
+        !recentText.includes('recurso') &&
+        !recentText.includes('tribunal')) {
       return 'instrucao';
     }
 

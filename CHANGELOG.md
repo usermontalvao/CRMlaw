@@ -1,7 +1,193 @@
 # Changelog
 
+## 1.9.586
+- **Chat**: Ajustado tamanho do card de áudio para não ficar compacto. Definida largura mínima responsiva (260px mobile / 320px desktop) mantendo visual limpo com player mais confortável.
+
+## 1.9.585
+- **Chat**: No card de áudio, removida a exibição do nome e tamanho do arquivo (ex.: `audio_*.webm` e `KB`). Agora o card mostra apenas ícone + player de áudio, mantendo visual limpo.
+
+## 1.9.584
+- **Chat**: Removido texto "Áudio" do preview de mensagens. Agora exibe apenas o emoji 🎤 para mensagens de áudio, mantendo visual limpo e minimalista.
+
+## 1.9.583
+- **Chat**: Adicionado fundo exato do WhatsApp na área de conversa. Pattern SVG com cores #ece5dd e #e9dfd9, tamanho 536x113px, repetição centralizada para visual idêntico ao app original.
+
+## 1.9.582
+- **Chat**: Adicionado fundo exato do WhatsApp na área de conversa. Pattern SVG com cores #ece5dd e #e9dfd9, tamanho 536x113px, repetição centralizada para visual idêntico ao app original.
+
+## 1.9.581
+- **Chat**: Redesign completo para estilo WhatsApp. Cores verde/teal (#25d366), mensagens enviadas com fundo verde claro (#dcf8c6), recebidas com fundo branco, layout limpo e pattern de fundo sutil na área de mensagens.
+
+## 1.9.580
+- **Tarefas**: Adicionada animação no botão "Adicionar" com loading spinner e prevenção de múltiplos cliques. Botão muda para verde durante o processo com texto "Adicionando...".
+
+## 1.9.579
+- **Tarefas**: Removido do menu lateral (nav). Módulo continua acessível apenas através do botão no header principal com contador de tarefas pendentes.
+
+## 1.9.578
+- **Tarefas**: Removido completamente o header do módulo. Agora exibe apenas o formulário de adicionar tarefas e a lista, sem título ou descrição no módulo (mantido apenas no navbar).
+
+## 1.9.577
+- **Tarefas**: Removido título duplicado "Tarefas" do módulo (mantido apenas no navbar). Mantida apenas descrição "Gerencie suas tarefas e lembretes".
+
+## 1.9.576
+- **Chat**: Redesign visual completo para estilo limpo e consistente com o sistema. Removidos efeitos glass pesados, padronizados fundos/bordas em slate, lista de conversas refinada e composer reorganizado com melhor hierarquia visual.
+
+## 1.9.575
+- **Chat**: Removido título duplicado "Chat da Equipe" do módulo (mantido apenas no navbar). Cores ajustadas para seguir padrão indigo do sistema em vez de gradientes purple.
+
+## 1.9.574
+- **Chat**: Aplicado tema glassmorphism premium com painéis translúcidos, efeito backdrop-filter, gradientes indigo/purple, bordas suaves e sombras modernas.
+
+## 1.9.571
+- **Prazos**: Corrigido filtro mensal para prazos concluídos. Agora são contabilizados no mês em que foram finalizados, não no mês de vencimento original.
+
+## 1.9.570
+- **Prazos**: Filtros Avançados movidos para a mesma linha da toolbar com botão dropdown. Texto oculto em telas menores (apenas ícone).
+
+## 1.9.569
+- **Prazos**: Filtros Avançados integrados diretamente na toolbar principal com expansão/recolhimento, seguindo design moderno.
+
+## 1.9.568
+- **Prazos**: Toolbar compactada em uma única linha seguindo design moderno. Seletor de mês movido para ao lado dos botões de visualização (Lista/Kanban/Calendário) dentro do módulo.
+
+## 1.9.567
+- **Prazos**: Removidos títulos duplicados do módulo (mantidos apenas no navbar). Seletor de mês movido para o cabeçalho ao lado do calendário, visível apenas no módulo Prazos.
+
+## 1.9.566
+- **Requerimentos**: Header da barra de controle refinado com visual mais limpo, melhor hierarquia, espaçamento consistente e botões/chips mais harmonizados.
+
+## 1.9.565
+- **Requerimentos / MS**: Corrigido erro 400 ao gerar MS. Removida verificação desnecessária de bucket via client (bucket já existe e está configurado no Supabase).
+
+## 1.9.564
+- **Requerimentos / MS**: Criado modal simples de seleção de template ao clicar em "Gerar MS". Agora basta clicar no modelo desejado para gerar automaticamente, sem precisar abrir o modal completo de gerenciamento.
+
+## 1.9.563
+- **Requerimentos / MS**: Ao enviar template MS, o sistema agora preserva o nome original do arquivo (sem a extensão .docx) em vez de adicionar data automaticamente.
+
+## 1.9.562
+- **Requerimentos**: Corrigido erro de import do ícone Download do lucide-react.
+
+## 1.9.561
+- **Requerimentos / MS**: Adicionado botão **Baixar** no modal de templates MS para download do modelo hospedado.
+- **Requerimentos / MS**: Ao clicar em "Gerar MS", agora abre o modal para **selecionar o modelo** antes de gerar. Botão **Gerar MS** disponível no modal quando há requerimento selecionado.
+
+## 1.9.560
+- **Requerimentos**: Corrigido botão "Gerenciar MS" que estava tentando navegar para módulo inexistente. Agora abre diretamente o modal de gerenciamento de templates MS.
+
+## 1.9.559
+- **Requerimentos**: Barra de filtros e ações alinhada e refinada, com chips mais compactos, espaçamento consistente e melhor equilíbrio visual entre status e botões de ação.
+
+## 1.9.558
+- **Requerimentos / MS**: No modal "Template MS", a lista agora exibe apenas modelos do contexto **MS (Requerimentos)**. Adicionada ação **Remover** para excluir o modelo MS selecionado.
+
+## 1.9.557
+- **Requerimentos**: Barra superior reorganizada e compactada sem scroll lateral, com chips de status menores em quebra de linha, melhor espaçamento visual e botão **Gerenciar MS** fixo na área de ações.
+
+## 1.9.556
+- **Requerimentos**: Botões de filtro reduzidos (text-[10px], px-1.5 py-0.5) para eliminar scroll lateral. Labels encurtados removendo "Aguardando". Adicionado botão "Gerenciar MS" para navegação ao módulo de gerenciamento.
+
+## 1.9.555
+- **Requerimentos**: Removido header duplicado do módulo (mantido apenas título no nav). Interface mais limpa sem repetição de "Sistema de Requerimentos" e "Gerencie requerimentos administrativos do INSS".
+
+## 1.9.554
+- **Requerimentos**: Removido header duplicado do módulo (mantido apenas título no nav). Interface mais limpa sem repetição de "Sistema de Requerimentos" e "Gerencie requerimentos administrativos do INSS".
+
+## 1.9.553
+- **Assinaturas**: Modo cards atualizado para visual estilo pasta, com aba superior, ícone de pasta e cartões com identidade visual mais documental.
+
+## 1.9.552
+- **Assinaturas**: Modo cards completamente redesenhado com layout moderno. Grid responsiva (xl:grid-cols-4), header com ícone e percentual, conteúdo organizado, footer com status e progresso visual melhorado.
+
+## 1.9.551
+- **Assinaturas**: Cards da lista simplificados para melhor UX. Removida complexidade desnecessária, layout mais limpo com cards compactos e informações essenciais apenas.
+
+## 1.9.550
+- **Assinaturas**: Cards da lista completamente redesenhados com layout moderno. Melhor hierarquia visual, organização de informações, badges compactos, progress bar integrada e botão "Ver detalhes" explícito.
+
+## 1.9.549
+- **Assinaturas**: Removida barra header vazia onde estava o botão Novo documento. Interface mais limpa com apenas a toolbar principal contendo filtros e ações.
+
+## 1.9.548
+- **Assinaturas**: Botão "Novo documento" reposicionado ao lado do botão "Público" no módulo. Removido do navigation para evitar duplicação.
+
+## 1.9.547
+- **Assinaturas**: Corrigido erro "Rendered more hooks than during the previous render" movendo useEffect para o topo do componente. Hooks devem sempre ser chamados na mesma ordem.
+
+## 1.9.546
+- **Assinaturas**: Botão "Novo documento" integrado ao navigation ao lado do perfil. Aparece apenas quando módulo Assinaturas está ativo, com acesso direto ao wizard de upload via DOM.
+
+## 1.9.545
+- **Assinaturas**: Removido header duplicado do módulo (mantido apenas título no nav). Interface mais limpa sem repetição de "Assinatura Digital" e "Envie documentos e acompanhe o progresso das assinaturas".
+
+## 1.9.544
+- **Documentos**: Removido header duplicado do módulo (mantido apenas título no nav). Interface mais limpa sem repetição de "Modelos de documentos" e "Gerencie templates e documentos".
+
+## 1.9.543
+- **Processos**: Adicionado botão X no header do modal de exportação para fechar, seguindo padrão da Agenda. Header agora com layout flex e botão de fechar no canto superior direito.
+
+## 1.9.542
+- **Processos**: Ajustado layout do modal de exportação para espelhar a estrutura da Agenda. Botões "Cancelar" e "Exportar Excel" movidos para dentro do mesmo container interno do conteúdo, eliminando diferença visual de espaçamento/alinhamento.
+
+## 1.9.541
+- **Processos**: Botão "Exportar Excel" corrigido para usar disabled:opacity-50 em vez de bg-gray-400, mantendo o gradiente verde esmeralda visível mesmo quando desabilitado, exatamente igual ao da Agenda.
+
+## 1.9.540
+- **Processos**: Corrigidos botões do modal de exportação para ficar idênticos aos da Agenda. Removidas classes duplicadas e ajustado estado disabled para consistência visual.
+
+## 1.9.539
+- **Processos**: Modal de exportação redesenhado seguindo padrão visual da Agenda. Labels com emojis, uppercase tracking, border-2, cores consistentes, botões com gradiente verde esmeralda e hover effects com transform.
+
+## 1.9.538
+- **Processos**: Exportação profissional com modal de filtros avançados. Botão "Exportar" agora abre modal com opções: filtro por status, tipo de processo, advogado responsável, período (data inicial/final), ordenação (mais recente/mais antigo). Prévia em tempo real de quantos processos serão exportados. Não baixa automaticamente - usuário configura filtros antes.
+
+## 1.9.537
+- **Processos**: Exportação Excel completamente melhorada. Adicionadas colunas: "Tipo de Processo", "Status do Processo", numeração, DJEN Sincronizado, DJEN Tem Dados, Última Sync DJEN. Processos ordenados por data de atualização (mais recente primeiro). Nome do arquivo inclui filtro de status aplicado e timestamp completo. Exporta apenas processos filtrados.
+
+## 1.9.536
+- **Processos**: Badge "CRON ATIVO (03h)" movido para ao lado do botão "Mapa de Fases" no módulo. Corrigida detecção de status de processos - Recurso agora tem prioridade sobre Instrução, incluindo termos como "sessão de julgamento", "turma recursal", "tribunal" e "recurso inominado".
+
+## 1.9.535
+- **Processos**: Restaurada seção expandida "Aguardando Confecção" com formulário inline e lista de clientes. Removido botão "AGUARDANDO CONFECÇÃO" do nav principal.
+
+## 1.9.534
+- **Processos**: Removido título duplicado do módulo (mantido apenas no nav). Badge "CRON ATIVO (03h)" e botão "AGUARDANDO CONFECÇÃO" movidos para o nav principal, visíveis apenas quando módulo Processos está ativo.
+
+## 1.9.533
+- **Processos**: Módulo reorganizado com design mais limpo e moderno. Removido monitor de cron detalhado (substituído por badge compacto), removida seção expandida "Aguardando Confecção", cards de estatísticas redesenhados com layout mais compacto e visual.
+
+## 1.9.532
+- **Processos**: Removida sincronização DJEN via navegador. Agora a sincronização é realizada **exclusivamente via Edge Function** (cron do Supabase). Removidos: hook `useDjenSync`, função `handleSyncAllDjen`, estados `syncingDjen` e `syncResult`, e UI de resultado de sincronização.
+
+## 1.9.531
+- **Processos**: Corrigido erro "Token inválido" no cron **Update Process Status (03h)**. Validação de token desabilitada na Edge Function `update-process-status` para permitir execução via cron do Supabase (mesmo padrão do `run-djen-sync`).
+
+## 1.9.530
+- **Intimações**: Card de monitoramento **Run DJEN Sync (07h e 19h)** movido para o módulo de Intimações, com status, horário da última execução, encontradas e salvas.
+- **Processos**: Removida a exibição do bloco de intimações do monitor de cron, mantendo apenas o card **Update Process Status (03h)**.
+
+## 1.9.529
+- **Processos**: Painel de monitoramento de cron dividido em dois blocos separados: **Update Process Status (03h)** e **Run DJEN Sync (07h e 19h)**, com status, última execução, contadores e erros por rotina.
+- **Processos**: Edge Function `update-process-status` agora registra execução em `djen_sync_history` (`source: process_status_cron`, `trigger_type: update_process_status`) para exibição fiel no módulo.
+
+## 1.9.528
+- **Processos**: Painel de status DJEN redesenhado com contadores em tempo real (processos, sincronizados, pendentes, encontradas, salvas). Exibe horário da cron com tempo relativo. Mostra erro da última execução se houver. Removidos botões manuais "Sync DJEN" e "Testar Sync" (sincronização agora é 100% automática via cron: 03h status, 07h/19h intimações). Redeploy da Edge Function `run-djen-sync` corrigindo validação de token.
+
+## 1.9.527
+- **Processos**: Adicionado timer de última atualização do registro no modal de detalhes do processo. Exibe ícone de relógio com tempo relativo (ex: "Atualizado há 2h") abaixo da informação de sincronização DJEN.
+
+## 1.9.526
+- **Processos**: Adicionado tempo da última sincronização DJEN. Exibe "há X horas", "ontem", "há X dias" ou data completa nos cards (lista, Kanban e detalhes). Permite identificar rapidamente quando cada processo foi sincronizado pela última vez com o Diário de Justiça.
+
+## 1.9.525
+- **Processos**: Corrigida sincronização automática com DJEN. O hook `useDjenSync` existia mas não estava sendo usado no ProcessesModule. Agora a sincronização automática está ativa: executa 5 segundos após carregar o módulo e depois a cada 1 hora, mantendo os dados dos processos atualizados automaticamente.
+
+## 1.9.524
+- **Petições**: Melhorada animação de loading ao formatar com IA. Design mais elegante com overlay menos transparente, card sólido, ícone com gradiente laranja e anéis de onda animados. Feedback visual mais claro e profissional durante o processamento.
+
 ## 1.9.523
-- **Petições**: Nova funcionalidade "Formatar com IA" no menu de contexto do editor. Funciona com QUALQUER tipo de texto selecionado: qualificações, endereços, textos jurídicos, listas, etc. A IA detecta automaticamente o tipo de texto e aplica a formatação apropriada. Inclui correção ortográfica completa, remoção de espaços extras, correção de pontuação, padronização de CPF/CEP, formatação de datas e uso de linguagem jurídica formal. Para qualificações, preserva negrito no nome. Usa modelos econômicos (Groq Llama 3.3 como principal, OpenAI GPT-4o-mini como fallback). Corrigido delay ao vincular cliente para garantir que o auto-save funcione corretamente. Adicionada animação de loading com overlay visual durante a formatação.
+- **Petições**: Nova funcionalidade "Formatar com IA" no menu de contexto do editor. Funciona com QUALQUER tipo de texto selecionado: qualificações, endereços, textos jurídicos, listas, etc. A IA detecta automaticamente o tipo de texto e aplica a formatação apropriada. Inclui correção ortográfica completa, remoção de espaços extras, correção de pontuação, padronização de CPF/CEP, formatação de datas e uso de linguagem jurídica formal. Para qualificações, preserva negrito no nome. Usa modelos econômicos (Groq Llama 3.3 como principal, OpenAI GPT-4o-mini como fallback). Corrigido delay ao vincular cliente para garantir que o auto-save funcione corretamente.
 
 ## 1.9.522
 - **Petições**: Corrigido bug onde ao inserir bloco e depois vincular cliente, o botão Salvar não funcionava. Causa: estado `saving` era compartilhado entre salvar documento e operações de modal (criar tipo padrão, salvar bloco), bloqueando o botão. Solução: separado em `savingDoc` (exclusivo do documento) e `saving` (modais/blocos). Também corrigida closure desatualizada do `selectedClient` no auto-save após vincular cliente.
