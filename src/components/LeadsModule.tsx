@@ -179,22 +179,7 @@ const LeadsModule: React.FC<LeadsModuleProps> = ({ onConvertLead }) => {
   }
 
   return (
-    <div className="space-y-6">
-      <div className="bg-white rounded-xl border border-gray-200 p-6">
-        <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
-          <div>
-            <h3 className="text-xl font-semibold text-slate-900">Pipeline de Leads</h3>
-            <p className="text-sm text-slate-600">Gerencie seus leads com quadro Kanban</p>
-          </div>
-          <button
-            onClick={handleOpenNewLeadModal}
-            className="bg-gradient-to-r from-orange-500 to-orange-600 hover:from-orange-600 hover:to-orange-700 text-white font-semibold px-6 py-3 rounded-lg flex items-center gap-2 transition-all shadow-lg shadow-orange-500/40 hover:shadow-orange-500/60"
-          >
-            <Plus className="w-5 h-5" />
-            Novo Lead
-          </button>
-        </div>
-      </div>
+    <div className="space-y-6 relative">
 
       {error && (
         <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg text-sm">
@@ -281,11 +266,25 @@ const LeadsModule: React.FC<LeadsModuleProps> = ({ onConvertLead }) => {
                 <div className="p-3 md:p-4 space-y-2 md:space-y-3 min-h-[150px] md:min-h-[200px] max-h-[400px] md:max-h-[600px] overflow-y-auto bg-gradient-to-b from-slate-50/80 to-white">
                   {stageLeads.length === 0 ? (
                     <div className="flex flex-col items-center justify-center py-12 text-center">
-                      <div className="bg-slate-100 p-3 rounded-full mb-3">
-                        {stage.icon}
-                      </div>
-                      <p className="text-xs text-slate-400 font-medium">Nenhum lead neste estágio</p>
-                      <p className="text-[10px] text-slate-300 mt-1">Arraste e solte leads aqui</p>
+                      {stage.key === 'novo' ? (
+                        <button
+                          onClick={handleOpenNewLeadModal}
+                          className="bg-gradient-to-r from-orange-500 to-orange-600 hover:from-orange-600 hover:to-orange-700 text-white font-semibold p-3 rounded-full flex items-center justify-center gap-2 transition-all shadow-lg shadow-orange-500/40 hover:shadow-orange-500/60 hover:scale-105 mb-3"
+                          title="Adicionar Novo Lead"
+                        >
+                          <Plus className="w-5 h-5" />
+                        </button>
+                      ) : (
+                        <div className="bg-slate-100 p-3 rounded-full mb-3">
+                          {stage.icon}
+                        </div>
+                      )}
+                      <p className="text-xs text-slate-400 font-medium">
+                        {stage.key === 'novo' ? 'Clique para adicionar' : 'Nenhum lead neste estágio'}
+                      </p>
+                      <p className="text-[10px] text-slate-300 mt-1">
+                        {stage.key === 'novo' ? 'ou arraste leads para cá' : 'Arraste e solte leads aqui'}
+                      </p>
                     </div>
                   ) : (
                     stageLeads.map((lead) => (
@@ -600,6 +599,7 @@ const LeadsModule: React.FC<LeadsModuleProps> = ({ onConvertLead }) => {
         </div>
       )}
 
+      
       {/* Modal Novo Lead */}
       <LeadModal
         isOpen={isModalOpen}

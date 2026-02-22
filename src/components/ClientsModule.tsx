@@ -471,28 +471,7 @@ const ClientsModule: React.FC<ClientsModuleProps> = ({
   return (
     <>
       <div className="space-y-4">
-        {/* Header */}
-        <div className="bg-white border border-slate-200 rounded-lg shadow-sm p-4">
-          <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
-            <div>
-              <h1 className="text-2xl font-semibold text-slate-900 flex items-center gap-2">
-                <Users className="w-6 h-6 text-blue-600" />
-                Gestão de Clientes
-              </h1>
-              <p className="text-sm text-slate-600 mt-1">
-                Cadastro e gerenciamento de clientes
-              </p>
-            </div>
-            <button
-              onClick={handleNewClient}
-              className="inline-flex items-center gap-1.5 bg-orange-500 hover:bg-orange-600 active:bg-orange-700 transition-colors px-3 py-1.5 rounded-lg text-xs font-medium text-white shadow-sm shadow-orange-500/30"
-            >
-              <Plus className="w-4 h-4" />
-              Novo Cliente
-            </button>
-          </div>
-        </div>
-
+        
         {/* Stats */}
         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2 sm:gap-3">
           <div className="bg-white border border-slate-200 rounded-lg p-2.5 sm:p-3 hover:shadow-sm transition">
@@ -585,6 +564,15 @@ const ClientsModule: React.FC<ClientsModuleProps> = ({
           <div className="flex items-center justify-between mb-2">
             <span className="text-xs sm:text-sm text-slate-600">Buscar e filtrar clientes</span>
             <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={handleNewClient}
+                className="inline-flex items-center gap-1.5 bg-orange-500 hover:bg-orange-600 active:bg-orange-700 transition-colors px-3 py-1.5 rounded-lg text-xs font-medium text-white shadow-sm shadow-orange-500/30"
+              >
+                <Plus className="w-4 h-4" />
+                Novo Cliente
+              </button>
+
               <button
                 type="button"
                 onClick={toggleSelectionMode}

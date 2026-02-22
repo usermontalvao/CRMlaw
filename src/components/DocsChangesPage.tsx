@@ -588,6 +588,53 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
 
 const releases: ReleaseNote[] = [
   {
+    version: '1.9.587',
+    date: '22/02/2026',
+    summary: 'Pipeline de Leads e Gestão de Clientes: interface otimizada e botões reposicionados.',
+    modules: [
+      {
+        moduleId: 'leads',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Título duplicado removido',
+            description: 'Removido título "Pipeline de Leads" duplicado dentro do módulo. Mantido apenas o título principal no header da aplicação.',
+          },
+          {
+            type: 'improvement',
+            title: 'Botão Novo Lead reposicionado',
+            description: 'Botão flutuante "Novo Lead" removido e adicionado botão "+" funcional na coluna "Novo" do Kanban quando vazia.',
+          },
+          {
+            type: 'improvement',
+            title: 'Botão + com ação',
+            description: 'Botão "+" na coluna "Novo" agora abre modal para criar novo lead. Textos adaptados: "Clique para adicionar" / "ou arraste leads para cá".',
+          },
+        ],
+      },
+      {
+        moduleId: 'clientes',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Título duplicado removido',
+            description: 'Removido título "Gestão de Clientes" duplicado dentro do módulo. Mantido apenas o título principal no header.',
+          },
+          {
+            type: 'improvement',
+            title: 'Botão Novo Cliente reposicionado',
+            description: 'Botão "Novo Cliente" movido do topo para a seção de busca/filtros, ao lado do botão "Selecionar".',
+          },
+          {
+            type: 'improvement',
+            title: 'Layout de filtros otimizado',
+            description: 'Nova ordem dos botões: [Novo Cliente] [Selecionar] [Mostrar filtros]. Botão mais acessível e visível na área de busca.',
+          },
+        ],
+      },
+    ],
+  },
+  {
     version: '1.9.586',
     date: '21/02/2026',
     summary: 'Chat: card de áudio com tamanho mais confortável.',
