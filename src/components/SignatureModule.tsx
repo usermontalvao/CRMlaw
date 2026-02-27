@@ -1225,7 +1225,7 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
     if (!children.length) return null;
 
     return (
-      <div className={depth === 0 ? 'space-y-1' : 'space-y-1 mt-1'}>
+      <div className={depth === 0 ? 'space-y-2' : 'space-y-2 mt-2'}>
         {children.map((folder) => {
           const isSelected = selectedFolderId === folder.id;
           const isDraggingThisFolder = draggingExplorer?.type === 'folder' && draggingExplorer.id === folder.id;
@@ -1253,8 +1253,8 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
               </div>
 
               <div
-                className={`group flex items-center rounded-lg transition ${
-                  isDraggingExplorer && dragOverFolderId === folder.id ? 'ring-2 ring-orange-500/40 bg-orange-50/40 rounded-xl' : ''
+                className={`group relative flex items-center rounded-xl transition ${
+                  isDraggingExplorer && dragOverFolderId === folder.id ? 'ring-2 ring-orange-500/40 bg-orange-50/40' : ''
                 }`}
                 onDragOver={handleAllowDrop}
                 onDragEnter={() => setDragOverFolderId(folder.id)}
@@ -1281,23 +1281,23 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
                     releaseSuppressExplorerClick();
                   }}
                   onClick={() => setSelectedFolderId(folder.id)}
-                  className={`relative flex-1 flex items-center gap-2 rounded-xl px-3 py-2 text-left text-xs font-semibold transition cursor-grab active:cursor-grabbing ${
+                  className={`relative flex-1 flex items-center gap-2.5 rounded-xl px-3.5 py-2.5 pr-24 text-left text-[13px] font-semibold transition cursor-grab active:cursor-grabbing ${
                     isSelected
-                      ? 'bg-orange-50 text-slate-900'
+                      ? 'bg-orange-50 text-slate-900 shadow-sm ring-1 ring-orange-500/10'
                       : 'text-slate-700 hover:bg-slate-50'
                   } ${
                     isDraggingThisFolder ? 'opacity-60 scale-[1.02] shadow-lg shadow-slate-900/10 bg-white ring-1 ring-slate-200' : ''
                   }`}
-                  style={{ paddingLeft: `${8 + depth * 12}px` }}
+                  style={{ paddingLeft: `${12 + depth * 16}px` }}
                   title={folder.name}
                 >
                   {isSelected && (
                     <span className="absolute left-0 top-0 h-full w-1.5 bg-orange-500 rounded-l-xl" />
                   )}
-                  <FolderOpen className={`w-3.5 h-3.5 ${isSelected ? 'text-orange-600' : 'text-slate-400'}`} />
+                  <FolderOpen className={`w-4 h-4 ${isSelected ? 'text-orange-600' : 'text-slate-400'}`} />
                   <span className="truncate flex-1">{folder.name}</span>
                   <span
-                    className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] font-bold ${
+                    className={`shrink-0 tabular-nums rounded-full px-2.5 py-1 text-[11px] font-bold ${
                       isSelected ? 'bg-orange-200 text-orange-800' : 'bg-slate-100 text-slate-600'
                     }`}
                     title="Itens nesta pasta"
@@ -1306,7 +1306,7 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
                   </span>
                 </div>
 
-                <div className="flex items-center gap-1 pr-1 opacity-0 group-hover:opacity-100 transition">
+                <div className="absolute right-1 top-1/2 -translate-y-1/2 flex items-center gap-1 px-1 py-0.5 rounded-lg bg-white/90 backdrop-blur-sm border border-slate-200 shadow-sm opacity-0 group-hover:opacity-100 transition">
                   <button
                     type="button"
                     onClick={(e) => {
@@ -3315,19 +3315,19 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
                 <button
                   type="button"
                   onClick={() => setSelectedFolderId(null)}
-                  className={`relative w-full flex items-center gap-2 rounded-xl px-3 py-2 text-left text-xs font-semibold transition ${
+                  className={`relative w-full flex items-center gap-2.5 rounded-xl px-3.5 py-2.5 pr-10 text-left text-[13px] font-semibold transition ${
                     selectedFolderId === null
-                      ? 'bg-orange-50 text-slate-900'
+                      ? 'bg-orange-50 text-slate-900 shadow-sm ring-1 ring-orange-500/10'
                       : 'text-slate-700 hover:bg-slate-50'
                   }`}
                 >
                   {selectedFolderId === null && (
                     <span className="absolute left-0 top-0 h-full w-1.5 bg-orange-500 rounded-l-xl" />
                   )}
-                  <FolderOpen className={`w-3.5 h-3.5 ${selectedFolderId === null ? 'text-orange-600' : 'text-slate-400'}`} />
+                  <FolderOpen className={`w-4 h-4 ${selectedFolderId === null ? 'text-orange-600' : 'text-slate-400'}`} />
                   <span className="truncate flex-1">Sem pasta</span>
                   <span
-                    className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] font-bold ${
+                    className={`shrink-0 tabular-nums rounded-full px-2.5 py-1 text-[11px] font-bold ${
                       selectedFolderId === null ? 'bg-orange-200 text-orange-800' : 'bg-slate-100 text-slate-600'
                     }`}
                     title="Itens em Sem pasta"

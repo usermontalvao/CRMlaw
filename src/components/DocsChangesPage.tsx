@@ -588,6 +588,40 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
 
 const releases: ReleaseNote[] = [
   {
+    version: '1.9.595',
+    date: '27/02/2026',
+    summary: 'Assinaturas: Explorer com mais espaçamento e hierarquia mais legível.',
+    modules: [
+      {
+        moduleId: 'assinaturas',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Mais respiro na lista de pastas',
+            description: 'Aumentado o espaçamento entre pastas/subpastas, altura das linhas e tamanho dos badges para deixar a sidebar mais organizada e fácil de ler.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.594',
+    date: '27/02/2026',
+    summary: 'Assinaturas: melhorias no layout das pastas do Explorer.',
+    modules: [
+      {
+        moduleId: 'assinaturas',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Pastas mais organizadas e sem “pulos” no hover',
+            description: 'A sidebar de Pastas foi refinada: ações agora aparecem em overlay (sem deslocar layout), seleção/hover mais nítidos e contadores alinhados.',
+          },
+        ],
+      },
+    ],
+  },
+  {
     version: '1.9.593',
     date: '27/02/2026',
     summary: 'Assinaturas: drag-and-drop mais confiável no modo lista.',
