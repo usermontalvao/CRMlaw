@@ -1,468 +1,476 @@
 # Changelog
 
+## 1.9.589
+- **Prazos**: Em meses anteriores, a listagem/tabela de prazos em aberto é ocultada e são exibidos apenas os prazos concluídos do período como histórico. Para o mês atual e futuros, todos os prazos relevantes continuam sendo exibidos.
+
+
+## 1.9.588
+- **Financeiro**: Corrigida a contabilização de valores recebidos no módulo financeiro. Agora, os valores pagos são contabilizados no mês em que a baixa foi efetivamente realizada (data de pagamento), e não mais no mês do vencimento original.
+
+
 ## 1.9.586
-- **Chat**: Ajustado tamanho do card de áudio para não ficar compacto. Definida largura mínima responsiva (260px mobile / 320px desktop) mantendo visual limpo com player mais confortável.
+- **Chat**: Ajustado tamanho do card de Ã¡udio para nÃ£o ficar compacto. Definida largura mÃ­nima responsiva (260px mobile / 320px desktop) mantendo visual limpo com player mais confortÃ¡vel.
 
 ## 1.9.585
-- **Chat**: No card de áudio, removida a exibição do nome e tamanho do arquivo (ex.: `audio_*.webm` e `KB`). Agora o card mostra apenas ícone + player de áudio, mantendo visual limpo.
+- **Chat**: No card de Ã¡udio, removida a exibiÃ§Ã£o do nome e tamanho do arquivo (ex.: `audio_*.webm` e `KB`). Agora o card mostra apenas Ã­cone + player de Ã¡udio, mantendo visual limpo.
 
 ## 1.9.584
-- **Chat**: Removido texto "Áudio" do preview de mensagens. Agora exibe apenas o emoji 🎤 para mensagens de áudio, mantendo visual limpo e minimalista.
+- **Chat**: Removido texto "Ã�udio" do preview de mensagens. Agora exibe apenas o emoji ðŸŽ¤ para mensagens de Ã¡udio, mantendo visual limpo e minimalista.
 
 ## 1.9.583
-- **Chat**: Adicionado fundo exato do WhatsApp na área de conversa. Pattern SVG com cores #ece5dd e #e9dfd9, tamanho 536x113px, repetição centralizada para visual idêntico ao app original.
+- **Chat**: Adicionado fundo exato do WhatsApp na Ã¡rea de conversa. Pattern SVG com cores #ece5dd e #e9dfd9, tamanho 536x113px, repetiÃ§Ã£o centralizada para visual idÃªntico ao app original.
 
 ## 1.9.582
-- **Chat**: Adicionado fundo exato do WhatsApp na área de conversa. Pattern SVG com cores #ece5dd e #e9dfd9, tamanho 536x113px, repetição centralizada para visual idêntico ao app original.
+- **Chat**: Adicionado fundo exato do WhatsApp na Ã¡rea de conversa. Pattern SVG com cores #ece5dd e #e9dfd9, tamanho 536x113px, repetiÃ§Ã£o centralizada para visual idÃªntico ao app original.
 
 ## 1.9.581
-- **Chat**: Redesign completo para estilo WhatsApp. Cores verde/teal (#25d366), mensagens enviadas com fundo verde claro (#dcf8c6), recebidas com fundo branco, layout limpo e pattern de fundo sutil na área de mensagens.
+- **Chat**: Redesign completo para estilo WhatsApp. Cores verde/teal (#25d366), mensagens enviadas com fundo verde claro (#dcf8c6), recebidas com fundo branco, layout limpo e pattern de fundo sutil na Ã¡rea de mensagens.
 
 ## 1.9.580
-- **Tarefas**: Adicionada animação no botão "Adicionar" com loading spinner e prevenção de múltiplos cliques. Botão muda para verde durante o processo com texto "Adicionando...".
+- **Tarefas**: Adicionada animaÃ§Ã£o no botÃ£o "Adicionar" com loading spinner e prevenÃ§Ã£o de mÃºltiplos cliques. BotÃ£o muda para verde durante o processo com texto "Adicionando...".
 
 ## 1.9.579
-- **Tarefas**: Removido do menu lateral (nav). Módulo continua acessível apenas através do botão no header principal com contador de tarefas pendentes.
+- **Tarefas**: Removido do menu lateral (nav). MÃ³dulo continua acessÃ­vel apenas atravÃ©s do botÃ£o no header principal com contador de tarefas pendentes.
 
 ## 1.9.578
-- **Tarefas**: Removido completamente o header do módulo. Agora exibe apenas o formulário de adicionar tarefas e a lista, sem título ou descrição no módulo (mantido apenas no navbar).
+- **Tarefas**: Removido completamente o header do mÃ³dulo. Agora exibe apenas o formulÃ¡rio de adicionar tarefas e a lista, sem tÃ­tulo ou descriÃ§Ã£o no mÃ³dulo (mantido apenas no navbar).
 
 ## 1.9.577
-- **Tarefas**: Removido título duplicado "Tarefas" do módulo (mantido apenas no navbar). Mantida apenas descrição "Gerencie suas tarefas e lembretes".
+- **Tarefas**: Removido tÃ­tulo duplicado "Tarefas" do mÃ³dulo (mantido apenas no navbar). Mantida apenas descriÃ§Ã£o "Gerencie suas tarefas e lembretes".
 
 ## 1.9.576
 - **Chat**: Redesign visual completo para estilo limpo e consistente com o sistema. Removidos efeitos glass pesados, padronizados fundos/bordas em slate, lista de conversas refinada e composer reorganizado com melhor hierarquia visual.
 
 ## 1.9.575
-- **Chat**: Removido título duplicado "Chat da Equipe" do módulo (mantido apenas no navbar). Cores ajustadas para seguir padrão indigo do sistema em vez de gradientes purple.
+- **Chat**: Removido tÃ­tulo duplicado "Chat da Equipe" do mÃ³dulo (mantido apenas no navbar). Cores ajustadas para seguir padrÃ£o indigo do sistema em vez de gradientes purple.
 
 ## 1.9.574
-- **Chat**: Aplicado tema glassmorphism premium com painéis translúcidos, efeito backdrop-filter, gradientes indigo/purple, bordas suaves e sombras modernas.
+- **Chat**: Aplicado tema glassmorphism premium com painÃ©is translÃºcidos, efeito backdrop-filter, gradientes indigo/purple, bordas suaves e sombras modernas.
 
 ## 1.9.571
-- **Prazos**: Corrigido filtro mensal para prazos concluídos. Agora são contabilizados no mês em que foram finalizados, não no mês de vencimento original.
+- **Prazos**: Corrigido filtro mensal para prazos concluÃ­dos. Agora sÃ£o contabilizados no mÃªs em que foram finalizados, nÃ£o no mÃªs de vencimento original.
 
 ## 1.9.570
-- **Prazos**: Filtros Avançados movidos para a mesma linha da toolbar com botão dropdown. Texto oculto em telas menores (apenas ícone).
+- **Prazos**: Filtros AvanÃ§ados movidos para a mesma linha da toolbar com botÃ£o dropdown. Texto oculto em telas menores (apenas Ã­cone).
 
 ## 1.9.569
-- **Prazos**: Filtros Avançados integrados diretamente na toolbar principal com expansão/recolhimento, seguindo design moderno.
+- **Prazos**: Filtros AvanÃ§ados integrados diretamente na toolbar principal com expansÃ£o/recolhimento, seguindo design moderno.
 
 ## 1.9.568
-- **Prazos**: Toolbar compactada em uma única linha seguindo design moderno. Seletor de mês movido para ao lado dos botões de visualização (Lista/Kanban/Calendário) dentro do módulo.
+- **Prazos**: Toolbar compactada em uma Ãºnica linha seguindo design moderno. Seletor de mÃªs movido para ao lado dos botÃµes de visualizaÃ§Ã£o (Lista/Kanban/CalendÃ¡rio) dentro do mÃ³dulo.
 
 ## 1.9.567
-- **Prazos**: Removidos títulos duplicados do módulo (mantidos apenas no navbar). Seletor de mês movido para o cabeçalho ao lado do calendário, visível apenas no módulo Prazos.
+- **Prazos**: Removidos tÃ­tulos duplicados do mÃ³dulo (mantidos apenas no navbar). Seletor de mÃªs movido para o cabeÃ§alho ao lado do calendÃ¡rio, visÃ­vel apenas no mÃ³dulo Prazos.
 
 ## 1.9.566
-- **Requerimentos**: Header da barra de controle refinado com visual mais limpo, melhor hierarquia, espaçamento consistente e botões/chips mais harmonizados.
+- **Requerimentos**: Header da barra de controle refinado com visual mais limpo, melhor hierarquia, espaÃ§amento consistente e botÃµes/chips mais harmonizados.
 
 ## 1.9.565
-- **Requerimentos / MS**: Corrigido erro 400 ao gerar MS. Removida verificação desnecessária de bucket via client (bucket já existe e está configurado no Supabase).
+- **Requerimentos / MS**: Corrigido erro 400 ao gerar MS. Removida verificaÃ§Ã£o desnecessÃ¡ria de bucket via client (bucket jÃ¡ existe e estÃ¡ configurado no Supabase).
 
 ## 1.9.564
-- **Requerimentos / MS**: Criado modal simples de seleção de template ao clicar em "Gerar MS". Agora basta clicar no modelo desejado para gerar automaticamente, sem precisar abrir o modal completo de gerenciamento.
+- **Requerimentos / MS**: Criado modal simples de seleÃ§Ã£o de template ao clicar em "Gerar MS". Agora basta clicar no modelo desejado para gerar automaticamente, sem precisar abrir o modal completo de gerenciamento.
 
 ## 1.9.563
-- **Requerimentos / MS**: Ao enviar template MS, o sistema agora preserva o nome original do arquivo (sem a extensão .docx) em vez de adicionar data automaticamente.
+- **Requerimentos / MS**: Ao enviar template MS, o sistema agora preserva o nome original do arquivo (sem a extensÃ£o .docx) em vez de adicionar data automaticamente.
 
 ## 1.9.562
-- **Requerimentos**: Corrigido erro de import do ícone Download do lucide-react.
+- **Requerimentos**: Corrigido erro de import do Ã­cone Download do lucide-react.
 
 ## 1.9.561
-- **Requerimentos / MS**: Adicionado botão **Baixar** no modal de templates MS para download do modelo hospedado.
-- **Requerimentos / MS**: Ao clicar em "Gerar MS", agora abre o modal para **selecionar o modelo** antes de gerar. Botão **Gerar MS** disponível no modal quando há requerimento selecionado.
+- **Requerimentos / MS**: Adicionado botÃ£o **Baixar** no modal de templates MS para download do modelo hospedado.
+- **Requerimentos / MS**: Ao clicar em "Gerar MS", agora abre o modal para **selecionar o modelo** antes de gerar. BotÃ£o **Gerar MS** disponÃ­vel no modal quando hÃ¡ requerimento selecionado.
 
 ## 1.9.560
-- **Requerimentos**: Corrigido botão "Gerenciar MS" que estava tentando navegar para módulo inexistente. Agora abre diretamente o modal de gerenciamento de templates MS.
+- **Requerimentos**: Corrigido botÃ£o "Gerenciar MS" que estava tentando navegar para mÃ³dulo inexistente. Agora abre diretamente o modal de gerenciamento de templates MS.
 
 ## 1.9.559
-- **Requerimentos**: Barra de filtros e ações alinhada e refinada, com chips mais compactos, espaçamento consistente e melhor equilíbrio visual entre status e botões de ação.
+- **Requerimentos**: Barra de filtros e aÃ§Ãµes alinhada e refinada, com chips mais compactos, espaÃ§amento consistente e melhor equilÃ­brio visual entre status e botÃµes de aÃ§Ã£o.
 
 ## 1.9.558
-- **Requerimentos / MS**: No modal "Template MS", a lista agora exibe apenas modelos do contexto **MS (Requerimentos)**. Adicionada ação **Remover** para excluir o modelo MS selecionado.
+- **Requerimentos / MS**: No modal "Template MS", a lista agora exibe apenas modelos do contexto **MS (Requerimentos)**. Adicionada aÃ§Ã£o **Remover** para excluir o modelo MS selecionado.
 
 ## 1.9.557
-- **Requerimentos**: Barra superior reorganizada e compactada sem scroll lateral, com chips de status menores em quebra de linha, melhor espaçamento visual e botão **Gerenciar MS** fixo na área de ações.
+- **Requerimentos**: Barra superior reorganizada e compactada sem scroll lateral, com chips de status menores em quebra de linha, melhor espaÃ§amento visual e botÃ£o **Gerenciar MS** fixo na Ã¡rea de aÃ§Ãµes.
 
 ## 1.9.556
-- **Requerimentos**: Botões de filtro reduzidos (text-[10px], px-1.5 py-0.5) para eliminar scroll lateral. Labels encurtados removendo "Aguardando". Adicionado botão "Gerenciar MS" para navegação ao módulo de gerenciamento.
+- **Requerimentos**: BotÃµes de filtro reduzidos (text-[10px], px-1.5 py-0.5) para eliminar scroll lateral. Labels encurtados removendo "Aguardando". Adicionado botÃ£o "Gerenciar MS" para navegaÃ§Ã£o ao mÃ³dulo de gerenciamento.
 
 ## 1.9.555
-- **Requerimentos**: Removido header duplicado do módulo (mantido apenas título no nav). Interface mais limpa sem repetição de "Sistema de Requerimentos" e "Gerencie requerimentos administrativos do INSS".
+- **Requerimentos**: Removido header duplicado do mÃ³dulo (mantido apenas tÃ­tulo no nav). Interface mais limpa sem repetiÃ§Ã£o de "Sistema de Requerimentos" e "Gerencie requerimentos administrativos do INSS".
 
 ## 1.9.554
-- **Requerimentos**: Removido header duplicado do módulo (mantido apenas título no nav). Interface mais limpa sem repetição de "Sistema de Requerimentos" e "Gerencie requerimentos administrativos do INSS".
+- **Requerimentos**: Removido header duplicado do mÃ³dulo (mantido apenas tÃ­tulo no nav). Interface mais limpa sem repetiÃ§Ã£o de "Sistema de Requerimentos" e "Gerencie requerimentos administrativos do INSS".
 
 ## 1.9.553
-- **Assinaturas**: Modo cards atualizado para visual estilo pasta, com aba superior, ícone de pasta e cartões com identidade visual mais documental.
+- **Assinaturas**: Modo cards atualizado para visual estilo pasta, com aba superior, Ã­cone de pasta e cartÃµes com identidade visual mais documental.
 
 ## 1.9.552
-- **Assinaturas**: Modo cards completamente redesenhado com layout moderno. Grid responsiva (xl:grid-cols-4), header com ícone e percentual, conteúdo organizado, footer com status e progresso visual melhorado.
+- **Assinaturas**: Modo cards completamente redesenhado com layout moderno. Grid responsiva (xl:grid-cols-4), header com Ã­cone e percentual, conteÃºdo organizado, footer com status e progresso visual melhorado.
 
 ## 1.9.551
-- **Assinaturas**: Cards da lista simplificados para melhor UX. Removida complexidade desnecessária, layout mais limpo com cards compactos e informações essenciais apenas.
+- **Assinaturas**: Cards da lista simplificados para melhor UX. Removida complexidade desnecessÃ¡ria, layout mais limpo com cards compactos e informaÃ§Ãµes essenciais apenas.
 
 ## 1.9.550
-- **Assinaturas**: Cards da lista completamente redesenhados com layout moderno. Melhor hierarquia visual, organização de informações, badges compactos, progress bar integrada e botão "Ver detalhes" explícito.
+- **Assinaturas**: Cards da lista completamente redesenhados com layout moderno. Melhor hierarquia visual, organizaÃ§Ã£o de informaÃ§Ãµes, badges compactos, progress bar integrada e botÃ£o "Ver detalhes" explÃ­cito.
 
 ## 1.9.549
-- **Assinaturas**: Removida barra header vazia onde estava o botão Novo documento. Interface mais limpa com apenas a toolbar principal contendo filtros e ações.
+- **Assinaturas**: Removida barra header vazia onde estava o botÃ£o Novo documento. Interface mais limpa com apenas a toolbar principal contendo filtros e aÃ§Ãµes.
 
 ## 1.9.548
-- **Assinaturas**: Botão "Novo documento" reposicionado ao lado do botão "Público" no módulo. Removido do navigation para evitar duplicação.
+- **Assinaturas**: BotÃ£o "Novo documento" reposicionado ao lado do botÃ£o "PÃºblico" no mÃ³dulo. Removido do navigation para evitar duplicaÃ§Ã£o.
 
 ## 1.9.547
 - **Assinaturas**: Corrigido erro "Rendered more hooks than during the previous render" movendo useEffect para o topo do componente. Hooks devem sempre ser chamados na mesma ordem.
 
 ## 1.9.546
-- **Assinaturas**: Botão "Novo documento" integrado ao navigation ao lado do perfil. Aparece apenas quando módulo Assinaturas está ativo, com acesso direto ao wizard de upload via DOM.
+- **Assinaturas**: BotÃ£o "Novo documento" integrado ao navigation ao lado do perfil. Aparece apenas quando mÃ³dulo Assinaturas estÃ¡ ativo, com acesso direto ao wizard de upload via DOM.
 
 ## 1.9.545
-- **Assinaturas**: Removido header duplicado do módulo (mantido apenas título no nav). Interface mais limpa sem repetição de "Assinatura Digital" e "Envie documentos e acompanhe o progresso das assinaturas".
+- **Assinaturas**: Removido header duplicado do mÃ³dulo (mantido apenas tÃ­tulo no nav). Interface mais limpa sem repetiÃ§Ã£o de "Assinatura Digital" e "Envie documentos e acompanhe o progresso das assinaturas".
 
 ## 1.9.544
-- **Documentos**: Removido header duplicado do módulo (mantido apenas título no nav). Interface mais limpa sem repetição de "Modelos de documentos" e "Gerencie templates e documentos".
+- **Documentos**: Removido header duplicado do mÃ³dulo (mantido apenas tÃ­tulo no nav). Interface mais limpa sem repetiÃ§Ã£o de "Modelos de documentos" e "Gerencie templates e documentos".
 
 ## 1.9.543
-- **Processos**: Adicionado botão X no header do modal de exportação para fechar, seguindo padrão da Agenda. Header agora com layout flex e botão de fechar no canto superior direito.
+- **Processos**: Adicionado botÃ£o X no header do modal de exportaÃ§Ã£o para fechar, seguindo padrÃ£o da Agenda. Header agora com layout flex e botÃ£o de fechar no canto superior direito.
 
 ## 1.9.542
-- **Processos**: Ajustado layout do modal de exportação para espelhar a estrutura da Agenda. Botões "Cancelar" e "Exportar Excel" movidos para dentro do mesmo container interno do conteúdo, eliminando diferença visual de espaçamento/alinhamento.
+- **Processos**: Ajustado layout do modal de exportaÃ§Ã£o para espelhar a estrutura da Agenda. BotÃµes "Cancelar" e "Exportar Excel" movidos para dentro do mesmo container interno do conteÃºdo, eliminando diferenÃ§a visual de espaÃ§amento/alinhamento.
 
 ## 1.9.541
-- **Processos**: Botão "Exportar Excel" corrigido para usar disabled:opacity-50 em vez de bg-gray-400, mantendo o gradiente verde esmeralda visível mesmo quando desabilitado, exatamente igual ao da Agenda.
+- **Processos**: BotÃ£o "Exportar Excel" corrigido para usar disabled:opacity-50 em vez de bg-gray-400, mantendo o gradiente verde esmeralda visÃ­vel mesmo quando desabilitado, exatamente igual ao da Agenda.
 
 ## 1.9.540
-- **Processos**: Corrigidos botões do modal de exportação para ficar idênticos aos da Agenda. Removidas classes duplicadas e ajustado estado disabled para consistência visual.
+- **Processos**: Corrigidos botÃµes do modal de exportaÃ§Ã£o para ficar idÃªnticos aos da Agenda. Removidas classes duplicadas e ajustado estado disabled para consistÃªncia visual.
 
 ## 1.9.539
-- **Processos**: Modal de exportação redesenhado seguindo padrão visual da Agenda. Labels com emojis, uppercase tracking, border-2, cores consistentes, botões com gradiente verde esmeralda e hover effects com transform.
+- **Processos**: Modal de exportaÃ§Ã£o redesenhado seguindo padrÃ£o visual da Agenda. Labels com emojis, uppercase tracking, border-2, cores consistentes, botÃµes com gradiente verde esmeralda e hover effects com transform.
 
 ## 1.9.538
-- **Processos**: Exportação profissional com modal de filtros avançados. Botão "Exportar" agora abre modal com opções: filtro por status, tipo de processo, advogado responsável, período (data inicial/final), ordenação (mais recente/mais antigo). Prévia em tempo real de quantos processos serão exportados. Não baixa automaticamente - usuário configura filtros antes.
+- **Processos**: ExportaÃ§Ã£o profissional com modal de filtros avanÃ§ados. BotÃ£o "Exportar" agora abre modal com opÃ§Ãµes: filtro por status, tipo de processo, advogado responsÃ¡vel, perÃ­odo (data inicial/final), ordenaÃ§Ã£o (mais recente/mais antigo). PrÃ©via em tempo real de quantos processos serÃ£o exportados. NÃ£o baixa automaticamente - usuÃ¡rio configura filtros antes.
 
 ## 1.9.537
-- **Processos**: Exportação Excel completamente melhorada. Adicionadas colunas: "Tipo de Processo", "Status do Processo", numeração, DJEN Sincronizado, DJEN Tem Dados, Última Sync DJEN. Processos ordenados por data de atualização (mais recente primeiro). Nome do arquivo inclui filtro de status aplicado e timestamp completo. Exporta apenas processos filtrados.
+- **Processos**: ExportaÃ§Ã£o Excel completamente melhorada. Adicionadas colunas: "Tipo de Processo", "Status do Processo", numeraÃ§Ã£o, DJEN Sincronizado, DJEN Tem Dados, Ãšltima Sync DJEN. Processos ordenados por data de atualizaÃ§Ã£o (mais recente primeiro). Nome do arquivo inclui filtro de status aplicado e timestamp completo. Exporta apenas processos filtrados.
 
 ## 1.9.536
-- **Processos**: Badge "CRON ATIVO (03h)" movido para ao lado do botão "Mapa de Fases" no módulo. Corrigida detecção de status de processos - Recurso agora tem prioridade sobre Instrução, incluindo termos como "sessão de julgamento", "turma recursal", "tribunal" e "recurso inominado".
+- **Processos**: Badge "CRON ATIVO (03h)" movido para ao lado do botÃ£o "Mapa de Fases" no mÃ³dulo. Corrigida detecÃ§Ã£o de status de processos - Recurso agora tem prioridade sobre InstruÃ§Ã£o, incluindo termos como "sessÃ£o de julgamento", "turma recursal", "tribunal" e "recurso inominado".
 
 ## 1.9.535
-- **Processos**: Restaurada seção expandida "Aguardando Confecção" com formulário inline e lista de clientes. Removido botão "AGUARDANDO CONFECÇÃO" do nav principal.
+- **Processos**: Restaurada seÃ§Ã£o expandida "Aguardando ConfecÃ§Ã£o" com formulÃ¡rio inline e lista de clientes. Removido botÃ£o "AGUARDANDO CONFECÃ‡ÃƒO" do nav principal.
 
 ## 1.9.534
-- **Processos**: Removido título duplicado do módulo (mantido apenas no nav). Badge "CRON ATIVO (03h)" e botão "AGUARDANDO CONFECÇÃO" movidos para o nav principal, visíveis apenas quando módulo Processos está ativo.
+- **Processos**: Removido tÃ­tulo duplicado do mÃ³dulo (mantido apenas no nav). Badge "CRON ATIVO (03h)" e botÃ£o "AGUARDANDO CONFECÃ‡ÃƒO" movidos para o nav principal, visÃ­veis apenas quando mÃ³dulo Processos estÃ¡ ativo.
 
 ## 1.9.533
-- **Processos**: Módulo reorganizado com design mais limpo e moderno. Removido monitor de cron detalhado (substituído por badge compacto), removida seção expandida "Aguardando Confecção", cards de estatísticas redesenhados com layout mais compacto e visual.
+- **Processos**: MÃ³dulo reorganizado com design mais limpo e moderno. Removido monitor de cron detalhado (substituÃ­do por badge compacto), removida seÃ§Ã£o expandida "Aguardando ConfecÃ§Ã£o", cards de estatÃ­sticas redesenhados com layout mais compacto e visual.
 
 ## 1.9.532
-- **Processos**: Removida sincronização DJEN via navegador. Agora a sincronização é realizada **exclusivamente via Edge Function** (cron do Supabase). Removidos: hook `useDjenSync`, função `handleSyncAllDjen`, estados `syncingDjen` e `syncResult`, e UI de resultado de sincronização.
+- **Processos**: Removida sincronizaÃ§Ã£o DJEN via navegador. Agora a sincronizaÃ§Ã£o Ã© realizada **exclusivamente via Edge Function** (cron do Supabase). Removidos: hook `useDjenSync`, funÃ§Ã£o `handleSyncAllDjen`, estados `syncingDjen` e `syncResult`, e UI de resultado de sincronizaÃ§Ã£o.
 
 ## 1.9.531
-- **Processos**: Corrigido erro "Token inválido" no cron **Update Process Status (03h)**. Validação de token desabilitada na Edge Function `update-process-status` para permitir execução via cron do Supabase (mesmo padrão do `run-djen-sync`).
+- **Processos**: Corrigido erro "Token invÃ¡lido" no cron **Update Process Status (03h)**. ValidaÃ§Ã£o de token desabilitada na Edge Function `update-process-status` para permitir execuÃ§Ã£o via cron do Supabase (mesmo padrÃ£o do `run-djen-sync`).
 
 ## 1.9.530
-- **Intimações**: Card de monitoramento **Run DJEN Sync (07h e 19h)** movido para o módulo de Intimações, com status, horário da última execução, encontradas e salvas.
-- **Processos**: Removida a exibição do bloco de intimações do monitor de cron, mantendo apenas o card **Update Process Status (03h)**.
+- **IntimaÃ§Ãµes**: Card de monitoramento **Run DJEN Sync (07h e 19h)** movido para o mÃ³dulo de IntimaÃ§Ãµes, com status, horÃ¡rio da Ãºltima execuÃ§Ã£o, encontradas e salvas.
+- **Processos**: Removida a exibiÃ§Ã£o do bloco de intimaÃ§Ãµes do monitor de cron, mantendo apenas o card **Update Process Status (03h)**.
 
 ## 1.9.529
-- **Processos**: Painel de monitoramento de cron dividido em dois blocos separados: **Update Process Status (03h)** e **Run DJEN Sync (07h e 19h)**, com status, última execução, contadores e erros por rotina.
-- **Processos**: Edge Function `update-process-status` agora registra execução em `djen_sync_history` (`source: process_status_cron`, `trigger_type: update_process_status`) para exibição fiel no módulo.
+- **Processos**: Painel de monitoramento de cron dividido em dois blocos separados: **Update Process Status (03h)** e **Run DJEN Sync (07h e 19h)**, com status, Ãºltima execuÃ§Ã£o, contadores e erros por rotina.
+- **Processos**: Edge Function `update-process-status` agora registra execuÃ§Ã£o em `djen_sync_history` (`source: process_status_cron`, `trigger_type: update_process_status`) para exibiÃ§Ã£o fiel no mÃ³dulo.
 
 ## 1.9.528
-- **Processos**: Painel de status DJEN redesenhado com contadores em tempo real (processos, sincronizados, pendentes, encontradas, salvas). Exibe horário da cron com tempo relativo. Mostra erro da última execução se houver. Removidos botões manuais "Sync DJEN" e "Testar Sync" (sincronização agora é 100% automática via cron: 03h status, 07h/19h intimações). Redeploy da Edge Function `run-djen-sync` corrigindo validação de token.
+- **Processos**: Painel de status DJEN redesenhado com contadores em tempo real (processos, sincronizados, pendentes, encontradas, salvas). Exibe horÃ¡rio da cron com tempo relativo. Mostra erro da Ãºltima execuÃ§Ã£o se houver. Removidos botÃµes manuais "Sync DJEN" e "Testar Sync" (sincronizaÃ§Ã£o agora Ã© 100% automÃ¡tica via cron: 03h status, 07h/19h intimaÃ§Ãµes). Redeploy da Edge Function `run-djen-sync` corrigindo validaÃ§Ã£o de token.
 
 ## 1.9.527
-- **Processos**: Adicionado timer de última atualização do registro no modal de detalhes do processo. Exibe ícone de relógio com tempo relativo (ex: "Atualizado há 2h") abaixo da informação de sincronização DJEN.
+- **Processos**: Adicionado timer de Ãºltima atualizaÃ§Ã£o do registro no modal de detalhes do processo. Exibe Ã­cone de relÃ³gio com tempo relativo (ex: "Atualizado hÃ¡ 2h") abaixo da informaÃ§Ã£o de sincronizaÃ§Ã£o DJEN.
 
 ## 1.9.526
-- **Processos**: Adicionado tempo da última sincronização DJEN. Exibe "há X horas", "ontem", "há X dias" ou data completa nos cards (lista, Kanban e detalhes). Permite identificar rapidamente quando cada processo foi sincronizado pela última vez com o Diário de Justiça.
+- **Processos**: Adicionado tempo da Ãºltima sincronizaÃ§Ã£o DJEN. Exibe "hÃ¡ X horas", "ontem", "hÃ¡ X dias" ou data completa nos cards (lista, Kanban e detalhes). Permite identificar rapidamente quando cada processo foi sincronizado pela Ãºltima vez com o DiÃ¡rio de JustiÃ§a.
 
 ## 1.9.525
-- **Processos**: Corrigida sincronização automática com DJEN. O hook `useDjenSync` existia mas não estava sendo usado no ProcessesModule. Agora a sincronização automática está ativa: executa 5 segundos após carregar o módulo e depois a cada 1 hora, mantendo os dados dos processos atualizados automaticamente.
+- **Processos**: Corrigida sincronizaÃ§Ã£o automÃ¡tica com DJEN. O hook `useDjenSync` existia mas nÃ£o estava sendo usado no ProcessesModule. Agora a sincronizaÃ§Ã£o automÃ¡tica estÃ¡ ativa: executa 5 segundos apÃ³s carregar o mÃ³dulo e depois a cada 1 hora, mantendo os dados dos processos atualizados automaticamente.
 
 ## 1.9.524
-- **Petições**: Melhorada animação de loading ao formatar com IA. Design mais elegante com overlay menos transparente, card sólido, ícone com gradiente laranja e anéis de onda animados. Feedback visual mais claro e profissional durante o processamento.
+- **PetiÃ§Ãµes**: Melhorada animaÃ§Ã£o de loading ao formatar com IA. Design mais elegante com overlay menos transparente, card sÃ³lido, Ã­cone com gradiente laranja e anÃ©is de onda animados. Feedback visual mais claro e profissional durante o processamento.
 
 ## 1.9.523
-- **Petições**: Nova funcionalidade "Formatar com IA" no menu de contexto do editor. Funciona com QUALQUER tipo de texto selecionado: qualificações, endereços, textos jurídicos, listas, etc. A IA detecta automaticamente o tipo de texto e aplica a formatação apropriada. Inclui correção ortográfica completa, remoção de espaços extras, correção de pontuação, padronização de CPF/CEP, formatação de datas e uso de linguagem jurídica formal. Para qualificações, preserva negrito no nome. Usa modelos econômicos (Groq Llama 3.3 como principal, OpenAI GPT-4o-mini como fallback). Corrigido delay ao vincular cliente para garantir que o auto-save funcione corretamente.
+- **PetiÃ§Ãµes**: Nova funcionalidade "Formatar com IA" no menu de contexto do editor. Funciona com QUALQUER tipo de texto selecionado: qualificaÃ§Ãµes, endereÃ§os, textos jurÃ­dicos, listas, etc. A IA detecta automaticamente o tipo de texto e aplica a formataÃ§Ã£o apropriada. Inclui correÃ§Ã£o ortogrÃ¡fica completa, remoÃ§Ã£o de espaÃ§os extras, correÃ§Ã£o de pontuaÃ§Ã£o, padronizaÃ§Ã£o de CPF/CEP, formataÃ§Ã£o de datas e uso de linguagem jurÃ­dica formal. Para qualificaÃ§Ãµes, preserva negrito no nome. Usa modelos econÃ´micos (Groq Llama 3.3 como principal, OpenAI GPT-4o-mini como fallback). Corrigido delay ao vincular cliente para garantir que o auto-save funcione corretamente.
 
 ## 1.9.522
-- **Petições**: Corrigido bug onde ao inserir bloco e depois vincular cliente, o botão Salvar não funcionava. Causa: estado `saving` era compartilhado entre salvar documento e operações de modal (criar tipo padrão, salvar bloco), bloqueando o botão. Solução: separado em `savingDoc` (exclusivo do documento) e `saving` (modais/blocos). Também corrigida closure desatualizada do `selectedClient` no auto-save após vincular cliente.
+- **PetiÃ§Ãµes**: Corrigido bug onde ao inserir bloco e depois vincular cliente, o botÃ£o Salvar nÃ£o funcionava. Causa: estado `saving` era compartilhado entre salvar documento e operaÃ§Ãµes de modal (criar tipo padrÃ£o, salvar bloco), bloqueando o botÃ£o. SoluÃ§Ã£o: separado em `savingDoc` (exclusivo do documento) e `saving` (modais/blocos). TambÃ©m corrigida closure desatualizada do `selectedClient` no auto-save apÃ³s vincular cliente.
 
 ## 1.9.521
-- **Sistema**: Atualização de versões de componentes e incremento da versão do sistema com registro no changelog.
+- **Sistema**: AtualizaÃ§Ã£o de versÃµes de componentes e incremento da versÃ£o do sistema com registro no changelog.
 
 ## 1.9.520
-- **Leads**: Corrigido modal de detalhes para seguir design padrão do sistema (faixa laranja, fundo branco e estilos consistentes).
+- **Leads**: Corrigido modal de detalhes para seguir design padrÃ£o do sistema (faixa laranja, fundo branco e estilos consistentes).
 
 ## 1.9.519
-- **Requerimentos**: Corrigido tempo em análise zerado ao editar requerimento (mantido cálculo baseado na data de entrada original).
+- **Requerimentos**: Corrigido tempo em anÃ¡lise zerado ao editar requerimento (mantido cÃ¡lculo baseado na data de entrada original).
 
 ## 1.9.518
-- **Requerimentos**: Adicionado badge "MS" nos requerimentos que possuem processo de Mandado de Segurança vinculado.
+- **Requerimentos**: Adicionado badge "MS" nos requerimentos que possuem processo de Mandado de SeguranÃ§a vinculado.
 
 ## 1.9.517
-- **Requerimentos**: Corrigida a data de entrada no documento MS gerado para evitar deslocamento por fuso horário.
+- **Requerimentos**: Corrigida a data de entrada no documento MS gerado para evitar deslocamento por fuso horÃ¡rio.
 
 ## 1.9.516
-- **Requerimentos**: Corrigida a data de entrada no modal de edição/visualização e na geração do MS para evitar deslocamento por fuso horário.
+- **Requerimentos**: Corrigida a data de entrada no modal de ediÃ§Ã£o/visualizaÃ§Ã£o e na geraÃ§Ã£o do MS para evitar deslocamento por fuso horÃ¡rio.
 
 ## 1.9.478
-- **Chat**: Impedida a criação de múltiplas conversas (DM) com a mesma pessoa. Ao iniciar chat, o sistema reutiliza a conversa existente.
+- **Chat**: Impedida a criaÃ§Ã£o de mÃºltiplas conversas (DM) com a mesma pessoa. Ao iniciar chat, o sistema reutiliza a conversa existente.
 
 ## 1.9.477
-- **Chat (Mobile)**: Melhorada a usabilidade no celular com ajustes no composer (input e botões) e correção de altura usando `100dvh` para evitar problemas de viewport.
+- **Chat (Mobile)**: Melhorada a usabilidade no celular com ajustes no composer (input e botÃµes) e correÃ§Ã£o de altura usando `100dvh` para evitar problemas de viewport.
 
 ## 1.9.476
-- **Chat (Mobile)**: Implementada responsividade completa para dispositivos móveis. Adicionada navegação entre lista de conversas e chat ativo, botão de voltar e ajustes de layout para telas pequenas.
+- **Chat (Mobile)**: Implementada responsividade completa para dispositivos mÃ³veis. Adicionada navegaÃ§Ã£o entre lista de conversas e chat ativo, botÃ£o de voltar e ajustes de layout para telas pequenas.
 
 ## 1.9.475
-- **Feed (Layout)**: Corrigido o comportamento "sticky" das sidebars laterais para seguir o padrão do Facebook. Agora as sidebars rolam junto com o feed até o final do seu conteúdo e permanecem fixas, evitando espaços vazios indesejados.
+- **Feed (Layout)**: Corrigido o comportamento "sticky" das sidebars laterais para seguir o padrÃ£o do Facebook. Agora as sidebars rolam junto com o feed atÃ© o final do seu conteÃºdo e permanecem fixas, evitando espaÃ§os vazios indesejados.
 
 ## 1.9.474
-- **Feed (Layout)**: Ajustado comportamento das sidebars laterais para seguir o padrão do Facebook - rolam até o fim do conteúdo e permanecem fixas, sem criar espaços vazios.
+- **Feed (Layout)**: Ajustado comportamento das sidebars laterais para seguir o padrÃ£o do Facebook - rolam atÃ© o fim do conteÃºdo e permanecem fixas, sem criar espaÃ§os vazios.
 
 ## 1.9.473
-- **Feed (Layout)**: Corrigido layout das sidebars com `items-start` no grid container - sidebars ficam alinhadas ao topo e param quando o conteúdo acaba.
+- **Feed (Layout)**: Corrigido layout das sidebars com `items-start` no grid container - sidebars ficam alinhadas ao topo e param quando o conteÃºdo acaba.
 
 ## 1.9.472
-- **Feed (Layout)**: Corrigido layout das sidebars com `items-start` no grid container - sidebars ficam alinhadas ao topo e param quando o conteúdo acaba.
+- **Feed (Layout)**: Corrigido layout das sidebars com `items-start` no grid container - sidebars ficam alinhadas ao topo e param quando o conteÃºdo acaba.
 
 ## 1.9.471
-- **Feed (Layout)**: Removido sticky das sidebars - agora usam `self-start` para ficarem alinhadas ao topo e pararem quando o conteúdo acabar. Feed central é o único eixo de rolagem.
+- **Feed (Layout)**: Removido sticky das sidebars - agora usam `self-start` para ficarem alinhadas ao topo e pararem quando o conteÃºdo acabar. Feed central Ã© o Ãºnico eixo de rolagem.
 
 ## 1.9.470
-- **Feed (Layout)**: Widgets laterais agora ficam fixos no topo com altura máxima (100vh - 2rem) e scroll interno próprio - evita áreas vazias e mantém foco no feed central.
+- **Feed (Layout)**: Widgets laterais agora ficam fixos no topo com altura mÃ¡xima (100vh - 2rem) e scroll interno prÃ³prio - evita Ã¡reas vazias e mantÃ©m foco no feed central.
 
 ## 1.9.469
-- **Feed (Layout)**: Implementado comportamento correto de rolagem dos widgets laterais - rolam até o fim do conteúdo e depois ficam fixos, evitando áreas vazias e poluição visual.
+- **Feed (Layout)**: Implementado comportamento correto de rolagem dos widgets laterais - rolam atÃ© o fim do conteÃºdo e depois ficam fixos, evitando Ã¡reas vazias e poluiÃ§Ã£o visual.
 
 ## 1.9.468
-- **Feed (Header)**: Adicionado cargo/função do usuário e badge na mesma linha do nome - layout mais informativo estilo Instagram/Facebook.
+- **Feed (Header)**: Adicionado cargo/funÃ§Ã£o do usuÃ¡rio e badge na mesma linha do nome - layout mais informativo estilo Instagram/Facebook.
 
 ## 1.9.467
-- **Feed (Badges)**: Badge de administrador agora mais destacado com gradiente vibrante (amber → orange → red), sombra forte e ring ao redor para diferenciar dos outros badges.
+- **Feed (Badges)**: Badge de administrador agora mais destacado com gradiente vibrante (amber â†’ orange â†’ red), sombra forte e ring ao redor para diferenciar dos outros badges.
 
 ## 1.9.466
-- **Feed (Posts)**: Redesign completo dos posts estilo Instagram/Facebook - header limpo com avatar, nome e tempo; contadores de likes/comentários separados; botões de ação centralizados e maiores.
+- **Feed (Posts)**: Redesign completo dos posts estilo Instagram/Facebook - header limpo com avatar, nome e tempo; contadores de likes/comentÃ¡rios separados; botÃµes de aÃ§Ã£o centralizados e maiores.
 
 ## 1.9.465
 - **Feed (Artigo)**: Redesenhado card de artigo com visual minimalista e elegante - removido gradiente, design limpo estilo Medium/LinkedIn.
 
 ## 1.9.464
-- **Feed (Artigo)**: Layout do post de artigo institucional redesenhado com visual mais profissional - header com gradiente laranja, ícone destacado, corpo com melhor espaçamento e footer com informações.
+- **Feed (Artigo)**: Layout do post de artigo institucional redesenhado com visual mais profissional - header com gradiente laranja, Ã­cone destacado, corpo com melhor espaÃ§amento e footer com informaÃ§Ãµes.
 
 ## 1.9.463
-- **Feed (UI)**: Removido botão "Ver todos" da barra de ações - contador de comentários agora aparece no botão "Comentar".
-- **PostModal (Comentários)**: Adicionado suporte a menções (@) nos comentários do single post com dropdown de seleção de usuários.
+- **Feed (UI)**: Removido botÃ£o "Ver todos" da barra de aÃ§Ãµes - contador de comentÃ¡rios agora aparece no botÃ£o "Comentar".
+- **PostModal (ComentÃ¡rios)**: Adicionado suporte a menÃ§Ãµes (@) nos comentÃ¡rios do single post com dropdown de seleÃ§Ã£o de usuÃ¡rios.
 
 ## 1.9.462
-- **Feed (Comentários)**: Corrigido dropdown de menções (@) nos comentários inline - agora funciona igual ao composer de posts.
+- **Feed (ComentÃ¡rios)**: Corrigido dropdown de menÃ§Ãµes (@) nos comentÃ¡rios inline - agora funciona igual ao composer de posts.
 
 ## 1.9.461
-- **Feed (Single Post)**: Corrigido hover das menções (@Nome) no PostModal (agora ficam azuis/sublinhadas ao passar o mouse).
+- **Feed (Single Post)**: Corrigido hover das menÃ§Ãµes (@Nome) no PostModal (agora ficam azuis/sublinhadas ao passar o mouse).
 
 ## 1.9.460
-- **Feed (Single Post)**: Menções (@Nome) no PostModal voltaram a ter comportamento de link (hover) e navegam para o perfil.
+- **Feed (Single Post)**: MenÃ§Ãµes (@Nome) no PostModal voltaram a ter comportamento de link (hover) e navegam para o perfil.
 
 ## 1.9.459
-- **Feed (Single Post)**: Cards de preview no PostModal agora exibem as informações completas (layout igual ao Feed).
+- **Feed (Single Post)**: Cards de preview no PostModal agora exibem as informaÃ§Ãµes completas (layout igual ao Feed).
 
 ## 1.9.458
-- **Feed (Single Post)**: Ajustada cor das menções no PostModal para não deixar o conteúdo azul.
+- **Feed (Single Post)**: Ajustada cor das menÃ§Ãµes no PostModal para nÃ£o deixar o conteÃºdo azul.
 
 ## 1.9.457
 - **Feed (Single Post)**: PostModal agora exibe tags (#), cards de preview e enquetes corretamente ao abrir um post individual.
 
 ## 1.9.456
-- **Notificações (Feed)**: Clique em notificação de menção/curtida/comentário agora abre o post específico (single post) no Feed.
+- **NotificaÃ§Ãµes (Feed)**: Clique em notificaÃ§Ã£o de menÃ§Ã£o/curtida/comentÃ¡rio agora abre o post especÃ­fico (single post) no Feed.
 
 ## 1.9.455
-- **Dashboard (Permissões)**: Widgets/contadores/atalhos agora respeitam permissões do cargo (ex.: Auxiliar não vê Financeiro/Intimações/Requerimentos se não tiver acesso).
+- **Dashboard (PermissÃµes)**: Widgets/contadores/atalhos agora respeitam permissÃµes do cargo (ex.: Auxiliar nÃ£o vÃª Financeiro/IntimaÃ§Ãµes/Requerimentos se nÃ£o tiver acesso).
 
 ## 1.9.454
-- **Feed (UI/UX)**: Composer reorganizado: dropdown de visibilidade (Público/Equipe/Privado) movido para a linha principal de ações e botão "Publicar" alinhado à direita.
+- **Feed (UI/UX)**: Composer reorganizado: dropdown de visibilidade (PÃºblico/Equipe/Privado) movido para a linha principal de aÃ§Ãµes e botÃ£o "Publicar" alinhado Ã  direita.
 
 ## 1.9.453
 - **Feed (Fix)**: Corrigido erro ao postar foto com `file_type` undefined (adicionado optional chaining).
 
 ## 1.9.452
-- **Feed (UI/UX)**: Corrigido z-index do emoji picker e dropdown de visibilidade para aparecerem acima do menu de navegação.
+- **Feed (UI/UX)**: Corrigido z-index do emoji picker e dropdown de visibilidade para aparecerem acima do menu de navegaÃ§Ã£o.
 
 ## 1.9.451
-- **Feed (UI/UX)**: Botão "Publicar" movido para a linha dos ícones de ações, otimizando espaço e deixando o layout mais compacto.
+- **Feed (UI/UX)**: BotÃ£o "Publicar" movido para a linha dos Ã­cones de aÃ§Ãµes, otimizando espaÃ§o e deixando o layout mais compacto.
 
 ## 1.9.450
-- **Feed (UI/UX)**: Botão "Agendar" movido para a linha dos ícones de ações, economizando espaço e deixando a barra mais compacta.
+- **Feed (UI/UX)**: BotÃ£o "Agendar" movido para a linha dos Ã­cones de aÃ§Ãµes, economizando espaÃ§o e deixando a barra mais compacta.
 
 ## 1.9.449
-- **Feed (UI/UX)**: Botões de visibilidade (Público/Equipe/Privado) unificados em único botão com dropdown para seleção.
+- **Feed (UI/UX)**: BotÃµes de visibilidade (PÃºblico/Equipe/Privado) unificados em Ãºnico botÃ£o com dropdown para seleÃ§Ã£o.
 
 ## 1.9.448
-- **Feed (UI/UX)**: Barra do composer simplificada (ações/visibilidade/agendar) para um visual mais minimalista: botões compactos (ícone), cores neutras e menos ruído visual.
+- **Feed (UI/UX)**: Barra do composer simplificada (aÃ§Ãµes/visibilidade/agendar) para um visual mais minimalista: botÃµes compactos (Ã­cone), cores neutras e menos ruÃ­do visual.
 
 ## 1.9.447
-- **Feed (Performance)**: Carregamento verdadeiramente em segundo plano: `loadDashboardData` e `loadFeedPosts` agora usam `requestIdleCallback`/`setTimeout` para renderizar layout primeiro; enquetes e preferências também carregam em background.
+- **Feed (Performance)**: Carregamento verdadeiramente em segundo plano: `loadDashboardData` e `loadFeedPosts` agora usam `requestIdleCallback`/`setTimeout` para renderizar layout primeiro; enquetes e preferÃªncias tambÃ©m carregam em background.
 
 ## 1.9.446
 - **Feed (UI)**: Removida mensagem/banner de "atualizando em segundo plano".
 
 ## 1.9.445
-- **Feed (Performance)**: Carregamento não bloqueante (sem tela inteira de loading), banner discreto de atualização em background e carregamento de perfis sob demanda (menções/audiência) para reduzir tempo inicial.
+- **Feed (Performance)**: Carregamento nÃ£o bloqueante (sem tela inteira de loading), banner discreto de atualizaÃ§Ã£o em background e carregamento de perfis sob demanda (menÃ§Ãµes/audiÃªncia) para reduzir tempo inicial.
 
 ## 1.9.444
-- **Feed (UI/UX)**: Avatar/foto do usuário agora usa renderização via `<img>` (mesmo padrão do Nav) para carregamento mais rápido e consistente.
+- **Feed (UI/UX)**: Avatar/foto do usuÃ¡rio agora usa renderizaÃ§Ã£o via `<img>` (mesmo padrÃ£o do Nav) para carregamento mais rÃ¡pido e consistente.
 
 ## 1.9.443
-- **Intimações (UI/UX)**: Pacote de melhorias: indicadores visuais de vinculação (Vinc/Sem Vínc), filtros por urgência e estado de vínculo, busca por nº de processo normalizado (ignora `.`/`-), ações em lote (vincular em lote, exportar selecionadas, marcar todas como lidas).
+- **IntimaÃ§Ãµes (UI/UX)**: Pacote de melhorias: indicadores visuais de vinculaÃ§Ã£o (Vinc/Sem VÃ­nc), filtros por urgÃªncia e estado de vÃ­nculo, busca por nÂº de processo normalizado (ignora `.`/`-), aÃ§Ãµes em lote (vincular em lote, exportar selecionadas, marcar todas como lidas).
 
 ## 1.9.442
-- **Intimações (DJEN)**: Vinculação automática de intimações sem vínculo (match por número do processo ignorando `.`/`-` e por nomes das partes, incluindo fallback pelo texto da intimação).
+- **IntimaÃ§Ãµes (DJEN)**: VinculaÃ§Ã£o automÃ¡tica de intimaÃ§Ãµes sem vÃ­nculo (match por nÃºmero do processo ignorando `.`/`-` e por nomes das partes, incluindo fallback pelo texto da intimaÃ§Ã£o).
 
 ## 1.9.441
-- **Intimações (UI)**: Otimização da área de visualização: header/filtros mais compactos para maximizar espaço (~95% de view para conteúdo).
+- **IntimaÃ§Ãµes (UI)**: OtimizaÃ§Ã£o da Ã¡rea de visualizaÃ§Ã£o: header/filtros mais compactos para maximizar espaÃ§o (~95% de view para conteÃºdo).
 
 ## 1.9.440
-- **Intimações (UI)**: Na visualização agrupada por processo, o texto da intimação agora ocupa largura total no desktop (ações movidas para abaixo do texto).
+- **IntimaÃ§Ãµes (UI)**: Na visualizaÃ§Ã£o agrupada por processo, o texto da intimaÃ§Ã£o agora ocupa largura total no desktop (aÃ§Ãµes movidas para abaixo do texto).
 
 ## 1.9.439
-- **Intimações (UI)**: Refinos de design para um visual mais corporativo (seleção em azul, cards agrupados com destaque discreto e chips/labels mais neutros).
+- **IntimaÃ§Ãµes (UI)**: Refinos de design para um visual mais corporativo (seleÃ§Ã£o em azul, cards agrupados com destaque discreto e chips/labels mais neutros).
 
 ## 1.9.438
-- **Intimações (UI)**: Botões de ação ajustados para ficarem lado a lado e cards/áreas de análise com visual mais neutro e profissional (menos cores fortes).
+- **IntimaÃ§Ãµes (UI)**: BotÃµes de aÃ§Ã£o ajustados para ficarem lado a lado e cards/Ã¡reas de anÃ¡lise com visual mais neutro e profissional (menos cores fortes).
 
 ## 1.9.437
-- **Intimações (UI)**: Corrigido erro de runtime ao abrir o módulo após adicionar botões no topo (import do ícone `Settings`).
-- **Dashboard**: Removidos logs de debug no console (cache/eventos) para reduzir ruído durante o desenvolvimento.
+- **IntimaÃ§Ãµes (UI)**: Corrigido erro de runtime ao abrir o mÃ³dulo apÃ³s adicionar botÃµes no topo (import do Ã­cone `Settings`).
+- **Dashboard**: Removidos logs de debug no console (cache/eventos) para reduzir ruÃ­do durante o desenvolvimento.
 
 ## 1.9.436
-- **Intimações (UI)**: Barra superior do desktop melhorada com botões rápidos (Não lidas/Lidas/Todas e período 30/60/90), e painel "Mais filtros" para ações avançadas.
+- **IntimaÃ§Ãµes (UI)**: Barra superior do desktop melhorada com botÃµes rÃ¡pidos (NÃ£o lidas/Lidas/Todas e perÃ­odo 30/60/90), e painel "Mais filtros" para aÃ§Ãµes avanÃ§adas.
 
 ## 1.9.435
-- **Intimações (UI)**: Filtros/controles do topo agora ficam colapsados por padrão também no desktop, liberando mais espaço para visualizar as intimações.
+- **IntimaÃ§Ãµes (UI)**: Filtros/controles do topo agora ficam colapsados por padrÃ£o tambÃ©m no desktop, liberando mais espaÃ§o para visualizar as intimaÃ§Ãµes.
 
 ## 1.9.434
-- **Dashboard / Agenda**: Corrigido o filtro/ordenação e marcação de "Hoje" para compromissos com `start_at` em formato de data (ex.: `YYYY-MM-DD`) que eram interpretados em UTC e podiam sumir no fuso local.
+- **Dashboard / Agenda**: Corrigido o filtro/ordenaÃ§Ã£o e marcaÃ§Ã£o de "Hoje" para compromissos com `start_at` em formato de data (ex.: `YYYY-MM-DD`) que eram interpretados em UTC e podiam sumir no fuso local.
 
 ## 1.9.433
-- **Feed**: Correção de estrutura JSX e ajustes de build/TypeScript após remoção das ações/comentários, eliminando erro 500 no carregamento do módulo.
-- **Feed / Navegação**: Ajustado import do FeedPage para usar o casing correto (`./Feed`) e correções auxiliares de build.
+- **Feed**: CorreÃ§Ã£o de estrutura JSX e ajustes de build/TypeScript apÃ³s remoÃ§Ã£o das aÃ§Ãµes/comentÃ¡rios, eliminando erro 500 no carregamento do mÃ³dulo.
+- **Feed / NavegaÃ§Ã£o**: Ajustado import do FeedPage para usar o casing correto (`./Feed`) e correÃ§Ãµes auxiliares de build.
 
 ## 1.9.432
-- **Feed (Evento)**: Publicação de eventos agora cria um compromisso real na Agenda e gera post com preview clicável.
-- **Feed (Artigo)**: Novo modo de post institucional com formulário dedicado e renderização formatada (título/categoria/conteúdo).
+- **Feed (Evento)**: PublicaÃ§Ã£o de eventos agora cria um compromisso real na Agenda e gera post com preview clicÃ¡vel.
+- **Feed (Artigo)**: Novo modo de post institucional com formulÃ¡rio dedicado e renderizaÃ§Ã£o formatada (tÃ­tulo/categoria/conteÃºdo).
 
 ## 1.9.426
-- **Feed / Enquetes**: Widget "Última Enquete" agora busca a enquete mais recente diretamente da tabela `feed_polls` (não depende de flags no post).
-- **Feed / Enquetes**: Debug do widget ajustado para não imprimir payloads grandes (ex.: avatar base64).
-- **Feed**: Correção de violação das Rules of Hooks ao remover `useMemo` de dentro de `renderWidget` ("Conexões em Destaque").
+- **Feed / Enquetes**: Widget "Ãšltima Enquete" agora busca a enquete mais recente diretamente da tabela `feed_polls` (nÃ£o depende de flags no post).
+- **Feed / Enquetes**: Debug do widget ajustado para nÃ£o imprimir payloads grandes (ex.: avatar base64).
+- **Feed**: CorreÃ§Ã£o de violaÃ§Ã£o das Rules of Hooks ao remover `useMemo` de dentro de `renderWidget` ("ConexÃµes em Destaque").
 
 ## 1.9.431
-- **Feed (UI)**: Removidos botões "Compartilhar" e "Salvar" dos posts. Agora só mantém "Curtir" e "Comentar".
+- **Feed (UI)**: Removidos botÃµes "Compartilhar" e "Salvar" dos posts. Agora sÃ³ mantÃ©m "Curtir" e "Comentar".
 
 ## 1.9.430
-- **Feed (Enquetes)**: Corrigido renderização de enquetes nos posts individuais (modal PostModal). Agora enquetes aparecem corretamente ao abrir um post.
+- **Feed (Enquetes)**: Corrigido renderizaÃ§Ã£o de enquetes nos posts individuais (modal PostModal). Agora enquetes aparecem corretamente ao abrir um post.
 
 ## 1.9.429
-- **Feed (Layout)**: Widget "Conexões em Destaque" movido para a sidebar esquerda para equilibrar layout.
-- **Feed (Atividade)**: Widget "Atividade da Equipe" agora mostra os últimos 4 posts (em vez de 5).
+- **Feed (Layout)**: Widget "ConexÃµes em Destaque" movido para a sidebar esquerda para equilibrar layout.
+- **Feed (Atividade)**: Widget "Atividade da Equipe" agora mostra os Ãºltimos 4 posts (em vez de 5).
 
 ## 1.9.428
-- **Feed (Métricas)**: Widget "Métricas do Feed" agora mostra apenas posts, curtidas e comentários do usuário logado (rótulo "Minhas").
+- **Feed (MÃ©tricas)**: Widget "MÃ©tricas do Feed" agora mostra apenas posts, curtidas e comentÃ¡rios do usuÃ¡rio logado (rÃ³tulo "Minhas").
 
 ## 1.9.427
-- **Feed (Layout)**: Ajuste de largura para ficar consistente com os demais módulos (remoção de `max-w` internos que limitavam o conteúdo).
+- **Feed (Layout)**: Ajuste de largura para ficar consistente com os demais mÃ³dulos (remoÃ§Ã£o de `max-w` internos que limitavam o conteÃºdo).
 
 ## 1.9.407
-- **Feed Redesign**: Implementação completa do feed estilo LinkedIn/Facebook
-  - **Layout 3 colunas**: Sidebar esquerda, feed central, sidebar direita com widgets arrastáveis
-  - **Novos Widgets**: Sugestões de Pessoas, Tendências por Tags, Próximos Eventos
+- **Feed Redesign**: ImplementaÃ§Ã£o completa do feed estilo LinkedIn/Facebook
+  - **Layout 3 colunas**: Sidebar esquerda, feed central, sidebar direita com widgets arrastÃ¡veis
+  - **Novos Widgets**: SugestÃµes de Pessoas, TendÃªncias por Tags, PrÃ³ximos Eventos
   - **Social Interactions**: Reactions (Curtir/Amei/Haha), Compartilhar, Salvar posts
-  - **Skeleton Loaders**: Animações suaves de carregamento para posts
-  - **Composer Aprimorado**: Placeholder dinâmico, preview de anexos com hover effects
-  - **Visual Moderno**: Cards refinados, animações suaves, shadows gradient
-  - **Drag-and-Drop**: Widgets reorganizáveis entre sidebars
-  - **Tags Filter**: Filtrar feed por tags através do widget de tendências
+  - **Skeleton Loaders**: AnimaÃ§Ãµes suaves de carregamento para posts
+  - **Composer Aprimorado**: Placeholder dinÃ¢mico, preview de anexos com hover effects
+  - **Visual Moderno**: Cards refinados, animaÃ§Ãµes suaves, shadows gradient
+  - **Drag-and-Drop**: Widgets reorganizÃ¡veis entre sidebars
+  - **Tags Filter**: Filtrar feed por tags atravÃ©s do widget de tendÃªncias
 
 ## 1.9.406
-- **Feed**: Implementação inicial layout 3 colunas e widgets básicos
+- **Feed**: ImplementaÃ§Ã£o inicial layout 3 colunas e widgets bÃ¡sicos
 
 ## 1.9.405
-- **Feed**: Removidos os widgets do Dashboard do módulo Feed (Feed fica apenas social).
+- **Feed**: Removidos os widgets do Dashboard do mÃ³dulo Feed (Feed fica apenas social).
 
 ## 1.9.404
-- **Requerimentos (Mobile)**: Área superior (ações/abas/filtros) agora é retrátil, mantendo "Novo Requerimento" sempre visível.
+- **Requerimentos (Mobile)**: Ã�rea superior (aÃ§Ãµes/abas/filtros) agora Ã© retrÃ¡til, mantendo "Novo Requerimento" sempre visÃ­vel.
 
 ## 1.9.403
 - **Assinaturas (Mobile)**: Toolbar responsiva sem overflow.
   - Tabs com scroll horizontal
   - Busca em largura total
-  - Ações com quebra de linha
+  - AÃ§Ãµes com quebra de linha
 
 ## 1.9.402
-- **Dashboard (Mobile)**: Header reorganizado para remover a “barra preta” e melhorar a legibilidade.
-  - Nome + botão "Novo Cliente" na mesma linha sem esticar largura
+- **Dashboard (Mobile)**: Header reorganizado para remover a â€œbarra pretaâ€� e melhorar a legibilidade.
+  - Nome + botÃ£o "Novo Cliente" na mesma linha sem esticar largura
   - Avisos/alertas abaixo como chips com texto + contador (inclui Financeiro atrasado)
 
 ## 1.9.401
 - **Dashboard / Tarefas**: Ajustes de responsividade.
   - Header: alertas urgentes ao lado do "Novo Cliente" com texto + contador
-  - Estatísticas: preservado layout do desktop; grid 2x2 apenas no mobile
-  - **TasksModule**: formulário/filtros/lista responsivos no mobile
+  - EstatÃ­sticas: preservado layout do desktop; grid 2x2 apenas no mobile
+  - **TasksModule**: formulÃ¡rio/filtros/lista responsivos no mobile
 
 ## 1.9.400
 - **Dashboard**: Layout responsivo mobile-first refatorado.
-  - Header compacto: saudação + botão "Novo Cliente" (apenas ícone no mobile)
-  - Estatísticas em grid 2x2 no mobile (flex-wrap no desktop)
+  - Header compacto: saudaÃ§Ã£o + botÃ£o "Novo Cliente" (apenas Ã­cone no mobile)
+  - EstatÃ­sticas em grid 2x2 no mobile (flex-wrap no desktop)
   - Widgets com padding/gaps reduzidos no mobile
   - Itens de agenda/tarefas/prazos mais compactos
-  - Modais com backdrop escuro e botões full-width no mobile
-  - Corrigido bug do botão "Novo Cliente" mostrando "+ +"
+  - Modais com backdrop escuro e botÃµes full-width no mobile
+  - Corrigido bug do botÃ£o "Novo Cliente" mostrando "+ +"
 
 ## 1.9.399
-- **Dashboard**: Corrigido backdrop dos modais para usar bg-transparent e forçar fundo branco com !bg-white no modo claro (removido backdrop escuro).
+- **Dashboard**: Corrigido backdrop dos modais para usar bg-transparent e forÃ§ar fundo branco com !bg-white no modo claro (removido backdrop escuro).
 
 ## 1.9.398
 - **Dashboard**: Corrigido backdrop dos modais para usar bg-black/50 no modo claro (estava muito escuro com bg-slate-900/70).
 
 ## 1.9.397
-- **Dashboard**: Modais de detalhes (Compromisso/Intimação) adequados ao padrão do tema (overlay + blur, container com ring/shadow, fita laranja e header/footer padronizados).
+- **Dashboard**: Modais de detalhes (Compromisso/IntimaÃ§Ã£o) adequados ao padrÃ£o do tema (overlay + blur, container com ring/shadow, fita laranja e header/footer padronizados).
 
 ## 1.9.396
-- **Dashboard**: Emoji de mão acenando (👋) agora com animação de movimento de um lado para o outro (como acenando).
-  - Animação CSS personalizada com rotação suave (0° → 20° → -10° → 0°)
-  - Origem da transformação ajustada para ponto de rotação no pulso
-  - Duração de 1 segundo com repetição infinita
+- **Dashboard**: Emoji de mÃ£o acenando (ðŸ‘‹) agora com animaÃ§Ã£o de movimento de um lado para o outro (como acenando).
+  - AnimaÃ§Ã£o CSS personalizada com rotaÃ§Ã£o suave (0Â° â†’ 20Â° â†’ -10Â° â†’ 0Â°)
+  - Origem da transformaÃ§Ã£o ajustada para ponto de rotaÃ§Ã£o no pulso
+  - DuraÃ§Ã£o de 1 segundo com repetiÃ§Ã£o infinita
 
 ## 1.9.395
-- **Dashboard**: Emoji de mão acenando (👋) agora com animação de movimento.
+- **Dashboard**: Emoji de mÃ£o acenando (ðŸ‘‹) agora com animaÃ§Ã£o de movimento.
 
 ## 1.9.394
-- **Dashboard**: Saudação com emoji de mão acenando (👋) ao lado do nome do usuário.
+- **Dashboard**: SaudaÃ§Ã£o com emoji de mÃ£o acenando (ðŸ‘‹) ao lado do nome do usuÃ¡rio.
 
 ## 1.9.393
-- **Dashboard**: Ícone de mão acenando adicionado ao lado do nome do usuário no header.
+- **Dashboard**: Ã�cone de mÃ£o acenando adicionado ao lado do nome do usuÃ¡rio no header.
 
 ## 1.9.392
-- **Dashboard**: Widget "Intimações" melhorado - agora mostra tipo (badge), número do processo, vara/órgão, e partes (Autor/Réu).
+- **Dashboard**: Widget "IntimaÃ§Ãµes" melhorado - agora mostra tipo (badge), nÃºmero do processo, vara/Ã³rgÃ£o, e partes (Autor/RÃ©u).
 
 ## 1.9.391
-- **Dashboard**: Widgets "Intimações", "Aguardando" e "Requerimentos" redesenhados - grid de 3 colunas, layout consistente com outros widgets.
+- **Dashboard**: Widgets "IntimaÃ§Ãµes", "Aguardando" e "Requerimentos" redesenhados - grid de 3 colunas, layout consistente com outros widgets.
 
 ## 1.9.390
-- **Dashboard**: "Intimações" ajustado para mostrar 5 intimações em vez de 3.
+- **Dashboard**: "IntimaÃ§Ãµes" ajustado para mostrar 5 intimaÃ§Ãµes em vez de 3.
 
 ## 1.9.389
-- **Dashboard**: Botão "Criar Compromisso" adicionado ao estado vazio da Agenda.
+- **Dashboard**: BotÃ£o "Criar Compromisso" adicionado ao estado vazio da Agenda.
 
 ## 1.9.388
 - **Dashboard**: "Agenda" agora mostra 4 compromissos em vez de 2.
 
 ## 1.9.387
-- **Dashboard**: "Agenda" ajustada para ficar com altura mais próxima dos demais widgets (layout mais compacto).
+- **Dashboard**: "Agenda" ajustada para ficar com altura mais prÃ³xima dos demais widgets (layout mais compacto).
 
 ## 1.9.386
 - **Dashboard**: Widget "Agenda" compactado para altura igual aos outros widgets.
@@ -474,109 +482,109 @@
 - **Dashboard**: Widget "Prazos" movido para abaixo do Financeiro na coluna direita.
 
 ## 1.9.383
-- **Dashboard**: Botões de alerta no header (Prazos/Intimações) redesenhados para estilo mais clean (chip com badge) e altura consistente.
+- **Dashboard**: BotÃµes de alerta no header (Prazos/IntimaÃ§Ãµes) redesenhados para estilo mais clean (chip com badge) e altura consistente.
 
 ## 1.9.382
-- **Dashboard**: Widgets "Prazos" e "Intimações" redesenhados - layout mais limpo, espaçamento melhorado e tipografia aprimorada.
+- **Dashboard**: Widgets "Prazos" e "IntimaÃ§Ãµes" redesenhados - layout mais limpo, espaÃ§amento melhorado e tipografia aprimorada.
 
 ## 1.9.381
-- **Dashboard**: Botão "Processo" reposicionado para ficar ao lado de "Requerimento" - melhor agrupamento lógico.
+- **Dashboard**: BotÃ£o "Processo" reposicionado para ficar ao lado de "Requerimento" - melhor agrupamento lÃ³gico.
 
 ## 1.9.380
-- **Dashboard**: Botão "Pagamento" adicionado de volta - agora abre modal de novo acordo no módulo Financeiro.
+- **Dashboard**: BotÃ£o "Pagamento" adicionado de volta - agora abre modal de novo acordo no mÃ³dulo Financeiro.
 
 ## 1.9.379
-- **Dashboard**: "Ações Rápidas" limpo - removidos botões "Acordo", "Pagamento" e "Alerta" que não tinham módulos correspondentes.
+- **Dashboard**: "AÃ§Ãµes RÃ¡pidas" limpo - removidos botÃµes "Acordo", "Pagamento" e "Alerta" que nÃ£o tinham mÃ³dulos correspondentes.
 
 ## 1.9.378
-- **Dashboard**: "Ações Rápidas" ajustado - título movido para cima dos botões, liberando mais espaço para os 9 botões em 2 linhas.
+- **Dashboard**: "AÃ§Ãµes RÃ¡pidas" ajustado - tÃ­tulo movido para cima dos botÃµes, liberando mais espaÃ§o para os 9 botÃµes em 2 linhas.
 
 ## 1.9.377
-- **Dashboard**: "Ações Rápidas" reformulado para layout em 2 linhas com flex-wrap - botões menores e mais organizados.
+- **Dashboard**: "AÃ§Ãµes RÃ¡pidas" reformulado para layout em 2 linhas com flex-wrap - botÃµes menores e mais organizados.
 
 ## 1.9.376
-- **Dashboard**: "Ações Rápidas" simplificado (UI mais clean) - removidas animações/CSS injetado e botões em estilo pill com scroll horizontal.
+- **Dashboard**: "AÃ§Ãµes RÃ¡pidas" simplificado (UI mais clean) - removidas animaÃ§Ãµes/CSS injetado e botÃµes em estilo pill com scroll horizontal.
 
 ## 1.9.375
-- **Dashboard**: "Ações Rápidas" otimizado com animações suaves, efeitos hover avançados, bordas dinâmicas e scrollbar customizado invisível.
+- **Dashboard**: "AÃ§Ãµes RÃ¡pidas" otimizado com animaÃ§Ãµes suaves, efeitos hover avanÃ§ados, bordas dinÃ¢micas e scrollbar customizado invisÃ­vel.
 
 ## 1.9.374
-- **Dashboard**: "Ações Rápidas" expandido com 9 opções: Cliente, Processo, Prazo, Tarefa, Compromisso, Requerimento, Acordo, Pagamento e Alerta.
+- **Dashboard**: "AÃ§Ãµes RÃ¡pidas" expandido com 9 opÃ§Ãµes: Cliente, Processo, Prazo, Tarefa, Compromisso, Requerimento, Acordo, Pagamento e Alerta.
 
 ## 1.9.373
-- **Dashboard**: Botões de "Ações Rápidas" movidos para o lado do título - layout mais compacto e eficiente.
+- **Dashboard**: BotÃµes de "AÃ§Ãµes RÃ¡pidas" movidos para o lado do tÃ­tulo - layout mais compacto e eficiente.
 
 ## 1.9.372
-- **Dashboard**: Componente "Ações Rápidas" otimizado para layout de linha única com scroll horizontal.
+- **Dashboard**: Componente "AÃ§Ãµes RÃ¡pidas" otimizado para layout de linha Ãºnica com scroll horizontal.
 
 ## 1.9.371
-- **Dashboard**: Widget "Intimações" otimizado para layout mais compacto - padding reduzido, ícones menores e espaçamento apertado.
+- **Dashboard**: Widget "IntimaÃ§Ãµes" otimizado para layout mais compacto - padding reduzido, Ã­cones menores e espaÃ§amento apertado.
 
 ## 1.9.370
-- **Dashboard**: Widget "Ações Rápidas" movido para cima do Financeiro e otimizado para layout de linha única.
+- **Dashboard**: Widget "AÃ§Ãµes RÃ¡pidas" movido para cima do Financeiro e otimizado para layout de linha Ãºnica.
 
 ## 1.9.369
-- **Dashboard**: Botões de alerta redesenhados - agora maiores com gradientes, ícones em containers, sombras e tipografia aprimorada.
+- **Dashboard**: BotÃµes de alerta redesenhados - agora maiores com gradientes, Ã­cones em containers, sombras e tipografia aprimorada.
 
 ## 1.9.368
-- **Dashboard**: Botões de alerta movidos para o header ao lado do botão "Novo Cliente" - layout mais compacto e acessível.
+- **Dashboard**: BotÃµes de alerta movidos para o header ao lado do botÃ£o "Novo Cliente" - layout mais compacto e acessÃ­vel.
 
 ## 1.9.367
-- **Dashboard**: Header aprimorado com UI/UX moderna - estatísticas clicáveis com ícones, efeitos hover, gradientes e layout centralizado responsivo.
+- **Dashboard**: Header aprimorado com UI/UX moderna - estatÃ­sticas clicÃ¡veis com Ã­cones, efeitos hover, gradientes e layout centralizado responsivo.
 
 ## 1.9.366
-- **Dashboard**: Otimizado layout do header - estatísticas compactas agora ficam na mesma linha da saudação, removendo cards grandes duplicados.
+- **Dashboard**: Otimizado layout do header - estatÃ­sticas compactas agora ficam na mesma linha da saudaÃ§Ã£o, removendo cards grandes duplicados.
 
 ## 1.9.365
-- **Dashboard**: Corrigida extração do primeiro nome do usuário - agora mostra apenas "Pedro" em vez do nome completo.
+- **Dashboard**: Corrigida extraÃ§Ã£o do primeiro nome do usuÃ¡rio - agora mostra apenas "Pedro" em vez do nome completo.
 
 ## 1.9.364
-- **Dashboard**: Header agora mostra apenas o primeiro nome do usuário com ícone ao lado (ex: "👤 Pedro").
+- **Dashboard**: Header agora mostra apenas o primeiro nome do usuÃ¡rio com Ã­cone ao lado (ex: "ðŸ‘¤ Pedro").
 
 ## 1.9.363
-- **Dashboard**: Header personalizado - agora mostra saudação ("Boa noite") no subtítulo e nome do usuário no título principal.
+- **Dashboard**: Header personalizado - agora mostra saudaÃ§Ã£o ("Boa noite") no subtÃ­tulo e nome do usuÃ¡rio no tÃ­tulo principal.
 
 ## 1.9.362
 - **Dashboard**: Removido widget "Processos em Andamento" (redundante).
-- **Dashboard**: Widget Intimações agora mostra resumo do processo (número + partes: polo ativo × polo passivo).
-- **Dashboard**: Widget Prazos agora exibe badge de prioridade (alta/média/normal) ou dias restantes se urgente.
+- **Dashboard**: Widget IntimaÃ§Ãµes agora mostra resumo do processo (nÃºmero + partes: polo ativo Ã— polo passivo).
+- **Dashboard**: Widget Prazos agora exibe badge de prioridade (alta/mÃ©dia/normal) ou dias restantes se urgente.
 
 ## 1.9.361
-- **Dashboard**: Coluna direita do bloco "Agenda + Financeiro" agora empilha **Financeiro** + **Ações rápidas** para equilibrar a altura com a Agenda.
+- **Dashboard**: Coluna direita do bloco "Agenda + Financeiro" agora empilha **Financeiro** + **AÃ§Ãµes rÃ¡pidas** para equilibrar a altura com a Agenda.
 
 ## 1.9.360
-- **Dashboard**: Redesign dos cards de Intimações, Processos Aguardando, Requerimentos e Em Andamento com estilo consistente.
-- **Dashboard**: Card Financeiro redesenhado - mais compacto, sem espaço vazio, altura automática (`h-fit`).
+- **Dashboard**: Redesign dos cards de IntimaÃ§Ãµes, Processos Aguardando, Requerimentos e Em Andamento com estilo consistente.
+- **Dashboard**: Card Financeiro redesenhado - mais compacto, sem espaÃ§o vazio, altura automÃ¡tica (`h-fit`).
 
 ## 1.9.359
-- **Dashboard**: Redesign completo com estética moderna e hierarquia visual melhorada.
-  - Header minimalista com saudação e botão de ação
-  - Cards de estatísticas com design limpo e interativo (hover effects)
+- **Dashboard**: Redesign completo com estÃ©tica moderna e hierarquia visual melhorada.
+  - Header minimalista com saudaÃ§Ã£o e botÃ£o de aÃ§Ã£o
+  - Cards de estatÃ­sticas com design limpo e interativo (hover effects)
   - Alertas urgentes em formato de badges discretos
-  - Seções de Agenda, Prazos e Tarefas com layout consistente
-  - Melhor espaçamento e tipografia
+  - SeÃ§Ãµes de Agenda, Prazos e Tarefas com layout consistente
+  - Melhor espaÃ§amento e tipografia
 
 ## 1.9.358
-- **Dashboard**: Corrigido erro `QuotaExceededError` quando localStorage está cheio - agora limpa caches antigos automaticamente.
+- **Dashboard**: Corrigido erro `QuotaExceededError` quando localStorage estÃ¡ cheio - agora limpa caches antigos automaticamente.
 
 ## 1.9.357
-- **Dashboard**: Restaurado dashboard antigo como tela inicial (visão geral do escritório com métricas e estatísticas).
-- **Feed**: Movido para módulo separado, acessível via menu de navegação.
+- **Dashboard**: Restaurado dashboard antigo como tela inicial (visÃ£o geral do escritÃ³rio com mÃ©tricas e estatÃ­sticas).
+- **Feed**: Movido para mÃ³dulo separado, acessÃ­vel via menu de navegaÃ§Ã£o.
 
 ## 1.9.356
-- **Editor de Petições**: Removido SpellChecker do Syncfusion (requer backend dedicado). Use o corretor ortográfico nativo do navegador (Chrome/Edge/Firefox já possuem correção pt-BR integrada).
+- **Editor de PetiÃ§Ãµes**: Removido SpellChecker do Syncfusion (requer backend dedicado). Use o corretor ortogrÃ¡fico nativo do navegador (Chrome/Edge/Firefox jÃ¡ possuem correÃ§Ã£o pt-BR integrada).
 
 ## 1.9.355
-- **Editor de Petições**: Corrigido erro "Inject SpellCheck module" - módulo SpellChecker agora é injetado corretamente no DocumentEditorContainerComponent.
+- **Editor de PetiÃ§Ãµes**: Corrigido erro "Inject SpellCheck module" - mÃ³dulo SpellChecker agora Ã© injetado corretamente no DocumentEditorContainerComponent.
 
 ## 1.9.354
-- **Editor de Petições**: Ativado corretor ortográfico com sugestões (pt-BR) no Syncfusion, com toggle "Revisão" para ligar/desligar.
+- **Editor de PetiÃ§Ãµes**: Ativado corretor ortogrÃ¡fico com sugestÃµes (pt-BR) no Syncfusion, com toggle "RevisÃ£o" para ligar/desligar.
 
 ## 1.9.353
 - **Feed**: UI/UX dos cards de preview melhorado (visual clean, sem gradientes fortes, melhor hierarquia e legibilidade), mantendo o comportamento de abrir o modal de detalhes.
 
 ## 1.9.352
-- **Feed**: Cards de preview agora abrem o modal de detalhes do registro (via `entityId`/`mode: details`) em vez de levar para a lista geral do módulo. Agenda e Financeiro agora suportam deep-link por ID.
+- **Feed**: Cards de preview agora abrem o modal de detalhes do registro (via `entityId`/`mode: details`) em vez de levar para a lista geral do mÃ³dulo. Agenda e Financeiro agora suportam deep-link por ID.
 
 ## 1.9.351
 - **Feed**: Redesign completo com visual limpo e profissional. Avatar fallback usa cor neutra (slate). Cards de preview com bordas sutis e fundo branco/slate (sem gradientes saturados). Tags com cores mais discretas.
@@ -585,540 +593,540 @@
 - **Feed**: Avatar agora usa a mesma origem do Nav/Perfil (prioriza `profiles.avatar_url` com fallback via `user_metadata`), evitando foto vazia.
 
 ## 1.9.349
-- **Intimações (Mobile)**: Seção expandida melhorada (Análise IA + ações) com layout mais limpo, remoção de botões duplicados e ações organizadas em grid.
+- **IntimaÃ§Ãµes (Mobile)**: SeÃ§Ã£o expandida melhorada (AnÃ¡lise IA + aÃ§Ãµes) com layout mais limpo, remoÃ§Ã£o de botÃµes duplicados e aÃ§Ãµes organizadas em grid.
 
 ## 1.9.348
-- **Intimações (Mobile)**: Painel de filtros e ações agora é expansível/retrátil no mobile (busca fica sempre visível; selects e botões ficam recolhíveis para economizar espaço).
+- **IntimaÃ§Ãµes (Mobile)**: Painel de filtros e aÃ§Ãµes agora Ã© expansÃ­vel/retrÃ¡til no mobile (busca fica sempre visÃ­vel; selects e botÃµes ficam recolhÃ­veis para economizar espaÃ§o).
 
 ## 1.9.347
-- **Intimações (Mobile)**: Na lista agrupada por processo, os botões de ação agora quebram para baixo no mobile quando a intimação está expandida, evitando que o texto fique espremido e quebre palavra por palavra.
+- **IntimaÃ§Ãµes (Mobile)**: Na lista agrupada por processo, os botÃµes de aÃ§Ã£o agora quebram para baixo no mobile quando a intimaÃ§Ã£o estÃ¡ expandida, evitando que o texto fique espremido e quebre palavra por palavra.
 
 ## 1.9.346
-- **Intimações (Mobile)**: Ajustado layout responsivo do módulo de Intimações DJEN para evitar overflow em telas pequenas. Busca agora ocupa linha própria; filtros e botões em grid responsivo (2 colunas no mobile, flex no desktop). Dropdowns (Limpar/Exportar/Configurações) agora abrem em largura total no mobile para não cortar conteúdo. Estado vazio compactado com ícones e textos menores. Botões com textos abreviados no mobile (Filtros/Limpar/Exportar/Configurações).
+- **IntimaÃ§Ãµes (Mobile)**: Ajustado layout responsivo do mÃ³dulo de IntimaÃ§Ãµes DJEN para evitar overflow em telas pequenas. Busca agora ocupa linha prÃ³pria; filtros e botÃµes em grid responsivo (2 colunas no mobile, flex no desktop). Dropdowns (Limpar/Exportar/ConfiguraÃ§Ãµes) agora abrem em largura total no mobile para nÃ£o cortar conteÃºdo. Estado vazio compactado com Ã­cones e textos menores. BotÃµes com textos abreviados no mobile (Filtros/Limpar/Exportar/ConfiguraÃ§Ãµes).
 
 ## 1.9.340
-- **Perfil (Mobile)**: Ajustado layout do perfil para telas pequenas (banner, avatar, botões e abas com scroll horizontal), evitando sobreposição com o widget flutuante.
+- **Perfil (Mobile)**: Ajustado layout do perfil para telas pequenas (banner, avatar, botÃµes e abas com scroll horizontal), evitando sobreposiÃ§Ã£o com o widget flutuante.
 
 ## 1.9.343
-- **Perfil (Mobile)**: Sidebar "Contato Profissional" agora fica oculto no mobile quando as abas estão fechadas; aparece apenas ao expandir ou em perfis de outros usuários.
+- **Perfil (Mobile)**: Sidebar "Contato Profissional" agora fica oculto no mobile quando as abas estÃ£o fechadas; aparece apenas ao expandir ou em perfis de outros usuÃ¡rios.
 
 ## 1.9.344
-- **Perfil (Mobile)**: "Contato Profissional" foi movido para dentro do painel expandível (mesmo botão de ver Feed/Atividade/Sobre), e a sidebar fica apenas no desktop.
+- **Perfil (Mobile)**: "Contato Profissional" foi movido para dentro do painel expandÃ­vel (mesmo botÃ£o de ver Feed/Atividade/Sobre), e a sidebar fica apenas no desktop.
 
 ## 1.9.345
-- **Perfil (Mobile)**: Barra de ações dos posts (Curtir/Comentar/contagens) ajustada para ficar em uma única linha no mobile.
+- **Perfil (Mobile)**: Barra de aÃ§Ãµes dos posts (Curtir/Comentar/contagens) ajustada para ficar em uma Ãºnica linha no mobile.
 
 ## 1.9.342
-- **Perfil (Mobile)**: Abas Feed/Atividade/Sobre agora ficam ocultas por padrão no mobile; aparecem apenas ao clicar em "Ver Feed, Atividade e Sobre".
+- **Perfil (Mobile)**: Abas Feed/Atividade/Sobre agora ficam ocultas por padrÃ£o no mobile; aparecem apenas ao clicar em "Ver Feed, Atividade e Sobre".
 
 ## 1.9.341
-- **Chat (Mobile)**: Botão flutuante de Mensagens agora fica compacto no mobile (apenas ícone + badge), evitando cobrir conteúdo das páginas.
+- **Chat (Mobile)**: BotÃ£o flutuante de Mensagens agora fica compacto no mobile (apenas Ã­cone + badge), evitando cobrir conteÃºdo das pÃ¡ginas.
 
 ## 1.9.325
-- **Feed (Agenda Jurídica)**: Widget agora exibe a data (dd/mm) nos compromissos.
+- **Feed (Agenda JurÃ­dica)**: Widget agora exibe a data (dd/mm) nos compromissos.
 
 ## 1.9.326
-- **Feed (Agenda Jurídica)**: Compromissos de hoje agora aparecem com destaque de cor no badge.
+- **Feed (Agenda JurÃ­dica)**: Compromissos de hoje agora aparecem com destaque de cor no badge.
 
 ## 1.9.338
-- **Feed (Menções)**: Corrigido bug onde texto após o nome mencionado ficava azul; agora apenas o nome exato do perfil é destacado e notificações são enviadas corretamente.
+- **Feed (MenÃ§Ãµes)**: Corrigido bug onde texto apÃ³s o nome mencionado ficava azul; agora apenas o nome exato do perfil Ã© destacado e notificaÃ§Ãµes sÃ£o enviadas corretamente.
 
 ## 1.9.337
-- **Feed (Composer)**: Corrigido bug de inserção de menções e tags que descartava texto digitado após a query.
+- **Feed (Composer)**: Corrigido bug de inserÃ§Ã£o de menÃ§Ãµes e tags que descartava texto digitado apÃ³s a query.
 
 ## 1.9.336
 - **Feed (Mobile)**: Barra de indicadores e filtros de tags escondidos no mobile; corrigido nome do autor bugado/cortado nos posts.
 
 ## 1.9.335
-- **Feed (UI)**: Removidos ajustes específicos de mobile na barra de indicadores e nos filtros (voltando layout/tamanhos padrão).
+- **Feed (UI)**: Removidos ajustes especÃ­ficos de mobile na barra de indicadores e nos filtros (voltando layout/tamanhos padrÃ£o).
 
 ## 1.9.334
-- **Feed (Mobile)**: Botões de visibilidade (Público/Equipe/Privado) e agendamento (relógio) reposicionados para a barra de ações ao lado do botão "+".
+- **Feed (Mobile)**: BotÃµes de visibilidade (PÃºblico/Equipe/Privado) e agendamento (relÃ³gio) reposicionados para a barra de aÃ§Ãµes ao lado do botÃ£o "+".
 
 ## 1.9.333
-- **Feed (Mobile)**: Barra de ações do composer organizada e expansível no mobile; filtro "Todas Atualizações" removido.
+- **Feed (Mobile)**: Barra de aÃ§Ãµes do composer organizada e expansÃ­vel no mobile; filtro "Todas AtualizaÃ§Ãµes" removido.
 
 ## 1.9.332
-- **Feed (Mobile)**: Visibilidade (Público/Equipe/Privado) unificada em um único botão no mobile e botão Agendar exibindo apenas o ícone.
+- **Feed (Mobile)**: Visibilidade (PÃºblico/Equipe/Privado) unificada em um Ãºnico botÃ£o no mobile e botÃ£o Agendar exibindo apenas o Ã­cone.
 
 ## 1.9.331
 - **Feed (Responsivo)**: Indicadores mais compactos no mobile (faixa horizontal) e controles de visibilidade/agendar em uma linha.
 
 ## 1.9.330
-- **Feed (Responsivo)**: Barra de indicadores ajustada para encaixar no mobile (grid) e `scrollbar-hide` reforçado para evitar scrollbar visível.
+- **Feed (Responsivo)**: Barra de indicadores ajustada para encaixar no mobile (grid) e `scrollbar-hide` reforÃ§ado para evitar scrollbar visÃ­vel.
 
 ## 1.9.329
-- **Feed (Responsivo)**: Filtros do feed compactados no mobile (tamanho de botões/ícones e espaçamentos).
+- **Feed (Responsivo)**: Filtros do feed compactados no mobile (tamanho de botÃµes/Ã­cones e espaÃ§amentos).
 
 ## 1.9.328
 - **Feed (Responsivo)**: Barra de indicadores e controles do composer ajustados para melhor encaixe no mobile (scroll e layout sem overflow).
 
 ## 1.9.327
-- **Feed (Responsivo)**: Ajustes de layout para melhorar visualização em mobile/tablet (espaçamentos, alinhamento e prevenção de overflow).
+- **Feed (Responsivo)**: Ajustes de layout para melhorar visualizaÃ§Ã£o em mobile/tablet (espaÃ§amentos, alinhamento e prevenÃ§Ã£o de overflow).
 
 ## 1.9.324
 - **Feed Social (Admin)**: Administradores agora podem remover permanentemente posts banidos.
-- **Feed Social (Moderação)**: Opção "Remover Post" aparece apenas para posts banidos e apenas para administradores.
-- **Feed Social (Segurança)**: Confirmação explícita antes de remover post banido permanentemente.
+- **Feed Social (ModeraÃ§Ã£o)**: OpÃ§Ã£o "Remover Post" aparece apenas para posts banidos e apenas para administradores.
+- **Feed Social (SeguranÃ§a)**: ConfirmaÃ§Ã£o explÃ­cita antes de remover post banido permanentemente.
 
 ## 1.9.323
-- **Feed Social (Banimento)**: Posts banidos não podem mais ser editados ou excluídos pelo autor.
-- **Feed Social (Segurança)**: Restrição de ações em posts banidos para preservar o registro de moderação.
+- **Feed Social (Banimento)**: Posts banidos nÃ£o podem mais ser editados ou excluÃ­dos pelo autor.
+- **Feed Social (SeguranÃ§a)**: RestriÃ§Ã£o de aÃ§Ãµes em posts banidos para preservar o registro de moderaÃ§Ã£o.
 
 ## 1.9.322
-- **Feed Social (Banimento)**: Posts banidos agora ocultam completamente todo o conteúdo (texto, enquetes, imagens e previews de dados).
-- **Feed Social (Modal)**: Modal de detalhes do post também exibe mensagem de conteúdo removido para posts banidos.
-- **Feed Social (UI)**: Design melhorado da mensagem de post banido com ícone e informações do administrador.
+- **Feed Social (Banimento)**: Posts banidos agora ocultam completamente todo o conteÃºdo (texto, enquetes, imagens e previews de dados).
+- **Feed Social (Modal)**: Modal de detalhes do post tambÃ©m exibe mensagem de conteÃºdo removido para posts banidos.
+- **Feed Social (UI)**: Design melhorado da mensagem de post banido com Ã­cone e informaÃ§Ãµes do administrador.
 
 ## 1.9.321
-- **Feed Social (Correção)**: Corrigida política RLS que impedia administradores de banir posts de outros usuários.
+- **Feed Social (CorreÃ§Ã£o)**: Corrigida polÃ­tica RLS que impedia administradores de banir posts de outros usuÃ¡rios.
 - **Feed Social (UI/UX)**: Melhorias visuais no design do feed e criador de posts.
 
 ## 1.9.320
 - **Feed Social (UI/UX)**: Design premium dos filtros com gradientes e sombras.
-- **Feed Social (UI/UX)**: Cards de posts com sombras suaves e transições elegantes.
+- **Feed Social (UI/UX)**: Cards de posts com sombras suaves e transiÃ§Ãµes elegantes.
 - **Feed Social (UI/UX)**: Header do post redesenhado com avatar maior e layout mais organizado.
-- **Feed Social (UI/UX)**: Botões de curtir/comentar com estados visuais melhorados.
-- **Feed Social (UI/UX)**: Seção de comentários com design mais moderno e espaçamento adequado.
-- **Feed Social (UI/UX)**: Ícones de reação com gradientes coloridos.
+- **Feed Social (UI/UX)**: BotÃµes de curtir/comentar com estados visuais melhorados.
+- **Feed Social (UI/UX)**: SeÃ§Ã£o de comentÃ¡rios com design mais moderno e espaÃ§amento adequado.
+- **Feed Social (UI/UX)**: Ã�cones de reaÃ§Ã£o com gradientes coloridos.
 
 ## 1.9.319
-- **Feed Social (Post Modal)**: Carregamento instantâneo - usa dados do feed já carregado em vez de nova requisição.
-- **Feed Social (Post Modal)**: Comentários carregam em paralelo sem bloquear exibição do post.
+- **Feed Social (Post Modal)**: Carregamento instantÃ¢neo - usa dados do feed jÃ¡ carregado em vez de nova requisiÃ§Ã£o.
+- **Feed Social (Post Modal)**: ComentÃ¡rios carregam em paralelo sem bloquear exibiÃ§Ã£o do post.
 
 ## 1.9.318
-- **Feed Social (Banimento)**: Administradores podem banir posts de outros usuários.
+- **Feed Social (Banimento)**: Administradores podem banir posts de outros usuÃ¡rios.
 - **Feed Social (Banimento)**: Posts banidos ficam com blur e exibem "Post Banido por [nome do admin]".
 - **Feed Social (Banimento)**: Admin pode desbanir posts previamente banidos.
-- **Feed Social (Banimento)**: Menu de ações do post agora aparece para admin em todos os posts.
+- **Feed Social (Banimento)**: Menu de aÃ§Ãµes do post agora aparece para admin em todos os posts.
 
 ## 1.9.317
 - **Feed Social (Post Modal)**: Corrigido fundo preto durante carregamento do modal - agora sempre branco.
 
 ## 1.9.316
 - **Feed Social (Post Modal)**: Corrigidas cores do modal para sempre exibir fundo branco e textos escuros.
-- **Feed Social (Post Modal)**: Clique no tempo da publicação (ex: "9m", "2h") agora abre o modal do post.
-- **Feed Social (Post Modal)**: Cores dos comentários e input corrigidas para tema claro.
+- **Feed Social (Post Modal)**: Clique no tempo da publicaÃ§Ã£o (ex: "9m", "2h") agora abre o modal do post.
+- **Feed Social (Post Modal)**: Cores dos comentÃ¡rios e input corrigidas para tema claro.
 
 ## 1.9.315
-- **Feed Social (Notificações)**: Evita notificação duplicada quando usuário é mencionado em comentário do próprio post.
-- **Feed Social (Notificações)**: Se o autor do post é mencionado, recebe apenas "comentou sua publicação" (não mais "mencionou você" também).
+- **Feed Social (NotificaÃ§Ãµes)**: Evita notificaÃ§Ã£o duplicada quando usuÃ¡rio Ã© mencionado em comentÃ¡rio do prÃ³prio post.
+- **Feed Social (NotificaÃ§Ãµes)**: Se o autor do post Ã© mencionado, recebe apenas "comentou sua publicaÃ§Ã£o" (nÃ£o mais "mencionou vocÃª" tambÃ©m).
 
 ## 1.9.314
-- **Feed Social (Post Modal)**: Novo modal de visualização de post individual estilo Facebook.
-- **Feed Social (Post Modal)**: Ao clicar em notificação de menção/curtida/comentário, abre o post em modal dedicado.
-- **Feed Social (Post Modal)**: Botão "Voltar ao Feed" para retornar à visualização completa.
-- **Feed Social (Post Modal)**: Exibe autor, conteúdo, imagens, curtidas, comentários e permite interagir.
-- **Feed Social (Post Modal)**: Menções clicáveis que levam ao perfil do usuário.
+- **Feed Social (Post Modal)**: Novo modal de visualizaÃ§Ã£o de post individual estilo Facebook.
+- **Feed Social (Post Modal)**: Ao clicar em notificaÃ§Ã£o de menÃ§Ã£o/curtida/comentÃ¡rio, abre o post em modal dedicado.
+- **Feed Social (Post Modal)**: BotÃ£o "Voltar ao Feed" para retornar Ã  visualizaÃ§Ã£o completa.
+- **Feed Social (Post Modal)**: Exibe autor, conteÃºdo, imagens, curtidas, comentÃ¡rios e permite interagir.
+- **Feed Social (Post Modal)**: MenÃ§Ãµes clicÃ¡veis que levam ao perfil do usuÃ¡rio.
 
 ## 1.9.313
-- **Feed Social (Menções)**: Corrigido clique em nome mencionado para navegar ao perfil do usuário.
-- **Feed Social (Menções)**: Melhorada busca flexível de perfis (comparação parcial de nomes).
-- **Feed Social (Menções)**: Adicionados logs de debug para diagnóstico de notificações.
+- **Feed Social (MenÃ§Ãµes)**: Corrigido clique em nome mencionado para navegar ao perfil do usuÃ¡rio.
+- **Feed Social (MenÃ§Ãµes)**: Melhorada busca flexÃ­vel de perfis (comparaÃ§Ã£o parcial de nomes).
+- **Feed Social (MenÃ§Ãµes)**: Adicionados logs de debug para diagnÃ³stico de notificaÃ§Ãµes.
 
 ## 1.9.312
-- **Feed Social (Menções)**: Nomes mencionados com @ agora ficam azuis e clicáveis (levam ao perfil do usuário).
-- **Feed Social (Menções)**: Usuários mencionados em comentários agora recebem notificação corretamente.
-- **Feed Social (Menções)**: Corrigida renderização de menções em todos os componentes (Dashboard, UserProfilePage, FeedWidget).
+- **Feed Social (MenÃ§Ãµes)**: Nomes mencionados com @ agora ficam azuis e clicÃ¡veis (levam ao perfil do usuÃ¡rio).
+- **Feed Social (MenÃ§Ãµes)**: UsuÃ¡rios mencionados em comentÃ¡rios agora recebem notificaÃ§Ã£o corretamente.
+- **Feed Social (MenÃ§Ãµes)**: Corrigida renderizaÃ§Ã£o de menÃ§Ãµes em todos os componentes (Dashboard, UserProfilePage, FeedWidget).
 
 ## 1.9.311
-- **Feed Social (Comentários)**: Dropdown de menções (@) agora aparece corretamente ao digitar @.
-- **Feed Social (Comentários)**: Usuários mencionados com @ agora recebem notificação.
+- **Feed Social (ComentÃ¡rios)**: Dropdown de menÃ§Ãµes (@) agora aparece corretamente ao digitar @.
+- **Feed Social (ComentÃ¡rios)**: UsuÃ¡rios mencionados com @ agora recebem notificaÃ§Ã£o.
 
 ## 1.9.310
-- **Feed Social (Comentários)**: Dropdown de menções (@) agora aparece abaixo do input, não mais escondido/cortado.
+- **Feed Social (ComentÃ¡rios)**: Dropdown de menÃ§Ãµes (@) agora aparece abaixo do input, nÃ£o mais escondido/cortado.
 
 ## 1.9.309
-- **Feed Social (Comentários)**: Clique em "X comentários" agora expande/mostra os comentários abaixo do post.
+- **Feed Social (ComentÃ¡rios)**: Clique em "X comentÃ¡rios" agora expande/mostra os comentÃ¡rios abaixo do post.
 
 ## 1.9.308
-- **Feed Social (Enquetes)**: Exibe quem votou (modal), tempo de expiração corrigido (sem "Agora") e auto-encerramento quando todos os participantes votarem.
-- **Feed Social (Comentários)**: Dropdown de menções (@) não fica mais escondido/cortado.
+- **Feed Social (Enquetes)**: Exibe quem votou (modal), tempo de expiraÃ§Ã£o corrigido (sem "Agora") e auto-encerramento quando todos os participantes votarem.
+- **Feed Social (ComentÃ¡rios)**: Dropdown de menÃ§Ãµes (@) nÃ£o fica mais escondido/cortado.
 
 ## 1.9.307
-- **Feed Social**: Após publicar uma enquete, o criador agora fecha automaticamente, limpa os campos e exibe confirmação. Botão Publicar só habilita com enquete válida.
+- **Feed Social**: ApÃ³s publicar uma enquete, o criador agora fecha automaticamente, limpa os campos e exibe confirmaÃ§Ã£o. BotÃ£o Publicar sÃ³ habilita com enquete vÃ¡lida.
 
 ## 1.9.306
-- **Feed Social**: Avatar do usuário no composer/comentários agora prioriza foto real do perfil e faz fallback para a foto do login (evita ícone genérico).
+- **Feed Social**: Avatar do usuÃ¡rio no composer/comentÃ¡rios agora prioriza foto real do perfil e faz fallback para a foto do login (evita Ã­cone genÃ©rico).
 
 ## 1.9.305
-- **Feed Social**: Adicionada funcionalidade de menções (@) nos comentários dos posts.
+- **Feed Social**: Adicionada funcionalidade de menÃ§Ãµes (@) nos comentÃ¡rios dos posts.
 
 ## 1.9.304
-- **Dashboard**: Ajustado visual do card "Aguardando Confecção" para manter consistência com os demais widgets.
+- **Dashboard**: Ajustado visual do card "Aguardando ConfecÃ§Ã£o" para manter consistÃªncia com os demais widgets.
 
 ## 1.9.303
-- **Dashboard**: Card "Aguardando Confecção" redesenhado com visual premium: header com gradiente, cards internos com sombras e hover effects, ícones com gradiente.
+- **Dashboard**: Card "Aguardando ConfecÃ§Ã£o" redesenhado com visual premium: header com gradiente, cards internos com sombras e hover effects, Ã­cones com gradiente.
 
 ## 1.9.302
-- **Feed Social**: Modal de editar post agora inclui opções de visibilidade (Público/Equipe/Privado) e seleção de destinatários.
+- **Feed Social**: Modal de editar post agora inclui opÃ§Ãµes de visibilidade (PÃºblico/Equipe/Privado) e seleÃ§Ã£o de destinatÃ¡rios.
 
 ## 1.9.301
-- **Feed Social**: Posts privados não notificam mais mencionados que não estão nos destinatários.
-- **Feed Social**: Corrigida RLS para que posts privados/equipe só apareçam para destinatários selecionados (não mais para mencionados).
+- **Feed Social**: Posts privados nÃ£o notificam mais mencionados que nÃ£o estÃ£o nos destinatÃ¡rios.
+- **Feed Social**: Corrigida RLS para que posts privados/equipe sÃ³ apareÃ§am para destinatÃ¡rios selecionados (nÃ£o mais para mencionados).
 
 ## 1.9.300
-- **Feed Social**: Corrigido bug onde menção (@) e tag (#) eram inseridas no final do texto em vez da posição do cursor.
+- **Feed Social**: Corrigido bug onde menÃ§Ã£o (@) e tag (#) eram inseridas no final do texto em vez da posiÃ§Ã£o do cursor.
 - **Financeiro**: Acordos encerrados agora mostram corretamente "ENCERRADO" em vez de "A SALDAR" ou "PARCIAL".
 
 ## 1.9.299
-- **Feed Social**: Visibilidade "Privado" e "Equipe" agora exigem seleção de destinatários (pessoas específicas e/ou departamentos via Cargo). Controle por `allowed_user_ids` e `allowed_roles`.
+- **Feed Social**: Visibilidade "Privado" e "Equipe" agora exigem seleÃ§Ã£o de destinatÃ¡rios (pessoas especÃ­ficas e/ou departamentos via Cargo). Controle por `allowed_user_ids` e `allowed_roles`.
 
 ## 1.9.298
 - **Feed Social**: UI do composer no Perfil atualizada com visibilidade em tabs e agendamento.
 
 ## 1.9.297
-- **Feed Social**: UI/UX do composer reorganizada em 2 linhas. Visibilidade em formato de tabs (Público/Equipe/Privado). Referências de entidades (clientes, processos, etc.) renderizadas com cores e clicáveis.
+- **Feed Social**: UI/UX do composer reorganizada em 2 linhas. Visibilidade em formato de tabs (PÃºblico/Equipe/Privado). ReferÃªncias de entidades (clientes, processos, etc.) renderizadas com cores e clicÃ¡veis.
 
 ## 1.9.296
-- **Feed Social**: Optimistic updates para likes (feedback instantâneo). Melhor fluidez na interação.
+- **Feed Social**: Optimistic updates para likes (feedback instantÃ¢neo). Melhor fluidez na interaÃ§Ã£o.
 
 ## 1.9.295
-- **Feed Social**: Comentários expandidos automaticamente quando post é aberto via menção (@).
+- **Feed Social**: ComentÃ¡rios expandidos automaticamente quando post Ã© aberto via menÃ§Ã£o (@).
 
 ## 1.9.294
-- **Feed Social**: Adicionada visibilidade de posts (público/privado/equipe) e agendamento de publicações.
+- **Feed Social**: Adicionada visibilidade de posts (pÃºblico/privado/equipe) e agendamento de publicaÃ§Ãµes.
 
 ## 1.9.293
-- **Performance**: Corrigido loop/recarregamento que podia manter "Carregando publicações..." indefinidamente no Feed.
+- **Performance**: Corrigido loop/recarregamento que podia manter "Carregando publicaÃ§Ãµes..." indefinidamente no Feed.
 
 ## 1.9.292
-- **Performance**: Corrigido loading de publicações - não mostra 'Carregando...' se já tem posts do cache.
+- **Performance**: Corrigido loading de publicaÃ§Ãµes - nÃ£o mostra 'Carregando...' se jÃ¡ tem posts do cache.
 
 ## 1.9.291
-- **Performance**: Publicações do Feed carregadas do cache instantaneamente. Atualização em background sem bloquear UI. Enquetes carregadas em paralelo.
+- **Performance**: PublicaÃ§Ãµes do Feed carregadas do cache instantaneamente. AtualizaÃ§Ã£o em background sem bloquear UI. Enquetes carregadas em paralelo.
 
 ## 1.9.290
-- **Performance**: Carregamento instantâneo do Feed e módulos. Cache carregado sincronamente no início, sem loading visível. Atualização de dados em background.
+- **Performance**: Carregamento instantÃ¢neo do Feed e mÃ³dulos. Cache carregado sincronamente no inÃ­cio, sem loading visÃ­vel. AtualizaÃ§Ã£o de dados em background.
 
 ## 1.9.289
-- **Permissões**: Eventos do calendário e widget de agenda agora filtrados por permissão do módulo de origem (ex: pagamentos só aparecem se tiver acesso ao financeiro, audiências só se tiver acesso a processos).
+- **PermissÃµes**: Eventos do calendÃ¡rio e widget de agenda agora filtrados por permissÃ£o do mÃ³dulo de origem (ex: pagamentos sÃ³ aparecem se tiver acesso ao financeiro, audiÃªncias sÃ³ se tiver acesso a processos).
 
 ## 1.9.288
-- **Performance**: Corrigida lentidão crítica (30s+) no carregamento de páginas. Funções de permissão agora memoizadas com useCallback/useMemo e guard de permissões com proteção contra loops.
+- **Performance**: Corrigida lentidÃ£o crÃ­tica (30s+) no carregamento de pÃ¡ginas. FunÃ§Ãµes de permissÃ£o agora memoizadas com useCallback/useMemo e guard de permissÃµes com proteÃ§Ã£o contra loops.
 
 ## 1.9.287
-- **Permissões**: Menu/Feed agora respeitam `can_view` (permite ver) e a navegação é bloqueada quando o usuário não possui permissão de visualização do módulo.
+- **PermissÃµes**: Menu/Feed agora respeitam `can_view` (permite ver) e a navegaÃ§Ã£o Ã© bloqueada quando o usuÃ¡rio nÃ£o possui permissÃ£o de visualizaÃ§Ã£o do mÃ³dulo.
 - **Header**: Busca de colaboradores no campo de busca. Digite @nome para buscar membros da equipe. Clique para navegar ao perfil do colaborador.
 
 ## 1.9.286
-- **Feed**: Widgets da coluna direita (incluindo "Prazos") agora aparecem também em telas menores (fora do breakpoint XL), garantindo visibilidade para Administrador.
+- **Feed**: Widgets da coluna direita (incluindo "Prazos") agora aparecem tambÃ©m em telas menores (fora do breakpoint XL), garantindo visibilidade para Administrador.
 
 ## 1.9.285
-- **Feed**: Widget "Prazos" agora mostra os 5 próximos prazos por ordem de vencimento (não apenas urgentes).
+- **Feed**: Widget "Prazos" agora mostra os 5 prÃ³ximos prazos por ordem de vencimento (nÃ£o apenas urgentes).
 
 ## 1.9.284
-- **Dashboard**: Adicionado widget "Prazos Urgentes" na sidebar direita (abaixo do Saúde Financeira). Exibe prazos com vencimento em até 3 dias, com indicação de atrasado/dias restantes.
-- **Dashboard**: Barra de indicadores substituída por métricas reais: Clientes, Processos, Requerimentos, Prazos, Tarefas (sem percentuais fictícios).
-- **App**: Renomeado "Dashboard" para "Feed" no menu lateral e no título do header.
+- **Dashboard**: Adicionado widget "Prazos Urgentes" na sidebar direita (abaixo do SaÃºde Financeira). Exibe prazos com vencimento em atÃ© 3 dias, com indicaÃ§Ã£o de atrasado/dias restantes.
+- **Dashboard**: Barra de indicadores substituÃ­da por mÃ©tricas reais: Clientes, Processos, Requerimentos, Prazos, Tarefas (sem percentuais fictÃ­cios).
+- **App**: Renomeado "Dashboard" para "Feed" no menu lateral e no tÃ­tulo do header.
 
 ## 1.9.283
-- **UserProfilePage**: Comentários agora aparecem inline abaixo do post (igual ao Dashboard), sem abrir modal. Inclui ação "Responder" que preenche o input com @nome e atualiza contador após comentar.
+- **UserProfilePage**: ComentÃ¡rios agora aparecem inline abaixo do post (igual ao Dashboard), sem abrir modal. Inclui aÃ§Ã£o "Responder" que preenche o input com @nome e atualiza contador apÃ³s comentar.
 
 ## 1.9.282
-- **NotificationBell**: Corrigido clique em notificações de feed (curtida/comentário/menção) para navegar até o post com scroll automático.
-- **Dashboard**: Imagens agora exibidas estilo Instagram - ocupam toda a largura do post, sem thumbnails pequenos. Grid para múltiplas imagens com overlay "+N" para mais de 4.
-- **Dashboard**: Adicionado botão "Responder" em comentários que preenche o input com @nome do autor.
-- **Dashboard**: Avatar e nome do comentário agora são clicáveis para navegar ao perfil.
+- **NotificationBell**: Corrigido clique em notificaÃ§Ãµes de feed (curtida/comentÃ¡rio/menÃ§Ã£o) para navegar atÃ© o post com scroll automÃ¡tico.
+- **Dashboard**: Imagens agora exibidas estilo Instagram - ocupam toda a largura do post, sem thumbnails pequenos. Grid para mÃºltiplas imagens com overlay "+N" para mais de 4.
+- **Dashboard**: Adicionado botÃ£o "Responder" em comentÃ¡rios que preenche o input com @nome do autor.
+- **Dashboard**: Avatar e nome do comentÃ¡rio agora sÃ£o clicÃ¡veis para navegar ao perfil.
 
 ## 1.9.281
-- **Dashboard**: Corrigido import de `UserPlus` que causava erro de referência.
+- **Dashboard**: Corrigido import de `UserPlus` que causava erro de referÃªncia.
 - **Migration**: Criada migration `20250110_add_feed_notification_types.sql` para adicionar tipos `feed_like` e `feed_comment` ao enum `user_notification_type` no banco de dados.
 
 ## 1.9.280
-- **Dashboard**: Notificações automáticas para o autor do post quando alguém curtir ou comentar. Tipos `feed_like` e `feed_comment` adicionados.
-- **NotificationPanel**: Categorias `feed_like` (ícone coração vermelho) e `feed_comment` (ícone balão azul) para exibição das notificações de feed.
+- **Dashboard**: NotificaÃ§Ãµes automÃ¡ticas para o autor do post quando alguÃ©m curtir ou comentar. Tipos `feed_like` e `feed_comment` adicionados.
+- **NotificationPanel**: Categorias `feed_like` (Ã­cone coraÃ§Ã£o vermelho) e `feed_comment` (Ã­cone balÃ£o azul) para exibiÃ§Ã£o das notificaÃ§Ãµes de feed.
 
 ## 1.9.279
-- **Dashboard**: Barra de estatísticas compacta horizontal (ATIVOS, HORAS, LEADS, URGENTE, RECEBIDO) substituindo os cards grandes. Ocupa menos altura e mostra mais informações.
+- **Dashboard**: Barra de estatÃ­sticas compacta horizontal (ATIVOS, HORAS, LEADS, URGENTE, RECEBIDO) substituindo os cards grandes. Ocupa menos altura e mostra mais informaÃ§Ãµes.
 
 ## 1.9.278
-- **Dashboard**: Comentários agora aparecem inline abaixo do post (estilo Facebook/Instagram) em vez de modal. Input para comentar com placeholder "Comente como [nome]...".
+- **Dashboard**: ComentÃ¡rios agora aparecem inline abaixo do post (estilo Facebook/Instagram) em vez de modal. Input para comentar com placeholder "Comente como [nome]...".
 - **Dashboard**: Galeria de imagens reduzida para estilo Instagram (menor, fundo escuro, sem header/footer grandes).
-- **Dashboard**: Agenda Jurídica agora traduz tipos de evento (payment→Pagamento, hearing→Audiência, deadline→Prazo, meeting→Reunião, task→Tarefa).
-- **Dashboard**: Avatar com novo tamanho 'xs' para comentários compactos.
+- **Dashboard**: Agenda JurÃ­dica agora traduz tipos de evento (paymentâ†’Pagamento, hearingâ†’AudiÃªncia, deadlineâ†’Prazo, meetingâ†’ReuniÃ£o, taskâ†’Tarefa).
+- **Dashboard**: Avatar com novo tamanho 'xs' para comentÃ¡rios compactos.
 
 ## 1.9.277
-- **Dashboard & UserProfilePage**: Sistema completo de comentários implementado. Modal de comentários agora exibe os comentários com conteúdo, nome do autor, data/hora e avatar. Input para criar novos comentários com Enter para enviar. Contadores de comentários atualizados em tempo real após criar comentário.
-- **NotificationPanel**: Adicionadas categorias 'feed' e 'mention' ao categoryConfig para suporte a notificações de feed/menções.
+- **Dashboard & UserProfilePage**: Sistema completo de comentÃ¡rios implementado. Modal de comentÃ¡rios agora exibe os comentÃ¡rios com conteÃºdo, nome do autor, data/hora e avatar. Input para criar novos comentÃ¡rios com Enter para enviar. Contadores de comentÃ¡rios atualizados em tempo real apÃ³s criar comentÃ¡rio.
+- **NotificationPanel**: Adicionadas categorias 'feed' e 'mention' ao categoryConfig para suporte a notificaÃ§Ãµes de feed/menÃ§Ãµes.
 
 ## 1.9.276
-- **Dashboard**: Alinhado feed 100% com UserProfilePage. Botão "Comentar" agora abre modal com lista de quem comentou (igual ao perfil). Adicionados contadores clicáveis de curtidas/comentários. Modal de interação (curtidas/comentários) implementado no Dashboard.
+- **Dashboard**: Alinhado feed 100% com UserProfilePage. BotÃ£o "Comentar" agora abre modal com lista de quem comentou (igual ao perfil). Adicionados contadores clicÃ¡veis de curtidas/comentÃ¡rios. Modal de interaÃ§Ã£o (curtidas/comentÃ¡rios) implementado no Dashboard.
 
 ## 1.9.275
-- **NotificationsModuleNew & Dashboard**: Corrigido navegação de notificação de menção/postagem. Clique na notificação agora abre o Dashboard e rola suavemente até o post correto com destaque visual (ring-2 ring-blue-500).
+- **NotificationsModuleNew & Dashboard**: Corrigido navegaÃ§Ã£o de notificaÃ§Ã£o de menÃ§Ã£o/postagem. Clique na notificaÃ§Ã£o agora abre o Dashboard e rola suavemente atÃ© o post correto com destaque visual (ring-2 ring-blue-500).
 
 ## 1.9.274
-- **UserProfilePage & Dashboard**: Implementado modal de galeria de imagens com fundo claro do tema (bg-slate-100/95) para visualização de anexos. Clique na imagem abre galeria com navegação anterior/próxima e contador de imagens.
+- **UserProfilePage & Dashboard**: Implementado modal de galeria de imagens com fundo claro do tema (bg-slate-100/95) para visualizaÃ§Ã£o de anexos. Clique na imagem abre galeria com navegaÃ§Ã£o anterior/prÃ³xima e contador de imagens.
 
 ## 1.9.273
-- **UserProfilePage**: Corrigido botão "Comentar" para abrir modal com a lista de quem comentou.
+- **UserProfilePage**: Corrigido botÃ£o "Comentar" para abrir modal com a lista de quem comentou.
 
 ## 1.9.272
-- **UserProfilePage**: Badges/tags com visual mais suave e preview Financeiro agora exibe detalhes reais do acordo (cliente, descrição, total, parcelas e status) quando houver referência financeira.
+- **UserProfilePage**: Badges/tags com visual mais suave e preview Financeiro agora exibe detalhes reais do acordo (cliente, descriÃ§Ã£o, total, parcelas e status) quando houver referÃªncia financeira.
 
 ## 1.9.271
-- **UserProfilePage**: Implementado modal para mostrar quem curtiu e quem comentou (clique nos contadores para ver lista de usuários com avatar e nome).
+- **UserProfilePage**: Implementado modal para mostrar quem curtiu e quem comentou (clique nos contadores para ver lista de usuÃ¡rios com avatar e nome).
 
 ## 1.9.270
 - **UserProfilePage**: Cards de posts na aba "Atividade" ajustados para um visual mais minimalista (menos sombra/padding e previews em caixa leve com barra lateral).
 
 ## 1.9.269
-- **UserProfilePage**: Removida a seção "Performance/Avaliação" (4.9 avaliações) do perfil.
+- **UserProfilePage**: Removida a seÃ§Ã£o "Performance/AvaliaÃ§Ã£o" (4.9 avaliaÃ§Ãµes) do perfil.
 
 ## 1.9.268
-- **UserProfilePage**: Adicionadas ações do post (curtir/comentar) e carregamento de `liked_by_me` no perfil, igual ao feed.
+- **UserProfilePage**: Adicionadas aÃ§Ãµes do post (curtir/comentar) e carregamento de `liked_by_me` no perfil, igual ao feed.
 
 ## 1.9.267
-- **UserProfilePage**: Box de criação de post do perfil agora é idêntico ao Dashboard (barra Mencionar/Tag/Foto/Emoji/Enquete, anexos, dropdowns e criador de enquete).
+- **UserProfilePage**: Box de criaÃ§Ã£o de post do perfil agora Ã© idÃªntico ao Dashboard (barra Mencionar/Tag/Foto/Emoji/Enquete, anexos, dropdowns e criador de enquete).
 
 ## 1.9.266
-- **UserProfilePage**: Corrigido header do post para ficar idêntico ao Dashboard: nome clicável para abrir perfil, menu de ações (editar/excluir) para autor, e uso de availableTags.
+- **UserProfilePage**: Corrigido header do post para ficar idÃªntico ao Dashboard: nome clicÃ¡vel para abrir perfil, menu de aÃ§Ãµes (editar/excluir) para autor, e uso de availableTags.
 
 ## 1.9.265
-- **UserProfilePage**: Posts na aba "Atividade" agora exibem badges de tags e cards de preview (`preview_data`) iguais ao feed (inclui cartão rosa de Assinatura).
-- **UserProfilePage/App**: Navegação dos cards de preview no perfil agora abre o módulo correspondente com parâmetros.
+- **UserProfilePage**: Posts na aba "Atividade" agora exibem badges de tags e cards de preview (`preview_data`) iguais ao feed (inclui cartÃ£o rosa de Assinatura).
+- **UserProfilePage/App**: NavegaÃ§Ã£o dos cards de preview no perfil agora abre o mÃ³dulo correspondente com parÃ¢metros.
 
 ## 1.9.264
-- **UserProfilePage**: Botão "Mensagem" agora abre o Chat flutuante direto na conversa (DM) com o usuário do perfil.
-- **UserProfilePage**: Botão "Editar Perfil" agora abre a aba "Dados Pessoais".
-- **UserProfilePage**: Removido botão "Compartilhar perfil".
+- **UserProfilePage**: BotÃ£o "Mensagem" agora abre o Chat flutuante direto na conversa (DM) com o usuÃ¡rio do perfil.
+- **UserProfilePage**: BotÃ£o "Editar Perfil" agora abre a aba "Dados Pessoais".
+- **UserProfilePage**: Removido botÃ£o "Compartilhar perfil".
 - **ChatFloatingWidget**: Suporte ao evento `CHAT_WIDGET_OPEN_DM` para abrir/criar DM via evento global.
 
 ## 1.9.263
 - **UserProfilePage**: Adicionada funcionalidade de criar posts diretamente do perfil (igual ao feed).
-- **UserProfilePage**: Box de criação de post com avatar, textarea e botão publicar (visível apenas no próprio perfil).
+- **UserProfilePage**: Box de criaÃ§Ã£o de post com avatar, textarea e botÃ£o publicar (visÃ­vel apenas no prÃ³prio perfil).
 
 ## 1.9.262
-- **UserProfilePage**: Tab "Estatísticas" agora exibe dados reais do sistema (clientes, processos, tarefas, compromissos, intimações).
-- **UserProfilePage**: Estatísticas divididas em "Feed & Engajamento" e "Dados do Escritório".
-- **App**: Clique no perfil do usuário agora abre a página de perfil (UserProfilePage) em vez do modal (ProfileModal).
-- **App**: Menu mobile também navega para a página de perfil.
+- **UserProfilePage**: Tab "EstatÃ­sticas" agora exibe dados reais do sistema (clientes, processos, tarefas, compromissos, intimaÃ§Ãµes).
+- **UserProfilePage**: EstatÃ­sticas divididas em "Feed & Engajamento" e "Dados do EscritÃ³rio".
+- **App**: Clique no perfil do usuÃ¡rio agora abre a pÃ¡gina de perfil (UserProfilePage) em vez do modal (ProfileModal).
+- **App**: Menu mobile tambÃ©m navega para a pÃ¡gina de perfil.
 
 ## 1.9.261
-- **UserProfilePage**: Adicionadas tabs de configurações (Dados Pessoais, Segurança, Estatísticas) visíveis apenas para o próprio perfil.
-- **UserProfilePage**: Tab "Dados Pessoais" com formulário completo (nome, email, CPF, telefone, OAB, biografia).
-- **UserProfilePage**: Tab "Segurança" com alteração de senha e detalhes da conta.
-- **UserProfilePage**: Tab "Estatísticas" com cards coloridos (publicações, curtidas, comentários, avaliação).
-- **UserProfilePage**: Tabs com ícones e design responsivo (overflow-x-auto para mobile).
+- **UserProfilePage**: Adicionadas tabs de configuraÃ§Ãµes (Dados Pessoais, SeguranÃ§a, EstatÃ­sticas) visÃ­veis apenas para o prÃ³prio perfil.
+- **UserProfilePage**: Tab "Dados Pessoais" com formulÃ¡rio completo (nome, email, CPF, telefone, OAB, biografia).
+- **UserProfilePage**: Tab "SeguranÃ§a" com alteraÃ§Ã£o de senha e detalhes da conta.
+- **UserProfilePage**: Tab "EstatÃ­sticas" com cards coloridos (publicaÃ§Ãµes, curtidas, comentÃ¡rios, avaliaÃ§Ã£o).
+- **UserProfilePage**: Tabs com Ã­cones e design responsivo (overflow-x-auto para mobile).
 
 ## 1.9.260
-- **UserProfilePage**: Adicionado modal de seleção de capas predefinidas (10 opções jurídicas).
-- **UserProfilePage**: Botão "Editar capa" agora abre modal com preview das capas disponíveis.
+- **UserProfilePage**: Adicionado modal de seleÃ§Ã£o de capas predefinidas (10 opÃ§Ãµes jurÃ­dicas).
+- **UserProfilePage**: BotÃ£o "Editar capa" agora abre modal com preview das capas disponÃ­veis.
 - **UserProfilePage**: Indicador visual (CheckCircle) para a capa atualmente selecionada.
 - **UserProfilePage**: Corrigido problema de src vazio em anexos de imagem.
 
 ## 1.9.259
-- **UserProfilePage**: Removida a exibição da OAB no header (abaixo do nome) para evitar quebra/ruído visual; OAB permanece apenas no card de contato.
+- **UserProfilePage**: Removida a exibiÃ§Ã£o da OAB no header (abaixo do nome) para evitar quebra/ruÃ­do visual; OAB permanece apenas no card de contato.
 
 ## 1.9.258
-- **UserProfilePage**: Design premium com capa gradiente azul/índigo.
-- **UserProfilePage**: Foto de perfil quadrada (128px) com borda, sombra e botão de edição integrado.
-- **UserProfilePage**: Sidebar com seção "Contato Profissional" (cargo, OAB, e-mail, telefone, localização) com ícones coloridos.
-- **UserProfilePage**: Sidebar com seção "Performance" (publicações, curtidas, avaliação) com gráficos circulares.
+- **UserProfilePage**: Design premium com capa gradiente azul/Ã­ndigo.
+- **UserProfilePage**: Foto de perfil quadrada (128px) com borda, sombra e botÃ£o de ediÃ§Ã£o integrado.
+- **UserProfilePage**: Sidebar com seÃ§Ã£o "Contato Profissional" (cargo, OAB, e-mail, telefone, localizaÃ§Ã£o) com Ã­cones coloridos.
+- **UserProfilePage**: Sidebar com seÃ§Ã£o "Performance" (publicaÃ§Ãµes, curtidas, avaliaÃ§Ã£o) com grÃ¡ficos circulares.
 - **UserProfilePage**: Tabs redesenhadas com estilo minimalista (Atividade, Sobre).
 - **UserProfilePage**: Layout responsivo com grid 12 colunas (sidebar 4, main 8).
 - **UserProfilePage**: Suporte a dark mode completo.
 
 ## 1.9.257
-- **Perfil**: Título "Perfil do Usuário" agora aparece no header/nav.
+- **Perfil**: TÃ­tulo "Perfil do UsuÃ¡rio" agora aparece no header/nav.
 - **Perfil**: Foto de perfil maior (w-32/40 em vez de w-28/36).
-- **Perfil**: Cards de posts com sombra mais visível (shadow-md + hover:shadow-lg).
+- **Perfil**: Cards de posts com sombra mais visÃ­vel (shadow-md + hover:shadow-lg).
 
 ## 1.9.256
-- **Perfil**: Capa com máscara/overlay reforçado para melhor contraste.
-- **Perfil**: Avatar agora usa imagem inteira (sem corte) dentro do círculo.
-- **Perfil**: Cards de Informações/Estatísticas mais compactos e com menos arredondamento.
+- **Perfil**: Capa com mÃ¡scara/overlay reforÃ§ado para melhor contraste.
+- **Perfil**: Avatar agora usa imagem inteira (sem corte) dentro do cÃ­rculo.
+- **Perfil**: Cards de InformaÃ§Ãµes/EstatÃ­sticas mais compactos e com menos arredondamento.
 
 ## 1.9.255
-- **Perfil**: Banners jurídicos (biblioteca, tribunal, escritório, etc) disponíveis.
-- **Perfil**: Banner padrão jurídico exibido quando usuário não selecionou nenhum.
-- **Perfil**: Estética melhorada com avatar maior com borda branca, capa maior com overlay, cards com headers coloridos e ícones em círculos coloridos.
-- **Perfil**: Adicionado campo CPF nas informações do perfil.
+- **Perfil**: Banners jurÃ­dicos (biblioteca, tribunal, escritÃ³rio, etc) disponÃ­veis.
+- **Perfil**: Banner padrÃ£o jurÃ­dico exibido quando usuÃ¡rio nÃ£o selecionou nenhum.
+- **Perfil**: EstÃ©tica melhorada com avatar maior com borda branca, capa maior com overlay, cards com headers coloridos e Ã­cones em cÃ­rculos coloridos.
+- **Perfil**: Adicionado campo CPF nas informaÃ§Ãµes do perfil.
 
 ## 1.9.254
 - **Feed**: Adicionado card de preview indigo para `#Documento` no post.
 
 ## 1.9.253
-- **Feed**: Clique na menção `@nome` agora navega para a página de perfil da pessoa mencionada.
+- **Feed**: Clique na menÃ§Ã£o `@nome` agora navega para a pÃ¡gina de perfil da pessoa mencionada.
 - **Perfil**: Layout mais compacto (capa menor, avatar menor, nome menor).
 
 ## 1.9.252
 - **Feed**: Adicionadas tags `#Assinatura` e `#Requerimento` com busca, preview e cards coloridos.
 - **Feed**: Foto anexada no post agora exibe em tamanho maior (max-h-80) em vez de miniatura 28x28.
-- **Feed**: Cards de preview agora passam `selectedId` para navegação direta ao registro específico.
+- **Feed**: Cards de preview agora passam `selectedId` para navegaÃ§Ã£o direta ao registro especÃ­fico.
 
 ## 1.9.251
-- **Feed**: `#Petição` agora busca na tabela `saved_petitions` (petições salvas/recentes) em vez de `petition_documents` (templates).
+- **Feed**: `#PetiÃ§Ã£o` agora busca na tabela `saved_petitions` (petiÃ§Ãµes salvas/recentes) em vez de `petition_documents` (templates).
 
 ## 1.9.250
-- **Feed**: `#Petição` agora exibe `title` (nome amigável) em vez de `file_name` (arquivo .html), com fallback para nome sem extensão.
-- **Feed**: Adicionado card de preview cyan para `#Petição` no post (igual aos outros cards de preview).
+- **Feed**: `#PetiÃ§Ã£o` agora exibe `title` (nome amigÃ¡vel) em vez de `file_name` (arquivo .html), com fallback para nome sem extensÃ£o.
+- **Feed**: Adicionado card de preview cyan para `#PetiÃ§Ã£o` no post (igual aos outros cards de preview).
 
 ## 1.9.249
-- **Feed**: `#Petição` agora exibe o nome correto (prioriza `file_name`, fallback para `title`) e a busca considera `file_name` ou `title`.
+- **Feed**: `#PetiÃ§Ã£o` agora exibe o nome correto (prioriza `file_name`, fallback para `title`) e a busca considera `file_name` ou `title`.
 
 ## 1.9.248
-- **Feed**: `#Petição` — adicionada policy de SELECT em `petition_documents` (RLS) para permitir listagem no frontend.
-- **Feed**: Melhorado diagnóstico de erros — logs do Supabase para `#Petição` e `#Documento` (evita falha silenciosa).
+- **Feed**: `#PetiÃ§Ã£o` â€” adicionada policy de SELECT em `petition_documents` (RLS) para permitir listagem no frontend.
+- **Feed**: Melhorado diagnÃ³stico de erros â€” logs do Supabase para `#PetiÃ§Ã£o` e `#Documento` (evita falha silenciosa).
 
 ## 1.9.247
-- **Feed**: Criada tag `#Petição` para buscar petições na tabela `petition_documents` (3 registros).
+- **Feed**: Criada tag `#PetiÃ§Ã£o` para buscar petiÃ§Ãµes na tabela `petition_documents` (3 registros).
 
 ## 1.9.246
-- **Feed**: Corrigido tag `#Documento` para usar tabela `generated_petition_documents` (onde há registros) em vez de `generated_documents` (vazia).
+- **Feed**: Corrigido tag `#Documento` para usar tabela `generated_petition_documents` (onde hÃ¡ registros) em vez de `generated_documents` (vazia).
 
 ## 1.9.245
 - **Feed**: Adicionado campo de busca no dropdown de registros da tag `#Cliente`.
 
 ## 1.9.244
-- **Feed**: Tradução de `event_type` no `#Agenda` (hearing → audiência, meeting → reunião, etc.).
+- **Feed**: TraduÃ§Ã£o de `event_type` no `#Agenda` (hearing â†’ audiÃªncia, meeting â†’ reuniÃ£o, etc.).
 
 ## 1.9.243
-- **Feed**: Corrigido "Invalid Date" no dropdown do `#Prazo` (formatação segura para `due_date`).
-- **Feed**: Tag `#Audiência` ajustada para `#Agenda` (calendário de compromissos).
+- **Feed**: Corrigido "Invalid Date" no dropdown do `#Prazo` (formataÃ§Ã£o segura para `due_date`).
+- **Feed**: Tag `#AudiÃªncia` ajustada para `#Agenda` (calendÃ¡rio de compromissos).
 
 ## 1.9.242
-- **Feed**: Referências financeiras (`#financeiro`) agora são azuis e clicáveis para abrir o modal do acordo.
+- **Feed**: ReferÃªncias financeiras (`#financeiro`) agora sÃ£o azuis e clicÃ¡veis para abrir o modal do acordo.
 
 ## 1.9.241
-- **Feed**: Corrigido erro 400 no `#financeiro` — coluna `total_amount` não existe, corrigido para `total_value`.
+- **Feed**: Corrigido erro 400 no `#financeiro` â€” coluna `total_amount` nÃ£o existe, corrigido para `total_value`.
 
 ## 1.9.240
 - **Feed**: Corrigido erro 400 no autocomplete/preview da tag `#financeiro` removendo embed PostgREST e buscando clientes em batch.
 
 ## 1.9.239
-- **Feed**: Corrigido erro 400 ao carregar registros da tag `#financeiro` (embed PostgREST agreements → clients ajustado para o constraint correto).
+- **Feed**: Corrigido erro 400 ao carregar registros da tag `#financeiro` (embed PostgREST agreements â†’ clients ajustado para o constraint correto).
 
 ## 1.9.238
-- **Enquete**: Seleção de participantes agora usa checkboxes (1 a 1) em vez de select multiple.
-- **Enquete**: Design melhorado — removido roxo, agora usa azul/cinza mais bonito.
+- **Enquete**: SeleÃ§Ã£o de participantes agora usa checkboxes (1 a 1) em vez de select multiple.
+- **Enquete**: Design melhorado â€” removido roxo, agora usa azul/cinza mais bonito.
 
 ## 1.9.237
-- **Notificações**: Criação de notificações agora usa RPC `create_user_notification` (bypass RLS) para corrigir erro 403 ao notificar menções.
+- **NotificaÃ§Ãµes**: CriaÃ§Ã£o de notificaÃ§Ãµes agora usa RPC `create_user_notification` (bypass RLS) para corrigir erro 403 ao notificar menÃ§Ãµes.
 
 ## 1.9.236
 - **Feed**: Removido feed realtime temporariamente para corrigir erro de cache do Vite.
 
 ## 1.9.235
-- **Feed**: Criada migration para corrigir RLS de notificações (permitir criar notificações para outros usuários).
+- **Feed**: Criada migration para corrigir RLS de notificaÃ§Ãµes (permitir criar notificaÃ§Ãµes para outros usuÃ¡rios).
 
 ## 1.9.234
-- **Feed**: Implementado feed realtime - posts atualizam automaticamente quando outros usuários publicam.
-- **Feed**: Criada migration para adicionar tipo 'mention' ao enum de notificações.
+- **Feed**: Implementado feed realtime - posts atualizam automaticamente quando outros usuÃ¡rios publicam.
+- **Feed**: Criada migration para adicionar tipo 'mention' ao enum de notificaÃ§Ãµes.
 
 ## 1.9.233
-- **Feed**: Corrigido regex de menções para suportar caracteres acentuados (ê, ã, ç, etc) em nomes completos.
-- **Feed**: Corrigido sistema de notificações para menções - agora usa `user_id` corretamente.
+- **Feed**: Corrigido regex de menÃ§Ãµes para suportar caracteres acentuados (Ãª, Ã£, Ã§, etc) em nomes completos.
+- **Feed**: Corrigido sistema de notificaÃ§Ãµes para menÃ§Ãµes - agora usa `user_id` corretamente.
 
 ## 1.9.232
-- **Feed**: Corrigido regex de menções para parar no final do nome (\b) - texto após @nome não fica mais azul.
+- **Feed**: Corrigido regex de menÃ§Ãµes para parar no final do nome (\b) - texto apÃ³s @nome nÃ£o fica mais azul.
 
 ## 1.9.231
-- **Feed**: Corrigido erro "Edit2 is not defined" usando ícone Pencil já importado.
+- **Feed**: Corrigido erro "Edit2 is not defined" usando Ã­cone Pencil jÃ¡ importado.
 
 ## 1.9.230
-- **Feed**: Adicionado indicador visual "editado" (ícone + texto) quando um post foi modificado.
+- **Feed**: Adicionado indicador visual "editado" (Ã­cone + texto) quando um post foi modificado.
 
 ## 1.9.229
-- **Feed**: Adicionado método `updatePost` no serviço `feedPostsService` para permitir edição de posts.
+- **Feed**: Adicionado mÃ©todo `updatePost` no serviÃ§o `feedPostsService` para permitir ediÃ§Ã£o de posts.
 
 ## 1.9.228
-- **Dashboard**: Corrigido erro "activeClients is not defined" nos cards de estatísticas.
+- **Dashboard**: Corrigido erro "activeClients is not defined" nos cards de estatÃ­sticas.
 
 ## 1.9.227
-- **Feed**: Corrigido bug onde editar post inline também editava o composer (estados separados).
+- **Feed**: Corrigido bug onde editar post inline tambÃ©m editava o composer (estados separados).
 - **Feed**: Corrigido erro "Cannot access 'availableTags' before initialization".
 
 ## 1.9.226
-- **Feed**: Editor inline agora suporta **@** (menções) e **#** (tags) com dropdowns.
+- **Feed**: Editor inline agora suporta **@** (menÃ§Ãµes) e **#** (tags) com dropdowns.
 - **Feed**: Editor inline mudado de azul para **cinza** (slate-50/200/700).
 
 ## 1.9.225
-- **Feed**: Edição de posts agora é **inline** — edita diretamente no próprio post, não no composer.
-- **Feed**: Editor inline com textarea, botões Cancelar/Salvar e visual destacado (fundo indigo).
+- **Feed**: EdiÃ§Ã£o de posts agora Ã© **inline** â€” edita diretamente no prÃ³prio post, nÃ£o no composer.
+- **Feed**: Editor inline com textarea, botÃµes Cancelar/Salvar e visual destacado (fundo indigo).
 
 ## 1.9.224
-- **Enquetes**: Agora permite votar em **múltiplas opções** (checkboxes em vez de radio).
+- **Enquetes**: Agora permite votar em **mÃºltiplas opÃ§Ãµes** (checkboxes em vez de radio).
 - **Criador de Enquete**: UI/UX completamente redesenhado:
-  - Header com ícone em gradiente e descrição
+  - Header com Ã­cone em gradiente e descriÃ§Ã£o
   - Input de pergunta com placeholder mais claro
-  - Contador de opções (x/6)
-  - Botões de remover opção aparecem apenas no hover
-  - Checkbox "Permitir múltiplas" com visual moderno
-  - Configurações organizadas em grid
+  - Contador de opÃ§Ãµes (x/6)
+  - BotÃµes de remover opÃ§Ã£o aparecem apenas no hover
+  - Checkbox "Permitir mÃºltiplas" com visual moderno
+  - ConfiguraÃ§Ãµes organizadas em grid
   - Indicador de participantes selecionados
-  - Gradientes mais vibrantes (indigo → purple → pink)
+  - Gradientes mais vibrantes (indigo â†’ purple â†’ pink)
   - Sombras e bordas mais refinadas
 
 ## 1.9.223
-- **Página de Perfil do Usuário** (estilo Facebook):
-  - Foto de capa personalizável com upload
+- **PÃ¡gina de Perfil do UsuÃ¡rio** (estilo Facebook):
+  - Foto de capa personalizÃ¡vel com upload
   - Avatar grande com upload
-  - Informações do perfil (cargo, OAB, email, telefone, localização)
-  - Abas "Publicações" e "Sobre"
-  - Estatísticas de posts e curtidas
-  - Exibe apenas posts do usuário selecionado
-- **Badges Especiais**: Advogado (azul), Administrador (laranja), Estagiário (verde) exibidos nos posts.
-- **Feed**: Clicar no nome/avatar do autor abre a página de perfil.
-- **Database**: Migração `add_profile_cover_and_badge` adicionando campos `cover_url`, `badge`, `location`, `joined_at` na tabela `profiles`.
+  - InformaÃ§Ãµes do perfil (cargo, OAB, email, telefone, localizaÃ§Ã£o)
+  - Abas "PublicaÃ§Ãµes" e "Sobre"
+  - EstatÃ­sticas de posts e curtidas
+  - Exibe apenas posts do usuÃ¡rio selecionado
+- **Badges Especiais**: Advogado (azul), Administrador (laranja), EstagiÃ¡rio (verde) exibidos nos posts.
+- **Feed**: Clicar no nome/avatar do autor abre a pÃ¡gina de perfil.
+- **Database**: MigraÃ§Ã£o `add_profile_cover_and_badge` adicionando campos `cover_url`, `badge`, `location`, `joined_at` na tabela `profiles`.
 - **Tipo Profile**: Atualizado com novos campos `cover_url`, `badge`, `location`, `joined_at`.
-- **Navegação**: Adicionado módulo `'perfil'` ao `ModuleName`.
+- **NavegaÃ§Ã£o**: Adicionado mÃ³dulo `'perfil'` ao `ModuleName`.
 
 ## 1.9.222
-- **Feed**: Substituído `confirm()` do navegador por modal customizado (`useDeleteConfirm`) para excluir posts.
-- **Dashboard**: Ajustada largura e espaçamento para igualar aos outros módulos (`space-y-4`, grid responsivo).
+- **Feed**: SubstituÃ­do `confirm()` do navegador por modal customizado (`useDeleteConfirm`) para excluir posts.
+- **Dashboard**: Ajustada largura e espaÃ§amento para igualar aos outros mÃ³dulos (`space-y-4`, grid responsivo).
 - **Dashboard**: Corrigido posicionamento sticky dos sidebars (`top-4` em vez de `top-24`).
-- **Fix**: Corrigido erro `setNewPostContent is not defined` (já estava corrigido, era cache do navegador).
+- **Fix**: Corrigido erro `setNewPostContent is not defined` (jÃ¡ estava corrigido, era cache do navegador).
 
 ## 1.9.221
 - **Enquetes**: Sistema completo de enquetes no feed com:
-  - Criação de enquetes com pergunta e até 6 opções
-  - Tempo de expiração configurável (1h, 6h, 24h, 3 dias, 7 dias ou sem expiração)
-  - Seleção de participantes específicos (ou todos podem votar)
-  - Notificação automática aos participantes selecionados
-  - Votação com barra de progresso visual e percentuais
-  - Indicador de voto do usuário e status de expiração
-- **Feed**: Corrigido layout cortado nos dropdowns de menção e tags (`overflow-visible`).
+  - CriaÃ§Ã£o de enquetes com pergunta e atÃ© 6 opÃ§Ãµes
+  - Tempo de expiraÃ§Ã£o configurÃ¡vel (1h, 6h, 24h, 3 dias, 7 dias ou sem expiraÃ§Ã£o)
+  - SeleÃ§Ã£o de participantes especÃ­ficos (ou todos podem votar)
+  - NotificaÃ§Ã£o automÃ¡tica aos participantes selecionados
+  - VotaÃ§Ã£o com barra de progresso visual e percentuais
+  - Indicador de voto do usuÃ¡rio e status de expiraÃ§Ã£o
+- **Feed**: Corrigido layout cortado nos dropdowns de menÃ§Ã£o e tags (`overflow-visible`).
 - **Design Premium**: Melhorias visuais no composer e posts:
   - Gradientes sutis no fundo do composer
   - Indicador de status online no avatar
   - Textarea com foco mais elegante (sombra azul)
-  - Botão Publicar com gradiente e efeito hover elevado
+  - BotÃ£o Publicar com gradiente e efeito hover elevado
   - Posts com sombras mais modernas e hover suave
   - Bordas mais arredondadas (rounded-2xl)
 
 ## 1.9.220
-- **Feed**: autor pode **editar** e **excluir** seus próprios posts (menu dropdown no ícone de 3 pontos).
-- **Feed**: removido botão "Compartilhar" dos posts.
-- **Feed**: menções `@nome` aparecem em **azul** e clicáveis no texto do post.
-- **Feed**: notificações de menção agora são salvas no **banco de dados** (tabela `user_notifications`) — o usuário mencionado recebe a notificação.
-- **Feed**: corrigido erro 404 `financial_agreements` → tabela correta é `agreements`.
+- **Feed**: autor pode **editar** e **excluir** seus prÃ³prios posts (menu dropdown no Ã­cone de 3 pontos).
+- **Feed**: removido botÃ£o "Compartilhar" dos posts.
+- **Feed**: menÃ§Ãµes `@nome` aparecem em **azul** e clicÃ¡veis no texto do post.
+- **Feed**: notificaÃ§Ãµes de menÃ§Ã£o agora sÃ£o salvas no **banco de dados** (tabela `user_notifications`) â€” o usuÃ¡rio mencionado recebe a notificaÃ§Ã£o.
+- **Feed**: corrigido erro 404 `financial_agreements` â†’ tabela correta Ã© `agreements`.
 - **Feed**: adicionado tipo `'mention'` ao `UserNotificationType`.
 
 ## 1.9.219
-- **Feed**: corrigido nome/role do autor nos posts — agora busca perfil opcionalmente (se existir, mostra nome real; senão, mostra "Usuário").
+- **Feed**: corrigido nome/role do autor nos posts â€” agora busca perfil opcionalmente (se existir, mostra nome real; senÃ£o, mostra "UsuÃ¡rio").
 - **Feed**: `hydrateAuthors` busca perfis em batch para melhor performance.
 
 ## 1.9.218
-- **Feed**: corrigido erro de foreign key constraint — removidas dependências de `profiles` (feed funciona mesmo sem perfil criado).
+- **Feed**: corrigido erro de foreign key constraint â€” removidas dependÃªncias de `profiles` (feed funciona mesmo sem perfil criado).
 - **Database**: migration `remove_feed_posts_profile_fk` aplicada via MCP.
 
 ## 1.9.217
-- **Feed**: **Foto** e **Emoji** funcionam no composer — emoji picker com 32 emojis e upload de imagem via Supabase Storage (bucket `anexos_chat`) com preview antes de publicar.
-- **Feed**: imagens anexadas aparecem nos posts (usando `signedUrl` temporário).
+- **Feed**: **Foto** e **Emoji** funcionam no composer â€” emoji picker com 32 emojis e upload de imagem via Supabase Storage (bucket `anexos_chat`) com preview antes de publicar.
+- **Feed**: imagens anexadas aparecem nos posts (usando `signedUrl` temporÃ¡rio).
 - **Feed**: `feed_posts.attachments` (jsonb) salva metadados dos anexos; `feedPostsService.uploadAttachment` faz o upload.
-- **Database**: migration `20250110_feed_posts.sql` idempotente (`DROP POLICY/TRIGGER IF EXISTS`) — pode rodar quantas vezes quiser.
+- **Database**: migration `20250110_feed_posts.sql` idempotente (`DROP POLICY/TRIGGER IF EXISTS`) â€” pode rodar quantas vezes quiser.
 
 ## 1.9.216
-- **Feed**: componente `FeedWidget` reutilizável criado para usar em todos os módulos.
-- **Feed**: suporte a modo compacto para sidebars e modo completo para páginas.
-- **Feed**: filtro por contexto do módulo (posts relacionados a clientes, processos, etc).
+- **Feed**: componente `FeedWidget` reutilizÃ¡vel criado para usar em todos os mÃ³dulos.
+- **Feed**: suporte a modo compacto para sidebars e modo completo para pÃ¡ginas.
+- **Feed**: filtro por contexto do mÃ³dulo (posts relacionados a clientes, processos, etc).
 
 ## 1.9.215
 - **Feed**: tabelas `feed_posts`, `feed_post_likes`, `feed_post_comments` criadas no Supabase via MCP.
-- **Feed**: **notificações de menções** - quando você menciona alguém (@usuario), a pessoa recebe uma notificação.
-- **Notificações**: novas categorias `mention` e `feed` adicionadas ao sistema de notificações.
+- **Feed**: **notificaÃ§Ãµes de menÃ§Ãµes** - quando vocÃª menciona alguÃ©m (@usuario), a pessoa recebe uma notificaÃ§Ã£o.
+- **NotificaÃ§Ãµes**: novas categorias `mention` e `feed` adicionadas ao sistema de notificaÃ§Ãµes.
 
 ## 1.9.214
 - **Feed**: ao clicar em uma tag (`#financeiro`, `#cliente`, etc), agora mostra **lista de registros reais** do sistema.
@@ -1127,101 +1135,101 @@
 
 ## 1.9.213
 - **Feed**: sistema de **tags integradas** com dados reais do sistema (`#financeiro`, `#cliente`, `#processo`, `#prazo`, `#agenda`).
-- **Feed**: posts salvos no **banco de dados** (tabela `feed_posts`) com likes e comentários.
+- **Feed**: posts salvos no **banco de dados** (tabela `feed_posts`) com likes e comentÃ¡rios.
 - **Feed**: **cards de preview** coloridos mostrando dados reais (resumo financeiro, cliente, processo, prazo, agenda).
-- **Feed**: botão **Publicar** funcional com loading e salvamento no banco.
+- **Feed**: botÃ£o **Publicar** funcional com loading e salvamento no banco.
 - **Feed**: sistema de **likes** com contagem e estado visual.
 - **Database**: novas tabelas `feed_posts`, `feed_post_likes`, `feed_post_comments` com RLS.
-- **Dashboard**: corrigido espaço em branco lateral em telas largas (quando a sidebar direita está oculta). O feed central agora expande para ocupar as colunas disponíveis.
+- **Dashboard**: corrigido espaÃ§o em branco lateral em telas largas (quando a sidebar direita estÃ¡ oculta). O feed central agora expande para ocupar as colunas disponÃ­veis.
 
 ## 1.9.212
-- **Dashboard**: cards de estatísticas de volta ao **topo** do feed (antes do campo de postar).
+- **Dashboard**: cards de estatÃ­sticas de volta ao **topo** do feed (antes do campo de postar).
 
 ## 1.9.211
 - **Dashboard**: campo de **postagem** movido para o **topo** do feed.
-- **Dashboard**: cards de estatísticas mais **compactos** (padding/typography/gap menores).
+- **Dashboard**: cards de estatÃ­sticas mais **compactos** (padding/typography/gap menores).
 
 ## 1.9.210
-- **Dashboard**: cards de estatísticas (Clientes, Processos, Prazos, Tarefas) reduzidos de tamanho (padding menor, texto menor).
-- **Dashboard**: widget **Aguardando Confecção** redesenhado (layout mais clean, sem caixa de scroll) com **nomes** e contador `+N`.
+- **Dashboard**: cards de estatÃ­sticas (Clientes, Processos, Prazos, Tarefas) reduzidos de tamanho (padding menor, texto menor).
+- **Dashboard**: widget **Aguardando ConfecÃ§Ã£o** redesenhado (layout mais clean, sem caixa de scroll) com **nomes** e contador `+N`.
 
 ## 1.9.209
-- **Dashboard**: widget **Aguardando Confecção** melhorado para mostrar nomes dos clientes/beneficiários com design bonito.
-- **Dashboard**: itens do widget Aguardando Confecção agora mostram ícones, gradientes e hover effects.
+- **Dashboard**: widget **Aguardando ConfecÃ§Ã£o** melhorado para mostrar nomes dos clientes/beneficiÃ¡rios com design bonito.
+- **Dashboard**: itens do widget Aguardando ConfecÃ§Ã£o agora mostram Ã­cones, gradientes e hover effects.
 
 ## 1.9.208
-- **Dashboard**: widget **Aguardando Confecção** melhorado para mostrar nomes dos clientes/beneficiários com design bonito.
-- **Dashboard**: itens do widget Aguardando Confecção agora mostram ícones, gradientes e hover effects.
+- **Dashboard**: widget **Aguardando ConfecÃ§Ã£o** melhorado para mostrar nomes dos clientes/beneficiÃ¡rios com design bonito.
+- **Dashboard**: itens do widget Aguardando ConfecÃ§Ã£o agora mostram Ã­cones, gradientes e hover effects.
 
 ## 1.9.207
 - **Dashboard**: corrigido widget **Financeiro** para facilitar o arrastar (removido indicador duplicado).
 - **Dashboard**: tratamento de erro de **quota do localStorage** com fallback para cache reduzido.
 
 ## 1.9.206
-- **Dashboard**: preferências de widgets agora são salvas no **banco de dados** (tabela `dashboard_preferences`) por usuário.
-- **Dashboard**: organização dos widgets persiste entre dispositivos e sessões.
-- **Database**: nova tabela `dashboard_preferences` com RLS para salvar preferências personalizadas por usuário.
+- **Dashboard**: preferÃªncias de widgets agora sÃ£o salvas no **banco de dados** (tabela `dashboard_preferences`) por usuÃ¡rio.
+- **Dashboard**: organizaÃ§Ã£o dos widgets persiste entre dispositivos e sessÃµes.
+- **Database**: nova tabela `dashboard_preferences` com RLS para salvar preferÃªncias personalizadas por usuÃ¡rio.
 
 ## 1.9.205
-- **Dashboard**: widgets agora podem ser **trocados entre sidebars** (esquerda ↔ direita) via drag-and-drop.
+- **Dashboard**: widgets agora podem ser **trocados entre sidebars** (esquerda â†” direita) via drag-and-drop.
 - **Dashboard**: sidebar fica destacada (fundo azul claro) ao arrastar widget sobre ela.
 - **Dashboard**: ordem dos widgets persistida separadamente para cada sidebar no localStorage.
 
 ## 1.9.204
-- **Build**: habilitado suporte a import com extensão `.tsx` para evitar conflito de resolução `Dashboard`/`dashboard` no Windows.
+- **Build**: habilitado suporte a import com extensÃ£o `.tsx` para evitar conflito de resoluÃ§Ã£o `Dashboard`/`dashboard` no Windows.
 - **Dashboard**: corrigido widget **Financeiro** que estava cortado/bugado na sidebar direita (layout compacto).
-- **Dashboard**: feed estilo **Facebook** com suporte a **menções** (@usuario) e **tags** (#financeiro, #processo, #prazo, etc).
-- **Dashboard**: indicadores visuais de **drag-and-drop** nos widgets (ícone de arrastar ao passar o mouse).
-- **Dashboard**: widgets da sidebar esquerda mais **compactos** para melhor visualização.
+- **Dashboard**: feed estilo **Facebook** com suporte a **menÃ§Ãµes** (@usuario) e **tags** (#financeiro, #processo, #prazo, etc).
+- **Dashboard**: indicadores visuais de **drag-and-drop** nos widgets (Ã­cone de arrastar ao passar o mouse).
+- **Dashboard**: widgets da sidebar esquerda mais **compactos** para melhor visualizaÃ§Ã£o.
 - **Dashboard**: barra de tags interativas para filtrar o feed por categoria.
 
 ## 1.9.203
-- **Dashboard/Build**: corrigidos conflitos de import (Dashboard/dashboard) e ajustes de parâmetros para abrir Processos/Requerimentos já filtrados em **Aguardando Confecção**.
+- **Dashboard/Build**: corrigidos conflitos de import (Dashboard/dashboard) e ajustes de parÃ¢metros para abrir Processos/Requerimentos jÃ¡ filtrados em **Aguardando ConfecÃ§Ã£o**.
 
 ## 1.9.202
-- **Dashboard**: widgets de **Aguardando Confecção** para Processos e Requerimentos (com contagem e navegação filtrada) + correção de hover (Tailwind) nos cards.
+- **Dashboard**: widgets de **Aguardando ConfecÃ§Ã£o** para Processos e Requerimentos (com contagem e navegaÃ§Ã£o filtrada) + correÃ§Ã£o de hover (Tailwind) nos cards.
 
 ## 1.9.201
-- **Dashboard**: removidos card de perfil e conteúdos duplicados; financeiro fica apenas no sidebar (layout mais estilo Facebook).
+- **Dashboard**: removidos card de perfil e conteÃºdos duplicados; financeiro fica apenas no sidebar (layout mais estilo Facebook).
 
 ## 1.9.200
-- **Dashboard**: removidos itens não usados (ações/filtros/áreas/premium), adicionado widget **Financeiro** e menção **#financeiro** no feed.
+- **Dashboard**: removidos itens nÃ£o usados (aÃ§Ãµes/filtros/Ã¡reas/premium), adicionado widget **Financeiro** e menÃ§Ã£o **#financeiro** no feed.
 
 ## 1.9.199
-- **Dashboard**: novo layout estilo rede social com 3 colunas (sidebar esquerda com agenda/tarefas/DJEN, feed central com posts/atualizações, sidebar direita com perfil/navegação).
+- **Dashboard**: novo layout estilo rede social com 3 colunas (sidebar esquerda com agenda/tarefas/DJEN, feed central com posts/atualizaÃ§Ãµes, sidebar direita com perfil/navegaÃ§Ã£o).
 
 ## 1.9.198
 - **Chat**: corrigido crash "Rendered fewer hooks than expected" no widget flutuante.
 
 ## 1.9.197
-- **Notificações**: intimações liberadas apenas para cargos **Administrador** e **Advogado** (demais perfis não veem/contam/recebem).
+- **NotificaÃ§Ãµes**: intimaÃ§Ãµes liberadas apenas para cargos **Administrador** e **Advogado** (demais perfis nÃ£o veem/contam/recebem).
 
 ## 1.9.196
-- **Notificações**: intimações agora respeitam permissões (perfis sem `intimacoes` não veem/contam/recebem popup no sino).
+- **NotificaÃ§Ãµes**: intimaÃ§Ãµes agora respeitam permissÃµes (perfis sem `intimacoes` nÃ£o veem/contam/recebem popup no sino).
 
 ## 1.9.195
-- **Chat**: widget flutuante: avatar do remetente em imagens agora é detectado por **mimeType** (não depende só do preview).
+- **Chat**: widget flutuante: avatar do remetente em imagens agora Ã© detectado por **mimeType** (nÃ£o depende sÃ³ do preview).
 
 ## 1.9.194
-- **Chat**: widget flutuante: launcher exibe **avatar de quem enviou a imagem** na notificação.
+- **Chat**: widget flutuante: launcher exibe **avatar de quem enviou a imagem** na notificaÃ§Ã£o.
 
 ## 1.9.193
-- **Chat**: widget flutuante: badge de **não lidas** agora é reidratado no refresh (persistência local + merge com banco).
+- **Chat**: widget flutuante: badge de **nÃ£o lidas** agora Ã© reidratado no refresh (persistÃªncia local + merge com banco).
 
 ## 1.9.192
-- **Petições/Chat**: launcher combinado: segmento **Editor** com a mesma cor de **Mensagens**, mantendo apenas o **divisor laranja**.
+- **PetiÃ§Ãµes/Chat**: launcher combinado: segmento **Editor** com a mesma cor de **Mensagens**, mantendo apenas o **divisor laranja**.
 
 ## 1.9.191
-- **Petições/Chat**: editor minimizado: botão **não sobrepõe** o chat; launcher combinado **Mensagens + Editor** com divisória laranja.
+- **PetiÃ§Ãµes/Chat**: editor minimizado: botÃ£o **nÃ£o sobrepÃµe** o chat; launcher combinado **Mensagens + Editor** com divisÃ³ria laranja.
 
 ## 1.9.190
 - **Chat**: widget flutuante: modal com **altura fixa** (sem contrair/expandir) durante o carregamento.
 
 ## 1.9.189
-- **Chat**: widget flutuante: removido **maxHeight fixo** do container de mensagens para evitar contração ao carregar.
+- **Chat**: widget flutuante: removido **maxHeight fixo** do container de mensagens para evitar contraÃ§Ã£o ao carregar.
 
 ## 1.9.188
-- **Chat**: widget flutuante: input mantém **foco automático** após enviar mensagem.
+- **Chat**: widget flutuante: input mantÃ©m **foco automÃ¡tico** apÃ³s enviar mensagem.
 
 ## 1.9.187
 - **Chat**: widget flutuante: header com **largura fixa** para evitar encolhimento ao truncar nomes longos.
@@ -1230,947 +1238,947 @@
 - **Chat**: widget flutuante: anexos (ex.: **PDF**) agora abrem via link assinado no mini-chat.
 
 ## 1.9.185
-- **Chat**: corrigido bug onde imagem/mensagem recém-enviada **sumia** após alguns segundos (listagem agora traz as **últimas** mensagens).
+- **Chat**: corrigido bug onde imagem/mensagem recÃ©m-enviada **sumia** apÃ³s alguns segundos (listagem agora traz as **Ãºltimas** mensagens).
 
 ## 1.9.184
 - **Chat**: widget flutuante: ajuste de **design/layout** (alinhamento do nome + badge verificado e toast).
 
 ## 1.9.183
-- **Chat**: widget flutuante: corrigida inconsistência do **badge de não lidas** (total vs por conversa).
+- **Chat**: widget flutuante: corrigida inconsistÃªncia do **badge de nÃ£o lidas** (total vs por conversa).
 
 ## 1.9.182
-- **Chat**: correção de status "visto por último" (evita erro quando `last_seen_at` é nulo).
+- **Chat**: correÃ§Ã£o de status "visto por Ãºltimo" (evita erro quando `last_seen_at` Ã© nulo).
 
 ## 1.9.181
-- **Chat**: imagens/anexos: clique no preview para **ampliar** (lightbox) no módulo Chat e no mini-chat do widget.
+- **Chat**: imagens/anexos: clique no preview para **ampliar** (lightbox) no mÃ³dulo Chat e no mini-chat do widget.
 
 ## 1.9.180
 - **Chat**: widget flutuante: badge **verificado** (Administrador **gold** e Advogado **azul**).
 
 ## 1.9.179
-- **Chat**: widget flutuante: correção de status **Online/Offline** (evita "falso offline") usando Presence em tempo real.
+- **Chat**: widget flutuante: correÃ§Ã£o de status **Online/Offline** (evita "falso offline") usando Presence em tempo real.
 
 ## 1.9.178
-- **Chat**: widget flutuante (mini-chat): adicionado envio de **áudio**, **anexos** e **emojis**.
+- **Chat**: widget flutuante (mini-chat): adicionado envio de **Ã¡udio**, **anexos** e **emojis**.
 
 ## 1.9.177
-- **Chat**: widget flutuante: ajustada **altura** do painel/mini-chat para não ficar muito alto.
+- **Chat**: widget flutuante: ajustada **altura** do painel/mini-chat para nÃ£o ficar muito alto.
 
 ## 1.9.176
-- **Chat**: widget flutuante: indicador de **não lido por conversa** (badge na lista) e limpeza ao abrir.
+- **Chat**: widget flutuante: indicador de **nÃ£o lido por conversa** (badge na lista) e limpeza ao abrir.
 
 ## 1.9.175
-- **Chat**: widget flutuante: correção do **toast** (avatar/preview) para renderizar no local correto e notificação com **som**.
+- **Chat**: widget flutuante: correÃ§Ã£o do **toast** (avatar/preview) para renderizar no local correto e notificaÃ§Ã£o com **som**.
 
 ## 1.9.174
-- **Chat**: widget flutuante: corrigido **toast** (avatar/nome/preview) e melhora do **som** de notificação após primeira interação do usuário.
+- **Chat**: widget flutuante: corrigido **toast** (avatar/nome/preview) e melhora do **som** de notificaÃ§Ã£o apÃ³s primeira interaÃ§Ã£o do usuÃ¡rio.
 
 ## 1.9.173
-- **Chat**: widget flutuante: **som** e **toast** de notificação (avatar + preview) ao receber novas mensagens.
+- **Chat**: widget flutuante: **som** e **toast** de notificaÃ§Ã£o (avatar + preview) ao receber novas mensagens.
 
 ## 1.9.172
-- **Chat**: widget flutuante (mini-chat): corrigida **notificação** mantendo subscription de mensagens estável (evita perder eventos ao abrir/fechar).
+- **Chat**: widget flutuante (mini-chat): corrigida **notificaÃ§Ã£o** mantendo subscription de mensagens estÃ¡vel (evita perder eventos ao abrir/fechar).
 
 ## 1.9.171
-- **Chat**: widget flutuante (mini-chat): corrigida **notificação/badge** ao receber novas mensagens e ajuste para **marcar como lido** ao abrir a conversa pelo widget.
+- **Chat**: widget flutuante (mini-chat): corrigida **notificaÃ§Ã£o/badge** ao receber novas mensagens e ajuste para **marcar como lido** ao abrir a conversa pelo widget.
 
 ## 1.9.170
-- **Chat**: widget flutuante (mini-chat): **preview de foto/anexo**, correção de **scroll lateral** e conversa abrindo **no final**.
+- **Chat**: widget flutuante (mini-chat): **preview de foto/anexo**, correÃ§Ã£o de **scroll lateral** e conversa abrindo **no final**.
 
 ## 1.9.169
-- **Chat**: widget flutuante de Mensagens agora é um **mini-chat** (abre conversa dentro do widget com mensagens e envio).
+- **Chat**: widget flutuante de Mensagens agora Ã© um **mini-chat** (abre conversa dentro do widget com mensagens e envio).
 
 ## 1.9.168
-- **Chat**: widget flutuante de Mensagens com **botão fixo** (não desloca para a esquerda ao abrir o painel).
+- **Chat**: widget flutuante de Mensagens com **botÃ£o fixo** (nÃ£o desloca para a esquerda ao abrir o painel).
 
 ## 1.9.167
-- **Chat**: novo **widget flutuante de Mensagens** fora do módulo Chat (badge de não-lidas + lista rápida) com atalho para abrir conversas.
+- **Chat**: novo **widget flutuante de Mensagens** fora do mÃ³dulo Chat (badge de nÃ£o-lidas + lista rÃ¡pida) com atalho para abrir conversas.
 
 ## 1.9.166
-- **Chat**: corrigido indicador **"digitando..."** (Presence) reutilizando o mesmo channel em vez de criar um novo a cada digitação.
+- **Chat**: corrigido indicador **"digitando..."** (Presence) reutilizando o mesmo channel em vez de criar um novo a cada digitaÃ§Ã£o.
 
 ## 1.9.165
-- **Chat**: corrigidas policies (RLS) do Supabase Storage para permitir upload no bucket `anexos_chat` (anexos e áudio).
+- **Chat**: corrigidas policies (RLS) do Supabase Storage para permitir upload no bucket `anexos_chat` (anexos e Ã¡udio).
 - **Chat**: mensagens de **imagem** agora mostram **preview** no chat (via signed URL).
 
 ## 1.9.164
-- **Chat**: envio de **mensagens de áudio** via MediaRecorder API.
-- **Chat**: áudios armazenados no bucket `anexos_chat` com validade de 6 meses.
-- **Chat**: player de áudio nativo nas mensagens com controls.
+- **Chat**: envio de **mensagens de Ã¡udio** via MediaRecorder API.
+- **Chat**: Ã¡udios armazenados no bucket `anexos_chat` com validade de 6 meses.
+- **Chat**: player de Ã¡udio nativo nas mensagens com controls.
 
 ## 1.9.163
 - **Chat**: indicador **"digitando..."** em tempo real via Supabase Presence.
-- **Chat**: mostrar **"visto por último"** no header quando usuário está offline.
+- **Chat**: mostrar **"visto por Ãºltimo"** no header quando usuÃ¡rio estÃ¡ offline.
 
 ## 1.9.162
-- **Chat**: e-mail substituído por **badge de função (role)** no header, lista de contatos e drawer.
+- **Chat**: e-mail substituÃ­do por **badge de funÃ§Ã£o (role)** no header, lista de contatos e drawer.
 
 ## 1.9.161
-- **Chat**: suporte a **anexos** (upload no bucket `anexos_chat`) com download por link temporário.
-- **Chat**: anexos com **validade de 6 meses** (após expirar, download fica indisponível).
-- **Chat**: botão de **emoji** para inserir rapidamente no campo de mensagem.
+- **Chat**: suporte a **anexos** (upload no bucket `anexos_chat`) com download por link temporÃ¡rio.
+- **Chat**: anexos com **validade de 6 meses** (apÃ³s expirar, download fica indisponÃ­vel).
+- **Chat**: botÃ£o de **emoji** para inserir rapidamente no campo de mensagem.
 
 ## 1.9.160
-- **Chat**: modal **Nova Conversa** padronizado no estilo do CRM (header, botão X visível e layout mais limpo).
-- **Chat**: removidos tons `amber` residuais no modal (evita fundo “bege” nos itens e spinner alinhado ao tema).
+- **Chat**: modal **Nova Conversa** padronizado no estilo do CRM (header, botÃ£o X visÃ­vel e layout mais limpo).
+- **Chat**: removidos tons `amber` residuais no modal (evita fundo â€œbegeâ€� nos itens e spinner alinhado ao tema).
 
 ## 1.9.159
-- **Chat**: esquema de cores profissional (indigo/slate) aplicado em todo o módulo.
+- **Chat**: esquema de cores profissional (indigo/slate) aplicado em todo o mÃ³dulo.
 
 ## 1.9.158
-- **Chat**: cores do sistema (laranja/amber) aplicadas em todo o módulo.
-- **Chat**: tradução completa para português (todos os textos em inglês removidos).
-- **Chat**: modal **Nova Conversa** redesenhado com faixa laranja e botão X visível.
-- **Chat**: botão de 3 pontos removido, substituído por toggle de notificação sonora.
+- **Chat**: cores do sistema (laranja/amber) aplicadas em todo o mÃ³dulo.
+- **Chat**: traduÃ§Ã£o completa para portuguÃªs (todos os textos em inglÃªs removidos).
+- **Chat**: modal **Nova Conversa** redesenhado com faixa laranja e botÃ£o X visÃ­vel.
+- **Chat**: botÃ£o de 3 pontos removido, substituÃ­do por toggle de notificaÃ§Ã£o sonora.
 - **Chat**: altura ajustada para `calc(100vh - 7rem)` eliminando scroll residual.
 
 ## 1.9.157
-- **Chat**: correção definitiva da altura usando `calc(100vh - 5rem)` para ocupar exatamente a viewport disponível sem gerar scroll no body.
+- **Chat**: correÃ§Ã£o definitiva da altura usando `calc(100vh - 5rem)` para ocupar exatamente a viewport disponÃ­vel sem gerar scroll no body.
 
 ## 1.9.156
-- **Chat**: módulo agora ocupa **altura total** (layout em tela cheia) e o rodapé (©/versão/Alterações) foi removido **apenas** no Chat.
+- **Chat**: mÃ³dulo agora ocupa **altura total** (layout em tela cheia) e o rodapÃ© (Â©/versÃ£o/AlteraÃ§Ãµes) foi removido **apenas** no Chat.
 - **Chat**: modal **Nova Conversa** redesenhado com visual mais profissional (header com gradiente, busca aprimorada e lista de contatos mais elegante).
 
 ## 1.9.122
-- **Central de Notificações**: agregadas pendências do **Financeiro** (parcelas vencidas) com filtro por tipo e navegação para o módulo.
+- **Central de NotificaÃ§Ãµes**: agregadas pendÃªncias do **Financeiro** (parcelas vencidas) com filtro por tipo e navegaÃ§Ã£o para o mÃ³dulo.
 
 ## 1.9.121
-- **Central de Notificações**: agora agrega também **Assinaturas pendentes** e **notificações do sistema (user_notifications)**, permitindo navegação direta para os módulos relacionados.
-- **Central de Notificações (DJEN)**: marcar intimações como lidas na Central passa a ser **somente local**, sem alterar o status crítico no módulo/serviço de Intimações.
+- **Central de NotificaÃ§Ãµes**: agora agrega tambÃ©m **Assinaturas pendentes** e **notificaÃ§Ãµes do sistema (user_notifications)**, permitindo navegaÃ§Ã£o direta para os mÃ³dulos relacionados.
+- **Central de NotificaÃ§Ãµes (DJEN)**: marcar intimaÃ§Ãµes como lidas na Central passa a ser **somente local**, sem alterar o status crÃ­tico no mÃ³dulo/serviÃ§o de IntimaÃ§Ãµes.
 
 ## 1.9.120
-- **Central de Notificações**: correção de JSX (remoção de fechamento extra) após ajustes de padronização visual.
+- **Central de NotificaÃ§Ãµes**: correÃ§Ã£o de JSX (remoÃ§Ã£o de fechamento extra) apÃ³s ajustes de padronizaÃ§Ã£o visual.
 
 ## 1.9.119
-- **Central de Notificações**: correção de estrutura/JSX após a padronização do layout (evita falhas de renderização/compilação).
+- **Central de NotificaÃ§Ãµes**: correÃ§Ã£o de estrutura/JSX apÃ³s a padronizaÃ§Ã£o do layout (evita falhas de renderizaÃ§Ã£o/compilaÃ§Ã£o).
 
 ## 1.9.118
-- **Central de Notificações**: padronização do layout para ficar consistente com os demais módulos (header/toolbar em cards padrão do sistema, espaçamentos e estilos de inputs/botões).
+- **Central de NotificaÃ§Ãµes**: padronizaÃ§Ã£o do layout para ficar consistente com os demais mÃ³dulos (header/toolbar em cards padrÃ£o do sistema, espaÃ§amentos e estilos de inputs/botÃµes).
 
 ## 1.9.117
-- **Central de Notificações**: refinamento visual inspirado em portais institucionais (header com gradiente + cards com blur, filtros mais consistentes), destaque melhor para **não lidas/urgentes**, e **paginação funcional** com contagem real de itens.
+- **Central de NotificaÃ§Ãµes**: refinamento visual inspirado em portais institucionais (header com gradiente + cards com blur, filtros mais consistentes), destaque melhor para **nÃ£o lidas/urgentes**, e **paginaÃ§Ã£o funcional** com contagem real de itens.
 
 ## 1.9.116
-- **Central de Notificações**: reorganização completa do layout (header/estatísticas/filtros/lista) com visual mais limpo e consistente, melhoria de legibilidade no dark mode e correção de navegação ao clicar (agora direciona para **Intimações** e **Agenda** corretamente).
+- **Central de NotificaÃ§Ãµes**: reorganizaÃ§Ã£o completa do layout (header/estatÃ­sticas/filtros/lista) com visual mais limpo e consistente, melhoria de legibilidade no dark mode e correÃ§Ã£o de navegaÃ§Ã£o ao clicar (agora direciona para **IntimaÃ§Ãµes** e **Agenda** corretamente).
 
 ## 1.9.115
-- **Agenda (Eventos)**: corrigido campo **Tipo** no modal de evento — em vez de exibir o valor técnico (`hearing`), agora exibe **Audiência** (e demais tipos com rótulo amigável).
+- **Agenda (Eventos)**: corrigido campo **Tipo** no modal de evento â€” em vez de exibir o valor tÃ©cnico (`hearing`), agora exibe **AudiÃªncia** (e demais tipos com rÃ³tulo amigÃ¡vel).
 
 ## 1.9.114
-- **Processos (Audiência/Distribuição)**: corrigida inconsistência de data exibindo **-1 dia** em "Detalhes do Processo" (erro de timezone ao interpretar strings `YYYY-MM-DD`/ISO). Agora a UI formata datas *date-only* sem conversão de fuso, garantindo que a data salva e a data exibida sejam iguais.
+- **Processos (AudiÃªncia/DistribuiÃ§Ã£o)**: corrigida inconsistÃªncia de data exibindo **-1 dia** em "Detalhes do Processo" (erro de timezone ao interpretar strings `YYYY-MM-DD`/ISO). Agora a UI formata datas *date-only* sem conversÃ£o de fuso, garantindo que a data salva e a data exibida sejam iguais.
 
 ## 1.9.113
-- **Documentos (Geração)**: corrigido problema onde apenas o documento principal era gerado, **sem os anexos**. Agora ao gerar um documento de um modelo que possui anexos (template_files), todos os anexos são processados (variáveis substituídas) e incluídos:
+- **Documentos (GeraÃ§Ã£o)**: corrigido problema onde apenas o documento principal era gerado, **sem os anexos**. Agora ao gerar um documento de um modelo que possui anexos (template_files), todos os anexos sÃ£o processados (variÃ¡veis substituÃ­das) e incluÃ­dos:
   - **Baixar Word**: se houver anexos, baixa um **ZIP** com o documento principal + anexos
-  - **Baixar PDF**: se houver anexos, **mescla todos** em um único PDF
-  - **Enviar para Assinatura**: anexos já eram enviados corretamente (sem alteração)
-  - Modal de opções agora exibe a lista de anexos incluídos
+  - **Baixar PDF**: se houver anexos, **mescla todos** em um Ãºnico PDF
+  - **Enviar para Assinatura**: anexos jÃ¡ eram enviados corretamente (sem alteraÃ§Ã£o)
+  - Modal de opÃ§Ãµes agora exibe a lista de anexos incluÃ­dos
 
 ## 1.9.112
-- **Assinatura (Kit Consumidor / Preencher)**: agora o preenchimento do formulário público é **salvo automaticamente em cache local (localStorage)** por token — se a página recarregar/cair, o cliente não perde as informações. O cache é limpo automaticamente após enviar e gerar o link de assinatura.
+- **Assinatura (Kit Consumidor / Preencher)**: agora o preenchimento do formulÃ¡rio pÃºblico Ã© **salvo automaticamente em cache local (localStorage)** por token â€” se a pÃ¡gina recarregar/cair, o cliente nÃ£o perde as informaÃ§Ãµes. O cache Ã© limpo automaticamente apÃ³s enviar e gerar o link de assinatura.
 
 ## 1.9.111
-- **Assinatura (Kit Consumidor / Preencher)**: corrigido loop de validação de endereço — quando o CEP é reconhecido e confirmado pelo usuário, os campos **Endereço** e **Bairro** (preenchidos pelo ViaCEP) não são mais considerados "faltantes". Agora o formulário avança corretamente para o próximo passo.
+- **Assinatura (Kit Consumidor / Preencher)**: corrigido loop de validaÃ§Ã£o de endereÃ§o â€” quando o CEP Ã© reconhecido e confirmado pelo usuÃ¡rio, os campos **EndereÃ§o** e **Bairro** (preenchidos pelo ViaCEP) nÃ£o sÃ£o mais considerados "faltantes". Agora o formulÃ¡rio avanÃ§a corretamente para o prÃ³ximo passo.
 
 ## 1.9.110
-- **Assinatura (Kit Consumidor / Preencher)**: corrigido fluxo de validação do formulário público — quando houver campos obrigatórios faltando, o sistema volta para a primeira etapa pendente (evitando ficar preso em **"Gerando documento..."**). Melhorias na validação de **CEP/endereço**.
+- **Assinatura (Kit Consumidor / Preencher)**: corrigido fluxo de validaÃ§Ã£o do formulÃ¡rio pÃºblico â€” quando houver campos obrigatÃ³rios faltando, o sistema volta para a primeira etapa pendente (evitando ficar preso em **"Gerando documento..."**). Melhorias na validaÃ§Ã£o de **CEP/endereÃ§o**.
 
 ## 1.9.109
-- **Peticionamento (Modelo Padrão do Modelo)**: corrigido o salvamento/visualização do **documento padrão** da Petição Padrão — após vincular, a UI agora sincroniza a lista de modelos (incluindo o seletor hierárquico Área → Modelos).
+- **Peticionamento (Modelo PadrÃ£o do Modelo)**: corrigido o salvamento/visualizaÃ§Ã£o do **documento padrÃ£o** da PetiÃ§Ã£o PadrÃ£o â€” apÃ³s vincular, a UI agora sincroniza a lista de modelos (incluindo o seletor hierÃ¡rquico Ã�rea â†’ Modelos).
 
 ## 1.9.108
-- **Peticionamento (Blocos por Modelo)**: no modal **"Novo/Editar Bloco"**, adicionado campo **"Modelo (Petição Padrão)"** para cadastrar o bloco diretamente em um modelo específico. Ao criar/editar dentro do contexto de um modelo, o vínculo é aplicado automaticamente e a listagem é recarregada conforme o escopo.
+- **Peticionamento (Blocos por Modelo)**: no modal **"Novo/Editar Bloco"**, adicionado campo **"Modelo (PetiÃ§Ã£o PadrÃ£o)"** para cadastrar o bloco diretamente em um modelo especÃ­fico. Ao criar/editar dentro do contexto de um modelo, o vÃ­nculo Ã© aplicado automaticamente e a listagem Ã© recarregada conforme o escopo.
 
 ## 1.9.107
-- **Peticionamento (Seletor Área/Modelo)**: seletor do topo agora é **hierárquico** (Área → Modelos) com subníveis e permite **entrar direto em um modelo**. Lista de modelos passa a atualizar automaticamente ao criar/editar/excluir (sem precisar recarregar a página).
+- **Peticionamento (Seletor Ã�rea/Modelo)**: seletor do topo agora Ã© **hierÃ¡rquico** (Ã�rea â†’ Modelos) com subnÃ­veis e permite **entrar direto em um modelo**. Lista de modelos passa a atualizar automaticamente ao criar/editar/excluir (sem precisar recarregar a pÃ¡gina).
 
 ## 1.9.106
-- **Peticionamento (Modelos / Petições Padrões)**: adicionada navegação por **Modelos** na sidebar de **Blocos** — ao selecionar um modelo (ex.: Previdenciário → Auxílio-acidente), a listagem passa a exibir **somente os blocos do modelo**, com opção de voltar para a visão por **Área**.
+- **Peticionamento (Modelos / PetiÃ§Ãµes PadrÃµes)**: adicionada navegaÃ§Ã£o por **Modelos** na sidebar de **Blocos** â€” ao selecionar um modelo (ex.: PrevidenciÃ¡rio â†’ AuxÃ­lio-acidente), a listagem passa a exibir **somente os blocos do modelo**, com opÃ§Ã£o de voltar para a visÃ£o por **Ã�rea**.
 
 ## 1.9.105
-- **Peticionamento (Biblioteca de Textos)**: ao usar **Escopo: Global** no modal **"Adicionar Bloco"**, cada resultado agora exibe a **Área Jurídica de origem** (badge), facilitando identificar de onde o bloco está sendo puxado.
+- **Peticionamento (Biblioteca de Textos)**: ao usar **Escopo: Global** no modal **"Adicionar Bloco"**, cada resultado agora exibe a **Ã�rea JurÃ­dica de origem** (badge), facilitando identificar de onde o bloco estÃ¡ sendo puxado.
 
 ## 1.9.104
-- **Peticionamento (Biblioteca de Textos)**: melhorado o **UI/UX** do modal **"Adicionar Bloco"** — seletor de **Escopo** reposicionado para **acima da busca** e redesenhado como um controle segmentado mais limpo.
+- **Peticionamento (Biblioteca de Textos)**: melhorado o **UI/UX** do modal **"Adicionar Bloco"** â€” seletor de **Escopo** reposicionado para **acima da busca** e redesenhado como um controle segmentado mais limpo.
 
 ## 1.9.103
-- **Peticionamento (Biblioteca de Textos)**: no modal **"Adicionar Bloco"**, adicionada opção de **busca global** com seletor de escopo (**Petição / Área / Global**) e carregamento automático conforme o escopo.
+- **Peticionamento (Biblioteca de Textos)**: no modal **"Adicionar Bloco"**, adicionada opÃ§Ã£o de **busca global** com seletor de escopo (**PetiÃ§Ã£o / Ã�rea / Global**) e carregamento automÃ¡tico conforme o escopo.
 
 ## 1.9.102
-- **Peticionamento (Petições Padrões)**: ao atualizar a página, o editor agora **mantém a Área Jurídica e Petição Padrão selecionadas** (persistência em cache local). Corrigido também o fluxo de **vincular documento pré-pronto (SFDT)** na petição padrão, atualizando imediatamente a lista/seleção.
+- **Peticionamento (PetiÃ§Ãµes PadrÃµes)**: ao atualizar a pÃ¡gina, o editor agora **mantÃ©m a Ã�rea JurÃ­dica e PetiÃ§Ã£o PadrÃ£o selecionadas** (persistÃªncia em cache local). Corrigido tambÃ©m o fluxo de **vincular documento prÃ©-pronto (SFDT)** na petiÃ§Ã£o padrÃ£o, atualizando imediatamente a lista/seleÃ§Ã£o.
 
 ## 1.9.101
-- **Peticionamento (Petições Padrões)**: novo sistema de **Petições Padrões** por área jurídica — permite criar tipos de petição (ex: Auxílio-acidente, BPC, Aposentadoria) e vincular blocos específicos a cada tipo. Seletor de petição padrão no header do editor. Filtro de blocos por escopo: **Petição** (blocos do tipo selecionado), **Área** (blocos da área jurídica) ou **Global** (todos os blocos). Possibilidade de vincular um **documento pré-pronto (SFDT)** que será carregado automaticamente ao selecionar o tipo.
+- **Peticionamento (PetiÃ§Ãµes PadrÃµes)**: novo sistema de **PetiÃ§Ãµes PadrÃµes** por Ã¡rea jurÃ­dica â€” permite criar tipos de petiÃ§Ã£o (ex: AuxÃ­lio-acidente, BPC, Aposentadoria) e vincular blocos especÃ­ficos a cada tipo. Seletor de petiÃ§Ã£o padrÃ£o no header do editor. Filtro de blocos por escopo: **PetiÃ§Ã£o** (blocos do tipo selecionado), **Ã�rea** (blocos da Ã¡rea jurÃ­dica) ou **Global** (todos os blocos). Possibilidade de vincular um **documento prÃ©-pronto (SFDT)** que serÃ¡ carregado automaticamente ao selecionar o tipo.
 
 ## 1.9.100
-- **Peticionamento (Categorias de Blocos)**: corrigido erro **400** ao salvar "Configurar categorias" (upsert não envia mais `id` inválido/indefinido).
+- **Peticionamento (Categorias de Blocos)**: corrigido erro **400** ao salvar "Configurar categorias" (upsert nÃ£o envia mais `id` invÃ¡lido/indefinido).
 
 ## 1.9.99
-- **Peticionamento (Editor Syncfusion)**: interface do editor (toolbar/menus) agora em **português (pt-BR)**.
+- **Peticionamento (Editor Syncfusion)**: interface do editor (toolbar/menus) agora em **portuguÃªs (pt-BR)**.
 
 ## 1.9.98
-- **Peticionamento (Áreas Jurídicas)**: blocos antigos foram **vinculados ao Trabalhista** (migração de backfill) e a listagem agora é **filtrada estritamente pela área selecionada** (ex.: ao escolher **Cível**, não exibe blocos de Trabalhista).
+- **Peticionamento (Ã�reas JurÃ­dicas)**: blocos antigos foram **vinculados ao Trabalhista** (migraÃ§Ã£o de backfill) e a listagem agora Ã© **filtrada estritamente pela Ã¡rea selecionada** (ex.: ao escolher **CÃ­vel**, nÃ£o exibe blocos de Trabalhista).
 
 ## 1.9.97
-- **Peticionamento (Áreas Jurídicas)**: novo sistema de **cadastro de Áreas Jurídicas** (Trabalhista, Cível, Penal, etc.) — permite criar, editar e gerenciar áreas livremente. Seletor de área no header do editor com cor de identificação. Blocos existentes permanecem intactos (sem área = disponíveis para todas).
+- **Peticionamento (Ã�reas JurÃ­dicas)**: novo sistema de **cadastro de Ã�reas JurÃ­dicas** (Trabalhista, CÃ­vel, Penal, etc.) â€” permite criar, editar e gerenciar Ã¡reas livremente. Seletor de Ã¡rea no header do editor com cor de identificaÃ§Ã£o. Blocos existentes permanecem intactos (sem Ã¡rea = disponÃ­veis para todas).
 
 ## 1.9.96
-- **Peticionamento (Offline)**: ao ficar **sem conexão**, o editor agora exibe uma **tela de bloqueio (overlay)** informando que o peticionamento é 100% online, impedindo edições até reconectar (com ações "Verificar conexão" e "Recarregar").
+- **Peticionamento (Offline)**: ao ficar **sem conexÃ£o**, o editor agora exibe uma **tela de bloqueio (overlay)** informando que o peticionamento Ã© 100% online, impedindo ediÃ§Ãµes atÃ© reconectar (com aÃ§Ãµes "Verificar conexÃ£o" e "Recarregar").
 
 ## 1.9.95
-- **Financeiro (Acordos)**: no **Resumo do Acordo**, removido **"Valor Líquido Cliente"** quando o tipo de honorário é **fixo**, pois não se aplica nesse contexto.
+- **Financeiro (Acordos)**: no **Resumo do Acordo**, removido **"Valor LÃ­quido Cliente"** quando o tipo de honorÃ¡rio Ã© **fixo**, pois nÃ£o se aplica nesse contexto.
 
 ## 1.9.94
-- **Financeiro (Acordos)**: corrigido exibição de honorários nas parcelas — quando honorários são **fixos**, agora mostra o valor total (não dividido) e oculta "Valor Cliente" por parcela, pois não se aplica nesse contexto.
+- **Financeiro (Acordos)**: corrigido exibiÃ§Ã£o de honorÃ¡rios nas parcelas â€” quando honorÃ¡rios sÃ£o **fixos**, agora mostra o valor total (nÃ£o dividido) e oculta "Valor Cliente" por parcela, pois nÃ£o se aplica nesse contexto.
 
 ## 1.9.93
-- **Assinaturas (ADM)**: redesign completo da toolbar — filtros de status em formato de **tabs**, busca centralizada, botões de ação agrupados à direita, painel de **autenticação pública** com ícone Globe e toggles inline, layout mais limpo e intuitivo.
+- **Assinaturas (ADM)**: redesign completo da toolbar â€” filtros de status em formato de **tabs**, busca centralizada, botÃµes de aÃ§Ã£o agrupados Ã  direita, painel de **autenticaÃ§Ã£o pÃºblica** com Ã­cone Globe e toggles inline, layout mais limpo e intuitivo.
 
 ## 1.9.92
-- **Assinatura Pública**: painel de **modos de autenticação** no ADM ficou mais compacto e agora **salva automaticamente** ao alternar **Google**, **E-mail (OTP)** e **Telefone (OTP)**, liberando mais espaço na listagem de documentos.
+- **Assinatura PÃºblica**: painel de **modos de autenticaÃ§Ã£o** no ADM ficou mais compacto e agora **salva automaticamente** ao alternar **Google**, **E-mail (OTP)** e **Telefone (OTP)**, liberando mais espaÃ§o na listagem de documentos.
 
 ## 1.9.91
-- **Assinatura Pública**: adicionada opção no módulo de Assinatura (ADM) para ativar/desativar os modos de autenticação **Google**, **E-mail (OTP)** e **Telefone (OTP)**. A página pública passa a respeitar essa configuração e remove automaticamente opções desativadas.
+- **Assinatura PÃºblica**: adicionada opÃ§Ã£o no mÃ³dulo de Assinatura (ADM) para ativar/desativar os modos de autenticaÃ§Ã£o **Google**, **E-mail (OTP)** e **Telefone (OTP)**. A pÃ¡gina pÃºblica passa a respeitar essa configuraÃ§Ã£o e remove automaticamente opÃ§Ãµes desativadas.
 
 ## 1.9.90
-- **Build**: corrigido erro de compilação `formatDateTime` não definido em ProcessesModule.tsx. Adicionada função local `formatDateTime` para exibir data/hora nas notas do processo.
+- **Build**: corrigido erro de compilaÃ§Ã£o `formatDateTime` nÃ£o definido em ProcessesModule.tsx. Adicionada funÃ§Ã£o local `formatDateTime` para exibir data/hora nas notas do processo.
 
 ## 1.9.89
-- **Assinatura Pública**: corrigido bloqueio de CORS/preflight ao chamar Edge Function `public-sign-document` (headers `Access-Control-Allow-Methods` e resposta `OPTIONS` com HTTP 200). Observação: a função deve ser deployada com `--no-verify-jwt` para funcionar sem sessão.
+- **Assinatura PÃºblica**: corrigido bloqueio de CORS/preflight ao chamar Edge Function `public-sign-document` (headers `Access-Control-Allow-Methods` e resposta `OPTIONS` com HTTP 200). ObservaÃ§Ã£o: a funÃ§Ã£o deve ser deployada com `--no-verify-jwt` para funcionar sem sessÃ£o.
 
 ## 1.9.88
-- **Assinatura Pública**: corrigido erro de RLS (401) ao assinar documento em página pública. Criada Edge Function `public-sign-document` que executa com service role, evitando problemas de permissão quando não há sessão autenticada.
+- **Assinatura PÃºblica**: corrigido erro de RLS (401) ao assinar documento em pÃ¡gina pÃºblica. Criada Edge Function `public-sign-document` que executa com service role, evitando problemas de permissÃ£o quando nÃ£o hÃ¡ sessÃ£o autenticada.
 
 ## 1.9.87
-- **Petições (Recentes)**: texto do loading ajustado para **"Carregando..."**.
-- **Petições (Blocos)**: botão **"Adicionar no documento"** no **Visualizar Bloco** ajustado para o **tema laranja** do sistema.
+- **PetiÃ§Ãµes (Recentes)**: texto do loading ajustado para **"Carregando..."**.
+- **PetiÃ§Ãµes (Blocos)**: botÃ£o **"Adicionar no documento"** no **Visualizar Bloco** ajustado para o **tema laranja** do sistema.
 
 ## 1.9.86
-- **Petições (Recentes)**: adicionado loading **"Procurando..."** enquanto carrega a lista de petições salvas.
+- **PetiÃ§Ãµes (Recentes)**: adicionado loading **"Procurando..."** enquanto carrega a lista de petiÃ§Ãµes salvas.
 
 ## 1.9.85
-- **Petições (Blocos)**: botão **Editar** no **Visualizar Bloco** agora segue o **tema laranja** do sistema.
+- **PetiÃ§Ãµes (Blocos)**: botÃ£o **Editar** no **Visualizar Bloco** agora segue o **tema laranja** do sistema.
 
 ## 1.9.84
-- **Petições (Blocos)**: clique no bloco na **sidebar** agora abre **Visualizar Bloco** (em vez de inserir direto).
+- **PetiÃ§Ãµes (Blocos)**: clique no bloco na **sidebar** agora abre **Visualizar Bloco** (em vez de inserir direto).
 
 ## 1.9.83
-- **Petições (Blocos)**: adicionado botão **Editar** no modal **Visualizar Bloco**.
+- **PetiÃ§Ãµes (Blocos)**: adicionado botÃ£o **Editar** no modal **Visualizar Bloco**.
 
 ## 1.9.82
-- **Petições (Mobile)**: item **Petições** no menu mobile agora mostra aviso de indisponibilidade em vez de abrir o editor.
-- **Editor de Petições (Widget)**: widget minimizado oculto no mobile.
+- **PetiÃ§Ãµes (Mobile)**: item **PetiÃ§Ãµes** no menu mobile agora mostra aviso de indisponibilidade em vez de abrir o editor.
+- **Editor de PetiÃ§Ãµes (Widget)**: widget minimizado oculto no mobile.
 
 ## 1.9.81
-- **Editor de Petições (Widget)**: ajustes de tamanho/legibilidade no modo minimizado (ícone e texto menores).
+- **Editor de PetiÃ§Ãµes (Widget)**: ajustes de tamanho/legibilidade no modo minimizado (Ã­cone e texto menores).
 
 ## 1.9.80
-- **Editor de Petições (Widget)**: modo minimizado com label "Editor" para facilitar identificação.
+- **Editor de PetiÃ§Ãµes (Widget)**: modo minimizado com label "Editor" para facilitar identificaÃ§Ã£o.
 
 ## 1.9.79
-- **Editor de Petições (Widget)**: refinamento visual do botão minimizado (tamanho, sombra e glow).
+- **Editor de PetiÃ§Ãµes (Widget)**: refinamento visual do botÃ£o minimizado (tamanho, sombra e glow).
 
 ## 1.9.78
-- **Editor de Petições (Widget)**: botão minimizado agora é **minimalista** (só ícone, sem texto) para ocupar menos espaço visual.
+- **Editor de PetiÃ§Ãµes (Widget)**: botÃ£o minimizado agora Ã© **minimalista** (sÃ³ Ã­cone, sem texto) para ocupar menos espaÃ§o visual.
 
 ## 1.9.77
-- **Editor de Petições (Widget)**: botão minimizado redesenhado com **visual mais moderno** (destaque, sombra, borda e microinterações) para facilitar encontrar e reabrir o editor.
+- **Editor de PetiÃ§Ãµes (Widget)**: botÃ£o minimizado redesenhado com **visual mais moderno** (destaque, sombra, borda e microinteraÃ§Ãµes) para facilitar encontrar e reabrir o editor.
 
 ## 1.9.76
-- **Petições (Blocos)**: ao clicar em **“Adicionar no documento”** no Visualizar Bloco, o sistema agora **fecha automaticamente o modal de busca**.
+- **PetiÃ§Ãµes (Blocos)**: ao clicar em **â€œAdicionar no documentoâ€�** no Visualizar Bloco, o sistema agora **fecha automaticamente o modal de busca**.
 
 ## 1.9.75
-- **Petições (Blocos)**: ao abrir **Visualizar Bloco** a partir da busca, o modal de busca agora **permanece aberto**. Fechar o Visualizar Bloco **não fecha** a busca.
+- **PetiÃ§Ãµes (Blocos)**: ao abrir **Visualizar Bloco** a partir da busca, o modal de busca agora **permanece aberto**. Fechar o Visualizar Bloco **nÃ£o fecha** a busca.
 
 ## 1.9.74
-- **Petições (Editor)**: item **“Inserir bloco”** do menu de contexto agora aparece com **destaque laranja forte por padrão**.
+- **PetiÃ§Ãµes (Editor)**: item **â€œInserir blocoâ€�** do menu de contexto agora aparece com **destaque laranja forte por padrÃ£o**.
 
 ## 1.9.73
-- **Petições (Editor)**: ajuste no menu de contexto para **manter “Adicionar bloco” sempre visível**, ficando **desabilitado quando não houver seleção** (preserva a ordem dos itens).
+- **PetiÃ§Ãµes (Editor)**: ajuste no menu de contexto para **manter â€œAdicionar blocoâ€� sempre visÃ­vel**, ficando **desabilitado quando nÃ£o houver seleÃ§Ã£o** (preserva a ordem dos itens).
 
 ## 1.9.72
-- **Petições (Editor)**: menu de contexto (clique direito) com **ordem ajustada**: **Inserir bloco** (1º), **Adicionar bloco** (2º), **Buscar empresa** (3º). Também foi adicionado **hover laranja** nos itens.
+- **PetiÃ§Ãµes (Editor)**: menu de contexto (clique direito) com **ordem ajustada**: **Inserir bloco** (1Âº), **Adicionar bloco** (2Âº), **Buscar empresa** (3Âº). TambÃ©m foi adicionado **hover laranja** nos itens.
 
 ## 1.9.71
-- **Petições (Editor)**: ao **carregar/importar um documento (DOCX/SFDT)** o sistema agora **captura e salva automaticamente a fonte (nome e tamanho)** como padrão, mantendo consistência de formatação nas próximas inserções/digitação.
+- **PetiÃ§Ãµes (Editor)**: ao **carregar/importar um documento (DOCX/SFDT)** o sistema agora **captura e salva automaticamente a fonte (nome e tamanho)** como padrÃ£o, mantendo consistÃªncia de formataÃ§Ã£o nas prÃ³ximas inserÃ§Ãµes/digitaÃ§Ã£o.
 
 ## 1.9.70
-- **Petições (Cadastro de Bloco)**: nova opção **"Atualizar bloco existente"** ao criar um bloco, permitindo escolher um bloco alvo e salvar como atualização (evita duplicar blocos repetidos).
+- **PetiÃ§Ãµes (Cadastro de Bloco)**: nova opÃ§Ã£o **"Atualizar bloco existente"** ao criar um bloco, permitindo escolher um bloco alvo e salvar como atualizaÃ§Ã£o (evita duplicar blocos repetidos).
 
 ## 1.9.69
-- **Petições (Cadastro de Bloco)**: tags agora são **quebradas automaticamente por espaço** ao clicar **Adicionar/Enter** e conectores (de/da/do/etc.) são ignorados, sem precisar clicar em botão extra.
+- **PetiÃ§Ãµes (Cadastro de Bloco)**: tags agora sÃ£o **quebradas automaticamente por espaÃ§o** ao clicar **Adicionar/Enter** e conectores (de/da/do/etc.) sÃ£o ignorados, sem precisar clicar em botÃ£o extra.
 
 ## 1.9.68
-- **Petições (Cadastro de Bloco)**: campo de tags agora **quebra frases automaticamente** (botão “Quebrar frases”) para criar várias tags de uma vez, facilitando cadastrar blocos com múltiplos temas.
+- **PetiÃ§Ãµes (Cadastro de Bloco)**: campo de tags agora **quebra frases automaticamente** (botÃ£o â€œQuebrar frasesâ€�) para criar vÃ¡rias tags de uma vez, facilitando cadastrar blocos com mÃºltiplos temas.
 
 ## 1.9.67
-- **Petições (Adicionar Bloco)**: busca com **fuzzy mais forte** (tolerância a múltiplos erros/typos) e ordenação baseada nos melhores termos, para continuar sugerindo blocos mesmo com digitação bem errada.
+- **PetiÃ§Ãµes (Adicionar Bloco)**: busca com **fuzzy mais forte** (tolerÃ¢ncia a mÃºltiplos erros/typos) e ordenaÃ§Ã£o baseada nos melhores termos, para continuar sugerindo blocos mesmo com digitaÃ§Ã£o bem errada.
 
 ## 1.9.66
-- **Petições (Adicionar Bloco)**: busca mais **tolerante** a termos digitados errado/extra (ignora palavras muito curtas e conectivos comuns e permite 1 termo falhar quando a busca tem vários termos), evitando “Nenhum bloco encontrado” por ruído.
+- **PetiÃ§Ãµes (Adicionar Bloco)**: busca mais **tolerante** a termos digitados errado/extra (ignora palavras muito curtas e conectivos comuns e permite 1 termo falhar quando a busca tem vÃ¡rios termos), evitando â€œNenhum bloco encontradoâ€� por ruÃ­do.
 
 ## 1.9.65
-- **Petições (Adicionar Bloco)**: resultados com **prévia maior do conteúdo** (mais linhas/caracteres) e lista com **scroll**, facilitando explorar o texto antes de inserir.
+- **PetiÃ§Ãµes (Adicionar Bloco)**: resultados com **prÃ©via maior do conteÃºdo** (mais linhas/caracteres) e lista com **scroll**, facilitando explorar o texto antes de inserir.
 
 ## 1.9.64
-- **Petições (Adicionar Bloco)**: modal **mais largo** e tags com visual melhor (chips mais legíveis, truncamento e indicador `+N`).
+- **PetiÃ§Ãµes (Adicionar Bloco)**: modal **mais largo** e tags com visual melhor (chips mais legÃ­veis, truncamento e indicador `+N`).
 
 ## 1.9.63
-- **Petições (Adicionar Bloco)**: ajuste de **relevância** na busca priorizando **tags** (sem deixar de considerar o **conteúdo** e o **título**) para resultados mais assertivos.
+- **PetiÃ§Ãµes (Adicionar Bloco)**: ajuste de **relevÃ¢ncia** na busca priorizando **tags** (sem deixar de considerar o **conteÃºdo** e o **tÃ­tulo**) para resultados mais assertivos.
 
 ## 1.9.62
-- **Petições (Adicionar Bloco)**: busca e listagem de blocos **mais rápida** com debounce e indexação/cache de texto (evita reprocessar SFDT a cada tecla), melhorando a responsividade do modal de busca e da sidebar.
+- **PetiÃ§Ãµes (Adicionar Bloco)**: busca e listagem de blocos **mais rÃ¡pida** com debounce e indexaÃ§Ã£o/cache de texto (evita reprocessar SFDT a cada tecla), melhorando a responsividade do modal de busca e da sidebar.
 
 ## 1.9.61
-- **Processos (Mapa de Fases)**: adicionada visão em formato de **mapa** por etapas (ex.: Conciliação, Instrução, etc.). Ao clicar em uma fase, o sistema lista os processos daquela etapa com busca e atalhos para abrir detalhes/timeline.
+- **Processos (Mapa de Fases)**: adicionada visÃ£o em formato de **mapa** por etapas (ex.: ConciliaÃ§Ã£o, InstruÃ§Ã£o, etc.). Ao clicar em uma fase, o sistema lista os processos daquela etapa com busca e atalhos para abrir detalhes/timeline.
 
 ## 1.9.60
-- **Processos (Timeline Geral)**: adicionada **Linha do Tempo Geral** (feed unificado) para buscar publicações/movimentações dos processos sincronizadas do DJEN, com busca por cliente/número/órgão/texto e atalho para abrir o processo ou a timeline completa.
+- **Processos (Timeline Geral)**: adicionada **Linha do Tempo Geral** (feed unificado) para buscar publicaÃ§Ãµes/movimentaÃ§Ãµes dos processos sincronizadas do DJEN, com busca por cliente/nÃºmero/Ã³rgÃ£o/texto e atalho para abrir o processo ou a timeline completa.
 
 ## 1.9.59
-- **Notificações (Assinatura)**: corrigida duplicação de notificações/popups de assinatura; agora a assinatura gera **apenas 1 notificação** (documento totalmente assinado), com dedupe por `request_id`.
+- **NotificaÃ§Ãµes (Assinatura)**: corrigida duplicaÃ§Ã£o de notificaÃ§Ãµes/popups de assinatura; agora a assinatura gera **apenas 1 notificaÃ§Ã£o** (documento totalmente assinado), com dedupe por `request_id`.
 - **Database (Trigger)**: trigger `notify_on_signature` tornado **idempotente** para evitar inserts duplicados ao concluir assinatura.
 - **Build**: corrigido erro TypeScript (`TS18047: x is possibly 'null'`) no `PetitionEditorModule.tsx`.
 
 ## 1.9.58
-- **Assinatura (PDF)**: atualizado o texto da **validade jurídica** (MP 2.200-2/2001) na página de registro de assinatura do PDF, com redação mais completa e formal.
+- **Assinatura (PDF)**: atualizado o texto da **validade jurÃ­dica** (MP 2.200-2/2001) na pÃ¡gina de registro de assinatura do PDF, com redaÃ§Ã£o mais completa e formal.
 
 ## 1.9.57
-- **Assinatura (OTP por E-mail)**: padronizadas as cores do fluxo (botões e destaques) para o **tema laranja** do projeto.
+- **Assinatura (OTP por E-mail)**: padronizadas as cores do fluxo (botÃµes e destaques) para o **tema laranja** do projeto.
 
 ## 1.9.56
-- **Assinatura (OTP por E-mail)**: melhorado o **template do e-mail** (layout mais compatível com clientes como Gmail/Outlook) e padronizado para as **cores do projeto**.
-- **Assinatura (OTP por E-mail)**: melhorias visuais no modal de autenticação (animações/feedback de envio e validação).
+- **Assinatura (OTP por E-mail)**: melhorado o **template do e-mail** (layout mais compatÃ­vel com clientes como Gmail/Outlook) e padronizado para as **cores do projeto**.
+- **Assinatura (OTP por E-mail)**: melhorias visuais no modal de autenticaÃ§Ã£o (animaÃ§Ãµes/feedback de envio e validaÃ§Ã£o).
 
 ## 1.9.55
-- **Assinatura (OTP por E-mail)**: ajustadas as Edge Functions para **não retornarem status HTTP de erro** (sempre `200` com `{ success: false, error }`), evitando o erro genérico "Edge Function returned a non-2xx status code" no frontend.
+- **Assinatura (OTP por E-mail)**: ajustadas as Edge Functions para **nÃ£o retornarem status HTTP de erro** (sempre `200` com `{ success: false, error }`), evitando o erro genÃ©rico "Edge Function returned a non-2xx status code" no frontend.
 
 ## 1.9.54
-- **Assinatura (OTP por E-mail)**: corrigida a etapa **“Continuar com E-mail”** que ficava em branco no modal; incluída a renderização da etapa `email_otp`.
+- **Assinatura (OTP por E-mail)**: corrigida a etapa **â€œContinuar com E-mailâ€�** que ficava em branco no modal; incluÃ­da a renderizaÃ§Ã£o da etapa `email_otp`.
 
 ## 1.9.53
-- **Assinatura (Código por E-mail)**: adicionado novo método de autenticação por **código via e-mail (OTP)** usando SMTP (Hostinger), com Edge Functions `email-send-otp` / `email-verify-otp` e persistência em `signature_email_otps`.
+- **Assinatura (CÃ³digo por E-mail)**: adicionado novo mÃ©todo de autenticaÃ§Ã£o por **cÃ³digo via e-mail (OTP)** usando SMTP (Hostinger), com Edge Functions `email-send-otp` / `email-verify-otp` e persistÃªncia em `signature_email_otps`.
 
 ## 1.9.52
-- **Preencher (Validação Telefone/WhatsApp)**: o campo de telefone/WhatsApp agora exige **11 dígitos** (DDD + 9) e não permite avançar com 10 dígitos.
+- **Preencher (ValidaÃ§Ã£o Telefone/WhatsApp)**: o campo de telefone/WhatsApp agora exige **11 dÃ­gitos** (DDD + 9) e nÃ£o permite avanÃ§ar com 10 dÃ­gitos.
 
 ## 1.9.51
-- **Processos (Timeline Profissional)**: redesign completo da linha do tempo inline com cards individuais, layout limpo e espaçado, ícones maiores, melhor hierarquia visual, badges refinados e botão de detalhes mais claro.
+- **Processos (Timeline Profissional)**: redesign completo da linha do tempo inline com cards individuais, layout limpo e espaÃ§ado, Ã­cones maiores, melhor hierarquia visual, badges refinados e botÃ£o de detalhes mais claro.
 
 ## 1.9.50
-- **Intimações (IA via Cron)**: desativada a análise de IA no frontend; o módulo agora apenas exibe análises **salvas no banco** (geradas via Edge/Cron), evitando consumo repetido ao abrir.
+- **IntimaÃ§Ãµes (IA via Cron)**: desativada a anÃ¡lise de IA no frontend; o mÃ³dulo agora apenas exibe anÃ¡lises **salvas no banco** (geradas via Edge/Cron), evitando consumo repetido ao abrir.
 
 ## 1.9.49
-- **Processos (IA Persistente)**: Edge Function `analyze-intimations` agora salva a análise também em `djen_comunicacoes.ai_analysis`, permitindo que a timeline consuma a análise do banco e reanalise **apenas** quando chegar nova movimentação.
+- **Processos (IA Persistente)**: Edge Function `analyze-intimations` agora salva a anÃ¡lise tambÃ©m em `djen_comunicacoes.ai_analysis`, permitindo que a timeline consuma a anÃ¡lise do banco e reanalise **apenas** quando chegar nova movimentaÃ§Ã£o.
 
 ## 1.9.48
-- **Processos (Timeline Inline)**: melhorias na linha do tempo no card: exibe **data completa + hora**, **órgão/tribunal**, permite **expandir detalhes** e inclui **botão de atualizar**; layout refinado e classes Tailwind ajustadas para evitar falhas de build.
+- **Processos (Timeline Inline)**: melhorias na linha do tempo no card: exibe **data completa + hora**, **Ã³rgÃ£o/tribunal**, permite **expandir detalhes** e inclui **botÃ£o de atualizar**; layout refinado e classes Tailwind ajustadas para evitar falhas de build.
 
 ## 1.9.47
-- **Processos (Edge Function)**: nova Edge Function `update-process-status` para atualização automática de status dos processos via cron, sem necessidade de abrir o navegador.
-- **Processos (Timeline Inline)**: linha do tempo agora é exibida diretamente no card do processo (expansível/recolhível), sem necessidade de abrir modal.
-- **Processos (Alerta Inteligente)**: sistema detecta e alerta quando um processo arquivado ainda possui prazos pendentes, exibindo notificação visual no módulo.
-- **Processos (Timeline Desktop)**: ao clicar na linha da tabela, a timeline expande abaixo da linha ao invés de abrir modal.
+- **Processos (Edge Function)**: nova Edge Function `update-process-status` para atualizaÃ§Ã£o automÃ¡tica de status dos processos via cron, sem necessidade de abrir o navegador.
+- **Processos (Timeline Inline)**: linha do tempo agora Ã© exibida diretamente no card do processo (expansÃ­vel/recolhÃ­vel), sem necessidade de abrir modal.
+- **Processos (Alerta Inteligente)**: sistema detecta e alerta quando um processo arquivado ainda possui prazos pendentes, exibindo notificaÃ§Ã£o visual no mÃ³dulo.
+- **Processos (Timeline Desktop)**: ao clicar na linha da tabela, a timeline expande abaixo da linha ao invÃ©s de abrir modal.
 
 ## 1.9.45
-- **Peticionamento (Blocos)**: removida a **numeração automática** na listagem de blocos.
+- **Peticionamento (Blocos)**: removida a **numeraÃ§Ã£o automÃ¡tica** na listagem de blocos.
 
 ## 1.9.44
-- **Peticionamento (Busca de Blocos)**: resultados agora exibem **todas as tags** e uma **porcentagem de match**; ao clicar em um item, abre o **View do bloco** com a opção **Adicionar no documento** (não insere automaticamente).
+- **Peticionamento (Busca de Blocos)**: resultados agora exibem **todas as tags** e uma **porcentagem de match**; ao clicar em um item, abre o **View do bloco** com a opÃ§Ã£o **Adicionar no documento** (nÃ£o insere automaticamente).
 
 ## 1.9.43
-- **Peticionamento (Busca de Blocos)**: busca refinada no modal (ignora stopwords como "de/da/do", suporta frase exata com aspas e aplica filtro/ranking mais estrito priorizando título/tags, reduzindo resultados genéricos).
+- **Peticionamento (Busca de Blocos)**: busca refinada no modal (ignora stopwords como "de/da/do", suporta frase exata com aspas e aplica filtro/ranking mais estrito priorizando tÃ­tulo/tags, reduzindo resultados genÃ©ricos).
 
 ## 1.9.42
-- **Peticionamento (Pré-visualização de Blocos)**: container do `docx-preview` agora permanece montado durante o carregamento (com overlay), evitando fallback e garantindo renderização correta por **parágrafos/páginas**.
+- **Peticionamento (PrÃ©-visualizaÃ§Ã£o de Blocos)**: container do `docx-preview` agora permanece montado durante o carregamento (com overlay), evitando fallback e garantindo renderizaÃ§Ã£o correta por **parÃ¡grafos/pÃ¡ginas**.
 
 ## 1.9.41
-- **Peticionamento (Pré-visualização de Blocos)**: ajustado CSS do `docx-preview` no modo *view* para restaurar **quebras de linha** e **espaçamento entre parágrafos**, evitando texto "colado".
+- **Peticionamento (PrÃ©-visualizaÃ§Ã£o de Blocos)**: ajustado CSS do `docx-preview` no modo *view* para restaurar **quebras de linha** e **espaÃ§amento entre parÃ¡grafos**, evitando texto "colado".
 
 ## 1.9.40
-- **Peticionamento (Pré-visualização de Blocos)**: visualização agora renderiza o conteúdo via **DOCX (gerado a partir do SFDT) + docx-preview**, garantindo exibição do documento no modo *view* sem travar na geração de PDF.
+- **Peticionamento (PrÃ©-visualizaÃ§Ã£o de Blocos)**: visualizaÃ§Ã£o agora renderiza o conteÃºdo via **DOCX (gerado a partir do SFDT) + docx-preview**, garantindo exibiÃ§Ã£o do documento no modo *view* sem travar na geraÃ§Ã£o de PDF.
 
 ## 1.9.39
-- **Peticionamento (Pré-visualização de Blocos)**: tentativa inicial de renderização via PDF gerado a partir do SFDT.
+- **Peticionamento (PrÃ©-visualizaÃ§Ã£o de Blocos)**: tentativa inicial de renderizaÃ§Ã£o via PDF gerado a partir do SFDT.
 
 ## 1.9.38
-- **Peticionamento (Editor de Blocos)**: botão de editar bloco reexibido na lista lateral (ícone lápis).
-- **Peticionamento (Editor de Blocos)**: reforço visual A4 no modal (largura total, folha centralizada, sombra/borda) e altura do editor ampliada para 520px.
-- **Peticionamento (Syncfusion)**: margens mínimas com dimensões A4 aplicadas ao editor do modal para manter proporção real de página.
+- **Peticionamento (Editor de Blocos)**: botÃ£o de editar bloco reexibido na lista lateral (Ã­cone lÃ¡pis).
+- **Peticionamento (Editor de Blocos)**: reforÃ§o visual A4 no modal (largura total, folha centralizada, sombra/borda) e altura do editor ampliada para 520px.
+- **Peticionamento (Syncfusion)**: margens mÃ­nimas com dimensÃµes A4 aplicadas ao editor do modal para manter proporÃ§Ã£o real de pÃ¡gina.
 
 ## 1.9.36
-- **Peticionamento (Editor de Blocos)**: restauradas declarações de estado/refs do modal de blocos (corrige build e exibição do editor).
-- **Peticionamento (Syncfusion)**: corrigido ajuste de layout que usava `pageWidth` como string, evitando falha silenciosa na inicialização do editor.
+- **Peticionamento (Editor de Blocos)**: restauradas declaraÃ§Ãµes de estado/refs do modal de blocos (corrige build e exibiÃ§Ã£o do editor).
+- **Peticionamento (Syncfusion)**: corrigido ajuste de layout que usava `pageWidth` como string, evitando falha silenciosa na inicializaÃ§Ã£o do editor.
 
 ## 1.9.35
-- **Peticionamento (Editor de Blocos)**: corrigido problema de largura reduzida do editor SFDT no modal. Removido layout grid que limitava a largura e adicionados CSS mais fortes para garantir 100% de ocupação do espaço disponível.
+- **Peticionamento (Editor de Blocos)**: corrigido problema de largura reduzida do editor SFDT no modal. Removido layout grid que limitava a largura e adicionados CSS mais fortes para garantir 100% de ocupaÃ§Ã£o do espaÃ§o disponÃ­vel.
 
 ## 1.9.34
-- **Peticionamento (Editor de Blocos)**: corrigido problema de largura reduzida do editor SFDT no modal. Agora o editor ocupa 100% da largura disponível, eliminando o espaço em branco à direita.
+- **Peticionamento (Editor de Blocos)**: corrigido problema de largura reduzida do editor SFDT no modal. Agora o editor ocupa 100% da largura disponÃ­vel, eliminando o espaÃ§o em branco Ã  direita.
 
 ## 1.9.33
-- **Peticionamento (Editor de Blocos)**: corrigido carregamento do conteúdo SFDT no modal de edição de blocos. Agora o conteúdo é carregado automaticamente quando o modal abre.
-- **Peticionamento (Pré-visualização)**: melhorada extração de texto SFDT com suporte a quebras de parágrafo e fallback mais robusto.
+- **Peticionamento (Editor de Blocos)**: corrigido carregamento do conteÃºdo SFDT no modal de ediÃ§Ã£o de blocos. Agora o conteÃºdo Ã© carregado automaticamente quando o modal abre.
+- **Peticionamento (PrÃ©-visualizaÃ§Ã£o)**: melhorada extraÃ§Ã£o de texto SFDT com suporte a quebras de parÃ¡grafo e fallback mais robusto.
 
 ## 1.9.32
-- **Peticionamento (Tags Inteligentes)**: reformulada lógica de sugestão para ser estritamente baseada em termos jurídicos. O sistema agora ignora palavras aleatórias e foca em uma base de dados de mais de 100 termos e expressões jurídicas (ex: "nexo causal", "estabilidade gestante", "litispendencia").
-- **Peticionamento (Sincronização)**: implementada detecção de mudanças no editor de blocos em tempo real, permitindo que as sugestões de tags se adaptem instantaneamente ao texto que está sendo digitado.
+- **Peticionamento (Tags Inteligentes)**: reformulada lÃ³gica de sugestÃ£o para ser estritamente baseada em termos jurÃ­dicos. O sistema agora ignora palavras aleatÃ³rias e foca em uma base de dados de mais de 100 termos e expressÃµes jurÃ­dicas (ex: "nexo causal", "estabilidade gestante", "litispendencia").
+- **Peticionamento (SincronizaÃ§Ã£o)**: implementada detecÃ§Ã£o de mudanÃ§as no editor de blocos em tempo real, permitindo que as sugestÃµes de tags se adaptem instantaneamente ao texto que estÃ¡ sendo digitado.
 
 ## 1.9.31
-- **Peticionamento (Tags Inteligentes)**: sistema de sugestão de tags agora é 100% dinâmico, analisando o título e conteúdo do bloco em tempo real para sugerir termos jurídicos relevantes.
-- **Peticionamento (Editor de Blocos)**: corrigido problema onde o conteúdo aparecia espremido/com wrap excessivo nos modais; implementado `ResizeObserver` e ajuste automático de margens para garantir 100% de largura.
-- **Peticionamento (Pré-visualização)**: melhorada a extração de texto de arquivos SFDT (Syncfusion) para evitar a mensagem "Pré-visualização indisponível".
-- **Database**: migration para garantir a existência da coluna `order` na tabela `petition_blocks`, resolvendo erros 400 na API.
+- **Peticionamento (Tags Inteligentes)**: sistema de sugestÃ£o de tags agora Ã© 100% dinÃ¢mico, analisando o tÃ­tulo e conteÃºdo do bloco em tempo real para sugerir termos jurÃ­dicos relevantes.
+- **Peticionamento (Editor de Blocos)**: corrigido problema onde o conteÃºdo aparecia espremido/com wrap excessivo nos modais; implementado `ResizeObserver` e ajuste automÃ¡tico de margens para garantir 100% de largura.
+- **Peticionamento (PrÃ©-visualizaÃ§Ã£o)**: melhorada a extraÃ§Ã£o de texto de arquivos SFDT (Syncfusion) para evitar a mensagem "PrÃ©-visualizaÃ§Ã£o indisponÃ­vel".
+- **Database**: migration para garantir a existÃªncia da coluna `order` na tabela `petition_blocks`, resolvendo erros 400 na API.
 
 ## 1.9.30
-- **Peticionamento (Supabase/Erros)**: corrigido acesso ao usuário no service (getUser async) e leitura do modelo padrão com `maybeSingle()` para evitar 406 quando não há registro; melhorada detecção de ausência da coluna `document_type` para evitar 400 repetidos.
+- **Peticionamento (Supabase/Erros)**: corrigido acesso ao usuÃ¡rio no service (getUser async) e leitura do modelo padrÃ£o com `maybeSingle()` para evitar 406 quando nÃ£o hÃ¡ registro; melhorada detecÃ§Ã£o de ausÃªncia da coluna `document_type` para evitar 400 repetidos.
 
 ## 1.9.29
-- **Peticionamento (Modelo Padrão)**: migrado do localStorage para Supabase; agora o modelo é salvo no banco e sincronizado entre dispositivos, com fallback para localStorage em caso de falha.
-- **Database**: adicionada tabela `petition_default_templates` com RLS para armazenar modelo padrão por usuário.
+- **Peticionamento (Modelo PadrÃ£o)**: migrado do localStorage para Supabase; agora o modelo Ã© salvo no banco e sincronizado entre dispositivos, com fallback para localStorage em caso de falha.
+- **Database**: adicionada tabela `petition_default_templates` com RLS para armazenar modelo padrÃ£o por usuÃ¡rio.
 
 ## 1.9.27
-- **Peticionamento (Otimização Supabase)**: salvamento instantâneo limitado (throttle) para evitar múltiplos saves durante digitação e refresh das petições via realtime com debounce para reduzir leituras.
+- **Peticionamento (OtimizaÃ§Ã£o Supabase)**: salvamento instantÃ¢neo limitado (throttle) para evitar mÃºltiplos saves durante digitaÃ§Ã£o e refresh das petiÃ§Ãµes via realtime com debounce para reduzir leituras.
 
 ## 1.9.26
-- **Peticionamento (Header)**: removido indicador visual do auto-salvamento e estabilizado layout para não deslocar o chip do cliente quando o status "Atualizado" muda.
+- **Peticionamento (Header)**: removido indicador visual do auto-salvamento e estabilizado layout para nÃ£o deslocar o chip do cliente quando o status "Atualizado" muda.
 - **Build**: restaurado `package.json` (arquivo estava vazio), evitando quebra do projeto.
 
 ## 1.9.23
-- **Peticionamento (Histórico/Recentes)**: abrir documento com 1 clique e indicador de carregamento "Abrindo..." com bloqueio durante a abertura.
+- **Peticionamento (HistÃ³rico/Recentes)**: abrir documento com 1 clique e indicador de carregamento "Abrindo..." com bloqueio durante a abertura.
 
 ## 1.9.22
-- **Peticionamento (Online-only)**: editor passa para modo leitura quando offline e bloqueia salvamentos/edições; adicionada proteção contra perda por navegação (alerta ao sair e salvamento best-effort ao ocultar/fechar a aba).
+- **Peticionamento (Online-only)**: editor passa para modo leitura quando offline e bloqueia salvamentos/ediÃ§Ãµes; adicionada proteÃ§Ã£o contra perda por navegaÃ§Ã£o (alerta ao sair e salvamento best-effort ao ocultar/fechar a aba).
 
 ## 1.9.21
-- **Peticionamento (Salvamento)**: adicionado salvamento instantâneo (debounce) e autosave contínuo, com proteção para não salvar durante carregamento e bloqueio de múltiplos cliques ao abrir petições (estado "Abrindo...").
+- **Peticionamento (Salvamento)**: adicionado salvamento instantÃ¢neo (debounce) e autosave contÃ­nuo, com proteÃ§Ã£o para nÃ£o salvar durante carregamento e bloqueio de mÃºltiplos cliques ao abrir petiÃ§Ãµes (estado "Abrindo...").
 
 ## 1.9.20
-- **Peticionamento (Auto-salvamento)**: corrigido bug onde o indicador ficava em "Auto-salvando em 30s" e não executava o salvamento automático (timer estabilizado com refs e execução via handler único).
+- **Peticionamento (Auto-salvamento)**: corrigido bug onde o indicador ficava em "Auto-salvando em 30s" e nÃ£o executava o salvamento automÃ¡tico (timer estabilizado com refs e execuÃ§Ã£o via handler Ãºnico).
 
 ## 1.9.19
-- **Peticionamento (Auto-salvamento)**: implementado salvamento automático a cada 30 segundos quando há alterações não salvas e cliente selecionado. Indicador visual mostra contador regressivo ("Auto-salvando em Xs") e status em tempo real.
+- **Peticionamento (Auto-salvamento)**: implementado salvamento automÃ¡tico a cada 30 segundos quando hÃ¡ alteraÃ§Ãµes nÃ£o salvas e cliente selecionado. Indicador visual mostra contador regressivo ("Auto-salvando em Xs") e status em tempo real.
 
 ## 1.9.18
-- **Assinaturas ↔ Requerimentos**: correção do vínculo automático do requerimento criado via assinatura (persistência do `signature_id` até o momento do salvar), garantindo exibição do badge "Requerimento Criado".
+- **Assinaturas â†” Requerimentos**: correÃ§Ã£o do vÃ­nculo automÃ¡tico do requerimento criado via assinatura (persistÃªncia do `signature_id` atÃ© o momento do salvar), garantindo exibiÃ§Ã£o do badge "Requerimento Criado".
 
 ## 1.9.17
-- **Assinaturas ↔ Requerimentos**: integração automática - ao criar requerimento a partir da assinatura, o badge "Requerimento Criado" agora aparece automaticamente no card.
+- **Assinaturas â†” Requerimentos**: integraÃ§Ã£o automÃ¡tica - ao criar requerimento a partir da assinatura, o badge "Requerimento Criado" agora aparece automaticamente no card.
 
 ## 1.9.16
 - **Assinaturas (Cards)**: indicadores visuais para processo e requerimento criados a partir da assinatura (badges coloridos nos cards).
 
 ## 1.9.15
-- **Assinaturas (Detalhes)**: botões "Abrir processo" e "Requerimento" agora em estilo de texto (sem fundo), com ícones e hover effects, seguindo o padrão de links estilizados.
+- **Assinaturas (Detalhes)**: botÃµes "Abrir processo" e "Requerimento" agora em estilo de texto (sem fundo), com Ã­cones e hover effects, seguindo o padrÃ£o de links estilizados.
 
 ## 1.9.14
-- **Assinaturas (Detalhes)**: botões "Criar processo" e "Requerimento" agora mais compactos (padding reduzido, fonte menor e ícones ajustados).
+- **Assinaturas (Detalhes)**: botÃµes "Criar processo" e "Requerimento" agora mais compactos (padding reduzido, fonte menor e Ã­cones ajustados).
 
 ## 1.9.13
-- **Assinaturas (Detalhes)**: ajuste fino nos botões "Criar processo" e "Requerimento" para fundo mais claro (neutral-700), com bordas definidas e ícones brancos, melhorando a definição visual.
+- **Assinaturas (Detalhes)**: ajuste fino nos botÃµes "Criar processo" e "Requerimento" para fundo mais claro (neutral-700), com bordas definidas e Ã­cones brancos, melhorando a definiÃ§Ã£o visual.
 
 ## 1.9.11
-- **Assinaturas (Detalhes)**: fidelização total do design dos botões "Criar processo" e "Requerimento" (fundo dark #333333, ícones brancos e ajuste de pesos de fonte).
+- **Assinaturas (Detalhes)**: fidelizaÃ§Ã£o total do design dos botÃµes "Criar processo" e "Requerimento" (fundo dark #333333, Ã­cones brancos e ajuste de pesos de fonte).
 
 ## 1.9.10
-- **Assinaturas (Detalhes)**: refinamento final do design dos botões de ação (Top e Bottom), garantindo que todos utilizem cantos `rounded-xl`, cores vibrantes e o novo padrão visual dark para ações secundárias.
+- **Assinaturas (Detalhes)**: refinamento final do design dos botÃµes de aÃ§Ã£o (Top e Bottom), garantindo que todos utilizem cantos `rounded-xl`, cores vibrantes e o novo padrÃ£o visual dark para aÃ§Ãµes secundÃ¡rias.
 
 ## 1.9.09
-- **Assinaturas (Detalhes)**: botões "Processo" e "Requerimento" agora utilizam fundo escuro e texto branco, seguindo o novo padrão visual de destaque secundário.
+- **Assinaturas (Detalhes)**: botÃµes "Processo" e "Requerimento" agora utilizam fundo escuro e texto branco, seguindo o novo padrÃ£o visual de destaque secundÃ¡rio.
 
 ## 1.9.08
-- **Assinaturas (Detalhes)**: refinamento do design das ações de Processo e Requerimento (botões lado a lado com estilo modernizado).
+- **Assinaturas (Detalhes)**: refinamento do design das aÃ§Ãµes de Processo e Requerimento (botÃµes lado a lado com estilo modernizado).
 
 ## 1.9.07
-- **Assinaturas (Detalhes)**: modal de detalhes mais compacto e ações de Processo/Requerimento reposicionadas abaixo dos botões principais (mais discretas).
+- **Assinaturas (Detalhes)**: modal de detalhes mais compacto e aÃ§Ãµes de Processo/Requerimento reposicionadas abaixo dos botÃµes principais (mais discretas).
 
 ## 1.9.06
-- **Assinaturas (Estabilidade)**: corrigido erro que quebrava o módulo de Assinaturas (referência a `detailsRequest` antes da inicialização).
+- **Assinaturas (Estabilidade)**: corrigido erro que quebrava o mÃ³dulo de Assinaturas (referÃªncia a `detailsRequest` antes da inicializaÃ§Ã£o).
 
 ## 1.9.05
-- **Assinaturas (Detalhes)**: botão "Processo" agora abre fluxo de criação quando não há processo vinculado (status "Aguardando Confecção" com seleção de área).
+- **Assinaturas (Detalhes)**: botÃ£o "Processo" agora abre fluxo de criaÃ§Ã£o quando nÃ£o hÃ¡ processo vinculado (status "Aguardando ConfecÃ§Ã£o" com seleÃ§Ã£o de Ã¡rea).
 
 ## 1.9.04
-- **Assinaturas (Detalhes)**: quando não há processo vinculado, agora permite selecionar a área e criar um Processo com status "Aguardando Confecção".
+- **Assinaturas (Detalhes)**: quando nÃ£o hÃ¡ processo vinculado, agora permite selecionar a Ã¡rea e criar um Processo com status "Aguardando ConfecÃ§Ã£o".
 
 ## 1.9.03
-- **Assinaturas (Detalhes)**: corrigido botão "Abrir processo" (fallback por número do processo) e ajustes no layout dos botões.
+- **Assinaturas (Detalhes)**: corrigido botÃ£o "Abrir processo" (fallback por nÃºmero do processo) e ajustes no layout dos botÃµes.
 
 ## 1.9.02
-- **Assinaturas (Detalhes)**: após assinar, adicionados atalhos para abrir o Processo vinculado e iniciar um Requerimento Administrativo (a confeccionar).
+- **Assinaturas (Detalhes)**: apÃ³s assinar, adicionados atalhos para abrir o Processo vinculado e iniciar um Requerimento Administrativo (a confeccionar).
 
 ## 1.9.01
-- **Assinatura (Login Google)**: ajustado selo "Recomendado" para não sobrepor o botão do Google.
+- **Assinatura (Login Google)**: ajustado selo "Recomendado" para nÃ£o sobrepor o botÃ£o do Google.
 
 ## 1.9.00
-- **Assinatura (Login Google)**: adicionado selo "Recomendado" na opção "Fazer Login com o Google".
+- **Assinatura (Login Google)**: adicionado selo "Recomendado" na opÃ§Ã£o "Fazer Login com o Google".
 
 ## 1.8.99
 - **Assinatura (PDF)**: ajustada escala da assinatura para 1.5x (meio termo entre muito pequena e muito grande).
 
 ## 1.8.98
-- **Assinatura (DOCX)**: corrigido problema onde documentos DOCX assinados mostravam apenas o relatório de assinatura; agora gera o documento completo com a assinatura.
+- **Assinatura (DOCX)**: corrigido problema onde documentos DOCX assinados mostravam apenas o relatÃ³rio de assinatura; agora gera o documento completo com a assinatura.
 
 ## 1.8.97
 - **Assinatura (PDF)**: corrigido tamanho excessivo da assinatura no documento final; removida escala 2x que causava assinaturas muito grandes.
 
 ## 1.8.96
-- **Editor de Petições (Recentes)**: adicionado botão de excluir em cada item da lista de Recentes com confirmação via modal de cálculo.
-- **Clientes (Detalhes)**: adicionada seção "Petições vinculadas" com opção de abrir e excluir petições do cliente.
+- **Editor de PetiÃ§Ãµes (Recentes)**: adicionado botÃ£o de excluir em cada item da lista de Recentes com confirmaÃ§Ã£o via modal de cÃ¡lculo.
+- **Clientes (Detalhes)**: adicionada seÃ§Ã£o "PetiÃ§Ãµes vinculadas" com opÃ§Ã£o de abrir e excluir petiÃ§Ãµes do cliente.
 
 ## 1.8.95
-- **Editor de Petições (Documento padrão)**: melhoria na persistência; quando o navegador não consegue salvar (armazenamento cheio), o sistema avisa e mantém fallback em memória para a sessão.
+- **Editor de PetiÃ§Ãµes (Documento padrÃ£o)**: melhoria na persistÃªncia; quando o navegador nÃ£o consegue salvar (armazenamento cheio), o sistema avisa e mantÃ©m fallback em memÃ³ria para a sessÃ£o.
 
 ## 1.8.94
-- **Editor de Petições (Documento padrão)**: ao importar um arquivo Word, o documento passa a ser salvo como "Documento padrão", permitindo que "Novo → Documento padrão" carregue o template selecionado.
+- **Editor de PetiÃ§Ãµes (Documento padrÃ£o)**: ao importar um arquivo Word, o documento passa a ser salvo como "Documento padrÃ£o", permitindo que "Novo â†’ Documento padrÃ£o" carregue o template selecionado.
 
 ## 1.8.93
-- **Clientes (Detalhes)**: seção "Documentos/Contratos assinados" agora exibe item "Vinculado" e organiza documentos em "Assinados" e "Gerados", com mensagem de vazio exibida abaixo.
+- **Clientes (Detalhes)**: seÃ§Ã£o "Documentos/Contratos assinados" agora exibe item "Vinculado" e organiza documentos em "Assinados" e "Gerados", com mensagem de vazio exibida abaixo.
 
 ## 1.8.92
-- **Editor de Petições (Tela Inicial)**: corrigido o atalho "Novo → Documento padrão" para carregar o template cadastrado (aguarda editor estar pronto e evita falha silenciosa).
+- **Editor de PetiÃ§Ãµes (Tela Inicial)**: corrigido o atalho "Novo â†’ Documento padrÃ£o" para carregar o template cadastrado (aguarda editor estar pronto e evita falha silenciosa).
 
 ## 1.8.91
-- **Editor de Petições (Tela Inicial)**: ajuste na exibição do nome do usuário para capitalização correta (ex.: "Pedro" em vez de "pedro").
+- **Editor de PetiÃ§Ãµes (Tela Inicial)**: ajuste na exibiÃ§Ã£o do nome do usuÃ¡rio para capitalizaÃ§Ã£o correta (ex.: "Pedro" em vez de "pedro").
 
 ## 1.8.90
-- **Editor de Petições (Salvamento)**: salvamento (manual e automático) permitido apenas com cliente vinculado; documentos antigos sem vínculo são removidos automaticamente.
-- **Editor de Petições (Tela Inicial)**: botão "Documento padrão" em "Novo" volta a carregar corretamente o template.
-- **Editor de Petições (Tela Inicial)**: saudação passa a exibir o nome do usuário logado.
+- **Editor de PetiÃ§Ãµes (Salvamento)**: salvamento (manual e automÃ¡tico) permitido apenas com cliente vinculado; documentos antigos sem vÃ­nculo sÃ£o removidos automaticamente.
+- **Editor de PetiÃ§Ãµes (Tela Inicial)**: botÃ£o "Documento padrÃ£o" em "Novo" volta a carregar corretamente o template.
+- **Editor de PetiÃ§Ãµes (Tela Inicial)**: saudaÃ§Ã£o passa a exibir o nome do usuÃ¡rio logado.
 
 ## 1.8.89
-- **Editor de Petições (Recentes)**: corrigido bug onde múltiplos cliques ao abrir um documento recente podiam carregar vazio e disparar salvamento automático em branco.
-- **Editor de Petições (Tela Inicial)**: renomeado atalho "Modelo" para "Documento padrão".
+- **Editor de PetiÃ§Ãµes (Recentes)**: corrigido bug onde mÃºltiplos cliques ao abrir um documento recente podiam carregar vazio e disparar salvamento automÃ¡tico em branco.
+- **Editor de PetiÃ§Ãµes (Tela Inicial)**: renomeado atalho "Modelo" para "Documento padrÃ£o".
 
 ## 1.8.88
-- **Editor de Petições (Tela Inicial)**: adicionados atalhos "Modelo" e "Importar arquivo" em "Novo".
-- **Editor de Petições (Recentes)**: confirmação de exclusão agora mostra detalhes (documento/cliente/total) como nos demais módulos.
+- **Editor de PetiÃ§Ãµes (Tela Inicial)**: adicionados atalhos "Modelo" e "Importar arquivo" em "Novo".
+- **Editor de PetiÃ§Ãµes (Recentes)**: confirmaÃ§Ã£o de exclusÃ£o agora mostra detalhes (documento/cliente/total) como nos demais mÃ³dulos.
 
 ## 1.8.87
-- **Editor de Petições (Tela Inicial)**: exibe nome do usuário logado (sem e-mail), adiciona botões de minimizar/fechar (widget) e mostra Recentes com arquivo + cliente vinculado.
+- **Editor de PetiÃ§Ãµes (Tela Inicial)**: exibe nome do usuÃ¡rio logado (sem e-mail), adiciona botÃµes de minimizar/fechar (widget) e mostra Recentes com arquivo + cliente vinculado.
 
 ## 1.8.86
-- **Editor de Petições (Salvamento)**: documentos passam a ser salvos apenas quando há cliente vinculado (autosave e salvar manual).
-- **Editor de Petições (Recentes)**: adicionada ação para excluir todos os documentos salvos e listagem de recentes agora considera apenas itens com cliente.
+- **Editor de PetiÃ§Ãµes (Salvamento)**: documentos passam a ser salvos apenas quando hÃ¡ cliente vinculado (autosave e salvar manual).
+- **Editor de PetiÃ§Ãµes (Recentes)**: adicionada aÃ§Ã£o para excluir todos os documentos salvos e listagem de recentes agora considera apenas itens com cliente.
 
 ## 1.8.85
-- **Editor de Petições (UI)**: tela inicial (abertura) remodelada em estilo Word (Novo/Recentes) e exibição do nome do usuário.
+- **Editor de PetiÃ§Ãµes (UI)**: tela inicial (abertura) remodelada em estilo Word (Novo/Recentes) e exibiÃ§Ã£o do nome do usuÃ¡rio.
 
 ## 1.8.84
-- **Editor de Petições (Blocos)**: cabeçalho agora é inserido sem numeração (sem prefixo "1 - "), mantendo o cabeçalho limpo.
+- **Editor de PetiÃ§Ãµes (Blocos)**: cabeÃ§alho agora Ã© inserido sem numeraÃ§Ã£o (sem prefixo "1 - "), mantendo o cabeÃ§alho limpo.
 
 ## 1.8.83
-- **Editor de Petições (Blocos)**: corrigido erro 400 ao listar blocos no Supabase (coluna `order` agora é referenciada corretamente na ordenação).
-- **Editor de Petições (Syncfusion)**: mitigados crashes/intermitências do ruler/selection quando o documento ainda não está inicializado.
-- **Editor de Petições (Blocos/Performance)**: placeholders do cliente passam a ser processados antes da inserção (sem `replaceAll` no editor principal), reduzindo travamento/lag após inserir bloco.
+- **Editor de PetiÃ§Ãµes (Blocos)**: corrigido erro 400 ao listar blocos no Supabase (coluna `order` agora Ã© referenciada corretamente na ordenaÃ§Ã£o).
+- **Editor de PetiÃ§Ãµes (Syncfusion)**: mitigados crashes/intermitÃªncias do ruler/selection quando o documento ainda nÃ£o estÃ¡ inicializado.
+- **Editor de PetiÃ§Ãµes (Blocos/Performance)**: placeholders do cliente passam a ser processados antes da inserÃ§Ã£o (sem `replaceAll` no editor principal), reduzindo travamento/lag apÃ³s inserir bloco.
 
 ## 1.8.82
-- **Editor de Petições (Performance)**: solução definitiva para o travamento de digitação após inserir bloco. Agora os dados do cliente (placeholders) são substituídos diretamente no código (SFDT) antes da colagem, eliminando 12 operações pesadas de substituição no editor que congelavam a interface.
-- **Editor de Petições (UI)**: reforçado estado editável e atualização de layout (repaint) no foco do editor.
+- **Editor de PetiÃ§Ãµes (Performance)**: soluÃ§Ã£o definitiva para o travamento de digitaÃ§Ã£o apÃ³s inserir bloco. Agora os dados do cliente (placeholders) sÃ£o substituÃ­dos diretamente no cÃ³digo (SFDT) antes da colagem, eliminando 12 operaÃ§Ãµes pesadas de substituiÃ§Ã£o no editor que congelavam a interface.
+- **Editor de PetiÃ§Ãµes (UI)**: reforÃ§ado estado editÃ¡vel e atualizaÃ§Ã£o de layout (repaint) no foco do editor.
 
 ## 1.8.81
-- **Editor de Petições (Blocos)**: simplificado mecanismo de foco após inserir bloco para resolver bug de edição travada (focusIn + moveToDocumentEnd).
+- **Editor de PetiÃ§Ãµes (Blocos)**: simplificado mecanismo de foco apÃ³s inserir bloco para resolver bug de ediÃ§Ã£o travada (focusIn + moveToDocumentEnd).
 
 ## 1.8.80
-- **Editor de Petições (Blocos)**: foco do editor agora força atualização/repaint do viewer após inserir bloco, evitando precisar rolar a página para o texto digitado aparecer.
+- **Editor de PetiÃ§Ãµes (Blocos)**: foco do editor agora forÃ§a atualizaÃ§Ã£o/repaint do viewer apÃ³s inserir bloco, evitando precisar rolar a pÃ¡gina para o texto digitado aparecer.
 
 ## 1.8.79
-- **Editor de Petições (Blocos)**: corrigido travamento/atraso de digitação após inserir bloco, executando as substituições (placeholders do cliente) de forma assíncrona e fatiada.
+- **Editor de PetiÃ§Ãµes (Blocos)**: corrigido travamento/atraso de digitaÃ§Ã£o apÃ³s inserir bloco, executando as substituiÃ§Ãµes (placeholders do cliente) de forma assÃ­ncrona e fatiada.
 
 ## 1.8.78
-- **Editor de Petições (Blocos)**: numeração automática (1 - , 2 - , etc.) agora é inserida antes do conteúdo do bloco.
-- **Editor de Petições (Blocos)**: corrigido bug de digitação travada/lenta após inserir bloco (foco melhorado com múltiplas tentativas).
+- **Editor de PetiÃ§Ãµes (Blocos)**: numeraÃ§Ã£o automÃ¡tica (1 - , 2 - , etc.) agora Ã© inserida antes do conteÃºdo do bloco.
+- **Editor de PetiÃ§Ãµes (Blocos)**: corrigido bug de digitaÃ§Ã£o travada/lenta apÃ³s inserir bloco (foco melhorado com mÃºltiplas tentativas).
 
 ## 1.8.77
-- **Editor de Petições (Blocos)**: numeração/ordem dos blocos voltou a aparecer na lista.
-- **Editor de Petições (Blocos)**: após inserir um bloco, o foco retorna ao editor para permitir edição imediata.
+- **Editor de PetiÃ§Ãµes (Blocos)**: numeraÃ§Ã£o/ordem dos blocos voltou a aparecer na lista.
+- **Editor de PetiÃ§Ãµes (Blocos)**: apÃ³s inserir um bloco, o foco retorna ao editor para permitir ediÃ§Ã£o imediata.
 
 ## 1.8.76
-- **Editor de Petições (Toolbar)**: removido item `Break` da toolbar.
+- **Editor de PetiÃ§Ãµes (Toolbar)**: removido item `Break` da toolbar.
 
 ## 1.8.75
-- **Editor de Petições (Toolbar/Layout)**: toolbar volta com itens de ação (header/footer/page setup/page number/TOC/bookmark/break) e agora não quebra linha; usa scroll horizontal interno para preservar a altura e aumentar a área de edição.
+- **Editor de PetiÃ§Ãµes (Toolbar/Layout)**: toolbar volta com itens de aÃ§Ã£o (header/footer/page setup/page number/TOC/bookmark/break) e agora nÃ£o quebra linha; usa scroll horizontal interno para preservar a altura e aumentar a Ã¡rea de ediÃ§Ã£o.
 
 ## 1.8.74
-- **Editor de Petições (Toolbar/Layout)**: removida a formatação de texto da toolbar (mantida apenas no painel lateral TEXT) e toolbar enxugada para evitar empurrar/afastar o documento.
+- **Editor de PetiÃ§Ãµes (Toolbar/Layout)**: removida a formataÃ§Ã£o de texto da toolbar (mantida apenas no painel lateral TEXT) e toolbar enxugada para evitar empurrar/afastar o documento.
 
 ## 1.8.73
-- **Editor de Petições (Toolbar/Layout)**: removidos itens não essenciais da toolbar (page setup/number, comentários, track changes, restrict editing, campos, bookmark/TOC etc.) para reduzir largura e evitar que o documento seja empurrado/afastado.
+- **Editor de PetiÃ§Ãµes (Toolbar/Layout)**: removidos itens nÃ£o essenciais da toolbar (page setup/number, comentÃ¡rios, track changes, restrict editing, campos, bookmark/TOC etc.) para reduzir largura e evitar que o documento seja empurrado/afastado.
 
 ## 1.8.72
-- **Editor de Petições (Toolbar)**: corrigido crash do Syncfusion ao adicionar botões de formatação; itens de formatação agora são botões custom com ação via `toolbarClick` (negrito/itálico/sublinhado e alinhamento).
+- **Editor de PetiÃ§Ãµes (Toolbar)**: corrigido crash do Syncfusion ao adicionar botÃµes de formataÃ§Ã£o; itens de formataÃ§Ã£o agora sÃ£o botÃµes custom com aÃ§Ã£o via `toolbarClick` (negrito/itÃ¡lico/sublinhado e alinhamento).
 
 ## 1.8.71
-- **Editor de Petições (Toolbar)**: adicionadas opções de formatação diretamente na barra superior (negrito/itálico/sublinhado, fonte/tamanho, cor/highlight, alinhamento, listas, indentação e espaçamento).
+- **Editor de PetiÃ§Ãµes (Toolbar)**: adicionadas opÃ§Ãµes de formataÃ§Ã£o diretamente na barra superior (negrito/itÃ¡lico/sublinhado, fonte/tamanho, cor/highlight, alinhamento, listas, indentaÃ§Ã£o e espaÃ§amento).
 
 ## 1.8.70
-- **Editor de Petições (UI)**: toolbar ultra-compacta (altura 22px, ícones 12px, padding mínimo) para caber em 100% de zoom sem precisar reduzir.
+- **Editor de PetiÃ§Ãµes (UI)**: toolbar ultra-compacta (altura 22px, Ã­cones 12px, padding mÃ­nimo) para caber em 100% de zoom sem precisar reduzir.
 
 ## 1.8.69
-- **Editor de Petições (UI)**: toolbar superior compactada (aprox. metade) com botões menores e labels ocultos (mantendo ícones), para caber melhor em 100% de zoom.
+- **Editor de PetiÃ§Ãµes (UI)**: toolbar superior compactada (aprox. metade) com botÃµes menores e labels ocultos (mantendo Ã­cones), para caber melhor em 100% de zoom.
 
 ## 1.8.68
-- **Editor de Petições (UI)**: toolbar superior do editor (Syncfusion) ajustada para não compactar em 100% de zoom, permitindo quebra em múltiplas linhas (wrap) e altura automática.
+- **Editor de PetiÃ§Ãµes (UI)**: toolbar superior do editor (Syncfusion) ajustada para nÃ£o compactar em 100% de zoom, permitindo quebra em mÃºltiplas linhas (wrap) e altura automÃ¡tica.
 
 ## 1.8.67
-- **Editor de Petições (UI)**: painel de formatação (TEXT) agora possui modo colapsado (aba fina), expandindo ao passar o mouse e com botão para fixar aberto/fechado.
+- **Editor de PetiÃ§Ãµes (UI)**: painel de formataÃ§Ã£o (TEXT) agora possui modo colapsado (aba fina), expandindo ao passar o mouse e com botÃ£o para fixar aberto/fechado.
 
 ## 1.8.66
-- **Editor de Petições (UI)**: painel de formatação (TEXT) reduzido ainda mais para caber melhor em 100% de zoom (padrão ~180px, mínimo 160px).
+- **Editor de PetiÃ§Ãµes (UI)**: painel de formataÃ§Ã£o (TEXT) reduzido ainda mais para caber melhor em 100% de zoom (padrÃ£o ~180px, mÃ­nimo 160px).
 
 ## 1.8.65
-- **Editor de Petições (UI)**: ajustados os limites do painel de formatação (TEXT) para manter "metade" da largura com usabilidade (padrão ~220px, mínimo 180px) e evitar painel estreito demais.
+- **Editor de PetiÃ§Ãµes (UI)**: ajustados os limites do painel de formataÃ§Ã£o (TEXT) para manter "metade" da largura com usabilidade (padrÃ£o ~220px, mÃ­nimo 180px) e evitar painel estreito demais.
 
 ## 1.8.64
-- **Editor de Petições (UI)**: painel de formatação (TEXT) reduzido para aproximadamente metade da largura para melhorar a visualização da folha em 100% de zoom.
-- **Editor de Petições (UI)**: reset do tamanho antigo do painel (chave do `localStorage` atualizada) para garantir que a nova largura padrão seja aplicada.
+- **Editor de PetiÃ§Ãµes (UI)**: painel de formataÃ§Ã£o (TEXT) reduzido para aproximadamente metade da largura para melhorar a visualizaÃ§Ã£o da folha em 100% de zoom.
+- **Editor de PetiÃ§Ãµes (UI)**: reset do tamanho antigo do painel (chave do `localStorage` atualizada) para garantir que a nova largura padrÃ£o seja aplicada.
 
 ## 1.8.63
-- **Editor de Petições (Layout 100% Zoom - Correção Definitiva)**: reescrito CSS do editor com estrutura flexbox correta para funcionar em 100% de zoom:
-  - **Diagnóstico**: O problema era causado por `min-width` implícito nos containers flex do Syncfusion e o Navigation Pane ativo criando gap à esquerda
-  - **Solução**: 
+- **Editor de PetiÃ§Ãµes (Layout 100% Zoom - CorreÃ§Ã£o Definitiva)**: reescrito CSS do editor com estrutura flexbox correta para funcionar em 100% de zoom:
+  - **DiagnÃ³stico**: O problema era causado por `min-width` implÃ­cito nos containers flex do Syncfusion e o Navigation Pane ativo criando gap Ã  esquerda
+  - **SoluÃ§Ã£o**: 
     - Wrapper com `flex: 1 1 0%` e `min-width: 0` para permitir encolhimento
     - Container principal com `max-width: 100%` e `overflow: hidden`
-    - Viewer com `flex: 1 1 auto` e `min-width: 0` para caber no espaço disponível
-    - Properties Pane com largura responsiva (320px → 260px conforme resolução)
+    - Viewer com `flex: 1 1 auto` e `min-width: 0` para caber no espaÃ§o disponÃ­vel
+    - Properties Pane com largura responsiva (320px â†’ 260px conforme resoluÃ§Ã£o)
     - Navigation Pane desabilitado via prop e CSS
-  - **Resultado**: Editor totalmente utilizável em 100% zoom sem scroll horizontal, com folha centralizada e painel TEXT sempre acessível
-  - Testado para resoluções: 1366px, 1440px, 1920px
+  - **Resultado**: Editor totalmente utilizÃ¡vel em 100% zoom sem scroll horizontal, com folha centralizada e painel TEXT sempre acessÃ­vel
+  - Testado para resoluÃ§Ãµes: 1366px, 1440px, 1920px
 
 ## 1.8.62
-- **Editor de Petições (Layout Definitivo 100% Zoom)**: corrigido conflito de CSS com layout nativo do Syncfusion. O editor agora funciona perfeitamente em 100% de zoom sem hacks:
-  - Folha alinhada naturalmente à esquerda (próxima ao painel de blocos)
-  - Painel de formatação (TEXT) sempre visível e acessível à direita
-  - Sem scroll horizontal desnecessário
-  - Responsividade automática para diferentes resoluções (1366/1440/1920px)
+- **Editor de PetiÃ§Ãµes (Layout Definitivo 100% Zoom)**: corrigido conflito de CSS com layout nativo do Syncfusion. O editor agora funciona perfeitamente em 100% de zoom sem hacks:
+  - Folha alinhada naturalmente Ã  esquerda (prÃ³xima ao painel de blocos)
+  - Painel de formataÃ§Ã£o (TEXT) sempre visÃ­vel e acessÃ­vel Ã  direita
+  - Sem scroll horizontal desnecessÃ¡rio
+  - Responsividade automÃ¡tica para diferentes resoluÃ§Ãµes (1366/1440/1920px)
   - CSS limpo que respeita o gerenciamento de layout interno do Syncfusion
 
 ## 1.8.59
-- **Editor de Petições (Layout Final)**: corrigida usabilidade em 100% zoom. A folha agora fica alinhada à esquerda (perto dos blocos) e o painel de formatação (TEXT) permanece fixo e visível à direita, sem ser empurrado para fora da tela.
+- **Editor de PetiÃ§Ãµes (Layout Final)**: corrigida usabilidade em 100% zoom. A folha agora fica alinhada Ã  esquerda (perto dos blocos) e o painel de formataÃ§Ã£o (TEXT) permanece fixo e visÃ­vel Ã  direita, sem ser empurrado para fora da tela.
 
 ## 1.8.58
-- **Editor de Petições (Layout/Zoom 100%)**: ajustado flex do Syncfusion para manter painel de formatação acessível em 100% e aproximar a folha do painel de blocos (sem precisar reduzir zoom).
+- **Editor de PetiÃ§Ãµes (Layout/Zoom 100%)**: ajustado flex do Syncfusion para manter painel de formataÃ§Ã£o acessÃ­vel em 100% e aproximar a folha do painel de blocos (sem precisar reduzir zoom).
 
 ## 1.8.57
-- **Editor de Petições (Layout/Usabilidade)**: removidos overrides de CSS que desbalanceavam a visualização em 100% e garantido painel de formatação do Syncfusion visível (fonte, tamanho, etc).
+- **Editor de PetiÃ§Ãµes (Layout/Usabilidade)**: removidos overrides de CSS que desbalanceavam a visualizaÃ§Ã£o em 100% e garantido painel de formataÃ§Ã£o do Syncfusion visÃ­vel (fonte, tamanho, etc).
 
 ## 1.8.56
-- **Editor de Petições (Layout)**: folha alinhada à esquerda (junto ao painel de blocos) + painel de formatação (fonte, tamanho, etc) visível à direita.
+- **Editor de PetiÃ§Ãµes (Layout)**: folha alinhada Ã  esquerda (junto ao painel de blocos) + painel de formataÃ§Ã£o (fonte, tamanho, etc) visÃ­vel Ã  direita.
 
 ## 1.8.55
-- **Editor de Petições (UI)**: restaurado painel de formatação (Properties Pane) do Syncfusion no lado direito após ajuste de alinhamento da folha.
+- **Editor de PetiÃ§Ãµes (UI)**: restaurado painel de formataÃ§Ã£o (Properties Pane) do Syncfusion no lado direito apÃ³s ajuste de alinhamento da folha.
 
 ## 1.8.54
-- **Editor de Petições (Layout)**: ajuste fino para ficar exatamente como antes (folha mais próxima do painel, removida centralização excessiva do canvas).
+- **Editor de PetiÃ§Ãµes (Layout)**: ajuste fino para ficar exatamente como antes (folha mais prÃ³xima do painel, removida centralizaÃ§Ã£o excessiva do canvas).
 
 ## 1.8.53
-- **Editor de Petições (Layout)**: ajustado alinhamento da folha no Syncfusion para ficar mais à direita (mais próximo do painel lateral), reduzindo espaço vazio.
+- **Editor de PetiÃ§Ãµes (Layout)**: ajustado alinhamento da folha no Syncfusion para ficar mais Ã  direita (mais prÃ³ximo do painel lateral), reduzindo espaÃ§o vazio.
 
 ## 1.8.52
-- **Editor de Petições**: corrigido erro "Editor não disponível" ao carregar petição da tela inicial (agora carrega conteúdo após editor estar pronto).
+- **Editor de PetiÃ§Ãµes**: corrigido erro "Editor nÃ£o disponÃ­vel" ao carregar petiÃ§Ã£o da tela inicial (agora carrega conteÃºdo apÃ³s editor estar pronto).
 
 ## 1.8.51
-- **Editor de Petições**: corrigidos erros de compilação e restauradas funções essenciais (savePetition, loadPetition, newPetition, insertBlock, deleteBlock, saveBlock, exportToWord, handleImportTemplate).
-- **Editor de Petições - Realtime**: lista "Recentes" atualiza automaticamente a cada 15s (tick) e via Supabase Realtime (postgres_changes).
-- **Editor de Petições - Save**: update otimista ao salvar - lista "Recentes" reflete imediatamente sem precisar F5.
+- **Editor de PetiÃ§Ãµes**: corrigidos erros de compilaÃ§Ã£o e restauradas funÃ§Ãµes essenciais (savePetition, loadPetition, newPetition, insertBlock, deleteBlock, saveBlock, exportToWord, handleImportTemplate).
+- **Editor de PetiÃ§Ãµes - Realtime**: lista "Recentes" atualiza automaticamente a cada 15s (tick) e via Supabase Realtime (postgres_changes).
+- **Editor de PetiÃ§Ãµes - Save**: update otimista ao salvar - lista "Recentes" reflete imediatamente sem precisar F5.
 
 ## 1.8.50
-- **Editor de Petições - Blocos**: corrigida numeração automática "N –" ao inserir blocos (agora incrementa corretamente: 1, 2, 3... e reseta ao criar/carregar documento).
+- **Editor de PetiÃ§Ãµes - Blocos**: corrigida numeraÃ§Ã£o automÃ¡tica "N â€“" ao inserir blocos (agora incrementa corretamente: 1, 2, 3... e reseta ao criar/carregar documento).
 
 ## 1.8.49
-- **Editor de Petições - Blocos**: inserção de blocos agora respeita a posição atual do cursor (não altera seleção ao calcular numeração e não força mover o cursor para o fim).
+- **Editor de PetiÃ§Ãµes - Blocos**: inserÃ§Ã£o de blocos agora respeita a posiÃ§Ã£o atual do cursor (nÃ£o altera seleÃ§Ã£o ao calcular numeraÃ§Ã£o e nÃ£o forÃ§a mover o cursor para o fim).
 
 ## 1.8.48
-- **Editor de Petições - Blocos**: numeração automática "N –" ao inserir blocos agora ignora a categoria "cabecalho".
+- **Editor de PetiÃ§Ãµes - Blocos**: numeraÃ§Ã£o automÃ¡tica "N â€“" ao inserir blocos agora ignora a categoria "cabecalho".
 
 ## 1.8.47
-- **Editor de Petições - Blocos**: ao inserir um bloco no editor, agora é adicionado automaticamente um prefixo com numeração no formato "N –" (ex.: "1 – ", "2 – ").
+- **Editor de PetiÃ§Ãµes - Blocos**: ao inserir um bloco no editor, agora Ã© adicionado automaticamente um prefixo com numeraÃ§Ã£o no formato "N â€“" (ex.: "1 â€“ ", "2 â€“ ").
 
 ## 1.8.46
-- **Editor de Petições - Blocos (Tags)**: tags ficaram mais inteligentes, priorizando expressões jurídicas (ex.: "acumulo de funcao", "aviso previo cumprido") e melhorando o fallback quando IA não retornar boas tags.
+- **Editor de PetiÃ§Ãµes - Blocos (Tags)**: tags ficaram mais inteligentes, priorizando expressÃµes jurÃ­dicas (ex.: "acumulo de funcao", "aviso previo cumprido") e melhorando o fallback quando IA nÃ£o retornar boas tags.
 
 ## 1.8.45
-- **Editor de Petições - Blocos**: reduzidas requisições 400 repetidas quando `document_type` ainda não existe no banco (service desativa automaticamente o uso do filtro após detectar PGRST204).
+- **Editor de PetiÃ§Ãµes - Blocos**: reduzidas requisiÃ§Ãµes 400 repetidas quando `document_type` ainda nÃ£o existe no banco (service desativa automaticamente o uso do filtro apÃ³s detectar PGRST204).
 
 ## 1.8.44
-- **Editor de Petições - Blocos**: `createBlock` agora tem fallback quando a coluna `document_type` ainda não existe no banco (evita erro PGRST204/400 e permite criar blocos até aplicar a migration).
+- **Editor de PetiÃ§Ãµes - Blocos**: `createBlock` agora tem fallback quando a coluna `document_type` ainda nÃ£o existe no banco (evita erro PGRST204/400 e permite criar blocos atÃ© aplicar a migration).
 
 ## 1.8.43
-- **Editor de Petições - Blocos (Sidebar)**: categorias agora iniciam recolhidas (fechadas) por padrão.
+- **Editor de PetiÃ§Ãµes - Blocos (Sidebar)**: categorias agora iniciam recolhidas (fechadas) por padrÃ£o.
 
 ## 1.8.42
-- **Editor de Petições - Categorias de Blocos**: corrigida migration de categorias (erro SQL 42601 por conflito de dollar-quote em `DO $$`).
-- **Editor de Petições - UX**: confirmações de "alterações não salvas" agora informam qual documento/cliente está pendente antes de continuar.
+- **Editor de PetiÃ§Ãµes - Categorias de Blocos**: corrigida migration de categorias (erro SQL 42601 por conflito de dollar-quote em `DO $$`).
+- **Editor de PetiÃ§Ãµes - UX**: confirmaÃ§Ãµes de "alteraÃ§Ãµes nÃ£o salvas" agora informam qual documento/cliente estÃ¡ pendente antes de continuar.
 
 ## 1.8.41
-- **Editor de Petições - Categorias de Blocos**: categorias agora são configuráveis por tipo de documento (petição/contestação/impugnação/recurso), com persistência no banco.
-- **Editor de Petições - Categorias de Blocos**: adicionada tela/modal "Configurar categorias" para editar nomes e ordem das seções exibidas na sidebar.
-- **Editor de Petições - Categorias de Blocos**: removida restrição rígida (CHECK) de `petition_blocks.category` para permitir categorias diferentes por tipo.
+- **Editor de PetiÃ§Ãµes - Categorias de Blocos**: categorias agora sÃ£o configurÃ¡veis por tipo de documento (petiÃ§Ã£o/contestaÃ§Ã£o/impugnaÃ§Ã£o/recurso), com persistÃªncia no banco.
+- **Editor de PetiÃ§Ãµes - Categorias de Blocos**: adicionada tela/modal "Configurar categorias" para editar nomes e ordem das seÃ§Ãµes exibidas na sidebar.
+- **Editor de PetiÃ§Ãµes - Categorias de Blocos**: removida restriÃ§Ã£o rÃ­gida (CHECK) de `petition_blocks.category` para permitir categorias diferentes por tipo.
 
 ## 1.8.40
-- **Editor de Petições - Blocos**: blocos agora são separados por tipo de documento (petição/contestação/impugnação/recurso) via campo `document_type` e filtro na interface.
+- **Editor de PetiÃ§Ãµes - Blocos**: blocos agora sÃ£o separados por tipo de documento (petiÃ§Ã£o/contestaÃ§Ã£o/impugnaÃ§Ã£o/recurso) via campo `document_type` e filtro na interface.
 
 ## 1.8.39
-- **Editor de Petições - Blocos (Sidebar)**: busca "Buscar bloco..." agora filtra por tags/título/conteúdo e aceita múltiplos termos separados por vírgula.
-- **Editor de Petições - Blocos (Sidebar)**: tags do bloco passam a ser exibidas abaixo do título.
+- **Editor de PetiÃ§Ãµes - Blocos (Sidebar)**: busca "Buscar bloco..." agora filtra por tags/tÃ­tulo/conteÃºdo e aceita mÃºltiplos termos separados por vÃ­rgula.
+- **Editor de PetiÃ§Ãµes - Blocos (Sidebar)**: tags do bloco passam a ser exibidas abaixo do tÃ­tulo.
 
 ## 1.8.38
-- **Editor de Petições - Blocos**: corrigido modal "Visualizar Conteúdo" (evita tela em branco aguardando o editor inicializar e usando fallback para texto quando necessário).
-- **Editor de Petições - Blocos**: tags agora aparecem na lista de blocos e são derivadas automaticamente para blocos antigos sem tags persistidas.
-- **Editor de Petições - Blocos**: fallback de palavras-chave melhorado quando IA estiver indisponível (extração básica a partir de título+conteúdo).
+- **Editor de PetiÃ§Ãµes - Blocos**: corrigido modal "Visualizar ConteÃºdo" (evita tela em branco aguardando o editor inicializar e usando fallback para texto quando necessÃ¡rio).
+- **Editor de PetiÃ§Ãµes - Blocos**: tags agora aparecem na lista de blocos e sÃ£o derivadas automaticamente para blocos antigos sem tags persistidas.
+- **Editor de PetiÃ§Ãµes - Blocos**: fallback de palavras-chave melhorado quando IA estiver indisponÃ­vel (extraÃ§Ã£o bÃ¡sica a partir de tÃ­tulo+conteÃºdo).
 
 ## 1.8.37
-- **Editor de Petições - Blocos**: adicionadas palavras-chave (tags) automáticas para facilitar encontrar blocos por contexto (ex.: "horas extras, rescisão indireta"), com geração via IA quando habilitada e fallback heurístico.
-- **Editor de Petições - Blocos**: busca agora considera título + conteúdo + tags e aceita múltiplos termos separados por vírgula.
+- **Editor de PetiÃ§Ãµes - Blocos**: adicionadas palavras-chave (tags) automÃ¡ticas para facilitar encontrar blocos por contexto (ex.: "horas extras, rescisÃ£o indireta"), com geraÃ§Ã£o via IA quando habilitada e fallback heurÃ­stico.
+- **Editor de PetiÃ§Ãµes - Blocos**: busca agora considera tÃ­tulo + conteÃºdo + tags e aceita mÃºltiplos termos separados por vÃ­rgula.
 
 ## 1.8.36
-- **Editor de Petições - Blocos/Clientes**: seção "qualificação" foi renomeada na interface para "DAS QUESTÕES INICIAIS".
+- **Editor de PetiÃ§Ãµes - Blocos/Clientes**: seÃ§Ã£o "qualificaÃ§Ã£o" foi renomeada na interface para "DAS QUESTÃ•ES INICIAIS".
 
 ## 1.8.35
-- **Editor de Petições - Blocos**: melhorada performance após inserir bloco formatado (placeholders são substituídos no fragmento antes de colar, evitando replaceAll global que gerava lentidão).
+- **Editor de PetiÃ§Ãµes - Blocos**: melhorada performance apÃ³s inserir bloco formatado (placeholders sÃ£o substituÃ­dos no fragmento antes de colar, evitando replaceAll global que gerava lentidÃ£o).
 
 ## 1.8.34
-- **Editor de Petições - Blocos**: inserção de blocos volta a preservar formatação usando conversão segura de SFDT para fragmento antes de colar no editor (fallback para texto quando necessário).
+- **Editor de PetiÃ§Ãµes - Blocos**: inserÃ§Ã£o de blocos volta a preservar formataÃ§Ã£o usando conversÃ£o segura de SFDT para fragmento antes de colar no editor (fallback para texto quando necessÃ¡rio).
 
 ## 1.8.33
-- **Editor de Petições - Endereçamento**: ao selecionar/inserir qualificação do cliente, preenche automaticamente "DA COMARCA DE" com cidade-UF quando estiver em branco.
+- **Editor de PetiÃ§Ãµes - EndereÃ§amento**: ao selecionar/inserir qualificaÃ§Ã£o do cliente, preenche automaticamente "DA COMARCA DE" com cidade-UF quando estiver em branco.
 
 ## 1.8.32
-- **Editor de Petições - Buscar Empresa (CNPJ)**: ao inserir no editor, o nome da empresa (fantasia/razão social) é aplicado em negrito real.
+- **Editor de PetiÃ§Ãµes - Buscar Empresa (CNPJ)**: ao inserir no editor, o nome da empresa (fantasia/razÃ£o social) Ã© aplicado em negrito real.
 
 ## 1.8.31
-- **Editor de Petições - Buscar Empresa (CNPJ)**: qualificação ajustada (e-mail em minúsculo, telefones deduplicados e rótulo 'telefones' quando houver mais de um).
+- **Editor de PetiÃ§Ãµes - Buscar Empresa (CNPJ)**: qualificaÃ§Ã£o ajustada (e-mail em minÃºsculo, telefones deduplicados e rÃ³tulo 'telefones' quando houver mais de um).
 
 ## 1.8.30
-- **Editor de Petições - Buscar Empresa (CNPJ)**: consulta BrasilAPI + OpenCNPJ e usa IA para compilar/normalizar os dados (ex.: e-mail pode vir de uma fonte e não da outra).
+- **Editor de PetiÃ§Ãµes - Buscar Empresa (CNPJ)**: consulta BrasilAPI + OpenCNPJ e usa IA para compilar/normalizar os dados (ex.: e-mail pode vir de uma fonte e nÃ£o da outra).
 
 ## 1.8.29
-- **Editor de Petições - Clientes**: qualificação agora insere o nome do cliente em negrito real (sem '**' literal).
+- **Editor de PetiÃ§Ãµes - Clientes**: qualificaÃ§Ã£o agora insere o nome do cliente em negrito real (sem '**' literal).
 
 ## 1.8.28
-- **Editor de Petições - Blocos**: endurecida extração de texto do SFDT (inclui 'tlp') para evitar inserção de JSON/SFDT cru no editor.
-- **Editor de Petições - Blocos**: modal 'Visualizar Conteúdo' evita exibir JSON cru e mostra mensagem quando não for possível gerar preview.
+- **Editor de PetiÃ§Ãµes - Blocos**: endurecida extraÃ§Ã£o de texto do SFDT (inclui 'tlp') para evitar inserÃ§Ã£o de JSON/SFDT cru no editor.
+- **Editor de PetiÃ§Ãµes - Blocos**: modal 'Visualizar ConteÃºdo' evita exibir JSON cru e mostra mensagem quando nÃ£o for possÃ­vel gerar preview.
 
 ## 1.8.27
-- **Editor de Petições - Blocos**: melhorada extração de texto de SFDT (inclui chave 'tlp') para evitar inserção de JSON cru.
-- **Editor de Petições - Blocos**: modal 'Visualizar Conteúdo' exibe mensagem quando não for possível gerar preview.
+- **Editor de PetiÃ§Ãµes - Blocos**: melhorada extraÃ§Ã£o de texto de SFDT (inclui chave 'tlp') para evitar inserÃ§Ã£o de JSON cru.
+- **Editor de PetiÃ§Ãµes - Blocos**: modal 'Visualizar ConteÃºdo' exibe mensagem quando nÃ£o for possÃ­vel gerar preview.
 
 ## 1.8.26
-- **Editor de Petições - Blocos**: corrigido bug crítico onde pasteSfdt corrompia o estado do editor Syncfusion causando erros em cascata. Agora blocos são inseridos como texto puro para maior estabilidade.
+- **Editor de PetiÃ§Ãµes - Blocos**: corrigido bug crÃ­tico onde pasteSfdt corrompia o estado do editor Syncfusion causando erros em cascata. Agora blocos sÃ£o inseridos como texto puro para maior estabilidade.
 
 ## 1.8.25
-- **Editor de Petições - Blocos**: corrigido bug onde bloco era inserido no topo do documento em vez de na posição do cursor.
-- **Editor de Petições - Blocos**: melhorado foco no elemento editável após inserir bloco para permitir digitação imediata.
+- **Editor de PetiÃ§Ãµes - Blocos**: corrigido bug onde bloco era inserido no topo do documento em vez de na posiÃ§Ã£o do cursor.
+- **Editor de PetiÃ§Ãµes - Blocos**: melhorado foco no elemento editÃ¡vel apÃ³s inserir bloco para permitir digitaÃ§Ã£o imediata.
 
 ## 1.8.24
-- **Editor de Petições - Blocos/Clientes**: corrigido bug onde texto digitado ficava em buffer invisível e só aparecia após colar (forçado resize do editor para re-render).
+- **Editor de PetiÃ§Ãµes - Blocos/Clientes**: corrigido bug onde texto digitado ficava em buffer invisÃ­vel e sÃ³ aparecia apÃ³s colar (forÃ§ado resize do editor para re-render).
 
 ## 1.8.23
-- **Editor de Petições - Blocos/Clientes**: corrigido bug onde após inserir bloco o editor aceitava colar mas não aceitava digitação direta (forçado foco no elemento editável interno).
+- **Editor de PetiÃ§Ãµes - Blocos/Clientes**: corrigido bug onde apÃ³s inserir bloco o editor aceitava colar mas nÃ£o aceitava digitaÃ§Ã£o direta (forÃ§ado foco no elemento editÃ¡vel interno).
 
 ## 1.8.22
-- **Editor de Petições - Blocos/Clientes**: após inserir bloco ou qualificação, o cursor é movido para o final do conteúdo inserido, permitindo digitar imediatamente.
+- **Editor de PetiÃ§Ãµes - Blocos/Clientes**: apÃ³s inserir bloco ou qualificaÃ§Ã£o, o cursor Ã© movido para o final do conteÃºdo inserido, permitindo digitar imediatamente.
 
 ## 1.8.21
-- **Editor de Petições - Blocos/Clientes**: após inserir bloco ou qualificação do cliente, o foco volta automaticamente para o editor para permitir edição imediata.
+- **Editor de PetiÃ§Ãµes - Blocos/Clientes**: apÃ³s inserir bloco ou qualificaÃ§Ã£o do cliente, o foco volta automaticamente para o editor para permitir ediÃ§Ã£o imediata.
 
 ## 1.8.20
-- **Editor de Petições - Blocos**: modal 'Visualizar Conteúdo' agora exibe fallback em texto quando o Syncfusion renderiza em branco.
+- **Editor de PetiÃ§Ãµes - Blocos**: modal 'Visualizar ConteÃºdo' agora exibe fallback em texto quando o Syncfusion renderiza em branco.
 
 ## 1.8.19
-- **Editor de Petições - Blocos**: melhorada extração de texto do SFDT para preview no modal 'Adicionar Bloco'.
-- **Editor de Petições - Blocos**: corrigido modal 'Visualizar Conteúdo' abrindo em branco (fallback para texto quando necessário).
+- **Editor de PetiÃ§Ãµes - Blocos**: melhorada extraÃ§Ã£o de texto do SFDT para preview no modal 'Adicionar Bloco'.
+- **Editor de PetiÃ§Ãµes - Blocos**: corrigido modal 'Visualizar ConteÃºdo' abrindo em branco (fallback para texto quando necessÃ¡rio).
 
 ## 1.8.18
-- **Editor de Petições - Toolbar**: botão de abrir/fechar painel agora usa ícones de painel (mais distinto do botão de voltar).
-- **Editor de Petições - Blocos**: corrigido preview no modal 'Adicionar Bloco' para evitar exibir SFDT/JSON cru.
+- **Editor de PetiÃ§Ãµes - Toolbar**: botÃ£o de abrir/fechar painel agora usa Ã­cones de painel (mais distinto do botÃ£o de voltar).
+- **Editor de PetiÃ§Ãµes - Blocos**: corrigido preview no modal 'Adicionar Bloco' para evitar exibir SFDT/JSON cru.
 
 ## 1.8.17
-- **Editor de Petições - UI**: corrigido problema onde a interface do Syncfusion estava sobrepondo a toolbar e a sidebar (Blocos/Clientes).
+- **Editor de PetiÃ§Ãµes - UI**: corrigido problema onde a interface do Syncfusion estava sobrepondo a toolbar e a sidebar (Blocos/Clientes).
 
 ## 1.8.16
-- **Editor de Petições - Tela inicial**: adicionado botão 'Excluir temporários' para deletar em lote petições sem vinculação com cliente, com confirmação e feedback.
+- **Editor de PetiÃ§Ãµes - Tela inicial**: adicionado botÃ£o 'Excluir temporÃ¡rios' para deletar em lote petiÃ§Ãµes sem vinculaÃ§Ã£o com cliente, com confirmaÃ§Ã£o e feedback.
 
 ## 1.8.15
-- **Editor de Petições - Tela inicial**: adicionado botão de deletar (lixeira) na lista de documentos recentes, com confirmação e efeito hover.
+- **Editor de PetiÃ§Ãµes - Tela inicial**: adicionado botÃ£o de deletar (lixeira) na lista de documentos recentes, com confirmaÃ§Ã£o e efeito hover.
 
 ## 1.8.14
-- **Editor de Petições - Auto-save**: salvamento automático agora só ocorre quando a petição está vinculada a um cliente.
-- **Editor de Petições - Sidebar**: removida a aba "Salvos".
-- **Editor de Petições - Toolbar**: botões de minimizar/fechar do widget movidos para o lado direito.
+- **Editor de PetiÃ§Ãµes - Auto-save**: salvamento automÃ¡tico agora sÃ³ ocorre quando a petiÃ§Ã£o estÃ¡ vinculada a um cliente.
+- **Editor de PetiÃ§Ãµes - Sidebar**: removida a aba "Salvos".
+- **Editor de PetiÃ§Ãµes - Toolbar**: botÃµes de minimizar/fechar do widget movidos para o lado direito.
 
 ## 1.8.13
-- **Editor de Petições - Toolbar**: adicionado botão 'Voltar para a tela inicial' com ícone ArrowLeft para retornar à start screen (com aviso se houver alterações não salvas).
+- **Editor de PetiÃ§Ãµes - Toolbar**: adicionado botÃ£o 'Voltar para a tela inicial' com Ã­cone ArrowLeft para retornar Ã  start screen (com aviso se houver alteraÃ§Ãµes nÃ£o salvas).
 
 ## 1.8.12
-- **Editor de Petições - Tela inicial**: botão X agora fecha o editor inteiro (widget), não apenas a tela inicial.
+- **Editor de PetiÃ§Ãµes - Tela inicial**: botÃ£o X agora fecha o editor inteiro (widget), nÃ£o apenas a tela inicial.
 
 ## 1.8.11
-- **Editor de Petições - Tela inicial**: adicionado botão X ao lado de "Ir para o editor" para fechar a tela inicial.
+- **Editor de PetiÃ§Ãµes - Tela inicial**: adicionado botÃ£o X ao lado de "Ir para o editor" para fechar a tela inicial.
 
 ## 1.8.10
-- **Editor de Petições - Widget Flutuante**: ao minimizar, o editor agora permanece montado (oculto) para preservar o documento aberto; ao reabrir pelo botão flutuante, retorna ao mesmo documento em vez de voltar para a tela inicial.
+- **Editor de PetiÃ§Ãµes - Widget Flutuante**: ao minimizar, o editor agora permanece montado (oculto) para preservar o documento aberto; ao reabrir pelo botÃ£o flutuante, retorna ao mesmo documento em vez de voltar para a tela inicial.
 
 ## 1.8.9
-- **Editor de Petições - Widget Flutuante**: removido o painel flutuante de controles (minimizar/fechar) no canto superior direito para evitar sobreposição na interface; controles permanecem na toolbar do editor.
+- **Editor de PetiÃ§Ãµes - Widget Flutuante**: removido o painel flutuante de controles (minimizar/fechar) no canto superior direito para evitar sobreposiÃ§Ã£o na interface; controles permanecem na toolbar do editor.
 
 ## 1.8.8
-- **Editor de Petições - Tela inicial**: ao criar "Documento em branco" ou aplicar "Modelo padrão", mantém o cliente vinculado quando o editor é aberto a partir de um cliente.
-- **Editor de Petições - Widget Flutuante**: ajustado espaçamento da tela inicial para não ficar por baixo dos botões de minimizar/fechar.
+- **Editor de PetiÃ§Ãµes - Tela inicial**: ao criar "Documento em branco" ou aplicar "Modelo padrÃ£o", mantÃ©m o cliente vinculado quando o editor Ã© aberto a partir de um cliente.
+- **Editor de PetiÃ§Ãµes - Widget Flutuante**: ajustado espaÃ§amento da tela inicial para nÃ£o ficar por baixo dos botÃµes de minimizar/fechar.
 
 ## 1.8.7
-- **Editor de Petições - Widget Flutuante**: removida a barra superior do widget (nav), mantendo apenas botões flutuantes de minimizar/fechar.
-- **Editor de Petições**: adicionada tela inicial estilo Word ao abrir o editor (modelos + recentes), para iniciar documento em branco, aplicar modelo padrão ou abrir recente.
+- **Editor de PetiÃ§Ãµes - Widget Flutuante**: removida a barra superior do widget (nav), mantendo apenas botÃµes flutuantes de minimizar/fechar.
+- **Editor de PetiÃ§Ãµes**: adicionada tela inicial estilo Word ao abrir o editor (modelos + recentes), para iniciar documento em branco, aplicar modelo padrÃ£o ou abrir recente.
 
 ## 1.8.6
-- **Editor de Petições - Widget Flutuante**: header agora exibe "Última atualização" (há X) e "Cliente vinculado" do documento aberto.
-- **Editor de Petições - Lista de Salvos**: documentos agora mostram tempo relativo de modificação (há X) e cliente vinculado.
+- **Editor de PetiÃ§Ãµes - Widget Flutuante**: header agora exibe "Ãšltima atualizaÃ§Ã£o" (hÃ¡ X) e "Cliente vinculado" do documento aberto.
+- **Editor de PetiÃ§Ãµes - Lista de Salvos**: documentos agora mostram tempo relativo de modificaÃ§Ã£o (hÃ¡ X) e cliente vinculado.
 
 ## 1.8.5
-- **Editor de Petições - Widget Flutuante**: corrigido minimizar para ocultar totalmente o overlay, mantendo apenas o botão flutuante "Editor de Petições".
+- **Editor de PetiÃ§Ãµes - Widget Flutuante**: corrigido minimizar para ocultar totalmente o overlay, mantendo apenas o botÃ£o flutuante "Editor de PetiÃ§Ãµes".
 
 ## 1.8.4
-- **Editor de Petições - Widget Flutuante**: o editor agora funciona como um widget flutuante global que pode ser aberto de qualquer módulo sem trocar de rota.
-- **Editor de Petições - Persistência**: estado do widget (aberto/minimizado) e contexto do documento são persistidos em localStorage, restaurando automaticamente após refresh da página.
-- **Editor de Petições - Integração com Clientes**: botão "Nova Petição" adicionado nas ações rápidas da ficha do cliente, abrindo o editor já vinculado ao cliente selecionado.
-- **Editor de Petições - Minimizar**: ao minimizar, o editor vira um botão flutuante no canto inferior direito, permitindo continuar trabalhando em outros módulos.
-- **UX**: sidebar não mais oculta ao abrir o editor; navegação permanece visível e funcional.
+- **Editor de PetiÃ§Ãµes - Widget Flutuante**: o editor agora funciona como um widget flutuante global que pode ser aberto de qualquer mÃ³dulo sem trocar de rota.
+- **Editor de PetiÃ§Ãµes - PersistÃªncia**: estado do widget (aberto/minimizado) e contexto do documento sÃ£o persistidos em localStorage, restaurando automaticamente apÃ³s refresh da pÃ¡gina.
+- **Editor de PetiÃ§Ãµes - IntegraÃ§Ã£o com Clientes**: botÃ£o "Nova PetiÃ§Ã£o" adicionado nas aÃ§Ãµes rÃ¡pidas da ficha do cliente, abrindo o editor jÃ¡ vinculado ao cliente selecionado.
+- **Editor de PetiÃ§Ãµes - Minimizar**: ao minimizar, o editor vira um botÃ£o flutuante no canto inferior direito, permitindo continuar trabalhando em outros mÃ³dulos.
+- **UX**: sidebar nÃ£o mais oculta ao abrir o editor; navegaÃ§Ã£o permanece visÃ­vel e funcional.
 
 ## 1.8.3
-- **Editor de Petições**: corrigido erro de build causado por JSX corrompido/duplicado na seção dos modais (Empresa/Blocos).
-- **Editor de Petições**: modais de Empresa/Busca de Bloco/Editor de Bloco reestruturados e estabilizados para evitar conflitos com CSS global (botões e layout).
+- **Editor de PetiÃ§Ãµes**: corrigido erro de build causado por JSX corrompido/duplicado na seÃ§Ã£o dos modais (Empresa/Blocos).
+- **Editor de PetiÃ§Ãµes**: modais de Empresa/Busca de Bloco/Editor de Bloco reestruturados e estabilizados para evitar conflitos com CSS global (botÃµes e layout).
 
 ## 1.8.2
-- **Editor de Petições**: busca de empresa por CNPJ agora usa BrasilAPI (dados completos) + OpenCNPJ (complemento, como e-mail) e refina a qualificação via IA quando configurada.
+- **Editor de PetiÃ§Ãµes**: busca de empresa por CNPJ agora usa BrasilAPI (dados completos) + OpenCNPJ (complemento, como e-mail) e refina a qualificaÃ§Ã£o via IA quando configurada.
 
 ## 1.8.1
-- **Editor de Petições**: modais alinhados ao tema do sistema (faixa laranja no topo, tipografia e botões em gradiente).
+- **Editor de PetiÃ§Ãµes**: modais alinhados ao tema do sistema (faixa laranja no topo, tipografia e botÃµes em gradiente).
 
 ## 1.8.0
-- **Editor de Petições**: modais de "Buscar Empresa" e "Adicionar Bloco" adequados ao tema do sistema (header/footer, botões e inputs padronizados).
-- **Editor de Petições**: corrigido render do modal de busca de blocos (empty state vs lista de resultados).
+- **Editor de PetiÃ§Ãµes**: modais de "Buscar Empresa" e "Adicionar Bloco" adequados ao tema do sistema (header/footer, botÃµes e inputs padronizados).
+- **Editor de PetiÃ§Ãµes**: corrigido render do modal de busca de blocos (empty state vs lista de resultados).
 
 ## 1.7.9
-- **Editor de Petições**: qualificação de empresa (CNPJ) agora identifica tipo de logradouro (Rua/Avenida/etc.) e ajusta o texto automaticamente ("na Rua...", "na Avenida...").
+- **Editor de PetiÃ§Ãµes**: qualificaÃ§Ã£o de empresa (CNPJ) agora identifica tipo de logradouro (Rua/Avenida/etc.) e ajusta o texto automaticamente ("na Rua...", "na Avenida...").
 
 ## 1.7.8
-- **Editor de Petições**: qualificação de empresa (CNPJ) agora usa logradouro completo (ex.: "Avenida") e melhor formatação de cidade/CEP.
-- **Editor de Petições**: corrigido erro de auto-save em `saved_petitions` (406 / "Cannot coerce...") tornando o update tolerante quando o retorno não vem como objeto único.
+- **Editor de PetiÃ§Ãµes**: qualificaÃ§Ã£o de empresa (CNPJ) agora usa logradouro completo (ex.: "Avenida") e melhor formataÃ§Ã£o de cidade/CEP.
+- **Editor de PetiÃ§Ãµes**: corrigido erro de auto-save em `saved_petitions` (406 / "Cannot coerce...") tornando o update tolerante quando o retorno nÃ£o vem como objeto Ãºnico.
 
 ## 1.7.7
-- **Editor de Petições**: adicionada opção "Buscar empresa..." no menu de contexto (CNPJ) que consulta `api.opencnpj.org`, formata a qualificação e insere no cursor.
+- **Editor de PetiÃ§Ãµes**: adicionada opÃ§Ã£o "Buscar empresa..." no menu de contexto (CNPJ) que consulta `api.opencnpj.org`, formata a qualificaÃ§Ã£o e insere no cursor.
 
 ## 1.7.6
-- **Editor de Petições**: correção de timing na inicialização do Syncfusion para garantir carregamento automático do modelo padrão (fila de ações antes do `created`).
+- **Editor de PetiÃ§Ãµes**: correÃ§Ã£o de timing na inicializaÃ§Ã£o do Syncfusion para garantir carregamento automÃ¡tico do modelo padrÃ£o (fila de aÃ§Ãµes antes do `created`).
 
 ## 1.7.5
-- **Editor de Petições**: ao abrir o módulo, o modelo padrão (DOCX) é carregado automaticamente (sem sobrescrever petições já carregadas).
+- **Editor de PetiÃ§Ãµes**: ao abrir o mÃ³dulo, o modelo padrÃ£o (DOCX) Ã© carregado automaticamente (sem sobrescrever petiÃ§Ãµes jÃ¡ carregadas).
 
 ## 1.7.4
-- **Editor de Petições**: adicionado modelo padrão (DOCX) com logo/rodapé: ao importar em "Modelo" o arquivo é salvo como padrão e pode ser aplicado via botão "Padrão".
+- **Editor de PetiÃ§Ãµes**: adicionado modelo padrÃ£o (DOCX) com logo/rodapÃ©: ao importar em "Modelo" o arquivo Ã© salvo como padrÃ£o e pode ser aplicado via botÃ£o "PadrÃ£o".
 
 ## 1.7.3
-- **Editor de Petições**: view de bloco ajustado para modo leitura (Syncfusion) escondendo barra inferior de página/zoom.
+- **Editor de PetiÃ§Ãµes**: view de bloco ajustado para modo leitura (Syncfusion) escondendo barra inferior de pÃ¡gina/zoom.
 
 ## 1.7.2
-- **Editor de Petições**: visualização de conteúdo do bloco agora usa Syncfusion (renderização SFDT) em modo somente leitura.
+- **Editor de PetiÃ§Ãµes**: visualizaÃ§Ã£o de conteÃºdo do bloco agora usa Syncfusion (renderizaÃ§Ã£o SFDT) em modo somente leitura.
 
 ## 1.7.1
-- **Editor de Petições**: adicionada opção de visualizar o conteúdo do bloco (modal read-only) diretamente na lista da sidebar.
+- **Editor de PetiÃ§Ãµes**: adicionada opÃ§Ã£o de visualizar o conteÃºdo do bloco (modal read-only) diretamente na lista da sidebar.
 
 ## 1.7.0
-- **Editor de Petições**: corrigido colar do Microsoft Word (evitava atualizar e colava conteúdo antigo) desabilitando `enableLocalPaste`/`LocalClipboard` para forçar uso do clipboard do sistema.
+- **Editor de PetiÃ§Ãµes**: corrigido colar do Microsoft Word (evitava atualizar e colava conteÃºdo antigo) desabilitando `enableLocalPaste`/`LocalClipboard` para forÃ§ar uso do clipboard do sistema.
 
 ## 1.6.9
-- **Editor de Petições**: atalho `Alt+Espaço` abre busca de blocos.
-- **Editor de Petições**: busca de blocos agora é tolerante a erro de digitação (fuzzy) e ordena por relevância (prioriza título).
+- **Editor de PetiÃ§Ãµes**: atalho `Alt+EspaÃ§o` abre busca de blocos.
+- **Editor de PetiÃ§Ãµes**: busca de blocos agora Ã© tolerante a erro de digitaÃ§Ã£o (fuzzy) e ordena por relevÃ¢ncia (prioriza tÃ­tulo).
 
 ## 1.6.8
-- **Editor de Petições**: adicionada opção de excluir bloco diretamente na lista da sidebar.
+- **Editor de PetiÃ§Ãµes**: adicionada opÃ§Ã£o de excluir bloco diretamente na lista da sidebar.
 
 ## 1.6.7
-- **Editor de Petições**: corrigido colar conteúdo externo (Ctrl+V) no Syncfusion garantindo `id` único por instância de editor (evita conflitos entre editor principal e modal).
+- **Editor de PetiÃ§Ãµes**: corrigido colar conteÃºdo externo (Ctrl+V) no Syncfusion garantindo `id` Ãºnico por instÃ¢ncia de editor (evita conflitos entre editor principal e modal).
 
 ## 1.6.6
-- **Editor de Petições**: sidebar de Blocos organizado por seção (hierarquia) em ordem fixa (Trabalhista) e ignorando categorias legadas.
-- **Database**: categorias legadas em `petition_blocks` normalizadas para `outros` e constraint de `category` restrito apenas às seções trabalhistas do app.
+- **Editor de PetiÃ§Ãµes**: sidebar de Blocos organizado por seÃ§Ã£o (hierarquia) em ordem fixa (Trabalhista) e ignorando categorias legadas.
+- **Database**: categorias legadas em `petition_blocks` normalizadas para `outros` e constraint de `category` restrito apenas Ã s seÃ§Ãµes trabalhistas do app.
 
 ## 1.6.5
-- **Editor de Petições**: inserção de bloco na petição agora preserva formatação (usa `pasteSfdt`) e evita colar o SFDT (JSON) como texto; placeholders do cliente são substituídos via `replaceAll`.
+- **Editor de PetiÃ§Ãµes**: inserÃ§Ã£o de bloco na petiÃ§Ã£o agora preserva formataÃ§Ã£o (usa `pasteSfdt`) e evita colar o SFDT (JSON) como texto; placeholders do cliente sÃ£o substituÃ­dos via `replaceAll`.
 
 ## 1.6.4
 - **Database**: corrigido erro `23514` no insert de blocos ajustando o constraint `petition_blocks_category_check` para aceitar as categorias do app (e manter compatibilidade com valores legados).
 
 ## 1.6.3
-- **Database**: alinhado schema de `petition_blocks` com o app (renomeia coluna `name` -> `title` quando necessário).
-- **Database**: corrigido erro de RLS ao inserir blocos (`new row violates row-level security policy`) criando policies permissivas para usuários `authenticated`.
+- **Database**: alinhado schema de `petition_blocks` com o app (renomeia coluna `name` -> `title` quando necessÃ¡rio).
+- **Database**: corrigido erro de RLS ao inserir blocos (`new row violates row-level security policy`) criando policies permissivas para usuÃ¡rios `authenticated`.
 
 ## 1.6.2
 - **Database**: corrigido erro `PGRST204: Could not find the 'is_active' column` adicionando colunas faltantes (`is_active`, `is_default`, `order`, `tags`, `category`) na tabela `petition_blocks`.
 
 ## 1.6.1
-- **Editor de Petições**: modal de Bloco agora força margens mínimas após colar conteúdo (`applyMinimalMargins`), garantindo que o texto ocupe a largura total do editor.
+- **Editor de PetiÃ§Ãµes**: modal de Bloco agora forÃ§a margens mÃ­nimas apÃ³s colar conteÃºdo (`applyMinimalMargins`), garantindo que o texto ocupe a largura total do editor.
 
 ## 1.6.0
-- **Editor de Petições**: modal de Bloco agora ocupa largura total no editor (margens mínimas + `FitPageWidth`, reaplicado após mudanças no documento).
+- **Editor de PetiÃ§Ãµes**: modal de Bloco agora ocupa largura total no editor (margens mÃ­nimas + `FitPageWidth`, reaplicado apÃ³s mudanÃ§as no documento).
 
 ## 1.5.9
-- **Editor de Petições**: corrigido bug de visualização no modal de Bloco (agora usa `layoutType="Continuous"` para exibir apenas área de texto, sem visual de página A4).
+- **Editor de PetiÃ§Ãµes**: corrigido bug de visualizaÃ§Ã£o no modal de Bloco (agora usa `layoutType="Continuous"` para exibir apenas Ã¡rea de texto, sem visual de pÃ¡gina A4).
 
 ## 1.5.8
-- **Editor de Petições**: ao cadastrar seleção como bloco, o SFDT da seleção é capturado no clique do menu de contexto e enviado para o modal, evitando perda de seleção e preservando formatação.
+- **Editor de PetiÃ§Ãµes**: ao cadastrar seleÃ§Ã£o como bloco, o SFDT da seleÃ§Ã£o Ã© capturado no clique do menu de contexto e enviado para o modal, evitando perda de seleÃ§Ã£o e preservando formataÃ§Ã£o.
 
 ## 1.5.7
-- **Editor de Petições**: melhoria de confiabilidade ao cadastrar seleção como bloco (foco no editor do modal + pequeno delay antes de `paste(sfdt)` para preservar formatação).
+- **Editor de PetiÃ§Ãµes**: melhoria de confiabilidade ao cadastrar seleÃ§Ã£o como bloco (foco no editor do modal + pequeno delay antes de `paste(sfdt)` para preservar formataÃ§Ã£o).
 
 ## 1.5.6
-- **Editor de Petições**: ao cadastrar seleção como bloco, preserva formatação inserindo o SFDT da seleção via `editor.paste(sfdt)` (fragmento), sem depender de clipboard.
-- **Editor de Petições**: modal de Bloco estabilizado (altura máxima + scroll interno; régua/painel de navegação ocultos no editor do modal).
+- **Editor de PetiÃ§Ãµes**: ao cadastrar seleÃ§Ã£o como bloco, preserva formataÃ§Ã£o inserindo o SFDT da seleÃ§Ã£o via `editor.paste(sfdt)` (fragmento), sem depender de clipboard.
+- **Editor de PetiÃ§Ãµes**: modal de Bloco estabilizado (altura mÃ¡xima + scroll interno; rÃ©gua/painel de navegaÃ§Ã£o ocultos no editor do modal).
 
 ## 1.5.5
-- **Editor de Petições**: corrigido modal de Bloco não puxando conteúdo da seleção (agora usa `getSelectionSfdt()` em vez de clipboard).
-- **Editor de Petições**: visual do modal de Bloco melhorado (toolbar escondida, layout mais limpo, espaçamentos ajustados).
+- **Editor de PetiÃ§Ãµes**: corrigido modal de Bloco nÃ£o puxando conteÃºdo da seleÃ§Ã£o (agora usa `getSelectionSfdt()` em vez de clipboard).
+- **Editor de PetiÃ§Ãµes**: visual do modal de Bloco melhorado (toolbar escondida, layout mais limpo, espaÃ§amentos ajustados).
 
 ## 1.5.4
-- **Editor de Petições**: correção de dependência do useEffect para inicialização do modal de Bloco.
+- **Editor de PetiÃ§Ãµes**: correÃ§Ã£o de dependÃªncia do useEffect para inicializaÃ§Ã£o do modal de Bloco.
 
 ## 1.5.3
-- **Editor de Petições**: modal de Bloco ajustado (mais largo e menos alto).
-- **Editor de Petições**: corrigida oscilação/loop que ficava alterando estado de Undo no modal (inicialização do editor ocorre 1x por abertura).
-- **Editor de Petições**: melhoria no copiar/colar da seleção para o modal (tentativa via APIs `selection` e `editor` do Syncfusion; mantém botão "Colar com formatação" quando necessário).
+- **Editor de PetiÃ§Ãµes**: modal de Bloco ajustado (mais largo e menos alto).
+- **Editor de PetiÃ§Ãµes**: corrigida oscilaÃ§Ã£o/loop que ficava alterando estado de Undo no modal (inicializaÃ§Ã£o do editor ocorre 1x por abertura).
+- **Editor de PetiÃ§Ãµes**: melhoria no copiar/colar da seleÃ§Ã£o para o modal (tentativa via APIs `selection` e `editor` do Syncfusion; mantÃ©m botÃ£o "Colar com formataÃ§Ã£o" quando necessÃ¡rio).
 
 ## 1.5.2
-- **Editor de Petições**: interface padronizada para "Blocos" (remoção de textos residuais de "Cláusulas").
-- **Editor de Petições**: cadastro/edição de bloco agora usa **Syncfusion** no modal e salva conteúdo em **SFDT**.
-- **Editor de Petições**: ao cadastrar seleção como bloco, o sistema tenta colar com formatação; se o navegador bloquear a colagem automática, exibe botão "Colar com formatação".
+- **Editor de PetiÃ§Ãµes**: interface padronizada para "Blocos" (remoÃ§Ã£o de textos residuais de "ClÃ¡usulas").
+- **Editor de PetiÃ§Ãµes**: cadastro/ediÃ§Ã£o de bloco agora usa **Syncfusion** no modal e salva conteÃºdo em **SFDT**.
+- **Editor de PetiÃ§Ãµes**: ao cadastrar seleÃ§Ã£o como bloco, o sistema tenta colar com formataÃ§Ã£o; se o navegador bloquear a colagem automÃ¡tica, exibe botÃ£o "Colar com formataÃ§Ã£o".
 
 ## 1.5.1
-- **Editor de Petições**: migration de renomeação para "blocos" agora garante que a tabela `petition_blocks` tenha a coluna `"order"`, corrigindo erro `petition_blocks.order does not exist` ao listar.
+- **Editor de PetiÃ§Ãµes**: migration de renomeaÃ§Ã£o para "blocos" agora garante que a tabela `petition_blocks` tenha a coluna `"order"`, corrigindo erro `petition_blocks.order does not exist` ao listar.
 
 ## 1.5.0
-- **BREAKING CHANGE**: Renomeação de "Cláusula" para "Bloco" em todo o sistema:
-  - Tipos: `PetitionClause` → `PetitionBlock`, `ClauseCategory` → `BlockCategory`
-  - Service: `listClauses()` → `listBlocks()`, `createClause()` → `createBlock()`, etc.
-  - Tabela no banco: `petition_clauses` → `petition_blocks`
-  - Coluna: `clauses_used` → `blocks_used` na tabela `saved_petitions`
+- **BREAKING CHANGE**: RenomeaÃ§Ã£o de "ClÃ¡usula" para "Bloco" em todo o sistema:
+  - Tipos: `PetitionClause` â†’ `PetitionBlock`, `ClauseCategory` â†’ `BlockCategory`
+  - Service: `listClauses()` â†’ `listBlocks()`, `createClause()` â†’ `createBlock()`, etc.
+  - Tabela no banco: `petition_clauses` â†’ `petition_blocks`
+  - Coluna: `clauses_used` â†’ `blocks_used` na tabela `saved_petitions`
   - Labels e textos de interface atualizados
-- **Editor de Petições**: removido campo "Formatação" do cadastro de bloco (formatação agora é gerenciada pelo Syncfusion SFDT)
-- **Editor de Petições**: menu de contexto atualizado com novos textos ("Inserir bloco...", "Cadastrar seleção como bloco...")
+- **Editor de PetiÃ§Ãµes**: removido campo "FormataÃ§Ã£o" do cadastro de bloco (formataÃ§Ã£o agora Ã© gerenciada pelo Syncfusion SFDT)
+- **Editor de PetiÃ§Ãµes**: menu de contexto atualizado com novos textos ("Inserir bloco...", "Cadastrar seleÃ§Ã£o como bloco...")
 - **Migration**: arquivo `20251229_rename_clauses_to_blocks.sql` criado para atualizar o banco de dados
 
 ## 1.4.9
-- **Editor de Petições**: menu de contexto do Syncfusion agora inclui ações do sistema:
-  - Inserir cláusula (abre a busca de cláusulas)
-  - Cadastrar seleção como cláusula (abre o cadastro já preenchido com o texto selecionado)
+- **Editor de PetiÃ§Ãµes**: menu de contexto do Syncfusion agora inclui aÃ§Ãµes do sistema:
+  - Inserir clÃ¡usula (abre a busca de clÃ¡usulas)
+  - Cadastrar seleÃ§Ã£o como clÃ¡usula (abre o cadastro jÃ¡ preenchido com o texto selecionado)
 
 ## 1.4.8
-- **Editor de Petições**: redimensionamento do painel de propriedades também pode ser feito arrastando pelo cabeçalho "TEXT".
+- **Editor de PetiÃ§Ãµes**: redimensionamento do painel de propriedades tambÃ©m pode ser feito arrastando pelo cabeÃ§alho "TEXT".
 
 ## 1.4.7
-- **Editor de Petições**: painel de propriedades do Syncfusion agora é redimensionável por arraste e a largura fica persistida localmente.
+- **Editor de PetiÃ§Ãµes**: painel de propriedades do Syncfusion agora Ã© redimensionÃ¡vel por arraste e a largura fica persistida localmente.
 
 ## 1.4.6
-- **Editor de Petições**: layout ajustado para a folha ocupar toda a área disponível, removendo o fundo ao redor e escalando a régua com a largura.
+- **Editor de PetiÃ§Ãµes**: layout ajustado para a folha ocupar toda a Ã¡rea disponÃ­vel, removendo o fundo ao redor e escalando a rÃ©gua com a largura.
 
 ## 1.4.5
 - **Syncfusion**: licenciamento simplificado via `.env` (`VITE_SYNCFUSION_LICENSE_KEY`) registrado no `main.tsx`.
@@ -2182,440 +2190,440 @@
 - **Syncfusion**: licenciamento via Supabase (Edge Function `syncfusion-license` + `registerLicense()` no PetitionEditor).
 
 ## 1.4.2
-- **Syncfusion**: registro da licença no `main.tsx` via `registerLicense()` (lendo `VITE_SYNCFUSION_LICENSE_KEY`).
+- **Syncfusion**: registro da licenÃ§a no `main.tsx` via `registerLicense()` (lendo `VITE_SYNCFUSION_LICENSE_KEY`).
 
 ## 1.4.1
-- **Editor de Petições**: atualização das dependências Syncfusion para `32.1.19`.
+- **Editor de PetiÃ§Ãµes**: atualizaÃ§Ã£o das dependÃªncias Syncfusion para `32.1.19`.
 
 ## 1.4.0
-- **Editor de Petições**: substituição completa do Quill pelo **Syncfusion DocumentEditor** para fidelidade 100% com formatação DOCX.
+- **Editor de PetiÃ§Ãµes**: substituiÃ§Ã£o completa do Quill pelo **Syncfusion DocumentEditor** para fidelidade 100% com formataÃ§Ã£o DOCX.
   - Novo componente `SyncfusionEditor.tsx` encapsulando o DocumentEditorContainerComponent.
-  - Toolbar nativa do Syncfusion com todas as opções de formatação Word.
-  - Import/export de arquivos DOCX via `serviceUrl` configurável (`VITE_SYNC_FUSION`).
-  - Salvar petições em formato SFDT (nativo Syncfusion) com compatibilidade para petições antigas.
+  - Toolbar nativa do Syncfusion com todas as opÃ§Ãµes de formataÃ§Ã£o Word.
+  - Import/export de arquivos DOCX via `serviceUrl` configurÃ¡vel (`VITE_SYNC_FUSION`).
+  - Salvar petiÃ§Ãµes em formato SFDT (nativo Syncfusion) com compatibilidade para petiÃ§Ãµes antigas.
   - CSS do Syncfusion importado globalmente em `index.css`.
-  - Sidebar e splitter mantidos para cláusulas, clientes e petições salvas.
+  - Sidebar e splitter mantidos para clÃ¡usulas, clientes e petiÃ§Ãµes salvas.
 
 ## 1.3.66
-- **Notificações**: correção definitiva de responsividade no dropdown (mobile fixed, desktop absolute) e ajustes de layout no módulo completo para evitar overflow em telas pequenas.
+- **NotificaÃ§Ãµes**: correÃ§Ã£o definitiva de responsividade no dropdown (mobile fixed, desktop absolute) e ajustes de layout no mÃ³dulo completo para evitar overflow em telas pequenas.
 
 ## 1.3.65
-- **Editor de Petições**: adicionada opção de altura da linha (line-height) na toolbar.
+- **Editor de PetiÃ§Ãµes**: adicionada opÃ§Ã£o de altura da linha (line-height) na toolbar.
 
 ## 1.3.64
-- **Editor de Petições**: sidebar agora é redimensionável via arraste (splitter) e a largura escolhida é persistida localmente.
+- **Editor de PetiÃ§Ãµes**: sidebar agora Ã© redimensionÃ¡vel via arraste (splitter) e a largura escolhida Ã© persistida localmente.
 
 ## 1.3.63
-- **Editor de Petições**: layout ajustado para a folha ocupar toda a área disponível, removendo o fundo ao redor e escalando a régua com a largura.
+- **Editor de PetiÃ§Ãµes**: layout ajustado para a folha ocupar toda a Ã¡rea disponÃ­vel, removendo o fundo ao redor e escalando a rÃ©gua com a largura.
 
 ## 1.3.62
-- **Editor de Petições**: corrigido editor em branco causado por CSP (`unsafe-eval`) removendo imports estáticos de libs DOCX e carregando-as somente via import dinâmico quando necessário.
+- **Editor de PetiÃ§Ãµes**: corrigido editor em branco causado por CSP (`unsafe-eval`) removendo imports estÃ¡ticos de libs DOCX e carregando-as somente via import dinÃ¢mico quando necessÃ¡rio.
 
 ## 1.3.61
-- **Editor de Petições**: formatação ajustada para a régua (4cm = recuo da primeira linha; 6cm = recuo do bloco para citação) e alinhamento do bloco é normalizado ao aplicar formatações.
+- **Editor de PetiÃ§Ãµes**: formataÃ§Ã£o ajustada para a rÃ©gua (4cm = recuo da primeira linha; 6cm = recuo do bloco para citaÃ§Ã£o) e alinhamento do bloco Ã© normalizado ao aplicar formataÃ§Ãµes.
 
 ## 1.3.60
-- **Editor de Petições**: inserção de cláusulas/qualificação agora usa texto puro (com normalização de espaços/quebras) e aplica formatação por linha, garantindo parágrafo/citação/título conforme o padrão do editor.
+- **Editor de PetiÃ§Ãµes**: inserÃ§Ã£o de clÃ¡usulas/qualificaÃ§Ã£o agora usa texto puro (com normalizaÃ§Ã£o de espaÃ§os/quebras) e aplica formataÃ§Ã£o por linha, garantindo parÃ¡grafo/citaÃ§Ã£o/tÃ­tulo conforme o padrÃ£o do editor.
 
 ## 1.3.59
-- **Editor de Petições**: inicialização do editor mais resiliente (try/catch, `enable(true)` e `tabIndex`), exibindo erro quando o Quill não inicializa e evitando editor “morto” sem digitação/inserção.
+- **Editor de PetiÃ§Ãµes**: inicializaÃ§Ã£o do editor mais resiliente (try/catch, `enable(true)` e `tabIndex`), exibindo erro quando o Quill nÃ£o inicializa e evitando editor â€œmortoâ€� sem digitaÃ§Ã£o/inserÃ§Ã£o.
 
 ## 1.3.58
-- **Editor de Petições**: inicialização do Quill mais robusta (recria a instância quando o container anterior sai do DOM), corrigindo casos em que o editor aparecia mas não permitia digitar/inserir.
+- **Editor de PetiÃ§Ãµes**: inicializaÃ§Ã£o do Quill mais robusta (recria a instÃ¢ncia quando o container anterior sai do DOM), corrigindo casos em que o editor aparecia mas nÃ£o permitia digitar/inserir.
 
 ## 1.3.57
-- **Editor de Petições**: editor agora permanece sempre em modal (portal) e o toggle de tela cheia altera apenas o layout, evitando remount do Quill que travava digitação/inserção.
+- **Editor de PetiÃ§Ãµes**: editor agora permanece sempre em modal (portal) e o toggle de tela cheia altera apenas o layout, evitando remount do Quill que travava digitaÃ§Ã£o/inserÃ§Ã£o.
 
 ## 1.3.56
-- **Editor de Petições**: corrigido bug crítico onde minimizar quebrava o editor e impedia digitação/inserção.
-- **Editor de Petições**: atalho Shift não interfere mais ao digitar (só dispara quando Shift é pressionado sozinho).
-- **Editor de Petições**: auto-save agora cria a petição automaticamente no primeiro texto digitado.
-- **Editor de Petições**: carregamento de petições mais robusto (aceita `content_delta` como JSON ou string JSON).
+- **Editor de PetiÃ§Ãµes**: corrigido bug crÃ­tico onde minimizar quebrava o editor e impedia digitaÃ§Ã£o/inserÃ§Ã£o.
+- **Editor de PetiÃ§Ãµes**: atalho Shift nÃ£o interfere mais ao digitar (sÃ³ dispara quando Shift Ã© pressionado sozinho).
+- **Editor de PetiÃ§Ãµes**: auto-save agora cria a petiÃ§Ã£o automaticamente no primeiro texto digitado.
+- **Editor de PetiÃ§Ãµes**: carregamento de petiÃ§Ãµes mais robusto (aceita `content_delta` como JSON ou string JSON).
 
 ## 1.3.55
-- **Editor de Petições**: modal fullscreen (sem menu/nav) com botões minimizar/maximizar/fechar.
-- **Editor de Petições**: salvamento instantâneo (debounce 2s) ao digitar.
-- **Editor de Petições**: atalhos de teclado - Shift 1x = parágrafo 4cm, Shift 2x = citação, Ctrl+S = salvar.
-- **Editor de Petições**: foco automático no editor ao abrir.
-- **Editor de Petições**: upload de fonte customizada (.ttf, .otf, .woff, .woff2).
-- **Editor de Petições**: dica de atalhos visível na interface.
+- **Editor de PetiÃ§Ãµes**: modal fullscreen (sem menu/nav) com botÃµes minimizar/maximizar/fechar.
+- **Editor de PetiÃ§Ãµes**: salvamento instantÃ¢neo (debounce 2s) ao digitar.
+- **Editor de PetiÃ§Ãµes**: atalhos de teclado - Shift 1x = parÃ¡grafo 4cm, Shift 2x = citaÃ§Ã£o, Ctrl+S = salvar.
+- **Editor de PetiÃ§Ãµes**: foco automÃ¡tico no editor ao abrir.
+- **Editor de PetiÃ§Ãµes**: upload de fonte customizada (.ttf, .otf, .woff, .woff2).
+- **Editor de PetiÃ§Ãµes**: dica de atalhos visÃ­vel na interface.
 
 ## 1.3.54
-- **Editor de Petições**: corrigido erro `Parchment.Attributor.Class is not a constructor` que impedia o editor de inicializar.
+- **Editor de PetiÃ§Ãµes**: corrigido erro `Parchment.Attributor.Class is not a constructor` que impedia o editor de inicializar.
 
 ## 1.3.53
-- **Editor de Petições**: ao importar modelo `.docx`, opção de carregar o conteúdo do arquivo diretamente no editor.
+- **Editor de PetiÃ§Ãµes**: ao importar modelo `.docx`, opÃ§Ã£o de carregar o conteÃºdo do arquivo diretamente no editor.
 
 ## 1.3.52
-- **Editor de Petições**: validação imediata ao importar modelo `.docx` e mensagem de erro mais clara quando o template não contém `[[CONTEUDO]]`.
+- **Editor de PetiÃ§Ãµes**: validaÃ§Ã£o imediata ao importar modelo `.docx` e mensagem de erro mais clara quando o template nÃ£o contÃ©m `[[CONTEUDO]]`.
 
 ## 1.3.51
-- **Editor de Petições**: header do app agora exibe título/descrição do módulo Petições.
-- **Editor de Petições**: formatação padrão ajustada para o modelo (parágrafo sem recuo; estilo 4cm opcional via botão).
+- **Editor de PetiÃ§Ãµes**: header do app agora exibe tÃ­tulo/descriÃ§Ã£o do mÃ³dulo PetiÃ§Ãµes.
+- **Editor de PetiÃ§Ãµes**: formataÃ§Ã£o padrÃ£o ajustada para o modelo (parÃ¡grafo sem recuo; estilo 4cm opcional via botÃ£o).
 
 ## 1.3.50
-- **Editor de Petições**: menu do sistema restaurado (header/rodapé), mantendo apenas o nav lateral oculto.
-- **Editor de Petições**: ajustes de formatação para o padrão do modelo (título sublinhado/centralizado; citação centralizada em caixa alta).
+- **Editor de PetiÃ§Ãµes**: menu do sistema restaurado (header/rodapÃ©), mantendo apenas o nav lateral oculto.
+- **Editor de PetiÃ§Ãµes**: ajustes de formataÃ§Ã£o para o padrÃ£o do modelo (tÃ­tulo sublinhado/centralizado; citaÃ§Ã£o centralizada em caixa alta).
 
 ## 1.3.49
-- **Editor de Petições**: migração para Quill (core) para maior estabilidade e edição fluida.
+- **Editor de PetiÃ§Ãµes**: migraÃ§Ã£o para Quill (core) para maior estabilidade e ediÃ§Ã£o fluida.
   - Remove `contentEditable`/`document.execCommand` e passa a usar Quill como fonte de verdade
   - Salvamento/auto-save agora persiste `content` (HTML) + `content_delta` (Quill Delta)
   - Carregamento restaura preferencialmente via `content_delta` (fallback para HTML)
-  - Inserção de cláusulas/qualificação de cliente no cursor via Quill
+  - InserÃ§Ã£o de clÃ¡usulas/qualificaÃ§Ã£o de cliente no cursor via Quill
 
 ## 1.3.48
-- **Editor de Petições**: modo tela cheia para peticionar mais rápido.
-  - Oculta menu lateral (nav) no módulo Petições
-  - Oculta header e rodapé do app no módulo Petições
+- **Editor de PetiÃ§Ãµes**: modo tela cheia para peticionar mais rÃ¡pido.
+  - Oculta menu lateral (nav) no mÃ³dulo PetiÃ§Ãµes
+  - Oculta header e rodapÃ© do app no mÃ³dulo PetiÃ§Ãµes
   - Editor passa a ocupar 100% da tela
 
 ## 1.3.47
-- **Editor de Petições**: melhorias visuais e funcionais.
-  - Régua estilo Word com marcações em centímetros (0-21cm)
-  - Indicadores de recuo (parágrafo 4cm, citação 6cm) na régua
-  - Botão "PDF" separado para exportar petição em PDF
-  - Botão "Imprimir" para impressão direta
+- **Editor de PetiÃ§Ãµes**: melhorias visuais e funcionais.
+  - RÃ©gua estilo Word com marcaÃ§Ãµes em centÃ­metros (0-21cm)
+  - Indicadores de recuo (parÃ¡grafo 4cm, citaÃ§Ã£o 6cm) na rÃ©gua
+  - BotÃ£o "PDF" separado para exportar petiÃ§Ã£o em PDF
+  - BotÃ£o "Imprimir" para impressÃ£o direta
   - Auto-save a cada 1 minuto (antes era 30 segundos)
-  - Vinculação com cliente mantida (aba Clientes na sidebar)
+  - VinculaÃ§Ã£o com cliente mantida (aba Clientes na sidebar)
 
 ## 1.3.46
-- **Editor de Petições**: exportação DOCX real com preservação do modelo.
+- **Editor de PetiÃ§Ãµes**: exportaÃ§Ã£o DOCX real com preservaÃ§Ã£o do modelo.
   - Importar modelo `.docx` e exportar preenchendo `[[CONTEUDO]]` via `docxtemplater`
-  - Preserva cabeçalho, rodapé e logo do modelo no Word
-  - Normalização do editor para manter estrutura em parágrafos (`<p>`) e evitar perda de formatação ao salvar
+  - Preserva cabeÃ§alho, rodapÃ© e logo do modelo no Word
+  - NormalizaÃ§Ã£o do editor para manter estrutura em parÃ¡grafos (`<p>`) e evitar perda de formataÃ§Ã£o ao salvar
 
 ## 1.3.45
-- **Editor de Petições**: ajustes para preservar formatação no Word.
-  - Exportação/Impressão: troca de recuo para `margin-left` (compatibilidade melhor com Word)
-  - CSS do export corrigido para usar `margin-left`/`margin-bottom` explícitos (evita interpretação incorreta)
+- **Editor de PetiÃ§Ãµes**: ajustes para preservar formataÃ§Ã£o no Word.
+  - ExportaÃ§Ã£o/ImpressÃ£o: troca de recuo para `margin-left` (compatibilidade melhor com Word)
+  - CSS do export corrigido para usar `margin-left`/`margin-bottom` explÃ­citos (evita interpretaÃ§Ã£o incorreta)
 
 ## 1.3.44
-- **Editor de Petições**: correção do recuo padrão e adição de régua.
-  - Recuo do parágrafo/citação agora considera a margem da folha (evita “ficar como citação”)
-  - Enter após citação/título/subtítulo volta para parágrafo padrão
-  - Régua visual na folha A4 (margem 3cm, parágrafo 4cm, citação 6cm)
+- **Editor de PetiÃ§Ãµes**: correÃ§Ã£o do recuo padrÃ£o e adiÃ§Ã£o de rÃ©gua.
+  - Recuo do parÃ¡grafo/citaÃ§Ã£o agora considera a margem da folha (evita â€œficar como citaÃ§Ã£oâ€�)
+  - Enter apÃ³s citaÃ§Ã£o/tÃ­tulo/subtÃ­tulo volta para parÃ¡grafo padrÃ£o
+  - RÃ©gua visual na folha A4 (margem 3cm, parÃ¡grafo 4cm, citaÃ§Ã£o 6cm)
 
 ## 1.3.43
-- **Editor de Petições**: correção dos modais que não cabiam na tela.
-  - Modal de cláusula: scroll no backdrop, header/footer sticky, textarea reduzido
-  - Modal de busca: altura máxima 50vh, scroll interno
+- **Editor de PetiÃ§Ãµes**: correÃ§Ã£o dos modais que nÃ£o cabiam na tela.
+  - Modal de clÃ¡usula: scroll no backdrop, header/footer sticky, textarea reduzido
+  - Modal de busca: altura mÃ¡xima 50vh, scroll interno
 
 ## 1.3.42
-- **Editor de Petições Trabalhistas v4**: novas funcionalidades e melhorias.
-  - Texto padrão inicial: cabeçalho TRT + qualificação do reclamante + reclamada
-  - Botão "Modelo": importar modelo Word (.doc/.docx) com logo e rodapé
-  - Botão "Word": exportar documento formatado
-  - Menu de contexto (botão direito) melhorado:
-    - "Adicionar cláusula": abre modal de busca com todas as cláusulas
-    - "Salvar como cláusula": salva texto selecionado como nova cláusula
-  - Modal de busca de cláusulas com filtro por título/conteúdo
-  - Dados do advogado pré-configurados no texto padrão
+- **Editor de PetiÃ§Ãµes Trabalhistas v4**: novas funcionalidades e melhorias.
+  - Texto padrÃ£o inicial: cabeÃ§alho TRT + qualificaÃ§Ã£o do reclamante + reclamada
+  - BotÃ£o "Modelo": importar modelo Word (.doc/.docx) com logo e rodapÃ©
+  - BotÃ£o "Word": exportar documento formatado
+  - Menu de contexto (botÃ£o direito) melhorado:
+    - "Adicionar clÃ¡usula": abre modal de busca com todas as clÃ¡usulas
+    - "Salvar como clÃ¡usula": salva texto selecionado como nova clÃ¡usula
+  - Modal de busca de clÃ¡usulas com filtro por tÃ­tulo/conteÃºdo
+  - Dados do advogado prÃ©-configurados no texto padrÃ£o
 
 ## 1.3.41
-- **Editor de Petições Trabalhistas v3**: melhorias significativas na toolbar e funcionalidades.
-  - Toolbar completa estilo Word: fonte, tamanho, negrito, itálico, sublinhado, tachado, subscrito, sobrescrito
+- **Editor de PetiÃ§Ãµes Trabalhistas v3**: melhorias significativas na toolbar e funcionalidades.
+  - Toolbar completa estilo Word: fonte, tamanho, negrito, itÃ¡lico, sublinhado, tachado, subscrito, sobrescrito
   - Cores de texto e destaque (highlight)
-  - Alinhamento: esquerda, centro, direita, justificado (padrão)
+  - Alinhamento: esquerda, centro, direita, justificado (padrÃ£o)
   - Listas com marcadores e numeradas
-  - Formatação de parágrafo: 4cm, 6cm (citação), título, subtítulo, normal
-  - Menu de contexto (botão direito): salvar seleção como cláusula
-  - Auto-save a cada 30 segundos quando há alterações
-  - Indicador de status de salvamento (última vez salvo / não salvo)
-  - Vinculação com cliente: aba "Clientes" na sidebar
-  - Qualificação automática do cliente (nome, CPF, RG, nacionalidade, estado civil, profissão, endereço)
-  - Variáveis de cliente nas cláusulas: [[NOME_CLIENTE]], [[CPF]], [[RG]], etc.
-  - Substituição automática de variáveis ao inserir cláusula com cliente selecionado
+  - FormataÃ§Ã£o de parÃ¡grafo: 4cm, 6cm (citaÃ§Ã£o), tÃ­tulo, subtÃ­tulo, normal
+  - Menu de contexto (botÃ£o direito): salvar seleÃ§Ã£o como clÃ¡usula
+  - Auto-save a cada 30 segundos quando hÃ¡ alteraÃ§Ãµes
+  - Indicador de status de salvamento (Ãºltima vez salvo / nÃ£o salvo)
+  - VinculaÃ§Ã£o com cliente: aba "Clientes" na sidebar
+  - QualificaÃ§Ã£o automÃ¡tica do cliente (nome, CPF, RG, nacionalidade, estado civil, profissÃ£o, endereÃ§o)
+  - VariÃ¡veis de cliente nas clÃ¡usulas: [[NOME_CLIENTE]], [[CPF]], [[RG]], etc.
+  - SubstituiÃ§Ã£o automÃ¡tica de variÃ¡veis ao inserir clÃ¡usula com cliente selecionado
 
 ## 1.3.40
-- **Editor de Petições Trabalhistas v2**: redesenhado para tela cheia com editor de texto livre.
-  - Editor ocupa página inteira sem header (folha A4 visual)
-  - Texto livre (não mais baseado em blocos) - edição fluida como Word
-  - Formatação Word preservada: Parágrafo (4cm), Citação (6cm), Título, Subtítulo
-  - Toolbar com negrito, itálico, sublinhado e botões de formatação
-  - Sidebar retrátil com cláusulas organizadas por categoria
-  - Cláusulas inseridas na posição do cursor
-  - Exportação DOC e PDF/Impressão com formatação correta
+- **Editor de PetiÃ§Ãµes Trabalhistas v2**: redesenhado para tela cheia com editor de texto livre.
+  - Editor ocupa pÃ¡gina inteira sem header (folha A4 visual)
+  - Texto livre (nÃ£o mais baseado em blocos) - ediÃ§Ã£o fluida como Word
+  - FormataÃ§Ã£o Word preservada: ParÃ¡grafo (4cm), CitaÃ§Ã£o (6cm), TÃ­tulo, SubtÃ­tulo
+  - Toolbar com negrito, itÃ¡lico, sublinhado e botÃµes de formataÃ§Ã£o
+  - Sidebar retrÃ¡til com clÃ¡usulas organizadas por categoria
+  - ClÃ¡usulas inseridas na posiÃ§Ã£o do cursor
+  - ExportaÃ§Ã£o DOC e PDF/ImpressÃ£o com formataÃ§Ã£o correta
   - Migration executada via MCP Supabase
 
 ## 1.3.39
-- **Editor de Petições Trabalhistas**: novo módulo isolado para criação de petições com cláusulas reutilizáveis.
-  - Cláusulas organizadas por categoria (Cabeçalho, Qualificação, Fatos, Direito, Pedidos, Encerramento)
-  - Formatação específica: Parágrafo (4cm), Citação (6cm), Título, Subtítulo
-  - Cláusulas padrão pré-cadastradas para petições trabalhistas
+- **Editor de PetiÃ§Ãµes Trabalhistas**: novo mÃ³dulo isolado para criaÃ§Ã£o de petiÃ§Ãµes com clÃ¡usulas reutilizÃ¡veis.
+  - ClÃ¡usulas organizadas por categoria (CabeÃ§alho, QualificaÃ§Ã£o, Fatos, Direito, Pedidos, Encerramento)
+  - FormataÃ§Ã£o especÃ­fica: ParÃ¡grafo (4cm), CitaÃ§Ã£o (6cm), TÃ­tulo, SubtÃ­tulo
+  - ClÃ¡usulas padrÃ£o prÃ©-cadastradas para petiÃ§Ãµes trabalhistas
   - Editor visual com drag-and-drop de blocos
-  - Exportação para DOC e PDF/Impressão
-  - Salvar e carregar petições
-  - Gerenciamento completo de cláusulas (criar, editar, excluir, definir padrão)
-  - Módulo completamente isolado (pode ser removido sem afetar outros módulos)
+  - ExportaÃ§Ã£o para DOC e PDF/ImpressÃ£o
+  - Salvar e carregar petiÃ§Ãµes
+  - Gerenciamento completo de clÃ¡usulas (criar, editar, excluir, definir padrÃ£o)
+  - MÃ³dulo completamente isolado (pode ser removido sem afetar outros mÃ³dulos)
 
 ## 1.3.38
-- Documentos: adicionado campo de busca para filtrar modelos no seletor de templates (inclui Petições Padrões e Novo Documento) para facilitar quando houver muitos arquivos/modelos.
+- Documentos: adicionado campo de busca para filtrar modelos no seletor de templates (inclui PetiÃ§Ãµes PadrÃµes e Novo Documento) para facilitar quando houver muitos arquivos/modelos.
 
 ## 1.3.37
-- Cache/Sincronização: implementado sistema de eventos globais para invalidação de cache e sincronização de clientes. Clientes criados, atualizados ou excluídos agora são refletidos imediatamente em todos os módulos (Dashboard, Clientes, Processos, Financeiro) sem necessidade de atualizar a página.
-- Documentos: corrigido campo nome do modal "Adicionar Template" que não era limpo ao abrir o modal.
+- Cache/SincronizaÃ§Ã£o: implementado sistema de eventos globais para invalidaÃ§Ã£o de cache e sincronizaÃ§Ã£o de clientes. Clientes criados, atualizados ou excluÃ­dos agora sÃ£o refletidos imediatamente em todos os mÃ³dulos (Dashboard, Clientes, Processos, Financeiro) sem necessidade de atualizar a pÃ¡gina.
+- Documentos: corrigido campo nome do modal "Adicionar Template" que nÃ£o era limpo ao abrir o modal.
 
 ## 1.3.36
-- Cache/Sincronização: clientes criados, atualizados ou excluídos agora são refletidos imediatamente em todos os módulos (Dashboard, Clientes, Processos, Financeiro) sem necessidade de atualizar a página. Implementado sistema de eventos globais para invalidação de cache e sincronização de estado entre componentes.
+- Cache/SincronizaÃ§Ã£o: clientes criados, atualizados ou excluÃ­dos agora sÃ£o refletidos imediatamente em todos os mÃ³dulos (Dashboard, Clientes, Processos, Financeiro) sem necessidade de atualizar a pÃ¡gina. Implementado sistema de eventos globais para invalidaÃ§Ã£o de cache e sincronizaÃ§Ã£o de estado entre componentes.
 
 ## 1.3.35
-- Documentos: Petições Padrões — adequação completa ao padrão visual do CRM (header branco, botões laranja, cards de stats, remoção de gradientes escuros) para consistência com os demais módulos.
+- Documentos: PetiÃ§Ãµes PadrÃµes â€” adequaÃ§Ã£o completa ao padrÃ£o visual do CRM (header branco, botÃµes laranja, cards de stats, remoÃ§Ã£o de gradientes escuros) para consistÃªncia com os demais mÃ³dulos.
 
 ## 1.3.34
-- Documentos: Petições Padrões — ajustes de tema (cores/bordas/inputs/botões) e suporte a dark mode (incluindo modais de criar/editar, campos e visualização).
+- Documentos: PetiÃ§Ãµes PadrÃµes â€” ajustes de tema (cores/bordas/inputs/botÃµes) e suporte a dark mode (incluindo modais de criar/editar, campos e visualizaÃ§Ã£o).
 
 ## 1.3.33
-- Documentos: corrigido dropdown de seleção de cliente (autocomplete) que podia ficar cortado/atrás do rodapé ou de containers com overflow; lista agora abre em overlay (portal) com posicionamento inteligente.
+- Documentos: corrigido dropdown de seleÃ§Ã£o de cliente (autocomplete) que podia ficar cortado/atrÃ¡s do rodapÃ© ou de containers com overflow; lista agora abre em overlay (portal) com posicionamento inteligente.
 
 ## 1.3.32
-- Performance: pré-carregamento (prefetch) em background dos módulos principais após login para navegação mais rápida e redução do tempo de carregamento ao abrir módulos.
+- Performance: prÃ©-carregamento (prefetch) em background dos mÃ³dulos principais apÃ³s login para navegaÃ§Ã£o mais rÃ¡pida e reduÃ§Ã£o do tempo de carregamento ao abrir mÃ³dulos.
 
 ## 1.3.31
-- Documentação: redesign da superpágina para o padrão visual do sistema (layout limpo/profissional, sem gradientes chamativos e sem aparência de template), mantendo sidebar, busca e seções.
+- DocumentaÃ§Ã£o: redesign da superpÃ¡gina para o padrÃ£o visual do sistema (layout limpo/profissional, sem gradientes chamativos e sem aparÃªncia de template), mantendo sidebar, busca e seÃ§Ãµes.
 
 ## 1.3.30
-- Documentação: nova superpágina de documentação premium com design moderno, sidebar de navegação, seções organizadas (Início, Guia do Sistema, Changelog, FAQ), busca integrada e layout responsivo.
+- DocumentaÃ§Ã£o: nova superpÃ¡gina de documentaÃ§Ã£o premium com design moderno, sidebar de navegaÃ§Ã£o, seÃ§Ãµes organizadas (InÃ­cio, Guia do Sistema, Changelog, FAQ), busca integrada e layout responsivo.
 
 ## 1.3.29
-- Autenticidade/Verificação: exibição do contato do signatário agora prioriza o e-mail/telefone realmente usado na autenticação (Google/telefone), evitando mostrar e-mail interno `public+...@crm.local`.
+- Autenticidade/VerificaÃ§Ã£o: exibiÃ§Ã£o do contato do signatÃ¡rio agora prioriza o e-mail/telefone realmente usado na autenticaÃ§Ã£o (Google/telefone), evitando mostrar e-mail interno `public+...@crm.local`.
 
 ## 1.3.28
-- Assinatura (selfie): anti-falso-negativo — se a IA reclamar apenas de “clareza/borrão/iluminação” mas não indicar ausência de rosto/obstrução/borrão severo, a foto é aceita.
+- Assinatura (selfie): anti-falso-negativo â€” se a IA reclamar apenas de â€œclareza/borrÃ£o/iluminaÃ§Ã£oâ€� mas nÃ£o indicar ausÃªncia de rosto/obstruÃ§Ã£o/borrÃ£o severo, a foto Ã© aceita.
 
 ## 1.3.27
-- Assinatura (selfie): critérios da IA ajustados para não reprovar por iluminação; reprova apenas por ausência de rosto, obstrução no rosto ou foto muito borrada.
+- Assinatura (selfie): critÃ©rios da IA ajustados para nÃ£o reprovar por iluminaÃ§Ã£o; reprova apenas por ausÃªncia de rosto, obstruÃ§Ã£o no rosto ou foto muito borrada.
 
 ## 1.3.26
-- Assinatura Pública: validação de selfie com IA agora bloqueia envio quando a foto estiver sem rosto visível/nítido e exibe o motivo.
-- Edge Function: `analyze-facial-photo` agora aceita validação via `token` público (sem login) com checagem no backend.
+- Assinatura PÃºblica: validaÃ§Ã£o de selfie com IA agora bloqueia envio quando a foto estiver sem rosto visÃ­vel/nÃ­tido e exibe o motivo.
+- Edge Function: `analyze-facial-photo` agora aceita validaÃ§Ã£o via `token` pÃºblico (sem login) com checagem no backend.
 
 ## 1.3.25
-- Assinatura Eletrônica: validação de foto facial com IA (OpenAI Vision) - verifica nitidez, iluminação e visibilidade do rosto.
-- Se a foto não passar na validação, exibe mensagem e pede para tirar nova foto.
-- Opção "Usar mesmo assim" para casos excepcionais.
+- Assinatura EletrÃ´nica: validaÃ§Ã£o de foto facial com IA (OpenAI Vision) - verifica nitidez, iluminaÃ§Ã£o e visibilidade do rosto.
+- Se a foto nÃ£o passar na validaÃ§Ã£o, exibe mensagem e pede para tirar nova foto.
+- OpÃ§Ã£o "Usar mesmo assim" para casos excepcionais.
 
 ## 1.3.24
-- Notificações: suporte a notificação do navegador ao receber notificações via Realtime (quando o usuário conceder permissão).
-- Notificações: clique na notificação de assinatura abre diretamente o módulo Assinaturas no modal de detalhes.
+- NotificaÃ§Ãµes: suporte a notificaÃ§Ã£o do navegador ao receber notificaÃ§Ãµes via Realtime (quando o usuÃ¡rio conceder permissÃ£o).
+- NotificaÃ§Ãµes: clique na notificaÃ§Ã£o de assinatura abre diretamente o mÃ³dulo Assinaturas no modal de detalhes.
 
 ## 1.3.23
-- Notificações: popups na tela agora ficam fixos até o usuário fechar (sem expirar automaticamente).
-- Notificações: redesign das notificações de assinatura (badge + progresso + cores) no popup e no dropdown.
+- NotificaÃ§Ãµes: popups na tela agora ficam fixos atÃ© o usuÃ¡rio fechar (sem expirar automaticamente).
+- NotificaÃ§Ãµes: redesign das notificaÃ§Ãµes de assinatura (badge + progresso + cores) no popup e no dropdown.
 
 ## 1.3.22
-- Notificações: `analyze-intimations` agora cria notificação para todas as novas intimações analisadas (não apenas urgentes).
-- Notificações: título da intimação agora reflete a urgência (📄/📋/⚠️/🚨).
-- Notificações: `NotificationBell` com Realtime mais robusto em ambiente dev (evita duplicidade no React StrictMode).
+- NotificaÃ§Ãµes: `analyze-intimations` agora cria notificaÃ§Ã£o para todas as novas intimaÃ§Ãµes analisadas (nÃ£o apenas urgentes).
+- NotificaÃ§Ãµes: tÃ­tulo da intimaÃ§Ã£o agora reflete a urgÃªncia (ðŸ“„/ðŸ“‹/âš ï¸�/ðŸš¨).
+- NotificaÃ§Ãµes: `NotificationBell` com Realtime mais robusto em ambiente dev (evita duplicidade no React StrictMode).
 
 ## 1.3.21
-- Notificações: integração de Requerimentos (alertas de MS/tempo em análise) via `notification-scheduler`.
-- Notificações: `user_notifications` agora suporta `requirement_id` e tipo `requirement_alert`.
-- Notificações: clique no sino/popup abre diretamente Requerimentos quando o alerta for de requerimento.
-- Notificações: scheduler agora respeita `notify_days_before` (prazos) e `notify_minutes_before` (agenda) e usa deduplicação por `dedupe_key`.
-- Notificações: correção de seleção de usuários ativos via `profiles.is_active`/`profiles.user_id`.
+- NotificaÃ§Ãµes: integraÃ§Ã£o de Requerimentos (alertas de MS/tempo em anÃ¡lise) via `notification-scheduler`.
+- NotificaÃ§Ãµes: `user_notifications` agora suporta `requirement_id` e tipo `requirement_alert`.
+- NotificaÃ§Ãµes: clique no sino/popup abre diretamente Requerimentos quando o alerta for de requerimento.
+- NotificaÃ§Ãµes: scheduler agora respeita `notify_days_before` (prazos) e `notify_minutes_before` (agenda) e usa deduplicaÃ§Ã£o por `dedupe_key`.
+- NotificaÃ§Ãµes: correÃ§Ã£o de seleÃ§Ã£o de usuÃ¡rios ativos via `profiles.is_active`/`profiles.user_id`.
 
 ## 1.3.20
-- Notificações: popup na tela agora permanece por 60 minutos (com botão de fechar).
-- Notificações: múltiplos popups empilhados (um em cima do outro) no canto da tela.
+- NotificaÃ§Ãµes: popup na tela agora permanece por 60 minutos (com botÃ£o de fechar).
+- NotificaÃ§Ãµes: mÃºltiplos popups empilhados (um em cima do outro) no canto da tela.
 
 ## 1.3.19
-- Notificações: popup na tela estilo Facebook/Instagram quando chega notificação via Realtime.
-- Notificações: intimações agora exibem partes (nomes/polo) e resumo/assunto para maior precisão.
-- Notificações: assinaturas digitais disparam popup realtime quando alguém assina documento.
-- Notificações: barra de progresso visual no popup (6 segundos para fechar automaticamente).
+- NotificaÃ§Ãµes: popup na tela estilo Facebook/Instagram quando chega notificaÃ§Ã£o via Realtime.
+- NotificaÃ§Ãµes: intimaÃ§Ãµes agora exibem partes (nomes/polo) e resumo/assunto para maior precisÃ£o.
+- NotificaÃ§Ãµes: assinaturas digitais disparam popup realtime quando alguÃ©m assina documento.
+- NotificaÃ§Ãµes: barra de progresso visual no popup (6 segundos para fechar automaticamente).
 
 ## 1.3.18
-- Clientes: seção "Documentos/Contratos assinados" nos detalhes do cliente (lista documentos assinados via módulo de Assinatura Digital, com acesso ao PDF assinado).
+- Clientes: seÃ§Ã£o "Documentos/Contratos assinados" nos detalhes do cliente (lista documentos assinados via mÃ³dulo de Assinatura Digital, com acesso ao PDF assinado).
 
 ## 1.3.17
-- Notificações: geração quase realtime de notificações de intimações (run-djen-sync chama analyze-intimations ao salvar novas intimações).
-- Notificações: dropdown do sino exibe apenas não lidas (ao marcar como lida, some da lista).
+- NotificaÃ§Ãµes: geraÃ§Ã£o quase realtime de notificaÃ§Ãµes de intimaÃ§Ãµes (run-djen-sync chama analyze-intimations ao salvar novas intimaÃ§Ãµes).
+- NotificaÃ§Ãµes: dropdown do sino exibe apenas nÃ£o lidas (ao marcar como lida, some da lista).
 
 ## 1.3.16
-- Notificações: Edge Function `analyze-intimations` para análise automática de intimações via cron.
-- Notificações: cron job executa a cada 30 minutos para analisar novas intimações.
-- Notificações: intimações urgentes (alta/crítica) geram notificação automática.
-- Notificações: usa Groq AI como provider principal, OpenAI como fallback.
+- NotificaÃ§Ãµes: Edge Function `analyze-intimations` para anÃ¡lise automÃ¡tica de intimaÃ§Ãµes via cron.
+- NotificaÃ§Ãµes: cron job executa a cada 30 minutos para analisar novas intimaÃ§Ãµes.
+- NotificaÃ§Ãµes: intimaÃ§Ãµes urgentes (alta/crÃ­tica) geram notificaÃ§Ã£o automÃ¡tica.
+- NotificaÃ§Ãµes: usa Groq AI como provider principal, OpenAI como fallback.
 
 ## 1.3.15
-- Notificações: ao marcar intimação como lida, notificação correspondente é marcada como lida automaticamente.
-- Notificações: dropdown mostra apenas notificações não lidas (lidas somem da lista).
+- NotificaÃ§Ãµes: ao marcar intimaÃ§Ã£o como lida, notificaÃ§Ã£o correspondente Ã© marcada como lida automaticamente.
+- NotificaÃ§Ãµes: dropdown mostra apenas notificaÃ§Ãµes nÃ£o lidas (lidas somem da lista).
 
 ## 1.3.14
-- Notificações: sistema de lembretes automáticos via Edge Function (cron).
-- Notificações: lembrete de prazo 1-3 dias antes do vencimento.
-- Notificações: lembrete de compromisso 1 dia antes.
-- Notificações: alerta de intimação urgente (análise IA).
-- Notificações: alerta de assinatura pendente há mais de 1 dia.
-- Notificações: trigger automático quando cliente assina documento.
-- Notificações: cron jobs executam a cada hora e às 8h da manhã.
-- Notificações: deduplicação para evitar notificações repetidas em 24h.
+- NotificaÃ§Ãµes: sistema de lembretes automÃ¡ticos via Edge Function (cron).
+- NotificaÃ§Ãµes: lembrete de prazo 1-3 dias antes do vencimento.
+- NotificaÃ§Ãµes: lembrete de compromisso 1 dia antes.
+- NotificaÃ§Ãµes: alerta de intimaÃ§Ã£o urgente (anÃ¡lise IA).
+- NotificaÃ§Ãµes: alerta de assinatura pendente hÃ¡ mais de 1 dia.
+- NotificaÃ§Ãµes: trigger automÃ¡tico quando cliente assina documento.
+- NotificaÃ§Ãµes: cron jobs executam a cada hora e Ã s 8h da manhÃ£.
+- NotificaÃ§Ãµes: deduplicaÃ§Ã£o para evitar notificaÃ§Ãµes repetidas em 24h.
 
 ## 1.3.13
-- Notificações: integração completa em todo o sistema.
-- Notificações: prazos criados geram notificação (urgente se ≤3 dias ou prioridade alta).
-- Notificações: compromissos criados geram notificação com data/hora.
-- Notificações: assinaturas digitais geram notificação quando cliente assina.
-- Notificações: processos criados geram notificação com número e cliente.
-- Notificações: ícone de caneta (PenTool) para assinaturas digitais.
+- NotificaÃ§Ãµes: integraÃ§Ã£o completa em todo o sistema.
+- NotificaÃ§Ãµes: prazos criados geram notificaÃ§Ã£o (urgente se â‰¤3 dias ou prioridade alta).
+- NotificaÃ§Ãµes: compromissos criados geram notificaÃ§Ã£o com data/hora.
+- NotificaÃ§Ãµes: assinaturas digitais geram notificaÃ§Ã£o quando cliente assina.
+- NotificaÃ§Ãµes: processos criados geram notificaÃ§Ã£o com nÃºmero e cliente.
+- NotificaÃ§Ãµes: Ã­cone de caneta (PenTool) para assinaturas digitais.
 
 ## 1.3.12
-- Notificações: cria notificação para TODAS as intimações (não apenas urgentes).
-- Notificações: badges de tribunal e urgência (ALTA, CRÍTICA) nas notificações.
-- Notificações: ícone diferenciado para intimações urgentes (triângulo vermelho).
-- Notificações: cor de fundo do ícone baseada na urgência.
-- Notificações: mensagem com resumo da análise de IA.
+- NotificaÃ§Ãµes: cria notificaÃ§Ã£o para TODAS as intimaÃ§Ãµes (nÃ£o apenas urgentes).
+- NotificaÃ§Ãµes: badges de tribunal e urgÃªncia (ALTA, CRÃ�TICA) nas notificaÃ§Ãµes.
+- NotificaÃ§Ãµes: Ã­cone diferenciado para intimaÃ§Ãµes urgentes (triÃ¢ngulo vermelho).
+- NotificaÃ§Ãµes: cor de fundo do Ã­cone baseada na urgÃªncia.
+- NotificaÃ§Ãµes: mensagem com resumo da anÃ¡lise de IA.
 
 ## 1.3.11
-- Notificações: suporte a Realtime (notificações instantâneas via WebSocket).
-- Notificações: som toca automaticamente ao receber nova notificação.
-- Notificações: habilitado Realtime na tabela user_notifications.
+- NotificaÃ§Ãµes: suporte a Realtime (notificaÃ§Ãµes instantÃ¢neas via WebSocket).
+- NotificaÃ§Ãµes: som toca automaticamente ao receber nova notificaÃ§Ã£o.
+- NotificaÃ§Ãµes: habilitado Realtime na tabela user_notifications.
 
 ## 1.3.10
-- Notificações: corrigido RLS policy para permitir INSERT/UPDATE/DELETE na tabela user_notifications.
+- NotificaÃ§Ãµes: corrigido RLS policy para permitir INSERT/UPDATE/DELETE na tabela user_notifications.
 
 ## 1.3.9
-- Notificações: novo sistema estilo Facebook/Instagram com dropdown moderno.
-- Notificações: som de alerta usando Web Audio API (pode ser ativado/desativado).
-- Notificações: badge com contador animado (pulse) no ícone do sino.
-- Notificações: tempo relativo (agora, 5m, 2h, 3d).
-- Notificações: ações rápidas (marcar como lida, deletar) ao passar o mouse.
-- Notificações: botão para marcar todas como lidas.
-- Notificações: polling automático a cada 30 segundos.
+- NotificaÃ§Ãµes: novo sistema estilo Facebook/Instagram com dropdown moderno.
+- NotificaÃ§Ãµes: som de alerta usando Web Audio API (pode ser ativado/desativado).
+- NotificaÃ§Ãµes: badge com contador animado (pulse) no Ã­cone do sino.
+- NotificaÃ§Ãµes: tempo relativo (agora, 5m, 2h, 3d).
+- NotificaÃ§Ãµes: aÃ§Ãµes rÃ¡pidas (marcar como lida, deletar) ao passar o mouse.
+- NotificaÃ§Ãµes: botÃ£o para marcar todas como lidas.
+- NotificaÃ§Ãµes: polling automÃ¡tico a cada 30 segundos.
 
 ## 1.3.8
-- Notificações: corrigido erro 400 ao criar notificações de intimação urgente (mapeia `intimation_urgent` para `intimation_new` e registra `urgent: true` no metadata).
+- NotificaÃ§Ãµes: corrigido erro 400 ao criar notificaÃ§Ãµes de intimaÃ§Ã£o urgente (mapeia `intimation_urgent` para `intimation_new` e registra `urgent: true` no metadata).
 
 ## 1.3.7
-- Intimações DJEN: layout unificado em barra única (header + filtros + ações).
-- Intimações DJEN: indicadores inline (total, não lidas, urgência).
-- Intimações DJEN: botões de ação apenas com ícones (Filtros, Histórico, Exportar, Config).
-- Intimações DJEN: exibição dos nomes das partes (destinatários ou extraídos do texto).
-- Intimações DJEN: fallback de extração de partes do texto quando não há destinatários cadastrados.
-- Intimações DJEN: vinculação automática quando nome da parte = nome do cliente cadastrado (match 100%).
-- Intimações DJEN: prioridade de visualização para as intimações.
+- IntimaÃ§Ãµes DJEN: layout unificado em barra Ãºnica (header + filtros + aÃ§Ãµes).
+- IntimaÃ§Ãµes DJEN: indicadores inline (total, nÃ£o lidas, urgÃªncia).
+- IntimaÃ§Ãµes DJEN: botÃµes de aÃ§Ã£o apenas com Ã­cones (Filtros, HistÃ³rico, Exportar, Config).
+- IntimaÃ§Ãµes DJEN: exibiÃ§Ã£o dos nomes das partes (destinatÃ¡rios ou extraÃ­dos do texto).
+- IntimaÃ§Ãµes DJEN: fallback de extraÃ§Ã£o de partes do texto quando nÃ£o hÃ¡ destinatÃ¡rios cadastrados.
+- IntimaÃ§Ãµes DJEN: vinculaÃ§Ã£o automÃ¡tica quando nome da parte = nome do cliente cadastrado (match 100%).
+- IntimaÃ§Ãµes DJEN: prioridade de visualizaÃ§Ã£o para as intimaÃ§Ãµes.
 
 ## 1.3.6
-- Intimações DJEN: análise automática de IA agora é disparada quando novas intimações chegam via realtime.
+- IntimaÃ§Ãµes DJEN: anÃ¡lise automÃ¡tica de IA agora Ã© disparada quando novas intimaÃ§Ãµes chegam via realtime.
 
 ## 1.3.5
-- Intimações DJEN: toast de realtime agora mostra a quantidade de novas intimações recebidas (inserts agrupados em lote).
+- IntimaÃ§Ãµes DJEN: toast de realtime agora mostra a quantidade de novas intimaÃ§Ãµes recebidas (inserts agrupados em lote).
 
 ## 1.3.4
 - Edge Function run-djen-sync: removido limite de 10 processos - agora busca TODOS os processos cadastrados.
 
 ## 1.3.3
-- Database: habilitado Realtime (postgres_changes) para tabela `djen_comunicacoes` - agora a lista atualiza automaticamente ao chegar nova intimação.
+- Database: habilitado Realtime (postgres_changes) para tabela `djen_comunicacoes` - agora a lista atualiza automaticamente ao chegar nova intimaÃ§Ã£o.
 
 ## 1.3.2
-- Intimações DJEN: busca agora considera também o número do processo cadastrado (process_code) e agrupamento prioriza process_code quando houver vínculo.
+- IntimaÃ§Ãµes DJEN: busca agora considera tambÃ©m o nÃºmero do processo cadastrado (process_code) e agrupamento prioriza process_code quando houver vÃ­nculo.
 
 ## 1.3.1
-- Intimações DJEN: atualização automática da lista e notificação quando chegar nova intimação (realtime).
+- IntimaÃ§Ãµes DJEN: atualizaÃ§Ã£o automÃ¡tica da lista e notificaÃ§Ã£o quando chegar nova intimaÃ§Ã£o (realtime).
 
 ## 1.3.0
-- Intimações DJEN: período de busca alterado para 7 dias (Edge Function + sync manual).
-- Edge Function run-djen-sync: extrai número do processo do texto quando não vem da API.
-- Edge Function run-djen-sync: vinculação automática com processos cadastrados melhorada.
-- Deletadas intimações antigas do banco (desde 11/12).
+- IntimaÃ§Ãµes DJEN: perÃ­odo de busca alterado para 7 dias (Edge Function + sync manual).
+- Edge Function run-djen-sync: extrai nÃºmero do processo do texto quando nÃ£o vem da API.
+- Edge Function run-djen-sync: vinculaÃ§Ã£o automÃ¡tica com processos cadastrados melhorada.
+- Deletadas intimaÃ§Ãµes antigas do banco (desde 11/12).
 
 ## 1.2.9
-- Database: coluna `numero_processo` em `djen_comunicacoes` agora é nullable (API do DJEN nem sempre retorna esse campo).
+- Database: coluna `numero_processo` em `djen_comunicacoes` agora Ã© nullable (API do DJEN nem sempre retorna esse campo).
 
 ## 1.2.8
-- Edge Function run-djen-sync: corrigido insert em `djen_comunicacoes` preenchendo campos obrigatórios (`djen_id` e `hash`) e melhorados logs de erro para diagnosticar falhas (evita "saved=0" silencioso).
+- Edge Function run-djen-sync: corrigido insert em `djen_comunicacoes` preenchendo campos obrigatÃ³rios (`djen_id` e `hash`) e melhorados logs de erro para diagnosticar falhas (evita "saved=0" silencioso).
 
 ## 1.2.7
-- Intimações DJEN: corrigido "Última atualização" para exibir a sincronização mais recente (não a primeira).
-- Edge Function run-djen-sync: corrigido nome da tabela `djen_comunicacoes_local` → `djen_comunicacoes`.
+- IntimaÃ§Ãµes DJEN: corrigido "Ãšltima atualizaÃ§Ã£o" para exibir a sincronizaÃ§Ã£o mais recente (nÃ£o a primeira).
+- Edge Function run-djen-sync: corrigido nome da tabela `djen_comunicacoes_local` â†’ `djen_comunicacoes`.
 - Corrigido nome da tabela em `processTimeline.service.ts`.
 
 ## 1.2.6
-- Intimações DJEN: melhorias visuais no header e ações (layout mais premium).
-- Intimações DJEN: período de busca do DJEN ampliado para 15 dias (cron/Edge Function e sincronização manual).
+- IntimaÃ§Ãµes DJEN: melhorias visuais no header e aÃ§Ãµes (layout mais premium).
+- IntimaÃ§Ãµes DJEN: perÃ­odo de busca do DJEN ampliado para 15 dias (cron/Edge Function e sincronizaÃ§Ã£o manual).
 
 ## 1.2.5
-- Intimações DJEN: "Última atualização" agora é baseada exclusivamente no histórico do cron (`djen_sync_history`).
-- DJEN cron: Edge Function `run-djen-sync` registra execução bloqueada (token inválido) no `djen_sync_history`.
+- IntimaÃ§Ãµes DJEN: "Ãšltima atualizaÃ§Ã£o" agora Ã© baseada exclusivamente no histÃ³rico do cron (`djen_sync_history`).
+- DJEN cron: Edge Function `run-djen-sync` registra execuÃ§Ã£o bloqueada (token invÃ¡lido) no `djen_sync_history`.
 
 ## 1.2.4
-- Intimações DJEN: sincronização manual agora registra na tabela `djen_sync_history` do Supabase.
-- Intimações DJEN: adicionados métodos `logSync` e `updateSync` no service de status.
+- IntimaÃ§Ãµes DJEN: sincronizaÃ§Ã£o manual agora registra na tabela `djen_sync_history` do Supabase.
+- IntimaÃ§Ãµes DJEN: adicionados mÃ©todos `logSync` e `updateSync` no service de status.
 
 ## 1.2.3
-- Intimações DJEN: criada migration para tabela `djen_sync_history` com políticas RLS corretas.
-- Intimações DJEN: corrigido service para não lançar exceção quando tabela não existe.
+- IntimaÃ§Ãµes DJEN: criada migration para tabela `djen_sync_history` com polÃ­ticas RLS corretas.
+- IntimaÃ§Ãµes DJEN: corrigido service para nÃ£o lanÃ§ar exceÃ§Ã£o quando tabela nÃ£o existe.
 
 ## 1.2.2
-- Modelos de Documentos: scroll automático ao selecionar categoria, modelo e cliente na aba Gerar.
+- Modelos de Documentos: scroll automÃ¡tico ao selecionar categoria, modelo e cliente na aba Gerar.
 
 ## 1.2.1
-- Modelos de Documentos: repaginação do layout geral do módulo mantendo abas (Gerar/Gerenciar), com header premium e contadores.
-- Modelos de Documentos: aba Gerenciar com filtros e ação "Novo Modelo" em layout mais limpo.
+- Modelos de Documentos: repaginaÃ§Ã£o do layout geral do mÃ³dulo mantendo abas (Gerar/Gerenciar), com header premium e contadores.
+- Modelos de Documentos: aba Gerenciar com filtros e aÃ§Ã£o "Novo Modelo" em layout mais limpo.
 
 ## 1.2.0
-- Petições Padrões: novo layout da aba "Gerar Documento" com fluxo em 3 passos (Categoria → Modelo → Cliente).
-- Petições Padrões: seleção visual de categorias com contagem de modelos disponíveis.
-- Petições Padrões: indicador de progresso (steps) no topo do formulário.
-- Petições Padrões: animações suaves ao revelar cada etapa.
-- Petições Padrões: header com gradiente e design mais moderno.
-- Petições Padrões: campos personalizados agora aparecem em grid 2 colunas.
+- PetiÃ§Ãµes PadrÃµes: novo layout da aba "Gerar Documento" com fluxo em 3 passos (Categoria â†’ Modelo â†’ Cliente).
+- PetiÃ§Ãµes PadrÃµes: seleÃ§Ã£o visual de categorias com contagem de modelos disponÃ­veis.
+- PetiÃ§Ãµes PadrÃµes: indicador de progresso (steps) no topo do formulÃ¡rio.
+- PetiÃ§Ãµes PadrÃµes: animaÃ§Ãµes suaves ao revelar cada etapa.
+- PetiÃ§Ãµes PadrÃµes: header com gradiente e design mais moderno.
+- PetiÃ§Ãµes PadrÃµes: campos personalizados agora aparecem em grid 2 colunas.
 
 ## 1.1.99
-- Petições Padrões: normalização automática de pontuação para evitar vírgulas duplicadas quando campos opcionais (ex: complemento) estão vazios.
+- PetiÃ§Ãµes PadrÃµes: normalizaÃ§Ã£o automÃ¡tica de pontuaÃ§Ã£o para evitar vÃ­rgulas duplicadas quando campos opcionais (ex: complemento) estÃ£o vazios.
 
 ## 1.1.98
-- Petições Padrões: cidade agora é formatada em Title Case (ex: "Várzea Grande") e UF em maiúsculo (ex: "MT") na geração de documentos.
+- PetiÃ§Ãµes PadrÃµes: cidade agora Ã© formatada em Title Case (ex: "VÃ¡rzea Grande") e UF em maiÃºsculo (ex: "MT") na geraÃ§Ã£o de documentos.
 
 ## 1.1.97
-- Petições Padrões: invertida ordem das abas - "Gerar Documento" agora é a primeira aba (padrão).
+- PetiÃ§Ãµes PadrÃµes: invertida ordem das abas - "Gerar Documento" agora Ã© a primeira aba (padrÃ£o).
 
 ## 1.1.96
-- Petições Padrões: adicionada função de substituir template DOCX no modal de edição.
-- Petições Padrões: UI melhorada para mostrar arquivo atual e botão "Substituir" quando já existe um template.
-- Petições Padrões: aviso visual quando o arquivo será substituído.
+- PetiÃ§Ãµes PadrÃµes: adicionada funÃ§Ã£o de substituir template DOCX no modal de ediÃ§Ã£o.
+- PetiÃ§Ãµes PadrÃµes: UI melhorada para mostrar arquivo atual e botÃ£o "Substituir" quando jÃ¡ existe um template.
+- PetiÃ§Ãµes PadrÃµes: aviso visual quando o arquivo serÃ¡ substituÃ­do.
 
 ## 1.1.95
-- Petições Padrões: corrigido conflito entre [[ESTADO]] (UF) e [[ESTADO CIVIL]] - agora cidade e UF mantêm capitalização original.
-- Petições Padrões: adicionado placeholder [[UF]] como alternativa para estado.
+- PetiÃ§Ãµes PadrÃµes: corrigido conflito entre [[ESTADO]] (UF) e [[ESTADO CIVIL]] - agora cidade e UF mantÃªm capitalizaÃ§Ã£o original.
+- PetiÃ§Ãµes PadrÃµes: adicionado placeholder [[UF]] como alternativa para estado.
 
 ## 1.1.94
-- Petições Padrões: CPF agora é formatado com máscara (000.000.000-00).
-- Petições Padrões: CEP agora é formatado com máscara (00000-000).
-- Petições Padrões: nacionalidade, estado civil e profissão agora são exibidos em minúsculo.
+- PetiÃ§Ãµes PadrÃµes: CPF agora Ã© formatado com mÃ¡scara (000.000.000-00).
+- PetiÃ§Ãµes PadrÃµes: CEP agora Ã© formatado com mÃ¡scara (00000-000).
+- PetiÃ§Ãµes PadrÃµes: nacionalidade, estado civil e profissÃ£o agora sÃ£o exibidos em minÃºsculo.
 
 ## 1.1.93
-- Petições Padrões: placeholders do cliente agora funcionam igual ao módulo Documentos (com variações: maiúsculo, minúsculo, com/sem acento, com espaço ou underscore).
-- Petições Padrões: adicionado placeholder [[ENDERECO_COMPLETO]] com endereço formatado.
-- Petições Padrões: corrigido problema de campos do cliente vindo "undefined".
+- PetiÃ§Ãµes PadrÃµes: placeholders do cliente agora funcionam igual ao mÃ³dulo Documentos (com variaÃ§Ãµes: maiÃºsculo, minÃºsculo, com/sem acento, com espaÃ§o ou underscore).
+- PetiÃ§Ãµes PadrÃµes: adicionado placeholder [[ENDERECO_COMPLETO]] com endereÃ§o formatado.
+- PetiÃ§Ãµes PadrÃµes: corrigido problema de campos do cliente vindo "undefined".
 
 ## 1.1.92
-- Petições Padrões: arquivos DOCX agora são processados automaticamente com substituição de placeholders (não pede mais para editar manualmente).
-- Petições Padrões: usa docxtemplater para gerar documento DOCX com todos os campos preenchidos.
+- PetiÃ§Ãµes PadrÃµes: arquivos DOCX agora sÃ£o processados automaticamente com substituiÃ§Ã£o de placeholders (nÃ£o pede mais para editar manualmente).
+- PetiÃ§Ãµes PadrÃµes: usa docxtemplater para gerar documento DOCX com todos os campos preenchidos.
 
 ## 1.1.91
-- Petições Padrões: campo tipo "date" agora abre calendário nativo do navegador.
-- Petições Padrões: campos personalizados agora são renderizados conforme seu tipo (date, textarea, select, number, currency).
-- Petições Padrões: geração de documento agora aplica corretamente os valores dos campos personalizados.
-- Petições Padrões: datas são formatadas para DD/MM/YYYY e moedas para R$ X.XXX,XX no documento gerado.
+- PetiÃ§Ãµes PadrÃµes: campo tipo "date" agora abre calendÃ¡rio nativo do navegador.
+- PetiÃ§Ãµes PadrÃµes: campos personalizados agora sÃ£o renderizados conforme seu tipo (date, textarea, select, number, currency).
+- PetiÃ§Ãµes PadrÃµes: geraÃ§Ã£o de documento agora aplica corretamente os valores dos campos personalizados.
+- PetiÃ§Ãµes PadrÃµes: datas sÃ£o formatadas para DD/MM/YYYY e moedas para R$ X.XXX,XX no documento gerado.
 
 ## 1.1.90
-- Petições Padrões: adicionada opção de editar campo personalizado no modal de campos.
+- PetiÃ§Ãµes PadrÃµes: adicionada opÃ§Ã£o de editar campo personalizado no modal de campos.
 
 ## 1.1.89
-- Petições Padrões: modais (Nova/Editar, Campos, Visualizar) agora respeitam o tema e não ficam pretos no modo claro.
+- PetiÃ§Ãµes PadrÃµes: modais (Nova/Editar, Campos, Visualizar) agora respeitam o tema e nÃ£o ficam pretos no modo claro.
 
 ## 1.1.88
-- Documentos: templates marcados como petições/requerimentos não aparecem mais na aba "Gerenciar templates" (ficam apenas na aba "Petições Padrões").
+- Documentos: templates marcados como petiÃ§Ãµes/requerimentos nÃ£o aparecem mais na aba "Gerenciar templates" (ficam apenas na aba "PetiÃ§Ãµes PadrÃµes").
 
 ## 1.1.87
-- **Submódulo Petições Padrões**: Nova aba no módulo de Documentos para gerenciar petições e requerimentos padrões.
-  - CRUD completo de petições com categorias (Requerimento Administrativo, Petição Inicial, Recurso, Contestação, Outros)
-  - Upload de arquivos DOCX ou criação de templates em texto com placeholders
-  - Campos personalizados por petição (texto, número, data, seleção, moeda, CPF, telefone, CEP)
-  - Geração de documentos com substituição automática de dados do cliente
-  - Histórico de documentos gerados
+- **SubmÃ³dulo PetiÃ§Ãµes PadrÃµes**: Nova aba no mÃ³dulo de Documentos para gerenciar petiÃ§Ãµes e requerimentos padrÃµes.
+  - CRUD completo de petiÃ§Ãµes com categorias (Requerimento Administrativo, PetiÃ§Ã£o Inicial, Recurso, ContestaÃ§Ã£o, Outros)
+  - Upload de arquivos DOCX ou criaÃ§Ã£o de templates em texto com placeholders
+  - Campos personalizados por petiÃ§Ã£o (texto, nÃºmero, data, seleÃ§Ã£o, moeda, CPF, telefone, CEP)
+  - GeraÃ§Ã£o de documentos com substituiÃ§Ã£o automÃ¡tica de dados do cliente
+  - HistÃ³rico de documentos gerados
 - Arquivos criados:
   - `src/components/StandardPetitionsModule.tsx` - Componente de UI completo
   - `src/services/standardPetition.service.ts` - Service com CRUD
@@ -2623,105 +2631,105 @@
   - `supabase/migrations/20251227_standard_petitions.sql` - Migration do banco
 
 ## 1.1.86
-- Processos: exibida a última atualização do cron DJEN no header (data/hora, status, encontrados/salvos).
+- Processos: exibida a Ãºltima atualizaÃ§Ã£o do cron DJEN no header (data/hora, status, encontrados/salvos).
 
 ## 1.1.85
-- Módulo Intimações: banner "Atualizando dados em segundo plano..." agora só aparece após o primeiro carregamento completo (não aparece ao entrar no módulo).
+- MÃ³dulo IntimaÃ§Ãµes: banner "Atualizando dados em segundo plano..." agora sÃ³ aparece apÃ³s o primeiro carregamento completo (nÃ£o aparece ao entrar no mÃ³dulo).
 
 ## 1.1.84
-- Módulo Intimações: não exibe mais o banner "Atualizando dados em segundo plano..." no carregamento inicial.
+- MÃ³dulo IntimaÃ§Ãµes: nÃ£o exibe mais o banner "Atualizando dados em segundo plano..." no carregamento inicial.
 
 ## 1.1.83
-- **Módulo Intimações**: Removida análise automática de IA ao abrir o módulo (agora só via cron)
-- **UI Melhorada**: Header redesenhado com card de "Última atualização" mostrando:
-  - Data e hora da última execução do cron
+- **MÃ³dulo IntimaÃ§Ãµes**: Removida anÃ¡lise automÃ¡tica de IA ao abrir o mÃ³dulo (agora sÃ³ via cron)
+- **UI Melhorada**: Header redesenhado com card de "Ãšltima atualizaÃ§Ã£o" mostrando:
+  - Data e hora da Ãºltima execuÃ§Ã£o do cron
   - Status (Sucesso/Erro/Executando) com badge colorido
-  - Quantidade de intimações encontradas e salvas
-- Removida mensagem "Atualizando em segundo plano" desnecessária
+  - Quantidade de intimaÃ§Ãµes encontradas e salvas
+- Removida mensagem "Atualizando em segundo plano" desnecessÃ¡ria
 
 ## 1.1.82
 - **Cron 2x/dia**: Alterado de 1x para 2x por dia (7h e 19h)
-- **Módulo Intimações**: Removida sincronização automática ao abrir o módulo (agora só via cron ou botão manual)
-- **Edge Function**: Logs detalhados da execução do cron com ID único de execução, etapas numeradas e duração total
-- Header atualizado: "Sincronização automática: 2x/dia (7h e 19h) via cron Supabase"
+- **MÃ³dulo IntimaÃ§Ãµes**: Removida sincronizaÃ§Ã£o automÃ¡tica ao abrir o mÃ³dulo (agora sÃ³ via cron ou botÃ£o manual)
+- **Edge Function**: Logs detalhados da execuÃ§Ã£o do cron com ID Ãºnico de execuÃ§Ã£o, etapas numeradas e duraÃ§Ã£o total
+- Header atualizado: "SincronizaÃ§Ã£o automÃ¡tica: 2x/dia (7h e 19h) via cron Supabase"
 
 ## 1.1.81
-- **Cron DJEN Completo**: Edge Function `run-djen-sync` agora atualiza **status do processo automaticamente** quando salva nova intimação vinculada.
-  - Detecta status baseado no texto: citação, conciliação, contestação, instrução, sentença, recurso, cumprimento, arquivado
+- **Cron DJEN Completo**: Edge Function `run-djen-sync` agora atualiza **status do processo automaticamente** quando salva nova intimaÃ§Ã£o vinculada.
+  - Detecta status baseado no texto: citaÃ§Ã£o, conciliaÃ§Ã£o, contestaÃ§Ã£o, instruÃ§Ã£o, sentenÃ§a, recurso, cumprimento, arquivado
   - Atualiza flags `djen_synced`, `djen_last_sync`, `djen_has_data` no processo
-- **Linha do Tempo do Processo**: agora busca do **banco local** (`djen_comunicacoes_local`) com análise IA já pronta pelo cron.
+- **Linha do Tempo do Processo**: agora busca do **banco local** (`djen_comunicacoes_local`) com anÃ¡lise IA jÃ¡ pronta pelo cron.
   - Abre instantaneamente sem precisar chamar OpenAI/Groq novamente
-  - Fallback para DJEN direto se não houver dados no banco
-  - Novo método `fetchTimelineFromDatabase` no `processTimeline.service.ts`
-- Fluxo completo: Cron diário → Sincroniza DJEN → Salva intimações → Analisa IA → Atualiza processo → Timeline pronta
+  - Fallback para DJEN direto se nÃ£o houver dados no banco
+  - Novo mÃ©todo `fetchTimelineFromDatabase` no `processTimeline.service.ts`
+- Fluxo completo: Cron diÃ¡rio â†’ Sincroniza DJEN â†’ Salva intimaÃ§Ãµes â†’ Analisa IA â†’ Atualiza processo â†’ Timeline pronta
 
 ## 1.1.80
-- Edge Function `run-djen-sync`: agora executa **análise automática de IA** após sincronizar intimações do DJEN.
-  - Busca até 50 intimações sem análise
-  - Chama OpenAI (gpt-4o-mini) para extrair: resumo, urgência, prazo, pontos-chave
-  - Salva análise no campo `ai_analysis` da tabela `djen_comunicacoes_local`
-  - Delay de 1.5s entre análises para respeitar rate limit
+- Edge Function `run-djen-sync`: agora executa **anÃ¡lise automÃ¡tica de IA** apÃ³s sincronizar intimaÃ§Ãµes do DJEN.
+  - Busca atÃ© 50 intimaÃ§Ãµes sem anÃ¡lise
+  - Chama OpenAI (gpt-4o-mini) para extrair: resumo, urgÃªncia, prazo, pontos-chave
+  - Salva anÃ¡lise no campo `ai_analysis` da tabela `djen_comunicacoes_local`
+  - Delay de 1.5s entre anÃ¡lises para respeitar rate limit
   - Requer `OPENAI_API_KEY` configurada nos secrets do Supabase
-- Cron diário unificado: sincronização DJEN + análise IA em uma única chamada
+- Cron diÃ¡rio unificado: sincronizaÃ§Ã£o DJEN + anÃ¡lise IA em uma Ãºnica chamada
 
 ## 1.1.79
 - Linha do Tempo (Processos): modal mais organizado e com visual mais premium:
-  - Header com ação de atualizar e melhor alinhamento/spacing
+  - Header com aÃ§Ã£o de atualizar e melhor alinhamento/spacing
   - Layout em 2 colunas com sidebar mais limpa e componentes com bordas arredondadas
-  - Cards de eventos com hierarquia visual melhor e expansão mais legível
-- Linha do Tempo (Processos): correção de segurança no filtro/busca quando `description` vem vazio.
+  - Cards de eventos com hierarquia visual melhor e expansÃ£o mais legÃ­vel
+- Linha do Tempo (Processos): correÃ§Ã£o de seguranÃ§a no filtro/busca quando `description` vem vazio.
 
 ## 1.1.78
 - Linha do Tempo (Processos): redesign ultra-minimalista:
-  - Sem cards, bordas ou sombras - apenas texto e espaço
-  - Timeline dot mínimo (2px)
-  - Data e tipo em linha única discreta
-  - Título como elemento principal
-  - Ações aparecem apenas quando expandido
-  - Conteúdo expandido limpo e compacto
+  - Sem cards, bordas ou sombras - apenas texto e espaÃ§o
+  - Timeline dot mÃ­nimo (2px)
+  - Data e tipo em linha Ãºnica discreta
+  - TÃ­tulo como elemento principal
+  - AÃ§Ãµes aparecem apenas quando expandido
+  - ConteÃºdo expandido limpo e compacto
 
 ## 1.1.77
 - Linha do Tempo (Processos): redesign completo dos cards com UI/UX mais limpo e humano:
   - Tipografia mais leve e hierarquia visual clara
-  - Badges removidos, substituídos por texto sutil
-  - Indicadores de urgência discretos (apenas quando necessário)
-  - Botões de ação como links minimalistas
+  - Badges removidos, substituÃ­dos por texto sutil
+  - Indicadores de urgÃªncia discretos (apenas quando necessÃ¡rio)
+  - BotÃµes de aÃ§Ã£o como links minimalistas
   - Cards com bordas arredondadas e sombras suaves
-  - Espaçamento respirado e cores neutras
+  - EspaÃ§amento respirado e cores neutras
 
 ## 1.1.76
-- Linha do Tempo (Processos): reduzida poluição visual nos cards (badges mais discretos/compactos e ações em botões outline menores).
+- Linha do Tempo (Processos): reduzida poluiÃ§Ã£o visual nos cards (badges mais discretos/compactos e aÃ§Ãµes em botÃµes outline menores).
 
 ## 1.1.75
-- Processos: status do processo agora é persistido **obrigatoriamente** conforme o subestágio do mapa exibido na Linha do Tempo (ex.: Conciliação/Contestação/Recurso), garantindo consistência entre modal e lista.
-- Build: correções de TypeScript para compatibilidade de tipos em Perfil/Requerimentos.
+- Processos: status do processo agora Ã© persistido **obrigatoriamente** conforme o subestÃ¡gio do mapa exibido na Linha do Tempo (ex.: ConciliaÃ§Ã£o/ContestaÃ§Ã£o/Recurso), garantindo consistÃªncia entre modal e lista.
+- Build: correÃ§Ãµes de TypeScript para compatibilidade de tipos em Perfil/Requerimentos.
 
 ## 1.1.74
-- Processos: ajustada ordem de prioridade na detecção automática de status. Agora "Conciliação" tem prioridade sobre "Contestação" e a detecção de Contestação exige termos mais específicos (evitando falsos positivos como "solicitou retificação").
+- Processos: ajustada ordem de prioridade na detecÃ§Ã£o automÃ¡tica de status. Agora "ConciliaÃ§Ã£o" tem prioridade sobre "ContestaÃ§Ã£o" e a detecÃ§Ã£o de ContestaÃ§Ã£o exige termos mais especÃ­ficos (evitando falsos positivos como "solicitou retificaÃ§Ã£o").
 
 ## 1.1.73
-- Processos: adicionados **sub-estágios** ao status do processo: Citação, Conciliação, Contestação, Instrução e Recurso.
-- IA agora detecta e atualiza automaticamente para o sub-estágio correto baseado nos eventos da timeline.
-- Novos badges coloridos para cada sub-estágio na lista de processos.
-- Migration SQL incluída para atualizar constraint do banco de dados.
+- Processos: adicionados **sub-estÃ¡gios** ao status do processo: CitaÃ§Ã£o, ConciliaÃ§Ã£o, ContestaÃ§Ã£o, InstruÃ§Ã£o e Recurso.
+- IA agora detecta e atualiza automaticamente para o sub-estÃ¡gio correto baseado nos eventos da timeline.
+- Novos badges coloridos para cada sub-estÃ¡gio na lista de processos.
+- Migration SQL incluÃ­da para atualizar constraint do banco de dados.
 
 ## 1.1.72
-- Processos: melhorada detecção de status pela IA. Agora prioriza os **eventos mais recentes** (últimos 5) e exige termos mais específicos para "Arquivado" (ex.: "arquivamento definitivo", "autos arquivados"). Eventos como Decisão, Intimação e Citação agora corretamente detectam status "Em Andamento".
+- Processos: melhorada detecÃ§Ã£o de status pela IA. Agora prioriza os **eventos mais recentes** (Ãºltimos 5) e exige termos mais especÃ­ficos para "Arquivado" (ex.: "arquivamento definitivo", "autos arquivados"). Eventos como DecisÃ£o, IntimaÃ§Ã£o e CitaÃ§Ã£o agora corretamente detectam status "Em Andamento".
 
 ## 1.1.71
-- Processos: corrigida lógica de atualização automática de status pela IA. Agora a análise pode **corrigir** status incorretos (ex.: "Arquivado" → "Em Andamento"), não apenas avançar na hierarquia.
+- Processos: corrigida lÃ³gica de atualizaÃ§Ã£o automÃ¡tica de status pela IA. Agora a anÃ¡lise pode **corrigir** status incorretos (ex.: "Arquivado" â†’ "Em Andamento"), nÃ£o apenas avanÃ§ar na hierarquia.
 
 ## 1.1.70
-- Processos: corrigido status exibido no front após análise/sincronização (DJEN/IA). Agora a atualização de status passa por `processService.updateStatus`, garantindo invalidação de cache e recarregamento correto.
+- Processos: corrigido status exibido no front apÃ³s anÃ¡lise/sincronizaÃ§Ã£o (DJEN/IA). Agora a atualizaÃ§Ã£o de status passa por `processService.updateStatus`, garantindo invalidaÃ§Ã£o de cache e recarregamento correto.
 
 ## 1.1.69
 - Financeiro: separadores brilhantes agora aparecem entre parcelas no modo escuro quando existe mais de uma parcela.
 - Linha discreta `via-white/15` com fade nas extremidades adiciona leitura entre cards.
 
 ## 1.1.68
-- Financeiro: cartão de parcelas em atraso no dark mode agora usa gradiente vinho (#3f0b1d → #09090b) alinhado ao tema.
-- Badges/pílulas receberam `dark:bg-[#4c0e1f]` e texto claro para leitura segura.
-- Indicador numérico usa `dark:bg-[#fb7185]` para manter o status visual.
+- Financeiro: cartÃ£o de parcelas em atraso no dark mode agora usa gradiente vinho (#3f0b1d â†’ #09090b) alinhado ao tema.
+- Badges/pÃ­lulas receberam `dark:bg-[#4c0e1f]` e texto claro para leitura segura.
+- Indicador numÃ©rico usa `dark:bg-[#fb7185]` para manter o status visual.
 
 ## 1.1.67
 - Financeiro: melhorado contraste do card vermelho (parcelas em atraso) no modo escuro.
@@ -2729,16 +2737,16 @@
 - Bordas e badges ajustados para melhor legibilidade em dark mode.
 
 ## 1.1.66
-- Perfil: métricas da aba "Métricas" com contraste alto (cards brancos, texto escuro).
-- Corrigidas cores dos ícones e labels para garantir visibilidade das estatísticas.
+- Perfil: mÃ©tricas da aba "MÃ©tricas" com contraste alto (cards brancos, texto escuro).
+- Corrigidas cores dos Ã­cones e labels para garantir visibilidade das estatÃ­sticas.
 - Melhorias de acessibilidade e legibilidade no dashboard do perfil.
 
 ## 1.1.64
 - Requerimentos/MS: textos oficiais atualizados para BPC LOAS.
 - MS agora imprime:
-  - "Benefício de Prestação Continuada (BPC/LOAS) à Pessoa com Deficiência"
-  - "Benefício de Prestação Continuada (BPC/LOAS) – Idoso"
-- Adequado para padrão do Ministério da Saúde.
+  - "BenefÃ­cio de PrestaÃ§Ã£o Continuada (BPC/LOAS) Ã  Pessoa com DeficiÃªncia"
+  - "BenefÃ­cio de PrestaÃ§Ã£o Continuada (BPC/LOAS) â€“ Idoso"
+- Adequado para padrÃ£o do MinistÃ©rio da SaÃºde.
 
 ## 1.1.63
 - Requerimentos: ajustado label do tipo legado.
@@ -2752,259 +2760,261 @@
 - MS continua imprimindo textos oficiais corretos.
 
 ## 1.1.61
-- Requerimentos/MS: saída do campo "Tipo/benefício" ajustada para exibir descrições oficiais do BPC LOAS.
+- Requerimentos/MS: saÃ­da do campo "Tipo/benefÃ­cio" ajustada para exibir descriÃ§Ãµes oficiais do BPC LOAS.
 - MS agora imprime:
-  - "BENEFÍCIO ASSISTENCIAL AO PORTADOR DE DEFICIÊNCIA"
-  - "Benefício de Prestação Continuada-BPC LOAS IDOSO"
+  - "BENEFÃ�CIO ASSISTENCIAL AO PORTADOR DE DEFICIÃŠNCIA"
+  - "BenefÃ­cio de PrestaÃ§Ã£o Continuada-BPC LOAS IDOSO"
 - Corrigido erro de constraint do banco removendo tipo legado.
 
 ## 1.1.60
 - Requerimentos: template MS atualizado para novos tipos BPC LOAS.
 - Placeholder [[BENEFICIO]] agora exibe labels corretos:
-  - "BPC LOAS - Deficiência"
+  - "BPC LOAS - DeficiÃªncia"
   - "BPC LOAS - Idoso"
-- Adequado para saída no Ministério da Saúde.
+- Adequado para saÃ­da no MinistÃ©rio da SaÃºde.
 
 ## 1.1.61
-- Requerimentos/MS: saída do campo "Tipo/benefício" ajustada para exibir descrições oficiais do BPC LOAS.
-- Compatibilidade com registros antigos: tipo legado "bpc_loas" agora sai como "BENEFÍCIO ASSISTENCIAL AO PORTADOR DE DEFICIÊNCIA".
+- Requerimentos/MS: saÃ­da do campo "Tipo/benefÃ­cio" ajustada para exibir descriÃ§Ãµes oficiais do BPC LOAS.
+- Compatibilidade com registros antigos: tipo legado "bpc_loas" agora sai como "BENEFÃ�CIO ASSISTENCIAL AO PORTADOR DE DEFICIÃŠNCIA".
 
 ## 1.1.59
-- Requerimentos: adequação para BPC LOAS do MS.
+- Requerimentos: adequaÃ§Ã£o para BPC LOAS do MS.
 - Separado BPC LOAS em duas categorias:
-  - BPC LOAS - Deficiência
+  - BPC LOAS - DeficiÃªncia
   - BPC LOAS - Idoso
-- Atualizados tipos e labels para adequação legal.
-- Benefícios agora classificados corretamente para MS.
+- Atualizados tipos e labels para adequaÃ§Ã£o legal.
+- BenefÃ­cios agora classificados corretamente para MS.
 
 ## 1.1.58
-- Requerimentos: animações premium nos ícones de status.
-- Animações pulse e bounce com drop-shadow para destaque.
+- Requerimentos: animaÃ§Ãµes premium nos Ã­cones de status.
+- AnimaÃ§Ãµes pulse e bounce com drop-shadow para destaque.
 - Aplicado tanto nas abas superiores quanto na tabela.
-- Corrigidos erros TypeScript em ícones Lucide.
+- Corrigidos erros TypeScript em Ã­cones Lucide.
 
 ## 1.1.57
-- Requerimentos: removido loader fixo do status "Em Análise".
-- Loader aparece apenas durante atualização de status.
-- Status "Em Análise" agora exibe apenas ícone Activity estático.
+- Requerimentos: removido loader fixo do status "Em AnÃ¡lise".
+- Loader aparece apenas durante atualizaÃ§Ã£o de status.
+- Status "Em AnÃ¡lise" agora exibe apenas Ã­cone Activity estÃ¡tico.
 
 ## 1.1.56
-- Requerimentos: animações adicionadas nos ícones de status.
-- Em Exigência: animate-pulse (âmbar)
-- Aguardando Perícia: animate-bounce (ciano)
-- Aguardando Confecção: animate-pulse (índigo)
+- Requerimentos: animaÃ§Ãµes adicionadas nos Ã­cones de status.
+- Em ExigÃªncia: animate-pulse (Ã¢mbar)
+- Aguardando PerÃ­cia: animate-bounce (ciano)
+- Aguardando ConfecÃ§Ã£o: animate-pulse (Ã­ndigo)
 - Deferidos: animate-pulse (verde)
-- Em Análise: sem animação (apenas loader)
+- Em AnÃ¡lise: sem animaÃ§Ã£o (apenas loader)
 
 ## 1.1.55
-- Requerimentos: ícones restaurados na tabela de status.
-- Ícones temáticos agora visíveis ao lado do select.
-- Mantida identificação visual clara dos status.
+- Requerimentos: Ã­cones restaurados na tabela de status.
+- Ã�cones temÃ¡ticos agora visÃ­veis ao lado do select.
+- Mantida identificaÃ§Ã£o visual clara dos status.
 
 ## 1.1.54
-- Requerimentos: removido ícone duplicado na tabela de status.
-- Mantido apenas ícone nas abas superiores para evitar poluição visual.
+- Requerimentos: removido Ã­cone duplicado na tabela de status.
+- Mantido apenas Ã­cone nas abas superiores para evitar poluiÃ§Ã£o visual.
 - Layout mais limpo e profissional.
 
 ## 1.1.53
-- Requerimentos: ícones adicionados ao dropdown de status na tabela.
-- Ícones temáticos agora visíveis ao lado de cada status.
-- Melhor identificação visual dos requerimentos.
+- Requerimentos: Ã­cones adicionados ao dropdown de status na tabela.
+- Ã�cones temÃ¡ticos agora visÃ­veis ao lado de cada status.
+- Melhor identificaÃ§Ã£o visual dos requerimentos.
 
 ## 1.1.52
-- Requerimentos: redesign profissional das animações de status.
-- Removidas animações complexas e gradientes excessivos.
-- Visual limpo com cores sólidas e ícones simples.
-- Corrigidos bugs de renderização e TypeScript.
+- Requerimentos: redesign profissional das animaÃ§Ãµes de status.
+- Removidas animaÃ§Ãµes complexas e gradientes excessivos.
+- Visual limpo com cores sÃ³lidas e Ã­cones simples.
+- Corrigidos bugs de renderizaÃ§Ã£o e TypeScript.
 - Abas de status com hover suave e escala sutil.
-- Dropdowns simplificados sem animações que causavam bugs.
+- Dropdowns simplificados sem animaÃ§Ãµes que causavam bugs.
 
 ## 1.1.51
-- Requerimentos: novas animações e ícones temáticos para status.
-- Em Análise: ícone Activity com animação pulse (1.6s).
-- Aguardando Perícia: ícone Microscope com animação bounce (2.4s).
-- Gradientes modernos em badges (amber→orange, cyan→blue, etc.).
-- Animações mais suaves com shadow-lg e ring effects.
-- Ícones médicos e gráficos para melhor identificação visual.
+- Requerimentos: novas animaÃ§Ãµes e Ã­cones temÃ¡ticos para status.
+- Em AnÃ¡lise: Ã­cone Activity com animaÃ§Ã£o pulse (1.6s).
+- Aguardando PerÃ­cia: Ã­cone Microscope com animaÃ§Ã£o bounce (2.4s).
+- Gradientes modernos em badges (amberâ†’orange, cyanâ†’blue, etc.).
+- AnimaÃ§Ãµes mais suaves com shadow-lg e ring effects.
+- Ã�cones mÃ©dicos e grÃ¡ficos para melhor identificaÃ§Ã£o visual.
 
 ## 1.1.50
-- Requerimentos: visão geral reorganizada com cartões e listas estruturadas.
-- Layout limpo usando rounded-2xl, shadow-sm e divide-y para separar informações.
+- Requerimentos: visÃ£o geral reorganizada com cartÃµes e listas estruturadas.
+- Layout limpo usando rounded-2xl, shadow-sm e divide-y para separar informaÃ§Ãµes.
 - Corrigido erro de sintaxe (className sem =) e import Search adicionado.
-- Visual mais profissional e menos poluído na aba de visão geral.
+- Visual mais profissional e menos poluÃ­do na aba de visÃ£o geral.
 
 ## 1.1.49
 - Requerimentos: removida linha vertical que dividia as colunas do modal.
 - Layout agora sem separador visual entre colunas esquerda e direita.
-- Visual mais limpo e unificado entre informações do cliente e do requerimento.
-- Espaçamento natural do grid já separa o conteúdo adequadamente.
+- Visual mais limpo e unificado entre informaÃ§Ãµes do cliente e do requerimento.
+- EspaÃ§amento natural do grid jÃ¡ separa o conteÃºdo adequadamente.
 
 ## 1.1.48
-- Requerimentos: removidas informações duplicadas do header do modal.
-- Header agora exibe apenas nome do beneficiário e protocolo.
-- CPF e benefício removidos do topo para evitar duplicação.
-- Informações completas ficam apenas na visão geral.
+- Requerimentos: removidas informaÃ§Ãµes duplicadas do header do modal.
+- Header agora exibe apenas nome do beneficiÃ¡rio e protocolo.
+- CPF e benefÃ­cio removidos do topo para evitar duplicaÃ§Ã£o.
+- InformaÃ§Ãµes completas ficam apenas na visÃ£o geral.
 
 ## 1.1.47
-- Requerimentos: removidas listas da visão geral, agora usa apenas separadores.
-- Layout limpo com linhas horizontais (h-px) entre informações.
-- Separadores contextuais: âmbar para exigência, ciano para perícias.
+- Requerimentos: removidas listas da visÃ£o geral, agora usa apenas separadores.
+- Layout limpo com linhas horizontais (h-px) entre informaÃ§Ãµes.
+- Separadores contextuais: Ã¢mbar para exigÃªncia, ciano para perÃ­cias.
 - Visual mais limpo e organizado sem bordas em cada item.
 
 ## 1.1.46
-- Requerimentos: colunas da visão geral invertidas.
-- Coluna esquerda: informações do cliente e processos vinculados.
-- Coluna direita: informações do requerimento (data, telefone, senha, protocolo, benefício).
-- Layout mais intuitivo com informações do cliente em primeiro lugar.
+- Requerimentos: colunas da visÃ£o geral invertidas.
+- Coluna esquerda: informaÃ§Ãµes do cliente e processos vinculados.
+- Coluna direita: informaÃ§Ãµes do requerimento (data, telefone, senha, protocolo, benefÃ­cio).
+- Layout mais intuitivo com informaÃ§Ãµes do cliente em primeiro lugar.
 
 ## 1.1.45
-- Requerimentos: adicionado separador visual entre colunas da visão geral.
+- Requerimentos: adicionado separador visual entre colunas da visÃ£o geral.
 - Linha vertical sutil (w-px) entre as duas colunas em desktop.
 - Separador oculto em mobile (hidden lg:block) para manter layout responsivo.
-- Melhora visual na distinção entre informações do requerimento e do cliente.
+- Melhora visual na distinÃ§Ã£o entre informaÃ§Ãµes do requerimento e do cliente.
 
 ## 1.1.44
-- Requerimentos: visão geral organizada em duas colunas lado a lado.
-- Coluna esquerda: informações do requerimento (data, telefone, senha, protocolo, benefício).
-- Coluna direita: informações do cliente (nome, CPF, telefone, benefício) e processos vinculados.
-- Layout responsivo com grid-cols-1 lg:grid-cols-2 para melhor aproveitamento de espaço.
+- Requerimentos: visÃ£o geral organizada em duas colunas lado a lado.
+- Coluna esquerda: informaÃ§Ãµes do requerimento (data, telefone, senha, protocolo, benefÃ­cio).
+- Coluna direita: informaÃ§Ãµes do cliente (nome, CPF, telefone, benefÃ­cio) e processos vinculados.
+- Layout responsivo com grid-cols-1 lg:grid-cols-2 para melhor aproveitamento de espaÃ§o.
 
 ## 1.1.43
-- Requerimentos: visão geral organizada em layout linear (sem blocos).
-- Informações exibidas em formato de lista com bordas separadoras.
+- Requerimentos: visÃ£o geral organizada em layout linear (sem blocos).
+- InformaÃ§Ãµes exibidas em formato de lista com bordas separadoras.
 - Processos vinculados em cards simplificados e alinhados verticalmente.
-- Layout mais limpo e fácil de escanear visualmente.
+- Layout mais limpo e fÃ¡cil de escanear visualmente.
 
 ## 1.1.42
 - Requerimentos: modal de detalhes padronizado para seguir layout do sistema.
 - Header agora usa faixa laranja e estrutura consistente com outros modais.
-- Botão fechar movido para direita com estilo padrão do sistema.
-- Subtítulo "Detalhes do Requerimento" e informações reorganizadas.
+- BotÃ£o fechar movido para direita com estilo padrÃ£o do sistema.
+- SubtÃ­tulo "Detalhes do Requerimento" e informaÃ§Ãµes reorganizadas.
 
 ## 1.1.41
-- Requerimentos: layout da aba Notas invertido (conteúdo acima, input abaixo).
-- Melhoria na UX para seguir padrão de apps de mensagens (conteúdo primeiro, campo de digitação embaixo).
+- Requerimentos: layout da aba Notas invertido (conteÃºdo acima, input abaixo).
+- Melhoria na UX para seguir padrÃ£o de apps de mensagens (conteÃºdo primeiro, campo de digitaÃ§Ã£o embaixo).
 
 ## 1.1.40
 - Requerimentos: notas agora exibidas em ordem inversa (mais recentes primeiro).
-- Melhoria na experiência de leitura ao ver as notas mais recentes no topo.
+- Melhoria na experiÃªncia de leitura ao ver as notas mais recentes no topo.
 
 ## 1.1.39
-- Requerimentos: Observações movidas para uma aba dedicada ao lado de Notas no modal.
-- Nova aba destaca o texto interno com ícone NotebookPen e blocos organizados.
-- Removido submenu anterior das observações na aba Visão Geral para reduzir ruído.
-- Mostra também a última atualização do requerimento dentro da aba Observações.
+- Requerimentos: ObservaÃ§Ãµes movidas para uma aba dedicada ao lado de Notas no modal.
+- Nova aba destaca o texto interno com Ã­cone NotebookPen e blocos organizados.
+- Removido submenu anterior das observaÃ§Ãµes na aba VisÃ£o Geral para reduzir ruÃ­do.
+- Mostra tambÃ©m a Ãºltima atualizaÃ§Ã£o do requerimento dentro da aba ObservaÃ§Ãµes.
 
 ## 1.1.38
-- Requerimentos: visão geral do modal reorganizada com layout mais limpo.
-- Informações divididas em seções: "Informações Principais" e "Processos Vinculados".
-- Observações movidas para submenu com botão Exibir/Ocultar.
-- Botão de observações com ícones Eye/EyeOff e estado showObservations.
-- Layout mais espaçado com space-y-6 entre seções principais.
-- Títulos de seção com text-sm font-semibold para melhor hierarquia.
-- Observações em container destacado com background quando expandidas.
-- Melhor organização visual e UX na aba "Visão Geral".
+- Requerimentos: visÃ£o geral do modal reorganizada com layout mais limpo.
+- InformaÃ§Ãµes divididas em seÃ§Ãµes: "InformaÃ§Ãµes Principais" e "Processos Vinculados".
+- ObservaÃ§Ãµes movidas para submenu com botÃ£o Exibir/Ocultar.
+- BotÃ£o de observaÃ§Ãµes com Ã­cones Eye/EyeOff e estado showObservations.
+- Layout mais espaÃ§ado com space-y-6 entre seÃ§Ãµes principais.
+- TÃ­tulos de seÃ§Ã£o com text-sm font-semibold para melhor hierarquia.
+- ObservaÃ§Ãµes em container destacado com background quando expandidas.
+- Melhor organizaÃ§Ã£o visual e UX na aba "VisÃ£o Geral".
 
 ## 1.1.37
-- Requerimentos: botões do header de documentos (Ver docs/Gerar MS) refinados para visual mais premium e consistente.
+- Requerimentos: botÃµes do header de documentos (Ver docs/Gerar MS) refinados para visual mais premium e consistente.
 
 ## 1.1.36
-- Requerimentos: modal de detalhes otimizado para ficar menos carregado (Notas/Status/Documentos recolhíveis + composer de notas mais compacto).
+- Requerimentos: modal de detalhes otimizado para ficar menos carregado (Notas/Status/Documentos recolhÃ­veis + composer de notas mais compacto).
 
 ## 1.1.35
-- Requerimentos: Histórico de Notas agora permite registrar nova nota no estilo comentários (Instagram-like), com campo de texto e botão publicar.
+- Requerimentos: HistÃ³rico de Notas agora permite registrar nova nota no estilo comentÃ¡rios (Instagram-like), com campo de texto e botÃ£o publicar.
 
 ## 1.1.34
-- Requerimentos: melhorado destaque/visibilidade do botão "Gerar MS" na seção de documentos.
+- Requerimentos: melhorado destaque/visibilidade do botÃ£o "Gerar MS" na seÃ§Ã£o de documentos.
 
 ## 1.1.33
-- Requerimentos: corrigido erro de interface que impedia abrir detalhes (ícone Eye ausente).
-- Requerimentos: histórico de notas ajustado para comentários estilo Instagram com avatar/foto, usuário, data/hora e resposta.
+- Requerimentos: corrigido erro de interface que impedia abrir detalhes (Ã­cone Eye ausente).
+- Requerimentos: histÃ³rico de notas ajustado para comentÃ¡rios estilo Instagram com avatar/foto, usuÃ¡rio, data/hora e resposta.
 
 ## 1.1.32
-- Requerimentos: histórico de notas reformulado para estilo de chat (Instagram-like) com foto, nome, data e respostas.
-- Requerimentos: botões de ação do modal de detalhes reorganizados para melhor usabilidade e hierarquia visual.
-- Requerimentos: botão "Gerar MS" agora possui fundo preto para destaque.
+- Requerimentos: histÃ³rico de notas reformulado para estilo de chat (Instagram-like) com foto, nome, data e respostas.
+- Requerimentos: botÃµes de aÃ§Ã£o do modal de detalhes reorganizados para melhor usabilidade e hierarquia visual.
+- Requerimentos: botÃ£o "Gerar MS" agora possui fundo preto para destaque.
 
 ## 1.1.31
-- Requerimentos: melhorado layout visual do modal de detalhes com seções agrupadas e ícones.
-- Requerimentos: organizadas informações em cards com gradientes e cores distintas por categoria.
-- Requerimentos: adicionados ícones contextuais para melhor identificação visual dos campos.
+- Requerimentos: melhorado layout visual do modal de detalhes com seÃ§Ãµes agrupadas e Ã­cones.
+- Requerimentos: organizadas informaÃ§Ãµes em cards com gradientes e cores distintas por categoria.
+- Requerimentos: adicionados Ã­cones contextuais para melhor identificaÃ§Ã£o visual dos campos.
 - Requerimentos: melhorada UX com layout responsivo e suporte a dark mode aprimorado.
 
 ## 1.1.30
-- Requerimentos: histórico de status (auditoria) no modal de detalhes.
-- Requerimentos: alertas de MS por nível (30/60/90+) e filtro "Somente risco MS (90+)".
-- Requerimentos: ações rápidas no detalhe (voltar p/ Em análise, prazo de exigência, agendar perícia).
+- Requerimentos: histÃ³rico de status (auditoria) no modal de detalhes.
+- Requerimentos: alertas de MS por nÃ­vel (30/60/90+) e filtro "Somente risco MS (90+)".
+- Requerimentos: aÃ§Ãµes rÃ¡pidas no detalhe (voltar p/ Em anÃ¡lise, prazo de exigÃªncia, agendar perÃ­cia).
 
 ## 1.1.29
-- Requerimentos: após passar a última perícia, o status retorna automaticamente para "Em análise".
+- Requerimentos: apÃ³s passar a Ãºltima perÃ­cia, o status retorna automaticamente para "Em anÃ¡lise".
 
 ## 1.1.28
-- Requerimentos: modal "Registrar prazo para exigência" ajustado para fundo branco claro com faixa laranja.
+- Requerimentos: modal "Registrar prazo para exigÃªncia" ajustado para fundo branco claro com faixa laranja.
 
 ## 1.1.27
-- Requerimentos: tempo em análise (MS) agora considera a última entrada em "Em análise" (reinicia ao reentrar).
-- Agenda: log de exclusões agrupado por dia (Hoje/Ontem/Data) para melhor leitura.
+- Requerimentos: tempo em anÃ¡lise (MS) agora considera a Ãºltima entrada em "Em anÃ¡lise" (reinicia ao reentrar).
+- Agenda: log de exclusÃµes agrupado por dia (Hoje/Ontem/Data) para melhor leitura.
 
 ## 1.1.26
-- Agenda: removida opção de limpar log; exibição limitada aos últimos 30 dias.
-- Requerimentos: agendar perícia médica/social agora cria apenas compromisso na Agenda (sem prazo).
+- Agenda: removida opÃ§Ã£o de limpar log; exibiÃ§Ã£o limitada aos Ãºltimos 30 dias.
+- Requerimentos: agendar perÃ­cia mÃ©dica/social agora cria apenas compromisso na Agenda (sem prazo).
 
 ## 1.1.25
-- Agenda: removida a opção de adicionar manualmente exclusões no log (mantido apenas registro automático).
+- Agenda: removida a opÃ§Ã£o de adicionar manualmente exclusÃµes no log (mantido apenas registro automÃ¡tico).
 
 ## 1.1.24
-- Agenda: log de exclusões agora permite adicionar manualmente exclusões feitas anteriormente (ex.: hoje antes do log existir).
+- Agenda: log de exclusÃµes agora permite adicionar manualmente exclusÃµes feitas anteriormente (ex.: hoje antes do log existir).
 
 ## 1.1.23
-- Agenda: log persistente de exclusões de compromissos com botão "Log" ao lado de "Filtros".
+- Agenda: log persistente de exclusÃµes de compromissos com botÃ£o "Log" ao lado de "Filtros".
 
 ## 1.1.22
-- Requerimentos: correção de layout para remover espaço vazio à direita após a coluna AÇÕES (tabela ocupa 100% do container).
+- Requerimentos: correÃ§Ã£o de layout para remover espaÃ§o vazio Ã  direita apÃ³s a coluna AÃ‡Ã•ES (tabela ocupa 100% do container).
 
 ## 1.0.97
-- Exibição padrão do módulo de Assinaturas alterada para blocos (grid), mantendo a preferência do usuário no armazenamento local.
+- ExibiÃ§Ã£o padrÃ£o do mÃ³dulo de Assinaturas alterada para blocos (grid), mantendo a preferÃªncia do usuÃ¡rio no armazenamento local.
 
 ## 1.0.96
-- Correção robusta na geração de URLs assinadas para imagens de selfie/assinatura no modal de detalhes, evitando erros 400 com tratamento específico por bucket e logs detalhados para diagnóstico.
+- CorreÃ§Ã£o robusta na geraÃ§Ã£o de URLs assinadas para imagens de selfie/assinatura no modal de detalhes, evitando erros 400 com tratamento especÃ­fico por bucket e logs detalhados para diagnÃ³stico.
 
 ## 1.0.95
-- Correção na geração de URLs assinadas do modal de detalhes (normaliza caminhos vindos com prefixo do bucket, evitando erro 400 ao exibir selfie/assinatura no Supabase Storage).
+- CorreÃ§Ã£o na geraÃ§Ã£o de URLs assinadas do modal de detalhes (normaliza caminhos vindos com prefixo do bucket, evitando erro 400 ao exibir selfie/assinatura no Supabase Storage).
 
 ## 1.0.94
-- Ajuste no modal de detalhes do módulo de Assinaturas para organizar os botões de ação no desktop (Ver assinado / Baixar documento lado a lado e Excluir separado), evitando empilhamento.
+- Ajuste no modal de detalhes do mÃ³dulo de Assinaturas para organizar os botÃµes de aÃ§Ã£o no desktop (Ver assinado / Baixar documento lado a lado e Excluir separado), evitando empilhamento.
 
 ## 1.0.93
-- Ajuste no layout do modal de detalhes do módulo de Assinaturas no desktop, organizando os botões de ação em grid responsivo para evitar empilhamento e desconfiguração.
+- Ajuste no layout do modal de detalhes do mÃ³dulo de Assinaturas no desktop, organizando os botÃµes de aÃ§Ã£o em grid responsivo para evitar empilhamento e desconfiguraÃ§Ã£o.
 
 ## 1.0.92
-- Versão anterior.
+- VersÃ£o anterior.
 
 ## Releases
 
 ### 1.9.399
-- **Dashboard**: Corrigido backdrop dos modais para usar bg-transparent e forçar fundo branco com !bg-white no modo claro (removido backdrop escuro).
+- **Dashboard**: Corrigido backdrop dos modais para usar bg-transparent e forÃ§ar fundo branco com !bg-white no modo claro (removido backdrop escuro).
 
 ### 1.9.398
 - **Dashboard**: Corrigido backdrop dos modais para usar bg-black/50 no modo claro (estava muito escuro com bg-slate-900/70).
 
 ### 1.9.397
-- **Dashboard**: Modais de detalhes (Compromisso/Intimação) adequados ao padrão do tema (overlay + blur, container com ring/shadow, fita laranja e header/footer padronizados).
+- **Dashboard**: Modais de detalhes (Compromisso/IntimaÃ§Ã£o) adequados ao padrÃ£o do tema (overlay + blur, container com ring/shadow, fita laranja e header/footer padronizados).
 
 ### 1.9.287
-- **Permissões**: Menu/Feed agora respeitam `can_view` (permite ver) e a navegação é bloqueada quando o usuário não possui permissão de visualização do módulo.
+- **PermissÃµes**: Menu/Feed agora respeitam `can_view` (permite ver) e a navegaÃ§Ã£o Ã© bloqueada quando o usuÃ¡rio nÃ£o possui permissÃ£o de visualizaÃ§Ã£o do mÃ³dulo.
 
 ### 1.9.286
-- **Feed**: Widgets da coluna direita (incluindo "Prazos") agora aparecem também em telas menores (fora do breakpoint XL), garantindo visibilidade para Administrador.
+- **Feed**: Widgets da coluna direita (incluindo "Prazos") agora aparecem tambÃ©m em telas menores (fora do breakpoint XL), garantindo visibilidade para Administrador.
 
 ### 1.9.285
-- **Feed**: Widget "Prazos" agora mostra os 5 próximos prazos por ordem de vencimento (não apenas urgentes).
+- **Feed**: Widget "Prazos" agora mostra os 5 prÃ³ximos prazos por ordem de vencimento (nÃ£o apenas urgentes).
 
 ### 1.9.284
-- **Dashboard**: Adicionado widget "Prazos Urgentes" na sidebar direita (abaixo do Saúde Financeira). Exibe prazos com vencimento em até 3 dias, com indicação de atrasado/dias restantes.
-- **Dashboard**: Barra de indicadores substituída por métricas reais: Clientes, Processos, Requerimentos, Prazos, Tarefas (sem percentuais fictícios).
-- **App**: Renomeado "Dashboard" para "Feed" no menu lateral e no título do header.
+- **Dashboard**: Adicionado widget "Prazos Urgentes" na sidebar direita (abaixo do SaÃºde Financeira). Exibe prazos com vencimento em atÃ© 3 dias, com indicaÃ§Ã£o de atrasado/dias restantes.
+- **Dashboard**: Barra de indicadores substituÃ­da por mÃ©tricas reais: Clientes, Processos, Requerimentos, Prazos, Tarefas (sem percentuais fictÃ­cios).
+- **App**: Renomeado "Dashboard" para "Feed" no menu lateral e no tÃ­tulo do header.
 
 ### 1.9.42
-- **Peticionamento (Pré-visualização de Blocos)**: container do `docx-preview` agora permanece montado durante o carregamento (com overlay), evitando fallback e garantindo renderização correta por **parágrafos/páginas**.
+- **Peticionamento (PrÃ©-visualizaÃ§Ã£o de Blocos)**: container do `docx-preview` agora permanece montado durante o carregamento (com overlay), evitando fallback e garantindo renderizaÃ§Ã£o correta por **parÃ¡grafos/pÃ¡ginas**.
+
+

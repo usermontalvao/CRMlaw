@@ -19,6 +19,7 @@ import { signatureFieldsService } from '../services/signatureFields.service';
 import { settingsService } from '../services/settings.service';
 import { useDeleteConfirm } from '../contexts/DeleteConfirmContext';
 import { userNotificationService } from '../services/userNotification.service';
+import { signatureExplorerService } from '../services/signatureExplorer.service';
 import type { ProcessPracticeArea } from '../types/process.types';
 import SignatureCanvas from './SignatureCanvas';
 import FacialCapture from './FacialCapture';
@@ -27,6 +28,7 @@ import type {
   SignerAuthMethod, SignatureFieldType, SignatureAuditLog,
 } from '../types/signature.types';
 import type { GeneratedDocument } from '../types/document.types';
+import type { SignatureExplorerFolder, SignatureExplorerItem } from '../types/signatureExplorer.types';
 
 pdfjs.GlobalWorkerOptions.workerSrc = `//unpkg.com/pdfjs-dist@${pdfjs.version}/build/pdf.worker.min.mjs`;
 
@@ -92,6 +94,50 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
   const [loading, setLoading] = useState(true);
   const [requests, setRequests] = useState<SignatureRequestWithSigners[]>([]);
   const [generatedDocuments, setGeneratedDocuments] = useState<GeneratedDocument[]>([]);
+
+  const [explorerLoading, setExplorerLoading] = useState(true);
+  const [explorerFolders, setExplorerFolders] = useState<SignatureExplorerFolder[]>([]);
+  const [explorerItems, setExplorerItems] = useState<SignatureExplorerItem[]>([]);
+  const [selectedFolderId, setSelectedFolderId] = useState<string | null>(null);
+
+  const [deleteFolderTarget, setDeleteFolderTarget] = useState<SignatureExplorerFolder | null>(null);
+
+  const [createFolderModalOpen, setCreateFolderModalOpen] = useState(false);
+  const [createFolderParentId, setCreateFolderParentId] = useState<string | null>(null);
+  const [createFolderName, setCreateFolderName] = useState('');
+  const [createFolderSaving, setCreateFolderSaving] = useState(false);
+
+  const [contextMenu, setContextMenu] = useState<null | {
+    x: number;
+    y: number;
+    itemType: 'signature_request' | 'generated_document';
+    itemId: string;
+    createdBy?: string;
+  }>(null);
+
+  const [moveModalOpen, setMoveModalOpen] = useState(false);
+  const [moveTarget, setMoveTarget] = useState<null | {
+    itemType: 'signature_request' | 'generated_document';
+    itemId: string;
+    createdBy?: string;
+  }>(null);
+  const [moveSelectedFolderId, setMoveSelectedFolderId] = useState<string | null>(null);
+  const [moveSaving, setMoveSaving] = useState(false);
+
+  const [dragOverFolderId, setDragOverFolderId] = useState<string | null>(null);
+  const [isDraggingExplorer, setIsDraggingExplorer] = useState(false);
+  const [draggingExplorer, setDraggingExplorer] = useState<null | {
+    type: 'folder' | 'item';
+    id: string;
+    itemType?: 'signature_request' | 'generated_document';
+  }>(null);
+  const [folderReorderOver, setFolderReorderOver] = useState<null | { parentId: string | null; beforeId: string | null }>(null);
+
+  const dragImageElRef = useRef<HTMLDivElement | null>(null);
+  const suppressExplorerClickRef = useRef(false);
+
+  const [deleteFolderSaving, setDeleteFolderSaving] = useState<'move_root' | 'delete_all' | null>(null);
+
   const [searchTerm, setSearchTerm] = useState('');
   const [filterStatus, setFilterStatus] = useState<'all' | 'pending' | 'signed'>('all');
   const [showFilters, setShowFilters] = useState(false);
@@ -221,16 +267,21 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
   const loadData = useCallback(async () => {
     try {
       setLoading(true);
-      const [requestsData, docsData] = await Promise.all([
+      const [requestsData, docsData, foldersData, itemsData] = await Promise.all([
         signatureService.listRequestsWithSigners(),
         documentTemplateService.listGeneratedDocuments(),
+        signatureExplorerService.listFolders(),
+        signatureExplorerService.listItems(),
       ]);
       setRequests(requestsData);
       setGeneratedDocuments(docsData);
+      setExplorerFolders(foldersData);
+      setExplorerItems(itemsData);
     } catch (error: any) {
       toast.error('Erro ao carregar dados');
     } finally {
       setLoading(false);
+      setExplorerLoading(false);
     }
   }, [toast]);
 
@@ -706,6 +757,616 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
 
     return out;
   }, [requests, searchTerm, filterStatus, filterPeriod, filterMonth, filterDateFrom, filterDateTo, sortOrder]);
+
+  const explorerItemIndex = useMemo(() => {
+    const byKey = new Map<string, SignatureExplorerItem>();
+    for (const item of explorerItems) {
+      const key = `${item.item_type}:${item.item_id}`;
+      if (!byKey.has(key)) byKey.set(key, item);
+    }
+    return byKey;
+  }, [explorerItems]);
+
+  const filteredRequestsByFolder = useMemo(() => {
+    return filteredRequests.filter((req) => {
+      const item = explorerItemIndex.get(`signature_request:${req.id}`);
+      const folderId = item?.folder_id ?? null;
+      return folderId === selectedFolderId;
+    });
+  }, [filteredRequests, explorerItemIndex, selectedFolderId]);
+
+  const filteredGeneratedDocumentsByFolder = useMemo(() => {
+    const q = searchTerm.trim().toLowerCase();
+    return generatedDocuments.filter((doc) => {
+      const item = explorerItemIndex.get(`generated_document:${doc.id}`);
+      const folderId = item?.folder_id ?? null;
+      if (folderId !== selectedFolderId) return false;
+
+      if (!q) return true;
+      const name = (doc.file_name || '').toLowerCase();
+      const client = (doc.client_name || '').toLowerCase();
+      const template = (doc.template_name || '').toLowerCase();
+      return name.includes(q) || client.includes(q) || template.includes(q);
+    });
+  }, [generatedDocuments, explorerItemIndex, searchTerm, selectedFolderId]);
+
+  const foldersByParent = useMemo(() => {
+    const map = new Map<string | null, SignatureExplorerFolder[]>();
+    for (const f of explorerFolders) {
+      const key = f.parent_id ?? null;
+      const arr = map.get(key) ?? [];
+      arr.push(f);
+      map.set(key, arr);
+    }
+    for (const [key, arr] of map.entries()) {
+      arr.sort((a, b) => (a.sort_order - b.sort_order) || a.name.localeCompare(b.name));
+      map.set(key, arr);
+    }
+    return map;
+  }, [explorerFolders]);
+
+  const foldersById = useMemo(() => {
+    const map = new Map<string, SignatureExplorerFolder>();
+    for (const f of explorerFolders) map.set(f.id, f);
+    return map;
+  }, [explorerFolders]);
+
+  const folderPathLabelById = useMemo(() => {
+    const map = new Map<string, string>();
+    const compute = (id: string): string => {
+      const cached = map.get(id);
+      if (cached) return cached;
+      const f = foldersById.get(id);
+      if (!f) return '';
+      const parentId = f.parent_id ?? null;
+      const out = parentId ? `${compute(parentId)} / ${f.name}` : f.name;
+      map.set(id, out);
+      return out;
+    };
+    for (const f of explorerFolders) compute(f.id);
+    return map;
+  }, [explorerFolders, foldersById]);
+
+  const folderDescendantsIndex = useMemo(() => {
+    const descendants = new Map<string, Set<string>>();
+
+    const childrenMap = new Map<string | null, string[]>();
+    for (const f of explorerFolders) {
+      const key = f.parent_id ?? null;
+      const arr = childrenMap.get(key) ?? [];
+      arr.push(f.id);
+      childrenMap.set(key, arr);
+    }
+
+    const compute = (id: string): Set<string> => {
+      const cached = descendants.get(id);
+      if (cached) return cached;
+      const set = new Set<string>();
+      const children = childrenMap.get(id) ?? [];
+      for (const childId of children) {
+        set.add(childId);
+        const childDesc = compute(childId);
+        for (const x of childDesc) set.add(x);
+      }
+      descendants.set(id, set);
+      return set;
+    };
+
+    for (const f of explorerFolders) compute(f.id);
+    return descendants;
+  }, [explorerFolders]);
+
+  const folderItemCountById = useMemo(() => {
+    const counts = new Map<string, number>();
+
+    for (const it of explorerItems) {
+      const folderId = it.folder_id ?? null;
+      if (!folderId) continue;
+      counts.set(folderId, (counts.get(folderId) ?? 0) + 1);
+    }
+
+    // Add subtree counts (folder + descendants)
+    for (const f of explorerFolders) {
+      const desc = folderDescendantsIndex.get(f.id);
+      if (!desc || desc.size === 0) continue;
+      let total = counts.get(f.id) ?? 0;
+      for (const childId of desc) {
+        total += counts.get(childId) ?? 0;
+      }
+      counts.set(f.id, total);
+    }
+
+    return counts;
+  }, [explorerFolders, explorerItems, folderDescendantsIndex]);
+
+  const rootItemCount = useMemo(() => {
+    return explorerItems.reduce((acc, it) => acc + (it.folder_id ? 0 : 1), 0);
+  }, [explorerItems]);
+
+  const reloadExplorer = useCallback(async () => {
+    const [foldersData, itemsData] = await Promise.all([
+      signatureExplorerService.listFolders(),
+      signatureExplorerService.listItems(),
+    ]);
+    setExplorerFolders(foldersData);
+    setExplorerItems(itemsData);
+  }, []);
+
+  const canDropFolderInto = useCallback((folderId: string, newParentId: string | null) => {
+    if (newParentId === null) return true;
+    if (folderId === newParentId) return false;
+    const desc = folderDescendantsIndex.get(folderId);
+    if (desc?.has(newParentId)) return false;
+    return true;
+  }, [folderDescendantsIndex]);
+
+  const handleReorderFolderDrop = useCallback(
+    async (e: React.DragEvent, targetParentId: string | null, beforeId: string | null) => {
+      e.preventDefault();
+      e.stopPropagation();
+      setFolderReorderOver(null);
+      setDragOverFolderId(null);
+
+      const raw = e.dataTransfer.getData('application/json') || e.dataTransfer.getData('text/plain');
+      if (!raw) return;
+      let payload: any;
+      try {
+        payload = JSON.parse(raw);
+      } catch {
+        return;
+      }
+
+      if (payload?.type !== 'folder' || typeof payload?.id !== 'string') return;
+      const draggedFolderId = payload.id as string;
+
+      const dragged = explorerFolders.find((f) => f.id === draggedFolderId);
+      if (!dragged) return;
+
+      const siblings = (foldersByParent.get(targetParentId) ?? []).slice();
+      const filtered = siblings.filter((f) => f.id !== draggedFolderId);
+      const beforeIndex = beforeId ? filtered.findIndex((f) => f.id === beforeId) : -1;
+      const insertIndex = beforeId ? (beforeIndex >= 0 ? beforeIndex : filtered.length) : filtered.length;
+
+      const next = filtered.slice();
+      next.splice(insertIndex, 0, { ...dragged, parent_id: targetParentId } as any);
+
+      const updates = next.map((f, idx) => ({
+        id: f.id,
+        parent_id: (f as any).parent_id ?? null,
+        sort_order: (idx + 1) * 10,
+      }));
+
+      try {
+        await Promise.all(
+          updates.map((u) =>
+            signatureExplorerService.updateFolder(u.id, {
+              parent_id: u.parent_id,
+              sort_order: u.sort_order,
+            })
+          )
+        );
+        await reloadExplorer();
+      } catch (err: any) {
+        toast.error(err?.message || 'Erro ao reordenar pastas');
+      }
+    },
+    [explorerFolders, foldersByParent, reloadExplorer, toast]
+  );
+
+  const openCreateFolderModal = useCallback((parentId: string | null) => {
+    setCreateFolderParentId(parentId);
+    setCreateFolderName('');
+    setCreateFolderModalOpen(true);
+  }, []);
+
+  const handleSubmitCreateFolder = useCallback(async () => {
+    const name = createFolderName.trim();
+    if (!name) return;
+    try {
+      setCreateFolderSaving(true);
+      await signatureExplorerService.createFolder({
+        name,
+        parent_id: createFolderParentId,
+        sort_order: 0,
+        created_by: user?.id ?? null,
+      });
+      setCreateFolderModalOpen(false);
+      await reloadExplorer();
+    } catch (err: any) {
+      toast.error(err?.message || 'Erro ao criar pasta');
+    } finally {
+      setCreateFolderSaving(false);
+    }
+  }, [createFolderName, createFolderParentId, reloadExplorer, toast, user?.id]);
+
+  const handleRenameFolder = useCallback(async (folder: SignatureExplorerFolder) => {
+    const name = (window.prompt('Renomear pasta:', folder.name) || '').trim();
+    if (!name || name === folder.name) return;
+    try {
+      await signatureExplorerService.updateFolder(folder.id, { name });
+      await reloadExplorer();
+    } catch (err: any) {
+      toast.error(err?.message || 'Erro ao renomear pasta');
+    }
+  }, [reloadExplorer, toast]);
+
+  const handleMoveItemToFolder = useCallback(async (params: { itemType: 'signature_request' | 'generated_document'; itemId: string; folderId: string | null }) => {
+    if (!user?.id) return;
+    try {
+      setMoveSaving(true);
+      await signatureExplorerService.moveItem({
+        itemType: params.itemType,
+        itemId: params.itemId,
+        folderId: params.folderId,
+        createdBy: user.id,
+      });
+      await reloadExplorer();
+    } catch (err: any) {
+      toast.error(err?.message || 'Erro ao mover item');
+    } finally {
+      setMoveSaving(false);
+    }
+  }, [reloadExplorer, toast, user?.id]);
+
+  const handleDeleteFolder = useCallback(async (params: { folder: SignatureExplorerFolder; mode: 'move_root' | 'delete_all' }) => {
+    const folder = params.folder;
+    const subtreeIds = new Set<string>([folder.id]);
+    const descendants = folderDescendantsIndex.get(folder.id);
+    if (descendants) {
+      for (const x of descendants) subtreeIds.add(x);
+    }
+
+    const itemsInSubtree = explorerItems.filter((it) => (it.folder_id ? subtreeIds.has(it.folder_id) : false));
+    const ownedItems = user?.id ? itemsInSubtree.filter((it) => it.created_by === user.id) : [];
+
+    try {
+      setDeleteFolderSaving(params.mode);
+      if (params.mode === 'delete_all' && user?.id) {
+        let archivedReq = 0;
+        let deletedDocs = 0;
+
+        for (const it of ownedItems) {
+          if (it.item_type === 'signature_request') {
+            try {
+              await signatureService.archiveRequest(it.item_id);
+              archivedReq += 1;
+            } catch {
+              // ignore
+            }
+          }
+          if (it.item_type === 'generated_document') {
+            try {
+              await documentTemplateService.deleteGeneratedDocument(it.item_id);
+              deletedDocs += 1;
+            } catch {
+              // ignore
+            }
+          }
+          try {
+            await signatureExplorerService.deleteItem({ itemType: it.item_type, itemId: it.item_id, createdBy: user.id });
+          } catch {
+            // ignore
+          }
+        }
+
+        if (itemsInSubtree.length > ownedItems.length) {
+          toast.error('Alguns itens não foram removidos (você só pode remover itens que você criou). Eles irão para "Sem pasta".');
+        }
+
+        if (archivedReq || deletedDocs) {
+          toast.success(`Remoção concluída: ${archivedReq} assinatura(s) removida(s) do painel, ${deletedDocs} documento(s) excluído(s).`);
+        }
+      }
+
+      await signatureExplorerService.deleteFolder(folder.id);
+      setDeleteFolderTarget(null);
+      if (selectedFolderId && subtreeIds.has(selectedFolderId)) {
+        setSelectedFolderId(null);
+      }
+      await reloadExplorer();
+      await loadData();
+    } catch (err: any) {
+      toast.error(err?.message || 'Erro ao remover pasta');
+    } finally {
+      setDeleteFolderSaving(null);
+    }
+  }, [documentTemplateService, explorerItems, folderDescendantsIndex, loadData, reloadExplorer, selectedFolderId, toast, user?.id]);
+
+  const handleMoveFolder = useCallback(async (folderId: string, newParentId: string | null) => {
+    if (!canDropFolderInto(folderId, newParentId)) {
+      toast.error('Movimento inválido');
+      return;
+    }
+    try {
+      await signatureExplorerService.updateFolder(folderId, { parent_id: newParentId });
+      await reloadExplorer();
+    } catch (err: any) {
+      toast.error(err?.message || 'Erro ao mover pasta');
+    }
+  }, [canDropFolderInto, reloadExplorer, toast]);
+
+  const handleDropOnFolder = useCallback(async (e: React.DragEvent, targetFolderId: string | null) => {
+    e.preventDefault();
+    setDragOverFolderId(null);
+    setIsDraggingExplorer(false);
+    setDraggingExplorer(null);
+    setFolderReorderOver(null);
+    if (dragImageElRef.current) {
+      try {
+        document.body.removeChild(dragImageElRef.current);
+      } catch {
+        // ignore
+      }
+      dragImageElRef.current = null;
+    }
+    const raw = e.dataTransfer.getData('application/json') || e.dataTransfer.getData('text/plain');
+    if (!raw) return;
+    let payload: any;
+    try {
+      payload = JSON.parse(raw);
+    } catch {
+      return;
+    }
+
+    if (payload?.type === 'folder') {
+      if (typeof payload?.id !== 'string') return;
+      await handleMoveFolder(payload.id, targetFolderId);
+      return;
+    }
+
+    if (payload?.type === 'item') {
+      if (!user?.id) return;
+      if (payload?.created_by && payload.created_by !== user.id) {
+        toast.error('Você só pode mover itens que você criou');
+        return;
+      }
+      const itemType = payload?.item_type as 'signature_request' | 'generated_document' | undefined;
+      const itemId = payload?.item_id as string | undefined;
+      if (!itemType || !itemId) return;
+      await handleMoveItemToFolder({ itemType, itemId, folderId: targetFolderId });
+    }
+  }, [handleMoveFolder, handleMoveItemToFolder, toast, user?.id]);
+
+  const handleAllowDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    try {
+      e.dataTransfer.dropEffect = 'move';
+    } catch {
+      // ignore
+    }
+  };
+
+  const setExplorerDragData = (e: React.DragEvent, payload: any, sourceElement?: HTMLElement) => {
+    const data = JSON.stringify(payload);
+    e.dataTransfer.setData('application/json', data);
+    e.dataTransfer.setData('text/plain', data);
+    e.dataTransfer.effectAllowed = 'move';
+    setIsDraggingExplorer(true);
+    suppressExplorerClickRef.current = true;
+
+    if (payload?.type === 'folder' && typeof payload?.id === 'string') {
+      setDraggingExplorer({ type: 'folder', id: payload.id });
+    } else if (payload?.type === 'item' && typeof payload?.item_id === 'string') {
+      setDraggingExplorer({ type: 'item', id: payload.item_id, itemType: payload?.item_type });
+    }
+
+    try {
+      if (dragImageElRef.current) {
+        try {
+          document.body.removeChild(dragImageElRef.current);
+        } catch {
+          // ignore
+        }
+        dragImageElRef.current = null;
+      }
+
+      let ghost: HTMLElement;
+
+      if (sourceElement) {
+        ghost = sourceElement.cloneNode(true) as HTMLElement;
+        ghost.style.position = 'fixed';
+        ghost.style.top = '0px';
+        ghost.style.left = '0px';
+        ghost.style.transform = 'translate(-9999px, -9999px) rotate(-2deg)';
+        ghost.style.width = `${sourceElement.offsetWidth}px`;
+        ghost.style.height = `${sourceElement.offsetHeight}px`;
+        ghost.style.pointerEvents = 'none';
+        ghost.style.zIndex = '999999';
+        ghost.style.opacity = '0.95';
+        ghost.style.boxShadow = '0 25px 50px -12px rgba(0, 0, 0, 0.4)';
+      } else {
+        ghost = document.createElement('div');
+        ghost.style.position = 'fixed';
+        ghost.style.top = '0px';
+        ghost.style.left = '0px';
+        ghost.style.transform = 'translate(-9999px, -9999px)';
+        ghost.style.padding = '10px 12px';
+        ghost.style.borderRadius = '14px';
+        ghost.style.background = 'rgba(15, 23, 42, 0.92)';
+        ghost.style.color = 'white';
+        ghost.style.fontSize = '12px';
+        ghost.style.fontWeight = '600';
+        ghost.style.boxShadow = '0 18px 40px rgba(0,0,0,0.25)';
+        ghost.style.maxWidth = '320px';
+        ghost.style.whiteSpace = 'nowrap';
+        ghost.style.overflow = 'hidden';
+        ghost.style.textOverflow = 'ellipsis';
+        ghost.style.pointerEvents = 'none';
+        ghost.style.zIndex = '999999';
+        ghost.textContent = 'Movendo...';
+      }
+
+      document.body.appendChild(ghost);
+      dragImageElRef.current = ghost as HTMLDivElement;
+
+      const offsetX = sourceElement ? sourceElement.offsetWidth / 2 : 16;
+      const offsetY = sourceElement ? sourceElement.offsetHeight / 2 : 14;
+      e.dataTransfer.setDragImage(ghost, offsetX, offsetY);
+    } catch {
+      // ignore
+    }
+  };
+
+  const releaseSuppressExplorerClick = () => {
+    // Delay to avoid click firing right after dragend/drop
+    window.setTimeout(() => {
+      suppressExplorerClickRef.current = false;
+    }, 0);
+  };
+
+  useEffect(() => {
+    const onDocClick = () => setContextMenu(null);
+    document.addEventListener('click', onDocClick);
+    return () => document.removeEventListener('click', onDocClick);
+  }, []);
+
+  const renderFolderTree = (parentId: string | null, depth: number): React.ReactNode => {
+    const children = foldersByParent.get(parentId) ?? [];
+    if (!children.length) return null;
+
+    return (
+      <div className={depth === 0 ? 'space-y-1' : 'space-y-1 mt-1'}>
+        {children.map((folder) => {
+          const isSelected = selectedFolderId === folder.id;
+          const isDraggingThisFolder = draggingExplorer?.type === 'folder' && draggingExplorer.id === folder.id;
+          const itemCount = folderItemCountById.get(folder.id) ?? 0;
+          return (
+            <div key={folder.id}>
+              <div
+                onDragOver={handleAllowDrop}
+                onDragEnter={() => setFolderReorderOver({ parentId, beforeId: folder.id })}
+                onDragLeave={() => setFolderReorderOver((prev) => (prev?.parentId === parentId && prev?.beforeId === folder.id ? null : prev))}
+                onDrop={(e) => void handleReorderFolderDrop(e, parentId, folder.id)}
+                className={`px-1 ${
+                  isDraggingExplorer && folderReorderOver?.parentId === parentId && folderReorderOver?.beforeId === folder.id
+                    ? 'py-1'
+                    : ''
+                }`}
+              >
+                <div
+                  className={`h-0.5 rounded-full transition ${
+                    isDraggingExplorer && folderReorderOver?.parentId === parentId && folderReorderOver?.beforeId === folder.id
+                      ? 'bg-orange-500'
+                      : 'bg-transparent'
+                  }`}
+                />
+              </div>
+
+              <div
+                className={`group flex items-center rounded-lg transition ${
+                  isDraggingExplorer && dragOverFolderId === folder.id ? 'ring-2 ring-orange-500/40 bg-orange-50/40 rounded-xl' : ''
+                }`}
+                onDragOver={handleAllowDrop}
+                onDragEnter={() => setDragOverFolderId(folder.id)}
+                onDragLeave={() => setDragOverFolderId((prev) => (prev === folder.id ? null : prev))}
+                onDrop={(e) => void handleDropOnFolder(e, folder.id)}
+              >
+                <div
+                  draggable
+                  onDragStart={(e) => {
+                    setExplorerDragData(e, { type: 'folder', id: folder.id }, e.currentTarget as HTMLElement);
+                  }}
+                  onDragEnd={() => {
+                    setIsDraggingExplorer(false);
+                    setDragOverFolderId(null);
+                    setDraggingExplorer(null);
+                    if (dragImageElRef.current) {
+                      try {
+                        document.body.removeChild(dragImageElRef.current);
+                      } catch {
+                        // ignore
+                      }
+                      dragImageElRef.current = null;
+                    }
+                    releaseSuppressExplorerClick();
+                  }}
+                  onClick={() => setSelectedFolderId(folder.id)}
+                  className={`relative flex-1 flex items-center gap-2 rounded-xl px-3 py-2 text-left text-xs font-semibold transition cursor-grab active:cursor-grabbing ${
+                    isSelected
+                      ? 'bg-orange-50 text-slate-900'
+                      : 'text-slate-700 hover:bg-slate-50'
+                  } ${
+                    isDraggingThisFolder ? 'opacity-60 scale-[1.02] shadow-lg shadow-slate-900/10 bg-white ring-1 ring-slate-200' : ''
+                  }`}
+                  style={{ paddingLeft: `${8 + depth * 12}px` }}
+                  title={folder.name}
+                >
+                  {isSelected && (
+                    <span className="absolute left-0 top-0 h-full w-1.5 bg-orange-500 rounded-l-xl" />
+                  )}
+                  <FolderOpen className={`w-3.5 h-3.5 ${isSelected ? 'text-orange-600' : 'text-slate-400'}`} />
+                  <span className="truncate flex-1">{folder.name}</span>
+                  <span
+                    className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] font-bold ${
+                      isSelected ? 'bg-orange-200 text-orange-800' : 'bg-slate-100 text-slate-600'
+                    }`}
+                    title="Itens nesta pasta"
+                  >
+                    {itemCount}
+                  </span>
+                </div>
+
+                <div className="flex items-center gap-1 pr-1 opacity-0 group-hover:opacity-100 transition">
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      openCreateFolderModal(folder.id);
+                    }}
+                    className="p-1 rounded hover:bg-slate-100 text-slate-400 hover:text-slate-700"
+                    title="Nova subpasta"
+                  >
+                    <Plus className="w-3.5 h-3.5" />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      void handleRenameFolder(folder);
+                    }}
+                    className="p-1 rounded hover:bg-slate-100 text-slate-400 hover:text-slate-700"
+                    title="Renomear"
+                  >
+                    <Pencil className="w-3.5 h-3.5" />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setDeleteFolderTarget(folder);
+                    }}
+                    className="p-1 rounded hover:bg-red-50 text-slate-400 hover:text-red-600"
+                    title="Remover"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              </div>
+              {renderFolderTree(folder.id, depth + 1)}
+            </div>
+          );
+        })}
+
+        <div
+          onDragOver={handleAllowDrop}
+          onDragEnter={() => setFolderReorderOver({ parentId, beforeId: null })}
+          onDragLeave={() => setFolderReorderOver((prev) => (prev?.parentId === parentId && prev?.beforeId === null ? null : prev))}
+          onDrop={(e) => void handleReorderFolderDrop(e, parentId, null)}
+          className={`px-1 ${
+            isDraggingExplorer && folderReorderOver?.parentId === parentId && folderReorderOver?.beforeId === null ? 'py-1' : ''
+          }`}
+        >
+          <div
+            className={`h-0.5 rounded-full transition ${
+              isDraggingExplorer && folderReorderOver?.parentId === parentId && folderReorderOver?.beforeId === null
+                ? 'bg-orange-500'
+                : 'bg-transparent'
+            }`}
+          />
+        </div>
+      </div>
+    );
+  };
 
   useEffect(() => {
     setSelectedRequestIds((prev) => {
@@ -2620,8 +3281,70 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
         </div>
       )}
 
-      {/* Toolbar compacta e limpa */}
-      <div className="rounded-xl border border-slate-200 bg-white px-3 sm:px-4 py-3">
+      <div className="grid grid-cols-1 lg:grid-cols-[280px_1fr] gap-4">
+        {/* Sidebar Explorer */}
+        <div className="rounded-2xl border border-slate-200 bg-white p-3 shadow-sm ring-1 ring-black/5">
+          <div className="flex items-center justify-between mb-2 px-1">
+            <div className="text-[11px] font-bold tracking-[0.18em] text-slate-500 uppercase">Pastas</div>
+            <div className="flex items-center gap-1">
+              <button
+                type="button"
+                onClick={() => openCreateFolderModal(null)}
+                className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-500"
+                title="Nova pasta"
+              >
+                <Plus className="w-4 h-4" />
+              </button>
+            </div>
+          </div>
+
+          {explorerLoading ? (
+            <div className="flex items-center gap-2 text-xs text-slate-500 px-2 py-2">
+              <Loader2 className="w-3.5 h-3.5 animate-spin" />
+              <span>Carregando...</span>
+            </div>
+          ) : (
+            <div className="space-y-2">
+              <div
+                draggable={false}
+                onDragOver={handleAllowDrop}
+                onDragEnter={() => setDragOverFolderId(null)}
+                onDrop={(e) => void handleDropOnFolder(e, null)}
+                className={isDraggingExplorer && dragOverFolderId === null ? 'ring-2 ring-orange-500/40 rounded-xl bg-orange-50/40' : ''}
+              >
+                <button
+                  type="button"
+                  onClick={() => setSelectedFolderId(null)}
+                  className={`relative w-full flex items-center gap-2 rounded-xl px-3 py-2 text-left text-xs font-semibold transition ${
+                    selectedFolderId === null
+                      ? 'bg-orange-50 text-slate-900'
+                      : 'text-slate-700 hover:bg-slate-50'
+                  }`}
+                >
+                  {selectedFolderId === null && (
+                    <span className="absolute left-0 top-0 h-full w-1.5 bg-orange-500 rounded-l-xl" />
+                  )}
+                  <FolderOpen className={`w-3.5 h-3.5 ${selectedFolderId === null ? 'text-orange-600' : 'text-slate-400'}`} />
+                  <span className="truncate flex-1">Sem pasta</span>
+                  <span
+                    className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] font-bold ${
+                      selectedFolderId === null ? 'bg-orange-200 text-orange-800' : 'bg-slate-100 text-slate-600'
+                    }`}
+                    title="Itens em Sem pasta"
+                  >
+                    {rootItemCount}
+                  </span>
+                </button>
+              </div>
+
+              {renderFolderTree(null, 0)}
+            </div>
+          )}
+        </div>
+
+        <div className="space-y-4">
+          {/* Toolbar compacta e limpa */}
+          <div className="rounded-xl border border-slate-200 bg-white px-3 sm:px-4 py-3">
         <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3 md:gap-4">
           {/* Lado esquerdo: Filtros de status como tabs */}
           <div className="flex items-center gap-1 rounded-lg bg-slate-100 p-1 overflow-x-auto max-w-full">
@@ -2908,9 +3631,9 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
         )}
       </div>
 
-      {/* Lista de documentos */}
-      <div className="rounded-2xl border border-slate-200 bg-white">
-        {filteredRequests.length === 0 ? (
+          {/* Lista de documentos */}
+          <div className="rounded-2xl border border-slate-200 bg-white">
+        {filteredRequestsByFolder.length === 0 && filteredGeneratedDocumentsByFolder.length === 0 ? (
           <div className="p-12 text-center">
             <FileText className="w-12 h-12 text-slate-300 mx-auto mb-4" />
             <h3 className="text-base font-semibold text-slate-900 mb-1">Nenhum documento encontrado</h3>
@@ -2925,18 +3648,54 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
           </div>
         ) : viewMode === 'list' ? (
           <div className="space-y-3">
-            {filteredRequests.map((req) => {
+            {filteredRequestsByFolder.map((req) => {
               const allSigned = req.signers?.length > 0 && req.signers.every((s: Signer) => s.status === 'signed');
               const signedCount = req.signers?.filter((s: Signer) => s.status === 'signed').length || 0;
               const totalSigners = req.signers?.length || 0;
               const clientLabel = req.client_name || req.signers?.[0]?.name || 'Cliente não informado';
               const pct = totalSigners > 0 ? Math.round((signedCount / totalSigners) * 100) : 0;
+              const isDraggingThisItem =
+                draggingExplorer?.type === 'item' &&
+                draggingExplorer.itemType === 'signature_request' &&
+                draggingExplorer.id === req.id;
 
               return (
                 <div
                   key={req.id}
-                  onClick={() => openDetails(req)}
-                  className="group bg-white rounded-xl border border-slate-200 p-4 hover:border-slate-300 hover:shadow-md transition-all cursor-pointer"
+                  draggable
+                  onDragStart={(e) => {
+                    setExplorerDragData(
+                      e,
+                      { type: 'item', item_type: 'signature_request', item_id: req.id, created_by: req.created_by },
+                      e.currentTarget as HTMLElement
+                    );
+                  }}
+                  onDragEnd={() => {
+                    setIsDraggingExplorer(false);
+                    setDragOverFolderId(null);
+                    setDraggingExplorer(null);
+                    if (dragImageElRef.current) {
+                      try {
+                        document.body.removeChild(dragImageElRef.current);
+                      } catch {
+                        // ignore
+                      }
+                      dragImageElRef.current = null;
+                    }
+                  }}
+                  onContextMenu={(e) => {
+                    e.preventDefault();
+                    setContextMenu({ x: e.clientX, y: e.clientY, itemType: 'signature_request', itemId: req.id, createdBy: req.created_by });
+                  }}
+                  onClick={() => {
+                    if (suppressExplorerClickRef.current || isDraggingExplorer) return;
+                    openDetails(req);
+                  }}
+                  className={`group bg-white rounded-2xl border border-slate-200 p-4 shadow-sm ring-1 ring-black/5 hover:border-slate-300 hover:shadow-md transition-all cursor-grab active:cursor-grabbing ${
+                    isDraggingExplorer ? 'select-none' : ''
+                  } ${
+                    isDraggingThisItem ? 'opacity-60 scale-[1.01] shadow-lg shadow-slate-900/10' : ''
+                  }`}
                 >
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-3 flex-1 min-w-0">
@@ -3027,11 +3786,75 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
                 </div>
               );
             })}
+
+            {filteredGeneratedDocumentsByFolder.length > 0 && (
+              <div className="pt-2">
+                <div className="px-4 pb-2 text-[11px] font-semibold text-slate-500 uppercase tracking-wide">
+                  Documentos gerados
+                </div>
+                <div className="divide-y divide-slate-100">
+                  {filteredGeneratedDocumentsByFolder.map((doc) => {
+                    const isDraggingThisDoc =
+                      draggingExplorer?.type === 'item' &&
+                      draggingExplorer.itemType === 'generated_document' &&
+                      draggingExplorer.id === doc.id;
+
+                    return (
+                      <button
+                        key={doc.id}
+                        type="button"
+                        draggable
+                        onDragStart={(e) => {
+                          const explorerItem = explorerItemIndex.get(`generated_document:${doc.id}`);
+                          setExplorerDragData(
+                            e,
+                            { type: 'item', item_type: 'generated_document', item_id: doc.id, created_by: explorerItem?.created_by },
+                            e.currentTarget as HTMLElement
+                          );
+                        }}
+                        onDragEnd={() => {
+                          setIsDraggingExplorer(false);
+                          setDragOverFolderId(null);
+                          setDraggingExplorer(null);
+                          if (dragImageElRef.current) {
+                            try {
+                              document.body.removeChild(dragImageElRef.current);
+                            } catch {
+                              // ignore
+                            }
+                            dragImageElRef.current = null;
+                          }
+                          releaseSuppressExplorerClick();
+                        }}
+                        onContextMenu={(e) => {
+                          e.preventDefault();
+                          const explorerItem = explorerItemIndex.get(`generated_document:${doc.id}`);
+                          setContextMenu({ x: e.clientX, y: e.clientY, itemType: 'generated_document', itemId: doc.id, createdBy: explorerItem?.created_by });
+                        }}
+                        onClick={() => {
+                          if (suppressExplorerClickRef.current || isDraggingExplorer) return;
+                          void handleSelectGeneratedDoc(doc);
+                        }}
+                        className={`w-full flex items-center justify-between gap-3 px-4 py-3 text-left transition cursor-grab active:cursor-grabbing ${
+                          isDraggingThisDoc ? 'opacity-60' : ''
+                        } hover:bg-slate-50`}
+                      >
+                        <div className="min-w-0">
+                          <div className="text-sm font-semibold text-slate-900 truncate">{doc.file_name}</div>
+                          <div className="text-xs text-slate-500 truncate">{doc.client_name || '—'}</div>
+                        </div>
+                        <div className="text-xs text-slate-400 shrink-0">{formatDate(doc.created_at)}</div>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
           </div>
         ) : (
           <div className="p-4 sm:p-6">
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5">
-              {filteredRequests.map((req) => {
+              {filteredRequestsByFolder.map((req) => {
                 const allSigned = req.signers?.length > 0 && req.signers.every((s: Signer) => s.status === 'signed');
                 const signedCount = req.signers?.filter((s: Signer) => s.status === 'signed').length || 0;
                 const totalSigners = req.signers?.length || 0;
@@ -3041,8 +3864,37 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
                 return (
                   <div
                     key={req.id}
-                    onClick={() => openDetails(req)}
-                    className="group relative cursor-pointer"
+                    draggable
+                    onDragStart={(e) => {
+                      setExplorerDragData(
+                        e,
+                        { type: 'item', item_type: 'signature_request', item_id: req.id, created_by: req.created_by },
+                        e.currentTarget as HTMLElement
+                      );
+                    }}
+                    onDragEnd={() => {
+                      setIsDraggingExplorer(false);
+                      setDragOverFolderId(null);
+                      setDraggingExplorer(null);
+                      if (dragImageElRef.current) {
+                        try {
+                          document.body.removeChild(dragImageElRef.current);
+                        } catch {
+                          // ignore
+                        }
+                        dragImageElRef.current = null;
+                      }
+                      releaseSuppressExplorerClick();
+                    }}
+                    onContextMenu={(e) => {
+                      e.preventDefault();
+                      setContextMenu({ x: e.clientX, y: e.clientY, itemType: 'signature_request', itemId: req.id, createdBy: req.created_by });
+                    }}
+                    onClick={() => {
+                      if (suppressExplorerClickRef.current || isDraggingExplorer) return;
+                      openDetails(req);
+                    }}
+                    className="group relative cursor-grab active:cursor-grabbing"
                   >
                     <div
                       className={`absolute left-4 top-0 h-3 w-24 rounded-t-lg border border-b-0 ${
@@ -3053,7 +3905,7 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
                     />
 
                     <div
-                      className={`relative mt-2 rounded-xl border p-4 transition-all hover:-translate-y-0.5 hover:shadow-lg ${
+                      className={`relative mt-2 rounded-2xl border p-4 shadow-sm ring-1 ring-black/5 transition-all hover:-translate-y-0.5 hover:shadow-lg ${
                         allSigned
                           ? 'border-emerald-300 bg-gradient-to-b from-emerald-50 to-white'
                           : 'border-amber-300 bg-gradient-to-b from-amber-50 to-white'
@@ -3138,9 +3990,331 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
                 );
               })}
             </div>
+
+            {filteredGeneratedDocumentsByFolder.length > 0 && (
+              <div className="mt-6">
+                <div className="text-[11px] font-semibold text-slate-500 uppercase tracking-wide mb-3">
+                  Documentos gerados
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+                  {filteredGeneratedDocumentsByFolder.map((doc) => (
+                    <button
+                      key={doc.id}
+                      type="button"
+                      draggable
+                      onDragStart={(e) => {
+                        const explorerItem = explorerItemIndex.get(`generated_document:${doc.id}`);
+                        setExplorerDragData(
+                          e,
+                          { type: 'item', item_type: 'generated_document', item_id: doc.id, created_by: explorerItem?.created_by },
+                          e.currentTarget as HTMLElement
+                        );
+                      }}
+                      onDragEnd={() => {
+                        setIsDraggingExplorer(false);
+                        setDragOverFolderId(null);
+                        setDraggingExplorer(null);
+                        if (dragImageElRef.current) {
+                          try {
+                            document.body.removeChild(dragImageElRef.current);
+                          } catch {
+                            // ignore
+                          }
+                          dragImageElRef.current = null;
+                        }
+                      }}
+                      onContextMenu={(e) => {
+                        e.preventDefault();
+                        const explorerItem = explorerItemIndex.get(`generated_document:${doc.id}`);
+                        setContextMenu({ x: e.clientX, y: e.clientY, itemType: 'generated_document', itemId: doc.id, createdBy: explorerItem?.created_by });
+                      }}
+                      onClick={() => void handleSelectGeneratedDoc(doc)}
+                      className="rounded-2xl border border-slate-200 bg-white p-4 text-left shadow-sm ring-1 ring-black/5 hover:shadow-md hover:border-slate-300 transition cursor-grab active:cursor-grabbing"
+                    >
+                      <div className="text-xs text-slate-500 truncate">{formatDate(doc.created_at)}</div>
+                      <div className="mt-1 text-sm font-semibold text-slate-900 line-clamp-2">{doc.file_name}</div>
+                      <div className="mt-1 text-xs text-slate-600 truncate">{doc.client_name || '—'}</div>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
         )}
       </div>
+
+        </div>
+      </div>
+
+      {deleteFolderTarget && createPortal(
+        <div className="fixed inset-0 z-[70] flex items-center justify-center px-3 sm:px-6 py-4">
+          <div
+            className="absolute inset-0 bg-slate-900/70 backdrop-blur-sm"
+            onClick={() => setDeleteFolderTarget(null)}
+            aria-hidden="true"
+          />
+          <div className="relative w-full max-w-md max-h-[92vh] bg-white rounded-2xl shadow-2xl ring-1 ring-black/5 flex flex-col overflow-hidden">
+            <div className="h-2 w-full bg-red-500" />
+            <div className="px-5 sm:px-8 py-5 border-b border-slate-200 bg-white flex items-start justify-between gap-4">
+              <div className="min-w-0">
+                <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">Explorer</p>
+                <h2 className="text-xl font-semibold text-slate-900 truncate">Remover pasta</h2>
+                <p className="text-xs text-slate-500 mt-1 truncate">{deleteFolderTarget.name}</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setDeleteFolderTarget(null)}
+                className="p-2 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-xl transition"
+                aria-label="Fechar modal"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="flex-1 overflow-y-auto bg-white px-5 sm:px-8 py-5 space-y-3">
+              <div className="text-sm text-slate-600">
+                O que você deseja fazer com os itens dentro desta pasta?
+              </div>
+              <button
+                type="button"
+                onClick={() => void handleDeleteFolder({ folder: deleteFolderTarget, mode: 'move_root' })}
+                disabled={deleteFolderSaving !== null}
+                className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-4 text-left hover:bg-slate-50 transition"
+              >
+                <div className="flex items-center justify-between gap-3">
+                  <div className="text-sm font-semibold text-slate-900">Mover itens para “Sem pasta”</div>
+                  {deleteFolderSaving === 'move_root' && <Loader2 className="w-4 h-4 animate-spin text-slate-500" />}
+                </div>
+                <div className="text-xs text-slate-500 mt-1">Remove apenas a pasta. Os itens ficam na raiz do Explorer.</div>
+              </button>
+              <button
+                type="button"
+                onClick={() => void handleDeleteFolder({ folder: deleteFolderTarget, mode: 'delete_all' })}
+                disabled={deleteFolderSaving !== null}
+                className="w-full rounded-2xl border border-red-200 bg-red-50 px-4 py-4 text-left hover:bg-red-100 transition"
+              >
+                <div className="flex items-center justify-between gap-3">
+                  <div className="text-sm font-semibold text-red-800">Excluir tudo</div>
+                  {deleteFolderSaving === 'delete_all' && <Loader2 className="w-4 h-4 animate-spin text-red-700" />}
+                </div>
+                <div className="text-xs text-red-700/80 mt-1">Tenta remover também os itens que você criou.</div>
+              </button>
+            </div>
+
+            <div className="border-t border-slate-200 bg-slate-50 px-4 sm:px-6 py-3">
+              <div className="flex justify-end gap-3">
+                <button
+                  type="button"
+                  onClick={() => setDeleteFolderTarget(null)}
+                  className="rounded-lg px-4 py-2 text-sm font-semibold text-slate-500"
+                >
+                  Cancelar
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>,
+        document.body
+      )}
+
+      {createFolderModalOpen && createPortal(
+        <div className="fixed inset-0 z-[70] flex items-center justify-center px-3 sm:px-6 py-4">
+          <div
+            className="absolute inset-0 bg-slate-900/70 backdrop-blur-sm"
+            onClick={() => setCreateFolderModalOpen(false)}
+            aria-hidden="true"
+          />
+          <div className="relative w-full max-w-md max-h-[92vh] bg-white rounded-2xl shadow-2xl ring-1 ring-black/5 flex flex-col overflow-hidden">
+            <div className="h-2 w-full bg-orange-500" />
+            <div className="px-5 sm:px-8 py-5 border-b border-slate-200 bg-white flex items-start justify-between gap-4">
+              <div className="min-w-0">
+                <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">Explorer</p>
+                <h2 className="text-xl font-semibold text-slate-900">Nova pasta</h2>
+                {createFolderParentId && (
+                  <p className="text-xs text-slate-500 mt-1 truncate">Em: {folderPathLabelById.get(createFolderParentId) || '—'}</p>
+                )}
+              </div>
+              <button
+                type="button"
+                onClick={() => setCreateFolderModalOpen(false)}
+                className="p-2 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-xl transition"
+                aria-label="Fechar modal"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="flex-1 overflow-y-auto bg-white px-5 sm:px-8 py-6 space-y-2">
+              <label className="text-xs font-semibold text-slate-500">Nome da pasta</label>
+              <input
+                autoFocus
+                value={createFolderName}
+                onChange={(e) => setCreateFolderName(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') void handleSubmitCreateFolder();
+                }}
+                className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-900 placeholder:text-slate-400 transition focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-400"
+                placeholder="Ex: Clientes, Contratos..."
+              />
+            </div>
+
+            <div className="border-t border-slate-200 bg-slate-50 px-4 sm:px-6 py-3">
+              <div className="flex justify-end gap-3">
+                <button
+                  type="button"
+                  onClick={() => setCreateFolderModalOpen(false)}
+                  className="rounded-lg px-4 py-2 text-sm font-semibold text-slate-500"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="button"
+                  disabled={createFolderSaving || !createFolderName.trim()}
+                  onClick={() => void handleSubmitCreateFolder()}
+                  className="inline-flex items-center gap-2 rounded-lg bg-slate-900 hover:bg-slate-800 text-white px-4 py-2 text-sm font-semibold transition disabled:opacity-60"
+                >
+                  {createFolderSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />}
+                  Criar
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>,
+        document.body
+      )}
+
+      {contextMenu && (
+        <div
+          className="fixed z-[80]"
+          style={{ left: contextMenu.x, top: contextMenu.y }}
+          onClick={(e) => e.stopPropagation()}
+          onContextMenu={(e) => e.preventDefault()}
+        >
+          <div className="w-56 rounded-xl border border-slate-200 bg-white shadow-xl overflow-hidden">
+            <button
+              type="button"
+              onClick={() => {
+                setMoveTarget({ itemType: contextMenu.itemType, itemId: contextMenu.itemId, createdBy: contextMenu.createdBy });
+                const current = explorerItemIndex.get(`${contextMenu.itemType}:${contextMenu.itemId}`);
+                setMoveSelectedFolderId(current?.folder_id ?? null);
+                setMoveModalOpen(true);
+                setContextMenu(null);
+              }}
+              className="w-full px-3 py-2 text-left text-xs font-semibold text-slate-700 hover:bg-slate-50 transition"
+            >
+              Mover...
+            </button>
+          </div>
+        </div>
+      )}
+
+      {moveModalOpen && moveTarget && createPortal(
+        <div className="fixed inset-0 z-[70] flex items-center justify-center px-3 sm:px-6 py-4">
+          <div
+            className="absolute inset-0 bg-slate-900/70 backdrop-blur-sm"
+            onClick={() => setMoveModalOpen(false)}
+            aria-hidden="true"
+          />
+          <div className="relative w-full max-w-lg max-h-[92vh] bg-white rounded-2xl shadow-2xl ring-1 ring-black/5 flex flex-col overflow-hidden">
+            <div className="h-2 w-full bg-indigo-600" />
+            <div className="px-5 sm:px-8 py-5 border-b border-slate-200 bg-white flex items-start justify-between gap-4">
+              <div className="min-w-0">
+                <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">Explorer</p>
+                <h2 className="text-xl font-semibold text-slate-900">Mover item</h2>
+              </div>
+              <button
+                type="button"
+                onClick={() => setMoveModalOpen(false)}
+                className="p-2 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-xl transition"
+                aria-label="Fechar modal"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="flex-1 overflow-y-auto bg-white px-5 sm:px-8 py-6">
+              <div className="text-xs font-semibold text-slate-500 mb-2">Destino</div>
+              <div className="max-h-72 overflow-y-auto rounded-2xl border border-slate-200">
+                <button
+                  type="button"
+                  onClick={() => setMoveSelectedFolderId(null)}
+                  className={`relative w-full px-4 py-3 text-left text-sm font-medium transition ${
+                    moveSelectedFolderId === null
+                      ? 'bg-orange-50 text-slate-900'
+                      : 'hover:bg-slate-50 text-slate-700'
+                  }`}
+                >
+                  {moveSelectedFolderId === null && (
+                    <span className="absolute left-0 top-0 h-full w-1.5 bg-orange-500" />
+                  )}
+                  Sem pasta
+                </button>
+                {explorerFolders
+                  .slice()
+                  .sort((a, b) => (a.sort_order - b.sort_order) || a.name.localeCompare(b.name))
+                  .map((f) => (
+                    <button
+                      key={f.id}
+                      type="button"
+                      onClick={() => setMoveSelectedFolderId(f.id)}
+                      className={`relative w-full px-4 py-3 text-left text-sm transition ${
+                        moveSelectedFolderId === f.id
+                          ? 'bg-orange-50 text-slate-900'
+                          : 'hover:bg-slate-50 text-slate-700'
+                      }`}
+                      title={folderPathLabelById.get(f.id) || f.name}
+                    >
+                      {moveSelectedFolderId === f.id && (
+                        <span className="absolute left-0 top-0 h-full w-1.5 bg-orange-500" />
+                      )}
+                      {folderPathLabelById.get(f.id) || f.name}
+                    </button>
+                  ))}
+              </div>
+            </div>
+
+            <div className="border-t border-slate-200 bg-slate-50 px-4 sm:px-6 py-3">
+              <div className="flex items-center justify-between gap-3">
+                <div className="text-[11px] text-slate-500 truncate">
+                  {moveSelectedFolderId ? `Destino: ${folderPathLabelById.get(moveSelectedFolderId) || '—'}` : 'Destino: Sem pasta'}
+                </div>
+                <div className="flex justify-end gap-3">
+                  <button
+                    type="button"
+                    onClick={() => setMoveModalOpen(false)}
+                    className="rounded-lg px-4 py-2 text-sm font-semibold text-slate-500"
+                  >
+                    Cancelar
+                  </button>
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      if (!user?.id) return;
+                      if (moveTarget.createdBy && moveTarget.createdBy !== user.id) {
+                        toast.error('Você só pode mover itens que você criou');
+                        return;
+                      }
+                      setMoveSaving(true);
+                      try {
+                        await handleMoveItemToFolder({ itemType: moveTarget.itemType, itemId: moveTarget.itemId, folderId: moveSelectedFolderId });
+                      } finally {
+                        setMoveSaving(false);
+                      }
+                      setMoveModalOpen(false);
+                    }}
+                    disabled={moveSaving}
+                    className="inline-flex items-center gap-2 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 text-sm font-semibold transition disabled:opacity-60"
+                  >
+                    {moveSaving && <Loader2 className="w-4 h-4 animate-spin" />}
+                    Mover
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>,
+        document.body
+      )}
 
       {detailsRequest && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-6 bg-slate-50/80 dark:bg-slate-50/80 backdrop-blur-md">

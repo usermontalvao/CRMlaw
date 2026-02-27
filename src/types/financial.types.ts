@@ -128,6 +128,7 @@ export interface FinancialStats {
   monthly_fees: number; // Honorários previstos para o mês vigente
   monthly_fees_received: number; // Honorários recebidos no mês vigente
   monthly_fees_pending: number; // Honorários pendentes no mês vigente
+  monthly_paid_installments: number; // Parcelas pagas no mês vigente
 }
 
 // Parcela com informações do acordo (para calendário)

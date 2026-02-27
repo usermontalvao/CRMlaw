@@ -619,20 +619,33 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
     });
   }, [deadlines]);
 
+  const isPastMonth = useMemo(() => {
+    const today = new Date();
+    const currentDate = new Date(today.getFullYear(), today.getMonth(), 1);
+    const selectedDate = new Date(internalCalendarYear, internalCalendarMonth, 1);
+    return selectedDate < currentDate;
+  }, [internalCalendarMonth, internalCalendarYear]);
+
   const monthlyDeadlines = useMemo(() => {
     return deadlines.filter((deadline) => {
+      if (isPastMonth) {
+        if (deadline.status !== 'cumprido' || !deadline.completed_at) return false;
+        const completed = new Date(deadline.completed_at);
+        return completed.getMonth() === internalCalendarMonth && completed.getFullYear() === internalCalendarYear;
+      }
+
       // Se o prazo foi concluído, considerar o mês da conclusão
       if (deadline.status === 'cumprido' && deadline.completed_at) {
         const completed = new Date(deadline.completed_at);
         return completed.getMonth() === internalCalendarMonth && completed.getFullYear() === internalCalendarYear;
       }
-      
+
       // Para prazos pendentes, vencidos ou cancelados, considerar o mês de vencimento
       const due = parseDateOnly(deadline.due_date);
       if (!due) return false;
       return due.getMonth() === internalCalendarMonth && due.getFullYear() === internalCalendarYear;
     });
-  }, [deadlines, internalCalendarMonth, internalCalendarYear]);
+  }, [deadlines, internalCalendarMonth, internalCalendarYear, isPastMonth]);
 
   const monthlyPending = useMemo(
     () => monthlyDeadlines.filter((deadline) => deadline.status === 'pendente'),
@@ -3367,16 +3380,16 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
             })}
           </div>
         </div>
-      ) : loading ? (
+      ) : (!isPastMonth && loading) ? (
         <div className="bg-white border border-gray-200 rounded-xl p-16 flex flex-col items-center gap-4">
           <Loader2 className="w-8 h-8 text-blue-600 animate-spin" />
           <p className="text-slate-600">Carregando prazos...</p>
         </div>
-      ) : filteredDeadlines.length === 0 ? (
+      ) : (!isPastMonth && filteredDeadlines.length === 0) ? (
         <div className="bg-white border border-gray-200 rounded-xl p-12 text-center">
           <p className="text-slate-600">Nenhum prazo encontrado.</p>
         </div>
-      ) : (
+      ) : !isPastMonth ? (
         <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
           {/* Mobile Cards */}
           <div className="block lg:hidden divide-y divide-gray-200">
@@ -3588,9 +3601,9 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
             </table>
           </div>
         </div>
-      )}
+      ) : null}
 
-      {filteredDeadlines.length > pageSize && (
+      {!isPastMonth && filteredDeadlines.length > pageSize && (
         <div className="bg-white border border-gray-200 rounded-xl p-4 flex items-center justify-between">
           <button
             onClick={() => setCurrentPage((prev) => Math.max(1, prev - 1))}
@@ -3623,11 +3636,11 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
           <h4 className="text-base font-semibold text-slate-900">Histórico - Últimos Prazos Cumpridos</h4>
         </div>
 
-        {completedDeadlines.length === 0 ? (
+        {(isPastMonth ? monthlyCompleted : completedDeadlines).length === 0 ? (
           <p className="text-sm text-slate-500 text-center py-8">Nenhum prazo cumprido ainda.</p>
         ) : (
           <div className="divide-y divide-slate-100">
-            {completedDeadlines.map((deadline) => {
+            {(isPastMonth ? monthlyCompleted : completedDeadlines).map((deadline) => {
               const clientItem = deadline.client_id ? clientMap.get(deadline.client_id) : null;
               const responsibleItem = deadline.responsible_id ? memberMap.get(deadline.responsible_id) : null;
               const priorityConfig = getPriorityConfig(deadline.priority);

@@ -588,6 +588,89 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
 
 const releases: ReleaseNote[] = [
   {
+    version: '1.9.593',
+    date: '27/02/2026',
+    summary: 'Assinaturas: drag-and-drop mais confiável no modo lista.',
+    modules: [
+      {
+        moduleId: 'assinaturas',
+        changes: [
+          {
+            type: 'fix',
+            title: 'Arrastar no modo lista sem abrir item',
+            description: 'Ao arrastar itens no modo lista, o clique agora é suprimido durante o drag para evitar abrir detalhes/seleção quando a intenção era mover.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.592',
+    date: '27/02/2026',
+    summary: 'Assinaturas: Explorer mostra quantidade de itens por pasta.',
+    modules: [
+      {
+        moduleId: 'assinaturas',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Contador de itens por pasta',
+            description: 'Sidebar do Explorer agora exibe badge com a quantidade de itens em cada pasta (inclui Sem pasta e total com subpastas).',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.591',
+    date: '27/02/2026',
+    summary: 'Assinaturas: reordenação de pastas por drag-and-drop no Explorer.',
+    modules: [
+      {
+        moduleId: 'assinaturas',
+        changes: [
+          {
+            type: 'feature',
+            title: 'Ordenar pastas arrastando (sort_order)',
+            description: 'Agora é possível reordenar pastas e subpastas arrastando na árvore (drop entre itens), persistindo a ordenação no banco via sort_order.',
+          },
+          {
+            type: 'fix',
+            title: 'Correção de classe na tela de signatários',
+            description: 'Corrigida quebra acidental em classe Tailwind que impactava o layout da etapa de confirmação de signatários.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.590',
+    date: '27/02/2026',
+    summary: 'Assinaturas: Explorer com pastas e drag-and-drop mais profissional (preview do card e destaques).',
+    modules: [
+      {
+        moduleId: 'assinaturas',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Pastas com visual premium',
+            description: 'Sidebar de pastas com seleção em faixa laranja, hover mais limpo, hierarquia mais legível e destaque de drop mais claro.',
+          },
+          {
+            type: 'improvement',
+            title: 'Drag preview com card completo',
+            description: 'Ao arrastar solicitações e documentos, agora o preview mostra o card completo acompanhando o cursor (clone visual), deixando claro qual item está sendo movido.',
+          },
+          {
+            type: 'improvement',
+            title: 'Cards e lista de documentos mais profissionais',
+            description: 'Ajustado acabamento (rounded, ring, shadow) e estados de drag/hover para padronizar com o design do CRM.',
+          },
+        ],
+      },
+    ],
+  },
+  {
     version: '1.9.587',
     date: '22/02/2026',
     summary: 'Pipeline de Leads e Gestão de Clientes: interface otimizada e botões reposicionados.',

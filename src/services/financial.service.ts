@@ -400,27 +400,40 @@ class FinancialService {
     let monthlyFees = 0;
     let monthlyFeesReceived = 0;
     let monthlyFeesPending = 0;
+    let monthlyPaidInstallments = 0;
 
     agreements?.forEach(agreement => {
       const feePerInstallment = agreement.fee_value / agreement.installments_count;
       const agreementInstallments = installments?.filter(i => i.agreement_id === agreement.id) || [];
 
+      // Honorários previstos e pendentes do mês (baseado na data de vencimento)
       agreementInstallments
         .filter(inst => inst.due_date >= monthStart && inst.due_date <= monthEnd)
         .forEach(inst => {
           monthlyFees += feePerInstallment;
-          if (inst.status === 'pago') {
-            monthlyFeesReceived += feePerInstallment;
-          } else if (pendingStatuses.includes(inst.status as any)) {
+          if (pendingStatuses.includes(inst.status as any)) {
             monthlyFeesPending += feePerInstallment;
           }
+        });
+
+      // Honorários e parcelas recebidas no mês (baseado na data de pagamento)
+      agreementInstallments
+        .filter(inst => {
+          if (inst.status !== 'pago') return false;
+          // Usa a data de pagamento se existir, caso contrário fallback para data de vencimento
+          const dateToCompare = inst.payment_date || inst.due_date;
+          return dateToCompare >= monthStart && dateToCompare <= monthEnd;
+        })
+        .forEach(inst => {
+          monthlyFeesReceived += feePerInstallment;
+          monthlyPaidInstallments++;
         });
     });
 
     // Garantir consistência (evita números negativos por arredondamento)
     monthlyFees = Number(monthlyFees.toFixed(2));
     monthlyFeesReceived = Number(monthlyFeesReceived.toFixed(2));
-    monthlyFeesPending = Number((monthlyFees - monthlyFeesReceived).toFixed(2));
+    monthlyFeesPending = Number(monthlyFeesPending.toFixed(2));
 
     // Calcular honorários vencidos
     let totalOverdueFees = 0;
@@ -446,12 +459,17 @@ class FinancialService {
       total_overdue: Number(totalOverdueFees.toFixed(2)),
       overdue_installments:
         installments?.filter(i => pendingStatuses.includes(i.status as any) && i.due_date < today).length || 0,
-      paid_installments: installments?.filter(i => i.status === 'pago').length || 0,
+      paid_installments: installments?.filter(i => {
+        if (i.status !== 'pago') return false;
+        const dateToCompare = i.payment_date || i.due_date;
+        return dateToCompare >= monthStart && dateToCompare <= monthEnd;
+      }).length || 0, // Atualizado para usar data de pagamento e mês vigente
       pending_installments:
-        installments?.filter(i => pendingStatuses.includes(i.status as any)).length || 0,
+        installments?.filter(i => pendingStatuses.includes(i.status as any) && i.due_date >= monthStart && i.due_date <= monthEnd).length || 0, // Atualizado para o mês vigente
       monthly_fees: monthlyFees,
       monthly_fees_received: monthlyFeesReceived,
       monthly_fees_pending: monthlyFeesPending,
+      monthly_paid_installments: monthlyPaidInstallments,
     };
 
     return stats;
