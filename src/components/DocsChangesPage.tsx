@@ -588,6 +588,40 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
 
 const releases: ReleaseNote[] = [
   {
+    version: '1.9.597',
+    date: '27/02/2026',
+    summary: 'Assinaturas: arrastar múltiplos itens selecionados no Explorer.',
+    modules: [
+      {
+        moduleId: 'assinaturas',
+        changes: [
+          {
+            type: 'feature',
+            title: 'Mover vários selecionados por drag-and-drop',
+            description: 'Quando o modo de seleção estiver ativo, é possível selecionar múltiplas solicitações e arrastá-las juntas para uma pasta. Itens sem permissão não são movidos.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.596',
+    date: '27/02/2026',
+    summary: 'Assinaturas: feedback visual ao arrastar sobre pastas do Explorer.',
+    modules: [
+      {
+        moduleId: 'assinaturas',
+        changes: [
+          {
+            type: 'fix',
+            title: 'Highlight em tempo real no alvo de drop',
+            description: 'Ao arrastar um documento/solicitação, a pasta sob o cursor agora fica destacada durante dragover/dragenter, indicando claramente o destino do drop.',
+          },
+        ],
+      },
+    ],
+  },
+  {
     version: '1.9.595',
     date: '27/02/2026',
     summary: 'Assinaturas: Explorer com mais espaçamento e hierarquia mais legível.',

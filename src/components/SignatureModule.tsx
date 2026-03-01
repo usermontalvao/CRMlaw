@@ -859,8 +859,16 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
   const folderItemCountById = useMemo(() => {
     const counts = new Map<string, number>();
 
-    for (const it of explorerItems) {
-      const folderId = it.folder_id ?? null;
+    for (const req of requests) {
+      const item = explorerItemIndex.get(`signature_request:${req.id}`);
+      const folderId = item?.folder_id ?? null;
+      if (!folderId) continue;
+      counts.set(folderId, (counts.get(folderId) ?? 0) + 1);
+    }
+
+    for (const doc of generatedDocuments) {
+      const item = explorerItemIndex.get(`generated_document:${doc.id}`);
+      const folderId = item?.folder_id ?? null;
       if (!folderId) continue;
       counts.set(folderId, (counts.get(folderId) ?? 0) + 1);
     }
@@ -877,11 +885,25 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
     }
 
     return counts;
-  }, [explorerFolders, explorerItems, folderDescendantsIndex]);
+  }, [explorerFolders, explorerItemIndex, folderDescendantsIndex, generatedDocuments, requests]);
 
   const rootItemCount = useMemo(() => {
-    return explorerItems.reduce((acc, it) => acc + (it.folder_id ? 0 : 1), 0);
-  }, [explorerItems]);
+    let total = 0;
+
+    for (const req of requests) {
+      const item = explorerItemIndex.get(`signature_request:${req.id}`);
+      const folderId = item?.folder_id ?? null;
+      if (!folderId) total += 1;
+    }
+
+    for (const doc of generatedDocuments) {
+      const item = explorerItemIndex.get(`generated_document:${doc.id}`);
+      const folderId = item?.folder_id ?? null;
+      if (!folderId) total += 1;
+    }
+
+    return total;
+  }, [explorerItemIndex, generatedDocuments, requests]);
 
   const reloadExplorer = useCallback(async () => {
     const [foldersData, itemsData] = await Promise.all([
@@ -1116,16 +1138,59 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
 
     if (payload?.type === 'item') {
       if (!user?.id) return;
+      const itemType = payload?.item_type as 'signature_request' | 'generated_document' | undefined;
+      const itemId = payload?.item_id as string | undefined;
+      if (!itemType || !itemId) return;
+
+      if (itemType === 'signature_request' && Array.isArray(payload?.selected_request_ids) && payload.selected_request_ids.length > 1) {
+        const selectedIds = (payload.selected_request_ids as any[]).filter((x: any): x is string => typeof x === 'string');
+        const uniqueIds: string[] = Array.from(new Set(selectedIds));
+        if (uniqueIds.length <= 1) {
+          await handleMoveItemToFolder({ itemType, itemId, folderId: targetFolderId });
+          return;
+        }
+
+        const selected = uniqueIds
+          .map((id: string) => requests.find((r) => r.id === id))
+          .filter(Boolean) as SignatureRequestWithSigners[];
+
+        const owned = selected.filter((r) => r.created_by === user.id);
+        const skipped = selected.length - owned.length;
+
+        if (owned.length === 0) {
+          toast.error('Você só pode mover itens que você criou');
+          return;
+        }
+
+        try {
+          await Promise.all(
+            owned.map((r) =>
+              signatureExplorerService.moveItem({
+                itemType: 'signature_request',
+                itemId: r.id,
+                folderId: targetFolderId,
+                createdBy: user.id,
+              })
+            )
+          );
+          await reloadExplorer();
+          if (skipped > 0) {
+            toast.error(`Alguns itens não foram movidos (permissão): ${skipped}.`);
+          }
+        } finally {
+          // ignore
+        }
+        return;
+      }
+
       if (payload?.created_by && payload.created_by !== user.id) {
         toast.error('Você só pode mover itens que você criou');
         return;
       }
-      const itemType = payload?.item_type as 'signature_request' | 'generated_document' | undefined;
-      const itemId = payload?.item_id as string | undefined;
-      if (!itemType || !itemId) return;
+
       await handleMoveItemToFolder({ itemType, itemId, folderId: targetFolderId });
     }
-  }, [handleMoveFolder, handleMoveItemToFolder, toast, user?.id]);
+  }, [handleMoveFolder, handleMoveItemToFolder, reloadExplorer, requests, toast, user?.id]);
 
   const handleAllowDrop = (e: React.DragEvent) => {
     e.preventDefault();
@@ -1135,6 +1200,16 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
       // ignore
     }
   };
+
+  const handleFolderDragEnter = useCallback((folderId: string | null) => {
+    setDragOverFolderId(folderId);
+  }, []);
+
+  const handleFolderDragLeave = useCallback((e: React.DragEvent, folderId: string | null) => {
+    const related = (e as any).relatedTarget as Node | null | undefined;
+    if (related && e.currentTarget && (e.currentTarget as any).contains?.(related)) return;
+    setDragOverFolderId((prev) => (prev === folderId ? null : prev));
+  }, []);
 
   const setExplorerDragData = (e: React.DragEvent, payload: any, sourceElement?: HTMLElement) => {
     const data = JSON.stringify(payload);
@@ -1256,9 +1331,12 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
                 className={`group relative flex items-center rounded-xl transition ${
                   isDraggingExplorer && dragOverFolderId === folder.id ? 'ring-2 ring-orange-500/40 bg-orange-50/40' : ''
                 }`}
-                onDragOver={handleAllowDrop}
-                onDragEnter={() => setDragOverFolderId(folder.id)}
-                onDragLeave={() => setDragOverFolderId((prev) => (prev === folder.id ? null : prev))}
+                onDragOver={(e) => {
+                  handleAllowDrop(e);
+                  setDragOverFolderId(folder.id);
+                }}
+                onDragEnter={() => handleFolderDragEnter(folder.id)}
+                onDragLeave={(e) => handleFolderDragLeave(e, folder.id)}
                 onDrop={(e) => void handleDropOnFolder(e, folder.id)}
               >
                 <div
@@ -1306,7 +1384,16 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
                   </span>
                 </div>
 
-                <div className="absolute right-1 top-1/2 -translate-y-1/2 flex items-center gap-1 px-1 py-0.5 rounded-lg bg-white/90 backdrop-blur-sm border border-slate-200 shadow-sm opacity-0 group-hover:opacity-100 transition">
+                <div
+                  className="absolute right-1 top-1/2 -translate-y-1/2 flex items-center gap-1 px-1 py-0.5 rounded-lg bg-white/90 backdrop-blur-sm border border-slate-200 shadow-sm opacity-0 group-hover:opacity-100 transition"
+                  onDragOver={(e) => {
+                    handleAllowDrop(e);
+                    setDragOverFolderId(folder.id);
+                  }}
+                  onDragEnter={() => handleFolderDragEnter(folder.id)}
+                  onDragLeave={(e) => handleFolderDragLeave(e, folder.id)}
+                  onDrop={(e) => void handleDropOnFolder(e, folder.id)}
+                >
                   <button
                     type="button"
                     onClick={(e) => {
@@ -3307,8 +3394,12 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
             <div className="space-y-2">
               <div
                 draggable={false}
-                onDragOver={handleAllowDrop}
-                onDragEnter={() => setDragOverFolderId(null)}
+                onDragOver={(e) => {
+                  handleAllowDrop(e);
+                  setDragOverFolderId(null);
+                }}
+                onDragEnter={() => handleFolderDragEnter(null)}
+                onDragLeave={(e) => handleFolderDragLeave(e, null)}
                 onDrop={(e) => void handleDropOnFolder(e, null)}
                 className={isDraggingExplorer && dragOverFolderId === null ? 'ring-2 ring-orange-500/40 rounded-xl bg-orange-50/40' : ''}
               >
@@ -3664,11 +3755,11 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
                   key={req.id}
                   draggable
                   onDragStart={(e) => {
-                    setExplorerDragData(
-                      e,
-                      { type: 'item', item_type: 'signature_request', item_id: req.id, created_by: req.created_by },
-                      e.currentTarget as HTMLElement
-                    );
+                    const payload: any = { type: 'item', item_type: 'signature_request', item_id: req.id, created_by: req.created_by };
+                    if (selectionMode && selectedRequestIds.size > 1 && selectedRequestIds.has(req.id)) {
+                      payload.selected_request_ids = Array.from(selectedRequestIds);
+                    }
+                    setExplorerDragData(e, payload, e.currentTarget as HTMLElement);
                   }}
                   onDragEnd={() => {
                     setIsDraggingExplorer(false);
@@ -3866,11 +3957,11 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
                     key={req.id}
                     draggable
                     onDragStart={(e) => {
-                      setExplorerDragData(
-                        e,
-                        { type: 'item', item_type: 'signature_request', item_id: req.id, created_by: req.created_by },
-                        e.currentTarget as HTMLElement
-                      );
+                      const payload: any = { type: 'item', item_type: 'signature_request', item_id: req.id, created_by: req.created_by };
+                      if (selectionMode && selectedRequestIds.size > 1 && selectedRequestIds.has(req.id)) {
+                        payload.selected_request_ids = Array.from(selectedRequestIds);
+                      }
+                      setExplorerDragData(e, payload, e.currentTarget as HTMLElement);
                     }}
                     onDragEnd={() => {
                       setIsDraggingExplorer(false);
