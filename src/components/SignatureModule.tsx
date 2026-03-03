@@ -163,6 +163,7 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
   const [openProcessLoading, setOpenProcessLoading] = useState(false);
   const [showCreateProcess, setShowCreateProcess] = useState(false);
   const [createProcessArea, setCreateProcessArea] = useState<ProcessPracticeArea>('previdenciario');
+  const [createProcessUrgent, setCreateProcessUrgent] = useState(false);
   const [createProcessLoading, setCreateProcessLoading] = useState(false);
 
   useEffect(() => {
@@ -4936,6 +4937,7 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
                                   process_code: (detailsRequest.process_number || '').trim(),
                                   status: 'aguardando_confeccao',
                                   practice_area: createProcessArea,
+                                  priority: createProcessUrgent ? 'urgente' : 'normal',
                                   notes: `Origem: Assinatura ${detailsRequest.document_name}`,
                                 } as any);
 
@@ -4969,6 +4971,29 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
                               </>
                             )}
                           </button>
+                        </div>
+                        <div className="mt-4 p-3 rounded-xl bg-gradient-to-r from-red-50 to-orange-50 border border-red-200">
+                          <div className="flex items-start gap-3">
+                            <div className="relative">
+                              <input
+                                type="checkbox"
+                                id="urgent-process"
+                                checked={createProcessUrgent}
+                                onChange={(e) => setCreateProcessUrgent(e.target.checked)}
+                                className="w-5 h-5 rounded border-red-300 text-red-600 focus:ring-2 focus:ring-red-500 focus:ring-offset-0 cursor-pointer"
+                              />
+                              {createProcessUrgent && (
+                                <div className="absolute -top-1 -left-1 w-3 h-3 bg-red-500 rounded-full animate-pulse" />
+                              )}
+                            </div>
+                            <div className="flex-1">
+                              <label htmlFor="urgent-process" className="flex items-center gap-2 text-sm font-semibold text-red-800 cursor-pointer hover:text-red-900 transition-colors">
+                                <AlertTriangle className="w-4 h-4" />
+                                Marcar como urgente
+                              </label>
+                              <p className="text-xs text-red-600 mt-1">Processo será priorizado em todas as visualizações</p>
+                            </div>
+                          </div>
                         </div>
                       </div>
                     )}

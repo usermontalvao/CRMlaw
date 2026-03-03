@@ -2713,7 +2713,15 @@ const ProcessesModule: React.FC<ProcessesModuleProps> = ({ forceCreate, entityId
                     </div>
                     <div className="flex-1 min-w-0">
                       <p className="text-sm font-medium text-slate-900 truncate">{client?.full_name || 'Cliente não informado'}</p>
-                      <p className="text-xs text-slate-500">{process.practice_area ? PRACTICE_AREAS.find(p => p.key === process.practice_area)?.label : 'Área não definida'}</p>
+                      <div className="flex items-center gap-2">
+                        <p className="text-xs text-slate-500">{process.practice_area ? PRACTICE_AREAS.find(p => p.key === process.practice_area)?.label : 'Área não definida'}</p>
+                        {process.priority === 'urgente' && (
+                          <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[10px] font-semibold bg-red-100 text-red-800 border border-red-200 shadow-sm">
+                            <AlertTriangle className="w-2.5 h-2.5" />
+                            Urgente
+                          </span>
+                        )}
+                      </div>
                     </div>
                     <button
                       onClick={(e) => {

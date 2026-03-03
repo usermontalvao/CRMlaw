@@ -588,6 +588,43 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
 
 const releases: ReleaseNote[] = [
   {
+    version: '1.9.609',
+    date: '03/03/2026',
+    summary: 'Assinaturas: checkbox urgência na criação de processo com destaque em Processos e Dashboard.',
+    modules: [
+      {
+        moduleId: 'assinaturas',
+        changes: [
+          {
+            type: 'feature',
+            title: 'Checkbox "Marcar como urgente" na criação de processo',
+            description: 'Ao criar um processo a partir de uma assinatura, agora é possível marcar como urgente. Processos marcados como urgente aparecem com badge vermelho "Urgente" no módulo Processos e no Dashboard, facilitando a priorização visual.',
+          },
+        ],
+      },
+      {
+        moduleId: 'processos',
+        changes: [
+          {
+            type: 'feature',
+            title: 'Destaque visual para processos urgentes',
+            description: 'Processos marcados como urgente exibem badge vermelho com ícone de alerta na tabela, cards mobile e kanban, destacando-os visualmente para priorização.',
+          },
+        ],
+      },
+      {
+        moduleId: 'dashboard',
+        changes: [
+          {
+            type: 'feature',
+            title: 'Badge de urgência nos processos do Dashboard',
+            description: 'Na seção de processos do Dashboard, processos urgentes exibem badge vermelho "Urgente" abaixo do nome do cliente, permitindo identificação rápida de prioridades.',
+          },
+        ],
+      },
+    ],
+  },
+  {
     version: '1.9.608',
     date: '03/03/2026',
     summary: 'Requerimentos: badge para indeferidos com processo criado (tabela e cards).',

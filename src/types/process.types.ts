@@ -19,6 +19,8 @@ export type ProcessPracticeArea =
   | 'previdenciario'
   | 'civel';
 
+export type ProcessPriority = 'normal' | 'urgente';
+
 export type HearingMode = 'presencial' | 'online';
 
 export type RequirementRole = 'principal' | 'ms';
@@ -30,6 +32,7 @@ export interface Process {
   status: ProcessStatus;
   distributed_at: string | null;
   practice_area: ProcessPracticeArea;
+  priority: ProcessPriority;
   requirement_id?: string | null;
   requirement_role?: RequirementRole | null;
   court?: string | null;
@@ -53,6 +56,7 @@ export interface CreateProcessDTO {
   status?: ProcessStatus;
   distributed_at?: string | null;
   practice_area: ProcessPracticeArea;
+  priority?: ProcessPriority;
   requirement_id?: string | null;
   requirement_role?: RequirementRole | null;
   court?: string | null;
