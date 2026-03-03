@@ -3332,7 +3332,7 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
   const signedRequestsCount = requests.filter((r) => r.status === 'signed').length;
 
   return (
-    <div className="space-y-4 max-w-full overflow-x-hidden" data-signature-module>
+    <div className="flex flex-col gap-4 max-w-full overflow-x-hidden h-[calc(100vh-96px)] overflow-hidden" data-signature-module>
       {selectionMode && selectedRequestIds.size > 0 && (
         <div className="rounded-xl border border-slate-200 bg-white px-3 sm:px-4 py-3">
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
@@ -3368,9 +3368,10 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
         </div>
       )}
 
-      <div className="grid grid-cols-1 lg:grid-cols-[280px_1fr] gap-4">
+      <div className="flex flex-1 min-h-0 gap-4">
         {/* Sidebar Explorer */}
-        <div className="rounded-2xl border border-slate-200 bg-white p-3 shadow-sm ring-1 ring-black/5">
+        <div className="hidden lg:block w-[280px] flex-shrink-0">
+          <div className="rounded-2xl border border-slate-200 bg-white p-3 shadow-sm ring-1 ring-black/5">
           <div className="flex items-center justify-between mb-2 px-1">
             <div className="text-[11px] font-bold tracking-[0.18em] text-slate-500 uppercase">Pastas</div>
             <div className="flex items-center gap-1">
@@ -3416,12 +3417,12 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
                     <span className="absolute left-0 top-0 h-full w-1.5 bg-orange-500 rounded-l-xl" />
                   )}
                   <FolderOpen className={`w-4 h-4 ${selectedFolderId === null ? 'text-orange-600' : 'text-slate-400'}`} />
-                  <span className="truncate flex-1">Sem pasta</span>
+                  <span className="truncate flex-1">Caixa de Entrada</span>
                   <span
                     className={`shrink-0 tabular-nums rounded-full px-2.5 py-1 text-[11px] font-bold ${
                       selectedFolderId === null ? 'bg-orange-200 text-orange-800' : 'bg-slate-100 text-slate-600'
                     }`}
-                    title="Itens em Sem pasta"
+                    title="Itens em Caixa de Entrada"
                   >
                     {rootItemCount}
                   </span>
@@ -3431,9 +3432,10 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
               {renderFolderTree(null, 0)}
             </div>
           )}
+          </div>
         </div>
 
-        <div className="space-y-4">
+        <div className="flex-1 min-h-0 overflow-y-auto space-y-4">
           {/* Toolbar compacta e limpa */}
           <div className="rounded-xl border border-slate-200 bg-white px-3 sm:px-4 py-3">
         <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3 md:gap-4">

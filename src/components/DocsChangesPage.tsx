@@ -588,6 +588,23 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
 
 const releases: ReleaseNote[] = [
   {
+    version: '1.9.599',
+    date: '03/03/2026',
+    summary: 'Assinaturas: sidebar fixa e scroll apenas no conteúdo.',
+    modules: [
+      {
+        moduleId: 'assinaturas',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Sidebar de Pastas fixa com scroll independente',
+            description: 'A sidebar de Pastas fica fixa na tela enquanto apenas a listagem de documentos/solicitações rola no painel à direita.',
+          },
+        ],
+      },
+    ],
+  },
+  {
     version: '1.9.598',
     date: '03/03/2026',
     summary: 'Atualização de versão e changelog.',
