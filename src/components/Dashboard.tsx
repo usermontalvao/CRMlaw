@@ -1196,12 +1196,6 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToModule }) => {
                       </div>
                       <div className="flex-1 min-w-0">
                         <p className="text-xs sm:text-sm font-medium text-slate-900 truncate">{client?.full_name || 'Cliente'}</p>
-                        {process.priority === 'urgente' && (
-                          <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[10px] font-semibold bg-red-100 text-red-800 border border-red-200 shadow-sm mt-1">
-                            <AlertTriangle className="w-2.5 h-2.5" />
-                            Urgente
-                          </span>
-                        )}
                       </div>
                       <ChevronRight className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-slate-300 group-hover:text-slate-500 transition-colors" />
                     </div>

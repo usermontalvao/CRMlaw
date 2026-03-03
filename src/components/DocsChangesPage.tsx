@@ -588,6 +588,23 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
 
 const releases: ReleaseNote[] = [
   {
+    version: '1.9.610',
+    date: '03/03/2026',
+    summary: 'Processos: badge urgência exibido apenas na seção "Aguardando Confecção".',
+    modules: [
+      {
+        moduleId: 'processos',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Badge urgência apenas em "Aguardando Confecção"',
+            description: 'O badge "Urgente" agora aparece apenas na seção compacta "Aguardando Confecção" para focar na priorização de processos que precisam ser protocolados. Removido da tabela principal, cards mobile, kanban e dashboard.',
+          },
+        ],
+      },
+    ],
+  },
+  {
     version: '1.9.609',
     date: '03/03/2026',
     summary: 'Assinaturas: checkbox urgência na criação de processo com destaque em Processos e Dashboard.',
