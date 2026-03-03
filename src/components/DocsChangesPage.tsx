@@ -588,6 +588,23 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
 
 const releases: ReleaseNote[] = [
   {
+    version: '1.9.598',
+    date: '03/03/2026',
+    summary: 'Atualização de versão e changelog.',
+    modules: [
+      {
+        moduleId: 'sistema',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Versão incrementada',
+            description: 'Versão atualizada para 1.9.598 com registro no changelog.',
+          },
+        ],
+      },
+    ],
+  },
+  {
     version: '1.9.597',
     date: '27/02/2026',
     summary: 'Assinaturas: arrastar múltiplos itens selecionados no Explorer.',
