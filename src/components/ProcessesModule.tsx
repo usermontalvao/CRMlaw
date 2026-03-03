@@ -1789,6 +1789,17 @@ const ProcessesModule: React.FC<ProcessesModuleProps> = ({ forceCreate, entityId
       }
     });
 
+    // Ordenar: urgentes primeiro, depois por data de criação
+    Object.keys(grouped).forEach((status) => {
+      grouped[status as ProcessStatus].sort((a, b) => {
+        // Primeiro: urgentes vs não urgentes
+        if (a.priority === 'urgente' && b.priority !== 'urgente') return -1;
+        if (a.priority !== 'urgente' && b.priority === 'urgente') return 1;
+        // Segundo: por data de criação (mais recentes primeiro)
+        return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
+      });
+    });
+
     return grouped;
   }, [filteredProcesses]);
 

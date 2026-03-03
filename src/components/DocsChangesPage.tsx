@@ -588,6 +588,57 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
 
 const releases: ReleaseNote[] = [
   {
+    version: '1.9.613',
+    date: '03/03/2026',
+    summary: 'Dashboard: processos urgentes agora aparecem primeiro na lista.',
+    modules: [
+      {
+        moduleId: 'dashboard',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Ordenação por urgência no Dashboard',
+            description: 'Processos marcados como urgente agora aparecem primeiro na seção "Aguardando Confecção" do Dashboard, alinhando com a ordenação do módulo Processos para consistência visual.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.612',
+    date: '03/03/2026',
+    summary: 'Processos: urgência agora aparece primeiro na lista "Aguardando Confecção".',
+    modules: [
+      {
+        moduleId: 'processos',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Ordenação por urgência na lista de processos',
+            description: 'Processos marcados como urgente agora aparecem primeiro na seção "Aguardando Confecção", seguidos pelos processos normais. Isso facilita a priorização visual imediata dos processos mais importantes.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.611',
+    date: '03/03/2026',
+    summary: 'Dashboard: badge urgência restaurado para priorização visual.',
+    modules: [
+      {
+        moduleId: 'dashboard',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Badge urgência restaurado no Dashboard',
+            description: 'Badge "Urgente" restaurado na seção de processos do Dashboard para permitir identificação rápida de processos prioritários diretamente da tela inicial.',
+          },
+        ],
+      },
+    ],
+  },
+  {
     version: '1.9.610',
     date: '03/03/2026',
     summary: 'Processos: badge urgência exibido apenas na seção "Aguardando Confecção".',
