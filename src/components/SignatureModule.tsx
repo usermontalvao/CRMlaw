@@ -1536,6 +1536,12 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
     setSelectedRequestIds(new Set(filteredRequests.map((r) => r.id)));
   };
 
+  const selectAllInFolder = () => {
+    if (!selectedFolderId) return;
+    const folderItems = filteredRequestsByFolder.map((r) => r.id);
+    setSelectedRequestIds(new Set(folderItems));
+  };
+
   const clearSelectedRequests = () => {
     setSelectedRequestIds(new Set());
   };
@@ -3666,6 +3672,55 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
             </div>
           </div>
         </div>
+
+        {/* Painel de seleção em massa */}
+        {selectionMode && (
+          <div className="rounded-xl border border-slate-200 bg-white px-3 sm:px-4 py-3">
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+              <div className="text-xs text-slate-600">
+                <span className="font-semibold text-slate-900">{selectedRequestIds.size}</span> selecionado(s)
+                <span className="text-slate-400"> · </span>
+                <span className="text-slate-500">
+                  {selectedFolderId ? `Pasta atual (${filteredRequestsByFolder.length})` : `Filtro atual (${filteredRequests.length})`}
+                </span>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                {selectedFolderId && (
+                  <button
+                    type="button"
+                    onClick={selectAllInFolder}
+                    className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 transition hover:bg-slate-50"
+                  >
+                    Selecionar tudo da pasta
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={selectAllFilteredRequests}
+                  className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 transition hover:bg-slate-50"
+                >
+                  Selecionar todos
+                </button>
+                <button
+                  type="button"
+                  onClick={clearSelectedRequests}
+                  className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 transition hover:bg-slate-50"
+                >
+                  Limpar seleção
+                </button>
+                <button
+                  type="button"
+                  onClick={deleteSelectedRequests}
+                  disabled={bulkDeleteLoading}
+                  className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs font-semibold text-red-700 transition hover:bg-red-100 disabled:opacity-50"
+                >
+                  {bulkDeleteLoading ? <Loader2 className="w-3 h-3 animate-spin" /> : <Trash2 className="w-3 h-3" />}
+                  Remover
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* Painel: Configuração de autenticação pública */}
         {showPublicAuthSettings && (

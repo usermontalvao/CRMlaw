@@ -587,6 +587,7 @@ const RequirementsModule: React.FC<RequirementsModuleProps> = ({ forceCreate, en
   });
   const [loadingLinkedProcesses, setLoadingLinkedProcesses] = useState(false);
   const [requirementsWithMs, setRequirementsWithMs] = useState<Set<string>>(new Set());
+  const [requirementsWithProcess, setRequirementsWithProcess] = useState<Set<string>>(new Set());
   const [exportingExcel, setExportingExcel] = useState(false);
   const [currentProfile, setCurrentProfile] = useState<Profile | null>(null);
   const [members, setMembers] = useState<Profile[]>([]);
@@ -698,6 +699,11 @@ const RequirementsModule: React.FC<RequirementsModuleProps> = ({ forceCreate, en
       // Atualizar lista de requerimentos com MS
       if (ms && !requirementsWithMs.has(selectedRequirementForView.id)) {
         setRequirementsWithMs(prev => new Set([...prev, selectedRequirementForView.id]));
+      }
+
+      // Atualizar lista de requerimentos indeferidos com processo
+      if (selectedRequirementForView.status === 'indeferido' && (principal || ms)) {
+        setRequirementsWithProcess(prev => new Set([...prev, selectedRequirementForView.id]));
       }
 
       toast.success(role === 'ms' ? 'Processo de MS criado com sucesso.' : 'Processo criado com sucesso.');
@@ -887,6 +893,11 @@ const RequirementsModule: React.FC<RequirementsModuleProps> = ({ forceCreate, en
         const principal = processes.find((p) => p.requirement_role === 'principal') || null;
         const ms = processes.find((p) => p.requirement_role === 'ms') || null;
         setLinkedProcesses({ principal, ms });
+
+        // Atualizar lista de requerimentos indeferidos com processo
+        if (selectedRequirementForView.status === 'indeferido' && (principal || ms)) {
+          setRequirementsWithProcess(prev => new Set([...prev, selectedRequirementForView.id]));
+        }
       } catch (err) {
         if (!active) return;
         console.error('Erro ao buscar processos vinculados:', err);
@@ -1625,6 +1636,24 @@ const RequirementsModule: React.FC<RequirementsModuleProps> = ({ forceCreate, en
         }
       }
       await autoUpdatePericiaStatuses(data);
+
+      // Carregar processos para requerimentos indeferidos
+      const indeferidos = data.filter(req => req.status === 'indeferido');
+      if (indeferidos.length > 0) {
+        try {
+          const processPromises = indeferidos.map(async (req) => {
+            const processes = await processService.listProcesses({ requirement_id: req.id });
+            return { requirementId: req.id, hasProcess: processes.length > 0 };
+          });
+          const processResults = await Promise.all(processPromises);
+          const withProcess = new Set(
+            processResults.filter(r => r.hasProcess).map(r => r.requirementId)
+          );
+          setRequirementsWithProcess(withProcess);
+        } catch (err) {
+          console.error('Erro ao carregar processos de indeferidos:', err);
+        }
+      }
     } catch (err: any) {
       setError(err.message || 'Não foi possível atualizar a lista de requerimentos.');
     } finally {
@@ -3925,6 +3954,12 @@ const RequirementsModule: React.FC<RequirementsModuleProps> = ({ forceCreate, en
                               MS
                             </span>
                           )}
+                          {requirement.status === 'indeferido' && requirementsWithProcess.has(requirement.id) && (
+                            <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-semibold bg-gradient-to-r from-indigo-50 to-blue-50 text-indigo-700 border border-indigo-200 shadow-sm">
+                              <FileText className="w-3 h-3" />
+                              Processo
+                            </span>
+                          )}
                         </div>
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
@@ -4011,6 +4046,12 @@ const RequirementsModule: React.FC<RequirementsModuleProps> = ({ forceCreate, en
                       {requirementsWithMs.has(requirement.id) && (
                         <span className="inline-flex items-center px-1.5 py-0.5 rounded-full text-xs font-semibold bg-purple-100 text-purple-800 border border-purple-200">
                           MS
+                        </span>
+                      )}
+                      {requirement.status === 'indeferido' && requirementsWithProcess.has(requirement.id) && (
+                        <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-xs font-semibold bg-gradient-to-r from-indigo-50 to-blue-50 text-indigo-700 border border-indigo-200 shadow-sm">
+                          <FileText className="w-3 h-3" />
+                          Processo
                         </span>
                       )}
                     </div>

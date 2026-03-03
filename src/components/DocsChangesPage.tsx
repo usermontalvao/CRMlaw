@@ -588,6 +588,57 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
 
 const releases: ReleaseNote[] = [
   {
+    version: '1.9.608',
+    date: '03/03/2026',
+    summary: 'Requerimentos: badge para indeferidos com processo criado (tabela e cards).',
+    modules: [
+      {
+        moduleId: 'requerimentos',
+        changes: [
+          {
+            type: 'feature',
+            title: 'Badge "Processo" para requerimentos indeferidos',
+            description: 'Quando um requerimento está marcado como "Indeferido" e possui um processo (principal ou MS) criado, exibe um badge azul "Processo" ao lado da data de entrada (na tabela desktop e nos cards mobile), facilitando a identificação visual.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.607',
+    date: '03/03/2026',
+    summary: 'Requerimentos: badge para indeferidos com processo criado.',
+    modules: [
+      {
+        moduleId: 'requerimentos',
+        changes: [
+          {
+            type: 'feature',
+            title: 'Badge "Processo" para requerimentos indeferidos',
+            description: 'Quando um requerimento está marcado como "Indeferido" e possui um processo (principal ou MS) criado, exibe um badge azul "Processo" ao lado da data de entrada, facilitando a identificação visual.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.606',
+    date: '03/03/2026',
+    summary: 'Assinaturas: opção "Selecionar tudo" para pasta atual no Explorer.',
+    modules: [
+      {
+        moduleId: 'assinaturas',
+        changes: [
+          {
+            type: 'feature',
+            title: 'Botão "Selecionar tudo da pasta" no modo de seleção',
+            description: 'Ao ativar o modo de seleção no Explorer, aparece botão "Selecionar tudo da pasta" que seleciona apenas os documentos da pasta atual, além do botão "Selecionar todos" que seleciona todos os documentos filtrados.',
+          },
+        ],
+      },
+    ],
+  },
+  {
     version: '1.9.605',
     date: '03/03/2026',
     summary: 'Assinaturas: reordenação de pastas com drop entre itens mais preciso.',
