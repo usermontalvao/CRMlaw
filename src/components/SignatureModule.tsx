@@ -6,6 +6,7 @@ import {
   FileText, Upload, Plus, Trash2, X, Check, Clock, CheckCircle, Send, Copy,
   User, Mail, Loader2, ChevronLeft, Eye, EyeOff, Filter, Search, MousePointer2,
   Type, Hash, Calendar, PenTool, Users, Download, AlertTriangle, ExternalLink, ChevronRight, ZoomIn, ZoomOut, Shield, Lightbulb, Pencil, Maximize2, Minimize2, LayoutList, LayoutGrid, Globe, FolderOpen,
+  ArrowUpDown,
 } from 'lucide-react';
 import { useToastContext } from '../contexts/ToastContext';
 import { useAuth } from '../contexts/AuthContext';
@@ -132,6 +133,7 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
     itemType?: 'signature_request' | 'generated_document';
   }>(null);
   const [folderReorderOver, setFolderReorderOver] = useState<null | { parentId: string | null; beforeId: string | null }>(null);
+  const [folderReorderMode, setFolderReorderMode] = useState(false);
 
   const dragImageElRef = useRef<HTMLDivElement | null>(null);
   const suppressExplorerClickRef = useRef(false);
@@ -1132,7 +1134,8 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
 
     if (payload?.type === 'folder') {
       if (typeof payload?.id !== 'string') return;
-      await handleMoveFolder(payload.id, targetFolderId);
+      // Pastas não são movidas/aninhadas por drop.
+      // Reordenação de pastas é feita exclusivamente pelo modo "Organizar" via handleReorderFolderDrop.
       return;
     }
 
@@ -1300,51 +1303,78 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
     if (!children.length) return null;
 
     return (
-      <div className={depth === 0 ? 'space-y-2' : 'space-y-2 mt-2'}>
-        {children.map((folder) => {
+      <div className={depth === 0 ? 'space-y-2' : 'space-y-2 mt-1'}>
+        {children.map((folder, index) => {
           const isSelected = selectedFolderId === folder.id;
           const isDraggingThisFolder = draggingExplorer?.type === 'folder' && draggingExplorer.id === folder.id;
           const itemCount = folderItemCountById.get(folder.id) ?? 0;
+          const nextSiblingId = children[index + 1]?.id ?? null;
+          const isInsertLineHere =
+            folderReorderMode &&
+            isDraggingExplorer &&
+            folderReorderOver?.parentId === parentId &&
+            folderReorderOver?.beforeId === folder.id;
           return (
             <div key={folder.id}>
-              <div
-                onDragOver={handleAllowDrop}
-                onDragEnter={() => setFolderReorderOver({ parentId, beforeId: folder.id })}
-                onDragLeave={() => setFolderReorderOver((prev) => (prev?.parentId === parentId && prev?.beforeId === folder.id ? null : prev))}
-                onDrop={(e) => void handleReorderFolderDrop(e, parentId, folder.id)}
-                className={`px-1 ${
-                  isDraggingExplorer && folderReorderOver?.parentId === parentId && folderReorderOver?.beforeId === folder.id
-                    ? 'py-1'
-                    : ''
-                }`}
-              >
-                <div
-                  className={`h-0.5 rounded-full transition ${
-                    isDraggingExplorer && folderReorderOver?.parentId === parentId && folderReorderOver?.beforeId === folder.id
-                      ? 'bg-orange-500'
-                      : 'bg-transparent'
-                  }`}
-                />
-              </div>
+              {folderReorderMode && (
+                <div className="px-1">
+                  <div className={`h-0.5 rounded-full transition ${isInsertLineHere ? 'bg-orange-500' : 'bg-transparent'}`} />
+                </div>
+              )}
 
               <div
                 className={`group relative flex items-center rounded-xl transition ${
                   isDraggingExplorer && dragOverFolderId === folder.id ? 'ring-2 ring-orange-500/40 bg-orange-50/40' : ''
                 }`}
                 onDragOver={(e) => {
-                  handleAllowDrop(e);
-                  setDragOverFolderId(folder.id);
+                  // Reordenação de pastas (modo organizar) usando midpoint do item
+                  if (folderReorderMode && draggingExplorer?.type === 'folder') {
+                    handleAllowDrop(e);
+                    const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+                    const midpointY = rect.top + rect.height / 2;
+                    const beforeId = e.clientY < midpointY ? folder.id : nextSiblingId;
+                    setFolderReorderOver({ parentId, beforeId });
+                    return;
+                  }
+
+                  // Drop de itens (documentos) dentro de pasta
+                  if (draggingExplorer?.type === 'item') {
+                    handleAllowDrop(e);
+                    setDragOverFolderId(folder.id);
+                  }
                 }}
-                onDragEnter={() => handleFolderDragEnter(folder.id)}
-                onDragLeave={(e) => handleFolderDragLeave(e, folder.id)}
-                onDrop={(e) => void handleDropOnFolder(e, folder.id)}
+                onDragEnter={() => {
+                  if (draggingExplorer?.type !== 'item') return;
+                  handleFolderDragEnter(folder.id);
+                }}
+                onDragLeave={(e) => {
+                  if (draggingExplorer?.type !== 'item') return;
+                  handleFolderDragLeave(e, folder.id);
+                }}
+                onDrop={(e) => {
+                  // Reordenação de pastas (modo organizar)
+                  if (folderReorderMode && draggingExplorer?.type === 'folder') {
+                    const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+                    const midpointY = rect.top + rect.height / 2;
+                    const beforeId = e.clientY < midpointY ? folder.id : nextSiblingId;
+                    void handleReorderFolderDrop(e, parentId, beforeId);
+                    return;
+                  }
+
+                  // Drop de itens (documentos)
+                  if (draggingExplorer?.type === 'item') {
+                    void handleDropOnFolder(e, folder.id);
+                  }
+                }}
               >
                 <div
-                  draggable
+                  draggable={folderReorderMode}
                   onDragStart={(e) => {
+                    if (!folderReorderMode) return;
                     setExplorerDragData(e, { type: 'folder', id: folder.id }, e.currentTarget as HTMLElement);
                   }}
                   onDragEnd={() => {
+                    if (!folderReorderMode) return;
                     setIsDraggingExplorer(false);
                     setDragOverFolderId(null);
                     setDraggingExplorer(null);
@@ -1359,21 +1389,33 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
                     releaseSuppressExplorerClick();
                   }}
                   onClick={() => setSelectedFolderId(folder.id)}
-                  className={`relative flex-1 flex items-center gap-2.5 rounded-xl px-3.5 py-2.5 pr-24 text-left text-[13px] font-semibold transition cursor-grab active:cursor-grabbing ${
+                  className={`relative flex-1 w-full flex items-center justify-between rounded-xl px-3.5 py-2.5 pr-24 text-left text-[13px] font-semibold transition ${
                     isSelected
                       ? 'bg-orange-50 text-slate-900 shadow-sm ring-1 ring-orange-500/10'
                       : 'text-slate-700 hover:bg-slate-50'
                   } ${
                     isDraggingThisFolder ? 'opacity-60 scale-[1.02] shadow-lg shadow-slate-900/10 bg-white ring-1 ring-slate-200' : ''
+                  } ${
+                    folderReorderMode ? 'cursor-grab active:cursor-grabbing' : 'cursor-pointer'
+                  } ${
+                    depth > 0 ? "before:content-[''] before:absolute before:left-[18px] before:top-2 before:bottom-2 before:w-px before:bg-slate-200" : ''
                   }`}
-                  style={{ paddingLeft: `${12 + depth * 16}px` }}
+                  style={depth > 0 ? { paddingLeft: `${14 + depth * 16}px` } : undefined}
                   title={folder.name}
                 >
                   {isSelected && (
                     <span className="absolute left-0 top-0 h-full w-1.5 bg-orange-500 rounded-l-xl" />
                   )}
-                  <FolderOpen className={`w-4 h-4 ${isSelected ? 'text-orange-600' : 'text-slate-400'}`} />
-                  <span className="truncate flex-1">{folder.name}</span>
+                  <span className="min-w-0 flex items-center gap-2.5">
+                    <FolderOpen className={`w-4 h-4 ${isSelected ? 'text-orange-600' : 'text-slate-400'}`} />
+                    <span
+                      className="text-left leading-snug"
+                      style={{ display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}
+                      title={folder.name}
+                    >
+                      {folder.name}
+                    </span>
+                  </span>
                   <span
                     className={`shrink-0 tabular-nums rounded-full px-2.5 py-1 text-[11px] font-bold ${
                       isSelected ? 'bg-orange-200 text-orange-800' : 'bg-slate-100 text-slate-600'
@@ -1387,12 +1429,22 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
                 <div
                   className="absolute right-1 top-1/2 -translate-y-1/2 flex items-center gap-1 px-1 py-0.5 rounded-lg bg-white/90 backdrop-blur-sm border border-slate-200 shadow-sm opacity-0 group-hover:opacity-100 transition"
                   onDragOver={(e) => {
+                    if (draggingExplorer?.type === 'folder') return;
                     handleAllowDrop(e);
                     setDragOverFolderId(folder.id);
                   }}
-                  onDragEnter={() => handleFolderDragEnter(folder.id)}
-                  onDragLeave={(e) => handleFolderDragLeave(e, folder.id)}
-                  onDrop={(e) => void handleDropOnFolder(e, folder.id)}
+                  onDragEnter={() => {
+                    if (draggingExplorer?.type === 'folder') return;
+                    handleFolderDragEnter(folder.id);
+                  }}
+                  onDragLeave={(e) => {
+                    if (draggingExplorer?.type === 'folder') return;
+                    handleFolderDragLeave(e, folder.id);
+                  }}
+                  onDrop={(e) => {
+                    if (draggingExplorer?.type === 'folder') return;
+                    void handleDropOnFolder(e, folder.id);
+                  }}
                 >
                   <button
                     type="button"
@@ -1435,17 +1487,21 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
         })}
 
         <div
-          onDragOver={handleAllowDrop}
-          onDragEnter={() => setFolderReorderOver({ parentId, beforeId: null })}
-          onDragLeave={() => setFolderReorderOver((prev) => (prev?.parentId === parentId && prev?.beforeId === null ? null : prev))}
-          onDrop={(e) => void handleReorderFolderDrop(e, parentId, null)}
+          onDragOver={folderReorderMode ? handleAllowDrop : undefined}
+          onDragEnter={folderReorderMode ? () => setFolderReorderOver({ parentId, beforeId: null }) : undefined}
+          onDragLeave={
+            folderReorderMode
+              ? () => setFolderReorderOver((prev) => (prev?.parentId === parentId && prev?.beforeId === null ? null : prev))
+              : undefined
+          }
+          onDrop={folderReorderMode ? (e) => void handleReorderFolderDrop(e, parentId, null) : undefined}
           className={`px-1 ${
-            isDraggingExplorer && folderReorderOver?.parentId === parentId && folderReorderOver?.beforeId === null ? 'py-1' : ''
+            folderReorderMode && isDraggingExplorer && folderReorderOver?.parentId === parentId && folderReorderOver?.beforeId === null ? 'py-1' : folderReorderMode ? 'py-0.5' : 'hidden'
           }`}
         >
           <div
             className={`h-0.5 rounded-full transition ${
-              isDraggingExplorer && folderReorderOver?.parentId === parentId && folderReorderOver?.beforeId === null
+              folderReorderMode && isDraggingExplorer && folderReorderOver?.parentId === parentId && folderReorderOver?.beforeId === null
                 ? 'bg-orange-500'
                 : 'bg-transparent'
             }`}
@@ -3377,6 +3433,27 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
             <div className="flex items-center gap-1">
               <button
                 type="button"
+                onClick={() => {
+                  setFolderReorderMode((prev) => {
+                    const next = !prev;
+                    if (!next) {
+                      setIsDraggingExplorer(false);
+                      setDraggingExplorer(null);
+                      setDragOverFolderId(null);
+                      setFolderReorderOver(null);
+                    }
+                    return next;
+                  });
+                }}
+                className={`p-1.5 rounded-lg transition ${
+                  folderReorderMode ? 'bg-orange-50 text-orange-700 ring-1 ring-orange-500/20' : 'hover:bg-slate-100 text-slate-500'
+                }`}
+                title={folderReorderMode ? 'Sair do modo de organização' : 'Organizar pastas'}
+              >
+                <ArrowUpDown className="w-4 h-4" />
+              </button>
+              <button
+                type="button"
                 onClick={() => openCreateFolderModal(null)}
                 className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-500"
                 title="Nova pasta"
@@ -3396,18 +3473,28 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
               <div
                 draggable={false}
                 onDragOver={(e) => {
+                  if (draggingExplorer?.type === 'folder') return;
                   handleAllowDrop(e);
                   setDragOverFolderId(null);
                 }}
-                onDragEnter={() => handleFolderDragEnter(null)}
-                onDragLeave={(e) => handleFolderDragLeave(e, null)}
-                onDrop={(e) => void handleDropOnFolder(e, null)}
+                onDragEnter={() => {
+                  if (draggingExplorer?.type === 'folder') return;
+                  handleFolderDragEnter(null);
+                }}
+                onDragLeave={(e) => {
+                  if (draggingExplorer?.type === 'folder') return;
+                  handleFolderDragLeave(e, null);
+                }}
+                onDrop={(e) => {
+                  if (draggingExplorer?.type === 'folder') return;
+                  void handleDropOnFolder(e, null);
+                }}
                 className={isDraggingExplorer && dragOverFolderId === null ? 'ring-2 ring-orange-500/40 rounded-xl bg-orange-50/40' : ''}
               >
                 <button
                   type="button"
                   onClick={() => setSelectedFolderId(null)}
-                  className={`relative w-full flex items-center gap-2.5 rounded-xl px-3.5 py-2.5 pr-10 text-left text-[13px] font-semibold transition ${
+                  className={`relative w-full flex items-center justify-between rounded-xl px-3.5 py-2.5 pr-10 text-left text-[13px] font-semibold transition ${
                     selectedFolderId === null
                       ? 'bg-orange-50 text-slate-900 shadow-sm ring-1 ring-orange-500/10'
                       : 'text-slate-700 hover:bg-slate-50'
@@ -3416,8 +3503,16 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
                   {selectedFolderId === null && (
                     <span className="absolute left-0 top-0 h-full w-1.5 bg-orange-500 rounded-l-xl" />
                   )}
-                  <FolderOpen className={`w-4 h-4 ${selectedFolderId === null ? 'text-orange-600' : 'text-slate-400'}`} />
-                  <span className="truncate flex-1">Caixa de Entrada</span>
+                  <span className="min-w-0 flex items-center gap-2.5">
+                    <FolderOpen className={`w-4 h-4 ${selectedFolderId === null ? 'text-orange-600' : 'text-slate-400'}`} />
+                    <span
+                      className="text-left leading-snug"
+                      style={{ display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}
+                      title="Caixa de Entrada"
+                    >
+                      Caixa de Entrada
+                    </span>
+                  </span>
                   <span
                     className={`shrink-0 tabular-nums rounded-full px-2.5 py-1 text-[11px] font-bold ${
                       selectedFolderId === null ? 'bg-orange-200 text-orange-800' : 'bg-slate-100 text-slate-600'

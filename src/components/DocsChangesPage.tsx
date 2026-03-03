@@ -588,6 +588,108 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
 
 const releases: ReleaseNote[] = [
   {
+    version: '1.9.605',
+    date: '03/03/2026',
+    summary: 'Assinaturas: reordenação de pastas com drop entre itens mais preciso.',
+    modules: [
+      {
+        moduleId: 'assinaturas',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Drop zone com midpoint para inserir acima/abaixo',
+            description: 'Melhorada a detecção da área de drop ao reorganizar pastas: a inserção é calculada pelo midpoint (eixo Y) do item e o indicador de inserção aparece entre as pastas, deixando o drop previsível.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.604',
+    date: '03/03/2026',
+    summary: 'Assinaturas: correção na organização de pastas (drag-and-drop).',
+    modules: [
+      {
+        moduleId: 'assinaturas',
+        changes: [
+          {
+            type: 'fix',
+            title: 'Pastas não viram subpastas automaticamente ao arrastar',
+            description: 'Ao arrastar pastas no modo Organizar, o drop não aninha pastas em outras pastas. A organização fica restrita à reordenação (sort_order) pelas barras de inserção, e o drop em pasta permanece para mover documentos.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.603',
+    date: '03/03/2026',
+    summary: 'Assinaturas: opção para organizar pastas no Explorer.',
+    modules: [
+      {
+        moduleId: 'assinaturas',
+        changes: [
+          {
+            type: 'feature',
+            title: 'Modo de organização de pastas (arrastar e soltar)',
+            description: 'Adicionada opção para ativar/desativar a reorganização de pastas por drag-and-drop no Explorer, evitando movimentações acidentais quando o modo estiver desligado.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.602',
+    date: '03/03/2026',
+    summary: 'Assinaturas: nomes de pastas com melhor legibilidade.',
+    modules: [
+      {
+        moduleId: 'assinaturas',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Nomes de pastas com 2 linhas e tooltip',
+            description: 'Reduzido truncamento agressivo no Explorer: nomes das pastas podem ocupar até 2 linhas e exibem tooltip com o texto completo.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.601',
+    date: '03/03/2026',
+    summary: 'Assinaturas: alinhamento do menu de pastas (sidebar).',
+    modules: [
+      {
+        moduleId: 'assinaturas',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Itens do menu alinhados à esquerda com badge à direita',
+            description: 'Padronizado o alinhamento do Explorer: ícone e nome ficam à esquerda e o contador (badge) permanece à direita, evitando aparência de conteúdo centralizado.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.600',
+    date: '03/03/2026',
+    summary: 'Assinaturas: Explorer de Pastas com hierarquia visual consistente.',
+    modules: [
+      {
+        moduleId: 'assinaturas',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Padronização visual por nível no menu de pastas',
+            description: 'Pastas do mesmo nível agora têm o mesmo tamanho, alinhamento e espaçamento. Indentação e indicador visual são aplicados apenas em subpastas reais.',
+          },
+        ],
+      },
+    ],
+  },
+  {
     version: '1.9.599',
     date: '03/03/2026',
     summary: 'Assinaturas: sidebar fixa e scroll apenas no conteúdo.',
