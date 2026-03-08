@@ -21,6 +21,7 @@ import { calendarService } from '../services/calendar.service';
 import type { DjenComunicacaoLocal } from '../types/djen.types';
 import type { Deadline } from '../types/deadline.types';
 import type { CalendarEvent } from '../types/calendar.types';
+import { matchesNormalizedSearch } from '../utils/search';
 
 type NotificationItem = {
   id: string;
@@ -188,11 +189,7 @@ const NotificationsModule: React.FC<NotificationsModuleProps> = ({ onNavigateToM
       
       // Busca
       if (searchTerm) {
-        const search = searchTerm.toLowerCase();
-        return (
-          notif.title.toLowerCase().includes(search) ||
-          notif.description.toLowerCase().includes(search)
-        );
+        return matchesNormalizedSearch(searchTerm, [notif.title, notif.description]);
       }
       
       return true;

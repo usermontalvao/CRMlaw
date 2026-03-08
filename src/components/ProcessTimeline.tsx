@@ -29,6 +29,7 @@ import {
   ExternalLink,
   Users,
 } from 'lucide-react';
+import { matchesNormalizedSearch } from '../utils/search';
 import { processTimelineService, type TimelineEvent } from '../services/processTimeline.service';
 import { processService } from '../services/process.service';
 import type { ProcessStatus } from '../types/process.types';
@@ -467,9 +468,7 @@ export const ProcessTimeline: React.FC<ProcessTimelineProps> = ({
   const filteredEvents = events.filter(event => {
     const matchesType = filterType === 'todos' || event.type === filterType;
     const matchesGrau = filterGrau === 'todos' || event.grauRecursal === filterGrau;
-    const matchesSearch = !searchTerm || 
-      event.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      (event.description || '').toLowerCase().includes(searchTerm.toLowerCase());
+    const matchesSearch = !searchTerm || matchesNormalizedSearch(searchTerm, [event.title, event.description || '']);
     return matchesType && matchesGrau && matchesSearch;
   });
 

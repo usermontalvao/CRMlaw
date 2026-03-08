@@ -36,6 +36,7 @@ import {
 import * as XLSX from 'xlsx';
 import { saveAs } from 'file-saver';
 import { PDFDocument, StandardFonts, rgb } from 'pdf-lib';
+import { matchesNormalizedSearch } from '../utils/search';
 import { deadlineService } from '../services/deadline.service';
 import { processService } from '../services/process.service';
 import { requirementService } from '../services/requirement.service';
@@ -478,11 +479,10 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
     }
 
     if (filterSearch.trim()) {
-      const term = filterSearch.trim().toLowerCase();
+      const term = filterSearch;
       filtered = filtered.filter(
         (deadline) =>
-          deadline.title.toLowerCase().includes(term) ||
-          (deadline.description && deadline.description.toLowerCase().includes(term)),
+          matchesNormalizedSearch(term, [deadline.title, deadline.description || '']),
       );
     }
 

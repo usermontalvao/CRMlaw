@@ -51,7 +51,8 @@ import {
 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { profileService, type Profile } from '../services/profile.service';
-import { feedPostsService, type FeedPost, type EntityReference, type PreviewData, type TagRecord } from '../services/feedPosts.service';
+import { feedPostsService, type EntityReference, type FeedPost, type PreviewData, type TagRecord } from '../services/feedPosts.service';
+import { matchesNormalizedSearch } from '../utils/search';
 import { feedPollsService, type FeedPoll } from '../services/feedPolls.service';
 import { clientService } from '../services/client.service';
 import { caseService } from '../services/case.service';
@@ -313,9 +314,8 @@ export const UserProfilePage: React.FC<UserProfilePageProps> = ({ userId, onClos
   }, [allProfiles]);
 
   const filteredAudienceProfiles = useMemo(() => {
-    const q = audienceSearch.trim().toLowerCase();
-    if (!q) return allProfiles;
-    return allProfiles.filter((p) => (p.name || '').toLowerCase().includes(q));
+    if (!audienceSearch.trim()) return allProfiles;
+    return allProfiles.filter((p) => matchesNormalizedSearch(audienceSearch, [p.name]));
   }, [audienceSearch, allProfiles]);
 
   useEffect(() => {
@@ -340,7 +340,7 @@ export const UserProfilePage: React.FC<UserProfilePageProps> = ({ userId, onClos
 
   const filteredProfiles = useMemo(() => {
     if (!mentionSearch) return allProfiles;
-    return allProfiles.filter((p) => (p.name || '').toLowerCase().includes(mentionSearch.toLowerCase()));
+    return allProfiles.filter((p) => matchesNormalizedSearch(mentionSearch, [p.name]));
   }, [mentionSearch, allProfiles]);
 
   const myProfile = useMemo(() => {

@@ -21,6 +21,7 @@ import {
 import PizZip from 'pizzip';
 import Docxtemplater from 'docxtemplater';
 import { saveAs } from 'file-saver';
+import { matchesNormalizedSearch } from '../utils/search';
 import { standardPetitionService } from '../services/standardPetition.service';
 import { clientService } from '../services/client.service';
 import { useToastContext } from '../contexts/ToastContext';
@@ -60,6 +61,23 @@ const CATEGORY_COLORS: Record<StandardPetitionCategory, string> = {
   recurso: 'bg-amber-100 text-amber-700 border-amber-200 dark:bg-amber-950/40 dark:text-amber-200 dark:border-amber-900/60',
   contestacao: 'bg-purple-100 text-purple-700 border-purple-200 dark:bg-purple-950/40 dark:text-purple-200 dark:border-purple-900/60',
   outros: 'bg-slate-100 text-slate-700 border-slate-200 dark:bg-zinc-800 dark:text-zinc-200 dark:border-zinc-700',
+};
+
+const getManausNow = () => {
+  const now = new Date();
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'America/Manaus',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).formatToParts(now);
+
+  const year = parts.find((part) => part.type === 'year')?.value;
+  const month = parts.find((part) => part.type === 'month')?.value;
+  const day = parts.find((part) => part.type === 'day')?.value;
+
+  if (!year || !month || !day) return now;
+  return new Date(`${year}-${month}-${day}T12:00:00-04:00`);
 };
 
 interface StandardPetitionsModuleProps {
@@ -170,8 +188,7 @@ const StandardPetitionsModule: React.FC<StandardPetitionsModuleProps> = ({ onNav
     return petitions.filter((p) => {
       const matchesSearch =
         !searchTerm ||
-        p.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        (p.description || '').toLowerCase().includes(searchTerm.toLowerCase());
+        matchesNormalizedSearch(searchTerm, [p.name, p.description || '']);
       const matchesCategory = !categoryFilter || p.category === categoryFilter;
       return matchesSearch && matchesCategory;
     });
@@ -611,7 +628,7 @@ const StandardPetitionsModule: React.FC<StandardPetitionsModuleProps> = ({ onNav
         content = content.replace(regex, formattedValue);
       });
 
-      const today = new Date();
+      const today = getManausNow();
       const dateFormatted = today.toLocaleDateString('pt-BR', { day: '2-digit', month: 'long', year: 'numeric' });
       content = content.replace(/\[\[DATA\]\]/gi, dateFormatted);
       content = content.replace(/\[\[DATA_ATUAL\]\]/gi, dateFormatted);

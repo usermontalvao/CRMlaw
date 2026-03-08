@@ -38,6 +38,8 @@ import { processService } from '../services/process.service';
 import { deadlineService } from '../services/deadline.service';
 import { calendarService } from '../services/calendar.service';
 import { profileService } from '../services/profile.service';
+import { matchesNormalizedSearch } from '../utils/search';
+import { formatDate as formatDateValue, formatDateTime as formatDateTimeValue } from '../utils/formatters';
 import { settingsService, type DjenConfig } from '../services/settings.service';
 import { userNotificationService } from '../services/userNotification.service';
 import { intimationAnalysisService } from '../services/intimationAnalysis.service';
@@ -47,6 +49,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { exportToCSV, exportToExcel, exportToPDF } from '../utils/exportIntimations';
 import { djenSyncStatusService, type DjenSyncLog } from '../services/djenSyncStatus.service';
 import { supabase } from '../config/supabase';
+import { useSelectionState } from '../hooks/useSelectionState';
 import type { DjenComunicacaoLocal, DjenConsultaParams, UpdateDjenComunicacaoDTO } from '../types/djen.types';
 import type { Client } from '../types/client.types';
 import type { Process } from '../types/process.types';
@@ -163,8 +166,14 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
   const [prescriptionSuccess, setPrescriptionSuccess] = useState<string | null>(null);
 
   // Seleção múltipla
-  const [selectionMode, setSelectionMode] = useState(false);
-  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const {
+    selectionMode,
+    selectedIds,
+    setSelectionMode,
+    toggleSelectedId,
+    clearSelectedIds,
+    disableSelectionMode,
+  } = useSelectionState<string>();
 
   // IA Analysis
   const [aiAnalysis, setAiAnalysis] = useState<Map<string, IntimationAnalysis>>(new Map());
@@ -282,7 +291,7 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
     try {
       const deleted = await djenLocalService.deleteByIds(ids);
       setIntimations(prev => prev.filter(int => !ids.includes(int.id)));
-      setSelectedIds(new Set());
+      clearSelectedIds();
       toast.success('Intimações removidas', `${deleted} registro(s) excluído(s) com sucesso.`);
     } catch (err: any) {
       toast.error('Erro ao remover', err.message);
@@ -840,8 +849,7 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
         updated++;
       }
       await reloadIntimations();
-      setSelectedIds(new Set());
-      setSelectionMode(false);
+      disableSelectionMode();
       toast.success('Sucesso', `${updated} intimações vinculadas`);
     } catch (err: any) {
       toast.error('Erro', err.message);
@@ -857,8 +865,7 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
       await handleMarkAsRead(id);
     }
     
-    setSelectedIds(new Set());
-    setSelectionMode(false);
+    disableSelectionMode();
   };
 
   // Exportar selecionadas
@@ -1001,14 +1008,14 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
 
           // Busca por nome do cliente
           const clientName = getClientName(i.client_id);
-          const clientMatch = clientName?.toLowerCase().includes(term);
+          const clientMatch = matchesNormalizedSearch(term, [clientName || '']);
 
           return (
             numeroProcessoLower?.includes(term) ||
             numeroProcessoMascaraLower?.includes(term) ||
             processCodeLower?.includes(term) ||
-            i.texto?.toLowerCase().includes(term) ||
-            i.nome_orgao?.toLowerCase().includes(term) ||
+            matchesNormalizedSearch(term, [i.texto || '']) ||
+            matchesNormalizedSearch(term, [i.nome_orgao || '']) ||
             clientMatch ||
             (Boolean(termDigits) && (numeroProcessoDigits.includes(termDigits) || numeroProcessoMascaraDigits.includes(termDigits) || processCodeDigits.includes(termDigits)))
           );
@@ -1147,11 +1154,7 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
 
   const formatDate = (dateStr: string) => {
     try {
-      return new Date(dateStr).toLocaleDateString('pt-BR', {
-        day: '2-digit',
-        month: '2-digit',
-        year: 'numeric',
-      });
+      return formatDateValue(dateStr);
     } catch {
       return dateStr;
     }
@@ -1159,27 +1162,10 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
 
   const formatDateTime = (dateStr: string) => {
     try {
-      return new Date(dateStr).toLocaleString('pt-BR', {
-        day: '2-digit',
-        month: '2-digit',
-        hour: '2-digit',
-        minute: '2-digit',
-      });
+      return formatDateTimeValue(dateStr);
     } catch {
       return dateStr;
     }
-  };
-
-  const toggleSelection = (id: string) => {
-    setSelectedIds((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) {
-        next.delete(id);
-      } else {
-        next.add(id);
-      }
-      return next;
-    });
   };
 
   const linkedProcessesCount = useMemo(() => {
@@ -1966,7 +1952,7 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
                         checked={selectionMode}
                         onChange={(e) => {
                           setSelectionMode(e.target.checked);
-                          if (!e.target.checked) setSelectedIds(new Set());
+                          if (!e.target.checked) clearSelectedIds();
                         }}
                         className="rounded border-slate-300 text-slate-600 focus:ring-slate-500"
                       />
@@ -2108,8 +2094,7 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
               </button>
               <button
                 onClick={() => {
-                  setSelectedIds(new Set());
-                  setSelectionMode(false);
+                  disableSelectionMode();
                 }}
                 className="inline-flex items-center gap-2 bg-transparent hover:bg-white text-slate-600 font-semibold px-3 py-2 rounded-lg transition text-sm border border-transparent"
               >
@@ -2443,7 +2428,7 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
                   <input
                     type="checkbox"
                     checked={selectedIds.has(intimation.id)}
-                    onChange={() => toggleSelection(intimation.id)}
+                    onChange={() => toggleSelectedId(intimation.id)}
                     onClick={(e) => e.stopPropagation()}
                     className="mt-1 w-4 h-4 sm:w-5 sm:h-5 text-blue-600 border-slate-300 rounded focus:ring-blue-500"
                   />
@@ -3326,9 +3311,7 @@ const DeadlineCreationModal: React.FC<DeadlineCreationModalProps> = ({
               {showResponsibleSuggestions && responsibleSearchTerm && (
                 <div className="absolute z-20 mt-1 w-full bg-white border border-gray-200 rounded-lg shadow-lg max-h-48 overflow-y-auto">
                   {members
-                    .filter((member) =>
-                      member.name.toLowerCase().includes(responsibleSearchTerm.toLowerCase())
-                    )
+                    .filter((member) => matchesNormalizedSearch(responsibleSearchTerm, [member.name]))
                     .slice(0, 5)
                     .map((member) => (
                       <button
@@ -3679,9 +3662,7 @@ const AppointmentCreationModal: React.FC<AppointmentCreationModalProps> = ({
               {showResponsibleSuggestions && responsibleSearchTerm && (
                 <div className="absolute z-20 mt-1 w-full bg-white border border-gray-200 rounded-lg shadow-lg max-h-48 overflow-y-auto">
                   {members
-                    .filter((member) =>
-                      member.name.toLowerCase().includes(responsibleSearchTerm.toLowerCase())
-                    )
+                    .filter((member) => matchesNormalizedSearch(responsibleSearchTerm, [member.name]))
                     .slice(0, 5)
                     .map((member) => (
                       <button

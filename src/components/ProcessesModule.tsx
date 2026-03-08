@@ -38,6 +38,7 @@ import { deadlineService } from '../services/deadline.service';
 import { userNotificationService } from '../services/userNotification.service';
 import { calendarService } from '../services/calendar.service';
 import { aiService } from '../services/ai.service';
+import { formatDate as formatDateValue, formatDateTime as formatDateTimeValue } from '../utils/formatters';
 import { ProcessTimeline } from './ProcessTimeline';
 import { ProcessTimelineInline } from './ProcessTimelineInline';
 import { ClientSearchSelect } from './ClientSearchSelect';
@@ -47,6 +48,7 @@ import type { Process, ProcessStatus, ProcessPracticeArea, HearingMode } from '.
 import type { Client } from '../types/client.types';
 import type { Profile } from '../services/profile.service';
 import { events, SYSTEM_EVENTS } from '../utils/events';
+import { normalizeSearchText } from '../utils/search';
 
 const STATUS_OPTIONS: { key: ProcessStatus; label: string; badge: string }[] = [
   { key: 'nao_protocolado', label: 'Não Protocolado', badge: 'bg-slate-100 text-slate-700' },
@@ -95,16 +97,9 @@ const emptyForm = {
 const formatDate = (value?: string | null) => {
   if (!value) return 'Pendente';
   try {
-    const raw = String(value).trim();
-    const datePart = raw.includes('T') ? raw.split('T')[0] : raw;
-    if (/^\d{4}-\d{2}-\d{2}$/.test(datePart)) {
-      const [yyyy, mm, dd] = datePart.split('-');
-      return `${dd}/${mm}/${yyyy}`;
-    }
-
-    const parsed = new Date(raw);
+    const parsed = new Date(String(value).trim());
     if (Number.isNaN(parsed.getTime())) return 'Data inválida';
-    return parsed.toLocaleDateString('pt-BR');
+    return formatDateValue(String(value));
   } catch (error) {
     console.error('Erro ao formatar data:', value, error);
     return 'Data inválida';
@@ -163,7 +158,7 @@ const formatDateTime = (value?: string | null) => {
   try {
     const parsed = new Date(value);
     if (Number.isNaN(parsed.getTime())) return 'Data inválida';
-    return parsed.toLocaleString('pt-BR');
+    return formatDateTimeValue(value);
   } catch (error) {
     console.error('Erro ao formatar data/hora:', value, error);
     return 'Data inválida';
@@ -926,9 +921,9 @@ const ProcessesModule: React.FC<ProcessesModuleProps> = ({ forceCreate, entityId
   // Filtrar clientes para sugestões no quick add
   const quickAddFilteredClients = useMemo(() => {
     if (!quickAddClientSearch.trim()) return [];
-    const search = quickAddClientSearch.toLowerCase();
+    const search = normalizeSearchText(quickAddClientSearch);
     return allClients
-      .filter((c) => c.full_name.toLowerCase().includes(search))
+      .filter((c) => normalizeSearchText(c.full_name).includes(search))
       .slice(0, 5);
   }, [allClients, quickAddClientSearch]);
 

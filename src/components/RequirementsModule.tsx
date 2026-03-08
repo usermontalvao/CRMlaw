@@ -42,6 +42,8 @@ import {
   RefreshCw,
   Download,
 } from 'lucide-react';
+import { formatDateTime as formatDateTimeValue } from '../utils/formatters';
+import { matchesNormalizedSearch, normalizeSearchText } from '../utils/search';
 import * as XLSX from 'xlsx';
 import { saveAs } from 'file-saver';
 import PizZip from 'pizzip';
@@ -248,13 +250,7 @@ const formatDate = (value?: string | null) => {
 const formatDateTime = (value: string) => {
   const parsed = new Date(value);
   if (Number.isNaN(parsed.getTime())) return value;
-  return parsed.toLocaleString('pt-BR', {
-    day: '2-digit',
-    month: '2-digit',
-    year: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-  });
+  return formatDateTimeValue(value);
 };
 
 const generateId = () => {
@@ -402,6 +398,23 @@ const formatDateLong = (date: Date) => {
     const year = date.getUTCFullYear();
     return `${day}/${month}/${year}`;
   }
+};
+
+const getManausNow = () => {
+  const now = new Date();
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'America/Manaus',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).formatToParts(now);
+
+  const year = parts.find((part) => part.type === 'year')?.value;
+  const month = parts.find((part) => part.type === 'month')?.value;
+  const day = parts.find((part) => part.type === 'day')?.value;
+
+  if (!year || !month || !day) return now;
+  return new Date(`${year}-${month}-${day}T12:00:00-04:00`);
 };
 
 const escapeRegExp = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -1139,7 +1152,7 @@ const RequirementsModule: React.FC<RequirementsModuleProps> = ({ forceCreate, en
       }
     };
 
-    const now = new Date();
+    const now = getManausNow();
     const benefitLabel = getMsBenefitTypeLabel(requirement.benefit_type);
     const primaryPhone = client.mobile || client.phone || requirement.phone || '';
 
@@ -1171,7 +1184,7 @@ const RequirementsModule: React.FC<RequirementsModuleProps> = ({ forceCreate, en
     registerPlaceholder('DATA_REQUERIMENTO', entryDateLabel);
     registerPlaceholder('TEMPO_EM_ANALISE_DIAS', analysisDays);
     registerPlaceholder('DATA_ATUAL_EXTENSO', formatDateLong(now));
-    registerPlaceholder('data', now.toLocaleDateString('pt-BR'));
+    registerPlaceholder('data', now.toLocaleDateString('pt-BR', { timeZone: 'America/Manaus' }));
 
     return placeholders;
   };
@@ -1338,13 +1351,13 @@ const RequirementsModule: React.FC<RequirementsModuleProps> = ({ forceCreate, en
     }
 
     if (filterProtocol.trim()) {
-      const term = filterProtocol.trim().toLowerCase();
-      filtered = filtered.filter((req) => (req.protocol ?? '').toLowerCase().includes(term));
+      const term = normalizeSearchText(filterProtocol);
+      filtered = filtered.filter((req) => matchesNormalizedSearch(term, [req.protocol ?? '']));
     }
 
     if (filterBeneficiary.trim()) {
-      const term = filterBeneficiary.trim().toLowerCase();
-      filtered = filtered.filter((req) => req.beneficiary.toLowerCase().includes(term));
+      const term = normalizeSearchText(filterBeneficiary);
+      filtered = filtered.filter((req) => matchesNormalizedSearch(term, [req.beneficiary]));
     }
 
     if (filterCPF.trim()) {

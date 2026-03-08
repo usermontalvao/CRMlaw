@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Users, Plus, Search, Mail, Briefcase, Shield, Trash2, Edit2, Loader2, Eye, EyeOff, CheckCircle2, X, UserLock } from 'lucide-react';
 import { supabase } from '../config/supabase';
 import { useAuth } from '../contexts/AuthContext';
+import { matchesNormalizedSearch, normalizeSearchText } from '../utils/search';
 
 interface Profile {
   id: string;
@@ -51,10 +52,7 @@ export const UserManagementModule: React.FC = () => {
   // Verificar se usuário pode gerenciar
   const normalizeRole = (role?: string | null) => {
     if (!role) return '';
-    return role
-      .toLowerCase()
-      .normalize('NFD')
-      .replace(/[\u0300-\u036f]/g, '');
+    return normalizeSearchText(role);
   };
 
   const normalizedCurrentRole = normalizeRole(currentUserRole);
@@ -221,10 +219,8 @@ export const UserManagementModule: React.FC = () => {
     }
   };
 
-  const filteredProfiles = profiles.filter(profile =>
-    profile.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    profile.email.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    profile.role.toLowerCase().includes(searchTerm.toLowerCase())
+  const filteredProfiles = profiles.filter((profile) =>
+    matchesNormalizedSearch(searchTerm, [profile.name, profile.email, profile.role])
   );
 
   if (!canManageUsers) {

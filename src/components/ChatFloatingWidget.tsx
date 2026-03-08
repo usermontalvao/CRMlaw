@@ -8,6 +8,7 @@ import { profileService, type Profile } from '../services/profile.service';
 import type { ChatMessage, ChatRoom } from '../types/chat.types';
 import { supabase } from '../config/supabase';
 import { events, SYSTEM_EVENTS } from '../utils/events';
+import { matchesNormalizedSearch } from '../utils/search';
 
 const WIDGET_OPEN_KEY = 'chat-floating-widget-open';
 
@@ -1274,12 +1275,7 @@ const ChatFloatingWidget: React.FC = () => {
                     .filter((m) => m.user_id !== user?.id)
                     .filter((m) => {
                       if (!searchMember.trim()) return true;
-                      const search = searchMember.toLowerCase();
-                      return (
-                        m.name?.toLowerCase().includes(search) ||
-                        m.email?.toLowerCase().includes(search) ||
-                        m.role?.toLowerCase().includes(search)
-                      );
+                      return matchesNormalizedSearch(searchMember, [m.name, m.email, m.role]);
                     })
                     .map((member) => {
                       const online = onlineUserIds.has(member.user_id);

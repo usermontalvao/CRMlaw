@@ -22,6 +22,7 @@ import {
 import { feedPostsService, type EntityReference, type FeedPost, type PreviewData, type TagRecord } from '../services/feedPosts.service';
 import { profileService, type Profile } from '../services/profile.service';
 import { useAuth } from '../contexts/AuthContext';
+import { matchesNormalizedSearch } from '../utils/search';
 
 // Avatar component - Design clean e profissional
 const Avatar: React.FC<{ src?: string | null; name: string; size?: 'sm' | 'md' | 'lg' }> = ({ src, name, size = 'md' }) => {
@@ -375,7 +376,7 @@ export const FeedWidget: React.FC<FeedWidgetProps> = ({
   const filteredProfiles = useMemo(() => {
     if (!mentionSearch) return allProfiles.slice(0, 5);
     return allProfiles
-      .filter(p => p.name?.toLowerCase().includes(mentionSearch))
+      .filter((p) => matchesNormalizedSearch(mentionSearch, [p.name]))
       .slice(0, 5);
   }, [allProfiles, mentionSearch]);
 

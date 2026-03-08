@@ -28,6 +28,7 @@ import {
 import { useAuth } from '../contexts/AuthContext';
 import { profileService, type Profile } from '../services/profile.service';
 import UserManagementModule from './UserManagementModule';
+import { matchesNormalizedSearch, normalizeSearchText } from '../utils/search';
 import {
   settingsService,
   type AuditLogEntry,
@@ -371,12 +372,12 @@ const SettingsModule: React.FC = () => {
   };
 
   const filteredUsers = useMemo(() => {
-    const term = userSearch.trim().toLowerCase();
+    const term = normalizeSearchText(userSearch);
     if (!term) return users;
     return users.filter((u) =>
       [u.name, u.email, u.role, u.phone, u.oab]
         .filter(Boolean)
-        .some((value) => value!.toLowerCase().includes(term)),
+        .some((value) => matchesNormalizedSearch(term, [value || ''])),
     );
   }, [users, userSearch]);
 

@@ -28,6 +28,7 @@ import {
 import { feedPostsService, type FeedPost } from '../services/feedPosts.service';
 import { feedPollsService, type FeedPoll } from '../services/feedPolls.service';
 import { profileService, type Profile } from '../services/profile.service';
+import { matchesNormalizedSearch } from '../utils/search';
 import { useAuth } from '../contexts/AuthContext';
 
 // Avatar component
@@ -869,10 +870,8 @@ export const PostModal: React.FC<PostModalProps> = ({
                         </span>
                       </div>
                       {allProfiles
-                        .filter(p => 
-                          mentionSearch
-                            ? p.name.toLowerCase().includes(mentionSearch.toLowerCase())
-                            : true
+                        .filter((p) =>
+                          mentionSearch ? matchesNormalizedSearch(mentionSearch, [p.name]) : true
                         )
                         .slice(0, 8)
                         .map((profile) => (

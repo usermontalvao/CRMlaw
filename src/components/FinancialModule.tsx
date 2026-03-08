@@ -37,6 +37,7 @@ import {
   History,
   ClipboardList,
 } from 'lucide-react';
+import { matchesNormalizedSearch } from '../utils/search';
 import { useToastContext } from '../contexts/ToastContext';
 import { useDeleteConfirm } from '../contexts/DeleteConfirmContext';
 import { useAuth } from '../contexts/AuthContext';
@@ -354,21 +355,19 @@ const FinancialModule: React.FC<FinancialModuleProps> = ({ entityId, mode, onPar
   };
 
   const filteredAgreements = useMemo(() => {
-    const term = searchTerm.trim().toLowerCase();
+    const term = searchTerm;
 
     return agreements.filter((agreement: Agreement) => {
-      const clientName = getClientName(agreement.client_id).toLowerCase();
+      const clientName = getClientName(agreement.client_id);
       const matchesSearch = !term
         ? true
-        : [
+        : matchesNormalizedSearch(term, [
             agreement.title,
             agreement.description,
             agreement.notes,
             clientName,
-            agreement.process_id,
-          ]
-            .filter(Boolean)
-            .some((value) => String(value).toLowerCase().includes(term));
+            agreement.process_id ? String(agreement.process_id) : '',
+          ]);
 
       const matchesStatus = filterStatus === 'all' ? true : agreement.status === filterStatus;
 

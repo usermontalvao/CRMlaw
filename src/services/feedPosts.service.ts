@@ -1,6 +1,7 @@
 import { supabase } from '../config/supabase';
 import { profileService, type Profile } from './profile.service';
 import { userNotificationService } from './userNotification.service';
+import { matchesNormalizedSearch } from '../utils/search';
 
 const FEED_ATTACHMENT_BUCKET = 'anexos_chat';
 
@@ -1148,7 +1149,10 @@ class FeedPostsService {
         const { data } = await query;
         
         if (data) {
-          for (const client of data) {
+          const filteredData = search
+            ? data.filter((client: any) => matchesNormalizedSearch(search, [client.full_name, client.cpf_cnpj, client.phone]))
+            : data;
+          for (const client of filteredData) {
             const formattedText = `cliente ${client.full_name.toUpperCase()}`;
             
             records.push({
@@ -1327,7 +1331,10 @@ class FeedPostsService {
         }
 
         if (data) {
-          for (const doc of data) {
+          const filteredData = search
+            ? data.filter((doc: any) => matchesNormalizedSearch(search, [doc.file_name, doc.petition_name, doc.client_name]))
+            : data;
+          for (const doc of filteredData) {
             const clientName = (doc as any).client_name || '';
             const petitionName = (doc as any).petition_name || '';
             let formattedText = `documento "${(doc as any).file_name}"`;
@@ -1372,7 +1379,10 @@ class FeedPostsService {
         }
 
         if (data) {
-          for (const pet of data) {
+          const filteredData = search
+            ? data.filter((pet: any) => matchesNormalizedSearch(search, [pet.title, pet.client_name]))
+            : data;
+          for (const pet of filteredData) {
             const clientName = (pet as any).client_name || '';
             const nome = (pet as any).title || 'Sem título';
             let formattedText = `petição "${nome}"`;
@@ -1414,7 +1424,10 @@ class FeedPostsService {
         }
 
         if (data) {
-          for (const sig of data) {
+          const filteredData = search
+            ? data.filter((sig: any) => matchesNormalizedSearch(search, [sig.document_name, sig.client_name]))
+            : data;
+          for (const sig of filteredData) {
             const clientName = (sig as any).client_name || '';
             const docName = (sig as any).document_name || 'Documento';
             const status = (sig as any).status || 'pending';
@@ -1460,7 +1473,10 @@ class FeedPostsService {
         }
 
         if (data) {
-          for (const req of data) {
+          const filteredData = search
+            ? data.filter((req: any) => matchesNormalizedSearch(search, [req.protocol, req.beneficiary, req.benefit_type]))
+            : data;
+          for (const req of filteredData) {
             const beneficiary = (req as any).beneficiary || '';
             const protocol = (req as any).protocol || '';
             const benefitType = (req as any).benefit_type || '';
@@ -1505,10 +1521,10 @@ class FeedPostsService {
         const { data } = await supabase
           .from('clients')
           .select('id, full_name')
-          .ilike('full_name', `%${search}%`)
-          .limit(limit);
+          .limit(200);
         if (data) {
-          for (const c of data) results.push({ type: 'client', id: c.id, name: (c as any).full_name });
+          const filteredData = search ? data.filter((c: any) => matchesNormalizedSearch(search, [c.full_name])) : data;
+          for (const c of filteredData.slice(0, limit)) results.push({ type: 'client', id: c.id, name: (c as any).full_name });
         }
         break;
       }
@@ -1568,13 +1584,13 @@ class FeedPostsService {
         const { data, error } = await supabase
           .from('saved_petitions')
           .select('id, title, client_name')
-          .or(`title.ilike.%${search}%,client_name.ilike.%${search}%`)
-          .limit(limit);
+          .limit(200);
         if (error) {
           console.warn('Erro ao buscar entidades para tag peticao:', error);
         }
         if (data) {
-          for (const pet of data) {
+          const filteredData = search ? data.filter((pet: any) => matchesNormalizedSearch(search, [pet.title, pet.client_name])) : data;
+          for (const pet of filteredData.slice(0, limit)) {
             const nome = (pet as any).title || 'Sem título';
             results.push({ type: 'petition', id: pet.id, name: nome });
           }
@@ -1586,13 +1602,13 @@ class FeedPostsService {
         const { data, error } = await supabase
           .from('signature_requests')
           .select('id, document_name, client_name')
-          .or(`document_name.ilike.%${search}%,client_name.ilike.%${search}%`)
-          .limit(limit);
+          .limit(200);
         if (error) {
           console.warn('Erro ao buscar entidades para tag assinatura:', error);
         }
         if (data) {
-          for (const sig of data) {
+          const filteredData = search ? data.filter((sig: any) => matchesNormalizedSearch(search, [sig.document_name, sig.client_name])) : data;
+          for (const sig of filteredData.slice(0, limit)) {
             results.push({ type: 'signature', id: sig.id, name: (sig as any).document_name || 'Documento' });
           }
         }
@@ -1603,13 +1619,13 @@ class FeedPostsService {
         const { data, error } = await supabase
           .from('requirements')
           .select('id, protocol, beneficiary')
-          .or(`protocol.ilike.%${search}%,beneficiary.ilike.%${search}%`)
-          .limit(limit);
+          .limit(200);
         if (error) {
           console.warn('Erro ao buscar entidades para tag requerimento:', error);
         }
         if (data) {
-          for (const req of data) {
+          const filteredData = search ? data.filter((req: any) => matchesNormalizedSearch(search, [req.protocol, req.beneficiary])) : data;
+          for (const req of filteredData.slice(0, limit)) {
             results.push({ type: 'requirement', id: req.id, name: (req as any).protocol || (req as any).beneficiary || 'Requerimento' });
           }
         }

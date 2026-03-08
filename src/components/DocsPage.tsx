@@ -1,8 +1,10 @@
 import React, { useState, useMemo, useRef, useEffect } from 'react';
 import {
   ArrowLeft,
+  Home,
   BookOpen,
   Calendar,
+  History,
   CheckCircle2,
   ChevronDown,
   ChevronRight,
@@ -22,19 +24,18 @@ import {
   UserPlus,
   Gavel,
   X,
-  History,
-  Home,
   Lightbulb,
   MessageCircleQuestion,
-  TrendingUp,
-  Bug,
-  AlertTriangle,
   LayoutDashboard,
   Megaphone,
   Menu,
+  Bug,
+  AlertTriangle,
+  TrendingUp,
 } from 'lucide-react';
+import { matchesNormalizedSearch } from '../utils/search';
 
-const CURRENT_VERSION = '1.3.35';
+const CURRENT_VERSION = '1.9.626';
 const VERSION_CODENAME = 'Café Padrão';
 
 type DocSection = 'inicio' | 'guia' | 'changelog' | 'faq';
@@ -53,7 +54,7 @@ const SYSTEM_MODULES = [
   { id: 'prazos', name: 'Prazos', description: 'Controle de prazos processuais com alertas automáticos.', icon: Clock, features: ['Alertas automáticos', 'Visualização em calendário', 'Prazos fatais destacados', 'Notificações push'], tips: ['Configure alertas com antecedência', 'Marque como cumprido ao concluir'] },
   { id: 'financeiro', name: 'Financeiro', description: 'Gestão financeira completa do escritório.', icon: DollarSign, features: ['Receitas e despesas', 'Honorários por processo', 'Fluxo de caixa', 'Geração de recibos'], tips: ['Categorize lançamentos', 'Vincule honorários aos processos'] },
   { id: 'documentos', name: 'Documentos', description: 'Repositório central de documentos com modelos.', icon: FolderOpen, features: ['Upload múltiplo', 'Modelos de documentos', 'Geração automática', 'Visualização de PDFs'], tips: ['Use nomes descritivos', 'Crie modelos frequentes'] },
-  { id: 'assinaturas', name: 'Assinaturas', description: 'Assinatura digital com validade jurídica.', icon: FileSignature, features: ['Múltiplos signatários', 'Verificação facial com IA', 'Autenticação Google/telefone', 'QR Code de verificação'], tips: ['Ative verificação facial', 'Acompanhe pendentes'] },
+  { id: 'assinaturas', name: 'Assinaturas', description: 'Assinatura digital com validade jurídica.', icon: FileSignature, features: ['Múltiplos signatários', 'Verificação facial com IA', 'Autenticação Google/telefone', 'QR Code de verificação', 'Design galático de campos'], tips: ['Ative verificação facial', 'Acompanhe pendentes'] },
   { id: 'agenda', name: 'Agenda', description: 'Calendário para compromissos e audiências.', icon: CalendarDays, features: ['Visualização diária/semanal/mensal', 'Lembretes automáticos', 'Arrastar e soltar', 'Log de exclusões'], tips: ['Vincule audiências aos processos', 'Use cores por tipo'] },
   { id: 'intimacoes', name: 'Intimações', description: 'Gestão de intimações eletrônicas com integração DJEN.', icon: Bell, features: ['Captura automática (DJEN)', 'Análise com IA', 'Criação de prazos', 'Alertas de urgência'], tips: ['Configure integração', 'Processe diariamente'] },
   { id: 'requerimentos', name: 'Requerimentos', description: 'Gestão de requerimentos INSS/BPC com geração de MS.', icon: Gavel, features: ['Acompanhamento de status', 'Alerta de MS (90+ dias)', 'Geração de MS em Word', 'Histórico de notas'], tips: ['Acompanhe tempo em análise', 'Gere MS após 90 dias'] },
@@ -111,20 +112,17 @@ const DocsPage: React.FC = () => {
 
   const filteredModules = useMemo(() => {
     if (!searchQuery.trim()) return SYSTEM_MODULES;
-    const q = searchQuery.toLowerCase();
-    return SYSTEM_MODULES.filter((m) => m.name.toLowerCase().includes(q) || m.description.toLowerCase().includes(q));
+    return SYSTEM_MODULES.filter((m) => matchesNormalizedSearch(searchQuery, [m.name, m.description]));
   }, [searchQuery]);
 
   const filteredFAQ = useMemo(() => {
     if (!searchQuery.trim()) return FAQ_ITEMS;
-    const q = searchQuery.toLowerCase();
-    return FAQ_ITEMS.filter((f) => f.question.toLowerCase().includes(q) || f.answer.toLowerCase().includes(q));
+    return FAQ_ITEMS.filter((f) => matchesNormalizedSearch(searchQuery, [f.question, f.answer]));
   }, [searchQuery]);
 
   const filteredChangelog = useMemo(() => {
     if (!searchQuery.trim()) return CHANGELOG;
-    const q = searchQuery.toLowerCase();
-    return CHANGELOG.filter((c) => c.version.includes(q) || c.summary.toLowerCase().includes(q));
+    return CHANGELOG.filter((c) => matchesNormalizedSearch(searchQuery, [c.version, c.summary]));
   }, [searchQuery]);
 
   const handleBack = () => window.history.back();

@@ -11,6 +11,7 @@ import type {
   SignatureAuditLog,
   SignatureStats,
 } from '../types/signature.types';
+import { matchesNormalizedSearch, normalizeSearchText } from '../utils/search';
 
 const STORAGE_BUCKET = 'document-templates';
 
@@ -69,7 +70,11 @@ class SignatureService {
 
     const { data, error } = await query;
     if (error) throw new Error(error.message);
-    return data ?? [];
+    const rows = data ?? [];
+    if (!filters?.search) return rows;
+
+    const normalizedSearch = normalizeSearchText(filters.search);
+    return rows.filter((item) => matchesNormalizedSearch(normalizedSearch, [item.document_name, item.client_name]));
   }
 
   async listRequestsWithDerivedStatus(filters?: {
@@ -253,6 +258,7 @@ class SignatureService {
       role: signer.role,
       order: signer.order ?? index + 1,
       auth_method: signer.auth_method ?? payload.auth_method,
+      public_token: this.generatePublicToken(),
     }));
 
     const { data: createdSigners, error: signersError } = await supabase
@@ -1064,10 +1070,13 @@ class SignatureService {
     // Gerar hash único de 16 caracteres hexadecimais
     const array = new Uint8Array(8);
     crypto.getRandomValues(array);
-    return Array.from(array, (b) => b.toString(16).padStart(2, '0')).join('').toUpperCase();
+    return Array.from(array, (byte) => byte.toString(16).padStart(2, '0')).join('');
   }
 
-  // Upload de documento para assinatura
+  generatePublicToken(): string {
+    return crypto.randomUUID();
+  }
+
   async uploadDocument(file: File): Promise<string> {
     const extension = file.name.split('.').pop() ?? 'docx';
     // Usar mesmo padrão do documentTemplate.service (uuid simples)

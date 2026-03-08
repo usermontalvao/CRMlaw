@@ -1,4 +1,5 @@
 import { supabase } from '../config/supabase';
+import { matchesNormalizedSearch, normalizeSearchText } from '../utils/search';
 
 export type PresenceStatus = 'online' | 'away' | 'offline';
 export type ThemePreference = 'light' | 'dark' | 'system';
@@ -113,7 +114,9 @@ class ProfileService {
       .limit(10);
 
     if (error) throw new Error(error.message);
-    return data ?? [];
+    const rows = data ?? [];
+    const normalizedSearch = normalizeSearchText(query);
+    return rows.filter((member) => matchesNormalizedSearch(normalizedSearch, [member.name, member.email]));
   }
 
   async getMyProfile(): Promise<Profile | null> {

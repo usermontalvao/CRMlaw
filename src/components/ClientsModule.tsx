@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { Plus, Users, User, Building2, ShieldAlert, Search, Filter, Download, Upload, Loader2, Edit, Trash2, AlertTriangle, CheckCircle2, X, Phone, Mail, FileText, Copy, FilePlus, UserPlus, Calendar, ChevronRight, Pencil, Clock } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { clientService } from '../services/client.service';
@@ -14,6 +14,9 @@ import type { Process } from '../types/process.types';
 import type { Requirement } from '../types/requirement.types';
 
 import { events, SYSTEM_EVENTS } from '../utils/events';
+import { buildDuplicateGroups, buildDuplicateSummaryMap, pickPrimaryClient, type DuplicateGroup } from '../utils/clientDuplicates';
+import { useSelectionState } from '../hooks/useSelectionState';
+import { getClientMissingFields, isOutdatedClientRecord, OUTDATED_THRESHOLD_DAYS } from '../utils/clientQuality';
 
 interface ClientsModuleProps {
   prefillData?: Partial<CreateClientDTO> | null;
@@ -25,33 +28,6 @@ interface ClientsModuleProps {
   focusClientId?: string;
 }
 
-const isBlank = (value?: string | null) => !value || !String(value).trim();
-const OUTDATED_THRESHOLD_DAYS = 180;
-
-const isOutdatedRecord = (client: Client) => {
-  if (!client.updated_at) return true;
-  const updatedAt = new Date(client.updated_at);
-  if (Number.isNaN(updatedAt.getTime())) return true;
-  const threshold = Date.now() - OUTDATED_THRESHOLD_DAYS * 24 * 60 * 60 * 1000;
-  return updatedAt.getTime() < threshold;
-};
-
-const getMissingFields = (client: Client): string[] => {
-  const missing: string[] = [];
-
-  if (isBlank(client.full_name)) missing.push('Nome completo');
-  if (isBlank(client.cpf_cnpj)) missing.push('CPF/CNPJ');
-  if (isBlank(client.marital_status)) missing.push('Estado civil');
-  if (isBlank(client.profession)) missing.push('Profissão');
-  if (isBlank(client.address_street)) missing.push('Logradouro');
-  if (isBlank(client.address_number)) missing.push('Número');
-  if (isBlank(client.address_city)) missing.push('Cidade');
-  if (isBlank(client.address_state)) missing.push('Estado');
-  if (isBlank(client.address_zip_code)) missing.push('CEP');
-
-  return missing;
-};
-
 const ClientsModule: React.FC<ClientsModuleProps> = ({
   prefillData,
   onClientSaved,
@@ -62,6 +38,7 @@ const ClientsModule: React.FC<ClientsModuleProps> = ({
   focusClientId,
 }) => {
   const { confirmDelete } = useDeleteConfirm();
+  const [allClients, setAllClients] = useState<Client[]>([]);
   const [clients, setClients] = useState<Client[]>([]);
   const [loading, setLoading] = useState(true);
   const [modalState, setModalState] = useState<{ type: 'none' | 'create' | 'edit' | 'details'; client: Client | null }>({
@@ -89,25 +66,50 @@ const ClientsModule: React.FC<ClientsModuleProps> = ({
   const [outdatedSet, setOutdatedSet] = useState<Set<string>>(new Set());
   const [showIncompleteOnly, setShowIncompleteOnly] = useState(false);
   const [showMissingBanner, setShowMissingBanner] = useState(true);
+  const [showDuplicateBanner, setShowDuplicateBanner] = useState(true);
   const [showFilters, setShowFilters] = useState<boolean>(false);
-  const [selectionMode, setSelectionMode] = useState(false);
-  const [selectedClientIds, setSelectedClientIds] = useState<Set<string>>(new Set());
   const [bulkDeleteLoading, setBulkDeleteLoading] = useState(false);
+  const [mergeLoading, setMergeLoading] = useState(false);
+
+  const {
+    selectionMode,
+    selectedIds: selectedClientIds,
+    toggleSelectionMode,
+    toggleSelectedId,
+    selectIds,
+    clearSelectedIds,
+    replaceSelection,
+    disableSelectionMode,
+  } = useSelectionState<string>();
+
+  const duplicateGroups = useMemo(() => buildDuplicateGroups(allClients), [allClients]);
+  const duplicateSummaryMap = useMemo(() => buildDuplicateSummaryMap(duplicateGroups), [duplicateGroups]);
+  const duplicateClientIds = useMemo(() => new Set(duplicateGroups.flatMap((group) => group.clientIds)), [duplicateGroups]);
+  const visibleDuplicateIds = useMemo(() => new Set(clients.filter((client) => duplicateClientIds.has(client.id)).map((client) => client.id)), [clients, duplicateClientIds]);
+  const selectedDuplicateGroups = useMemo(() => {
+    return duplicateGroups
+      .map((group) => ({
+        group,
+        selectedIds: group.clientIds.filter((id) => selectedClientIds.has(id)),
+      }))
+      .filter((item) => item.selectedIds.length >= 2);
+  }, [duplicateGroups, selectedClientIds]);
 
   // Carregar clientes
   const loadClients = async () => {
     try {
       setLoading(true);
       const data = await clientService.listClients(filters);
+      setAllClients(data);
 
       const missing = new Map<string, string[]>();
       const outdated = new Set<string>();
       data.forEach((client) => {
-        const missingFields = getMissingFields(client);
+        const missingFields = getClientMissingFields(client);
         if (missingFields.length > 0) {
           missing.set(client.id, missingFields);
         }
-        if (isOutdatedRecord(client)) {
+        if (isOutdatedClientRecord(client)) {
           outdated.add(client.id);
         }
       });
@@ -240,31 +242,54 @@ const ClientsModule: React.FC<ClientsModuleProps> = ({
     };
   }, [searchTerm]);
 
-  const toggleSelectionMode = () => {
-    setSelectionMode((prev) => {
-      const next = !prev;
-      if (!next) {
-        setSelectedClientIds(new Set());
-      }
-      return next;
-    });
-  };
-
-  const toggleSelectedClientId = (clientId: string) => {
-    setSelectedClientIds((prev) => {
-      const next = new Set(prev);
-      if (next.has(clientId)) next.delete(clientId);
-      else next.add(clientId);
-      return next;
-    });
-  };
-
   const selectAllVisibleClients = () => {
-    setSelectedClientIds(new Set(clients.map((c) => c.id)));
+    selectIds(clients.map((c) => c.id));
   };
 
-  const clearSelectedClients = () => {
-    setSelectedClientIds(new Set());
+  const selectAllDuplicateClients = () => {
+    replaceSelection(visibleDuplicateIds, { enableSelectionMode: true });
+  };
+
+  const executeMergeGroups = async (groups: Array<{ group: DuplicateGroup; selectedIds?: string[] }>, label: string) => {
+    if (groups.length === 0) {
+      alert('Nenhum grupo de duplicados disponível para mesclar.');
+      return;
+    }
+
+    const confirmed = window.confirm(`Deseja ${label} ${groups.length} grupo(s) de contatos duplicados? Os campos vazios do contato principal serão preenchidos com os dados dos demais.`);
+    if (!confirmed) return;
+
+    try {
+      setMergeLoading(true);
+      for (const item of groups) {
+        const groupClients = item.selectedIds?.length
+          ? item.group.clients.filter((client) => item.selectedIds?.includes(client.id))
+          : item.group.clients;
+        if (groupClients.length < 2) continue;
+
+        const primary = pickPrimaryClient(groupClients);
+        const sourceIds = groupClients.filter((client) => client.id !== primary.id).map((client) => client.id);
+        if (sourceIds.length === 0) continue;
+
+        await clientService.mergeClients(primary.id, sourceIds);
+      }
+
+      disableSelectionMode();
+      await loadClients();
+    } catch (error: any) {
+      console.error('Erro ao mesclar clientes duplicados:', error);
+      alert(error?.message || 'Erro ao mesclar contatos duplicados');
+    } finally {
+      setMergeLoading(false);
+    }
+  };
+
+  const handleMergeAllDuplicates = async () => {
+    await executeMergeGroups(duplicateGroups.map((group) => ({ group })), 'mesclar');
+  };
+
+  const handleMergeSelectedDuplicates = async () => {
+    await executeMergeGroups(selectedDuplicateGroups, 'mesclar os selecionados de');
   };
 
   const deleteSelectedClients = async () => {
@@ -280,8 +305,7 @@ const ClientsModule: React.FC<ClientsModuleProps> = ({
     try {
       setBulkDeleteLoading(true);
       await Promise.all(Array.from(selectedClientIds).map((id) => clientService.deleteClient(id)));
-      setSelectedClientIds(new Set());
-      setSelectionMode(false);
+      disableSelectionMode();
       loadClients();
     } catch (error) {
       console.error('Erro ao desativar clientes selecionados:', error);
@@ -512,8 +536,65 @@ const ClientsModule: React.FC<ClientsModuleProps> = ({
         </div>
 
         {/* Warnings */}
-        {(missingFieldsMap.size > 0 || outdatedSet.size > 0) && (
+        {(missingFieldsMap.size > 0 || outdatedSet.size > 0 || duplicateGroups.length > 0) && (
           <div className="space-y-2">
+            {duplicateGroups.length > 0 && showDuplicateBanner && (
+              <div className="bg-red-50 border border-red-200 text-red-800 px-4 py-2.5 rounded-lg flex flex-col gap-3">
+                <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
+                  <div className="flex items-start gap-3 flex-1">
+                    <ShieldAlert className="w-5 h-5 mt-0.5 flex-shrink-0" />
+                    <div>
+                      <p className="font-semibold text-sm">Aviso: {duplicateGroups.length} grupo(s) de contatos possivelmente duplicados</p>
+                      <p className="text-xs mt-1">
+                        Encontramos {duplicateClientIds.size} contato(s) com indícios de se tratar da mesma pessoa. O sistema considera duplicado quando há <strong>CPF igual</strong> ou combinação de <strong>nome igual</strong> e <strong>telefone igual</strong>.
+                      </p>
+                    </div>
+                  </div>
+                  <div className="flex flex-wrap items-center gap-2 self-stretch sm:self-auto">
+                    <button
+                      type="button"
+                      onClick={() => void handleMergeAllDuplicates()}
+                      disabled={mergeLoading}
+                      className="inline-flex items-center justify-center px-3 py-1.5 text-xs font-semibold text-white bg-red-600 hover:bg-red-700 rounded-md transition-colors disabled:opacity-60"
+                    >
+                      {mergeLoading ? 'Mesclando...' : 'Mesclar todos'}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={selectAllDuplicateClients}
+                      className="inline-flex items-center justify-center px-3 py-1.5 text-xs font-semibold text-red-900 bg-red-100 hover:bg-red-200 rounded-md transition-colors"
+                    >
+                      Selecionar duplicados
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setShowDuplicateBanner(false)}
+                      className="ml-auto text-red-700 hover:text-red-900 text-xs font-semibold px-2 py-1 rounded-md hover:bg-red-100 transition-colors"
+                      aria-label="Fechar aviso de duplicados"
+                    >
+                      ×
+                    </button>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-2">
+                  {duplicateGroups.slice(0, 4).map((group) => {
+                    const names = group.clients.map((client) => client.full_name).slice(0, 3);
+                    const extraCount = group.clients.length - names.length;
+                    return (
+                      <div key={group.key} className="rounded-lg border border-red-200 bg-white/70 px-3 py-2">
+                        <p className="text-xs font-semibold text-red-900">
+                          {names.join(', ')}{extraCount > 0 ? ` +${extraCount}` : ''}
+                        </p>
+                        <p className="text-[11px] text-red-700 mt-1">
+                          Motivo: {group.reasons.join(', ')}.
+                        </p>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
             {missingFieldsMap.size > 0 && showMissingBanner && (
               <div className="bg-amber-50 border border-amber-200 text-amber-800 px-4 py-2.5 rounded-lg flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
                 <div className="flex items-start gap-3 flex-1">
@@ -714,11 +795,27 @@ const ClientsModule: React.FC<ClientsModuleProps> = ({
                 </button>
                 <button
                   type="button"
-                  onClick={clearSelectedClients}
+                  onClick={selectAllDuplicateClients}
+                  disabled={visibleDuplicateIds.size === 0}
+                  className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs font-semibold text-red-700 transition hover:bg-red-100 disabled:opacity-60 disabled:cursor-not-allowed"
+                >
+                  Duplicados ({visibleDuplicateIds.size})
+                </button>
+                <button
+                  type="button"
+                  onClick={clearSelectedIds}
                   disabled={selectedClientIds.size === 0}
                   className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 transition hover:bg-slate-50 disabled:opacity-60 disabled:cursor-not-allowed"
                 >
                   Limpar
+                </button>
+                <button
+                  type="button"
+                  onClick={() => void handleMergeSelectedDuplicates()}
+                  disabled={selectedDuplicateGroups.length === 0 || mergeLoading}
+                  className="inline-flex items-center justify-center rounded-lg bg-orange-600 px-3 py-2 text-xs font-semibold text-white transition hover:bg-orange-700 disabled:opacity-60 disabled:cursor-not-allowed"
+                >
+                  {mergeLoading ? 'Mesclando...' : `Mesclar selecionados (${selectedDuplicateGroups.length})`}
                 </button>
                 <button
                   type="button"
@@ -737,12 +834,13 @@ const ClientsModule: React.FC<ClientsModuleProps> = ({
         <ClientList
           clients={clients}
           loading={loading}
+          duplicateSummaryMap={duplicateSummaryMap}
           missingFieldsMap={missingFieldsMap}
           outdatedSet={outdatedSet}
           isFiltered={hasActiveFilters}
           selectionMode={selectionMode}
           selectedIds={selectedClientIds}
-          onToggleSelected={toggleSelectedClientId}
+          onToggleSelected={toggleSelectedId}
           onView={handleViewClient}
           onEdit={handleEditClient}
           onDelete={handleDeleteClient}

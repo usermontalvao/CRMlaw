@@ -1,5 +1,237 @@
 # Changelog
 
+## 1.9.673
+- **Assinatura Pública**: Corrigida a geração do placeholder `data` na edge function `template-fill`, que ainda montava o documento final da solicitação com `new Date().toLocaleDateString('pt-BR')` sem fixar `America/Manaus`.
+
+## 1.9.672
+- **Requerimentos**: Corrigida a geração de `DATA_ATUAL_EXTENSO` e `data` no `RequirementsModule` para usar a data corrente em `America/Manaus`, evitando avanço indevido do dia em documentos MS gerados.
+
+## 1.9.671
+- **Documentos**: Corrigida a geração de placeholders de data no `DocumentsModule` para usar a data corrente em `America/Manaus`, evitando avanço indevido de dia em linhas como `[[cidade]] – [[estado]], [[data]]`.
+- **Petições Padrão**: Corrigida a substituição de `[[DATA]]` e `[[DATA_ATUAL]]` no `StandardPetitionsModule` para usar a mesma base de data de Manaus do relatório de assinaturas.
+
+## 1.9.670
+- **Assinaturas**: Corrigida a formatação de data/hora no `pdfSignature.service` para centralizar o uso de `America/Manaus` no contrato assinado e no histórico de autenticidade.
+- **Assinaturas**: O histórico do relatório passou a ordenar eventos pelo timestamp real, evitando inconsistências causadas por ordenação sobre strings formatadas.
+
+## 1.9.669
+- **Assinaturas**: O visualizador do `SignatureModule` passou a empilhar todas as folhas do PDF verticalmente quando há múltiplas páginas, em vez de manter exibição de página isolada.
+- **Assinaturas**: A navegação entre páginas agora rola até a folha correspondente e o posicionamento de campos respeita a página clicada no documento empilhado.
+
+## 1.9.668
+- **Requerimentos**: O `RequirementsModule` passou a reutilizar o formatador compartilhado de data/hora, preservando a formatação especial de data em UTC já existente.
+
+## 1.9.667
+- **Intimações**: O `IntimationsModule` passou a reutilizar os formatadores compartilhados de data e data/hora, preservando o fallback local de exibição.
+
+## 1.9.666
+- **Processos**: O `ProcessesModule` passou a reutilizar os formatadores compartilhados de data e data/hora, preservando os fallbacks locais de exibição.
+
+## 1.9.665
+- **Tarefas**: O `TasksModule` passou a reutilizar os formatadores compartilhados de data e hora, reduzindo duplicação local com baixo risco.
+
+## 1.9.664
+- **Cleanup**: Removidos setters redundantes de `useSelectionState` em `ClientsModule` e `SignatureModule`, mantendo apenas os helpers efetivamente usados.
+
+## 1.9.663
+- **Cleanup**: Removido setter redundante de seleção de requests no `SignatureModule`, reduzindo ruído interno após a adoção do `useSelectionState`.
+
+## 1.9.662
+- **Cleanup**: Removidos wrappers triviais de limpeza de seleção em `ClientsModule` e `SignatureModule`, passando a usar diretamente os helpers do `useSelectionState`.
+- **Estabilidade**: Ajustadas referências residuais após o cleanup para manter a compilação limpa.
+
+## 1.9.661
+- **Assinaturas**: Ajustada a limpeza da seleção de uploads no `SignatureModule` ao resetar o wizard e ao selecionar arquivo único, evitando estado residual entre fluxos.
+
+## 1.9.660
+- **Assinaturas**: A seleção de arquivos enviados no `SignatureModule` passou a reutilizar o `useSelectionState`, reduzindo duplicação de estado no fluxo de envelope/upload.
+- **Hook compartilhado**: O `useSelectionState` passou a suportar chaves numéricas, permitindo reuso seguro também para seleções por índice.
+- **Estabilidade**: Ajustados pontos residuais no bloco de uploads do `SignatureModule` para manter a compilação limpa após a extração.
+
+## 1.9.659
+- **Intimações**: A seleção em massa do `IntimationsModule` passou a reutilizar o `useSelectionState`, reduzindo duplicação de estado e mantendo o mesmo comportamento das ações em lote.
+- **Estabilidade**: Ajustado o bloco de helpers do `IntimationsModule` durante a refatoração para preservar compilação limpa.
+
+## 1.9.658
+- **Seleção em massa**: Extraídos helpers reutilizáveis no `useSelectionState` para substituir seleção e podar IDs inválidos com segurança.
+- **Clientes**: `ClientsModule` passou a reutilizar helper central para selecionar duplicados visíveis e encerrar seleção após ações em lote.
+- **Assinaturas**: `SignatureModule` passou a reutilizar helper central para podar seleção quando a lista filtrada muda.
+
+## 1.9.657
+- **Documentação**: Padronizada a busca sem acento no `DocsChangesPage` para versão, resumo, codename e alterações internas.
+- **Intimações**: Padronizada a busca sem acento nos dropdowns de seleção de responsável do `IntimationsModule`.
+
+## 1.9.656
+- **Feed**: Padronizada a busca sem acento nas menções expandidas de comentários do `Feed`.
+- **Documentação**: Padronizada a busca sem acento no `DocsPage` para módulos, FAQ e changelog.
+- **Chat**: Padronizada a busca sem acento no `ChatFloatingWidget` para nome, e-mail e cargo de membros.
+
+## 1.9.655
+- **Prazos**: Padronizada a busca sem acento no `DeadlinesModule` para título e descrição.
+- **Financeiro**: Padronizada a busca sem acento no `FinancialModule` para título, descrição, observações, cliente e processo.
+
+## 1.9.654
+- **Petições**: Padronizada a busca sem acento no `StandardPetitionsModule` para nome e descrição.
+- **Documentos**: Padronizada a busca sem acento no `DocumentsModule` para templates do fluxo de novo documento.
+- **Posts**: Padronizada a busca sem acento no `PostModal` para menções de usuários.
+- **Intimações**: Padronizada a busca sem acento em campos textuais do `IntimationsModule`, mantendo a busca numérica por processo e dígitos.
+
+## 1.9.653
+- **Configurações**: Padronizada a busca sem acento no `SettingsModule` para nome, e-mail, cargo, telefone e OAB.
+- **Requerimentos**: Padronizada a busca sem acento no `RequirementsModule` para protocolo e beneficiário.
+- **Timeline**: Padronizada a busca sem acento no `ProcessTimeline` para título e descrição.
+
+## 1.9.652
+- **Feed**: Padronizada a busca sem acento em audiência, menções e tags inline no `Feed` e no `FeedWidget`.
+- **Notificações**: Padronizada a busca sem acento no `NotificationsModuleNew` para título e descrição.
+
+## 1.9.651
+- **Notificações**: Padronizada a busca sem acento no `NotificationsModule` para título e descrição.
+
+## 1.9.650
+- **Tarefas**: Padronizada a busca sem acento no `TasksModule` para o filtro de tarefas concluídas.
+
+## 1.9.649
+- **Perfil**: Padronizada a busca sem acento no `UserProfilePage` para filtros de audiência e menções.
+
+## 1.9.648
+- **Usuários**: Padronizada a busca sem acento no `UserManagementModule` para nome, e-mail e cargo.
+
+## 1.9.647
+- **Assinaturas**: Extraída e estabilizada a lógica de filtros e busca derivada do `SignatureModule` em util compartilhado, mantendo o mesmo comportamento da tela.
+
+## 1.9.646
+- **Clientes**: Extraídas as regras de qualidade de cadastro para util compartilhado, reduzindo acoplamento no módulo sem alterar comportamento.
+
+## 1.9.645
+- **Assinaturas**: Aplicado hook compartilhado de seleção em massa no `SignatureModule`, reduzindo duplicação de estado sem alterar comportamento.
+
+## 1.9.644
+- **Assinaturas**: Extraído o refresh silencioso para hook compartilhado e aplicado no `SignatureModule`, reduzindo duplicação sem alterar comportamento.
+
+## 1.9.643
+- **Clientes**: Extraído o estado de seleção em massa para hook compartilhado, reduzindo complexidade do módulo sem alterar comportamento.
+
+## 1.9.642
+- **Clientes**: Extraída a lógica de detecção de duplicidade para util compartilhado, reduzindo acoplamento no módulo sem alterar o comportamento da tela.
+
+## 1.9.641
+- **Busca**: Criado util compartilhado para normalização sem acento e comparação padronizada de termos de pesquisa.
+- **Busca**: Padronizada a busca sem acento nos módulos e serviços principais, incluindo clientes, colaboradores, assinaturas, processos, prazos, chat e referências do feed.
+
+## 1.9.640
+- **Busca**: Corrigida a busca de clientes sem acento no autocomplete e na tela de clientes, evitando que o filtro do banco barrasse resultados como `mario` para `Mário`.
+
+## 1.9.639
+- **Busca**: Ajustadas buscas principais por nome para funcionarem sem depender de acentos.
+- **Busca**: Clientes, colaboradores, assinaturas e sugestão rápida de clientes em processos agora aceitam buscas como `Joao` e `João`.
+
+## 1.9.638
+- **Clientes**: Adicionada detecção de contatos possivelmente duplicados com motivo claro por nome, telefone e CPF.
+- **Clientes**: Novo aviso com quantidade de grupos duplicados e ações para selecionar duplicados ou mesclar todos.
+- **Clientes**: Implementada mesclagem inteligente de contatos, preenchendo campos vazios do principal com dados dos demais e inativando os registros mesclados.
+
+## 1.9.637
+- **Assinaturas**: Atualização automática da lista ajustada para ocorrer em segundo plano, sem reflash visual.
+- **Assinaturas**: Separada a carga inicial do refresh silencioso em eventos do Realtime, foco da aba e polling leve.
+
+## 1.9.636
+- **Assinaturas**: Reforçada a atualização automática dos cards com `Realtime` + refresh agendado para evitar status preso em `1/2` e `50%`.
+- **Assinaturas**: Adicionado polling leve e refresh ao voltar foco/visibilidade da aba na tela de assinaturas.
+
+## 1.9.635
+- **Assinaturas**: Removido o QR Code do card principal de assinatura no relatório PDF para deixar o layout mais limpo.
+- **Assinaturas**: Área da assinatura ampliada para melhorar a leitura do traço e o destaque visual.
+
+## 1.9.634
+- **Assinaturas**: Corrigido Realtime para documentos criados, agora monitorando também a tabela `generated_documents`.
+- **Assinaturas**: Novos documentos gerados passam a aparecer automaticamente na lista sem precisar atualizar a página.
+
+## 1.9.633
+- **Assinaturas**: QR Code do relatório de assinaturas redesenhado com visual inspirado no relatório selfie.
+- **Assinaturas**: QR Code aumentado e mantido abaixo da assinatura para melhor leitura e validação.
+- **Assinaturas**: Card do QR ganhou destaque visual maior com título e legenda de validação.
+
+## 1.9.632
+- **Assinaturas**: Implementado Supabase Realtime para atualização automática da lista de documentos.
+- **Assinaturas**: Lista atualiza em tempo real quando documentos são criados, assinados ou concluídos.
+- **Assinaturas**: Não é mais necessário atualizar a página (F5) para ver mudanças.
+
+## 1.9.631
+- **Assinaturas**: Redesign completo do relatório PDF com visual premium e moderno.
+- **Assinaturas**: Cards de assinatura com sombra sutil, barra superior verde e badge de status.
+- **Assinaturas**: Histórico redesenhado com cards individuais por evento e badges coloridos por tipo de ação.
+- **Assinaturas**: Corrigida sobreposição de timestamp e texto no histórico (layout em blocos separados).
+
+## 1.9.630
+- **Assinaturas**: Corrigida sobreposição de linhas no histórico do relatório PDF (espaçamento aumentado).
+- **Assinaturas**: QR Code agora é exibido no rodapé/footer de todas as páginas do documento.
+- **Assinaturas**: QR Code reposicionado abaixo da assinatura no card do signatário (não sobrepõe mais).
+
+## 1.9.629
+- **Assinaturas**: Relatório PDF reorganizado para ficar mais bonito e organizado.
+- **Assinaturas**: QR Code reposicionado abaixo da assinatura no card do signatário.
+- **Assinaturas**: Corrigidas sobreposições de data/hora e do histórico no relatório de assinaturas.
+
+## 1.9.628
+- **Assinaturas**: Campo de assinatura refinado novamente para ficar mais largo, mais horizontal e com leitura mais limpa no designer.
+- **Assinaturas**: Reduzida a altura visual do card e simplificado o conteúdo interno para evitar aparência apertada/confusa.
+
+## 1.9.627
+- **Assinaturas**: Card do campo de assinatura redesenhado com visual mais bonito, premium e mais largo no designer.
+- **Assinaturas**: Melhorado o layout horizontal do campo com badge lateral, tipografia mais elegante e destaque visual superior.
+
+## 1.9.626
+- **Assinaturas**: Corrigido reset global do módulo ao adicionar ou arrastar campos no wizard de posicionamento.
+- **Assinaturas**: `loadData` foi estabilizado para não ser recriado por mudanças do contexto de toast durante a edição.
+- **Assinaturas**: O loading global do módulo não interrompe mais o wizard quando você está posicionando campos.
+
+## 1.9.625
+- **Assinaturas**: SOLUÇÃO DEFINITIVA para eliminar recarregamentos/flickers ao adicionar ou arrastar campos de assinatura.
+- **Assinaturas**: PDF agora renderiza em escala fixa (1.0) e zoom é aplicado via CSS transform, evitando reload do documento.
+- **Assinaturas**: Auto-fit aplicado apenas UMA VEZ no carregamento inicial, eliminando loops de re-render.
+- **Assinaturas**: Removido ResizeObserver que causava instabilidade durante interação com campos.
+
+## 1.9.624
+- **Assinaturas**: Implementado "Design Galático" nos campos de assinatura, com efeitos de brilho (shimmer), profundidade 3D e animações interativas.
+- **Assinaturas**: Eliminado recarregamento indesejado da página ao clicar para posicionar campos (reforço de preventDefault e stopPropagation).
+- **Assinaturas**: Estabilizado ResizeObserver do visualizador de documentos para evitar oscilações visuais no designer.
+
+## 1.9.623
+- **Assinaturas**: Corrigido o bloco do QR Code principal da primeira página do relatório para exibição íntegra e legível.
+- **Assinaturas**: Corrigida a composição do PDF consolidado para preservar assinaturas anteriores ao entrar uma nova assinatura.
+
+## 1.9.622
+- **Assinaturas**: Restaurado e aprimorado o QR Code de verificação na primeira página do relatório de assinatura, com bloco visual destacado para autenticação rápida.
+
+## 1.9.621
+- **Assinaturas**: Corrigido o relatório de autenticidade/PDF para incluir todos os signatários já assinados, com seus dados, assinaturas e selfies.
+- **Assinaturas**: Corrigida a seleção do PDF assinado exibido/baixado para usar o signatário assinado mais recente, evitando abrir o arquivo antigo do primeiro assinante.
+
+## 1.9.620
+- **Assinaturas**: Corrigido o vínculo dos campos de assinatura com o signatário criado, priorizando `order`/índice estável para evitar que a assinatura de um signatário apareça no campo de outro.
+
+## 1.9.619
+- **Assinaturas**: Corrigida a geração do `public_token` dos signatários para usar UUID válido, compatível com a coluna `uuid` do banco.
+
+## 1.9.618
+- **Assinaturas**: Corrigido loop infinito de renderização adicionando ref `documentLoadedRef` para evitar chamadas repetidas de `loadDocumentPreview` e simplificando dependências do useEffect.
+
+## 1.9.617
+- **Assinaturas**: Corrigido loop infinito de renderização causado por função `loadDocumentPreview` recriada a cada render. Convertida para `useCallback` e removida das dependências do useEffect.
+
+## 1.9.616
+- **Assinaturas**: Corrigido loop infinito de renderização no designer de assinatura causado por useLayoutEffect sem dependências.
+
+## 1.9.615
+- **Assinaturas**: Corrigida a duplicação de campo ao arrastar e soltar no designer de assinatura, bloqueando o clique residual após o drag.
+- **Assinaturas**: Ajustado o clique no canvas para não reposicionar/criar campo enquanto um arraste estiver em andamento.
+
+## 1.9.614
+- **Assinaturas**: Corrigido o wizard de posicionamento para evitar recarregamentos/submits acidentais ao clicar em campos e controles.
+- **Assinaturas**: Ajustado o posicionamento dos campos para centralizar no ponto clicado e manter a assinatura no local marcado.
+- **Assinaturas**: Garantida a geração de link público individual por signatário, melhorando o fluxo de multiassinatura.
+
 ## 1.9.589
 - **Prazos**: Em meses anteriores, a listagem/tabela de prazos em aberto é ocultada e são exibidos apenas os prazos concluídos do período como histórico. Para o mês atual e futuros, todos os prazos relevantes continuam sendo exibidos.
 

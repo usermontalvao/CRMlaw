@@ -27,6 +27,7 @@ import { calendarService } from '../services/calendar.service';
 import { signatureService } from '../services/signature.service';
 import { userNotificationService } from '../services/userNotification.service';
 import { financialService } from '../services/financial.service';
+import { matchesNormalizedSearch } from '../utils/search';
 import type { DjenComunicacaoLocal } from '../types/djen.types';
 import type { Deadline } from '../types/deadline.types';
 import type { CalendarEvent } from '../types/calendar.types';
@@ -280,9 +281,7 @@ const NotificationsModuleNew: React.FC<NotificationsModuleProps> = ({ onNavigate
       
       // Busca
       if (searchTerm) {
-        const search = searchTerm.toLowerCase();
-        return n.title.toLowerCase().includes(search) || 
-               n.description.toLowerCase().includes(search);
+        return matchesNormalizedSearch(searchTerm, [n.title, n.description]);
       }
       
       return true;

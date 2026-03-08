@@ -11,6 +11,8 @@ import {
 import { taskService } from '../services/task.service';
 import { useAuth } from '../contexts/AuthContext';
 import type { Task } from '../types/task.types';
+import { formatDate, formatTime } from '../utils/formatters';
+import { matchesNormalizedSearch, normalizeSearchText } from '../utils/search';
 
 interface TasksModuleProps {
   focusNewTask?: boolean;
@@ -174,20 +176,7 @@ const TasksModule = ({ focusNewTask = false, onParamConsumed, onPendingTasksChan
     }
   };
 
-  const formatDate = (iso: string) =>
-    new Date(iso).toLocaleDateString('pt-BR', {
-      day: '2-digit',
-      month: '2-digit',
-      year: 'numeric',
-    });
-
-  const formatTime = (iso: string) =>
-    new Date(iso).toLocaleTimeString('pt-BR', {
-      hour: '2-digit',
-      minute: '2-digit',
-    });
-
-  const normalizedSearch = completedSearch.trim().toLowerCase();
+  const normalizedSearch = normalizeSearchText(completedSearch);
 
   const filteredTasks = tasks.filter((task) => {
     if (filter === 'all') return true;
@@ -195,7 +184,7 @@ const TasksModule = ({ focusNewTask = false, onParamConsumed, onPendingTasksChan
       const matchesStatus = task.status === 'completed';
       if (!matchesStatus) return false;
       if (!normalizedSearch) return true;
-      return task.title.toLowerCase().includes(normalizedSearch);
+      return matchesNormalizedSearch(normalizedSearch, [task.title]);
     }
     return task.status === filter;
   });

@@ -135,6 +135,36 @@ class PdfSignatureService {
     return { device, browser, os };
   }
 
+  private toDateValue(value: string | Date | null | undefined): Date | null {
+    if (!value) return null;
+    if (value instanceof Date) {
+      return Number.isNaN(value.getTime()) ? null : value;
+    }
+
+    const raw = String(value).trim();
+    if (!raw) return null;
+
+    const normalized = raw.includes('T') ? raw : raw.replace(' ', 'T');
+    const parsed = new Date(normalized);
+    if (Number.isNaN(parsed.getTime())) return null;
+    return parsed;
+  }
+
+  private formatManausDateTime(value: string | Date | null | undefined, options?: { withSeconds?: boolean }): string {
+    const date = this.toDateValue(value);
+    if (!date) return 'Nao informado';
+
+    return new Intl.DateTimeFormat('pt-BR', {
+      timeZone: 'America/Manaus',
+      day: '2-digit',
+      month: '2-digit',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+      ...(options?.withSeconds ? { second: '2-digit' } : {}),
+    }).format(date);
+  }
+
   private generateHash(docId: string, signerId: string): string {
     const input = `${docId}-${signerId}`;
     let hash = '';
@@ -335,20 +365,31 @@ class PdfSignatureService {
     const versionLabel = `Jurius v${__APP_VERSION__}`;
 
     if (mode === 'strip') {
-      const h = 32;
+      const h = 52;
       const x = 24;
       const y = 10;
       const w = pageWidth - 48;
+      const qrSize = 44;
+      const qrX = x + w - qrSize - 6;
+      const qrY = y + (h - qrSize) / 2;
 
       page.drawRectangle({ x, y, width: w, height: h, color: rgb(0.98, 0.99, 1), borderColor: rgb(0.85, 0.88, 0.95), borderWidth: 1 });
-      page.drawText(`Hash SHA-256: ${integrityFull}`, { x: x + 10, y: y + 21, size: 5.5, font: helvetica, color: rgb(0.35, 0.35, 0.35) });
+
+      if (qrImage) {
+        page.drawImage(qrImage, { x: qrX, y: qrY, width: qrSize, height: qrSize });
+      }
+
+      const textMaxX = qrImage ? qrX - 10 : x + w - 80;
+      void textMaxX;
+
+      page.drawText(`Hash SHA-256: ${integrityFull}`, { x: x + 10, y: y + h - 14, size: 5.5, font: helvetica, color: rgb(0.35, 0.35, 0.35) });
       if (signer.verification_hash) {
-        page.drawText(`Código: ${(signer.verification_hash || '').toUpperCase()}`, { x: x + 10, y: y + 13, size: 6, font: helveticaBold, color: rgb(0.15, 0.25, 0.25) });
+        page.drawText(`Código: ${(signer.verification_hash || '').toUpperCase()}`, { x: x + 10, y: y + h - 26, size: 6, font: helveticaBold, color: rgb(0.15, 0.25, 0.25) });
       }
 
       if (verificationUrl) {
-        const urlToDraw = verificationUrl.length > 80 ? `${verificationUrl.slice(0, 77)}...` : verificationUrl;
-        page.drawText(`Verificar: ${urlToDraw}`, { x: x + 10, y: y + 5, size: 5.2, font: helvetica, color: rgb(0.12, 0.35, 0.7) });
+        const urlToDraw = verificationUrl.length > 70 ? `${verificationUrl.slice(0, 67)}...` : verificationUrl;
+        page.drawText(`Verificar: ${urlToDraw}`, { x: x + 10, y: y + 6, size: 5.2, font: helvetica, color: rgb(0.12, 0.35, 0.7) });
       }
 
       const versionSize = 6;
@@ -356,8 +397,8 @@ class PdfSignatureService {
         ? helveticaBold.widthOfTextAtSize(versionLabel, versionSize)
         : 70;
       page.drawText(versionLabel, {
-        x: x + w - versionTextWidth - 10,
-        y: y + 13,
+        x: qrImage ? qrX - versionTextWidth - 10 : x + w - versionTextWidth - 10,
+        y: y + h - 26,
         size: versionSize,
         font: helveticaBold,
         color: rgb(0.15, 0.25, 0.25),
@@ -428,7 +469,6 @@ class PdfSignatureService {
       page.drawText(urlToDraw, { x: textX, y: boxY + 6, size: 5.5, font: helvetica, color: rgb(0.12, 0.35, 0.7) });
     }
   }
-
   private async addReportPages(params: {
     pdfDoc: PDFDocument;
     request: SignatureRequest;
@@ -443,354 +483,331 @@ class PdfSignatureService {
 
     const helvetica = await pdfDoc.embedFont(StandardFonts.Helvetica);
     const helveticaBold = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
-
-    const geo = this.parseGeolocation(signer.signer_geolocation);
-    const ua = this.parseUserAgent(signer.signer_user_agent);
-    const signedAt = signer.signed_at ? new Date(signer.signed_at) : new Date();
-    const signedAtStr = signedAt.toLocaleString('pt-BR', {
-      timeZone: 'America/Manaus',
-      day: '2-digit',
-      month: '2-digit',
-      year: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit',
-      second: '2-digit',
-    });
-    const now = new Date();
-    const nowStr = now.toLocaleString('pt-BR', {
-      timeZone: 'America/Manaus',
-      day: '2-digit',
-      month: '2-digit',
-      year: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit',
-    });
-
-    // ==================== PÁGINA 1 - Relatório de Assinaturas ====================
-    const page1 = pdfDoc.addPage([595.28, 841.89]);
-    const { width, height } = page1.getSize();
     const lm = 50;
+    const pageWidth = 595.28;
+    const pageHeight = 841.89;
 
-    // Header com logo e data
-    page1.drawText('Juris CRM', { x: lm, y: height - 45, size: 20, font: helveticaBold, color: rgb(0.2, 0.4, 0.8) });
-    page1.drawText('Relatorio de Assinaturas', { x: lm + 95, y: height - 45, size: 14, font: helvetica, color: rgb(0.4, 0.4, 0.4) });
-    
-    // Data e timezone no canto direito
-    page1.drawText('Datas e horarios em UTC-0400 (America/Manaus)', { x: width - lm - 200, y: height - 30, size: 7, font: helvetica, color: rgb(0.5, 0.5, 0.5) });
-    page1.drawText(`Ultima atualizacao em ${nowStr}`, { x: width - lm - 200, y: height - 42, size: 7, font: helvetica, color: rgb(0.5, 0.5, 0.5) });
-
-    // Linha separadora
-    page1.drawLine({ start: { x: lm, y: height - 60 }, end: { x: width - lm, y: height - 60 }, thickness: 1, color: rgb(0.85, 0.85, 0.85) });
-
-    // Nome do documento
-    page1.drawText(request.document_name.toUpperCase(), { x: lm, y: height - 90, size: 16, font: helveticaBold, color: rgb(0.1, 0.1, 0.1) });
-    page1.drawText(`Documento numero ${request.id}`, { x: lm, y: height - 108, size: 8, font: helvetica, color: rgb(0.5, 0.5, 0.5) });
-
-    // QR Code grande no canto direito do header
-    if (qrImage) {
-      page1.drawImage(qrImage, { x: width - lm - 90, y: height - 130, width: 85, height: 85 });
-    }
-
-    // Linha separadora
-    page1.drawLine({ start: { x: lm, y: height - 145 }, end: { x: width - lm, y: height - 145 }, thickness: 1, color: rgb(0.85, 0.85, 0.85) });
-
-    // Seção Assinaturas
-    page1.drawText('Assinaturas', { x: lm, y: height - 175, size: 16, font: helveticaBold, color: rgb(0.1, 0.1, 0.1) });
-
-    // Card do signatário com ícone verde
-    let cardY = height - 210;
-    
-    // Ícone de check verde (círculo)
-    page1.drawCircle({ x: lm + 12, y: cardY + 5, size: 10, color: rgb(0.2, 0.7, 0.3) });
-    page1.drawText('v', { x: lm + 8, y: cardY + 1, size: 10, font: helveticaBold, color: rgb(1, 1, 1) });
-    
-    // Nome e status
-    page1.drawText(signer.name.toUpperCase(), { x: lm + 30, y: cardY + 8, size: 11, font: helveticaBold, color: rgb(0.2, 0.7, 0.3) });
-    page1.drawText('Assinou', { x: lm + 30, y: cardY - 6, size: 9, font: helvetica, color: rgb(0.2, 0.7, 0.3) });
-
-    // Coluna esquerda - Informações
-    let infoY = cardY - 35;
-    const infoX = lm;
-    
-    // Pontos de autenticação
-    page1.drawText('Pontos de autenticação:', { x: infoX, y: infoY, size: 8, font: helveticaBold, color: rgb(0.2, 0.2, 0.2) });
-    infoY -= 14;
-    
-    // Lista de pontos de autenticação com bullets
-    const authPoints: string[] = ['Assinatura manuscrita digital'];
-    
-    // Método de autenticação
-    if (signer.auth_provider === 'google') {
-      authPoints.push(`Autenticação via Google (${signer.auth_email || 'não informado'})`);
-      if (signer.auth_google_sub) authPoints.push(`Google ID: ${signer.auth_google_sub}`);
-    } else if (signer.auth_provider === 'email_link') {
-      authPoints.push(`Autenticação via Link por E-mail (${signer.auth_email || 'não informado'})`);
-    } else if (signer.auth_provider === 'phone') {
-      authPoints.push(`Autenticação via Telefone (${signer.phone || 'verificado'})`);
-    }
-    
-    if (signer.signer_ip) authPoints.push(`Endereço IP: ${signer.signer_ip}`);
-    if (geo.coordinates) authPoints.push(`Geolocalização: ${geo.coordinates}`);
-    if (signer.facial_image_path) authPoints.push('Verificação facial (selfie)');
-    if (ua.device) authPoints.push(`Dispositivo: ${ua.device} - ${ua.browser || 'Navegador'} - ${ua.os || 'Sistema'}`);
-    
-    for (const point of authPoints) {
-      // Evitar caractere bullet ("•") por incompatibilidade de encoding/fonte (pode virar "â€¢" no PDF).
-      // Desenhar bullet como um pequeno círculo.
-      page1.drawCircle({ x: infoX + 7, y: infoY + 2.5, size: 1.2, color: rgb(0.35, 0.35, 0.35) });
-      page1.drawText(point, { x: infoX + 12, y: infoY, size: 7, font: helvetica, color: rgb(0.3, 0.3, 0.3) });
-      infoY -= 10;
-    }
-    
-    infoY -= 5;
-    
-    if (signer.signer_user_agent) {
-      const uaText = signer.signer_user_agent.slice(0, 65);
-      page1.drawText(`Dispositivo: ${uaText}`, { x: infoX, y: infoY, size: 7, font: helvetica, color: rgb(0.3, 0.3, 0.3) });
-      infoY -= 10;
-      if (signer.signer_user_agent.length > 65) {
-        page1.drawText(signer.signer_user_agent.slice(65, 130), { x: infoX, y: infoY, size: 7, font: helvetica, color: rgb(0.3, 0.3, 0.3) });
-        infoY -= 10;
+    const signedRequestSigners = await (async () => {
+      try {
+        const { data } = await supabase
+          .from('signature_signers')
+          .select('*')
+          .eq('signature_request_id', request.id)
+          .order('order', { ascending: true });
+        const all = (data as Signer[] | null) ?? [];
+        const signed = all.filter((item) => item.status === 'signed');
+        return signed.length > 0 ? signed : [signer];
+      } catch {
+        return [signer];
       }
-    }
-    
-    page1.drawText(`Data e hora: ${signedAtStr}`, { x: infoX, y: infoY, size: 8, font: helvetica, color: rgb(0.3, 0.3, 0.3) });
-    infoY -= 10;
-    
-    if (signer.auth_email) {
-      page1.drawText(`E-mail autenticado: ${signer.auth_email}`, { x: infoX, y: infoY, size: 8, font: helvetica, color: rgb(0.3, 0.3, 0.3) });
-      infoY -= 10;
-    }
-    
-    if (signer.auth_provider === 'phone' && signer.phone) {
-      page1.drawText(`Telefone autenticado: ${signer.phone}`, { x: infoX, y: infoY, size: 8, font: helvetica, color: rgb(0.3, 0.3, 0.3) });
-      infoY -= 10;
-    }
-    
-    if (signer.public_token) {
-      page1.drawText(`Token: ${signer.public_token}`, { x: infoX, y: infoY, size: 8, font: helvetica, color: rgb(0.3, 0.3, 0.3) });
-      infoY -= 10;
-    }
-    
-    if (signer.facial_image_path) {
-      page1.drawText('Foto do rosto (selfie) anexa.', { x: infoX, y: infoY, size: 8, font: helvetica, color: rgb(0.3, 0.3, 0.3) });
-    }
-
-    // Coluna direita - Assinatura manuscrita grande
-    const sigX = width - lm - 180;
-    const sigY = cardY - 30;
-    
-    // Caixa da assinatura
-    page1.drawRectangle({ x: sigX, y: sigY - 100, width: 175, height: 100, borderColor: rgb(0.8, 0.8, 0.8), borderWidth: 1 });
-    
-    if (signatureImage) {
-      page1.drawImage(signatureImage, { x: sigX + 10, y: sigY - 90, width: 155, height: 80 });
-    }
-    
-    // Label da assinatura
-    page1.drawText(`Assinatura de ${signer.name.toUpperCase()}`, { x: sigX, y: sigY - 115, size: 7, font: helvetica, color: rgb(0.5, 0.5, 0.5) });
-
-    // ==================== PÁGINA 2 - Foto Selfie Grande ====================
-    const page2 = pdfDoc.addPage([595.28, 841.89]);
-
-    // Título da foto
-    page2.drawText(`Foto do rosto (selfie) de ${signer.name.toUpperCase()}:`, { x: lm, y: height - 50, size: 10, font: helvetica, color: rgb(0.3, 0.3, 0.3) });
-
-    // Foto GRANDE com borda tracejada
-    const photoW = 350;
-    const photoH = 350;
-    const photoX = lm;
-    const photoY = height - 60 - photoH;
-
-    // Borda tracejada (simulada com linhas)
-    for (let i = 0; i < photoW; i += 8) {
-      page2.drawLine({ start: { x: photoX + i, y: photoY + photoH }, end: { x: photoX + i + 4, y: photoY + photoH }, thickness: 1, color: rgb(0.6, 0.6, 0.6) });
-      page2.drawLine({ start: { x: photoX + i, y: photoY }, end: { x: photoX + i + 4, y: photoY }, thickness: 1, color: rgb(0.6, 0.6, 0.6) });
-    }
-    for (let i = 0; i < photoH; i += 8) {
-      page2.drawLine({ start: { x: photoX, y: photoY + i }, end: { x: photoX, y: photoY + i + 4 }, thickness: 1, color: rgb(0.6, 0.6, 0.6) });
-      page2.drawLine({ start: { x: photoX + photoW, y: photoY + i }, end: { x: photoX + photoW, y: photoY + i + 4 }, thickness: 1, color: rgb(0.6, 0.6, 0.6) });
-    }
-
-    if (facialImage) {
-      page2.drawImage(facialImage, { x: photoX + 5, y: photoY + 5, width: photoW - 10, height: photoH - 10 });
-      
-      // Marca d'água CONFIDENTIAL com data (cinza e mais transparente)
-      const wmY = photoY + photoH / 2;
-      page2.drawText('- - - - - - - - - - - - - - - - - - - - - - - -', { x: photoX + 40, y: wmY + 30, size: 10, font: helvetica, color: rgb(0.25, 0.25, 0.25), opacity: 0.42 });
-      page2.drawText('C O N F I D E N T I A L', { x: photoX + 80, y: wmY + 10, size: 14, font: helveticaBold, color: rgb(0.25, 0.25, 0.25), opacity: 0.42 });
-      page2.drawText(signedAtStr, { x: photoX + 115, y: wmY - 10, size: 9, font: helvetica, color: rgb(0.25, 0.25, 0.25), opacity: 0.42 });
-
-      page2.drawRectangle({ x: photoX, y: photoY, width: photoW, height: photoH, borderColor: rgb(0.6, 0.6, 0.6), borderWidth: 1, borderDashArray: [4, 4] });
-    } else {
-      page2.drawText('Selfie não coletada', { x: photoX + 100, y: photoY + photoH / 2, size: 14, font: helveticaBold, color: rgb(0.6, 0.6, 0.6) });
-    }
-
-    // Seção Fundamentação Legal e Validade
-    let legalY = photoY - 30;
-    
-    // Título da seção
-    page2.drawText('VALIDADE JURIDICA (MP 2.200-2/2001)', { x: lm, y: legalY, size: 11, font: helveticaBold, color: rgb(0.15, 0.4, 0.85) });
-    legalY -= 18;
-
-    page2.drawText('A Medida Provisoria n 2.200-2, de 27 de julho de 2001, dispoe sobre a validade', { x: lm, y: legalY, size: 7.5, font: helvetica, color: rgb(0.3, 0.3, 0.3) });
-    legalY -= 11;
-    page2.drawText('juridica dos documentos eletronicos no Brasil e institui a Infraestrutura de Chaves', { x: lm, y: legalY, size: 7.5, font: helvetica, color: rgb(0.3, 0.3, 0.3) });
-    legalY -= 11;
-    page2.drawText('Publicas Brasileira (ICP-Brasil), reconhecendo, igualmente, a utilizacao de outros', { x: lm, y: legalY, size: 7.5, font: helvetica, color: rgb(0.3, 0.3, 0.3) });
-    legalY -= 11;
-    page2.drawText('meios de comprovacao da autoria e da integridade de documentos em meio eletronico,', { x: lm, y: legalY, size: 7.5, font: helvetica, color: rgb(0.3, 0.3, 0.3) });
-    legalY -= 11;
-    page2.drawText('desde que admitidos pelas partes como validos.', { x: lm, y: legalY, size: 7.5, font: helvetica, color: rgb(0.3, 0.3, 0.3) });
-    legalY -= 14;
-
-    page2.drawText('Trecho (MP 2.200-2/2001, Art. 2):', { x: lm, y: legalY, size: 8, font: helveticaBold, color: rgb(0.2, 0.2, 0.2) });
-    legalY -= 12;
-    page2.drawText('"Art. 2 O disposto nesta Medida Provisoria nao obsta a utilizacao de outro meio de', { x: lm, y: legalY, size: 6.6, font: helvetica, color: rgb(0.35, 0.35, 0.35) });
-    legalY -= 10;
-    page2.drawText('comprovacao da autoria e integridade de documentos em forma eletronica, inclusive os', { x: lm, y: legalY, size: 6.6, font: helvetica, color: rgb(0.35, 0.35, 0.35) });
-    legalY -= 10;
-    page2.drawText('que utilizem certificados nao emitidos pela ICP-Brasil, desde que admitido pelas', { x: lm, y: legalY, size: 6.6, font: helvetica, color: rgb(0.35, 0.35, 0.35) });
-    legalY -= 10;
-    page2.drawText('partes como valido ou aceito pela pessoa a quem for oposto o documento"', { x: lm, y: legalY, size: 6.6, font: helvetica, color: rgb(0.35, 0.35, 0.35) });
-    legalY -= 14;
-
-    page2.drawText('Dessa forma, a assinatura eletronica ou digital aposta neste documento possui plena', { x: lm, y: legalY, size: 7.5, font: helvetica, color: rgb(0.3, 0.3, 0.3) });
-    legalY -= 11;
-    page2.drawText('validade juridica, produzindo os mesmos efeitos legais de um documento assinado', { x: lm, y: legalY, size: 7.5, font: helvetica, color: rgb(0.3, 0.3, 0.3) });
-    legalY -= 11;
-    page2.drawText('fisicamente, desde que as partes reconhecam e aceitem sua validade, o que ocorre', { x: lm, y: legalY, size: 7.5, font: helvetica, color: rgb(0.3, 0.3, 0.3) });
-    legalY -= 11;
-    page2.drawText('mediante a manifestacao de vontade expressa ao realizar a assinatura eletronica.', { x: lm, y: legalY, size: 7.5, font: helvetica, color: rgb(0.3, 0.3, 0.3) });
-
-    legalY -= 25;
-    page2.drawLine({ start: { x: lm, y: legalY }, end: { x: width - lm, y: legalY }, thickness: 0.5, color: rgb(0.85, 0.85, 0.85) });
-    legalY -= 20;
-    
-    page2.drawText('CÓDIGO DE AUTENTICAÇÃO:', { x: lm, y: legalY, size: 9, font: helveticaBold, color: rgb(0.2, 0.2, 0.2) });
-    legalY -= 14;
-    page2.drawText(signer.verification_hash || 'N/A', { x: lm, y: legalY, size: 12, font: helveticaBold, color: rgb(0.15, 0.2, 0.2) });
-
-    legalY -= 22;
-    page2.drawText('VERIFICAR AUTENTICIDADE:', { x: lm, y: legalY, size: 9, font: helveticaBold, color: rgb(0.2, 0.2, 0.2) });
-    legalY -= 14;
-    if (verificationUrl) {
-      page2.drawText(verificationUrl, { x: lm, y: legalY, size: 8, font: helvetica, color: rgb(0.2, 0.4, 0.7) });
-    }
-
-    // QR Code no canto direito
-    if (qrImage) {
-      page2.drawImage(qrImage, { x: width - lm - 100, y: legalY + 20, width: 90, height: 90 });
-    }
-
-    // Texto legal final
-    legalY -= 30;
-    page2.drawLine({ start: { x: lm, y: legalY }, end: { x: width - lm, y: legalY }, thickness: 0.5, color: rgb(0.85, 0.85, 0.85) });
-    legalY -= 18;
-    
-    page2.drawText(`Este registro e exclusivo e parte integrante do documento ID: ${request.id}`, { x: lm, y: legalY, size: 7, font: helvetica, color: rgb(0.4, 0.4, 0.4) });
-    legalY -= 10;
-    page2.drawText('A integridade deste documento pode ser verificada atraves do QR Code ou URL acima.', { x: lm, y: legalY, size: 7, font: helvetica, color: rgb(0.4, 0.4, 0.4) });
-    legalY -= 10;
-    page2.drawText('Qualquer alteracao no documento invalida esta assinatura digital.', { x: lm, y: legalY, size: 7, font: helvetica, color: rgb(0.4, 0.4, 0.4) });
-
-    // Banner no rodapÃ© em vez de logo
-    legalY -= 25;
-    
-    // Desenhar banner azul
-    const bannerHeight = 20;
-    const bannerWidth = width - (lm * 2);
-    
-    page2.drawRectangle({
-      x: lm,
-      y: legalY,
-      width: bannerWidth,
-      height: bannerHeight,
-      color: rgb(0.15, 0.4, 0.85),
-    });
-    
-    // Texto "Documento Assinado Digitalmente" sobre o banner
-    page2.drawText('DOCUMENTO ASSINADO DIGITALMENTE', { 
-      x: lm + bannerWidth/2 - 100, 
-      y: legalY + bannerHeight/2 - 5, 
-      size: 12, 
-      font: helveticaBold, 
-      color: rgb(1, 1, 1) 
-    });
-
-    // ==================== PÁGINA 3 - Histórico ====================
-    const page3 = pdfDoc.addPage([595.28, 841.89]);
-    const { width: w3, height: h3 } = page3.getSize();
-
-    page3.drawText('HISTÓRICO', { x: lm, y: h3 - 60, size: 14, font: helveticaBold, color: rgb(0.1, 0.1, 0.1) });
-    page3.drawLine({ start: { x: lm, y: h3 - 74 }, end: { x: w3 - lm, y: h3 - 74 }, thickness: 1, color: rgb(0.85, 0.85, 0.85) });
-
-    const geo2 = geo;
-    const createdAtStr = request.created_at ? new Date(request.created_at).toLocaleString('pt-BR', { timeZone: 'America/Manaus' }) : nowStr;
-    const viewedAtStr = signer.viewed_at ? new Date(signer.viewed_at).toLocaleString('pt-BR', { timeZone: 'America/Manaus' }) : null;
-    const signedAtStr2 = signer.signed_at ? new Date(signer.signed_at).toLocaleString('pt-BR', { timeZone: 'America/Manaus' }) : signedAtStr;
-
-    type HistoryItem = { label: string; when: string; detail: string };
-    const history: HistoryItem[] = [];
-
-    const creatorName = creator?.name || 'Sistema';
-    const creatorEmail = creator?.email ? ` (Email: ${creator.email})` : '';
-    history.push({ label: 'Criado', when: createdAtStr, detail: `${creatorName} criou este documento.${creatorEmail}` });
-
-    const authEmail = String(signer.auth_email || '').trim();
-    const phone = String((signer as any).phone || '').trim();
-    const rawEmail = String(signer.email || '').trim();
-    const displayContact =
-      authEmail ||
-      (signer.auth_provider === 'phone' ? phone : '') ||
-      (!this.isInternalPlaceholderEmail(rawEmail) ? rawEmail : '');
-    const displayContactLabel = authEmail
-      ? 'Email'
-      : signer.auth_provider === 'phone'
-        ? 'Telefone'
-        : 'Email';
-    const signerContact = displayContact ? ` (${displayContactLabel}: ${displayContact})` : '';
-    const signerCpf = (signer as any).cpf ? `, CPF: ${(signer as any).cpf}` : '';
-    const locationInfo = geo2.coordinates ? ` localizado em ${geo2.coordinates}${geo2.address ? ` - ${geo2.address}` : ''}` : '';
-    if (viewedAtStr) {
-      history.push({
-        label: 'Visualizado',
-        when: viewedAtStr,
-        detail: `${signer.name}${signerContact}${signerCpf} visualizou este documento${signer.signer_ip ? ` por meio do IP ${signer.signer_ip}` : ''}${locationInfo}`,
-      });
-    }
-
-    const authSummary = (() => {
-      if (signer.auth_provider === 'phone') {
-        const digits = String((signer as any).phone || '').replace(/\D/g, '');
-        return digits ? `Autenticação via Telefone (${digits})` : 'Autenticação via Telefone';
-      }
-      if (signer.auth_provider === 'email_link') {
-        return signer.auth_email ? `Autenticação via Link por E-mail (${signer.auth_email})` : 'Autenticação via Link por E-mail';
-      }
-      if (signer.auth_provider === 'google') {
-        return signer.auth_email ? `Autenticação via Google (${signer.auth_email})` : 'Autenticação via Google';
-      }
-      return '';
     })();
 
-    history.push({
-      label: 'Assinado',
-      when: signedAtStr2,
-      detail: `${signer.name}${signerContact}${signerCpf} assinou este documento${signer.signer_ip ? ` por meio do IP ${signer.signer_ip}` : ''}${locationInfo}${authSummary ? `. ${authSummary}` : ''}`,
-    });
+    const nowStr = this.formatManausDateTime(new Date());
 
-    let y = h3 - 105;
-    const colDateW = 110;
-    const lineGap = 14;
-    for (const item of history) {
-      page3.drawText(item.when, { x: lm, y, size: 8, font: helveticaBold, color: rgb(0.2, 0.2, 0.2) });
-      page3.drawText(item.label, { x: lm, y: y - 10, size: 7, font: helvetica, color: rgb(0.4, 0.4, 0.4) });
-      page3.drawText(item.detail, { x: lm + colDateW, y: y - 2, size: 8, font: helvetica, color: rgb(0.2, 0.2, 0.2), maxWidth: w3 - lm - (lm + colDateW) });
-      y -= 40;
-      if (y < 80) break;
-      page3.drawLine({ start: { x: lm, y }, end: { x: w3 - lm, y }, thickness: 0.5, color: rgb(0.9, 0.9, 0.9) });
-      y -= lineGap;
+    const signerAssets = await Promise.all(
+      signedRequestSigners.map(async (item) => ({
+        signer: item,
+        signature: item.id === signer.id ? (signatureImage ?? null) : await this.loadStorageImage(pdfDoc, item.signature_image_path, true),
+        facial: item.id === signer.id ? (facialImage ?? null) : await this.loadStorageImage(pdfDoc, item.facial_image_path),
+        qr: item.id === signer.id
+          ? (qrImage ?? null)
+          : (item.verification_hash ? await this.buildQrPng(pdfDoc, `${window.location.origin}/#/verificar/${item.verification_hash}`) : null),
+        verificationUrl: item.id === signer.id
+          ? (verificationUrl ?? null)
+          : (item.verification_hash ? `${window.location.origin}/#/verificar/${item.verification_hash}` : null),
+      }))
+    );
+
+    const wrapText = (text: string, font: any, size: number, maxWidth: number) => {
+      const safe = String(text || '').trim();
+      if (!safe) return [''];
+      const words = safe.split(/\s+/);
+      const lines: string[] = [];
+      let current = '';
+      for (const word of words) {
+        const candidate = current ? `${current} ${word}` : word;
+        const width = typeof font?.widthOfTextAtSize === 'function'
+          ? font.widthOfTextAtSize(candidate, size)
+          : candidate.length * size * 0.5;
+        if (width <= maxWidth || !current) {
+          current = candidate;
+        } else {
+          lines.push(current);
+          current = word;
+        }
+      }
+      if (current) lines.push(current);
+      return lines;
+    };
+
+    const createReportHeader = (page: PDFPage, title: string, subtitle?: string) => {
+      const rightColW = 170;
+      const rightColX = pageWidth - lm - rightColW;
+      page.drawText('Juris CRM', { x: lm, y: pageHeight - 45, size: 20, font: helveticaBold, color: rgb(0.2, 0.4, 0.8) });
+      page.drawText(title, { x: lm + 112, y: pageHeight - 44, size: 15, font: helvetica, color: rgb(0.35, 0.35, 0.35) });
+      page.drawText('Datas e horarios em UTC-0400 (America/Manaus)', { x: rightColX, y: pageHeight - 30, size: 7, font: helvetica, color: rgb(0.5, 0.5, 0.5) });
+      page.drawText(`Ultima atualizacao em ${nowStr}`, { x: rightColX, y: pageHeight - 42, size: 7, font: helvetica, color: rgb(0.5, 0.5, 0.5) });
+      page.drawLine({ start: { x: lm, y: pageHeight - 60 }, end: { x: pageWidth - lm, y: pageHeight - 60 }, thickness: 1, color: rgb(0.85, 0.85, 0.85) });
+      page.drawText(request.document_name.toUpperCase(), { x: lm, y: pageHeight - 96, size: 16, font: helveticaBold, color: rgb(0.1, 0.1, 0.1) });
+      page.drawText(`Documento numero ${request.id}`, { x: lm, y: pageHeight - 114, size: 8, font: helvetica, color: rgb(0.5, 0.5, 0.5) });
+      if (subtitle) {
+        page.drawText(subtitle, { x: lm, y: pageHeight - 132, size: 9, font: helvetica, color: rgb(0.35, 0.35, 0.35) });
+      }
+      page.drawLine({ start: { x: lm, y: pageHeight - 150 }, end: { x: pageWidth - lm, y: pageHeight - 150 }, thickness: 1, color: rgb(0.85, 0.85, 0.85) });
+    };
+
+    const buildAuthPoints = (item: Signer) => {
+      const geo = this.parseGeolocation(item.signer_geolocation);
+      const ua = this.parseUserAgent(item.signer_user_agent);
+      const points: string[] = ['Assinatura manuscrita digital'];
+      if (item.auth_provider === 'google') {
+        points.push(`Autenticação via Google (${item.auth_email || 'não informado'})`);
+        if (item.auth_google_sub) points.push(`Google ID: ${item.auth_google_sub}`);
+      } else if (item.auth_provider === 'email_link') {
+        points.push(`Autenticação via Link por E-mail (${item.auth_email || 'não informado'})`);
+      } else if (item.auth_provider === 'phone') {
+        points.push(`Autenticação via Telefone (${item.phone || 'verificado'})`);
+      }
+      if (item.signer_ip) points.push(`Endereço IP: ${item.signer_ip}`);
+      if (geo.coordinates) points.push(`Geolocalização: ${geo.coordinates}`);
+      if (item.facial_image_path) points.push('Verificação facial (selfie)');
+      if (ua.device) points.push(`Dispositivo: ${ua.device} - ${ua.browser || 'Navegador'} - ${ua.os || 'Sistema'}`);
+      return points;
+    };
+
+    const page1 = pdfDoc.addPage([pageWidth, pageHeight]);
+    createReportHeader(page1, 'Relatorio de Assinaturas', `${signedRequestSigners.length} signatario(s) com assinatura registrada`);
+
+    // Título da seção com linha decorativa
+    page1.drawRectangle({ x: lm, y: pageHeight - 176, width: 4, height: 18, color: rgb(0.15, 0.55, 0.3) });
+    page1.drawText('Assinaturas', { x: lm + 12, y: pageHeight - 172, size: 14, font: helveticaBold, color: rgb(0.15, 0.15, 0.15) });
+
+    let yCards = pageHeight - 205;
+    for (const asset of signerAssets) {
+      const item = asset.signer;
+      const signedAtStr = this.formatManausDateTime(item.signed_at, { withSeconds: true });
+      const authPoints = buildAuthPoints(item);
+      const infoColW = 260;
+      const rightColW = 180;
+      const rightStartX = pageWidth - lm - rightColW;
+      const cardHeight = Math.max(200, 70 + (authPoints.length * 12));
+      if (yCards - cardHeight < 80) break;
+
+      // Card principal com sombra sutil
+      page1.drawRectangle({
+        x: lm + 2,
+        y: yCards - cardHeight - 2,
+        width: pageWidth - (lm * 2),
+        height: cardHeight,
+        color: rgb(0.92, 0.93, 0.94),
+      });
+      page1.drawRectangle({
+        x: lm,
+        y: yCards - cardHeight,
+        width: pageWidth - (lm * 2),
+        height: cardHeight,
+        borderColor: rgb(0.85, 0.88, 0.9),
+        borderWidth: 1,
+        color: rgb(1, 1, 1),
+      });
+
+      // Barra superior verde
+      page1.drawRectangle({
+        x: lm,
+        y: yCards - 4,
+        width: pageWidth - (lm * 2),
+        height: 4,
+        color: rgb(0.15, 0.6, 0.35),
+      });
+
+      // Badge de status
+      page1.drawRectangle({ x: lm + 12, y: yCards - 28, width: 70, height: 18, color: rgb(0.15, 0.6, 0.35) });
+      page1.drawText('ASSINADO', { x: lm + 18, y: yCards - 24, size: 8, font: helveticaBold, color: rgb(1, 1, 1) });
+
+      // Nome do signatário
+      page1.drawText(item.name.toUpperCase(), { x: lm + 90, y: yCards - 24, size: 12, font: helveticaBold, color: rgb(0.1, 0.1, 0.1) });
+
+      // Data e hora
+      page1.drawText(`Assinado em: ${signedAtStr}`, { x: lm + 12, y: yCards - 46, size: 9, font: helvetica, color: rgb(0.4, 0.4, 0.4) });
+
+      // Linha separadora
+      page1.drawLine({ start: { x: lm + 12, y: yCards - 56 }, end: { x: rightStartX - 10, y: yCards - 56 }, thickness: 0.5, color: rgb(0.9, 0.9, 0.9) });
+
+      // Pontos de autenticação
+      let pointY = yCards - 72;
+      for (const point of authPoints.slice(0, 8)) {
+        page1.drawText('•', { x: lm + 12, y: pointY, size: 8, font: helvetica, color: rgb(0.15, 0.6, 0.35) });
+        page1.drawText(point, { x: lm + 22, y: pointY, size: 7.5, font: helvetica, color: rgb(0.3, 0.3, 0.3), maxWidth: infoColW });
+        pointY -= 12;
+      }
+
+      // Coluna direita - Assinatura
+      const sigBoxW = rightColW - 20;
+      const sigBoxH = 126;
+      const sigX = rightStartX + 10;
+      const sigY = yCards - 20;
+
+      page1.drawText('ASSINATURA', { x: sigX, y: sigY - 6, size: 7, font: helveticaBold, color: rgb(0.5, 0.5, 0.5) });
+      page1.drawRectangle({ x: sigX, y: sigY - sigBoxH - 10, width: sigBoxW, height: sigBoxH, borderColor: rgb(0.85, 0.88, 0.9), borderWidth: 1, color: rgb(0.99, 0.99, 1) });
+      if (asset.signature) {
+        page1.drawImage(asset.signature, { x: sigX + 6, y: sigY - sigBoxH - 4, width: sigBoxW - 12, height: sigBoxH - 12 });
+      }
+
+      yCards -= cardHeight + 20;
+    }
+
+    for (const asset of signerAssets) {
+      const item = asset.signer;
+      const page = pdfDoc.addPage([pageWidth, pageHeight]);
+      const signedAtStr = this.formatManausDateTime(item.signed_at, { withSeconds: true });
+
+      createReportHeader(page, 'Relatorio de Assinaturas', `Detalhes do signatario ${item.name}`);
+      page.drawText(`Foto do rosto (selfie) de ${item.name.toUpperCase()}:`, { x: lm, y: pageHeight - 168, size: 10, font: helvetica, color: rgb(0.3, 0.3, 0.3) });
+
+      const photoW = 350;
+      const photoH = 350;
+      const photoX = lm;
+      const photoY = pageHeight - 180 - photoH;
+      for (let i = 0; i < photoW; i += 8) {
+        page.drawLine({ start: { x: photoX + i, y: photoY + photoH }, end: { x: photoX + i + 4, y: photoY + photoH }, thickness: 1, color: rgb(0.6, 0.6, 0.6) });
+        page.drawLine({ start: { x: photoX + i, y: photoY }, end: { x: photoX + i + 4, y: photoY }, thickness: 1, color: rgb(0.6, 0.6, 0.6) });
+      }
+      for (let i = 0; i < photoH; i += 8) {
+        page.drawLine({ start: { x: photoX, y: photoY + i }, end: { x: photoX, y: photoY + i + 4 }, thickness: 1, color: rgb(0.6, 0.6, 0.6) });
+        page.drawLine({ start: { x: photoX + photoW, y: photoY + i }, end: { x: photoX + photoW, y: photoY + i + 4 }, thickness: 1, color: rgb(0.6, 0.6, 0.6) });
+      }
+      if (asset.facial) {
+        page.drawImage(asset.facial, { x: photoX + 5, y: photoY + 5, width: photoW - 10, height: photoH - 10 });
+        const wmY = photoY + photoH / 2;
+        page.drawText('- - - - - - - - - - - - - - - - - - - - - - - -', { x: photoX + 40, y: wmY + 30, size: 10, font: helvetica, color: rgb(0.25, 0.25, 0.25), opacity: 0.42 });
+        page.drawText('C O N F I D E N T I A L', { x: photoX + 80, y: wmY + 10, size: 14, font: helveticaBold, color: rgb(0.25, 0.25, 0.25), opacity: 0.42 });
+        page.drawText(signedAtStr, { x: photoX + 115, y: wmY - 10, size: 9, font: helvetica, color: rgb(0.25, 0.25, 0.25), opacity: 0.42 });
+        page.drawRectangle({ x: photoX, y: photoY, width: photoW, height: photoH, borderColor: rgb(0.6, 0.6, 0.6), borderWidth: 1, borderDashArray: [4, 4] });
+      } else {
+        page.drawText('Selfie não coletada', { x: photoX + 100, y: photoY + photoH / 2, size: 14, font: helveticaBold, color: rgb(0.6, 0.6, 0.6) });
+      }
+
+      let legalY = photoY - 30;
+      page.drawText('VALIDADE JURIDICA (MP 2.200-2/2001)', { x: lm, y: legalY, size: 11, font: helveticaBold, color: rgb(0.15, 0.4, 0.85) });
+      legalY -= 18;
+      page.drawText('A Medida Provisoria n 2.200-2 reconhece a validade juridica das assinaturas', { x: lm, y: legalY, size: 7.5, font: helvetica, color: rgb(0.3, 0.3, 0.3) });
+      legalY -= 11;
+      page.drawText('eletronicas e de outros meios de comprovacao da autoria e integridade documental,', { x: lm, y: legalY, size: 7.5, font: helvetica, color: rgb(0.3, 0.3, 0.3) });
+      legalY -= 11;
+      page.drawText('desde que admitidos pelas partes como validos.', { x: lm, y: legalY, size: 7.5, font: helvetica, color: rgb(0.3, 0.3, 0.3) });
+      legalY -= 18;
+      page.drawText('CÓDIGO DE AUTENTICAÇÃO:', { x: lm, y: legalY, size: 9, font: helveticaBold, color: rgb(0.2, 0.2, 0.2) });
+      legalY -= 14;
+      page.drawText(item.verification_hash || 'N/A', { x: lm, y: legalY, size: 12, font: helveticaBold, color: rgb(0.15, 0.2, 0.2) });
+      legalY -= 22;
+      page.drawText('VERIFICAR AUTENTICIDADE:', { x: lm, y: legalY, size: 9, font: helveticaBold, color: rgb(0.2, 0.2, 0.2) });
+      legalY -= 14;
+      if (asset.verificationUrl) {
+        page.drawText(asset.verificationUrl, { x: lm, y: legalY, size: 8, font: helvetica, color: rgb(0.2, 0.4, 0.7) });
+      }
+      if (asset.qr) {
+        page.drawImage(asset.qr, { x: pageWidth - lm - 100, y: legalY + 20, width: 90, height: 90 });
+      }
+      legalY -= 30;
+      page.drawLine({ start: { x: lm, y: legalY }, end: { x: pageWidth - lm, y: legalY }, thickness: 0.5, color: rgb(0.85, 0.85, 0.85) });
+      legalY -= 18;
+      page.drawText(`Este registro e parte integrante do documento ID: ${request.id}`, { x: lm, y: legalY, size: 7, font: helvetica, color: rgb(0.4, 0.4, 0.4) });
+      legalY -= 10;
+      page.drawText(`Signatario: ${item.name}`, { x: lm, y: legalY, size: 7, font: helvetica, color: rgb(0.4, 0.4, 0.4) });
+      legalY -= 25;
+      page.drawRectangle({ x: lm, y: legalY, width: pageWidth - (lm * 2), height: 20, color: rgb(0.15, 0.4, 0.85) });
+      page.drawText('DOCUMENTO ASSINADO DIGITALMENTE', { x: lm + 130, y: legalY + 5, size: 12, font: helveticaBold, color: rgb(1, 1, 1) });
+    }
+
+    const historyPage = pdfDoc.addPage([pageWidth, pageHeight]);
+    createReportHeader(historyPage, 'HISTORICO');
+    const createdAtDate = this.toDateValue(request.created_at) ?? new Date();
+    const createdAtStr = this.formatManausDateTime(createdAtDate);
+    type HistoryItem = { label: string; when: string; detail: string; sortAt: number };
+    const history: HistoryItem[] = [];
+    const creatorName = creator?.name || 'Sistema';
+    const creatorEmail = creator?.email ? ` (Email: ${creator.email})` : '';
+    history.push({ label: 'Criado', when: createdAtStr, detail: `${creatorName} criou este documento.${creatorEmail}`, sortAt: createdAtDate.getTime() });
+
+    for (const item of signedRequestSigners) {
+      const geo = this.parseGeolocation(item.signer_geolocation);
+      const authEmail = String(item.auth_email || '').trim();
+      const phone = String(item.phone || '').trim();
+      const rawEmail = String(item.email || '').trim();
+      const displayContact = authEmail || (item.auth_provider === 'phone' ? phone : '') || (!this.isInternalPlaceholderEmail(rawEmail) ? rawEmail : '');
+      const displayContactLabel = authEmail ? 'Email' : item.auth_provider === 'phone' ? 'Telefone' : 'Email';
+      const signerContact = displayContact ? ` (${displayContactLabel}: ${displayContact})` : '';
+      const signerCpf = item.cpf ? `, CPF: ${item.cpf}` : '';
+      const locationInfo = geo.coordinates ? ` localizado em ${geo.coordinates}${geo.address ? ` - ${geo.address}` : ''}` : '';
+      if (item.viewed_at) {
+        const viewedAtDate = this.toDateValue(item.viewed_at);
+        history.push({
+          label: 'Visualizado',
+          when: this.formatManausDateTime(item.viewed_at),
+          detail: `${item.name}${signerContact}${signerCpf} visualizou este documento${item.signer_ip ? ` por meio do IP ${item.signer_ip}` : ''}${locationInfo}`,
+          sortAt: viewedAtDate?.getTime() ?? 0,
+        });
+      }
+      if (item.signed_at) {
+        const signedAtDate = this.toDateValue(item.signed_at);
+        const authSummary = item.auth_provider === 'phone'
+          ? `Autenticação via Telefone (${String(item.phone || '').replace(/\D/g, '') || 'não informado'})`
+          : item.auth_provider === 'email_link'
+            ? `Autenticação via Link por E-mail (${item.auth_email || 'não informado'})`
+            : item.auth_provider === 'google'
+              ? `Autenticação via Google (${item.auth_email || 'não informado'})`
+              : '';
+        history.push({
+          label: 'Assinado',
+          when: this.formatManausDateTime(item.signed_at),
+          detail: `${item.name}${signerContact}${signerCpf} assinou este documento${item.signer_ip ? ` por meio do IP ${item.signer_ip}` : ''}${locationInfo}${authSummary ? `. ${authSummary}` : ''}`,
+          sortAt: signedAtDate?.getTime() ?? 0,
+        });
+      }
+    }
+
+    history.sort((a, b) => a.sortAt - b.sortAt);
+    let y = pageHeight - 120;
+    const eventGap = 18;
+
+    for (const histItem of history) {
+      const detailLines = wrapText(histItem.detail, helvetica, 8, pageWidth - lm * 2 - 20);
+      const blockHeight = 32 + detailLines.length * 13;
+      if (y - blockHeight < 70) break;
+
+      // Card do evento
+      historyPage.drawRectangle({
+        x: lm,
+        y: y - blockHeight,
+        width: pageWidth - lm * 2,
+        height: blockHeight,
+        color: rgb(0.98, 0.98, 0.99),
+        borderColor: rgb(0.88, 0.9, 0.92),
+        borderWidth: 1,
+      });
+
+      // Badge de label (Criado, Visualizado, Assinado)
+      const labelColor = histItem.label === 'Assinado' ? rgb(0.15, 0.6, 0.3) : histItem.label === 'Visualizado' ? rgb(0.2, 0.45, 0.8) : rgb(0.4, 0.4, 0.5);
+      historyPage.drawRectangle({
+        x: lm + 8,
+        y: y - 20,
+        width: 58,
+        height: 14,
+        color: labelColor,
+      });
+      historyPage.drawText(histItem.label.toUpperCase(), { x: lm + 12, y: y - 17, size: 7, font: helveticaBold, color: rgb(1, 1, 1) });
+
+      // Data/hora ao lado do badge
+      historyPage.drawText(histItem.when, { x: lm + 74, y: y - 17, size: 8, font: helvetica, color: rgb(0.35, 0.35, 0.35) });
+
+      // Detalhes abaixo
+      let detailY = y - 34;
+      for (const line of detailLines.slice(0, 6)) {
+        historyPage.drawText(line, { x: lm + 12, y: detailY, size: 8, font: helvetica, color: rgb(0.25, 0.25, 0.25) });
+        detailY -= 13;
+      }
+
+      y -= blockHeight + eventGap;
     }
   }
 
@@ -856,17 +873,28 @@ class PdfSignatureService {
     } catch {
       fields = [];
     }
+    const { data: requestSignersData } = await supabase
+      .from('signature_signers')
+      .select('*')
+      .eq('signature_request_id', request.id)
+      .order('order', { ascending: true });
+    const signedRequestSigners = ((requestSignersData as Signer[] | null) ?? []).filter((item) => item.status === 'signed');
 
-    const signatureFields = fields.filter((f) => f.field_type === 'signature' && (!f.signer_id || f.signer_id === signer.id));
-
-    console.log('[PDF] Campos encontrados:', fields.length, 'Campos de assinatura:', signatureFields.length);
-    console.log('[PDF] Campos:', signatureFields);
+    console.log('[PDF] Campos encontrados:', fields.length, 'Signatários assinados:', signedRequestSigners.length);
+    console.log('[PDF] Campos:', fields);
 
     const pages = pdfDoc.getPages();
 
-    // Place signature image where marked
-    if (signatureImage && signatureFields.length > 0) {
-      for (const f of signatureFields) {
+    const signerDrawAssets = await Promise.all((signedRequestSigners.length > 0 ? signedRequestSigners : [signer]).map(async (item) => ({
+      signer: item,
+      signature: item.id === signer.id ? signatureImage : await this.loadStorageImage(pdfDoc, item.signature_image_path, true),
+    })));
+
+    let drewAnySignature = false;
+    for (const asset of signerDrawAssets) {
+      if (!asset.signature) continue;
+      const assetFields = fields.filter((f) => f.field_type === 'signature' && (f.signer_id === asset.signer.id || (!f.signer_id && signerDrawAssets.length === 1)));
+      for (const f of assetFields) {
         const docId = (f as any).document_id || 'main';
         const offset = documentOffsets[docId] ?? 0;
         const pageIndex = Math.max(0, offset + Math.max(1, (f.page_number ?? 1)) - 1);
@@ -874,20 +902,16 @@ class PdfSignatureService {
         if (!page) continue;
         const { width, height } = page.getSize();
         const { x, y, w, h } = this.percentToPdfRect(width, height, f);
-
-        // Escala 1.5x para melhor visibilidade
-        const scale = 1.5;
-        const desiredW = w * scale;
-        const desiredH = h * scale;
         const drawX = Math.max(0, Math.min(width, x));
         const drawY = Math.max(0, Math.min(height, y));
-        const drawW = Math.max(1, Math.min(desiredW, width - drawX));
-        const drawH = Math.max(1, Math.min(desiredH, height - drawY));
-        console.log('[PDF] Desenhando assinatura na pÃ¡gina', pageIndex + 1, '- PosiÃ§Ã£o:', { x, y, w, h }, '- PÃ¡gina:', { width, height });
-        console.log('[PDF] Campo original:', { x_percent: f.x_percent, y_percent: f.y_percent, w_percent: f.w_percent, h_percent: f.h_percent });
-        page.drawImage(signatureImage, { x: drawX, y: drawY, width: drawW, height: drawH });
+        const drawW = Math.max(1, Math.min(w, width - drawX));
+        const drawH = Math.max(1, Math.min(h, height - drawY));
+        page.drawImage(asset.signature, { x: drawX, y: drawY, width: drawW, height: drawH });
+        drewAnySignature = true;
       }
-    } else if (signatureImage) {
+    }
+
+    if (!drewAnySignature && signatureImage) {
       // Fallback: se nÃ£o houver campos marcados, colocar assinatura na Ãºltima pÃ¡gina
       console.log('[PDF] Nenhum campo marcado - usando posiÃ§Ã£o padrÃ£o na Ãºltima pÃ¡gina');
       const lastPage = pages[pages.length - 1];
@@ -901,7 +925,7 @@ class PdfSignatureService {
         console.log('[PDF] Desenhando assinatura na posiÃ§Ã£o padrÃ£o:', { x, y, sigWidth, sigHeight });
         lastPage.drawImage(signatureImage, { x, y, width: sigWidth, height: sigHeight });
       }
-    } else {
+    } else if (!signatureImage) {
       console.log('[PDF] Imagem de assinatura nÃ£o disponÃ­vel');
     }
 
@@ -1160,6 +1184,17 @@ class PdfSignatureService {
       }
     }
 
+    const { data: signedRequestSignersDataForDocx } = await supabase
+      .from('signature_signers')
+      .select('*')
+      .eq('signature_request_id', request.id)
+      .order('order', { ascending: true });
+    const docxSignedRequestSigners = ((signedRequestSignersDataForDocx as Signer[] | null) ?? []).filter((item) => item.status === 'signed');
+    const docxSignerDrawAssets = await Promise.all((docxSignedRequestSigners.length > 0 ? docxSignedRequestSigners : [signer]).map(async (item) => ({
+      signer: item,
+      signature: item.id === signer.id ? signatureImage : await this.loadStorageImage(pdfDoc, item.signature_image_path, true),
+    })));
+
     const drawSignatureField = (params: {
       pdfPage: any;
       pageW: number;
@@ -1173,14 +1208,10 @@ class PdfSignatureService {
       signatureImage: EmbeddedImage;
     }) => {
       const { pdfPage, pageW, x, y, w, h, minY, maxY, signatureImage } = params;
-      // Escala 1.5x para melhor visibilidade
-      const scale = 1.5;
-      const desiredW = w * scale;
-      const desiredH = h * scale;
       const drawX = Math.max(0, Math.min(pageW, x));
       const drawY = Math.max(minY, Math.min(maxY, y));
-      const drawW = Math.max(1, Math.min(desiredW, pageW - drawX));
-      const drawH = Math.max(1, Math.min(desiredH, maxY - drawY));
+      const drawW = Math.max(1, Math.min(w, pageW - drawX));
+      const drawH = Math.max(1, Math.min(h, maxY - drawY));
       pdfPage.drawImage(signatureImage, { x: drawX, y: drawY, width: drawW, height: drawH });
     };
 
@@ -1401,66 +1432,63 @@ class PdfSignatureService {
               variant: 'card',
             });
 
-            if (!signatureImage) return;
+            for (const asset of docxSignerDrawAssets) {
+              if (!asset.signature) continue;
+              const docFields = fields.filter((f: any) =>
+                f.field_type === 'signature' &&
+                (f.signer_id === asset.signer.id || (!f.signer_id && docxSignerDrawAssets.length === 1)) &&
+                (f.document_id || 'main') === documentId
+              );
 
-            const docFields = fields.filter((f: any) =>
-              f.field_type === 'signature' &&
-              (f.signer_id == null || f.signer_id === signer.id) &&
-              (f.document_id || 'main') === documentId
-            );
+              for (const field of docFields as any[]) {
+                const fieldX = drawX + (field.x_percent / 100) * drawWPt;
+                const fieldW = (field.w_percent / 100) * drawWPt;
 
-            for (const field of docFields as any[]) {
-              const fieldX = drawX + (field.x_percent / 100) * drawWPt;
-              const fieldW = (field.w_percent / 100) * drawWPt;
+                if (typeof sliceStartPt === 'number' && typeof fullScaledHeightPt === 'number') {
+                  const fieldYTopFull = (field.y_percent / 100) * fullScaledHeightPt;
+                  const fieldHFull = (field.h_percent / 100) * fullScaledHeightPt;
+                  const isAuto = typeof field.id === 'string' && field.id.startsWith('auto-');
+                  const manualSlicePage = Math.max(1, (field.page_number ?? 1));
+                  if (!isAuto && manualSlicePage !== pageNumberForFields) continue;
 
-              // Se o DOCX foi fatiado (1 section) usamos coordenadas do documento inteiro
-              if (typeof sliceStartPt === 'number' && typeof fullScaledHeightPt === 'number') {
-                const fieldYTopFull = (field.y_percent / 100) * fullScaledHeightPt;
-                const fieldHFull = (field.h_percent / 100) * fullScaledHeightPt;
+                  const sliceEndPt = sliceStartPt + drawHPt;
+                  if (fieldYTopFull + fieldHFull < sliceStartPt || fieldYTopFull > sliceEndPt) continue;
 
-                // Se for campo manual com page_number por fatia, respeitar
-                const isAuto = typeof field.id === 'string' && field.id.startsWith('auto-');
-                const manualSlicePage = Math.max(1, (field.page_number ?? 1));
-                if (!isAuto && manualSlicePage !== pageNumberForFields) continue;
+                  const yInSlice = fieldYTopFull - sliceStartPt;
+                  const y = drawY + (drawHPt - yInSlice - fieldHFull) + (isAuto ? PLACEHOLDER_Y_OFFSET_PT : 0);
 
-                const sliceEndPt = sliceStartPt + drawHPt;
-                if (fieldYTopFull + fieldHFull < sliceStartPt || fieldYTopFull > sliceEndPt) continue;
+                  drawSignatureField({
+                    pdfPage,
+                    pageW: pdfPageWidth,
+                    pageH: pdfPageHeight,
+                    x: fieldX,
+                    y,
+                    w: fieldW,
+                    h: fieldHFull,
+                    minY: contentBottomY,
+                    maxY: contentTopY,
+                    signatureImage: asset.signature,
+                  });
+                } else {
+                  if (Math.max(1, (field.page_number ?? 1)) !== pageNumberForFields) continue;
+                  const fieldYTop = (field.y_percent / 100) * drawHPt;
+                  const fieldH = (field.h_percent / 100) * drawHPt;
+                  const isAuto = typeof field.id === 'string' && field.id.startsWith('auto-');
+                  const y = drawY + (drawHPt - fieldYTop - fieldH) + (isAuto ? PLACEHOLDER_Y_OFFSET_PT : 0);
 
-                const yInSlice = fieldYTopFull - sliceStartPt;
-                const y = drawY + (drawHPt - yInSlice - fieldHFull) + (isAuto ? PLACEHOLDER_Y_OFFSET_PT : 0);
-
-                drawSignatureField({
-                  pdfPage,
-                  pageW: pdfPageWidth,
-                  pageH: pdfPageHeight,
-                  x: fieldX,
-                  y,
-                  w: fieldW,
-                  h: fieldHFull,
-                  minY: contentBottomY,
-                  maxY: contentTopY,
-                  signatureImage,
-                });
-              } else {
-                // Caso normal: page_number é a section
-                if (Math.max(1, (field.page_number ?? 1)) !== pageNumberForFields) continue;
-                const fieldYTop = (field.y_percent / 100) * drawHPt;
-                const fieldH = (field.h_percent / 100) * drawHPt;
-                const isAuto = typeof field.id === 'string' && field.id.startsWith('auto-');
-                const y = drawY + (drawHPt - fieldYTop - fieldH) + (isAuto ? PLACEHOLDER_Y_OFFSET_PT : 0);
-
-                drawSignatureField({
-                  pdfPage,
-                  pageW: pdfPageWidth,
-                  pageH: pdfPageHeight,
-                  x: fieldX,
-                  y,
-                  w: fieldW,
-                  h: fieldH,
-                  minY: contentBottomY,
-                  maxY: contentTopY,
-                  signatureImage,
-                });
+                  drawSignatureField({
+                    pdfPage,
+                    pageW: pdfPageWidth,
+                    pageH: pdfPageHeight,
+                    x: fieldX,
+                    y,
+                    w: fieldW,
+                    h: fieldH,
+                    minY: contentBottomY,
+                    maxY: contentTopY,
+                    signatureImage: asset.signature,
+                  });
+                }
               }
             }
           };
@@ -1622,18 +1650,29 @@ class PdfSignatureService {
         }
       }
 
-      if (signatureImage) {
-        const pages = pdfDoc.getPages();
+      const { data: attachmentRequestSignersData } = await supabase
+        .from('signature_signers')
+        .select('*')
+        .eq('signature_request_id', request.id)
+        .order('order', { ascending: true });
+      const attachmentSignedRequestSigners = ((attachmentRequestSignersData as Signer[] | null) ?? []).filter((item) => item.status === 'signed');
+      const attachmentSignerDrawAssets = await Promise.all((attachmentSignedRequestSigners.length > 0 ? attachmentSignedRequestSigners : [signer]).map(async (item) => ({
+        signer: item,
+        signature: item.id === signer.id ? signatureImage : await this.loadStorageImage(pdfDoc, item.signature_image_path, true),
+      })));
+
+      for (const asset of attachmentSignerDrawAssets) {
+        if (!asset.signature) continue;
         const signatureFields = fields.filter((f: any) =>
           f.field_type === 'signature' &&
-          (f.signer_id == null || f.signer_id === signer.id) &&
+          (f.signer_id === asset.signer.id || (!f.signer_id && attachmentSignerDrawAssets.length === 1)) &&
           (f.document_id || 'main') in documentOffsets
         );
 
         for (const f of signatureFields as any[]) {
           const offset = documentOffsets[f.document_id || 'main'] ?? 0;
           const pageIndex = Math.max(0, offset + Math.max(1, (f.page_number ?? 1)) - 1);
-          const page = pages[pageIndex];
+          const page = pdfDoc.getPages()[pageIndex];
           if (!page) continue;
           const { width, height } = page.getSize();
           const rect = this.percentToPdfRect(width, height, f);
@@ -1647,31 +1686,20 @@ class PdfSignatureService {
             h: rect.h,
             minY: 0,
             maxY: height,
-            signatureImage,
+            signatureImage: asset.signature,
           });
         }
       }
     }
-    
-    // Carregar imagem facial para o relatÃ³rio
+
     let facialImage: EmbeddedImage | null = null;
     if (signer.facial_image_path) {
       facialImage = await this.loadStorageImage(pdfDoc, signer.facial_image_path);
     }
-    
-    // Gerar QR code para relatÃ³rio (pode ser o mesmo do footer)
-    let qrImage: EmbeddedImage | null = qrImageForFooter;
-    if (!qrImage && typeof verificationUrl === 'string') {
-      try {
-        const qrDataUrl = await QRCode.toDataURL(verificationUrl, { width: 150, margin: 1 });
-        const qrBytes = Uint8Array.from(atob(qrDataUrl.split(',')[1]), (c) => c.charCodeAt(0));
-        qrImage = await pdfDoc.embedPng(qrBytes);
-      } catch (e) {
-        console.warn('[PDF] Erro ao gerar QR code:', e);
-      }
-    }
-    
-    // Adicionar pÃ¡ginas do relatÃ³rio
+
+    const qrImage: EmbeddedImage | null = qrImageForFooter;
+
+    // Adicionar páginas do relatório
     await this.addReportPages({
       pdfDoc,
       request,

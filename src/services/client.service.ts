@@ -7,6 +7,32 @@ import { supabase } from '../config/supabase.js';
 import type { Client, CreateClientDTO } from '../types/client.types.js';
 import type { ClientFilters } from '../types/client.types.js';
 import { events, SYSTEM_EVENTS } from '../utils/events';
+import { matchesNormalizedSearch, normalizeSearchText } from '../utils/search';
+
+const isBlankValue = (value: unknown) => value === null || value === undefined || String(value).trim() === '';
+
+const clientMergeFields: Array<keyof CreateClientDTO> = [
+  'full_name',
+  'cpf_cnpj',
+  'rg',
+  'birth_date',
+  'nationality',
+  'marital_status',
+  'profession',
+  'client_type',
+  'email',
+  'phone',
+  'mobile',
+  'address_street',
+  'address_number',
+  'address_complement',
+  'address_neighborhood',
+  'address_city',
+  'address_state',
+  'address_zip_code',
+  'notes',
+  'status',
+];
 
 export class ClientService {
   private tableName = 'clients';
@@ -27,15 +53,9 @@ export class ClientService {
         query = query.eq('client_type', filters.client_type);
       }
 
-      if (filters?.search) {
-        query = query.or(
-          `full_name.ilike.%${filters.search}%,cpf_cnpj.ilike.%${filters.search}%,email.ilike.%${filters.search}%`
-        );
-      }
-
       // Ordenação
       const sortAscending = filters?.sort_order === 'oldest';
-      query = query.order('full_name', { ascending: true });
+      query = query.order('full_name', { ascending: !sortAscending ? true : true });
 
       const { data, error } = await query;
 
@@ -44,7 +64,13 @@ export class ClientService {
         throw new Error(`Erro ao listar clientes: ${error.message}`);
       }
 
-      return (data as Client[]) || [];
+      const rows = (data as Client[]) || [];
+      if (!filters?.search) return rows;
+
+      const normalizedSearch = normalizeSearchText(filters.search);
+      if (!normalizedSearch) return rows;
+
+      return rows.filter((client) => matchesNormalizedSearch(normalizedSearch, [client.full_name, client.cpf_cnpj, client.email]));
     } catch (error) {
       console.error('Erro ao listar clientes:', error);
       throw error;
@@ -127,6 +153,113 @@ export class ClientService {
       return data ?? null;
     } catch (error) {
       console.error('Erro ao buscar cliente por e-mail:', error);
+      throw error;
+    }
+  }
+
+  async mergeClients(targetId: string, sourceIds: string[]): Promise<Client> {
+    try {
+      const uniqueSourceIds = Array.from(new Set(sourceIds.filter((id) => id && id !== targetId)));
+      if (uniqueSourceIds.length === 0) {
+        throw new Error('Nenhum contato duplicado informado para mesclagem');
+      }
+
+      const target = await this.getClientById(targetId);
+      if (!target) {
+        throw new Error('Cliente principal não encontrado');
+      }
+
+      const { data: sourceRows, error: sourceError } = await supabase
+        .from(this.tableName)
+        .select('*')
+        .in('id', uniqueSourceIds);
+
+      if (sourceError) {
+        throw new Error(`Erro ao carregar contatos para mesclagem: ${sourceError.message}`);
+      }
+
+      const sources = (sourceRows as Client[] | null) ?? [];
+      if (sources.length === 0) {
+        throw new Error('Nenhum contato duplicado encontrado para mesclagem');
+      }
+
+      const mergedPayload: Partial<CreateClientDTO> = {};
+
+      for (const field of clientMergeFields) {
+        const currentValue = target[field];
+        if (!isBlankValue(currentValue)) continue;
+
+        for (const source of sources) {
+          const candidate = source[field];
+          if (!isBlankValue(candidate)) {
+            mergedPayload[field] = candidate as any;
+            break;
+          }
+        }
+      }
+
+      const notes = [target.notes, ...sources.map((source) => source.notes).filter(Boolean)]
+        .map((value) => String(value || '').trim())
+        .filter(Boolean);
+      const uniqueNotes = Array.from(new Set(notes));
+      if (uniqueNotes.length > 0) {
+        mergedPayload.notes = uniqueNotes.join(' | ');
+      }
+
+      if (!mergedPayload.status) {
+        mergedPayload.status = target.status || 'ativo';
+      }
+
+      const { data: updatedTarget, error: updateError } = await supabase
+        .from(this.tableName)
+        .update({
+          ...mergedPayload,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', targetId)
+        .select('*')
+        .single();
+
+      if (updateError) {
+        throw new Error(`Erro ao atualizar cliente principal: ${updateError.message}`);
+      }
+
+      for (const source of sources) {
+        const mergeNote = `Mesclado com ${updatedTarget.full_name} (${updatedTarget.id}) em ${new Date().toLocaleString('pt-BR')}`;
+        const sourceNotes = [source.notes, mergeNote]
+          .map((value) => String(value || '').trim())
+          .filter(Boolean)
+          .join(' | ');
+
+        const { error } = await supabase
+          .from(this.tableName)
+          .update({
+            status: 'inativo',
+            cpf_cnpj: null,
+            email: null,
+            phone: null,
+            mobile: null,
+            notes: sourceNotes,
+            updated_at: new Date().toISOString(),
+          })
+          .eq('id', source.id);
+
+        if (error) {
+          throw new Error(`Erro ao inativar contato mesclado: ${error.message}`);
+        }
+      }
+
+      localStorage.removeItem('crm-dashboard-cache');
+      events.emit(SYSTEM_EVENTS.CLIENTS_CHANGED, {
+        action: 'merge',
+        targetId,
+        sourceIds: uniqueSourceIds,
+        client: updatedTarget,
+      });
+
+      return updatedTarget as Client;
+    } catch (error) {
+      console.error('Erro ao mesclar clientes:', error);
       throw error;
     }
   }
@@ -309,16 +442,19 @@ export class ClientService {
       const { data, error } = await supabase
         .from(this.tableName)
         .select('id, full_name, email, phone, mobile, status, client_type')
-        .or(`full_name.ilike.%${term}%,cpf_cnpj.ilike.%${term}%,email.ilike.%${term}%`)
         .order('full_name', { ascending: true })
-        .limit(limit);
+        .limit(200);
 
       if (error) {
         console.error('Erro ao buscar clientes:', error);
         throw new Error(`Erro ao buscar clientes: ${error.message}`);
       }
 
-      return (data as Array<Pick<Client, 'id' | 'full_name' | 'email' | 'phone' | 'mobile' | 'status' | 'client_type'>>) || [];
+      const rows = (data as Array<Pick<Client, 'id' | 'full_name' | 'email' | 'phone' | 'mobile' | 'status' | 'client_type'>>) || [];
+      const normalizedSearch = normalizeSearchText(term);
+      return rows
+        .filter((client) => matchesNormalizedSearch(normalizedSearch, [client.full_name, client.email, client.phone, client.mobile]))
+        .slice(0, limit);
     } catch (error) {
       console.error('Erro ao buscar clientes:', error);
       throw error;

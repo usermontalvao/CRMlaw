@@ -18,6 +18,7 @@ import {
   rectSortingStrategy,
 } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
+import { matchesNormalizedSearch } from '../utils/search';
 import {
   Users,
   Briefcase,
@@ -713,15 +714,13 @@ const Feed: React.FC<FeedProps> = ({ onNavigateToModule, params }) => {
   }, [allProfiles]);
 
   const filteredAudienceProfiles = useMemo(() => {
-    const q = audienceSearch.trim().toLowerCase();
-    if (!q) return allProfiles;
-    return allProfiles.filter((p) => (p.name || '').toLowerCase().includes(q));
+    if (!audienceSearch.trim()) return allProfiles;
+    return allProfiles.filter((p) => matchesNormalizedSearch(audienceSearch, [p.name]));
   }, [audienceSearch, allProfiles]);
 
   const filteredEditingAudienceProfiles = useMemo(() => {
-    const q = editingAudienceSearch.trim().toLowerCase();
-    if (!q) return allProfiles;
-    return allProfiles.filter((p) => (p.name || '').toLowerCase().includes(q));
+    if (!editingAudienceSearch.trim()) return allProfiles;
+    return allProfiles.filter((p) => matchesNormalizedSearch(editingAudienceSearch, [p.name]));
   }, [editingAudienceSearch, allProfiles]);
 
   useEffect(() => {
@@ -766,23 +765,19 @@ const Feed: React.FC<FeedProps> = ({ onNavigateToModule, params }) => {
   // Filtrar perfis para menção (composer)
   const filteredProfiles = useMemo(() => {
     if (!mentionSearch) return allProfiles;
-    return allProfiles.filter((profile) =>
-      profile.name.toLowerCase().includes(mentionSearch.toLowerCase())
-    );
+    return allProfiles.filter((profile) => matchesNormalizedSearch(mentionSearch, [profile.name]));
   }, [mentionSearch, allProfiles]);
 
   // ===== Editor inline (edição no próprio post) =====
   // Importante: NÃO reutiliza estados/handlers do composer, para não editar os dois campos.
   const filteredProfilesInline = useMemo(() => {
-    const q = inlineMentionQuery.trim().toLowerCase();
-    if (!q) return allProfiles;
-    return allProfiles.filter((profile) => profile.name.toLowerCase().includes(q));
+    if (!inlineMentionQuery.trim()) return allProfiles;
+    return allProfiles.filter((profile) => matchesNormalizedSearch(inlineMentionQuery, [profile.name]));
   }, [inlineMentionQuery, allProfiles]);
 
   const filteredTagsInline = useMemo(() => {
-    const q = inlineTagQuery.trim().toLowerCase();
-    if (!q) return availableTags;
-    return availableTags.filter((tag) => tag.label.toLowerCase().includes(q));
+    if (!inlineTagQuery.trim()) return availableTags;
+    return availableTags.filter((tag) => matchesNormalizedSearch(inlineTagQuery, [tag.label]));
   }, [inlineTagQuery, availableTags]);
 
   const handleInlineEditChange = useCallback((e: React.ChangeEvent<HTMLTextAreaElement>) => {
@@ -5743,9 +5738,9 @@ const Feed: React.FC<FeedProps> = ({ onNavigateToModule, params }) => {
                             </span>
                           </div>
                           {allProfiles
-                            .filter(p => 
+                            .filter((p) =>
                               expandedComments[post.id].mentionSearch
-                                ? p.name.toLowerCase().includes(expandedComments[post.id].mentionSearch.toLowerCase())
+                                ? matchesNormalizedSearch(expandedComments[post.id].mentionSearch, [p.name])
                                 : true
                             )
                             .slice(0, 8)

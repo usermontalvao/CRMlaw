@@ -88,6 +88,13 @@ const inferClientType = (cpfCnpjDigits: string | null) => {
   return digits.length > 11 ? 'pessoa_juridica' : 'pessoa_fisica';
 };
 
+const getManausDateString = () => new Intl.DateTimeFormat('pt-BR', {
+  timeZone: 'America/Manaus',
+  day: '2-digit',
+  month: '2-digit',
+  year: 'numeric',
+}).format(new Date());
+
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders });
@@ -249,7 +256,7 @@ Deno.serve(async (req) => {
     const rawValues: Record<string, string> = {
       ...(link.prefill ?? {}),
       ...(submitBody.values ?? {}),
-      data: new Date().toLocaleDateString('pt-BR'),
+      data: getManausDateString(),
     };
 
     const values = normalizeValues(rawValues);

@@ -6,6 +6,7 @@ import { chatService } from '../services/chat.service';
 import { profileService, type Profile } from '../services/profile.service';
 import { supabase } from '../config/supabase';
 import type { ChatMessage, ChatRoom } from '../types/chat.types';
+import { matchesNormalizedSearch, normalizeSearchText } from '../utils/search';
 
 const DEFAULT_ROOM_NAME = 'Geral';
 
@@ -568,12 +569,12 @@ const ChatModule: React.FC = () => {
 
   const filteredRooms = useMemo(() => {
     let filtered = rooms;
-    const term = searchTerm.trim().toLowerCase();
+    const term = normalizeSearchText(searchTerm);
     if (term) {
       filtered = filtered.filter((r) => {
         const otherUser = getOtherUserForRoom(r);
         const displayName = otherUser?.name || r.name;
-        return displayName.toLowerCase().includes(term);
+        return matchesNormalizedSearch(term, [displayName]);
       });
     }
     const unique = new Map<string, ChatRoom>();
@@ -1442,7 +1443,7 @@ const ChatModule: React.FC = () => {
                 <>
                   {members
                     .filter((m) => m.user_id !== user?.id)
-                    .filter((m) => !newChatSearch || m.name.toLowerCase().includes(newChatSearch.toLowerCase()))
+                    .filter((m) => !newChatSearch || matchesNormalizedSearch(newChatSearch, [m.name]))
                     .length === 0 ? (
                     <div className="flex flex-col items-center justify-center py-12 space-y-3">
                       <div className="w-16 h-16 bg-slate-100 dark:bg-zinc-800 rounded-full flex items-center justify-center">
@@ -1453,7 +1454,7 @@ const ChatModule: React.FC = () => {
                   ) : (
                     members
                       .filter((m) => m.user_id !== user?.id)
-                      .filter((m) => !newChatSearch || m.name.toLowerCase().includes(newChatSearch.toLowerCase()))
+                      .filter((m) => !newChatSearch || matchesNormalizedSearch(newChatSearch, [m.name]))
                       .map((member) => (
                         <button
                           key={member.user_id}

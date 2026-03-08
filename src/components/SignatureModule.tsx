@@ -6,7 +6,7 @@ import {
   FileText, Upload, Plus, Trash2, X, Check, Clock, CheckCircle, Send, Copy,
   User, Mail, Loader2, ChevronLeft, Eye, EyeOff, Filter, Search, MousePointer2,
   Type, Hash, Calendar, PenTool, Users, Download, AlertTriangle, ExternalLink, ChevronRight, ZoomIn, ZoomOut, Shield, Lightbulb, Pencil, Maximize2, Minimize2, LayoutList, LayoutGrid, Globe, FolderOpen,
-  ArrowUpDown,
+  ArrowUpDown, FileSignature,
 } from 'lucide-react';
 import { useToastContext } from '../contexts/ToastContext';
 import { useAuth } from '../contexts/AuthContext';
@@ -21,15 +21,18 @@ import { settingsService } from '../services/settings.service';
 import { useDeleteConfirm } from '../contexts/DeleteConfirmContext';
 import { userNotificationService } from '../services/userNotification.service';
 import { signatureExplorerService } from '../services/signatureExplorer.service';
-import type { ProcessPracticeArea } from '../types/process.types';
-import SignatureCanvas from './SignatureCanvas';
+import { useSilentRefresh } from '../hooks/useSilentRefresh';
+import { useSelectionState } from '../hooks/useSelectionState';
 import FacialCapture from './FacialCapture';
+import { filterGeneratedDocumentsByFolder, filterSignatureRequests } from '../utils/signatureFilters';
 import type {
   SignatureRequest, SignatureRequestWithSigners, Signer, CreateSignatureRequestDTO,
   SignerAuthMethod, SignatureFieldType, SignatureAuditLog,
 } from '../types/signature.types';
+import SignatureCanvas from './SignatureCanvas';
 import type { GeneratedDocument } from '../types/document.types';
 import type { SignatureExplorerFolder, SignatureExplorerItem } from '../types/signatureExplorer.types';
+import type { ProcessPracticeArea } from '../types/process.types';
 
 pdfjs.GlobalWorkerOptions.workerSrc = `//unpkg.com/pdfjs-dist@${pdfjs.version}/build/pdf.worker.min.mjs`;
 
@@ -51,7 +54,7 @@ interface SignatureSettings {
 }
 
 const FIELD_PRESETS: Record<SignatureFieldType, { w: number; h: number; label: string; icon: React.ElementType }> = {
-  signature: { w: 10, h: 1.8, label: 'Assinatura', icon: PenTool },
+  signature: { w: 24, h: 5.4, label: 'Assinatura', icon: FileSignature },
   initials: { w: 8, h: 3, label: 'Rubrica', icon: PenTool },
   name: { w: 12, h: 2.5, label: 'Nome', icon: Type },
   cpf: { w: 10, h: 2.5, label: 'CPF', icon: Hash },
@@ -81,6 +84,12 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
   const { user } = useAuth();
   const { navigateTo } = useNavigation();
   const { confirmDelete } = useDeleteConfirm();
+
+  const toastRef = useRef(toast);
+
+  useEffect(() => {
+    toastRef.current = toast;
+  }, [toast]);
 
   const [showPublicAuthSettings, setShowPublicAuthSettings] = useState(false);
   const [publicAuthLoading, setPublicAuthLoading] = useState(false);
@@ -198,7 +207,6 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
   const [selectedClientName, setSelectedClientName] = useState<string | null>(null);
   const [uploadedFile, setUploadedFile] = useState<File | null>(null);
   const [uploadedFiles, setUploadedFiles] = useState<File[]>([]); // Múltiplos arquivos (envelope)
-  const [selectedUploadFileIndexes, setSelectedUploadFileIndexes] = useState<Set<number>>(new Set());
   const [dragOver, setDragOver] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -223,13 +231,13 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
   const pdfContainerRef = useRef<HTMLDivElement>(null);
   const docxContainerRef = useRef<HTMLDivElement>(null);
   const viewerScrollRef = useRef<HTMLDivElement>(null);
+  const documentLoadedRef = useRef<string | null>(null);
 
   const [pdfNumPages, setPdfNumPages] = useState(0);
   const [pdfCurrentPage, setPdfCurrentPage] = useState(1);
   const [pdfScale, setPdfScale] = useState(1);
   const [pdfAutoFitEnabled, setPdfAutoFitEnabled] = useState(true);
   const [pdfViewMode, setPdfViewMode] = useState<'fit' | 'expanded' | 'manual'>('fit');
-  const [viewerResizeTick, setViewerResizeTick] = useState(0);
   const [pdfLoading, setPdfLoading] = useState(false);
   const [pdfPreviewUrls, setPdfPreviewUrls] = useState<string[]>([]); // URLs para múltiplos PDFs
   const [pdfNumPagesByDoc, setPdfNumPagesByDoc] = useState<Record<number, number>>({}); // Páginas por documento
@@ -255,8 +263,6 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
   const [signStep, setSignStep] = useState<'signature' | 'facial' | 'confirm'>('signature');
   const [signLoading, setSignLoading] = useState(false);
   const [zoomImageUrl, setZoomImageUrl] = useState<string | null>(null);
-  const [selectionMode, setSelectionMode] = useState(false);
-  const [selectedRequestIds, setSelectedRequestIds] = useState<Set<string>>(new Set());
   const [bulkDeleteLoading, setBulkDeleteLoading] = useState(false);
   const [auditLog, setAuditLog] = useState<SignatureAuditLog[]>([]);
   const [auditLogLoading, setAuditLogLoading] = useState(false);
@@ -264,12 +270,34 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
   const [signerImages, setSignerImages] = useState<Record<string, { facial?: string; signature?: string }>>({});
   const [deleteLoading, setDeleteLoading] = useState(false);
 
+  const {
+    selectionMode,
+    selectedIds: selectedRequestIds,
+    toggleSelectionMode,
+    toggleSelectedId: toggleSelectedRequestId,
+    selectIds,
+    clearSelectedIds,
+    pruneSelectedIds,
+  } = useSelectionState<string>();
+
+  const {
+    selectedIds: selectedUploadFileIndexes,
+    toggleSelectedId: toggleSelectedUploadIndex,
+    selectIds: selectUploadFileIndexes,
+    clearSelectedIds: clearSelectedUploadFileIndexes,
+    setSelectedIds: setSelectedUploadFileIndexes,
+  } = useSelectionState<number>();
+
   const detailsLoadTokenRef = useRef(0);
   const detailsRequestIdRef = useRef<string | null>(null);
+  const hasLoadedOnceRef = useRef(false);
 
-  const loadData = useCallback(async () => {
+  const loadData = useCallback(async (options?: { silent?: boolean }) => {
+    const silent = options?.silent ?? false;
     try {
-      setLoading(true);
+      if (!silent || !hasLoadedOnceRef.current) {
+        setLoading(true);
+      }
       const [requestsData, docsData, foldersData, itemsData] = await Promise.all([
         signatureService.listRequestsWithSigners(),
         documentTemplateService.listGeneratedDocuments(),
@@ -280,15 +308,74 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
       setGeneratedDocuments(docsData);
       setExplorerFolders(foldersData);
       setExplorerItems(itemsData);
+      hasLoadedOnceRef.current = true;
     } catch (error: any) {
-      toast.error('Erro ao carregar dados');
+      toastRef.current.error('Erro ao carregar dados');
     } finally {
-      setLoading(false);
+      if (!silent || !hasLoadedOnceRef.current) {
+        setLoading(false);
+      }
       setExplorerLoading(false);
     }
-  }, [toast]);
+  }, []);
 
-  useEffect(() => { loadData(); }, [loadData]);
+  const { scheduleRefresh: scheduleDataRefresh, refreshTimerRef } = useSilentRefresh({
+    enabled: wizardStep === 'list',
+    intervalMs: 5000,
+    isVisible: () => document.visibilityState === 'visible' && wizardStep === 'list',
+    onRefresh: loadData,
+  });
+
+  useEffect(() => { void loadData(); }, [loadData]);
+
+  // Supabase Realtime - atualização automática da lista
+  useEffect(() => {
+    const channel = supabase
+      .channel('signature-realtime')
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'signature_requests' },
+        (payload) => {
+          console.log('[Realtime] signature_requests change:', payload.eventType);
+          scheduleDataRefresh(150);
+        }
+      )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'generated_documents' },
+        (payload) => {
+          console.log('[Realtime] generated_documents change:', payload.eventType);
+          scheduleDataRefresh(150);
+        }
+      )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'signature_signers' },
+        (payload) => {
+          console.log('[Realtime] signature_signers update:', payload.new);
+          scheduleDataRefresh(150);
+        }
+      )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'user_notifications' },
+        (payload) => {
+          console.log('[Realtime] user_notifications change:', payload.eventType);
+          scheduleDataRefresh(300);
+        }
+      )
+      .subscribe((status) => {
+        console.log('[Realtime] Subscription status:', status);
+      });
+
+    return () => {
+      if (refreshTimerRef.current) {
+        window.clearTimeout(refreshTimerRef.current);
+        refreshTimerRef.current = null;
+      }
+      supabase.removeChannel(channel);
+    };
+  }, [scheduleDataRefresh]);
 
   // Expor funções para acesso externo via DOM
   useEffect(() => {
@@ -373,7 +460,7 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
     }, 500);
   };
 
-  const loadDocumentPreview = async (doc: ViewerDocument) => {
+  const loadDocumentPreview = useCallback(async (doc: ViewerDocument) => {
     try {
       setPdfLoading(true);
       setLoadingViewerDoc(true);
@@ -441,7 +528,8 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
       setPdfLoading(false);
       setLoadingViewerDoc(false);
     }
-  };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [toast]);
 
   // Ref para evitar processamento duplicado do prefill
   const prefillProcessedRef = useRef(false);
@@ -700,7 +788,7 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
         if (viewerScrollRef.current) viewerScrollRef.current.scrollTop = prevScrollTop;
       });
     }
-  });
+  }, [wizardStep, isDocxFile]);
 
   useEffect(() => {
     if (wizardStep !== 'position') return;
@@ -717,48 +805,15 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
   }, [wizardStep]);
 
   const filteredRequests = useMemo(() => {
-    const now = Date.now();
-    const fromMs = filterDateFrom ? new Date(`${filterDateFrom}T00:00:00`).getTime() : null;
-    const toMs = filterDateTo ? new Date(`${filterDateTo}T23:59:59`).getTime() : null;
-    const periodMs =
-      filterPeriod === '7d'
-        ? 7 * 24 * 60 * 60 * 1000
-        : filterPeriod === '30d'
-          ? 30 * 24 * 60 * 60 * 1000
-          : filterPeriod === '90d'
-            ? 90 * 24 * 60 * 60 * 1000
-            : 0;
-
-    const out = requests.filter((req) => {
-      const q = searchTerm.trim().toLowerCase();
-      const matchesSearch =
-        !q ||
-        req.document_name.toLowerCase().includes(q) ||
-        (req.client_name || '').toLowerCase().includes(q);
-
-      const matchesStatus = filterStatus === 'all' || req.status === filterStatus;
-
-      const matchesPeriod =
-        periodMs === 0 || (now - new Date(req.created_at).getTime() <= periodMs);
-
-      const createdAt = new Date(req.created_at);
-      const createdMs = createdAt.getTime();
-
-      const matchesMonth = !filterMonth || req.created_at.slice(0, 7) === filterMonth;
-
-      const matchesDateFrom = fromMs === null || createdMs >= fromMs;
-      const matchesDateTo = toMs === null || createdMs <= toMs;
-
-      return matchesSearch && matchesStatus && matchesPeriod && matchesMonth && matchesDateFrom && matchesDateTo;
+    return filterSignatureRequests(requests, {
+      searchTerm,
+      filterStatus,
+      filterPeriod,
+      filterMonth,
+      filterDateFrom,
+      filterDateTo,
+      sortOrder,
     });
-
-    out.sort((a, b) => {
-      const aT = new Date(a.created_at).getTime();
-      const bT = new Date(b.created_at).getTime();
-      return sortOrder === 'newest' ? bT - aT : aT - bT;
-    });
-
-    return out;
   }, [requests, searchTerm, filterStatus, filterPeriod, filterMonth, filterDateFrom, filterDateTo, sortOrder]);
 
   const explorerItemIndex = useMemo(() => {
@@ -779,18 +834,7 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
   }, [filteredRequests, explorerItemIndex, selectedFolderId]);
 
   const filteredGeneratedDocumentsByFolder = useMemo(() => {
-    const q = searchTerm.trim().toLowerCase();
-    return generatedDocuments.filter((doc) => {
-      const item = explorerItemIndex.get(`generated_document:${doc.id}`);
-      const folderId = item?.folder_id ?? null;
-      if (folderId !== selectedFolderId) return false;
-
-      if (!q) return true;
-      const name = (doc.file_name || '').toLowerCase();
-      const client = (doc.client_name || '').toLowerCase();
-      const template = (doc.template_name || '').toLowerCase();
-      return name.includes(q) || client.includes(q) || template.includes(q);
-    });
+    return filterGeneratedDocumentsByFolder(generatedDocuments, explorerItemIndex, searchTerm, selectedFolderId);
   }, [generatedDocuments, explorerItemIndex, searchTerm, selectedFolderId]);
 
   const foldersByParent = useMemo(() => {
@@ -1513,48 +1557,17 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
   };
 
   useEffect(() => {
-    setSelectedRequestIds((prev) => {
-      if (!prev.size) return prev;
-      const allowed = new Set(filteredRequests.map((r) => r.id));
-      const next = new Set<string>();
-      for (const id of prev) {
-        if (allowed.has(id)) next.add(id);
-      }
-      return next;
-    });
-  }, [filteredRequests]);
-
-  const toggleSelectedRequestId = (id: string) => {
-    setSelectedRequestIds((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
-  };
+    pruneSelectedIds(filteredRequests.map((r) => r.id));
+  }, [filteredRequests, pruneSelectedIds]);
 
   const selectAllFilteredRequests = () => {
-    setSelectedRequestIds(new Set(filteredRequests.map((r) => r.id)));
+    selectIds(filteredRequests.map((r) => r.id));
   };
 
   const selectAllInFolder = () => {
     if (!selectedFolderId) return;
     const folderItems = filteredRequestsByFolder.map((r) => r.id);
-    setSelectedRequestIds(new Set(folderItems));
-  };
-
-  const clearSelectedRequests = () => {
-    setSelectedRequestIds(new Set());
-  };
-
-  const toggleSelectionMode = () => {
-    setSelectionMode((prev) => {
-      const next = !prev;
-      if (!next) {
-        setSelectedRequestIds(new Set());
-      }
-      return next;
-    });
+    selectIds(folderItems);
   };
 
   const deleteSelectedRequests = async () => {
@@ -1574,7 +1587,7 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
         await signatureService.archiveRequest(id);
       }
       toast.success('Documentos removidos do painel.');
-      setSelectedRequestIds(new Set());
+      clearSelectedIds();
       detailsRequestIdRef.current = null;
       setDetailsRequest(null);
       loadData();
@@ -1623,6 +1636,7 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
     setSelectedClientId(null); setSelectedClientName(null);
     setUploadedFile(null);
     setUploadedFiles([]);
+    clearSelectedUploadFileIndexes();
     setSigners([{ id: crypto.randomUUID(), name: '', email: '', cpf: '', role: 'Assinar', order: 1, deliveryMethod: 'email' }]);
     setFields([]); setPdfPreviewUrl(null); setCreatedRequest(null);
     setPdfPreviewUrls([]); setPdfNumPagesByDoc({});
@@ -1642,6 +1656,7 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
     setSelectedClientId(null);
     setSelectedClientName(null);
     setUploadedFiles([file]);
+    clearSelectedUploadFileIndexes();
   };
 
   // Múltiplos arquivos (envelope)
@@ -1652,7 +1667,7 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
     cleanupLocalViewerUrls(viewerDocuments, pdfPreviewUrls);
 
     setUploadedFiles(files);
-    setSelectedUploadFileIndexes(new Set());
+    clearSelectedUploadFileIndexes();
     setUploadedFile(files[0]);
     setSelectedDocumentName(files[0].name);
     setSelectedDocumentId('');
@@ -1680,24 +1695,11 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
     setPdfPreviewUrl(null);
     setPdfPreviewUrls([]);
     setPdfNumPagesByDoc({});
-    setSelectedUploadFileIndexes(new Set());
-  };
-
-  const toggleSelectedUploadIndex = (index: number) => {
-    setSelectedUploadFileIndexes((prev) => {
-      const next = new Set(prev);
-      if (next.has(index)) next.delete(index);
-      else next.add(index);
-      return next;
-    });
+    clearSelectedUploadFileIndexes();
   };
 
   const selectAllUploadedFiles = () => {
-    setSelectedUploadFileIndexes(new Set(uploadedFiles.map((_, i) => i)));
-  };
-
-  const clearSelectedUploadedFiles = () => {
-    setSelectedUploadFileIndexes(new Set());
+    selectUploadFileIndexes(uploadedFiles.map((_, i) => i));
   };
 
   const removeUploadedFilesByIndexes = (indexes: Set<number>) => {
@@ -1716,7 +1718,7 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
         setPdfPreviewUrl(null);
         setPdfPreviewUrls([]);
         setPdfNumPagesByDoc({});
-        setSelectedUploadFileIndexes(new Set());
+        clearSelectedUploadFileIndexes();
         return next;
       }
 
@@ -1728,7 +1730,7 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
       setPdfPreviewUrl(docs[0]?.previewUrl || null);
       setPdfPreviewUrls([]);
       setPdfNumPagesByDoc({});
-      setSelectedUploadFileIndexes(new Set());
+      clearSelectedUploadFileIndexes();
       return next;
     });
   };
@@ -1858,15 +1860,22 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
       const docs = buildViewerDocumentsFromUploads(uploadedFiles);
       setViewerDocuments(docs);
       setCurrentViewerDocIndex(0);
-      loadDocumentPreview(docs[0]);
+      // Evitar chamada duplicada
+      if (documentLoadedRef.current !== docs[0].id) {
+        documentLoadedRef.current = docs[0].id;
+        loadDocumentPreview(docs[0]);
+      }
       return;
     }
 
     const currentDoc = viewerDocuments[currentViewerDocIndex];
-    if (currentDoc?.previewUrl && currentDoc.previewUrl !== pdfPreviewUrl) {
+    // Evitar loop: só atualizar se realmente mudou e não está carregando
+    if (currentDoc?.previewUrl && currentDoc.previewUrl !== pdfPreviewUrl && documentLoadedRef.current !== currentDoc.id) {
+      documentLoadedRef.current = currentDoc.id;
       setPdfPreviewUrl(currentDoc.previewUrl);
     }
-  }, [currentViewerDocIndex, loadDocumentPreview, pdfPreviewUrl, selectedDocumentId, selectedDocumentPath, uploadedFiles, viewerDocuments, wizardStep]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [wizardStep]);
 
   useEffect(() => {
     if (!pdfPreviewUrl) return;
@@ -1878,11 +1887,15 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
     setPdfViewMode('fit');
   }, [pdfPreviewUrl]);
 
-  const applyPdfAutoFit = useCallback(() => {
-    if (wizardStep !== 'position') return;
+  // SOLUÇÃO DEFINITIVA: Auto-fit apenas UMA VEZ no carregamento inicial.
+  // Depois disso, a escala só muda via botões de zoom manuais.
+  // Isso elimina 100% dos reloads/flickers causados por ResizeObserver ou mudanças de estado.
+  const initialFitAppliedRef = useRef(false);
+  
+  const applyInitialFit = useCallback(() => {
+    if (initialFitAppliedRef.current) return;
     if (!viewerScrollRef.current) return;
-    if (!pdfPreviewUrl && !isDocxFile) return;
-
+    
     const el = viewerScrollRef.current;
     const styles = window.getComputedStyle(el);
     const padX = (parseFloat(styles.paddingLeft || '0') || 0) + (parseFloat(styles.paddingRight || '0') || 0);
@@ -1891,7 +1904,6 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
     const availableW = Math.max(0, el.clientWidth - padX);
     const availableH = Math.max(0, el.clientHeight - padY);
 
-    // A4 aproximado (react-pdf em scale=1 tende a ficar ~595x842)
     const baseW = isDocxFile ? 794 : 595;
     const baseH = isDocxFile ? 1123 : 842;
 
@@ -1899,30 +1911,42 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
 
     const fitScale = Math.min(availableW / baseW, availableH / baseH);
     const clamped = Math.max(0.5, Math.min(1.4, fitScale));
+    
     setPdfScale(clamped);
     setPdfViewMode('fit');
-  }, [isDocxFile, pdfPreviewUrl, wizardStep]);
+    initialFitAppliedRef.current = true;
+  }, [isDocxFile]);
 
+  const scrollToPdfPage = useCallback((pageNumber: number) => {
+    if (!viewerScrollRef.current || !pdfContainerRef.current) return;
+    const targetPage = pdfContainerRef.current.querySelector(`[data-pdf-page-number="${pageNumber}"]`) as HTMLElement | null;
+    if (!targetPage) return;
+
+    const containerRect = viewerScrollRef.current.getBoundingClientRect();
+    const pageRect = targetPage.getBoundingClientRect();
+    const nextTop = viewerScrollRef.current.scrollTop + (pageRect.top - containerRect.top) - 24;
+
+    viewerScrollRef.current.scrollTo({
+      top: Math.max(0, nextTop),
+      behavior: 'smooth',
+    });
+  }, []);
+
+  // Aplicar fit inicial apenas uma vez quando o documento carrega
   useLayoutEffect(() => {
     if (wizardStep !== 'position') return;
     if (!pdfAutoFitEnabled) return;
-    applyPdfAutoFit();
-  }, [applyPdfAutoFit, pdfAutoFitEnabled, viewerResizeTick, wizardStep]);
+    if (initialFitAppliedRef.current) return;
+    
+    // Pequeno delay para garantir que o container está renderizado
+    const timer = setTimeout(applyInitialFit, 100);
+    return () => clearTimeout(timer);
+  }, [applyInitialFit, pdfAutoFitEnabled, wizardStep]);
 
+  // Reset do flag quando muda de documento
   useEffect(() => {
-    if (wizardStep !== 'position') return;
-    const el = viewerScrollRef.current;
-    if (!el) return;
-    if (typeof ResizeObserver === 'undefined') return;
-
-    const ro = new ResizeObserver(() => {
-      setViewerResizeTick((t) => t + 1);
-    });
-    ro.observe(el);
-    return () => {
-      ro.disconnect();
-    };
-  }, [wizardStep]);
+    initialFitAppliedRef.current = false;
+  }, [pdfPreviewUrl]);
 
   // Entrar no passo de posicionamento com "Adicionar campo" ativo por padrão
   useEffect(() => {
@@ -1934,6 +1958,8 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
   const handlePdfLoadSuccess = useCallback(({ numPages }: { numPages: number }) => {
     setPdfNumPages(numPages);
     setPdfLoading(false);
+    // Travar auto-fit após carregamento inicial para evitar re-renders durante edição
+    setPdfAutoFitEnabled(false);
   }, []);
 
   const handlePdfLoadError = useCallback((err: any) => {
@@ -1942,7 +1968,9 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
     toast.error('Erro ao carregar o PDF');
   }, [toast]);
 
-  const pdfPageNode = useMemo(() => {
+  // SOLUÇÃO DEFINITIVA: Renderizar PDF em escala fixa (1.0) e aplicar zoom via CSS transform.
+  // Isso evita que o react-pdf recarregue o documento inteiro quando a escala muda.
+  const pdfPagesNode = useMemo(() => {
     if (isDocxFile || !pdfPreviewUrl) return null;
 
     return (
@@ -1952,21 +1980,113 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
         onLoadError={handlePdfLoadError}
         loading={null}
       >
-        <Page
-          pageNumber={pdfCurrentPage}
-          scale={pdfScale}
-          renderTextLayer={false}
-          renderAnnotationLayer={false}
-        />
+        {Array.from({ length: pdfNumPages || 1 }, (_, index) => {
+          const pageNumber = index + 1;
+          return (
+            <div key={pageNumber} data-pdf-page-number={pageNumber} className="relative bg-white shadow-xl rounded-lg overflow-hidden">
+              <Page
+                pageNumber={pageNumber}
+                scale={1}
+                renderTextLayer={false}
+                renderAnnotationLayer={false}
+              />
+
+              {fields.filter(f => 
+                f.fieldType === 'signature' &&
+                f.documentId === (viewerDocuments[currentViewerDocIndex]?.id || 'main') &&
+                f.pageNumber === pageNumber
+              ).map((field) => {
+                const preset = FIELD_PRESETS[field.fieldType];
+                const signer = signers.find(s => s.id === field.signerId);
+                const signerIndex = signers.findIndex(s => s.id === field.signerId);
+                const signerColor = ['#3B82F6', '#EF4444', '#10B981', '#8B5CF6', '#F59E0B'][signerIndex % 5];
+                const isSignature = field.fieldType === 'signature';
+
+                return (
+                  <div
+                    key={field.localId}
+                    className="absolute cursor-move border-2 rounded-md flex items-center justify-center transition-shadow hover:shadow-lg"
+                    style={{
+                      left: `${field.xPercent}%`,
+                      top: `${field.yPercent}%`,
+                      width: `${field.wPercent}%`,
+                      height: `${field.hPercent}%`,
+                      borderColor: signerColor,
+                      backgroundColor: isSignature ? `${signerColor}08` : `${signerColor}20`,
+                      borderStyle: isSignature ? 'dashed' : 'solid',
+                    }}
+                    onMouseDown={(e) => startDragging(e, field)}
+                  >
+                    <div className="flex items-center justify-center w-full h-full relative group px-3 py-2 overflow-hidden rounded-[20px]">
+                      <div className="absolute top-1 right-1 w-4 h-4 rounded-full flex items-center justify-center text-white text-xs font-bold shadow-md z-10" style={{ backgroundColor: signerColor }}>
+                        {signerIndex + 1}
+                      </div>
+
+                      {isSignature ? (
+                        <div className="w-full h-full rounded-[16px] border border-white/70 bg-white/92 backdrop-blur-sm shadow-[0_10px_30px_-18px_rgba(0,0,0,0.28)] px-3 py-1 flex items-center gap-3">
+                          <div
+                            className="shrink-0 w-6 h-6 rounded-lg flex items-center justify-center shadow-sm"
+                            style={{ backgroundColor: `${signerColor}18`, color: signerColor }}
+                          >
+                            <FileSignature className="w-3 h-3" />
+                          </div>
+                          <div className="min-w-0 flex-1 flex flex-col items-start justify-center leading-tight">
+                            <span className="text-[9px] font-bold uppercase tracking-[0.12em]" style={{ color: signerColor }}>
+                              Assinatura
+                            </span>
+                            <span className="text-[9px] text-slate-500 truncate max-w-full">
+                              {signer?.name || 'Signatário'}
+                            </span>
+                          </div>
+                          <div
+                            className="shrink-0 rounded-full px-1.5 py-0.5 text-[7px] font-semibold border bg-white/95"
+                            style={{ color: signerColor, borderColor: `${signerColor}35` }}
+                          >
+                            Assinar
+                          </div>
+                        </div>
+                      ) : (
+                        <>
+                          <preset.icon className="w-4 h-4" style={{ color: signerColor }} />
+                          <span className="text-xs font-medium" style={{ color: signerColor }}>{preset.label}</span>
+                        </>
+                      )}
+
+                      <span className="absolute bottom-1 left-1 text-[8px] font-bold px-2 py-0.5 rounded-full bg-white shadow-sm border border-slate-100" style={{ color: signerColor }}>
+                        {signer?.name || 'Signatário'}
+                      </span>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        removeField(field.localId);
+                      }}
+                      className={
+                        isSignature
+                          ? 'absolute top-1 left-1 w-4 h-4 bg-red-500 text-white rounded-full flex items-center justify-center hover:bg-red-600 transition-colors'
+                          : 'absolute -top-2 -right-2 w-5 h-5 bg-red-500 text-white rounded-full flex items-center justify-center hover:bg-red-600 transition-colors'
+                      }
+                    >
+                      <X className="w-3 h-3" />
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
+          );
+        })}
       </Document>
     );
-  }, [handlePdfLoadError, handlePdfLoadSuccess, isDocxFile, pdfCurrentPage, pdfPreviewUrl, pdfScale]);
+  }, [currentViewerDocIndex, fields, handlePdfLoadError, handlePdfLoadSuccess, isDocxFile, pdfNumPages, pdfPreviewUrl, signers]);
 
   // Estado simplificado para posicionamento
   const [positionMode, setPositionMode] = useState<'select' | 'place'>('select');
   const [currentSignerIndex, setCurrentSignerIndex] = useState(0);
   const [currentFieldType, setCurrentFieldType] = useState<SignatureFieldType>('signature');
   const [isPlacingField, setIsPlacingField] = useState(false);
+  const suppressNextPlacementClickRef = useRef(false);
+  const dragMovedRef = useRef(false);
 
   // Forçar apenas campo de assinatura (UI e lógica)
   useEffect(() => {
@@ -2022,19 +2142,38 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
     
     // Para PDF, usar o container do react-pdf
     if (!pdfContainerRef.current) return null;
-    const pdfElement = pdfContainerRef.current.querySelector('.react-pdf__Page') as HTMLElement;
+    const target = e.target as HTMLElement;
+    const pdfPageWrapper = target.closest('[data-pdf-page-number]') as HTMLElement | null;
+    const pdfElement = (pdfPageWrapper?.querySelector('.react-pdf__Page') || pdfPageWrapper || pdfContainerRef.current.querySelector('.react-pdf__Page')) as HTMLElement | null;
     if (!pdfElement) return null;
     
     const rect = pdfElement.getBoundingClientRect();
     const x = ((e.clientX - rect.left) / rect.width) * 100;
     const y = ((e.clientY - rect.top) / rect.height) * 100;
+    const pageNumberAttr = pdfPageWrapper?.getAttribute('data-pdf-page-number');
+    const pageNumber = pageNumberAttr ? Number(pageNumberAttr) || 1 : pdfCurrentPage;
     
-    return { x, y, rect, pageNumber: pdfCurrentPage };
+    return { x, y, rect, pageNumber };
   };
 
   // Adicionar campo na posição clicada
   const addFieldAtPosition = (e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    
+    // Desativar auto-fit ao interagir manualmente para evitar flickering/reload
+    if (pdfAutoFitEnabled) {
+      setPdfAutoFitEnabled(false);
+      setPdfViewMode('manual');
+    }
+
     console.log('🖱️ addFieldAtPosition chamado', { isPlacingField, positionMode, isDocxFile });
+
+    if (suppressNextPlacementClickRef.current) {
+      console.log('⛔ Clique ignorado após drag');
+      suppressNextPlacementClickRef.current = false;
+      return;
+    }
     
     if (!isPlacingField || positionMode !== 'place') {
       console.log('❌ Não está em modo de posicionamento');
@@ -2067,8 +2206,8 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
       signerId: currentSigner.id,
       fieldType: 'signature',
       pageNumber: coords.pageNumber,
-      xPercent: Math.max(0, Math.min(100 - preset.w, coords.x)),
-      yPercent: Math.max(0, Math.min(100 - preset.h, coords.y)),
+      xPercent: Math.max(0, Math.min(100 - preset.w, coords.x - (preset.w / 2))),
+      yPercent: Math.max(0, Math.min(100 - preset.h, coords.y - (preset.h / 2))),
       wPercent: preset.w,
       hPercent: preset.h,
       documentId: docId,
@@ -2097,6 +2236,7 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
   const startDragging = (e: React.MouseEvent, field: DraftField) => {
     e.preventDefault();
     e.stopPropagation();
+    dragMovedRef.current = false;
 
     // No DOCX, ao clicar no overlay do campo, o e.target pode não estar dentro de section/article
     // (logo getPdfCoordinates pode falhar). Então derivamos o rect da página pelo pageNumber.
@@ -2136,6 +2276,18 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
 
   // Handler para clique no PDF
   const handlePdfClick = (e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    
+    if (draggingField) {
+      return;
+    }
+
+    const target = e.target as HTMLElement | null;
+    if (target?.closest('button')) {
+      return;
+    }
+
     if (positionMode === 'place') {
       addFieldAtPosition(e);
     }
@@ -2148,6 +2300,10 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
     const handleMouseMove = (e: MouseEvent) => {
       const dx = ((e.clientX - draggingField.startX) / draggingField.rect.width) * 100;
       const dy = ((e.clientY - draggingField.startY) / draggingField.rect.height) * 100;
+
+      if (Math.abs(e.clientX - draggingField.startX) > 3 || Math.abs(e.clientY - draggingField.startY) > 3) {
+        dragMovedRef.current = true;
+      }
       
       setFields(prev => prev.map(f => {
         if (f.localId !== draggingField.localId) return f;
@@ -2160,6 +2316,14 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
     };
     
     const handleMouseUp = () => {
+      if (dragMovedRef.current) {
+        suppressNextPlacementClickRef.current = true;
+        window.setTimeout(() => {
+          suppressNextPlacementClickRef.current = false;
+        }, 120);
+      }
+
+      dragMovedRef.current = false;
       setDraggingField(null);
     };
     
@@ -2197,9 +2361,14 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
       console.log('✅ Solicitação criada:', created.id, 'attachment_paths no response:', (created as any).attachment_paths);
       console.log('📍 Campos de assinatura no estado:', fields.length, fields.map(f => ({ doc: f.documentId, page: f.pageNumber, type: f.fieldType })));
       if (fields.length > 0) {
+        const createdSignersOrdered = [...created.signers].sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
         const fieldsPayload = fields.filter((f) => f.fieldType === 'signature').map((f) => {
           const signer = signers.find((s) => s.id === f.signerId);
-          const createdSigner = created.signers.find((cs) => cs.email === signer?.email);
+          const signerIndex = signers.findIndex((s) => s.id === f.signerId);
+          const signerOrder = signer?.order ?? (signerIndex >= 0 ? signerIndex + 1 : null);
+          const createdSigner = createdSignersOrdered.find((cs) => (cs.order ?? null) === signerOrder)
+            ?? created.signers.find((cs) => cs.email === signer?.email)
+            ?? (signerIndex >= 0 ? createdSignersOrdered[signerIndex] : null);
           return {
             document_id: f.documentId,
             signer_id: createdSigner?.id ?? null,
@@ -2401,7 +2570,9 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
       }
       
       // Se tem signatário que assinou, verificar se já existe PDF assinado salvo
-      const signedSigner = freshRequest.signers.find(s => s.status === 'signed');
+      const signedSigner = [...freshRequest.signers]
+        .filter(s => s.status === 'signed')
+        .sort((a, b) => new Date(b.signed_at || 0).getTime() - new Date(a.signed_at || 0).getTime())[0];
       console.log('[DOWNLOAD] signedSigner:', signedSigner?.name, signedSigner?.status);
       
       if (signedSigner) {
@@ -2668,7 +2839,7 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
 
   const formatDate = (d: string) => new Date(d).toLocaleDateString('pt-BR', { day: '2-digit', month: 'short', year: 'numeric' });
 
-  if (loading) return <div className="flex items-center justify-center h-64"><Loader2 className="w-8 h-8 animate-spin text-orange-600" /></div>;
+  if (loading && wizardStep === 'list') return <div className="flex items-center justify-center h-64"><Loader2 className="w-8 h-8 animate-spin text-orange-600" /></div>;
 
   // SUCCESS
   if (wizardStep === 'success' && createdRequest) {
@@ -2678,7 +2849,7 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
           <div className="h-2 w-full bg-gradient-to-r from-orange-500 to-orange-600" />
           <div className="p-8">
             <div className="w-20 h-20 bg-orange-100 rounded-full flex items-center justify-center mx-auto mb-6"><Check className="w-10 h-10 text-orange-600" /></div>
-          <h2 className="text-2xl font-bold text-slate-800 mb-2">Documento criado e enviado com sucesso</h2>
+          <h2 className="text-2xl font-bold text-slate-900 mb-2">Documento criado e enviado com sucesso</h2>
           <p className="text-slate-600 mb-8">Seu documento foi <strong>enviado</strong> para os destinatários.</p>
           <div className="bg-slate-50 rounded-xl p-4 mb-6">
             <h3 className="text-sm font-semibold text-slate-700 mb-3">Links de assinatura</h3>
@@ -2689,12 +2860,24 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
                     <div className="w-8 h-8 bg-orange-100 rounded-full flex items-center justify-center"><User className="w-4 h-4 text-orange-600" /></div>
                     <div className="min-w-0"><p className="font-medium text-slate-800 truncate">{signer.name}</p><p className="text-xs text-slate-500 truncate">{signatureService.generatePublicSigningUrl(signer.public_token!)}</p></div>
                   </div>
-                  <button onClick={() => copyLink(signer.public_token!)} className="flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-orange-600 hover:bg-orange-50 rounded-lg"><Copy className="w-4 h-4" />Copiar</button>
+                  <button 
+                    type="button"
+                    onClick={() => copyLink(signer.public_token!)} 
+                    className="flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-orange-600 hover:bg-orange-50 rounded-lg"
+                  >
+                    <Copy className="w-4 h-4" />Copiar
+                  </button>
                 </div>
               ))}
             </div>
           </div>
-          <button onClick={resetWizard} className="px-6 py-2.5 bg-orange-600 text-white rounded-lg font-medium hover:bg-orange-700">Fechar</button>
+          <button 
+            type="button"
+            onClick={resetWizard} 
+            className="px-6 py-2.5 bg-orange-600 text-white rounded-lg font-medium hover:bg-orange-700"
+          >
+            Fechar
+          </button>
           </div>
         </div>
       </div>
@@ -2721,6 +2904,7 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
             <div className="h-1 bg-gradient-to-r from-orange-500 to-orange-600" />
             <div className="max-w-5xl mx-auto px-6 py-4 flex items-center justify-between">
               <button 
+                type="button"
                 onClick={() => { 
                   if (wizardStep === 'upload') resetWizard(); 
                   else if (wizardStep === 'signers') setWizardStep('upload'); 
@@ -2751,13 +2935,14 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
               </div>
               
               <button 
+                type="button"
                 onClick={() => { 
                   if (wizardStep === 'upload' && canProceedUpload) setWizardStep('signers'); 
                   else if (wizardStep === 'signers' && canProceedSigners) setWizardStep('position'); 
                   else if (wizardStep === 'settings') handleSubmit(); 
                 }} 
                 disabled={(wizardStep === 'upload' && !canProceedUpload) || (wizardStep === 'signers' && !canProceedSigners) || wizardLoading} 
-                className="flex items-center gap-2 px-4 py-2 bg-slate-900 text-white rounded text-sm font-medium hover:bg-slate-800 disabled:opacity-40 disabled:cursor-not-allowed"
+                className="flex items-center gap-2 px-4 py-2 bg-slate-900 text-white rounded-lg font-medium hover:bg-slate-800 disabled:opacity-40 disabled:cursor-not-allowed"
               >
                 {wizardLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : wizardStep === 'settings' ? <><Send className="w-4 h-4" />Enviar</> : <>Avançar<ChevronRight className="w-4 h-4" /></>}
               </button>
@@ -2806,7 +2991,7 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
                               <span className="text-slate-300">|</span>
                               <button
                                 type="button"
-                                onClick={() => clearSelectedUploadedFiles()}
+                                onClick={() => clearSelectedUploadFileIndexes()}
                                 className="text-[11px] font-semibold text-slate-600 hover:text-slate-800"
                               >
                                 Limpar
@@ -2840,18 +3025,18 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
                                 />
                                 <span className="truncate text-slate-600">{f.name}</span>
                               </label>
-                              <button onClick={() => removeUploadedFileAt(i)} className="text-red-500 hover:text-red-600 ml-2"><X className="w-3 h-3" /></button>
+                              <button type="button" onClick={() => removeUploadedFileAt(i)} className="text-red-500 hover:text-red-600 ml-2"><X className="w-3 h-3" /></button>
                             </div>
                           ))}
                         </div>
                       )}
-                      <button onClick={clearUploadedFiles} className="text-xs text-red-500 hover:text-red-600">Remover</button>
+                      <button type="button" onClick={clearUploadedFiles} className="text-xs text-red-500 hover:text-red-600">Remover</button>
                     </div>
                   ) : (
                     <>
                       <Upload className="w-10 h-10 text-slate-300 mx-auto mb-3" />
                       <p className="text-sm text-slate-500 mb-3">Arraste arquivos ou</p>
-                      <button onClick={() => fileInputRef.current?.click()} className="px-4 py-2 bg-slate-900 text-white rounded text-sm font-medium hover:bg-slate-800">Selecionar arquivos</button>
+                      <button type="button" onClick={() => fileInputRef.current?.click()} className="px-4 py-2 bg-slate-900 text-white rounded text-sm font-medium hover:bg-slate-800">Selecionar arquivos</button>
                     </>
                   )}
                 </div>
@@ -2862,6 +3047,7 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
                     <div className="space-y-2 max-h-40 overflow-y-auto">
                       {generatedDocuments.slice(0, 5).map((doc) => (
                         <button 
+                          type="button"
                           key={doc.id} 
                           onClick={() => handleSelectGeneratedDoc(doc)} 
                           className={`w-full flex items-center gap-3 p-3 rounded border text-left text-sm transition ${
@@ -2886,8 +3072,8 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
                 <div className="flex items-center justify-between mb-4">
                   <h2 className="text-sm font-medium text-slate-700">Signatários</h2>
                   <div className="flex gap-1">
-                    <button onClick={() => setSignerOrder('none')} className={`px-2 py-1 rounded text-xs font-medium ${signerOrder === 'none' ? 'bg-slate-900 text-white' : 'bg-slate-100 text-slate-600'}`}>Sem ordem</button>
-                    <button onClick={() => setSignerOrder('sequential')} className={`px-2 py-1 rounded text-xs font-medium ${signerOrder === 'sequential' ? 'bg-slate-900 text-white' : 'bg-slate-100 text-slate-600'}`}>Com ordem</button>
+                    <button type="button" onClick={() => setSignerOrder('none')} className={`px-2 py-1 rounded text-xs font-medium ${signerOrder === 'none' ? 'bg-slate-900 text-white' : 'bg-slate-100 text-slate-600'}`}>Sem ordem</button>
+                    <button type="button" onClick={() => setSignerOrder('sequential')} className={`px-2 py-1 rounded text-xs font-medium ${signerOrder === 'sequential' ? 'bg-slate-900 text-white' : 'bg-slate-100 text-slate-600'}`}>Com ordem</button>
                   </div>
                 </div>
                 <div className="space-y-3 max-h-64 overflow-y-auto">
@@ -2904,11 +3090,11 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
                           </select>
                         </div>
                       </div>
-                      <button onClick={() => removeSigner(signer.id)} disabled={signers.length <= 1} className="p-1 text-slate-400 hover:text-red-500 disabled:opacity-30"><Trash2 className="w-4 h-4" /></button>
+                      <button type="button" onClick={() => removeSigner(signer.id)} disabled={signers.length <= 1} className="p-1 text-slate-400 hover:text-red-500 disabled:opacity-30"><Trash2 className="w-4 h-4" /></button>
                     </div>
                   ))}
                 </div>
-                <button onClick={addSigner} className="mt-3 w-full flex items-center justify-center gap-2 px-3 py-2 border border-dashed border-slate-300 rounded text-sm text-slate-500 hover:border-slate-400 hover:text-slate-600">
+                <button type="button" onClick={addSigner} className="mt-3 w-full flex items-center justify-center gap-2 px-3 py-2 border border-dashed border-slate-300 rounded text-sm text-slate-500 hover:border-slate-400 hover:text-slate-600">
                   <Plus className="w-4 h-4" /> Adicionar signatário
                 </button>
               </div>
@@ -2943,6 +3129,7 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
             <div className="bg-white border-b border-gray-200 px-6 py-3 flex items-center justify-between">
               <div className="flex items-center gap-2">
                 <button
+                  type="button"
                   onClick={() => setWizardStep('signers')}
                   className="flex items-center gap-1 text-sm font-medium text-gray-500 hover:text-gray-900 transition"
                 >
@@ -2956,12 +3143,14 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
               </div>
               <div className="flex items-center gap-3">
                 <button
+                  type="button"
                   onClick={resetWizard}
                   className="px-4 py-2 bg-white border border-gray-200 text-gray-700 rounded-lg hover:bg-gray-50 transition shadow-sm font-medium text-sm"
                 >
                   Cancelar
                 </button>
                 <button
+                  type="button"
                   onClick={() => setWizardStep('settings')}
                   className="px-5 py-2 bg-[#00C48C] text-white rounded-lg hover:bg-emerald-600 transition shadow-lg flex items-center gap-2 font-medium text-sm"
                 >
@@ -2980,10 +3169,16 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
                   <h2 className="text-sm font-bold text-gray-900 uppercase tracking-wider mb-4">Ferramentas</h2>
                   <button
                     type="button"
-                    onClick={() => { setPositionMode('place'); setIsPlacingField(true); }}
+                    onClick={(e) => { 
+                      e.preventDefault();
+                      e.stopPropagation();
+                      console.log('🔘 Ativando modo de posicionamento');
+                      setPositionMode('place'); 
+                      setIsPlacingField(true); 
+                    }}
                     disabled={isPlacingField}
-                    className={`w-full text-white py-3 px-4 rounded-lg font-medium shadow-md transition flex items-center justify-center gap-2 group ${
-                      isPlacingField ? 'bg-emerald-600' : 'bg-[#00C48C] hover:bg-emerald-600'
+                    className={`w-full text-white py-3 px-4 rounded-lg font-medium shadow-md transition-all duration-300 flex items-center justify-center gap-2 group active:scale-95 ${
+                      isPlacingField ? 'bg-emerald-600 ring-4 ring-emerald-100' : 'bg-[#00C48C] hover:bg-emerald-600 hover:shadow-emerald-200'
                     }`}
                   >
                     {isPlacingField ? (
@@ -3007,6 +3202,7 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
                   <div className="space-y-2">
                     {viewerDocuments.map((doc, idx) => (
                       <button
+                        type="button"
                         key={doc.id}
                         onClick={() => { setCurrentViewerDocIndex(idx); loadDocumentPreview(doc); }}
                         className={`group w-full flex items-center gap-3 p-3 rounded-lg text-left text-sm transition cursor-pointer ${
@@ -3035,6 +3231,7 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
                   <h3 className="text-xs font-semibold text-gray-500 uppercase mb-3">Signatários</h3>
                   {signers.map((signer, index) => (
                     <button
+                      type="button"
                       key={signer.id}
                       onClick={() => setCurrentSignerIndex(index)}
                       className={`w-full rounded-lg p-3 mb-2 transition ${
@@ -3060,7 +3257,7 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
                       </div>
                     </button>
                   ))}
-                  <button className="mt-1 w-full py-2 border border-dashed border-gray-300 rounded-lg text-sm text-gray-500 hover:text-[#00C48C] hover:border-[#00C48C] hover:bg-emerald-50/50 transition flex items-center justify-center gap-1">
+                  <button type="button" onClick={addSigner} className="mt-1 w-full py-2 border border-dashed border-gray-300 rounded-lg text-sm text-gray-500 hover:text-[#00C48C] hover:border-[#00C48C] hover:bg-emerald-50/50 transition flex items-center justify-center gap-1">
                     <Plus className="w-4 h-4" /> Adicionar Signatário
                   </button>
                 </div>
@@ -3071,7 +3268,7 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
                   <div className="bg-gray-50 rounded-lg p-4 border border-gray-100">
                     <div className="flex items-center justify-between mb-3">
                       <h3 className="text-xs font-semibold text-gray-500 uppercase">Campos Adicionados</h3>
-                      <button onClick={() => setFields([])} className="text-xs text-red-500 hover:text-red-600 font-medium">Limpar</button>
+                      <button type="button" onClick={() => setFields([])} className="text-xs text-red-500 hover:text-red-600 font-medium">Limpar</button>
                     </div>
                     <div className="space-y-2">
                       {fields.map((field) => {
@@ -3085,7 +3282,7 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
                             </div>
                             <div className="flex items-center gap-2">
                               <span className="text-xs text-gray-400">Pág. {field.pageNumber}</span>
-                              <button onClick={() => removeField(field.localId)} className="text-gray-400 hover:text-red-500 transition">
+                              <button type="button" onClick={() => removeField(field.localId)} className="text-gray-400 hover:text-red-500 transition">
                                 <X className="w-4 h-4" />
                               </button>
                             </div>
@@ -3117,6 +3314,7 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
               <div className="absolute top-4 left-1/2 transform -translate-x-1/2 bg-white shadow-lg rounded-full px-4 py-2 flex items-center gap-4 z-10 border border-gray-200">
                 <div className="flex items-center gap-2">
                   <button 
+                    type="button"
                     onClick={() => { setPdfAutoFitEnabled(false); setPdfViewMode('manual'); setPdfScale((s) => Math.max(0.5, s - 0.1)); }} 
                     className="p-1.5 hover:bg-gray-100 rounded-full text-gray-600 transition" 
                     title="Zoom Out"
@@ -3125,6 +3323,7 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
                   </button>
                   <span className="text-xs font-medium w-12 text-center text-gray-900">{Math.round(pdfScale * 100)}%</span>
                   <button 
+                    type="button"
                     onClick={() => { setPdfAutoFitEnabled(false); setPdfViewMode('manual'); setPdfScale((s) => Math.min(2, s + 0.1)); }} 
                     className="p-1.5 hover:bg-gray-100 rounded-full text-gray-600 transition" 
                     title="Zoom In"
@@ -3132,13 +3331,15 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
                     <ZoomIn className="w-4 h-4" />
                   </button>
                   <button
+                    type="button"
                     onClick={() => {
                       viewerScrollRef.current?.scrollTo({ top: 0, left: 0, behavior: 'auto' });
 
                       if (pdfViewMode === 'expanded') {
+                        // Resetar para fit inicial
+                        initialFitAppliedRef.current = false;
                         setPdfAutoFitEnabled(true);
                         setPdfViewMode('fit');
-                        applyPdfAutoFit();
                         return;
                       }
 
@@ -3156,7 +3357,12 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
                 <div className="w-px h-4 bg-gray-300"></div>
                 <div className="flex items-center gap-2">
                   <button 
-                    onClick={() => setPdfCurrentPage((p) => Math.max(1, p - 1))} 
+                    type="button"
+                    onClick={() => {
+                      const nextPage = Math.max(1, pdfCurrentPage - 1);
+                      setPdfCurrentPage(nextPage);
+                      scrollToPdfPage(nextPage);
+                    }} 
                     disabled={pdfCurrentPage <= 1} 
                     className="p-1.5 hover:bg-gray-100 rounded-full text-gray-400 transition disabled:opacity-30"
                   >
@@ -3164,7 +3370,12 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
                   </button>
                   <span className="text-xs font-medium text-gray-900">{pdfCurrentPage} / {pdfNumPages || 1}</span>
                   <button 
-                    onClick={() => setPdfCurrentPage((p) => Math.min(pdfNumPages || 1, p + 1))} 
+                    type="button"
+                    onClick={() => {
+                      const nextPage = Math.min(pdfNumPages || 1, pdfCurrentPage + 1);
+                      setPdfCurrentPage(nextPage);
+                      scrollToPdfPage(nextPage);
+                    }} 
                     disabled={pdfCurrentPage >= (pdfNumPages || 1)} 
                     className="p-1.5 hover:bg-gray-100 rounded-full text-gray-600 transition disabled:opacity-30"
                   >
@@ -3177,7 +3388,6 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
               <div ref={viewerScrollRef} className="flex-1 overflow-auto pt-16 pb-6 px-6 flex justify-center items-start bg-gray-200/50 min-h-0">
                 {(pdfPreviewUrl || isDocxFile) ? (
                   <div className="w-full flex justify-center items-start min-w-0">
-                    {/* Container para DOCX */}
                     {isDocxFile && (
                       <div className="relative" style={{ width: `${794 * pdfScale}px`, minHeight: `${1123 * pdfScale}px` }}>
                         <div
@@ -3189,176 +3399,128 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
                             transformOrigin: 'top left',
                           }}
                         >
-                        {/* Container do conteúdo DOCX - NÃO re-renderiza */}
-                        <div
-                          ref={docxContainerRef}
-                          className={`bg-white shadow-lg rounded-lg overflow-hidden ${
-                            isPlacingField ? 'cursor-crosshair' : 'cursor-default'
-                          }`}
-                          onClick={handlePdfClick}
-                          style={{ 
-                            width: '100%', 
-                            minHeight: '1123px',
-                          }}
-                        />
-                        
-                        {pdfLoading && (
-                          <div className="absolute inset-0 flex items-center justify-center bg-white/80 z-10">
-                            <Loader2 className="w-8 h-8 text-orange-500 animate-spin" />
-                          </div>
-                        )}
-                        
-                        {/* Overlay para campos de assinatura - DOCX */}
-                        <div 
-                          className="absolute inset-0 pointer-events-none"
-                          style={{ width: '100%', height: '100%' }}
-                        >
-                          {fields.filter(f => 
-                            f.fieldType === 'signature' &&
-                            f.pageNumber === pdfCurrentPage && 
-                            (f.documentId === (viewerDocuments[currentViewerDocIndex]?.id || 'main'))
-                          ).map((field) => {
-                            const preset = FIELD_PRESETS[field.fieldType];
-                            const signer = signers.find(s => s.id === field.signerId);
-                            const signerIndex = signers.findIndex(s => s.id === field.signerId);
-                            const signerColor = ['#3B82F6', '#EF4444', '#10B981', '#8B5CF6', '#F59E0B'][signerIndex % 5];
-                            const isSignature = field.fieldType === 'signature';
-                            
-                            return (
-                              <div
-                                key={field.localId}
-                                className="absolute cursor-move border-2 rounded-md flex items-center justify-center transition-shadow hover:shadow-lg pointer-events-auto"
-                                style={{
-                                  left: `${field.xPercent}%`,
-                                  top: `${field.yPercent}%`,
-                                  width: `${field.wPercent}%`,
-                                  height: `${field.hPercent}%`,
-                                  borderColor: signerColor,
-                                  backgroundColor: isSignature ? `${signerColor}08` : `${signerColor}20`,
-                                  borderStyle: isSignature ? 'dashed' : 'solid',
-                                  zIndex: 50,
-                                }}
-                                onMouseDown={(e) => startDragging(e, field)}
-                              >
-                                <div className="flex flex-col items-center justify-center w-full h-full">
-                                  <div className="absolute top-1 right-1 w-5 h-5 rounded-full flex items-center justify-center text-white text-xs font-bold" style={{ backgroundColor: signerColor }}>
-                                    {signerIndex + 1}
-                                  </div>
-                                  {!isSignature && (
-                                    <>
-                                      <preset.icon className="w-4 h-4" style={{ color: signerColor }} />
-                                      <span className="text-xs font-medium" style={{ color: signerColor }}>{preset.label}</span>
-                                    </>
-                                  )}
-                                  {isSignature && (
-                                    <span
-                                      className="absolute bottom-1 right-1 text-[10px] font-semibold px-1.5 py-0.5 rounded"
-                                      style={{ backgroundColor: `${signerColor}18`, color: signerColor }}
-                                    >
-                                      Assinatura
-                                    </span>
-                                  )}
-                                </div>
-                                <button
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    removeField(field.localId);
+                          <div
+                            ref={docxContainerRef}
+                            className={`bg-white shadow-lg rounded-lg overflow-hidden ${
+                              isPlacingField ? 'cursor-crosshair' : 'cursor-default'
+                            }`}
+                            onClick={handlePdfClick}
+                            style={{ width: '100%', minHeight: '1123px' }}
+                          />
+
+                          {pdfLoading && (
+                            <div className="absolute inset-0 flex items-center justify-center bg-white/80 z-10">
+                              <Loader2 className="w-8 h-8 text-orange-500 animate-spin" />
+                            </div>
+                          )}
+
+                          <div className="absolute inset-0 pointer-events-none" style={{ width: '100%', height: '100%' }}>
+                            {fields.filter(f => 
+                              f.fieldType === 'signature' &&
+                              f.pageNumber === pdfCurrentPage && 
+                              (f.documentId === (viewerDocuments[currentViewerDocIndex]?.id || 'main'))
+                            ).map((field) => {
+                              const preset = FIELD_PRESETS[field.fieldType];
+                              const signer = signers.find(s => s.id === field.signerId);
+                              const signerIndex = signers.findIndex(s => s.id === field.signerId);
+                              const signerColor = ['#3B82F6', '#EF4444', '#10B981', '#8B5CF6', '#F59E0B'][signerIndex % 5];
+                              const isSignature = field.fieldType === 'signature';
+
+                              return (
+                                <div
+                                  key={field.localId}
+                                  className="absolute cursor-move border-2 rounded-md flex items-center justify-center transition-shadow hover:shadow-lg pointer-events-auto"
+                                  style={{
+                                    left: `${field.xPercent}%`,
+                                    top: `${field.yPercent}%`,
+                                    width: `${field.wPercent}%`,
+                                    height: `${field.hPercent}%`,
+                                    borderColor: signerColor,
+                                    backgroundColor: isSignature ? `${signerColor}08` : `${signerColor}20`,
+                                    borderStyle: isSignature ? 'dashed' : 'solid',
+                                    zIndex: 50,
                                   }}
-                                  className={
-                                    isSignature
-                                      ? 'absolute top-1 left-1 w-4 h-4 bg-red-500 text-white rounded-full flex items-center justify-center hover:bg-red-600 transition-colors'
-                                      : 'absolute -top-2 -right-2 w-5 h-5 bg-red-500 text-white rounded-full flex items-center justify-center hover:bg-red-600 transition-colors'
-                                  }
+                                  onMouseDown={(e) => startDragging(e, field)}
                                 >
-                                  <X className="w-3 h-3" />
-                                </button>
-                              </div>
-                            );
-                          })}
-                        </div>
+                                  <div className="flex items-center justify-center w-full h-full relative group overflow-hidden rounded-[20px] px-3 py-2">
+                                    <div className="absolute inset-0 opacity-10 group-hover:opacity-20 transition-opacity duration-500" style={{ background: `linear-gradient(135deg, ${signerColor}, transparent)` }} />
+                                    <div className="absolute top-1 right-1 w-5 h-5 rounded-full flex items-center justify-center text-white text-xs font-bold shadow-md z-20" style={{ backgroundColor: signerColor }}>
+                                      {signerIndex + 1}
+                                    </div>
+                                    {isSignature ? (
+                                      <div className="w-full h-full rounded-[16px] border border-white/70 bg-white/90 backdrop-blur-sm shadow-[0_10px_30px_-18px_rgba(0,0,0,0.28)] px-3 py-1.5 flex items-center gap-3">
+                                        <div
+                                          className="shrink-0 w-8 h-8 rounded-lg flex items-center justify-center shadow-sm"
+                                          style={{ backgroundColor: `${signerColor}18`, color: signerColor }}
+                                        >
+                                          <FileSignature className="w-4 h-4" />
+                                        </div>
+                                        <div className="min-w-0 flex-1 flex flex-col items-start justify-center leading-tight">
+                                          <span className="text-[9px] font-bold uppercase tracking-[0.12em]" style={{ color: signerColor }}>
+                                            Assinatura
+                                          </span>
+                                          <span className="text-[9px] text-slate-500 truncate max-w-full">
+                                            {signer?.name || 'Signatário'}
+                                          </span>
+                                        </div>
+                                        <div
+                                          className="shrink-0 rounded-full px-2 py-0.5 text-[8px] font-semibold border bg-white/95"
+                                          style={{ color: signerColor, borderColor: `${signerColor}35` }}
+                                        >
+                                          Assinar
+                                        </div>
+                                      </div>
+                                    ) : (
+                                      <>
+                                        <preset.icon className="w-4 h-4" style={{ color: signerColor }} />
+                                        <span className="text-xs font-medium" style={{ color: signerColor }}>{preset.label}</span>
+                                      </>
+                                    )}
+
+                                    <span className="absolute bottom-1 left-1 text-[8px] font-bold px-2 py-0.5 rounded-full bg-white shadow-sm border border-slate-100" style={{ color: signerColor }}>
+                                      {signer?.name || 'Signatário'}
+                                    </span>
+                                  </div>
+                                  <button
+                                    type="button"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      removeField(field.localId);
+                                    }}
+                                    className={
+                                      isSignature
+                                        ? 'absolute top-1 left-1 w-4 h-4 bg-red-500 text-white rounded-full flex items-center justify-center hover:bg-red-600 transition-colors'
+                                        : 'absolute -top-2 -right-2 w-5 h-5 bg-red-500 text-white rounded-full flex items-center justify-center hover:bg-red-600 transition-colors'
+                                    }
+                                  >
+                                    <X className="w-3 h-3" />
+                                  </button>
+                                </div>
+                              );
+                            })}
+                          </div>
                         </div>
                       </div>
                     )}
-                    
-                    {/* Container para PDF */}
-                    {!isDocxFile && pdfPreviewUrl && (
-                      <div
-                        ref={pdfContainerRef}
-                        className={`relative bg-white shadow-xl rounded-lg overflow-hidden self-start flex-none inline-block ${
-                          isPlacingField ? 'cursor-crosshair' : 'cursor-default'
-                        }`}
-                        onClick={handlePdfClick}
-                      >
-                        {pdfLoading && (
-                          <div className="absolute inset-0 flex items-center justify-center bg-white/80 z-10">
-                            <Loader2 className="w-8 h-8 text-orange-500 animate-spin" />
-                          </div>
-                        )}
-                        
-                        {pdfPageNode}
 
-                        {/* Campos da Página Atual - PDF */}
-                        {fields.filter(f => 
-                          f.fieldType === 'signature' &&
-                          f.pageNumber === pdfCurrentPage && 
-                          (f.documentId === (viewerDocuments[currentViewerDocIndex]?.id || 'main'))
-                        ).map((field) => {
-                          const preset = FIELD_PRESETS[field.fieldType];
-                          const signer = signers.find(s => s.id === field.signerId);
-                          const signerIndex = signers.findIndex(s => s.id === field.signerId);
-                          const signerColor = ['#3B82F6', '#EF4444', '#10B981', '#8B5CF6', '#F59E0B'][signerIndex % 5];
-                          const isSignature = field.fieldType === 'signature';
-                          
-                          return (
-                            <div
-                              key={field.localId}
-                              className="absolute cursor-move border-2 rounded-md flex items-center justify-center transition-shadow hover:shadow-lg"
-                              style={{
-                                left: `${field.xPercent}%`,
-                                top: `${field.yPercent}%`,
-                                width: `${field.wPercent}%`,
-                                height: `${field.hPercent}%`,
-                                borderColor: signerColor,
-                                backgroundColor: isSignature ? `${signerColor}08` : `${signerColor}20`,
-                                borderStyle: isSignature ? 'dashed' : 'solid',
-                              }}
-                              onMouseDown={(e) => startDragging(e, field)}
-                            >
-                              <div className="flex flex-col items-center justify-center w-full h-full">
-                                <div className="absolute top-1 right-1 w-5 h-5 rounded-full flex items-center justify-center text-white text-xs font-bold" style={{ backgroundColor: signerColor }}>
-                                  {signerIndex + 1}
-                                </div>
-                                {!isSignature && (
-                                  <>
-                                    <preset.icon className="w-4 h-4" style={{ color: signerColor }} />
-                                    <span className="text-xs font-medium" style={{ color: signerColor }}>{preset.label}</span>
-                                  </>
-                                )}
-                                {isSignature && (
-                                  <span
-                                    className="absolute bottom-1 right-1 text-[10px] font-semibold px-1.5 py-0.5 rounded"
-                                    style={{ backgroundColor: `${signerColor}18`, color: signerColor }}
-                                  >
-                                    Assinatura
-                                  </span>
-                                )}
-                              </div>
-                              <button
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  removeField(field.localId);
-                                }}
-                                className={
-                                  isSignature
-                                    ? 'absolute top-1 left-1 w-4 h-4 bg-red-500 text-white rounded-full flex items-center justify-center hover:bg-red-600 transition-colors'
-                                    : 'absolute -top-2 -right-2 w-5 h-5 bg-red-500 text-white rounded-full flex items-center justify-center hover:bg-red-600 transition-colors'
-                                }
-                              >
-                                <X className="w-3 h-3" />
-                              </button>
+                    {!isDocxFile && pdfPreviewUrl && (
+                      <div className="relative self-start flex-none inline-block" style={{ width: `${595 * pdfScale}px` }}>
+                        <div
+                          ref={pdfContainerRef}
+                          className={`relative bg-transparent ${isPlacingField ? 'cursor-crosshair' : 'cursor-default'}`}
+                          style={{ width: '595px', transform: `scale(${pdfScale})`, transformOrigin: 'top left' }}
+                          onClick={handlePdfClick}
+                        >
+                          {pdfLoading && (
+                            <div className="absolute inset-0 z-20 flex items-center justify-center bg-white/80 rounded-lg">
+                              <Loader2 className="w-8 h-8 animate-spin text-orange-500" />
                             </div>
-                          );
-                        })}
+                          )}
+
+                          <div className="flex flex-col gap-6 items-center">
+                            {pdfPagesNode}
+                          </div>
+                        </div>
                       </div>
                     )}
                   </div>
@@ -3380,7 +3542,7 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
           <div className="max-w-xl mx-auto p-6"><div className="bg-white rounded-xl border border-slate-200 p-6"><h3 className="text-lg font-semibold mb-6">Configurações</h3><div className="space-y-4">
             <div><label className="block text-sm font-medium mb-2">Aparência</label><select value={settings.signatureAppearance} onChange={(e) => setSettings((s) => ({ ...s, signatureAppearance: e.target.value }))} className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm"><option value="signature_only">Apenas assinatura</option><option value="signature_name">Assinatura + Nome</option></select></div>
             <div className="space-y-3 pt-4 border-t">
-              {[{ key: 'requireCpf', label: 'Não exigir CPF' }, { key: 'allowRefusal', label: 'Permitir recusa' }, { key: 'blockAfterDeadline', label: 'Bloquear após prazo' }].map(({ key, label }) => <label key={key} className="flex items-center justify-between"><span className="text-sm">{label}</span><button onClick={() => setSettings((s) => ({ ...s, [key]: !(s as any)[key] }))} className={`w-10 h-6 rounded-full ${(settings as any)[key] ? 'bg-orange-600' : 'bg-slate-300'}`}><div className={`w-4 h-4 bg-white rounded-full shadow transform ${(settings as any)[key] ? 'translate-x-5' : 'translate-x-1'}`} /></button></label>)}
+              {[{ key: 'requireCpf', label: 'Não exigir CPF' }, { key: 'allowRefusal', label: 'Permitir recusa' }, { key: 'blockAfterDeadline', label: 'Bloquear após prazo' }].map(({ key, label }) => <label key={key} className="flex items-center justify-between"><span className="text-sm">{label}</span><button type="button" onClick={() => setSettings((s) => ({ ...s, [key]: !(s as any)[key] }))} className={`w-10 h-6 rounded-full ${(settings as any)[key] ? 'bg-orange-600' : 'bg-slate-300'}`}><div className={`w-4 h-4 bg-white rounded-full shadow transform ${(settings as any)[key] ? 'translate-x-5' : 'translate-x-1'}`} /></button></label>)}
             </div>
             {settings.blockAfterDeadline && <div className="pt-4"><label className="block text-sm font-medium mb-2">Data limite</label><input type="date" value={settings.expiresAt} onChange={(e) => setSettings((s) => ({ ...s, expiresAt: e.target.value }))} className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm" /></div>}
           </div></div></div>
@@ -3414,7 +3576,7 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
               </button>
               <button
                 type="button"
-                onClick={clearSelectedRequests}
+                onClick={clearSelectedIds}
                 className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 transition hover:bg-slate-50"
               >
                 Limpar seleção
@@ -3704,7 +3866,7 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
                 </button>
                 <button
                   type="button"
-                  onClick={clearSelectedRequests}
+                  onClick={clearSelectedIds}
                   className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 transition hover:bg-slate-50"
                 >
                   Limpar seleção
@@ -3856,7 +4018,7 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
               </button>
               <button
                 type="button"
-                onClick={clearSelectedRequests}
+                onClick={clearSelectedIds}
                 className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-600 hover:bg-slate-50 transition"
               >
                 Limpar
@@ -4623,7 +4785,9 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
                             return;
                           }
                           
-                          const signedSigner = freshRequest.signers.find(s => s.status === 'signed');
+                          const signedSigner = [...freshRequest.signers]
+                            .filter(s => s.status === 'signed')
+                            .sort((a, b) => new Date(b.signed_at || 0).getTime() - new Date(a.signed_at || 0).getTime())[0];
                           const docPathLower = (freshRequest.document_path || '').toLowerCase();
                           const isDocxFile = docPathLower.endsWith('.docx') || docPathLower.endsWith('.doc');
                           

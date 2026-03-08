@@ -6,6 +6,7 @@ import type {
   ProcessFilters,
   ProcessStatus,
 } from '../types/process.types';
+import { matchesNormalizedSearch, normalizeSearchText } from '../utils/search';
 
 // Cache configuration
 const CACHE_DURATION = 5 * 60 * 1000; // 5 minutes
@@ -68,15 +69,6 @@ class ProcessService {
       query = query.eq('requirement_role', filters.requirement_role);
     }
 
-    if (filters?.search) {
-      const term = filters.search.trim();
-      if (term) {
-        query = query.or(
-          `process_code.ilike.%${term}%,court.ilike.%${term}%,responsible_lawyer.ilike.%${term}%,notes.ilike.%${term}%`
-        );
-      }
-    }
-
     const { data, error } = await query;
 
     if (error) {
@@ -84,7 +76,10 @@ class ProcessService {
       throw new Error(error.message);
     }
 
-    const result = data ?? [];
+    const rows = data ?? [];
+    const result = filters?.search
+      ? rows.filter((item) => matchesNormalizedSearch(filters.search || '', [item.process_code, item.court, item.responsible_lawyer, item.notes]))
+      : rows;
 
     // Save to cache
     this.cache = {

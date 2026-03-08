@@ -37,6 +37,7 @@ import {
   History,
   Info,
 } from 'lucide-react';
+import { matchesNormalizedSearch } from '../utils/search';
 
 /* ============================================================================
    CODINOMES DAS VERSÕES
@@ -587,6 +588,33 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
 };
 
 const releases: ReleaseNote[] = [
+  {
+    version: '1.9.673',
+    date: '07/03/2026',
+    summary: 'Assinatura pública: correção da data no documento final gerado pelo link público.',
+    modules: [
+      {
+        moduleId: 'assinatura-publica',
+        changes: [
+          {
+            type: 'fix',
+            title: 'Data do link público ajustada para America/Manaus',
+            description: 'A edge function `template-fill` passou a gerar o placeholder `data` usando explicitamente o fuso `America/Manaus`, evitando que documentos criados por link público avancem indevidamente para o dia seguinte.',
+          },
+        ],
+      },
+      {
+        moduleId: 'dev',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Deploy da correção no Supabase',
+            description: 'A função pública `template-fill` foi publicada novamente para que a correção de data passe a valer em novos links públicos de assinatura.',
+          },
+        ],
+      },
+    ],
+  },
   {
     version: '1.9.613',
     date: '03/03/2026',
@@ -11491,13 +11519,10 @@ const DocsChangesPage: React.FC = () => {
   const filteredReleases = useMemo(() => {
     return releases.filter((release) => {
       const matchesSearch = searchQuery === '' || 
-        release.version.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        release.summary?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        getCodename(release.version).name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        matchesNormalizedSearch(searchQuery, [release.version, release.summary, getCodename(release.version).name]) ||
         release.modules.some((mod) =>
           mod.changes.some((change) =>
-            change.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
-            change.description?.toLowerCase().includes(searchQuery.toLowerCase())
+            matchesNormalizedSearch(searchQuery, [change.title, change.description])
           )
         );
 

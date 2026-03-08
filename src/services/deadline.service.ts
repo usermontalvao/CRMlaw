@@ -6,6 +6,7 @@ import type {
   DeadlineFilters,
   DeadlineStatus,
 } from '../types/deadline.types';
+import { matchesNormalizedSearch } from '../utils/search';
 
 class DeadlineService {
   private tableName = 'deadlines';
@@ -52,13 +53,6 @@ class DeadlineService {
       query = query.lte('due_date', filters.due_date_to);
     }
 
-    if (filters?.search) {
-      const term = filters.search.trim();
-      if (term) {
-        query = query.or(`title.ilike.%${term}%,description.ilike.%${term}%`);
-      }
-    }
-
     const { data, error } = await query;
 
     if (error) {
@@ -66,7 +60,10 @@ class DeadlineService {
       throw new Error(error.message);
     }
 
-    return data ?? [];
+    const rows = data ?? [];
+    return filters?.search
+      ? rows.filter((item) => matchesNormalizedSearch(filters.search || '', [item.title, item.description]))
+      : rows;
   }
 
   async getDeadlineById(id: string): Promise<Deadline | null> {

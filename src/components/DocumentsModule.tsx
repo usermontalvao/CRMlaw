@@ -32,6 +32,7 @@ import { Document as DocxDocument, Packer, Paragraph, TextRun } from 'docx';
 import { renderAsync } from 'docx-preview';
 import html2canvas from 'html2canvas';
 import { jsPDF } from 'jspdf';
+import { matchesNormalizedSearch } from '../utils/search';
 import { documentTemplateService } from '../services/documentTemplate.service';
 import { clientService } from '../services/client.service';
 import { processService } from '../services/process.service';
@@ -73,6 +74,23 @@ const formatDateLong = (date: Date) => {
   } catch {
     return date.toLocaleDateString('pt-BR');
   }
+};
+
+const getManausNow = () => {
+  const now = new Date();
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'America/Manaus',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).formatToParts(now);
+
+  const year = parts.find((part) => part.type === 'year')?.value;
+  const month = parts.find((part) => part.type === 'month')?.value;
+  const day = parts.find((part) => part.type === 'day')?.value;
+
+  if (!year || !month || !day) return now;
+  return new Date(`${year}-${month}-${day}T12:00:00-04:00`);
 };
 
 const extractPlaceholdersFromText = (content: string): string[] => {
@@ -309,7 +327,7 @@ const DocumentsModule: React.FC<DocumentsModuleProps> = ({ onNavigateToModule })
   const [templateFormConfigFields, setTemplateFormConfigFields] = useState<UpsertTemplateCustomFieldDTO[]>([]);
   const templateFormConfigDragIndexRef = useRef<number | null>(null);
 
-  const currentDate = useMemo(() => new Date(), []);
+  const currentDate = useMemo(() => getManausNow(), []);
 
   const handleOpenTemplateFormConfig = async (template: DocumentTemplate) => {
     try {
@@ -605,9 +623,8 @@ const DocumentsModule: React.FC<DocumentsModuleProps> = ({ onNavigateToModule })
 
   const newDocTemplates = useMemo(() => templates.filter((t) => !isRequirementsMsTemplate(t)), [templates]);
   const filteredNewDocTemplates = useMemo(() => {
-    const q = templateSearchQuery.trim().toLowerCase();
-    if (!q) return newDocTemplates;
-    return newDocTemplates.filter((template) => (template.name || '').toLowerCase().includes(q));
+    if (!templateSearchQuery.trim()) return newDocTemplates;
+    return newDocTemplates.filter((template) => matchesNormalizedSearch(templateSearchQuery, [template.name || '']));
   }, [newDocTemplates, templateSearchQuery]);
   const manageTemplates = useMemo(() => templates.filter((t) => !isRequirementsMsTemplate(t)), [templates]);
 

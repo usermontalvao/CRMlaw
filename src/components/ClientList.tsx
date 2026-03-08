@@ -9,6 +9,7 @@ interface ClientListProps {
   onView: (client: Client) => void;
   onEdit: (client: Client) => void;
   onDelete: (id: string) => void;
+  duplicateSummaryMap?: Map<string, { count: number; reasons: string[]; partnerNames: string[] }>;
   missingFieldsMap?: Map<string, string[]>;
   outdatedSet?: Set<string>;
   isFiltered?: boolean;
@@ -17,7 +18,7 @@ interface ClientListProps {
   onToggleSelected?: (clientId: string) => void;
 }
 
-const ClientList: React.FC<ClientListProps> = ({ clients, loading, onView, onEdit, onDelete, missingFieldsMap, outdatedSet, isFiltered, selectionMode = false, selectedIds, onToggleSelected }) => {
+const ClientList: React.FC<ClientListProps> = ({ clients, loading, onView, onEdit, onDelete, duplicateSummaryMap, missingFieldsMap, outdatedSet, isFiltered, selectionMode = false, selectedIds, onToggleSelected }) => {
   const formatCpfCnpj = (client: Client) => {
     const raw = client.cpf_cnpj || '';
     const digits = raw.replace(/\D/g, '');
@@ -70,6 +71,7 @@ const ClientList: React.FC<ClientListProps> = ({ clients, loading, onView, onEdi
       {/* Layout de Cards para Mobile */}
       <div className="md:hidden space-y-3">
         {clients.map((client) => {
+          const duplicateInfo = duplicateSummaryMap?.get(client.id);
           const missingFields = missingFieldsMap?.get(client.id) || [];
           const isOutdated = outdatedSet?.has(client.id) ?? false;
           const primaryPhone = client.phone || client.mobile || '';
@@ -116,8 +118,14 @@ const ClientList: React.FC<ClientListProps> = ({ clients, loading, onView, onEdi
                 </span>
               </div>
 
-              {(missingFields.length > 0 || isOutdated) && (
+              {(missingFields.length > 0 || isOutdated || duplicateInfo) && (
                 <div className="flex flex-wrap gap-1 mb-2">
+                  {duplicateInfo && (
+                    <span className="inline-flex items-center gap-1 rounded-full bg-red-100 px-2 py-0.5 text-[10px] font-semibold text-red-700">
+                      <AlertTriangle className="w-3 h-3" />
+                      {duplicateInfo.count} duplicado{duplicateInfo.count > 1 ? 's' : ''}
+                    </span>
+                  )}
                   {missingFields.length > 0 && (
                     <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-semibold text-amber-700">
                       <AlertTriangle className="w-3 h-3" />
@@ -129,6 +137,20 @@ const ClientList: React.FC<ClientListProps> = ({ clients, loading, onView, onEdi
                       <Clock className="w-3 h-3" />
                       Desatualizado
                     </span>
+                  )}
+                </div>
+              )}
+
+              {duplicateInfo && (
+                <div className="mb-3 rounded-md border border-red-200 bg-red-50 px-2.5 py-2">
+                  <p className="text-[10px] font-semibold text-red-800">Possível contato duplicado</p>
+                  <p className="mt-1 text-[10px] text-red-700">
+                    Motivo: {duplicateInfo.reasons.join(', ')}.
+                  </p>
+                  {duplicateInfo.partnerNames.length > 0 && (
+                    <p className="mt-1 text-[10px] text-red-700 truncate">
+                      Relacionado com: {duplicateInfo.partnerNames.join(', ')}
+                    </p>
                   )}
                 </div>
               )}
@@ -222,6 +244,7 @@ const ClientList: React.FC<ClientListProps> = ({ clients, loading, onView, onEdi
             </thead>
             <tbody className="bg-white divide-y divide-gray-200">
               {clients.map((client) => {
+                const duplicateInfo = duplicateSummaryMap?.get(client.id);
                 const missingFields = missingFieldsMap?.get(client.id) || [];
                 const isOutdated = outdatedSet?.has(client.id) ?? false;
                 const primaryPhone = client.phone || client.mobile || '';
@@ -255,6 +278,12 @@ const ClientList: React.FC<ClientListProps> = ({ clients, loading, onView, onEdi
                       <div className="text-sm font-medium text-gray-900">{client.full_name}</div>
                       <div className="text-sm text-gray-500">{client.profession || 'N/A'}</div>
                       <div className="mt-1 flex flex-wrap items-center gap-2">
+                        {duplicateInfo && (
+                          <span className="inline-flex items-center gap-1 rounded-full bg-red-100 px-2 py-0.5 text-[11px] font-semibold text-red-700">
+                            <AlertTriangle className="w-3 h-3" />
+                            Possível duplicado: {duplicateInfo.reasons.join(', ')}
+                          </span>
+                        )}
                         {missingFields.length > 0 && (
                           <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-semibold text-amber-700">
                             <AlertTriangle className="w-3 h-3" />
