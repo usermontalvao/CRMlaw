@@ -349,13 +349,13 @@ export class ClientService {
   }
 
   /**
-   * Deleta um cliente (soft delete - marca como inativo)
+   * Deleta um cliente permanentemente
    */
   async deleteClient(id: string): Promise<void> {
     try {
       const { error } = await supabase
         .from(this.tableName)
-        .update({ status: 'inativo' })
+        .delete()
         .eq('id', id);
 
       if (error) {
@@ -370,32 +370,6 @@ export class ClientService {
       events.emit(SYSTEM_EVENTS.CLIENTS_CHANGED, { action: 'delete', id });
     } catch (error) {
       console.error('Erro ao deletar cliente:', error);
-      throw error;
-    }
-  }
-
-  /**
-   * Deleta permanentemente um cliente
-   */
-  async permanentlyDeleteClient(id: string): Promise<void> {
-    try {
-      const { error } = await supabase
-        .from(this.tableName)
-        .delete()
-        .eq('id', id);
-
-      if (error) {
-        console.error('Erro ao deletar cliente permanentemente:', error);
-        throw new Error(`Erro ao deletar cliente: ${error.message}`);
-      }
-
-      // Invalida cache do dashboard para forçar recarregamento
-      localStorage.removeItem('crm-dashboard-cache');
-      
-      // Dispara evento global de mudança de clientes
-      events.emit(SYSTEM_EVENTS.CLIENTS_CHANGED, { action: 'delete', id });
-    } catch (error) {
-      console.error('Erro ao deletar cliente permanentemente:', error);
       throw error;
     }
   }

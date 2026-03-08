@@ -589,6 +589,23 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
 
 const releases: ReleaseNote[] = [
   {
+    version: '1.9.674',
+    date: '08/03/2026',
+    summary: 'Clientes: exclusão passou a remover permanentemente o cadastro.',
+    modules: [
+      {
+        moduleId: 'clientes',
+        changes: [
+          {
+            type: 'fix',
+            title: 'Exclusão real de clientes restaurada',
+            description: 'O fluxo do módulo de clientes e o `client.service` deixaram de apenas inativar registros ao excluir. Agora a ação remove o cliente permanentemente e os textos de confirmação refletem o comportamento real.',
+          },
+        ],
+      },
+    ],
+  },
+  {
     version: '1.9.673',
     date: '07/03/2026',
     summary: 'Assinatura pública: correção da data no documento final gerado pelo link público.',

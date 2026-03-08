@@ -1,5 +1,8 @@
 # Changelog
 
+## 1.9.674
+- **Clientes**: Corrigido o fluxo de exclusão no `ClientsModule` e no `client.service`, que estava apenas inativando o cadastro. Agora a ação remove o cliente permanentemente e os textos de confirmação foram alinhados ao comportamento real.
+
 ## 1.9.673
 - **Assinatura Pública**: Corrigida a geração do placeholder `data` na edge function `template-fill`, que ainda montava o documento final da solicitação com `new Date().toLocaleDateString('pt-BR')` sem fixar `America/Manaus`.
 

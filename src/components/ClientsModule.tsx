@@ -296,9 +296,9 @@ const ClientsModule: React.FC<ClientsModuleProps> = ({
     if (selectedClientIds.size === 0) return;
 
     const confirmed = await confirmDelete({
-      title: 'Desativar clientes selecionados',
-      message: `Você tem certeza que deseja desativar ${selectedClientIds.size} cliente(s)? Essa ação pode ser revertida reativando o cadastro.`,
-      confirmLabel: 'Desativar',
+      title: 'Excluir clientes selecionados',
+      message: `Você tem certeza que deseja excluir ${selectedClientIds.size} cliente(s)? Essa ação removerá os cadastros permanentemente.`,
+      confirmLabel: 'Excluir',
     });
     if (!confirmed) return;
 
@@ -308,8 +308,8 @@ const ClientsModule: React.FC<ClientsModuleProps> = ({
       disableSelectionMode();
       loadClients();
     } catch (error) {
-      console.error('Erro ao desativar clientes selecionados:', error);
-      alert('Erro ao desativar clientes selecionados');
+      console.error('Erro ao excluir clientes selecionados:', error);
+      alert('Erro ao excluir clientes selecionados');
     } finally {
       setBulkDeleteLoading(false);
     }
@@ -445,10 +445,10 @@ const ClientsModule: React.FC<ClientsModuleProps> = ({
   const handleDeleteClient = async (id: string) => {
     const client = clients.find((c) => c.id === id);
     const confirmed = await confirmDelete({
-      title: 'Desativar cliente',
+      title: 'Excluir cliente',
       entityName: client?.full_name || undefined,
-      message: 'Tem certeza que deseja desativar este cliente? Essa ação pode ser revertida reativando o cadastro.',
-      confirmLabel: 'Desativar',
+      message: 'Tem certeza que deseja excluir este cliente? Essa ação removerá o cadastro permanentemente.',
+      confirmLabel: 'Excluir',
     });
     if (!confirmed) return;
 
@@ -770,7 +770,7 @@ const ClientsModule: React.FC<ClientsModuleProps> = ({
           <div className="bg-white border border-slate-200 rounded-lg p-3 shadow-sm">
             <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
               <div className="text-xs text-slate-600">
-                <span className="text-slate-500">Dica: use “Selecionar” para desativar vários clientes.</span>
+                <span className="text-slate-500">Dica: use “Selecionar” para excluir vários clientes.</span>
                 <span className="text-slate-400"> · </span>
                 <span className="font-semibold text-slate-900">{selectedClientIds.size}</span> selecionado(s)
                 <span className="text-slate-400"> · </span>
@@ -819,11 +819,11 @@ const ClientsModule: React.FC<ClientsModuleProps> = ({
                 </button>
                 <button
                   type="button"
-                  onClick={() => void deleteSelectedClients()}
+                  onClick={deleteSelectedClients}
                   disabled={selectedClientIds.size === 0 || bulkDeleteLoading}
                   className="inline-flex items-center justify-center rounded-lg bg-red-600 px-3 py-2 text-xs font-semibold text-white transition hover:bg-red-700 disabled:opacity-60 disabled:cursor-not-allowed"
                 >
-                  {bulkDeleteLoading ? 'Desativando...' : 'Desativar selecionados'}
+                  {bulkDeleteLoading ? 'Excluindo...' : 'Excluir selecionados'}
                 </button>
               </div>
             </div>
