@@ -70,7 +70,7 @@ class FeedPollsService {
           try {
             await userNotificationService.createNotification({
               user_id: participantId,
-              type: 'mention',
+              type: 'poll_invite',
               title: 'Nova enquete para você',
               message: dto.question.length > 80 ? dto.question.substring(0, 80) + '...' : dto.question,
               metadata: {

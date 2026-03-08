@@ -48,6 +48,10 @@ class UserNotificationService {
    * Cria uma nova notificação para usuário
    */
   async createNotification(payload: CreateUserNotificationDTO): Promise<UserNotification> {
+    if (!payload.user_id || !String(payload.user_id).trim()) {
+      throw new Error('user_id é obrigatório para criar notificação');
+    }
+
     const dbPayload = this.normalizePayloadForDb(payload);
     const { data, error } = await supabase.rpc('create_user_notification', {
       p_user_id: dbPayload.user_id,

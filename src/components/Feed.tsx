@@ -2388,7 +2388,7 @@ const Feed: React.FC<FeedProps> = ({ onNavigateToModule, params }) => {
         for (const mentionedProfile of mentionedProfiles) {
           try {
             await userNotificationService.createNotification({
-              user_id: mentionedProfile.id,
+              user_id: mentionedProfile.user_id,
               type: 'mention',
               title: `${currentProfile.name} mencionou você em um comentário`,
               message: state.newComment.trim().substring(0, 100) + (state.newComment.trim().length > 100 ? '...' : ''),

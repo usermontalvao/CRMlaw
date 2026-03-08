@@ -92,13 +92,13 @@ export const NotificationBell: React.FC<NotificationBellProps> = ({ onNavigateTo
   const unreadCount = unreadNotifications.length;
 
   const isSignatureNotification = (notification: UserNotification) => {
-    return notification.type === 'process_updated' && Boolean(notification.metadata?.signature_type);
+    return notification.type === 'signature_completed' || Boolean(notification.metadata?.signature_type);
   };
 
   const getNotificationDedupeKey = useCallback((notification: UserNotification) => {
     const signatureType = notification.metadata?.signature_type;
     const requestId = notification.metadata?.request_id;
-    if (notification.type === 'process_updated' && signatureType === 'completed' && requestId) {
+    if ((notification.type === 'signature_completed' || signatureType === 'completed') && requestId) {
       return `signature_completed:${String(requestId)}`;
     }
     return `id:${notification.id}`;
@@ -220,7 +220,6 @@ export const NotificationBell: React.FC<NotificationBellProps> = ({ onNavigateTo
     }
 
     // Preferir navegação por tipo (evita que requirement_id em prazo/agenda mude o destino)
-    // Assinatura: type=process_updated com signature_type no metadata
     if (isSignatureNotification(notification)) {
       const requestId = notification.metadata?.request_id;
       console.log('➡️ Navegando para assinaturas, requestId:', requestId);
@@ -241,7 +240,7 @@ export const NotificationBell: React.FC<NotificationBellProps> = ({ onNavigateTo
     } else if (notification.type === 'appointment_assigned' || notification.type === 'appointment_reminder') {
       console.log('➡️ Navegando para agenda');
       onNavigateToModule('agenda');
-    } else if (notification.type === 'feed_like' || notification.type === 'feed_comment' || notification.type === 'mention') {
+    } else if (notification.type === 'feed_like' || notification.type === 'feed_comment' || notification.type === 'mention' || notification.type === 'poll_invite') {
       // Notificação de feed: abrir modal do post específico
       const postId = notification.metadata?.post_id;
       console.log('➡️ Abrindo modal do post:', postId);
@@ -250,7 +249,7 @@ export const NotificationBell: React.FC<NotificationBellProps> = ({ onNavigateTo
       } else {
         onNavigateToModule('feed');
       }
-    } else if (notification.process_id) {
+    } else if (notification.type === 'process_created' || notification.type === 'process_updated' || notification.process_id) {
       console.log('➡️ Navegando para processos');
       onNavigateToModule('processos');
     } else if (notification.requirement_id) {
@@ -413,28 +412,35 @@ export const NotificationBell: React.FC<NotificationBellProps> = ({ onNavigateTo
       case 'appointment_reminder':
         return <Calendar className="w-4 h-4 text-blue-500" />;
       case 'requirement_alert':
-        return <Briefcase className="w-4 h-4 text-amber-600" />;
+        return <Briefcase className="w-4 h-4 text-indigo-500" />;
       case 'intimation_new':
-        return isUrgent 
+        return isUrgent
           ? <AlertTriangle className="w-4 h-4 text-red-500" />
           : <FileText className="w-4 h-4 text-purple-500" />;
+      case 'process_created':
       case 'process_updated':
-        // Verificar se é assinatura pelo metadata
-        if (notification.metadata?.signature_type) {
+        return <Briefcase className="w-4 h-4 text-cyan-500" />;
+      case 'signature_completed':
+        return <PenTool className="w-4 h-4 text-emerald-500" />;
+      case 'poll_invite':
+        return <Bell className="w-4 h-4 text-fuchsia-500" />;
+      case 'mention':
+        return <Bell className="w-4 h-4 text-blue-500" />;
+      case 'feed_like':
+        return <Check className="w-4 h-4 text-pink-500" />;
+      case 'feed_comment':
+        return <ChevronRight className="w-4 h-4 text-sky-500" />;
+      default:
+        if (isSignatureNotification(notification)) {
           return <PenTool className="w-4 h-4 text-emerald-500" />;
         }
-        return <FileText className="w-4 h-4 text-slate-500" />;
-      default:
         return <Bell className="w-4 h-4 text-slate-500" />;
     }
   };
 
-  // Cor de fundo do ícone baseado na urgência
   const getIconBgColor = (notification: UserNotification) => {
     const urgency = notification.metadata?.urgency;
-    if (isSignatureNotification(notification)) {
-      return notification.metadata?.signature_type === 'completed' ? 'bg-emerald-100' : 'bg-teal-100';
-    }
+    if (isSignatureNotification(notification)) return 'bg-emerald-100';
     if (urgency === 'critica') return 'bg-red-100';
     if (urgency === 'alta') return 'bg-orange-100';
     if (!notification.read) return 'bg-blue-100';

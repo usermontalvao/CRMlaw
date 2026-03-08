@@ -60,6 +60,7 @@ type NewEventForm = {
   type: EventType;
   description: string;
   client_id: string;
+  responsible_id: string;
 };
 
 interface CalendarModuleProps {
@@ -157,6 +158,7 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({
     type: 'meeting',
     description: '',
     client_id: '',
+    responsible_id: '',
   });
   const [savingEvent, setSavingEvent] = useState(false);
   const [clients, setClients] = useState<Client[]>([]);
@@ -326,6 +328,7 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({
         type: 'meeting',
         description: '',
         client_id: '',
+        responsible_id: '',
         ...initialValues,
       };
 
@@ -813,7 +816,7 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({
         });
         
         // 🔔 Criar notificação para novo compromisso
-        if (user?.id && createdEvent) {
+        if (user?.id && createdEvent && newEventForm.responsible_id && newEventForm.responsible_id !== user.id) {
           try {
             const eventDate = new Date(createdEvent.start_at);
             const formattedDate = eventDate.toLocaleDateString('pt-BR', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' });
@@ -822,7 +825,7 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({
               title: '📅 Novo Compromisso',
               message: `${createdEvent.title} • ${formattedDate}`,
               type: 'appointment_assigned',
-              user_id: user.id,
+              user_id: newEventForm.responsible_id,
               appointment_id: createdEvent.id,
               metadata: {
                 event_type: newEventForm.type,

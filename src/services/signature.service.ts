@@ -851,7 +851,7 @@ class SignatureService {
         user_id: request.created_by,
         title,
         message,
-        type: 'process_updated',
+        type: 'signature_completed',
         read: false,
         created_at: new Date().toISOString(),
         metadata: {

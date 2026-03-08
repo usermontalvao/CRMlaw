@@ -589,6 +589,40 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
 
 const releases: ReleaseNote[] = [
   {
+    version: '1.9.676',
+    date: '08/03/2026',
+    summary: 'Notificações: fluxos corrigidos, tipos padronizados e navegação estabilizada.',
+    modules: [
+      {
+        moduleId: 'notificacoes',
+        changes: [
+          {
+            type: 'fix',
+            title: 'Sistema de notificações consolidado e corrigido',
+            description: 'Foram corrigidos fluxos inconsistentes no sistema de notificações, incluindo auto-notificação residual em ações vindas de intimações, destinatário incorreto em menções do feed, uso de tipos mais adequados para processo criado, assinatura concluída e convite de enquete, além do alinhamento da navegação pelo sino e da remoção do fluxo legado local no `App`.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.675',
+    date: '08/03/2026',
+    summary: 'Notificações: criador não recebe mais aviso do próprio prazo ou compromisso.',
+    modules: [
+      {
+        moduleId: 'notificacoes',
+        changes: [
+          {
+            type: 'fix',
+            title: 'Auto-notificação removida em prazos e agenda',
+            description: 'A criação de prazos e compromissos deixou de enviar notificação para o próprio usuário que criou o item. Agora o aviso é gerado apenas quando o responsável atribuído é outra pessoa.',
+          },
+        ],
+      },
+    ],
+  },
+  {
     version: '1.9.674',
     date: '08/03/2026',
     summary: 'Clientes: exclusão passou a remover permanentemente o cadastro.',

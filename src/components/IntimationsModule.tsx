@@ -3084,6 +3084,7 @@ const DeadlineCreationModal: React.FC<DeadlineCreationModalProps> = ({
   onClose,
   onSuccess,
 }) => {
+  const { user } = useAuth();
   const process = processes.find((p) => p.id === intimation.process_id);
   const client = clients.find((c) => c.id === intimation.client_id);
 
@@ -3154,7 +3155,7 @@ const DeadlineCreationModal: React.FC<DeadlineCreationModalProps> = ({
       const createdDeadline = await deadlineService.createDeadline(payload);
       
       // Notificar responsável se foi atribuído
-      if (formData.responsible_id) {
+      if (formData.responsible_id && formData.responsible_id !== user?.id) {
         try {
           await userNotificationService.notifyDeadlineAssigned({
             userId: formData.responsible_id,
@@ -3424,6 +3425,7 @@ const AppointmentCreationModal: React.FC<AppointmentCreationModalProps> = ({
   onClose,
   onSuccess,
 }) => {
+  const { user } = useAuth();
   const process = processes.find((p) => p.id === intimation.process_id);
   const client = clients.find((c) => c.id === intimation.client_id);
 
@@ -3495,7 +3497,7 @@ const AppointmentCreationModal: React.FC<AppointmentCreationModalProps> = ({
       const createdAppointment = await calendarService.createEvent(payload);
       
       // Notificar responsável se foi atribuído
-      if (formData.responsible_id) {
+      if (formData.responsible_id && formData.responsible_id !== user?.id) {
         try {
           await userNotificationService.notifyAppointmentAssigned({
             userId: formData.responsible_id,

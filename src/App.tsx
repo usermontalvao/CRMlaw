@@ -66,9 +66,7 @@ const PetitionEditorModule = lazy(() => import('./components/PetitionEditorModul
 // Widget flutuante do Editor de Petições
 const PetitionEditorWidget = lazy(() => import('./components/PetitionEditorWidget'));
 const ChatFloatingWidget = lazy(() => import('./components/ChatFloatingWidget'));
-import { useNotifications } from './hooks/useNotifications';
 import { usePresence } from './hooks/usePresence';
-import { pushNotifications } from './utils/pushNotifications';
 import { useAuth } from './contexts/AuthContext';
 import { events, SYSTEM_EVENTS } from './utils/events';
 import { useTheme } from './contexts/ThemeContext';
@@ -76,7 +74,6 @@ import { CacheProvider } from './contexts/CacheContext';
 import { useDjenSync } from './hooks/useDjenSync';
 import { profileService } from './services/profile.service';
 import { leadService } from './services/lead.service';
-import { notificationService } from './services/notification.service';
 import { taskService } from './services/task.service';
 import { djenLocalService } from './services/djenLocal.service';
 import { supabase } from './config/supabase';
@@ -85,7 +82,6 @@ import { formatCPF } from './utils/formatters';
 import { usePermissions } from './hooks/usePermissions';
 import type { Lead } from './types/lead.types';
 import type { CreateClientDTO } from './types/client.types';
-import type { NotificationItem } from './types/notification.types';
 
 type ClientSearchResult = Awaited<ReturnType<typeof clientService.searchClients>>[number];
 
@@ -212,9 +208,6 @@ const MainApp: React.FC = () => {
   const [profileLoading, setProfileLoading] = useState(false);
   const [profileError, setProfileError] = useState<string | null>(null);
   const [clientPrefill, setClientPrefill] = useState<Partial<CreateClientDTO> | null>(null);
-  const [notifications, setNotifications] = useState<NotificationItem[]>([]);
-  const [notificationsOpen, setNotificationsOpen] = useState(false);
-  const [notificationsLoading, setNotificationsLoading] = useState(false);
   const [profileMenuOpen, setProfileMenuOpen] = useState(false);
   const [loggingOut, setLoggingOut] = useState(false);
   const profileMenuRef = useRef<HTMLDivElement | null>(null);
@@ -267,6 +260,10 @@ const MainApp: React.FC = () => {
     navigateTo(moduleKey, params);
   }, [permissionsLoading, hasModuleAccess, navigateTo]);
 
+  const handleNavigateToModule = (moduleKey: string, params?: Record<string, string>) => {
+    safeNavigateTo(moduleKey as ModuleName, params);
+  };
+
   // Guard de permissões - redireciona apenas uma vez se não tiver acesso
   const permissionCheckDoneRef = useRef<string | null>(null);
   useEffect(() => {
@@ -315,7 +312,6 @@ const MainApp: React.FC = () => {
   const [searchOpen, setSearchOpen] = useState(false);
   // const [isClientFormModalOpen, setIsClientFormModalOpen] = useState(false);
   // const [clientFormPrefill, setClientFormPrefill] = useState<Partial<CreateClientDTO> | null>(null);
-  const unreadCount = useMemo(() => notifications.filter((n) => !n.read).length, [notifications]);
 
   const clientsParams = useMemo(() => {
     if (!moduleParams['clientes']) return null;
@@ -352,7 +348,6 @@ const MainApp: React.FC = () => {
   }, [moduleParams]);
 
   const PROFILE_CACHE_KEY = 'crm-profile-cache';
-  const NOTIFICATIONS_CACHE_KEY = 'crm-notifications-cache';
   const LAST_LOGIN_CPF_KEY = 'crm-last-login-cpf';
 
   useEffect(() => {
@@ -514,15 +509,12 @@ const MainApp: React.FC = () => {
 
   // Monitorar mudanças de autenticação e renovar sessão automaticamente
   useEffect(() => {
-    const { data: authListener } = supabase.auth.onAuthStateChange(async (event, session) => {
-      // Apenas logar eventos importantes
+    const { data: authListener } = supabase.auth.onAuthStateChange(async (event) => {
       if (event === 'SIGNED_OUT') {
         console.log('🔒 Logout detectado');
-        // Limpar cache
         sessionStorage.removeItem(PROFILE_CACHE_KEY);
-        sessionStorage.removeItem(NOTIFICATIONS_CACHE_KEY);
-        
-        // Reset estado
+        sessionStorage.removeItem(LAST_LOGIN_CPF_KEY);
+
         setProfile({
           name: 'Usuário',
           email: '',
@@ -534,12 +526,10 @@ const MainApp: React.FC = () => {
           bio: '',
           lawyerFullName: '',
         });
-        setNotifications([]);
         setPendingTasksCount(0);
         setModuleParams({});
         setClientPrefill(null);
-        
-        // Redirecionar para login
+
         if (activeModule !== 'login') {
           navigateTo('login');
         }
@@ -549,178 +539,111 @@ const MainApp: React.FC = () => {
     return () => {
       authListener.subscription.unsubscribe();
     };
-  }, [activeModule, navigateTo]);
+  }, [activeModule, navigateTo, GENERIC_AVATAR, setModuleParams]);
 
-  // Detectar quando usuário perde autenticação e limpar estado
-  useEffect(() => {
-    if (!user && !loading) {
-      if (!logoutCleanupDoneRef.current) {
-        logoutCleanupDoneRef.current = true;
+// Detectar quando usuário perde autenticação e limpar estado
+useEffect(() => {
+  if (!user && !loading) {
+    if (!logoutCleanupDoneRef.current) {
+      logoutCleanupDoneRef.current = true;
 
-        // Limpar cache ao fazer logout/expiração de sessão
-        sessionStorage.removeItem(PROFILE_CACHE_KEY);
-        sessionStorage.removeItem(NOTIFICATIONS_CACHE_KEY);
-        
-        // Reset estado
-        setProfile({
-          name: 'Usuário',
-          email: '',
-          avatarUrl: GENERIC_AVATAR,
-          role: 'Auxiliar',
-          cpf: '',
-          oab: '',
-          phone: '',
-          bio: '',
-          lawyerFullName: '',
-        });
-        setNotifications([]);
-        setPendingTasksCount(0);
-        setModuleParams({});
-        setClientPrefill(null);
-      }
-
-      // Redirecionar para login se não estiver autenticado
-      if (activeModule !== 'login') {
-        navigateTo('login');
-      }
-    } else if (user) {
-      logoutCleanupDoneRef.current = false;
-    }
-  }, [user, loading, activeModule, navigateTo]);
-
-  useEffect(() => {
-    if (user && activeModule === 'login') {
-      navigateTo('dashboard');
-    }
-  }, [user, activeModule, navigateTo]);
-
-  useEffect(() => {
-    if (!user) {
+      // Limpar cache ao fazer logout/expiração de sessão
+      sessionStorage.removeItem(PROFILE_CACHE_KEY);
+      // Reset estado
+      setProfile({
+        name: 'Usuário',
+        email: '',
+        avatarUrl: GENERIC_AVATAR,
+        role: 'Auxiliar',
+        cpf: '',
+        oab: '',
+        phone: '',
+        bio: '',
+        lawyerFullName: '',
+      });
       setPendingTasksCount(0);
-      return;
+      setModuleParams({});
+      setClientPrefill(null);
     }
 
-    const loadPendingTasks = async () => {
-      try {
-        const items = await taskService.listTasks();
-        setPendingTasksCount(items.filter((task) => task.status === 'pending').length);
-      } catch (error) {
-        console.error('Erro ao carregar tarefas pendentes:', error);
+    // Redirecionar para login se não estiver autenticado
+    if (activeModule !== 'login') {
+      navigateTo('login');
+    }
+  } else if (user) {
+    logoutCleanupDoneRef.current = false;
+  }
+}, [user, loading, activeModule, navigateTo]);
+
+useEffect(() => {
+  if (user && activeModule === 'login') {
+    navigateTo('dashboard');
+  }
+}, [user, activeModule, navigateTo]);
+
+useEffect(() => {
+  if (!user) {
+    setPendingTasksCount(0);
+    return;
+  }
+
+  const loadPendingTasks = async () => {
+    try {
+      const items = await taskService.listTasks();
+      setPendingTasksCount(items.filter((task) => task.status === 'pending').length);
+    } catch (error) {
+      console.error('Erro ao carregar tarefas pendentes:', error);
+    }
+  };
+
+  loadPendingTasks();
+}, [user]);
+
+useEffect(() => {
+  const term = searchTerm.trim();
+
+  if (term.length < 2) {
+    setClientSearchResults([]);
+    setCollaboratorSearchResults([]);
+    setSearchLoading(false);
+    return;
+  }
+
+  const isCollaboratorSearch = term.startsWith('@');
+  const searchQuery = isCollaboratorSearch ? term.slice(1) : term;
+
+  setSearchLoading(true);
+  let isActive = true;
+  const handler = setTimeout(async () => {
+    try {
+      if (isCollaboratorSearch) {
+        const results = await profileService.searchMembers(searchQuery);
+        if (!isActive) return;
+        setCollaboratorSearchResults(results);
+        setClientSearchResults([]);
+      } else {
+        const results = await clientService.searchClients(searchQuery);
+        if (!isActive) return;
+        setClientSearchResults(results);
+        setCollaboratorSearchResults([]);
       }
-    };
-
-    loadPendingTasks();
-  }, [user]);
-
-  useEffect(() => {
-    const term = searchTerm.trim();
-
-    if (term.length < 2) {
+    } catch (error) {
+      if (!isActive) return;
+      console.error('Erro ao buscar:', error);
       setClientSearchResults([]);
       setCollaboratorSearchResults([]);
-      setSearchLoading(false);
-      return;
-    }
-
-    const isCollaboratorSearch = term.startsWith('@');
-    const searchQuery = isCollaboratorSearch ? term.slice(1) : term;
-
-    setSearchLoading(true);
-    let isActive = true;
-    const handler = setTimeout(async () => {
-      try {
-        if (isCollaboratorSearch) {
-          const results = await profileService.searchMembers(searchQuery);
-          if (!isActive) return;
-          setCollaboratorSearchResults(results);
-          setClientSearchResults([]);
-        } else {
-          const results = await clientService.searchClients(searchQuery);
-          if (!isActive) return;
-          setClientSearchResults(results);
-          setCollaboratorSearchResults([]);
-        }
-      } catch (error) {
-        if (!isActive) return;
-        console.error('Erro ao buscar:', error);
-        setClientSearchResults([]);
-        setCollaboratorSearchResults([]);
-      } finally {
-        if (isActive) {
-          setSearchLoading(false);
-        }
-      }
-    }, 200);
-
-    return () => {
-      isActive = false;
-      clearTimeout(handler);
-    };
-  }, [searchTerm]);
-
-  useEffect(() => {
-    const cacheAvailable = typeof window !== 'undefined';
-
-    if (cacheAvailable) {
-      const cachedNotifications = sessionStorage.getItem(NOTIFICATIONS_CACHE_KEY);
-      if (cachedNotifications) {
-        try {
-          const parsed: NotificationItem[] = JSON.parse(cachedNotifications);
-          setNotifications(parsed);
-        } catch (error) {
-          sessionStorage.removeItem(NOTIFICATIONS_CACHE_KEY);
-        }
+    } finally {
+      if (isActive) {
+        setSearchLoading(false);
       }
     }
+  }, 300);
 
-    const loadNotifications = async () => {
-      try {
-        setNotificationsLoading(true);
-        const items = await notificationService.list();
-        setNotifications(items);
-        if (cacheAvailable) {
-          sessionStorage.setItem(NOTIFICATIONS_CACHE_KEY, JSON.stringify(items));
-        }
-      } catch (error) {
-        console.error('Erro ao carregar notificações:', error);
-      } finally {
-        setNotificationsLoading(false);
-      }
-    };
-
-    loadNotifications();
-  }, []);
-
-  const handleMarkAsRead = async (id: string) => {
-    try {
-      await notificationService.markAsRead(id);
-      setNotifications((prev) => prev.map((n) => (n.id === id ? { ...n, read: true } : n)));
-    } catch (error) {
-      console.error('Erro ao marcar notificação como lida:', error);
-    }
+  return () => {
+    isActive = false;
+    clearTimeout(handler);
   };
-
-  const handleMarkAllAsRead = async () => {
-    try {
-      await notificationService.markAllAsRead();
-      setNotifications((prev) => prev.map((n) => ({ ...n, read: true })));
-    } catch (error) {
-      console.error('Erro ao marcar todas como lidas:', error);
-    }
-  };
-
-  const handleClearAll = async () => {
-    try {
-      await notificationService.clear();
-      setNotifications([]);
-    } catch (error) {
-      console.error('Erro ao limpar notificações:', error);
-    }
-  };
-
-  const handleNavigateToModule = (moduleKey: string, params?: Record<string, string>) => {
-    safeNavigateTo(moduleKey as any, params);
-  };
+}, [searchTerm]);
 
   const handleConvertLead = async (lead: Lead) => {
     const notesParts = [] as string[];
@@ -737,14 +660,12 @@ const MainApp: React.FC = () => {
       status: 'ativo',
     };
 
-    // Guardar referência do lead para remover apenas quando cliente for salvo
     setLeadToConvert(lead);
     setClientPrefill(prefill);
     safeNavigateTo('clientes');
   };
 
   const handleClientSaved = async () => {
-    // Remover lead do pipeline após cliente ser salvo com sucesso
     if (leadToConvert) {
       try {
         await leadService.deleteLead(leadToConvert.id);
@@ -757,7 +678,6 @@ const MainApp: React.FC = () => {
   };
 
   const handleClientCancelled = () => {
-    // Limpar dados sem remover o lead
     setLeadToConvert(null);
     setClientPrefill(null);
   };

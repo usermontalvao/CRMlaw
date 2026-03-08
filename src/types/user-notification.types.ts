@@ -3,12 +3,15 @@
 export type UserNotificationType = 
   | 'deadline_assigned' 
   | 'appointment_assigned'
+  | 'process_created'
   | 'process_updated'
+  | 'signature_completed'
   | 'intimation_new'
   | 'intimation_urgent'
   | 'deadline_reminder'
   | 'appointment_reminder'
   | 'requirement_alert'
+  | 'poll_invite'
   | 'mention'
   | 'feed_like'
   | 'feed_comment';

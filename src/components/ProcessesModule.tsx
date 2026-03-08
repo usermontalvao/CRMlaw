@@ -1062,7 +1062,7 @@ const ProcessesModule: React.FC<ProcessesModuleProps> = ({ forceCreate, entityId
             await userNotificationService.createNotification({
               title: '📋 Novo Processo',
               message: `${createPayload.process_code || 'Sem número'} • ${clientName}`,
-              type: 'process_updated',
+              type: 'process_created',
               user_id: user.id,
               process_id: newProcess.id,
               metadata: {

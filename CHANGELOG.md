@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.9.676
+- **Notificações**: Corrigidos fluxos inconsistentes no sistema de notificações, incluindo auto-notificação residual em ações originadas por intimações, destinatário incorreto em menções do feed, uso de tipos semânticos mais adequados (`process_created`, `signature_completed`, `poll_invite`) e remoção do uso legado do serviço local de notificações no `App`.
+- **Estabilidade**: Ajustados `App.tsx`, `NotificationBell`, `CalendarModule`, `IntimationsModule`, `ProcessesModule`, `feedPolls.service`, `signature.service` e tipos de `user_notification` para restaurar compilação limpa e navegação consistente a partir das notificações.
+
+## 1.9.675
+- **Notificações**: Corrigido o envio de auto-notificações ao criar prazos e compromissos. Agora `DeadlinesModule` e `CalendarModule` só notificam quando o responsável atribuído é diferente do usuário que criou o item.
+
 ## 1.9.674
 - **Clientes**: Corrigido o fluxo de exclusão no `ClientsModule` e no `client.service`, que estava apenas inativando o cadastro. Agora a ação remove o cliente permanentemente e os textos de confirmação foram alinhados ao comportamento real.
 

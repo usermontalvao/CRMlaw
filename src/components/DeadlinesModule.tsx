@@ -1153,7 +1153,7 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
         const newDeadline = await deadlineService.createDeadline(payloadBase as any);
         
         // 🔔 Criar notificação para novo prazo
-        if (user?.id && newDeadline) {
+        if (user?.id && newDeadline && payloadBase.responsible_id && payloadBase.responsible_id !== user.id) {
           try {
             const daysUntilDue = Math.ceil((new Date(payloadBase.due_date).getTime() - Date.now()) / (1000 * 60 * 60 * 24));
             const isUrgent = daysUntilDue <= 3 || payloadBase.priority === 'urgente' || payloadBase.priority === 'alta';
@@ -1162,7 +1162,7 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
               title: isUrgent ? '⚠️ Prazo Urgente Criado' : '📅 Novo Prazo',
               message: `${payloadBase.title} • Vence em ${daysUntilDue} dia(s)`,
               type: 'deadline_assigned',
-              user_id: user.id,
+              user_id: payloadBase.responsible_id,
               deadline_id: newDeadline.id,
               metadata: {
                 priority: payloadBase.priority,
