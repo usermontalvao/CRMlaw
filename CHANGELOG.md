@@ -1,5 +1,25 @@
 # Changelog
   
+  ## 1.9.741
+  - **Cloud**: Adicionada opção de `Girar 90°` também no preview do arquivo para imagens e PDFs.
+  - **Cloud**: O preview reaproveita a mesma rotação rápida do card, com bloqueio durante o processamento para evitar giros múltiplos acidentais.
+
+  ## 1.9.740
+  - **Cloud**: Corrigida a rotação rápida no card para evitar múltiplas rotações no mesmo clique enquanto o arquivo ainda está sendo processado.
+  - **Cloud**: Adicionada ação rápida discreta de download sobre o preview do card, mantendo o modo `Cards` mais útil sem abrir menus extras.
+
+  ## 1.9.739
+  - **Cloud**: Simplificado o controle de rotação nos cards. O botão textual `Girar` foi substituído por um ícone discreto sobre o preview do arquivo.
+  - **Cloud**: Mantida a rotação rápida para imagens e PDFs, agora com menos poluição visual no modo `Cards`.
+
+  ## 1.9.738
+  - **Cloud**: Adicionado botão `Girar` diretamente no card de arquivos do modo `Cards` para imagens e PDFs.
+  - **Cloud**: A rotação rápida salva a alteração no próprio arquivo sem exigir abertura do preview ou do hub PDF.
+
+  ## 1.9.737
+  - **Cloud**: Prints/imagens colados na pasta atual agora são convertidos automaticamente em PDF antes do salvamento.
+  - **Cloud**: O botão `Colar print` e o atalho de colagem passam a gerar o arquivo final já em `.pdf`, evitando a etapa manual de conversão após o upload.
+
   ## 1.9.736
   - **Cloud**: Corrigido o arrastar e soltar para a raiz `/Cloud`. Agora pastas podem voltar para a raiz pelo painel lateral.
   - **Cloud**: Mantido o bloqueio para arquivos na raiz quando o fluxo exigir pasta, exibindo mensagem orientativa em vez de falha silenciosa.

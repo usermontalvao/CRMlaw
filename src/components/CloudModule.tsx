@@ -116,6 +116,8 @@ const getFileTypeLabel = (file: CloudFile) => {
   return file.extension?.toUpperCase() || 'Arquivo';
 };
 
+const normalizeRotation = (rotation: number) => (((rotation % 360) + 360) % 360);
+
 type FolderLabelConfig = {
   id: string;
   name: string;
@@ -166,6 +168,7 @@ const arrayBufferToBase64 = (buffer: ArrayBuffer) => {
 };
 
 const getRandomImageFileName = (extension = 'png') => `print_${crypto.randomUUID().replace(/-/g, '').slice(0, 12)}.${extension}`;
+const getRandomPdfFileName = () => `print_${crypto.randomUUID().replace(/-/g, '').slice(0, 12)}.pdf`;
 
 const getInitialCloudViewMode = (): CloudViewMode => {
   if (typeof window === 'undefined') return 'list';
@@ -277,6 +280,7 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
   const [pdfToolSaving, setPdfToolSaving] = useState(false);
   const [pdfToolSaveAsCopy, setPdfToolSaveAsCopy] = useState(false);
   const [pdfToolMode, setPdfToolMode] = useState<PdfToolMode>('home');
+  const [quickActionFileId, setQuickActionFileId] = useState<string | null>(null);
   const [contextMenu, setContextMenu] = useState<
     | { x: number; y: number; type: 'folder'; folderId: string }
     | { x: number; y: number; type: 'file'; fileId: string }
@@ -846,17 +850,34 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
       return;
     }
 
-    const type = blob.type || 'image/png';
-    const extension = type.includes('jpeg') || type.includes('jpg') ? 'jpg' : 'png';
-    const file = new window.File([blob], getRandomImageFileName(extension), { type });
-
     try {
       setUploading(true);
+      const pdfDocument = await PDFDocument.create();
+      const imageBytes = blob.type.includes('jpeg') || blob.type.includes('jpg')
+        ? new Uint8Array(await blob.arrayBuffer())
+        : await blobToPngBytes(blob);
+
+      const embeddedImage = blob.type.includes('jpeg') || blob.type.includes('jpg')
+        ? await pdfDocument.embedJpg(imageBytes)
+        : await pdfDocument.embedPng(imageBytes);
+
+      const page = pdfDocument.addPage([embeddedImage.width, embeddedImage.height]);
+      page.drawImage(embeddedImage, {
+        x: 0,
+        y: 0,
+        width: embeddedImage.width,
+        height: embeddedImage.height,
+      });
+
+      const pdfBytes = await pdfDocument.save();
+      const pdfBlob = new Blob([pdfBytes as unknown as BlobPart], { type: 'application/pdf' });
+      const file = new window.File([pdfBlob], getRandomPdfFileName(), { type: 'application/pdf' });
+
       await cloudService.uploadFiles(currentFolderId, [file], currentFolder?.client_id || null);
-      toast.success('Cloud', 'Print enviado com nome aleatório.');
+      toast.success('Cloud', 'Print convertido em PDF e salvo na pasta atual.');
       await loadData();
     } catch (error: any) {
-      toast.error('Cloud', error.message || 'Erro ao enviar print.');
+      toast.error('Cloud', error.message || 'Erro ao converter print em PDF.');
     } finally {
       setUploading(false);
     }
@@ -1349,6 +1370,81 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
       return new Uint8Array(await pngBlob.arrayBuffer());
     } finally {
       URL.revokeObjectURL(imageUrl);
+    }
+  };
+
+  const rotateImageBlob = async (blob: Blob, delta: number) => {
+    const rotation = normalizeRotation(delta);
+    if (rotation === 0) return blob;
+
+    const imageUrl = URL.createObjectURL(blob);
+    try {
+      const img = await new Promise<HTMLImageElement>((resolve, reject) => {
+        const element = new Image();
+        element.onload = () => resolve(element);
+        element.onerror = () => reject(new Error('Não foi possível processar a imagem para rotação.'));
+        element.src = imageUrl;
+      });
+
+      const swapSides = rotation === 90 || rotation === 270;
+      const canvas = document.createElement('canvas');
+      canvas.width = swapSides ? img.naturalHeight : img.naturalWidth;
+      canvas.height = swapSides ? img.naturalWidth : img.naturalHeight;
+
+      const context = canvas.getContext('2d');
+      if (!context) throw new Error('Canvas indisponível para girar a imagem.');
+
+      context.translate(canvas.width / 2, canvas.height / 2);
+      context.rotate((rotation * Math.PI) / 180);
+      context.drawImage(img, -img.naturalWidth / 2, -img.naturalHeight / 2);
+
+      return await new Promise<Blob>((resolve, reject) => {
+        canvas.toBlob((result) => {
+          if (result) resolve(result);
+          else reject(new Error('Falha ao gerar a imagem rotacionada.'));
+        }, blob.type || 'image/png');
+      });
+    } finally {
+      URL.revokeObjectURL(imageUrl);
+    }
+  };
+
+  const handleRotateFileQuick = async (file: CloudFile, delta: number) => {
+    if (quickActionFileId) return;
+
+    try {
+      setQuickActionFileId(file.id);
+      setUploading(true);
+      const signedUrl = await cloudService.getFileSignedUrl(file.storage_path);
+      const response = await fetch(signedUrl);
+      if (!response.ok) {
+        throw new Error(`Não foi possível baixar ${file.original_name}.`);
+      }
+
+      if (isImageFile(file.mime_type)) {
+        const blob = await response.blob();
+        const rotatedBlob = await rotateImageBlob(blob, delta);
+        await cloudService.replaceFileContents(file, rotatedBlob, file.original_name);
+        toast.success('Cloud', 'Imagem girada com sucesso.');
+      } else if (isPdfFile(file.mime_type, file.original_name)) {
+        const originalBytes = await response.arrayBuffer();
+        const sourcePdf = await PDFDocument.load(originalBytes);
+        sourcePdf.getPages().forEach((page) => {
+          const currentRotation = page.getRotation().angle;
+          page.setRotation(degrees(normalizeRotation(currentRotation + delta)));
+        });
+        const bytes = await sourcePdf.save();
+        const blob = new Blob([bytes as unknown as BlobPart], { type: 'application/pdf' });
+        await cloudService.replaceFileContents(file, blob, file.original_name);
+        toast.success('Cloud', 'PDF girado com sucesso.');
+      }
+
+      await loadData();
+    } catch (error: any) {
+      toast.error('Cloud', error.message || 'Erro ao girar arquivo.');
+    } finally {
+      setUploading(false);
+      setQuickActionFileId(null);
     }
   };
 
@@ -2392,6 +2488,8 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
                     const itemKey = `file:${file.id}`;
                     const isSelected = selectedItemKeys.includes(itemKey);
                     const previewUrl = cardPreviewUrls[file.id] || null;
+                    const canQuickRotate = isImageFile(file.mime_type) || isPdfFile(file.mime_type, file.original_name);
+                    const isQuickActionLoading = quickActionFileId === file.id;
 
                     return (
                       <div
@@ -2420,7 +2518,37 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
                           setContextMenu({ x: e.clientX, y: e.clientY, type: 'file', fileId: file.id });
                         }}
                       >
-                        <div className="mb-3 rounded-2xl border border-slate-200 bg-slate-50 overflow-hidden">
+                        <div className="mb-3 relative rounded-2xl border border-slate-200 bg-slate-50 overflow-hidden">
+                          <div className="absolute right-2 top-2 z-10 flex items-center gap-1.5">
+                            {canQuickRotate ? (
+                              <button
+                                type="button"
+                                disabled={isQuickActionLoading}
+                                onClick={(event) => {
+                                  event.stopPropagation();
+                                  event.preventDefault();
+                                  void handleRotateFileQuick(file, 90);
+                                }}
+                                className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-slate-200 bg-white/95 text-slate-700 shadow-sm hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-70"
+                                title="Girar documento 90°"
+                              >
+                                {isQuickActionLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <RotateCw className="w-4 h-4" />}
+                              </button>
+                            ) : null}
+                            <button
+                              type="button"
+                              disabled={isQuickActionLoading}
+                              onClick={(event) => {
+                                event.stopPropagation();
+                                event.preventDefault();
+                                void handleDownloadFile(file);
+                              }}
+                              className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-slate-200 bg-white/95 text-slate-700 shadow-sm hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-70"
+                              title="Baixar arquivo"
+                            >
+                              <Download className="w-4 h-4" />
+                            </button>
+                          </div>
                           {isImageFile(file.mime_type) && previewUrl ? (
                             <img src={previewUrl} alt={file.original_name} className="w-full h-36 object-cover bg-white" />
                           ) : isPdfFile(file.mime_type, file.original_name) && previewUrl ? (
@@ -2677,31 +2805,40 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
                 </div>
                 <button onClick={() => setFolderModalOpen(false)} className="p-2 rounded-lg hover:bg-slate-100"><X className="w-5 h-5 text-slate-400" /></button>
               </div>
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+              {currentFolderId ? (
                 <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-1">Nome</label>
-                  <input value={folderName} onChange={(e) => setFolderName(e.target.value)} className="w-full rounded-xl border border-slate-200 px-4 py-3 text-sm bg-white text-slate-900 focus:outline-none focus:ring-2 focus:ring-orange-100 focus:border-orange-400" placeholder="Ex: Contratos do cliente" />
+                  <label className="block text-sm font-medium text-slate-700 mb-1">Nome da subpasta</label>
+                  <input value={folderName} onChange={(e) => setFolderName(e.target.value)} className="w-full rounded-xl border border-slate-200 px-4 py-3 text-sm bg-white text-slate-900 focus:outline-none focus:ring-2 focus:ring-orange-100 focus:border-orange-400" placeholder="Ex: Documentos" />
                 </div>
-                <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-1">Etiqueta inicial</label>
-                  <select value={selectedFolderLabelId} onChange={(e) => setSelectedFolderLabelId(e.target.value)} className="w-full rounded-xl border border-slate-200 px-4 py-3 text-sm bg-white text-slate-900 focus:outline-none focus:ring-2 focus:ring-orange-100 focus:border-orange-400">
-                    {folderLabels.map((label) => (
-                      <option key={label.id} value={label.id}>{label.name}</option>
-                    ))}
-                  </select>
-                </div>
-              </div>
-              <ClientSearchSelect value={folderClientId} onChange={(clientId) => setFolderClientId(clientId)} label="Vincular a cliente" required={false} allowCreate={false} />
-              <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4 space-y-3">
-                <p className="text-sm font-medium text-slate-900">Cadastrar nova etiqueta</p>
-                <div className="grid grid-cols-1 md:grid-cols-[1fr_120px_auto] gap-3">
-                  <input value={newLabelName} onChange={(e) => setNewLabelName(e.target.value)} placeholder="Ex: Em análise" className="w-full rounded-xl border border-slate-200 px-4 py-3 text-sm bg-white text-slate-900 focus:outline-none focus:ring-2 focus:ring-orange-100 focus:border-orange-400" />
-                  <input type="color" value={newLabelColor} onChange={(e) => setNewLabelColor(e.target.value)} className="w-full h-[50px] rounded-xl border border-slate-200 bg-white p-2" />
-                  <button type="button" onClick={handleCreateCustomLabel} className="px-4 py-3 rounded-xl bg-orange-50 text-orange-700 border border-orange-200 text-sm font-medium hover:bg-orange-100">
-                    Cadastrar etiqueta
-                  </button>
-                </div>
-              </div>
+              ) : (
+                <>
+                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-sm font-medium text-slate-700 mb-1">Nome</label>
+                      <input value={folderName} onChange={(e) => setFolderName(e.target.value)} className="w-full rounded-xl border border-slate-200 px-4 py-3 text-sm bg-white text-slate-900 focus:outline-none focus:ring-2 focus:ring-orange-100 focus:border-orange-400" placeholder="Ex: Contratos do cliente" />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-slate-700 mb-1">Etiqueta inicial</label>
+                      <select value={selectedFolderLabelId} onChange={(e) => setSelectedFolderLabelId(e.target.value)} className="w-full rounded-xl border border-slate-200 px-4 py-3 text-sm bg-white text-slate-900 focus:outline-none focus:ring-2 focus:ring-orange-100 focus:border-orange-400">
+                        {folderLabels.map((label) => (
+                          <option key={label.id} value={label.id}>{label.name}</option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
+                  <ClientSearchSelect value={folderClientId} onChange={(clientId) => setFolderClientId(clientId)} label="Vincular a cliente" required={false} allowCreate={false} />
+                  <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4 space-y-3">
+                    <p className="text-sm font-medium text-slate-900">Cadastrar nova etiqueta</p>
+                    <div className="grid grid-cols-1 md:grid-cols-[1fr_120px_auto] gap-3">
+                      <input value={newLabelName} onChange={(e) => setNewLabelName(e.target.value)} placeholder="Ex: Em análise" className="w-full rounded-xl border border-slate-200 px-4 py-3 text-sm bg-white text-slate-900 focus:outline-none focus:ring-2 focus:ring-orange-100 focus:border-orange-400" />
+                      <input type="color" value={newLabelColor} onChange={(e) => setNewLabelColor(e.target.value)} className="w-full h-[50px] rounded-xl border border-slate-200 bg-white p-2" />
+                      <button type="button" onClick={handleCreateCustomLabel} className="px-4 py-3 rounded-xl bg-orange-50 text-orange-700 border border-orange-200 text-sm font-medium hover:bg-orange-100">
+                        Cadastrar etiqueta
+                      </button>
+                    </div>
+                  </div>
+                </>
+              )}
               <div className="flex justify-end gap-2">
                 <button onClick={() => setFolderModalOpen(false)} className="px-4 py-2.5 rounded-xl border border-slate-200 text-sm text-slate-700 hover:bg-slate-50">Cancelar</button>
                 <button onClick={handleCreateFolder} className="px-5 py-2.5 rounded-xl bg-orange-500 text-white text-sm font-medium hover:bg-orange-600">Criar pasta</button>
@@ -2819,6 +2956,16 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
                 <p className="text-xs text-slate-500">{isDocxFile(previewFile.mime_type, previewFile.original_name) ? 'Editor de documento' : 'Preview do arquivo'}</p>
               </div>
               <div className="flex items-center gap-2">
+                {(isImageFile(previewFile.mime_type) || isPdfFile(previewFile.mime_type, previewFile.original_name)) ? (
+                  <button
+                    onClick={() => void handleRotateFileQuick(previewFile, 90)}
+                    disabled={quickActionFileId === previewFile.id}
+                    className="px-3 py-1.5 rounded-lg border border-slate-200 text-slate-600 text-sm hover:bg-slate-50 inline-flex items-center gap-2 disabled:cursor-not-allowed disabled:opacity-70"
+                  >
+                    {quickActionFileId === previewFile.id ? <Loader2 className="w-4 h-4 animate-spin" /> : <RotateCw className="w-4 h-4" />}
+                    Girar 90°
+                  </button>
+                ) : null}
                 {isDocxFile(previewFile.mime_type, previewFile.original_name) && (
                   <>
                     <button onClick={() => setPreviewFile(null)} className="px-3 py-1.5 rounded-lg border border-slate-200 text-slate-600 text-sm hover:bg-slate-50 inline-flex items-center gap-2">

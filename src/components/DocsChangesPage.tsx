@@ -589,6 +589,96 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
 
 const releases: ReleaseNote[] = [
   {
+    version: '1.9.741',
+    date: '09/03/2026',
+    summary: 'Cloud: o preview do arquivo agora também permite girar imagens e PDFs.',
+    modules: [
+      {
+        moduleId: 'cloud',
+        changes: [
+          {
+            type: 'feature',
+            title: 'Girar também no preview',
+            description: 'O modal de preview do Cloud agora exibe a ação `Girar 90°` para imagens e PDFs, permitindo corrigir a orientação sem voltar para a grade de cards.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.740',
+    date: '09/03/2026',
+    summary: 'Cloud: rotação rápida do card corrigida e ações rápidas ficaram mais úteis.',
+    modules: [
+      {
+        moduleId: 'cloud',
+        changes: [
+          {
+            type: 'fix',
+            title: 'Rotação rápida sem múltiplos giros',
+            description: 'A ação de girar no card agora trava enquanto o arquivo está sendo processado, evitando que um único uso acabe aplicando rotações adicionais por cliques repetidos.',
+          },
+          {
+            type: 'improvement',
+            title: 'Download rápido no card',
+            description: 'Os previews do modo `Cards` agora também exibem um atalho discreto de download, permitindo baixar o arquivo sem abrir menu contextual ou painel lateral.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.739',
+    date: '09/03/2026',
+    summary: 'Cloud: ação de girar no card ficou mais discreta e limpa.',
+    modules: [
+      {
+        moduleId: 'cloud',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Ícone discreto de rotação no card',
+            description: 'O modo `Cards` do Cloud agora mostra apenas um ícone pequeno sobre o preview para girar imagens e PDFs, reduzindo a poluição visual sem perder a ação rápida.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.738',
+    date: '09/03/2026',
+    summary: 'Cloud: agora dá para girar imagem e PDF direto pelo card.',
+    modules: [
+      {
+        moduleId: 'cloud',
+        changes: [
+          {
+            type: 'feature',
+            title: 'Botão girar no card',
+            description: 'Os cards de imagem e PDF no modo `Cards` agora exibem um botão `Girar`, aplicando rotação rápida no próprio arquivo sem precisar abrir outras ferramentas.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.737',
+    date: '09/03/2026',
+    summary: 'Cloud: prints colados na pasta atual agora viram PDF automaticamente.',
+    modules: [
+      {
+        moduleId: 'cloud',
+        changes: [
+          {
+            type: 'feature',
+            title: 'Print colado já vira PDF',
+            description: 'Ao usar `Ctrl+V` ou o botão `Colar print` no Cloud, a imagem da área de transferência agora é convertida automaticamente para PDF antes de ser salva na pasta atual.',
+          },
+        ],
+      },
+    ],
+  },
+  {
     version: '1.9.736',
     date: '09/03/2026',
     summary: 'Cloud: pastas podem ser arrastadas de volta para a raiz /Cloud.',
