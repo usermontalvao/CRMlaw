@@ -1,4 +1,136 @@
 # Changelog
+  
+  ## 1.9.736
+  - **Cloud**: Corrigido o arrastar e soltar para a raiz `/Cloud`. Agora pastas podem voltar para a raiz pelo painel lateral.
+  - **Cloud**: Mantido o bloqueio para arquivos na raiz quando o fluxo exigir pasta, exibindo mensagem orientativa em vez de falha silenciosa.
+
+  ## 1.9.735
+  - **Cloud**: Removidos também os badges de status (`Pendente`/`Concluído`) das subpastas. Agora esses avisos visuais aparecem apenas nas pastas principais.
+
+  ## 1.9.734
+  - **Cloud**: O badge de vínculo com cliente agora aparece somente nas pastas principais. Subpastas não exibem mais esse aviso visual.
+  - **Clientes/Cloud**: Adicionada seção `Pastas do Cloud` no detalhe do cliente, mostrando as pastas principais vinculadas, com status ativo/arquivada e data de atualização.
+
+  ## 1.9.733
+  - **Cloud**: Corrigida a coluna `Tamanho` no explorador para exibir também o tamanho calculado das pastas, somando arquivos internos e subpastas em vez de mostrar apenas `—`.
+
+  ## 1.9.732
+  - **Cloud/Compartilhamento**: Corrigido o erro de `statement timeout` na abertura do link compartilhado, removendo a consulta pesada com join direto na resolução pública do token.
+  - **Cloud/Compartilhamento**: O link compartilhado agora é único por pasta. Se o link já existir, o sistema reaproveita o mesmo token em vez de gerar outro.
+  - **Cloud/Compartilhamento**: Adicionadas ações para atualizar senha e validade do link existente, remover senha e tornar a pasta privada novamente.
+  - **Cloud/Compartilhamento**: O modal agora informa quando a pasta já possui um link único ativo e permite gerenciá-lo sem perder a URL existente.
+
+  ## 1.9.731
+  - **Cloud**: Removido o título duplicado do cabeçalho interno, mantendo apenas a navegação atual da pasta.
+  - **Cloud**: Adicionado badge visual nas pastas indicando quando estão `Vinculadas` ou `Sem vínculo` com cliente, na árvore lateral, lista e cards.
+
+  ## 1.9.730
+  - **Cloud**: Adicionado menu contextual no espaço branco (botão direito) com opções: Nova pasta, Enviar arquivos, Colar imagem, Atualizar, e Converter imagens em PDF (quando há imagens selecionadas).
+  - **Cloud**: Agora é possível arrastar arquivos e pastas para a árvore de pastas no painel lateral esquerdo, facilitando a organização.
+  - **Hub PDF**: Adicionada função de extrair páginas selecionadas para um novo PDF.
+  - **Hub PDF**: Adicionados botões de seleção rápida: Selecionar todas, Inverter seleção, Limpar.
+  - **Hub PDF**: Adicionada grade visual de páginas para seleção rápida na tela inicial.
+  - **Hub PDF**: Adicionado botão de download direto do PDF.
+
+  ## 1.9.729
+  - **Cloud**: Adicionado drag and drop para mover arquivos e pastas arrastando para dentro de outras pastas. Ao arrastar um item sobre uma pasta, ela fica destacada indicando que pode receber o item.
+  - **Cloud**: Adicionada função de renomear arquivos e pastas via menu contextual (botão direito).
+  - **Cloud**: Adicionada função de duplicar arquivos, criando uma cópia na mesma pasta.
+  - **Cloud**: Adicionada função de copiar link do arquivo para a área de transferência.
+
+  ## 1.9.728
+  - **Cloud/PDF**: Corrigido o espaço em branco no PDF gerado a partir de imagens. Agora cada página do PDF tem exatamente o tamanho da imagem, sem margens nem espaço extra.
+  - **Cloud**: Adicionado `preventDefault` nos handlers de clique para garantir que `Alt`+clique funcione corretamente na seleção múltipla.
+
+  ## 1.9.727
+  - **Cloud**: Corrigida definitivamente a seleção múltipla com `Ctrl`/`Alt`/`Cmd` + clique. Adicionado `stopPropagation` nos handlers de clique dos itens para evitar que o evento borbulhe para o container e limpe a seleção.
+
+  ## 1.9.726
+  - **Cloud**: Melhorado o modal `Mover arquivo` para listar a pasta principal e suas subpastas com hierarquia visual no seletor de destino, facilitando identificar o nível de cada pasta antes de mover o arquivo.
+
+  ## 1.9.725
+  - **Cloud**: Corrigida a limpeza indevida da seleção ao clicar em textos e elementos internos dos itens do explorador. Agora `Ctrl`/`Alt`/`Cmd` + clique mantém corretamente a multiseleção na lista e nos cards.
+
+  ## 1.9.724
+  - **Cloud**: Adicionado `Ctrl+A`/`Cmd+A` para selecionar todos os itens visíveis no explorador da pasta atual, reforçando o comportamento de storage/explorer.
+  - **Cloud**: Mantidas as melhorias recentes de seleção múltipla com modificadores e navegação por setas no explorador.
+
+  ## 1.9.723
+  - **Cloud**: Corrigida a seleção em massa no explorador para voltar a aceitar múltipla seleção com `Ctrl`/`Alt`/`Meta` + clique entre arquivos e pastas.
+  - **Cloud**: Adicionada navegação por teclado com setas no estilo explorer/storage. As setas agora movem a seleção entre itens e ajudam na navegação tanto em `Lista` quanto em `Cards`.
+
+  ## 1.9.722
+  - **Cloud**: Restaurado o painel de detalhes para aparecer novamente quando um item estiver selecionado, mantendo o comportamento de ocultar o painel quando não houver seleção.
+  - **Cloud**: Ajustada a visualização em `Cards` para ficar mais compacta e comportar até 4 itens por linha em telas largas.
+
+  ## 1.9.721
+  - **Cloud**: Simplificados os cards de arquivos para reduzir ruído visual. Agora eles exibem badge com o tipo do documento (ex.: `PDF`, `DOC`, `Imagem`) e removem metadados textuais redundantes como tamanho, cliente e data diretamente no card.
+  - **Cloud**: Reduzido o tamanho de ícones nos cards e removido o painel lateral de detalhes para arquivos. Ao clicar fora na área branca do explorador, a seleção agora é limpa de fato e o detalhe não permanece visível.
+
+  ## 1.9.720
+  - **Cloud/PDF**: O `Hub PDF` passou a executar as ações principais no próprio preview das páginas. Agora é possível organizar folhas por arrastar, girar cada página diretamente na miniatura e remover páginas a partir da seleção visual no editor.
+  - **Cloud/PDF**: O modal do hub agora mantém `Salvar PDF` e `Fechar` fixos no rodapé, facilitando o uso contínuo durante a edição.
+
+  ## 1.9.719
+  - **Cloud**: Corrigida a persistência do modo de exibição para reabrir corretamente no último layout escolhido (`Lista` ou `Cards`).
+  - **Cloud**: Os cards agora exibem preview real do conteúdo quando possível: imagens mostram thumbnail da própria imagem e PDFs mostram a primeira página como miniatura. Outros arquivos continuam com ícone padrão.
+
+  ## 1.9.718
+  - **Cloud/PDF**: Redesenhado o `Hub PDF` para uma experiência mais próxima de uma central de ferramentas, com tela inicial em grade e apenas funções essenciais no fluxo atual: `Organizar PDFs`, `Rodar páginas PDF`, `Remover páginas PDF` e `Juntar PDF`.
+  - **Cloud/PDF**: O editor do hub agora exibe páginas em grade visual, permitindo seleção mais clara das folhas antes de girar, remover ou reorganizar.
+
+  ## 1.9.717
+  - **Cloud**: Melhorado o `View` do painel lateral para mostrar visualização rápida do arquivo selecionado. Imagens agora aparecem diretamente no painel e arquivos suportados também podem exibir conteúdo embutido, como PDF e texto.
+
+  ## 1.9.716
+  - **Cloud**: Adicionado acesso rápido às pastas arquivadas na lateral do explorador, com exibição da exclusão agendada e do período restante até a remoção automática.
+  - **Cloud**: Adicionada ação de `Desarquivar pasta` no painel de detalhes e no menu contextual, restaurando a pasta ao fluxo normal e removendo o agendamento de exclusão.
+
+## 1.9.715
+- **Cloud**: Adicionados modos de exibição `Lista` e `Cards` no explorador, com persistência da preferência do usuário para manter o layout escolhido nas próximas visitas.
+
+## 1.9.714
+- **Cloud**: Melhorada a seleção em massa com suporte a `Ctrl`/`Alt`/`Meta` + clique, além de atalhos de teclado com `Del` para excluir itens selecionados e `Enter` para abrir o item em foco.
+- **Cloud/PDF**: Adicionado o primeiro `Hub PDF` no `Cloud`, com ações para remover páginas, girar páginas selecionadas e salvar o arquivo editado por cima ou como cópia.
+
+## 1.9.713
+- **Assinaturas/Cloud**: Melhorada a identificação da subpasta da contraparte para priorizar o nome do banco/empresa presente no título do contrato, evitando nomes genéricos como `Novo Contrato`. Agora a organização favorece estruturas como `DARIO / NUBANK / NÃO PROTOCOLAR`.
+
+## 1.9.712
+- **Cloud**: Padronizados os modais restantes do módulo para visual claro, especialmente `Mover arquivo` e `Compartilhar pasta`, eliminando a aparência preta/escura inconsistente.
+
+## 1.9.711
+- **Cloud**: Melhorado o modal de conversão de imagens em PDF para visual claro e consistente com o sistema. A ordenação das imagens agora exibe miniaturas reais e permite reorganização por arrastar e soltar.
+
+## 1.9.710
+- **Cloud**: Removido o bloqueio que exigia pasta vazia para exclusão. Agora a exclusão de pastas no `Cloud` apaga recursivamente subpastas e arquivos internos.
+
+## 1.9.709
+- **Assinaturas/Cloud**: Quando o mesmo cliente possui múltiplas assinaturas/contratos com réus ou partes contrárias diferentes, o sistema agora cria e identifica subpastas por nome dessas partes antes de `NÃO PROTOCOLAR`, evitando mistura entre contratos do mesmo cliente. A estrutura com processo continua sendo respeitada quando existir.
+
+## 1.9.708
+- **Assinaturas/Cloud**: Ajustada a identificação de destino no `Cloud` para casos em que o mesmo cliente possui múltiplos processos. Agora, quando houver processo vinculado, a cópia e a detecção usam a estrutura `Cliente / PROCESSO <número> / NÃO PROTOCOLAR`, mantendo compatibilidade com a estrutura antiga sem processo.
+
+## 1.9.707
+- **Assinaturas/Cloud**: O módulo de `Assinaturas` agora exibe visualmente quando a pasta/cópia correspondente já foi criada no `Cloud`, tanto nos cards/lista quanto no detalhe da assinatura, com atualização imediata após a ação `Criar pasta`.
+
+## 1.9.706
+- **Cloud**: Adicionado suporte para colar prints/imagens diretamente na pasta atual com nome aleatório. Também foi adicionada conversão de imagens em PDF, com seleção de imagens, modal para organizar a ordem e salvamento do PDF na mesma pasta com o título escolhido.
+
+## 1.9.705
+- **Cloud**: O painel `Detalhes` agora fica oculto quando nenhum arquivo ou pasta estiver selecionado. Também foi ajustado o clique em área branca da listagem para limpar a seleção e esconder o painel lateral.
+
+## 1.9.704
+- **Cloud/Assinaturas**: Corrigida a atualização imediata do `Cloud` após a cópia de documentos vindos de Assinaturas usando evento interno do sistema. Também foi adicionada migration para incluir as tabelas `cloud_*` na publicação `supabase_realtime` do Supabase.
+
+## 1.9.703
+- **Cloud**: Ativada atualização realtime para arquivos, pastas e compartilhamentos. O módulo agora reflete mudanças automaticamente sem necessidade de recarregar manualmente.
+
+## 1.9.702
+- **Assinaturas/Cloud**: Adicionada ação `Criar pasta` no detalhe da assinatura para copiar o documento assinado para o `Cloud`, criando automaticamente a pasta do cliente e a subpasta `NÃO PROTOCOLAR` sem alterar o arquivo original assinado.
+
+## 1.9.701
+- **Cloud**: Adicionada opção de arquivar pasta. Pastas arquivadas saem da listagem padrão e ficam com exclusão automática agendada para 30 dias.
 
 ## 1.9.700
 - **Cloud**: Adicionadas ações de download para arquivos e pastas. Arquivos agora podem ser baixados diretamente e pastas com múltiplos arquivos são baixadas em `.zip` mantendo a estrutura interna.

@@ -3,6 +3,8 @@ export interface CloudFolder {
   name: string;
   parent_id?: string | null;
   client_id?: string | null;
+  archived_at?: string | null;
+  delete_scheduled_for?: string | null;
   created_by?: string | null;
   updated_by?: string | null;
   created_at: string;
@@ -19,6 +21,8 @@ export interface UpdateCloudFolderDTO {
   name?: string;
   parent_id?: string | null;
   client_id?: string | null;
+  archived_at?: string | null;
+  delete_scheduled_for?: string | null;
 }
 
 export interface CloudFile {

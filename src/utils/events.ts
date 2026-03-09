@@ -50,6 +50,7 @@ export const SYSTEM_EVENTS = {
   CLIENT_CREATED: 'client_created',
   CLIENT_UPDATED: 'client_updated',
   CLIENT_DELETED: 'client_deleted',
+  CLOUD_CHANGED: 'cloud_changed',
   PROCESSES_CHANGED: 'processes_changed',
   PROCESS_CREATED: 'process_created',
   PROCESS_UPDATED: 'process_updated',

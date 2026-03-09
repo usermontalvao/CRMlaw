@@ -589,6 +589,706 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
 
 const releases: ReleaseNote[] = [
   {
+    version: '1.9.736',
+    date: '09/03/2026',
+    summary: 'Cloud: pastas podem ser arrastadas de volta para a raiz /Cloud.',
+    modules: [
+      {
+        moduleId: 'cloud',
+        changes: [
+          {
+            type: 'fix',
+            title: 'Drag and drop para a raiz',
+            description: 'Agora é possível arrastar pastas para o item raiz `/Cloud` no painel lateral, retornando-as para a raiz com feedback visual e mensagem de sucesso.',
+          },
+          {
+            type: 'improvement',
+            title: 'Mensagem mais clara para arquivos na raiz',
+            description: 'Quando o usuário tenta mover arquivo para a raiz em um fluxo que exige pasta, o sistema mostra uma orientação explícita em vez de falhar silenciosamente.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.734',
+    date: '09/03/2026',
+    summary: 'Cloud: badge de vínculo só em pasta principal e pastas do Cloud visíveis no módulo de clientes.',
+    modules: [
+      {
+        moduleId: 'cloud',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Badge só em pasta principal',
+            description: 'O aviso de vínculo com cliente agora aparece apenas nas pastas principais. Subpastas não exibem mais esse badge.',
+          },
+        ],
+      },
+      {
+        moduleId: 'clients',
+        changes: [
+          {
+            type: 'feature',
+            title: 'Pastas do Cloud no cliente',
+            description: 'O detalhe do cliente agora mostra as pastas principais do Cloud vinculadas, com status e data de atualização.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.733',
+    date: '09/03/2026',
+    summary: 'Cloud: coluna Tamanho agora mostra também o tamanho calculado das pastas.',
+    modules: [
+      {
+        moduleId: 'cloud',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Tamanho real das pastas',
+            description: 'A coluna `Tamanho` do explorador passou a somar arquivos internos e subpastas, substituindo o traço por um valor calculado para cada pasta.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.732',
+    date: '09/03/2026',
+    summary: 'Cloud: compartilhamento com link único por pasta e gestão completa do link existente.',
+    modules: [
+      {
+        moduleId: 'cloud',
+        changes: [
+          {
+            type: 'fix',
+            title: 'Fim do timeout no link compartilhado',
+            description: 'A resolução pública do token deixou de usar a consulta pesada com join direto, eliminando o erro de `statement timeout` na abertura do link.',
+          },
+          {
+            type: 'improvement',
+            title: 'Link único por pasta',
+            description: 'Quando a pasta já possui compartilhamento ativo, o sistema reaproveita o mesmo token em vez de gerar um novo link.',
+          },
+          {
+            type: 'feature',
+            title: 'Gerenciar link já existente',
+            description: 'O modal agora permite atualizar senha e validade, remover senha e tornar a pasta privada novamente sem perder o controle do link atual.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.731',
+    date: '08/03/2026',
+    summary: 'Cloud: cabeçalho sem duplicação e status visual de vínculo nas pastas.',
+    modules: [
+      {
+        moduleId: 'cloud',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Cabeçalho interno simplificado',
+            description: 'O topo do módulo Cloud deixou de repetir o título e agora mostra apenas a navegação atual da pasta.',
+          },
+          {
+            type: 'improvement',
+            title: 'Badge de pasta vinculada',
+            description: 'Pastas agora exibem badge visual de `Vinculada` ou `Sem vínculo` na árvore lateral, lista e cards.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.730',
+    date: '08/03/2026',
+    summary: 'Cloud: menu contextual no espaço branco, drag para árvore lateral e melhorias no Hub PDF.',
+    modules: [
+      {
+        moduleId: 'cloud',
+        changes: [
+          {
+            type: 'feature',
+            title: 'Menu contextual no espaço branco',
+            description: 'Botão direito no espaço vazio agora mostra opções: Nova pasta, Enviar arquivos, Colar imagem, Atualizar, e Converter imagens em PDF.',
+          },
+          {
+            type: 'feature',
+            title: 'Arrastar para árvore de pastas',
+            description: 'Agora é possível arrastar arquivos e pastas para qualquer pasta na árvore lateral esquerda.',
+          },
+          {
+            type: 'feature',
+            title: 'Hub PDF: Extrair páginas',
+            description: 'Nova função para extrair páginas selecionadas e criar um novo PDF.',
+          },
+          {
+            type: 'improvement',
+            title: 'Hub PDF: Seleção rápida de páginas',
+            description: 'Grade visual de páginas na tela inicial com botões de selecionar todas, inverter e limpar seleção.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.729',
+    date: '08/03/2026',
+    summary: 'Cloud: drag and drop para mover itens, renomear, duplicar e copiar link.',
+    modules: [
+      {
+        moduleId: 'cloud',
+        changes: [
+          {
+            type: 'feature',
+            title: 'Drag and drop para mover arquivos e pastas',
+            description: 'Agora é possível arrastar arquivos e pastas e soltar dentro de outras pastas para movê-los. A pasta de destino fica destacada durante o arrasto.',
+          },
+          {
+            type: 'feature',
+            title: 'Renomear arquivos e pastas',
+            description: 'Adicionada opção de renomear no menu contextual (botão direito) para arquivos e pastas.',
+          },
+          {
+            type: 'feature',
+            title: 'Duplicar arquivos',
+            description: 'Adicionada opção de duplicar arquivos no menu contextual, criando uma cópia na mesma pasta.',
+          },
+          {
+            type: 'feature',
+            title: 'Copiar link do arquivo',
+            description: 'Adicionada opção de copiar o link temporário do arquivo para a área de transferência.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.728',
+    date: '08/03/2026',
+    summary: 'Cloud: PDF de imagens sem espaço em branco e Alt+clique funcionando.',
+    modules: [
+      {
+        moduleId: 'cloud',
+        changes: [
+          {
+            type: 'fix',
+            title: 'PDF de imagens sem espaço em branco',
+            description: 'Ao converter imagens em PDF, cada página agora tem exatamente o tamanho da imagem original, sem margens nem espaço extra.',
+          },
+          {
+            type: 'fix',
+            title: 'Alt+clique na seleção múltipla',
+            description: 'Adicionado `preventDefault` para garantir que `Alt`+clique funcione corretamente na seleção múltipla do explorador.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.727',
+    date: '08/03/2026',
+    summary: 'Cloud: seleção múltipla com Ctrl/Alt/Cmd finalmente estabilizada.',
+    modules: [
+      {
+        moduleId: 'cloud',
+        changes: [
+          {
+            type: 'fix',
+            title: 'Seleção múltipla corrigida definitivamente',
+            description: 'Adicionado `stopPropagation` nos handlers de clique dos itens do explorador para evitar que o evento borbulhe para o container e limpe a seleção. Agora `Ctrl`/`Alt`/`Cmd` + clique funciona corretamente.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.726',
+    date: '08/03/2026',
+    summary: 'Cloud: o modal de mover arquivo passou a mostrar melhor a hierarquia das pastas.',
+    modules: [
+      {
+        moduleId: 'cloud',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Hierarquia visual no seletor de pasta destino',
+            description: 'O modal `Mover arquivo` do `Cloud` agora exibe a pasta principal e suas subpastas com indentação visual, facilitando entender a estrutura antes de escolher o destino.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.725',
+    date: '08/03/2026',
+    summary: 'Cloud: a multiseleção por clique com modificadores foi estabilizada no explorador.',
+    modules: [
+      {
+        moduleId: 'cloud',
+        changes: [
+          {
+            type: 'fix',
+            title: 'Ctrl/Alt/Cmd+clique corrigido no explorador',
+            description: 'Foi corrigido o comportamento que limpava a seleção ao clicar em áreas internas dos itens do `Cloud`. Agora a multiseleção com `Ctrl`/`Alt`/`Cmd` + clique funciona corretamente na lista e na visualização em cards.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.724',
+    date: '08/03/2026',
+    summary: 'Cloud: o explorador ganhou seleção total por atalho e ficou ainda mais próximo de um storage tradicional.',
+    modules: [
+      {
+        moduleId: 'cloud',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Ctrl+A para selecionar tudo no explorador',
+            description: 'O `Cloud` agora aceita `Ctrl+A`/`Cmd+A` para selecionar todos os itens visíveis da pasta atual, complementando a seleção múltipla e a navegação por teclado.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.723',
+    date: '08/03/2026',
+    summary: 'Cloud: o explorador voltou a ficar mais próximo de um storage, com seleção múltipla e navegação por teclado.',
+    modules: [
+      {
+        moduleId: 'cloud',
+        changes: [
+          {
+            type: 'fix',
+            title: 'Seleção múltipla restaurada',
+            description: 'A seleção em massa do `Cloud` foi corrigida para voltar a aceitar múltiplos itens usando `Ctrl`/`Alt`/`Meta` + clique no explorador.',
+          },
+          {
+            type: 'improvement',
+            title: 'Navegação por setas no explorador',
+            description: 'O `Cloud` agora permite navegar com as setas do teclado entre itens da visualização, com comportamento mais próximo de exploradores de arquivos e storages modernos.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.722',
+    date: '08/03/2026',
+    summary: 'Cloud: o painel de detalhes voltou a aparecer por seleção e os cards ficaram mais compactos.',
+    modules: [
+      {
+        moduleId: 'cloud',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Detalhes exibidos apenas quando há seleção',
+            description: 'O painel lateral do `Cloud` voltou a aparecer quando um arquivo ou pasta é selecionado, mas continua oculto quando não existe item selecionado.',
+          },
+          {
+            type: 'improvement',
+            title: 'Cards mais compactos',
+            description: 'A grade de `Cards` do `Cloud` foi ajustada para reduzir o tamanho dos blocos e aproveitar melhor a largura disponível, chegando a até 4 cards por linha em telas largas.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.721',
+    date: '08/03/2026',
+    summary: 'Cloud: a visualização ficou mais limpa e o detalhe lateral foi reduzido ao essencial.',
+    modules: [
+      {
+        moduleId: 'cloud',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Cards mais limpos com badge de tipo',
+            description: 'Os cards de arquivos no `Cloud` passaram a mostrar um badge com o tipo do documento e removeram informações textuais redundantes, deixando a visualização mais enxuta.',
+          },
+          {
+            type: 'improvement',
+            title: 'Clique fora limpa seleção e remove detalhe residual',
+            description: 'Ao clicar fora dos itens na área branca do explorador, a seleção do `Cloud` agora é limpa corretamente. Também foi removido o painel lateral detalhado de arquivos para reduzir ruído visual.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.720',
+    date: '08/03/2026',
+    summary: 'Cloud/PDF: o hub ficou mais interativo e passou a editar direto no preview.',
+    modules: [
+      {
+        moduleId: 'cloud',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Ações no próprio preview do Hub PDF',
+            description: 'O editor do `Hub PDF` agora permite interagir diretamente com as miniaturas das páginas: reorganizar por arrastar, girar páginas na própria visualização e selecionar/remover folhas a partir do preview.',
+          },
+          {
+            type: 'improvement',
+            title: 'Rodapé fixo com salvar e fechar',
+            description: 'As ações principais do modal do `Hub PDF` passaram a ficar fixas no rodapé, mantendo `Salvar PDF` e `Fechar` sempre acessíveis durante a edição.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.719',
+    date: '08/03/2026',
+    summary: 'Cloud: os cards agora mostram mais conteúdo visual e a preferência de exibição passou a persistir corretamente.',
+    modules: [
+      {
+        moduleId: 'cloud',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Cards com thumbnail real para imagens e PDFs',
+            description: 'Na visualização em `Cards`, arquivos de imagem agora exibem a própria miniatura e arquivos PDF mostram a primeira página como preview. Outros arquivos mantêm o ícone padrão.',
+          },
+          {
+            type: 'fix',
+            title: 'Persistência correta do modo Lista/Cards',
+            description: 'A última preferência de exibição do `Cloud` agora é restaurada corretamente ao reabrir o módulo, sem voltar indevidamente para `Lista` após atualização ou retorno à tela.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.718',
+    date: '08/03/2026',
+    summary: 'Cloud/PDF: o hub de PDF foi redesenhado para um formato mais visual e objetivo.',
+    modules: [
+      {
+        moduleId: 'cloud',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Hub PDF em grade com foco no essencial',
+            description: 'O `Hub PDF` do `Cloud` agora abre em uma tela inicial mais visual, inspirada em uma central de ferramentas, mantendo somente as ações essenciais para o fluxo atual: organizar, girar, remover páginas e juntar PDFs.',
+          },
+          {
+            type: 'improvement',
+            title: 'Páginas exibidas visualmente no editor',
+            description: 'Ao entrar em uma ferramenta do hub, as páginas do PDF passam a ser mostradas em grade visual, facilitando selecionar folhas antes de reordenar, girar ou remover.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.717',
+    date: '08/03/2026',
+    summary: 'Cloud: o painel lateral agora mostra melhor o conteúdo do arquivo selecionado.',
+    modules: [
+      {
+        moduleId: 'cloud',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'View rápido com imagem e conteúdo',
+            description: 'O painel lateral do `Cloud` agora exibe uma visualização rápida mais útil do arquivo selecionado. Imagens aparecem diretamente no `View`, PDFs podem ser visualizados embutidos e arquivos de texto suportados mostram o conteúdo no próprio painel.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.716',
+    date: '08/03/2026',
+    summary: 'Cloud: pastas arquivadas agora podem ser acessadas e restauradas com mais clareza.',
+    modules: [
+      {
+        moduleId: 'cloud',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Acesso às arquivadas com exclusão agendada visível',
+            description: 'O `Cloud` agora mostra uma área dedicada para pastas arquivadas, permitindo acessá-las rapidamente e visualizar a data/período restante até a exclusão automática.',
+          },
+          {
+            type: 'feature',
+            title: 'Desarquivar pasta',
+            description: 'Pastas arquivadas agora podem ser desarquivadas diretamente pelo painel lateral ou pelo menu contextual, removendo o agendamento de exclusão e devolvendo a pasta ao fluxo normal do explorador.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.715',
+    date: '08/03/2026',
+    summary: 'Cloud: modo de exibição agora pode ser alternado e salvo.',
+    modules: [
+      {
+        moduleId: 'cloud',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Exibição em lista ou cards com persistência',
+            description: 'O explorador do `Cloud` agora permite alternar entre visualização em `Lista` e `Cards`, salvando automaticamente a preferência do usuário para reaplicar o layout escolhido nas próximas visitas.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.714',
+    date: '08/03/2026',
+    summary: 'Cloud: seleção em massa e novo hub de ferramentas PDF.',
+    modules: [
+      {
+        moduleId: 'cloud',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Seleção em massa com atalhos de teclado',
+            description: 'O `Cloud` agora aceita seleção múltipla com `Ctrl`/`Alt`/`Meta` + clique, além de suportar `Del` para remover itens selecionados e `Enter` para abrir o item em foco.',
+          },
+          {
+            type: 'feature',
+            title: 'Primeira versão do Hub PDF',
+            description: 'Arquivos PDF no `Cloud` agora contam com um hub inicial de ferramentas para remover páginas, girar páginas selecionadas e salvar a edição por cima do arquivo atual ou como uma nova cópia.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.713',
+    date: '08/03/2026',
+    summary: 'Assinaturas/Cloud: a pasta da contraparte agora prioriza o nome real do contrato.',
+    modules: [
+      {
+        moduleId: 'cloud',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Contraparte derivada do título do contrato',
+            description: 'No fluxo de `Assinaturas` para o `Cloud`, a subpasta da contraparte agora prioriza o nome do banco ou empresa presente no título do contrato antes de usar heurísticas baseadas nos signatários. Isso evita nomes genéricos e favorece estruturas como `Cliente / NUBANK / NÃO PROTOCOLAR`.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.712',
+    date: '08/03/2026',
+    summary: 'Cloud: modais restantes foram alinhados ao visual claro do sistema.',
+    modules: [
+      {
+        moduleId: 'cloud',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Padronização visual dos modais do Cloud',
+            description: 'Os modais restantes do `Cloud`, como `Mover arquivo` e `Compartilhar pasta`, agora seguem o mesmo padrão claro do sistema, com fundo branco, cabeçalho com destaque laranja e campos consistentes.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.711',
+    date: '08/03/2026',
+    summary: 'Cloud: modal de imagens para PDF agora mostra miniaturas claras e arrastáveis.',
+    modules: [
+      {
+        moduleId: 'cloud',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Miniaturas arrastáveis no modal de imagens para PDF',
+            description: 'O modal de conversão de imagens em PDF no `Cloud` agora usa visual claro e mostra miniaturas reais das imagens selecionadas. A ordenação pode ser feita arrastando os cards, além dos botões de mover para cima e para baixo.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.710',
+    date: '08/03/2026',
+    summary: 'Cloud: pastas agora podem ser excluídas mesmo com conteúdo interno.',
+    modules: [
+      {
+        moduleId: 'cloud',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Exclusão recursiva de pastas no Cloud',
+            description: 'O módulo `Cloud` não exige mais que a pasta esteja vazia para exclusão. Ao excluir uma pasta, o sistema agora remove automaticamente arquivos e subpastas internas em cascata.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.709',
+    date: '08/03/2026',
+    summary: 'Assinaturas/Cloud: contratos do mesmo cliente agora podem ser separados por réu.',
+    modules: [
+      {
+        moduleId: 'cloud',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Subpastas por réu/parte contrária nas assinaturas',
+            description: 'No fluxo de `Assinaturas` para o `Cloud`, quando há múltiplos contratos do mesmo cliente com réus ou partes contrárias diferentes, o sistema agora cria e identifica uma subpasta com o nome dessas partes antes da pasta `NÃO PROTOCOLAR`. Se houver processo vinculado, a organização continua em `Cliente / PROCESSO <número> / <parte> / NÃO PROTOCOLAR`.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.708',
+    date: '08/03/2026',
+    summary: 'Assinaturas/Cloud: cliente com múltiplos processos agora é identificado corretamente.',
+    modules: [
+      {
+        moduleId: 'cloud',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Desambiguação por processo ao criar pasta no Cloud',
+            description: 'No fluxo de `Assinaturas`, quando o mesmo cliente possui mais de um processo, o sistema agora cria e identifica o destino no `Cloud` usando também o número do processo, organizando a cópia em `Cliente / PROCESSO <número> / NÃO PROTOCOLAR`. A lógica antiga sem processo continua compatível para registros anteriores.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.707',
+    date: '08/03/2026',
+    summary: 'Assinaturas: agora fica visível quando a pasta já foi criada no Cloud.',
+    modules: [
+      {
+        moduleId: 'cloud',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Indicador visual de pasta criada em Assinaturas',
+            description: 'O módulo `Assinaturas` agora consulta o `Cloud` para exibir um selo de `Pasta criada` nos cards/lista e no detalhe da assinatura. O status também é atualizado imediatamente após usar a ação `Criar pasta`.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.706',
+    date: '08/03/2026',
+    summary: 'Cloud: prints podem ser colados e imagens podem ser convertidas em PDF.',
+    modules: [
+      {
+        moduleId: 'cloud',
+        changes: [
+          {
+            type: 'feature',
+            title: 'Print com nome aleatório e imagens para PDF',
+            description: 'O módulo `Cloud` agora permite colar prints/imagens diretamente na pasta atual com nome aleatório. Também passou a oferecer conversão de imagens em PDF com seleção múltipla, organização da ordem em modal e salvamento do arquivo final na mesma pasta com o título definido pelo usuário.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.705',
+    date: '08/03/2026',
+    summary: 'Cloud: painel de detalhes agora some quando não há seleção.',
+    modules: [
+      {
+        moduleId: 'cloud',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Painel de detalhes oculto sem seleção',
+            description: 'O módulo `Cloud` agora esconde completamente o painel lateral `Detalhes` quando nenhum item estiver selecionado. Clicar na área branca do explorador também limpa a seleção atual e fecha o painel.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.704',
+    date: '08/03/2026',
+    summary: 'Cloud: atualização imediata corrigida após ações vindas de Assinaturas.',
+    modules: [
+      {
+        moduleId: 'cloud',
+        changes: [
+          {
+            type: 'fix',
+            title: 'Refresh imediato do Cloud após cópia de assinatura',
+            description: 'O `Cloud` agora recebe um evento interno logo após a cópia de documentos vindos de Assinaturas e também passou a contar com migration para publicar as tabelas `cloud_*` no `supabase_realtime`, garantindo atualização automática mais confiável.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.703',
+    date: '08/03/2026',
+    summary: 'Cloud: módulo agora atualiza automaticamente em tempo real.',
+    modules: [
+      {
+        moduleId: 'cloud',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Atualização realtime no Cloud',
+            description: 'O módulo `Cloud` agora escuta alterações de pastas, arquivos e compartilhamentos via Supabase Realtime e atualiza a listagem automaticamente, sem exigir refresh manual.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.702',
+    date: '08/03/2026',
+    summary: 'Assinaturas: documento assinado agora pode ser copiado para o Cloud automaticamente.',
+    modules: [
+      {
+        moduleId: 'cloud',
+        changes: [
+          {
+            type: 'feature',
+            title: 'Cópia de assinatura para Cliente / NÃO PROTOCOLAR',
+            description: 'No detalhe de uma assinatura concluída, a ação `Criar pasta` agora cria ou reaproveita a pasta do cliente no `Cloud`, cria a subpasta `NÃO PROTOCOLAR` e envia para lá uma cópia do documento assinado, preservando o arquivo original.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.701',
+    date: '08/03/2026',
+    summary: 'Cloud: pastas agora podem ser arquivadas com exclusão em 30 dias.',
+    modules: [
+      {
+        moduleId: 'cloud',
+        changes: [
+          {
+            type: 'feature',
+            title: 'Arquivamento de pasta com exclusão agendada',
+            description: 'O módulo `Cloud` agora permite arquivar pastas. Ao arquivar, a pasta sai da listagem principal e recebe exclusão automática agendada para 30 dias.',
+          },
+        ],
+      },
+    ],
+  },
+  {
     version: '1.9.700',
     date: '08/03/2026',
     summary: 'Cloud: arquivos e pastas agora podem ser baixados diretamente.',

@@ -8,8 +8,10 @@ import type { SignatureRequestWithSigners } from '../types/signature.types';
 import { signatureService } from '../services/signature.service';
 import { pdfSignatureService } from '../services/pdfSignature.service';
 import { petitionEditorService } from '../services/petitionEditor.service';
+import { cloudService } from '../services/cloud.service';
 import { useDeleteConfirm } from '../contexts/DeleteConfirmContext';
 import type { SavedPetition } from '../types/petitionEditor.types';
+import type { CloudFolder } from '../types/cloud.types';
 
 interface ClientDetailsProps {
   client: Client;
@@ -63,6 +65,8 @@ const ClientDetails: React.FC<ClientDetailsProps> = ({ client, processes, requir
   const [signatureError, setSignatureError] = useState<string | null>(null);
   const [clientPetitions, setClientPetitions] = useState<SavedPetition[]>([]);
   const [petitionsLoading, setPetitionsLoading] = useState(false);
+  const [clientCloudFolders, setClientCloudFolders] = useState<CloudFolder[]>([]);
+  const [cloudFoldersLoading, setCloudFoldersLoading] = useState(false);
 
   const formatDate = (dateString?: string) => {
     if (!dateString) return 'N/A';
@@ -122,6 +126,31 @@ const ClientDetails: React.FC<ClientDetailsProps> = ({ client, processes, requir
     };
 
     void loadSignedDocuments();
+    return () => {
+      isMounted = false;
+    };
+  }, [client.id]);
+
+  useEffect(() => {
+    let isMounted = true;
+
+    const loadClientCloudFolders = async () => {
+      try {
+        setCloudFoldersLoading(true);
+        const folders = await cloudService.listClientRootFolders(client.id, true);
+        if (!isMounted) return;
+        setClientCloudFolders(folders);
+      } catch (error) {
+        console.error('Erro ao carregar pastas do Cloud do cliente:', error);
+        if (!isMounted) return;
+        setClientCloudFolders([]);
+      } finally {
+        if (!isMounted) return;
+        setCloudFoldersLoading(false);
+      }
+    };
+
+    void loadClientCloudFolders();
     return () => {
       isMounted = false;
     };
@@ -463,6 +492,52 @@ const ClientDetails: React.FC<ClientDetailsProps> = ({ client, processes, requir
                       <span className="px-3 py-1 inline-flex text-xs font-semibold rounded-full bg-emerald-100 text-emerald-700">
                         {capitalizeSentence(requirement.status)}
                       </span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          <div className="rounded-2xl border border-slate-200 bg-white shadow-sm p-4 space-y-3">
+            <div className="flex items-center justify-between gap-3">
+              <h3 className="text-slate-900 text-base font-semibold">Pastas do Cloud</h3>
+              <span className="px-3 py-1 inline-flex text-xs font-semibold rounded-full bg-sky-100 text-sky-700">
+                Cloud
+              </span>
+            </div>
+            {cloudFoldersLoading ? (
+              <div className="py-4 flex items-center text-slate-500 gap-2 text-sm">
+                <Loader2 className="w-4 h-4 animate-spin" />
+                Carregando pastas do Cloud...
+              </div>
+            ) : clientCloudFolders.length === 0 ? (
+              <p className="text-slate-500 text-sm">Nenhuma pasta principal do Cloud vinculada a este cliente.</p>
+            ) : (
+              <div className="grid grid-cols-1 gap-3">
+                {clientCloudFolders.map((folder) => (
+                  <div key={folder.id} className="rounded-xl border border-slate-200 p-4 hover:bg-slate-50 transition">
+                    <div className="flex flex-wrap items-center justify-between gap-3">
+                      <div>
+                        <p className="text-sm font-semibold text-slate-900 flex items-center gap-2">
+                          <FolderPlus className="w-4 h-4 text-amber-500" />
+                          {folder.name}
+                        </p>
+                        <p className="text-xs text-slate-500 mt-0.5">
+                          Atualizada em: {formatDateTime(folder.updated_at)}
+                        </p>
+                      </div>
+                      <div className="flex items-center gap-2 flex-wrap">
+                        {folder.archived_at ? (
+                          <span className="px-3 py-1 inline-flex text-xs font-semibold rounded-full bg-amber-100 text-amber-700">
+                            Arquivada
+                          </span>
+                        ) : (
+                          <span className="px-3 py-1 inline-flex text-xs font-semibold rounded-full bg-emerald-100 text-emerald-700">
+                            Ativa
+                          </span>
+                        )}
+                      </div>
                     </div>
                   </div>
                 ))}

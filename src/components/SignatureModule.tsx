@@ -14,7 +14,9 @@ import { useNavigation } from '../contexts/NavigationContext';
 import { signatureService } from '../services/signature.service';
 import { processService } from '../services/process.service';
 import { pdfSignatureService } from '../services/pdfSignature.service';
+import { cloudService } from '../services/cloud.service';
 import { supabase } from '../config/supabase';
+import { events, SYSTEM_EVENTS } from '../utils/events';
 import { documentTemplateService } from '../services/documentTemplate.service';
 import { signatureFieldsService } from '../services/signatureFields.service';
 import { settingsService } from '../services/settings.service';
@@ -31,6 +33,7 @@ import type {
 } from '../types/signature.types';
 import SignatureCanvas from './SignatureCanvas';
 import type { GeneratedDocument } from '../types/document.types';
+import type { CloudFile, CloudFolder } from '../types/cloud.types';
 import type { SignatureExplorerFolder, SignatureExplorerItem } from '../types/signatureExplorer.types';
 import type { ProcessPracticeArea } from '../types/process.types';
 
@@ -59,6 +62,71 @@ const FIELD_PRESETS: Record<SignatureFieldType, { w: number; h: number; label: s
   name: { w: 12, h: 2.5, label: 'Nome', icon: Type },
   cpf: { w: 10, h: 2.5, label: 'CPF', icon: Hash },
   date: { w: 10, h: 2.5, label: 'Data', icon: Calendar },
+};
+
+const normalizeCloudCompareText = (value?: string | null) =>
+  String(value || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .trim()
+    .toLowerCase();
+
+const getProcessFolderName = (processNumber?: string | null) => {
+  const normalized = String(processNumber || '').trim();
+  return normalized ? `PROCESSO ${normalized}` : null;
+};
+
+const GENERIC_CONTRACT_FOLDER_TOKENS = new Set([
+  'novo contrato',
+  'contrato',
+  'kit consumidor',
+  'kit',
+  'consumidor',
+  'acordo',
+  'documento',
+]);
+
+const cleanCounterpartyCandidate = (value?: string | null) => {
+  const normalized = String(value || '')
+    .replace(/[_]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+  if (!normalized) return null;
+  if (GENERIC_CONTRACT_FOLDER_TOKENS.has(normalizeCloudCompareText(normalized))) return null;
+  return normalized;
+};
+
+const getCounterpartyFromDocumentName = (documentName?: string | null, clientName?: string | null) => {
+  const normalizedClientName = normalizeCloudCompareText(clientName || '');
+  const rawParts = String(documentName || '')
+    .split('-')
+    .map((part) => cleanCounterpartyCandidate(part))
+    .filter(Boolean) as string[];
+
+  const candidate = rawParts.find((part) => normalizeCloudCompareText(part) !== normalizedClientName);
+  return candidate || null;
+};
+
+const getCounterpartyFolderName = (request: SignatureRequestWithSigners) => {
+  const rawClientName = request.client_name || request.signers?.[0]?.name || '';
+  const clientName = normalizeCloudCompareText(rawClientName);
+  const documentCounterparty = getCounterpartyFromDocumentName(request.document_name, rawClientName);
+
+  if (documentCounterparty) {
+    return documentCounterparty;
+  }
+
+  const counterparties = Array.from(new Set(
+    (request.signers || [])
+      .map((signer) => cleanCounterpartyCandidate(signer.name))
+      .filter(Boolean)
+      .filter((name) => normalizeCloudCompareText(name) !== clientName),
+  ));
+
+  if (counterparties.length === 0) return null;
+  if (counterparties.length === 1) return counterparties[0];
+  return counterparties.join(' + ');
 };
 
 interface SignatureModulePrefillData {
@@ -104,6 +172,7 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
   const [loading, setLoading] = useState(true);
   const [requests, setRequests] = useState<SignatureRequestWithSigners[]>([]);
   const [generatedDocuments, setGeneratedDocuments] = useState<GeneratedDocument[]>([]);
+  const [cloudSyncStatusByRequestId, setCloudSyncStatusByRequestId] = useState<Record<string, boolean>>({});
 
   const [explorerLoading, setExplorerLoading] = useState(true);
   const [explorerFolders, setExplorerFolders] = useState<SignatureExplorerFolder[]>([]);
@@ -174,6 +243,7 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
   const [createProcessArea, setCreateProcessArea] = useState<ProcessPracticeArea>('previdenciario');
   const [createProcessUrgent, setCreateProcessUrgent] = useState(false);
   const [createProcessLoading, setCreateProcessLoading] = useState(false);
+  const [copyToCloudLoading, setCopyToCloudLoading] = useState(false);
 
   useEffect(() => {
     try {
@@ -254,6 +324,7 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
     setShowCreateProcess(false);
     setOpenProcessLoading(false);
     setCreateProcessLoading(false);
+    setCopyToCloudLoading(false);
   }, [detailsRequest?.id]);
 
   const [signModalOpen, setSignModalOpen] = useState(false);
@@ -298,16 +369,89 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
       if (!silent || !hasLoadedOnceRef.current) {
         setLoading(true);
       }
-      const [requestsData, docsData, foldersData, itemsData] = await Promise.all([
+      const [requestsData, docsData, foldersData, itemsData, cloudFoldersData, cloudFilesData] = await Promise.all([
         signatureService.listRequestsWithSigners(),
         documentTemplateService.listGeneratedDocuments(),
         signatureExplorerService.listFolders(),
         signatureExplorerService.listItems(),
+        cloudService.listAllFolders(),
+        cloudService.listAllFiles(),
       ]);
+
+      const cloudStatusMap = requestsData.reduce<Record<string, boolean>>((acc, request) => {
+        const clientFolderName = normalizeCloudCompareText(request.client_name || request.signers?.[0]?.name || '');
+        const expectedFileName = normalizeCloudCompareText(`${request.document_name}_assinado.pdf`);
+        const processFolderName = getProcessFolderName(request.process_number);
+        const counterpartyFolderName = getCounterpartyFolderName(request);
+
+        if (!request.client_id || !clientFolderName) {
+          acc[request.id] = false;
+          return acc;
+        }
+
+        const clientFolder = cloudFoldersData.find((folder: CloudFolder) =>
+          !folder.parent_id
+          && (folder.client_id || null) === request.client_id
+          && normalizeCloudCompareText(folder.name) === clientFolderName,
+        );
+
+        if (!clientFolder) {
+          acc[request.id] = false;
+          return acc;
+        }
+
+        const processFolder = processFolderName
+          ? cloudFoldersData.find((folder: CloudFolder) =>
+              folder.parent_id === clientFolder.id
+              && normalizeCloudCompareText(folder.name) === normalizeCloudCompareText(processFolderName),
+            )
+          : null;
+
+        const processOrClientParentId = processFolder?.id || clientFolder.id;
+
+        const counterpartyFolder = counterpartyFolderName
+          ? cloudFoldersData.find((folder: CloudFolder) =>
+              folder.parent_id === processOrClientParentId
+              && normalizeCloudCompareText(folder.name) === normalizeCloudCompareText(counterpartyFolderName),
+            )
+          : null;
+
+        const targetParentId = counterpartyFolder?.id || processOrClientParentId;
+
+        const nonProtocolFolder = cloudFoldersData.find((folder: CloudFolder) =>
+          folder.parent_id === targetParentId
+          && normalizeCloudCompareText(folder.name) === normalizeCloudCompareText('NÃO PROTOCOLAR'),
+        ) || (!counterpartyFolderName && !processFolderName
+          ? null
+          : cloudFoldersData.find((folder: CloudFolder) =>
+              folder.parent_id === processOrClientParentId
+              && normalizeCloudCompareText(folder.name) === normalizeCloudCompareText('NÃO PROTOCOLAR'),
+            )) || (!processFolderName
+          ? null
+          : cloudFoldersData.find((folder: CloudFolder) =>
+              folder.parent_id === clientFolder.id
+              && normalizeCloudCompareText(folder.name) === normalizeCloudCompareText('NÃO PROTOCOLAR'),
+            ));
+
+        if (!nonProtocolFolder) {
+          acc[request.id] = false;
+          return acc;
+        }
+
+        const hasSignedCopy = cloudFilesData.some((file: CloudFile) =>
+          file.folder_id === nonProtocolFolder.id
+          && normalizeCloudCompareText(file.original_name) === expectedFileName,
+        );
+
+        acc[request.id] = hasSignedCopy;
+        return acc;
+      }, {});
+
       setRequests(requestsData);
       setGeneratedDocuments(docsData);
       setExplorerFolders(foldersData);
       setExplorerItems(itemsData);
+      setCloudSyncStatusByRequestId(cloudStatusMap);
       hasLoadedOnceRef.current = true;
     } catch (error: any) {
       toastRef.current.error('Erro ao carregar dados');
@@ -2818,6 +2962,134 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
     }
   };
 
+  const fetchBlobFromUrl = async (url: string): Promise<Blob> => {
+    const response = await fetch(url);
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    return response.blob();
+  };
+
+  const ensureCloudFolderByName = async (name: string, parentId: string | null, clientId?: string | null) => {
+    const folders = await cloudService.listFolders(parentId);
+    const normalizedName = (name || '').trim().toLocaleLowerCase('pt-BR');
+    const existing = folders.find((folder) => {
+      const sameName = folder.name.trim().toLocaleLowerCase('pt-BR') === normalizedName;
+      if (!sameName) return false;
+      if (parentId === null) {
+        return (folder.client_id || null) === (clientId || null);
+      }
+      return true;
+    });
+
+    if (existing) {
+      if (clientId && existing.client_id !== clientId) {
+        return cloudService.updateFolder(existing.id, { client_id: clientId });
+      }
+      return existing;
+    }
+
+    return cloudService.createFolder({
+      name,
+      parent_id: parentId,
+      client_id: clientId || null,
+    });
+  };
+
+  const resolveCloudTargetFolder = async (request: SignatureRequestWithSigners) => {
+    const clientFolderName = (request.client_name || request.signers?.[0]?.name || '').trim();
+    if (!clientFolderName) {
+      throw new Error('Não foi possível identificar o nome do cliente para a pasta.');
+    }
+
+    const clientFolder = await ensureCloudFolderByName(clientFolderName, null, request.client_id);
+    const processFolderName = getProcessFolderName(request.process_number);
+    const counterpartyFolderName = getCounterpartyFolderName(request);
+
+    let currentParentFolder = clientFolder;
+    const pathSegments = [clientFolder.name];
+    let processFolder: CloudFolder | null = null;
+    let counterpartyFolder: CloudFolder | null = null;
+
+    if (request.process_id && processFolderName) {
+      processFolder = await ensureCloudFolderByName(processFolderName, clientFolder.id, request.client_id);
+      currentParentFolder = processFolder;
+      pathSegments.push(processFolder.name);
+    }
+
+    if (counterpartyFolderName) {
+      counterpartyFolder = await ensureCloudFolderByName(counterpartyFolderName, currentParentFolder.id, request.client_id);
+      currentParentFolder = counterpartyFolder;
+      pathSegments.push(counterpartyFolder.name);
+    }
+
+    const nonProtocolFolder = await ensureCloudFolderByName('NÃO PROTOCOLAR', currentParentFolder.id, request.client_id);
+    pathSegments.push('NÃO PROTOCOLAR');
+
+    return {
+      clientFolder,
+      processFolder,
+      counterpartyFolder,
+      nonProtocolFolder,
+      locationLabel: pathSegments.join(' / '),
+    };
+  };
+
+  const resolveSignedDocumentBlob = async (request: SignatureRequestWithSigners): Promise<{ blob: Blob; fileName: string }> => {
+    const freshRequest = await signatureService.getRequestWithSigners(request.id);
+    if (!freshRequest) {
+      throw new Error('Não foi possível carregar a assinatura.');
+    }
+
+    const signedSigner = [...freshRequest.signers]
+      .filter((s) => s.status === 'signed')
+      .sort((a, b) => new Date(b.signed_at || 0).getTime() - new Date(a.signed_at || 0).getTime())[0];
+
+    if (!signedSigner) {
+      throw new Error('Ainda não existe documento assinado para copiar.');
+    }
+
+    if (signedSigner.signed_document_path) {
+      const signedUrl = await pdfSignatureService.getSignedPdfUrl(signedSigner.signed_document_path);
+      if (!signedUrl) {
+        throw new Error('Não foi possível acessar o PDF assinado.');
+      }
+
+      return {
+        blob: await fetchBlobFromUrl(signedUrl),
+        fileName: `${request.document_name}_assinado.pdf`,
+      };
+    }
+
+    throw new Error('O PDF assinado ainda não foi gerado. Faça o download do documento assinado uma vez para gerar o PDF e tente novamente.');
+  };
+
+  const handleCopySignedDocumentToCloud = async (request: SignatureRequestWithSigners) => {
+    if (!request.client_id) {
+      toast.error('Vincule um cliente para criar a pasta no Cloud.');
+      return;
+    }
+
+    try {
+      setCopyToCloudLoading(true);
+      const { blob, fileName } = await resolveSignedDocumentBlob(request);
+      const { nonProtocolFolder, locationLabel } = await resolveCloudTargetFolder(request);
+
+      const file = new File([blob], fileName, { type: blob.type || 'application/pdf' });
+      await cloudService.uploadFiles(nonProtocolFolder.id, [file], request.client_id);
+      events.emit(SYSTEM_EVENTS.CLOUD_CHANGED, {
+        action: 'signed_document_copied',
+        folderId: nonProtocolFolder.id,
+        clientId: request.client_id,
+      });
+      setCloudSyncStatusByRequestId((prev) => ({ ...prev, [request.id]: true }));
+
+      toast.success(`Cópia enviada para o Cloud em ${locationLabel}.`);
+    } catch (error: any) {
+      toast.error(error.message || 'Não foi possível copiar o documento assinado para o Cloud.');
+    } finally {
+      setCopyToCloudLoading(false);
+    }
+  };
+
   const openSignModal = (signer: Signer) => { setSigningSigner(signer); setSignatureData(null); setFacialData(null); setSignStep('signature'); setSignModalOpen(true); };
 
   const confirmSignature = async () => {
@@ -4060,10 +4332,11 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
               const totalSigners = req.signers?.length || 0;
               const clientLabel = req.client_name || req.signers?.[0]?.name || 'Cliente não informado';
               const pct = totalSigners > 0 ? Math.round((signedCount / totalSigners) * 100) : 0;
+              const isInCloud = Boolean(cloudSyncStatusByRequestId[req.id]);
               const isDraggingThisItem =
-                draggingExplorer?.type === 'item' &&
-                draggingExplorer.itemType === 'signature_request' &&
-                draggingExplorer.id === req.id;
+                draggingExplorer?.type === 'item'
+                && draggingExplorer.itemType === 'signature_request'
+                && draggingExplorer.id === req.id;
 
               return (
                 <div
@@ -4137,6 +4410,12 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
                             <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium bg-orange-100 text-orange-700">
                               <Plus className="w-3 h-3" />
                               Req.
+                            </span>
+                          )}
+                          {isInCloud && (
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium border border-emerald-200 bg-emerald-50 text-emerald-700">
+                              <FolderOpen className="w-3 h-3" />
+                              Pasta criada
                             </span>
                           )}
                         </div>
@@ -4266,6 +4545,7 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
                 const totalSigners = req.signers?.length || 0;
                 const clientLabel = req.client_name || req.signers?.[0]?.name || 'Cliente não informado';
                 const pct = totalSigners > 0 ? Math.round((signedCount / totalSigners) * 100) : 0;
+                const isInCloud = Boolean(cloudSyncStatusByRequestId[req.id]);
 
                 return (
                   <div
@@ -4355,6 +4635,11 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
                         {req.requirement_id && (
                           <span className="inline-flex items-center gap-1 rounded-full bg-orange-100 px-2 py-0.5 text-[10px] font-medium text-orange-700">
                             <Plus className="w-3 h-3" /> Req.
+                          </span>
+                        )}
+                        {isInCloud && (
+                          <span className="inline-flex items-center gap-1 rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-[10px] font-medium text-emerald-700">
+                            <FolderOpen className="w-3 h-3" /> Pasta criada
                           </span>
                         )}
                       </div>
@@ -4758,6 +5043,9 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
                 {detailsRequest.process_number && (
                   <div><span className="text-slate-500">Processo:</span> <span className="font-medium text-slate-700">{detailsRequest.process_number}</span></div>
                 )}
+                {cloudSyncStatusByRequestId[detailsRequest.id] ? (
+                  <div><span className="text-slate-500">Cloud:</span> <span className="font-medium text-emerald-700">Pasta criada</span></div>
+                ) : null}
                 <div>
                   <span className="text-slate-500">Status:</span>{' '}
                   {detailsRequest.signers.every(s => s.status === 'signed') ? (
@@ -5070,6 +5358,23 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
                       >
                         <FileText className="w-4 h-4 group-hover:scale-110 transition-transform" />
                         <span className="hover:underline underline-offset-4">Requerimento</span>
+                      </button>
+                      <button
+                        disabled={copyToCloudLoading}
+                        onClick={() => handleCopySignedDocumentToCloud(detailsRequest)}
+                        className="group flex items-center gap-2 text-sm font-medium text-slate-600 hover:text-orange-500 transition-colors disabled:opacity-70"
+                      >
+                        {copyToCloudLoading ? (
+                          <>
+                            <Loader2 className="w-4 h-4 animate-spin" />
+                            <span>Copiando...</span>
+                          </>
+                        ) : (
+                          <>
+                            <FolderOpen className="w-4 h-4 group-hover:scale-110 transition-transform" />
+                            <span className="hover:underline underline-offset-4">Criar pasta</span>
+                          </>
+                        )}
                       </button>
                     </div>
 

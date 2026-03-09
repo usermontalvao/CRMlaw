@@ -53,25 +53,45 @@ class CloudService {
     return toHex(buffer);
   }
 
-  async listFolders(parentId: string | null): Promise<CloudFolder[]> {
+  async listFolders(parentId: string | null, includeArchived = false): Promise<CloudFolder[]> {
     let query = supabase
       .from(this.foldersTable)
       .select('*')
       .order('name', { ascending: true });
 
     query = parentId ? query.eq('parent_id', parentId) : query.is('parent_id', null);
+    if (!includeArchived) query = query.is('archived_at', null);
 
     const { data, error } = await query;
     if (error) throw new Error(error.message);
     return (data as CloudFolder[]) ?? [];
   }
 
-  async listAllFolders(): Promise<CloudFolder[]> {
-    const { data, error } = await supabase
+  async listAllFolders(includeArchived = false): Promise<CloudFolder[]> {
+    let query = supabase
       .from(this.foldersTable)
       .select('*')
       .order('name', { ascending: true });
 
+    if (!includeArchived) query = query.is('archived_at', null);
+
+    const { data, error } = await query;
+
+    if (error) throw new Error(error.message);
+    return (data as CloudFolder[]) ?? [];
+  }
+
+  async listClientRootFolders(clientId: string, includeArchived = true): Promise<CloudFolder[]> {
+    let query = supabase
+      .from(this.foldersTable)
+      .select('*')
+      .eq('client_id', clientId)
+      .is('parent_id', null)
+      .order('name', { ascending: true });
+
+    if (!includeArchived) query = query.is('archived_at', null);
+
+    const { data, error } = await query;
     if (error) throw new Error(error.message);
     return (data as CloudFolder[]) ?? [];
   }
@@ -98,6 +118,16 @@ class CloudService {
     return data as CloudFolder;
   }
 
+  async archiveFolder(folderId: string): Promise<CloudFolder> {
+    const deleteAt = new Date();
+    deleteAt.setDate(deleteAt.getDate() + 30);
+
+    return this.updateFolder(folderId, {
+      archived_at: new Date().toISOString(),
+      delete_scheduled_for: deleteAt.toISOString(),
+    });
+  }
+
   async updateFolder(folderId: string, payload: UpdateCloudFolderDTO): Promise<CloudFolder> {
     const { data, error } = await supabase
       .from(this.foldersTable)
@@ -116,8 +146,12 @@ class CloudService {
       this.listFiles(folderId),
     ]);
 
-    if (childFolders.length > 0 || childFiles.length > 0) {
-      throw new Error('A pasta precisa estar vazia antes de ser excluída.');
+    for (const childFolder of childFolders) {
+      await this.deleteFolder(childFolder.id);
+    }
+
+    for (const childFile of childFiles) {
+      await this.deleteFile(childFile);
     }
 
     const { error } = await supabase
@@ -133,6 +167,16 @@ class CloudService {
       .from(this.filesTable)
       .select('*')
       .eq('folder_id', folderId)
+      .order('original_name', { ascending: true });
+
+    if (error) throw new Error(error.message);
+    return (data as CloudFile[]) ?? [];
+  }
+
+  async listAllFiles(): Promise<CloudFile[]> {
+    const { data, error } = await supabase
+      .from(this.filesTable)
+      .select('*')
       .order('original_name', { ascending: true });
 
     if (error) throw new Error(error.message);
@@ -239,6 +283,81 @@ class CloudService {
     await supabase.storage.from(CLOUD_BUCKET).remove([file.storage_path]);
   }
 
+  async renameFile(fileId: string, newName: string): Promise<CloudFile> {
+    const extension = newName.includes('.') ? newName.split('.').pop()?.toLowerCase() ?? null : null;
+
+    const { data, error } = await supabase
+      .from(this.filesTable)
+      .update({
+        original_name: newName,
+        extension,
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', fileId)
+      .select('*')
+      .single();
+
+    if (error) throw new Error(error.message);
+    return data as CloudFile;
+  }
+
+  async duplicateFile(fileId: string): Promise<CloudFile> {
+    await this.ensureBucket();
+
+    const { data: original, error: fetchError } = await supabase
+      .from(this.filesTable)
+      .select('*')
+      .eq('id', fileId)
+      .single();
+
+    if (fetchError || !original) throw new Error(fetchError?.message ?? 'Arquivo não encontrado.');
+
+    const file = original as CloudFile;
+    const signedUrl = await this.getFileSignedUrl(file.storage_path);
+    const response = await fetch(signedUrl);
+    if (!response.ok) throw new Error('Não foi possível baixar o arquivo original.');
+    const blob = await response.blob();
+
+    const nameParts = file.original_name.split('.');
+    const ext = nameParts.length > 1 ? nameParts.pop() : null;
+    const baseName = nameParts.join('.');
+    const copyName = ext ? `${baseName} (cópia).${ext}` : `${file.original_name} (cópia)`;
+
+    const safeOriginalName = sanitizeStorageSegment(copyName);
+    const safeName = `${crypto.randomUUID()}_${safeOriginalName}`;
+    const storagePath = `${file.folder_id}/${safeName}`;
+
+    const { error: uploadError } = await supabase.storage
+      .from(CLOUD_BUCKET)
+      .upload(storagePath, blob, {
+        contentType: file.mime_type || 'application/octet-stream',
+        upsert: false,
+      });
+
+    if (uploadError) throw new Error(uploadError.message);
+
+    const { data, error } = await supabase
+      .from(this.filesTable)
+      .insert({
+        folder_id: file.folder_id,
+        client_id: file.client_id,
+        original_name: copyName,
+        storage_path: storagePath,
+        mime_type: file.mime_type,
+        file_size: file.file_size,
+        extension: file.extension,
+      })
+      .select('*')
+      .single();
+
+    if (error) {
+      await supabase.storage.from(CLOUD_BUCKET).remove([storagePath]);
+      throw new Error(error.message);
+    }
+
+    return data as CloudFile;
+  }
+
   async getFileSignedUrl(storagePath: string, expiresIn = 60 * 60): Promise<string> {
     const { data, error } = await supabase.storage
       .from(CLOUD_BUCKET)
@@ -249,9 +368,27 @@ class CloudService {
   }
 
   async createShare(payload: CreateCloudShareDTO): Promise<CloudFolderShare> {
-    const token = crypto.randomUUID().replace(/-/g, '');
+    const existingShare = await this.getActiveShareByFolder(payload.folder_id);
     const password_hash = payload.password ? await this.hashPassword(payload.password) : null;
 
+    if (existingShare) {
+      const { data, error } = await supabase
+        .from(this.sharesTable)
+        .update({
+          password_hash,
+          expires_at: payload.expires_at || null,
+          is_active: true,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', existingShare.id)
+        .select('*')
+        .single();
+
+      if (error) throw new Error(error.message);
+      return data as CloudFolderShare;
+    }
+
+    const token = crypto.randomUUID().replace(/-/g, '');
     const { data, error } = await supabase
       .from(this.sharesTable)
       .insert({
@@ -261,6 +398,48 @@ class CloudService {
         expires_at: payload.expires_at || null,
         is_active: true,
       })
+      .select('*')
+      .single();
+
+    if (error) throw new Error(error.message);
+    return data as CloudFolderShare;
+  }
+
+  async getActiveShareByFolder(folderId: string): Promise<CloudFolderShare | null> {
+    const { data, error } = await supabase
+      .from(this.sharesTable)
+      .select('*')
+      .eq('folder_id', folderId)
+      .eq('is_active', true)
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (error) throw new Error(error.message);
+    return (data as CloudFolderShare | null) ?? null;
+  }
+
+  async updateShare(shareId: string, payload: { password?: string; expires_at?: string | null; is_active?: boolean }): Promise<CloudFolderShare> {
+    const updateData: Record<string, unknown> = {
+      updated_at: new Date().toISOString(),
+    };
+
+    if (payload.password !== undefined) {
+      updateData.password_hash = payload.password ? await this.hashPassword(payload.password) : null;
+    }
+
+    if (payload.expires_at !== undefined) {
+      updateData.expires_at = payload.expires_at;
+    }
+
+    if (payload.is_active !== undefined) {
+      updateData.is_active = payload.is_active;
+    }
+
+    const { data, error } = await supabase
+      .from(this.sharesTable)
+      .update(updateData)
+      .eq('id', shareId)
       .select('*')
       .single();
 
@@ -291,7 +470,7 @@ class CloudService {
   async resolvePublicShare(token: string, password?: string): Promise<CloudShareAccessResult> {
     const { data, error } = await supabase
       .from(this.sharesTable)
-      .select('*, folder:cloud_folders(*)')
+      .select('*')
       .eq('token', token)
       .eq('is_active', true)
       .maybeSingle();
@@ -309,9 +488,14 @@ class CloudService {
       }
     }
 
+    const folder = await this.getFolder(data.folder_id);
+    if (!folder) {
+      throw new Error('A pasta compartilhada não foi encontrada.');
+    }
+
     return {
-      share: data as unknown as CloudFolderShare,
-      folder: (data as any).folder as CloudFolder,
+      share: data as CloudFolderShare,
+      folder,
     };
   }
 
