@@ -589,6 +589,464 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
 
 const releases: ReleaseNote[] = [
   {
+    version: '1.9.700',
+    date: '08/03/2026',
+    summary: 'Cloud: arquivos e pastas agora podem ser baixados diretamente.',
+    modules: [
+      {
+        moduleId: 'cloud',
+        changes: [
+          {
+            type: 'feature',
+            title: 'Download direto de arquivos e pastas no Cloud',
+            description: 'O módulo `Cloud` agora oferece download direto de arquivos e também download de pastas; quando a pasta contém múltiplos arquivos, o sistema gera um `.zip` preservando a estrutura interna de subpastas.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.699',
+    date: '08/03/2026',
+    summary: 'Cloud/Petição: arquivos Word voltam a abrir direto no editor de petições.',
+    modules: [
+      {
+        moduleId: 'cloud',
+        changes: [
+          {
+            type: 'fix',
+            title: 'Fluxo direto restaurado para Word vindo do Cloud',
+            description: 'Ao abrir arquivos Word pelo `Cloud`, o sistema voltou a enviar o documento diretamente para o editor de petições, sem abrir o modal intermediário de preview embutido.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.698',
+    date: '08/03/2026',
+    summary: 'Cloud/Petição: editor de petições volta ao fluxo que já funcionava.',
+    modules: [
+      {
+        moduleId: 'cloud',
+        changes: [
+          {
+            type: 'fix',
+            title: 'Regressão removida na abertura do editor de petições',
+            description: 'O carregamento direto do editor de petições voltou ao comportamento anterior que já funcionava, enquanto a importação mais robusta do Syncfusion foi mantida apenas no preview do `Cloud` e no compartilhamento público.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.697',
+    date: '08/03/2026',
+    summary: 'Cloud: arquivos Word que abriam em branco agora são importados corretamente.',
+    modules: [
+      {
+        moduleId: 'cloud',
+        changes: [
+          {
+            type: 'fix',
+            title: 'Importação mais robusta de .docx no Cloud',
+            description: 'O carregamento de arquivos Word no `Cloud` passou a usar a conversão do serviço `Import` do Syncfusion também para `.docx`, reduzindo casos em que o editor abria em branco mesmo com arquivo válido.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.696',
+    date: '08/03/2026',
+    summary: 'Cloud/Petição: salvar no editor agora atualiza o mesmo arquivo do Cloud.',
+    modules: [
+      {
+        moduleId: 'cloud',
+        changes: [
+          {
+            type: 'fix',
+            title: 'Documento editado volta para o arquivo original do Cloud',
+            description: 'Arquivos abertos do `Cloud` no editor de petições agora mantêm vínculo com o arquivo original; ao salvar, o sistema exporta o conteúdo atualizado e sobrescreve o mesmo arquivo no storage, em vez de atualizar apenas o histórico interno do editor.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.695',
+    date: '08/03/2026',
+    summary: 'Cloud: clique direito em arquivos volta a abrir o menu do sistema.',
+    modules: [
+      {
+        moduleId: 'cloud',
+        changes: [
+          {
+            type: 'fix',
+            title: 'Menu contextual restaurado para arquivos do Cloud',
+            description: 'O explorador do `Cloud` voltou a interceptar o botão direito também nos arquivos, exibindo o menu customizado com ações rápidas e evitando a abertura do menu nativo do navegador.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.694',
+    date: '08/03/2026',
+    summary: 'Cloud/Petição: cliente da pasta fica obrigatório no fluxo e importação ganha overlay visual.',
+    modules: [
+      {
+        moduleId: 'cloud',
+        changes: [
+          {
+            type: 'fix',
+            title: 'Cliente do Cloud continua aplicado mesmo com carga assíncrona',
+            description: 'O editor de petições passou a reforçar o reaproveitamento do cliente já vinculado à pasta/arquivo do `Cloud`, evitando pedidos indevidos de vínculo manual durante a abertura do documento.',
+          },
+          {
+            type: 'improvement',
+            title: 'Overlay visual de carregamento ao importar .doc',
+            description: 'A importação de arquivos `.doc` agora mostra um overlay central de `Carregando documento...`, com feedback visual mais claro enquanto o arquivo é aberto no editor.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.693',
+    date: '08/03/2026',
+    summary: 'Cloud/Petição: .doc importado agora mostra aviso e reaproveita cliente da pasta.',
+    modules: [
+      {
+        moduleId: 'cloud',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Aviso de rascunho/salvamento após importar .doc',
+            description: 'Após abrir um arquivo `.doc` no editor de petições, a interface passou a informar claramente que o documento foi importado, ficou em rascunho e será salvo automaticamente.',
+          },
+          {
+            type: 'fix',
+            title: 'Cliente da pasta é aplicado automaticamente no editor',
+            description: 'O fluxo entre `Cloud` e editor de petições passou a reaproveitar o cliente já vinculado à pasta/arquivo antes da importação, evitando pedir vínculo manual sem necessidade.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.692',
+    date: '08/03/2026',
+    summary: 'Cloud/Petição: .doc deixa de ficar preso na tela inicial.',
+    modules: [
+      {
+        moduleId: 'cloud',
+        changes: [
+          {
+            type: 'fix',
+            title: 'Editor monta direto quando há documento inicial',
+            description: 'A abertura de arquivos `.doc` no fluxo entre `Cloud` e editor de petições passou a desativar a tela inicial logo na montagem quando já existe documento inicial, permitindo que a importação aconteça de fato.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.691',
+    date: '08/03/2026',
+    summary: 'Cloud/Petição: .doc passa a abrir via signedUrl no editor.',
+    modules: [
+      {
+        moduleId: 'cloud',
+        changes: [
+          {
+            type: 'fix',
+            title: 'Fluxo de .doc deixa de trafegar em base64 no widget',
+            description: 'A abertura de arquivos `.doc` entre `Cloud` e editor de petições passou a usar a URL assinada do arquivo, evitando travamentos no widget antes da importação pelo Syncfusion.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.690',
+    date: '08/03/2026',
+    summary: 'Cloud/Petição: .doc legado abre direto no editor de petições.',
+    modules: [
+      {
+        moduleId: 'cloud',
+        changes: [
+          {
+            type: 'feature',
+            title: 'Abertura de .doc legado no editor de petições',
+            description: 'Arquivos `.doc` legados agora abrem diretamente no editor de petições usando conversão server-side do Syncfusion, sem necessidade de download ou conversão manual.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.689',
+    date: '08/03/2026',
+    summary: 'Cloud: .doc legado baixa direto para abrir no Word.',
+    modules: [
+      {
+        moduleId: 'cloud',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Download direto de arquivos .doc legados',
+            description: 'Arquivos `.doc` legados agora são baixados diretamente para abertura no Microsoft Word instalado, já que o editor web não suporta esse formato nativamente.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.688',
+    date: '08/03/2026',
+    summary: 'Cloud/Petição: .doc legado preserva o tipo correto no importador.',
+    modules: [
+      {
+        moduleId: 'cloud',
+        changes: [
+          {
+            type: 'fix',
+            title: 'Importador deixa de mascarar .doc como .docx',
+            description: 'O importador usado entre `Cloud` e editor de petição passou a respeitar o tipo real de arquivos `.doc`, melhorando a compatibilidade com documentos Word legados no fluxo de abertura.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.687',
+    date: '08/03/2026',
+    summary: 'Cloud: .doc volta a importar mesmo com editor já aberto.',
+    modules: [
+      {
+        moduleId: 'cloud',
+        changes: [
+          {
+            type: 'fix',
+            title: 'Reabertura efetiva de .doc no editor de petição',
+            description: 'A abertura de arquivos `.doc` a partir do `Cloud` passou a forçar uma nova importação no editor de petição, inclusive quando o widget já estiver aberto, evitando que o aviso apareça sem carregar o documento.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.686',
+    date: '08/03/2026',
+    summary: 'Cloud: .doc abre direto importado no editor de petição.',
+    modules: [
+      {
+        moduleId: 'cloud',
+        changes: [
+          {
+            type: 'fix',
+            title: 'Arquivo .doc abre direto no editor em vez da home do widget',
+            description: 'O módulo `Cloud` agora envia o arquivo `.doc` com seu conteúdo para o editor de petição, fazendo a abertura ocorrer diretamente no documento importado e não mais na tela inicial genérica do widget.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.685',
+    date: '08/03/2026',
+    summary: 'Cloud: arquivos .doc corrigidos para abrir em fluxo de edição.',
+    modules: [
+      {
+        moduleId: 'cloud',
+        changes: [
+          {
+            type: 'fix',
+            title: 'Arquivos .doc deixam de abrir em preview genérico',
+            description: 'Os arquivos `.doc` do módulo `Cloud` passaram a seguir o fluxo de edição/documento Word, evitando abertura incorreta como preview simples quando o objetivo é editar.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.684',
+    date: '08/03/2026',
+    summary: 'Cloud: pastas com menu de botão direito e ações rápidas.',
+    modules: [
+      {
+        moduleId: 'cloud',
+        changes: [
+          {
+            type: 'feature',
+            title: 'Menu contextual em pastas do Cloud',
+            description: 'As pastas do módulo `Cloud` agora possuem menu de botão direito com ações rápidas para abrir, alterar status, compartilhar, trabalhar o vínculo com cliente, criar subpasta e excluir.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.683',
+    date: '08/03/2026',
+    summary: 'Cloud: painel de detalhes vazio ocultado quando não há seleção.',
+    modules: [
+      {
+        moduleId: 'cloud',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Menos ruído no painel direito do Cloud',
+            description: 'O conteúdo do painel de detalhes do módulo `Cloud` deixa de aparecer quando nenhuma pasta ou arquivo estiver selecionado, reduzindo informação desnecessária na tela.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.682',
+    date: '08/03/2026',
+    summary: 'Cloud: mais etiquetas visíveis, preview claro e DOCX em editor cheio.',
+    modules: [
+      {
+        moduleId: 'cloud',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Adicionar mais etiquetas sem sumir da tela',
+            description: 'A tela da pasta no módulo `Cloud` passou a manter uma área visível para cadastro de novas etiquetas, evitando que a opção desapareça após a criação inicial.',
+          },
+          {
+            type: 'improvement',
+            title: 'Preview com visual claro',
+            description: 'Os overlays e modais de preview do `Cloud` foram ajustados para um visual mais claro e consistente com o restante do tema da aplicação.',
+          },
+          {
+            type: 'feature',
+            title: 'DOCX abre em editor Syncfusion em tela cheia',
+            description: 'Arquivos do Word no `Cloud` agora abrem em tela cheia com o editor Syncfusion, incluindo ações de minimizar, fechar e abrir no módulo de petição.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.681',
+    date: '08/03/2026',
+    summary: 'Cloud: etiquetas de pasta, modal refinado e upload corrigido.',
+    modules: [
+      {
+        moduleId: 'cloud',
+        changes: [
+          {
+            type: 'feature',
+            title: 'Etiquetas em pastas do Cloud',
+            description: 'As pastas do módulo `Cloud` agora podem receber etiquetas coloridas, com estados iniciais `Pendente` e `Concluído`, além da possibilidade de cadastrar novas etiquetas diretamente pelo fluxo de criação.',
+          },
+          {
+            type: 'fix',
+            title: 'Upload de arquivos com nomes inválidos corrigido',
+            description: 'Foi corrigido o envio de arquivos com nomes problemáticos para o storage, sanitizando caracteres inválidos para evitar erros de chave no upload.',
+          },
+          {
+            type: 'improvement',
+            title: 'Modal de pasta e vínculo com cliente melhorados',
+            description: 'O modal de nova pasta recebeu visual claro e mais organizado, e o painel da pasta agora permite vincular cliente diretamente quando não houver vínculo definido.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.680',
+    date: '08/03/2026',
+    summary: 'Cloud: tema laranja, lateral útil e interface mais limpa.',
+    modules: [
+      {
+        moduleId: 'cloud',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Cloud alinhado ao tema laranja do sistema',
+            description: 'O módulo `Cloud` foi refinado para usar o tema laranja do CRM nos destaques principais, removendo o acento azul que destoava do restante do sistema.',
+          },
+          {
+            type: 'improvement',
+            title: 'Menos ruído e lateral mais útil',
+            description: 'A interface passou a reduzir informações duplicadas, manter a lateral esquerda com função real de navegação/recência e enriquecer o painel direito com detalhes mais úteis dos itens selecionados.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.679',
+    date: '08/03/2026',
+    summary: 'Cloud: layout ampliado e visual claro refinado no estilo Explorer.',
+    modules: [
+      {
+        moduleId: 'cloud',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Cloud com largura útil maior',
+            description: 'O explorador do módulo `Cloud` foi ajustado para aproveitar melhor a largura disponível da área principal, deixando a navegação e a listagem mais confortáveis.',
+          },
+          {
+            type: 'improvement',
+            title: 'Visual claro no modo claro',
+            description: 'O layout principal do `Cloud` passou para uma apresentação clara no modo claro, com fundo branco, painéis suaves e contraste mais leve, mantendo a estrutura inspirada no Windows Explorer.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.678',
+    date: '08/03/2026',
+    summary: 'Cloud: interface redesenhada para um visual estilo Windows Explorer.',
+    modules: [
+      {
+        moduleId: 'cloud',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Cloud com visual estilo Explorer',
+            description: 'O módulo `Cloud` foi redesenhado para uma experiência visual mais próxima do Windows Explorer, com árvore de pastas na lateral, barra superior de ações, breadcrumb, listagem principal em colunas e painel de detalhes para itens selecionados.',
+          },
+          {
+            type: 'improvement',
+            title: 'Operações mantidas no novo layout',
+            description: 'O novo visual preserva upload por arrastar/soltar, preview de PDF/imagem/DOCX, movimentação de arquivos, vínculo com cliente e compartilhamento público de pasta com senha.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.677',
+    date: '08/03/2026',
+    summary: 'Cloud: primeira base do novo explorador de arquivos com compartilhamento público.',
+    modules: [
+      {
+        moduleId: 'cloud',
+        changes: [
+          {
+            type: 'feature',
+            title: 'Módulo Cloud inicial criado no CRM',
+            description: 'Foi criada a primeira base do módulo `Cloud`, com pastas e subpastas, vínculo opcional com clientes, upload por arrastar/soltar, movimentação de arquivos entre pastas, preview de PDF/imagem e abertura de arquivos `.docx` no editor Syncfusion em modo leitura.',
+          },
+          {
+            type: 'feature',
+            title: 'Compartilhamento público de pasta com link e senha',
+            description: 'Também foi adicionada a base de compartilhamento público de pastas, com geração de link, opção de senha e página pública inicial para acesso ao conteúdo compartilhado.',
+          },
+        ],
+      },
+    ],
+  },
+  {
     version: '1.9.676',
     date: '08/03/2026',
     summary: 'Notificações: fluxos corrigidos, tipos padronizados e navegação estabilizada.',

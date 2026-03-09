@@ -1,6 +1,6 @@
 {
   "name": "crm",
-  "version": "1.9.676",
+  "version": "1.9.700",
   "main": "dist/index.js",
   "scripts": {
     "start": "vite",
@@ -57,6 +57,7 @@
     "html2canvas": "^1.4.1",
     "jspdf": "^3.0.4",
     "lucide-react": "^0.544.0",
+    "mammoth": "^1.11.0",
     "multer": "^2.0.2",
     "openai": "^6.3.0",
     "pdf-lib": "^1.17.1",

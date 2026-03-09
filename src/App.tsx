@@ -3,6 +3,7 @@ import { useNavigation } from './contexts/NavigationContext';
 import type { ModuleName } from './contexts/NavigationContext';
 import {
   Users,
+  Cloud,
   Calendar,
   MessageCircle,
   X,
@@ -42,6 +43,7 @@ const Feed = lazy(() => import('./components/FeedPage'));
 const UserProfilePage = lazy(() => import('./components/UserProfilePage'));
 const ClientsModule = lazy(() => import('./components/ClientsModule'));
 const DocumentsModule = lazy(() => import('./components/DocumentsModule'));
+const CloudModule = lazy(() => import('./components/CloudModule'));
 const LeadsModule = lazy(() => import('./components/LeadsModule'));
 const ProcessesModule = lazy(() => import('./components/ProcessesModule'));
 const IntimationsModule = lazy(() => import('./components/IntimationsModule'));
@@ -60,6 +62,7 @@ const PublicSigningPage = lazy(() => import('./components/PublicSigningPage'));
 const PublicTemplateFillPage = lazy(() => import('./components/PublicTemplateFillPage'));
 const PublicVerificationPage = lazy(() => import('./components/PublicVerificationPage'));
 const PublicPermalinkRedirect = lazy(() => import('./components/PublicPermalinkRedirect'));
+const PublicCloudSharePage = lazy(() => import('./components/PublicCloudSharePage'));
 const DocsPage = lazy(() => import('./components/DocsPage'));
 // Editor de Petições - Módulo isolado (pode ser removido sem afetar outros módulos)
 const PetitionEditorModule = lazy(() => import('./components/PetitionEditorModule'));
@@ -222,6 +225,7 @@ const MainApp: React.FC = () => {
     'leads',
     'clientes',
     'documentos',
+    'cloud',
     'assinaturas',
     'processos',
     'requerimentos',
@@ -241,6 +245,7 @@ const MainApp: React.FC = () => {
   const canAccessModule = useCallback((moduleKey: ModuleName) => {
     if (isAdmin) return true;
     if (moduleKey === 'configuracoes') return canAccessConfig;
+    if (moduleKey === 'cloud') return canView('documentos');
     return canView(moduleKey);
   }, [isAdmin, canAccessConfig, canView]);
 
@@ -977,6 +982,19 @@ useEffect(() => {
             </button>
           )}
 
+          {!permissionsLoading && canAccessModule('cloud') && (
+            <button
+              onClick={() => { setClientPrefill(null); setIsMobileNavOpen(false); safeNavigateTo('cloud'); }}
+              className={`relative flex flex-col items-center py-2.5 px-1 rounded-lg transition-colors ${
+                activeModule === 'cloud' ? 'text-amber-500' : 'text-slate-400 hover:text-white hover:bg-slate-800/50'
+              }`}
+            >
+              {activeModule === 'cloud' && <div className="absolute left-0 top-1/2 -translate-y-1/2 w-0.5 h-6 bg-amber-500 rounded-r" />}
+              <Cloud className="w-5 h-5" />
+              <span className="text-[9px] mt-1">Cloud</span>
+            </button>
+          )}
+
           {!permissionsLoading && canAccessModule('assinaturas') && (
             <button
               onClick={() => { setClientPrefill(null); setIsMobileNavOpen(false); safeNavigateTo('assinaturas'); }}
@@ -1135,6 +1153,7 @@ useEffect(() => {
                     {activeModule === 'chat' && 'Chat da Equipe'}
                     {activeModule === 'tarefas' && 'Tarefas'}
                     {activeModule === 'documentos' && 'Documentos'}
+                    {activeModule === 'cloud' && 'Cloud'}
                     {activeModule === 'assinaturas' && 'Assinatura Digital'}
                     {activeModule === 'configuracoes' && 'Configurações'}
                   </h2>
@@ -1152,6 +1171,7 @@ useEffect(() => {
                     {activeModule === 'chat' && 'Converse com a equipe em tempo real'}
                     {activeModule === 'tarefas' && 'Gerencie suas tarefas e lembretes'}
                     {activeModule === 'documentos' && 'Crie modelos e gere documentos personalizados'}
+                    {activeModule === 'cloud' && 'Gerencie arquivos, pastas, previews e compartilhamentos'}
                     {activeModule === 'assinaturas' && 'Assine documentos com biometria facial e assinatura digital'}
                     {activeModule === 'configuracoes' && 'Gerencie usuários, permissões e preferências do sistema'}
                   </p>
@@ -1404,6 +1424,7 @@ useEffect(() => {
                 }}
               />
             )}
+            {activeModule === 'cloud' && <CloudModule onNavigateToModule={handleNavigateToModule} />}
             {activeModule === 'processos' && (
               <ProcessesModule 
                 forceCreate={moduleParams['processos'] ? JSON.parse(moduleParams['processos']).mode === 'create' : false}
@@ -1561,6 +1582,7 @@ const App: React.FC = () => {
   const isSigningRoute = hashRoute?.includes('/assinar/') || pathname?.includes('/assinar/');
   const isTemplateFillRoute = hashRoute?.includes('/preencher/') || pathname?.includes('/preencher/');
   const isPermalinkRoute = hashRoute?.includes('/p/') || pathname?.includes('/p/');
+  const isCloudShareRoute = hashRoute?.includes('/cloud/share/') || pathname?.includes('/cloud/share/');
   const isVerificationRoute = hashRoute?.includes('/verificar') || pathname?.includes('/verificar');
 
   if (isTermsRoute) {
@@ -1630,6 +1652,20 @@ const App: React.FC = () => {
       return (
         <Suspense fallback={<div className="min-h-screen bg-slate-100 flex items-center justify-center"><Loader2 className="w-8 h-8 animate-spin text-blue-600" /></div>}>
           <PublicSigningPage token={token} />
+        </Suspense>
+      );
+    }
+  }
+
+  if (isCloudShareRoute) {
+    let token = hashRoute.split('/cloud/share/')[1]?.split('?')[0]?.split('#')[0];
+    if (!token && pathname.includes('/cloud/share/')) {
+      token = pathname.split('/cloud/share/')[1]?.split('?')[0]?.split('#')[0];
+    }
+    if (token) {
+      return (
+        <Suspense fallback={<div className="min-h-screen bg-slate-100 flex items-center justify-center"><Loader2 className="w-8 h-8 animate-spin text-sky-600" /></div>}>
+          <PublicCloudSharePage token={token} />
         </Suspense>
       );
     }

@@ -18,13 +18,14 @@ interface HeaderProps {
 }
 
 const moduleLabels: Record<ModuleName, { title: string; description: string }> = {
-  dashboard: { title: 'Dashboard', description: 'Visão geral do escritório e atividades recentes' },
-  leads: { title: 'Pipeline de Leads', description: 'Gerencie leads e converta em clientes' },
-  clientes: { title: 'Gestão de Clientes', description: 'Gerencie todos os seus clientes e informações' },
+  dashboard: { title: 'Dashboard', description: 'Visão geral do escritório e métricas' },
+  leads: { title: 'Leads', description: 'Gerencie leads e converta em clientes' },
+  clientes: { title: 'Clientes', description: 'Gerencie todos os seus clientes e informações' },
   documentos: { title: 'Documentos', description: 'Crie modelos e gere documentos personalizados' },
+  cloud: { title: 'Cloud', description: 'Gerencie arquivos, pastas, previews e compartilhamentos' },
   processos: { title: 'Gestão de Processos', description: 'Acompanhe processos e andamentos' },
   requerimentos: { title: 'Sistema de Requerimentos', description: 'Gerencie requerimentos administrativos do INSS' },
-  prazos: { title: 'Gestão de Prazos', description: 'Controle compromissos e prazos vinculados aos seus casos' },
+  prazos: { title: 'Gestão de Prazos', description: 'Controle prazos, alertas e calendário processual vinculados aos seus casos' },
   intimacoes: { title: 'Diário de Justiça Eletrônico', description: 'Consulte comunicações processuais do DJEN' },
   financeiro: { title: 'Gestão Financeira', description: 'Acompanhe acordos, parcelas e honorários do escritório' },
   agenda: { title: 'Agenda', description: 'Organize compromissos e prazos' },

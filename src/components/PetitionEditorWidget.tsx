@@ -23,6 +23,11 @@ export interface PetitionEditorOpenPayload {
   client?: Client;
   petitionId?: string;
   mode?: 'new' | 'continue';
+  initialDocumentBase64?: string;
+  initialDocumentUrl?: string;
+  initialDocumentName?: string;
+  initialCloudFileId?: string;
+  openRequestId?: string;
 }
 
 type WidgetState = 'closed' | 'open' | 'minimized';
@@ -31,6 +36,11 @@ interface PersistedState {
   state: WidgetState;
   clientId?: string;
   petitionId?: string;
+  initialDocumentBase64?: string;
+  initialDocumentUrl?: string;
+  initialDocumentName?: string;
+  initialCloudFileId?: string;
+  openRequestId?: string;
 }
 
 const PetitionEditorWidget: React.FC = () => {
@@ -54,6 +64,11 @@ const PetitionEditorWidget: React.FC = () => {
               clientId: parsed.clientId,
               petitionId: parsed.petitionId,
               mode: parsed.petitionId ? 'continue' : 'new',
+              initialDocumentBase64: parsed.initialDocumentBase64,
+              initialDocumentUrl: parsed.initialDocumentUrl,
+              initialDocumentName: parsed.initialDocumentName,
+              initialCloudFileId: parsed.initialCloudFileId,
+              openRequestId: parsed.openRequestId,
             });
           }
         }
@@ -70,6 +85,11 @@ const PetitionEditorWidget: React.FC = () => {
         state: widgetState,
         clientId: pendingPayload?.clientId,
         petitionId: pendingPayload?.petitionId,
+        initialDocumentBase64: pendingPayload?.initialDocumentBase64,
+        initialDocumentUrl: pendingPayload?.initialDocumentUrl,
+        initialDocumentName: pendingPayload?.initialDocumentName,
+        initialCloudFileId: pendingPayload?.initialCloudFileId,
+        openRequestId: pendingPayload?.openRequestId,
       };
       localStorage.setItem(WIDGET_STATE_KEY, JSON.stringify(toSave));
     } catch (e) {
@@ -85,13 +105,15 @@ const PetitionEditorWidget: React.FC = () => {
           hasUnsavedChanges,
           clientId: pendingPayload?.clientId,
           petitionId: pendingPayload?.petitionId,
+          initialDocumentName: pendingPayload?.initialDocumentName,
+          openRequestId: pendingPayload?.openRequestId,
         },
       });
       window.dispatchEvent(ev);
     } catch {
       // ignore
     }
-  }, [widgetState, hasUnsavedChanges, pendingPayload?.clientId, pendingPayload?.petitionId]);
+  }, [widgetState, hasUnsavedChanges, pendingPayload?.clientId, pendingPayload?.petitionId, pendingPayload?.initialDocumentName, pendingPayload?.openRequestId]);
 
   useEffect(() => {
     const update = () => {
@@ -185,6 +207,11 @@ const PetitionEditorWidget: React.FC = () => {
               isFloatingWidget={true}
               initialClientId={pendingPayload?.clientId}
               initialPetitionId={pendingPayload?.petitionId}
+              initialDocumentBase64={pendingPayload?.initialDocumentBase64}
+              initialDocumentUrl={pendingPayload?.initialDocumentUrl}
+              initialDocumentName={pendingPayload?.initialDocumentName}
+              initialCloudFileId={pendingPayload?.initialCloudFileId}
+              initialDocumentRequestId={pendingPayload?.openRequestId}
               onUnsavedChanges={handleUnsavedChanges}
               onRequestClose={handleClose}
               onRequestMinimize={handleMinimize}

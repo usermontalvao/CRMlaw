@@ -1,5 +1,6 @@
 import React, { useMemo } from 'react';
 import {
+  Cloud,
   Scale,
   Users,
   Calendar,
@@ -40,6 +41,7 @@ const navItems: NavItem[] = [
   { id: 'leads', label: 'Leads', icon: <Target className="w-5 h-5 mb-1.5" />, moduleKey: 'leads' },
   { id: 'clientes', label: 'Clientes', icon: <Users className="w-5 h-5 mb-1.5" />, moduleKey: 'clientes' },
   { id: 'documentos', label: 'Documentos', icon: <Library className="w-5 h-5 mb-1.5" />, moduleKey: 'documentos' },
+  { id: 'cloud', label: 'Cloud', icon: <Cloud className="w-5 h-5 mb-1.5" />, moduleKey: 'documentos' },
   { id: 'assinaturas', label: 'Assinaturas', icon: <FileSignature className="w-5 h-5 mb-1.5" />, moduleKey: 'assinaturas' },
   { id: 'processos', label: 'Processos', icon: <Scale className="w-5 h-5 mb-1.5" />, moduleKey: 'processos' },
   { id: 'requerimentos', label: 'Requerimentos', icon: <Briefcase className="w-5 h-5 mb-1.5" />, moduleKey: 'requerimentos' },

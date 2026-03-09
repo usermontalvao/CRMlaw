@@ -6,6 +6,7 @@ export type ModuleName =
   | 'leads'
   | 'clientes'
   | 'documentos'
+  | 'cloud'
   | 'processos'
   | 'requerimentos'
   | 'prazos'

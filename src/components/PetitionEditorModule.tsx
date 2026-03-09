@@ -44,6 +44,7 @@ import {
 import { saveAs } from 'file-saver';
 import { petitionEditorService } from '../services/petitionEditor.service';
 import { aiService } from '../services/ai.service';
+import { cloudService } from '../services/cloud.service';
 import type {
   PetitionBlock,
   CreatePetitionBlockDTO,
@@ -55,6 +56,7 @@ import type {
   PetitionStandardType,
 } from '../types/petitionEditor.types';
 import type { Client } from '../types/client.types';
+import type { CloudFile } from '../types/cloud.types';
 import { useAuth } from '../contexts/AuthContext';
 import { useDeleteConfirm } from '../contexts/DeleteConfirmContext';
 import { supabase } from '../config/supabase';
@@ -538,6 +540,11 @@ interface PetitionEditorModuleProps {
   isFloatingWidget?: boolean;
   initialClientId?: string;
   initialPetitionId?: string;
+  initialDocumentBase64?: string;
+  initialDocumentUrl?: string;
+  initialDocumentName?: string;
+  initialCloudFileId?: string;
+  initialDocumentRequestId?: string;
   onUnsavedChanges?: (hasChanges: boolean) => void;
   onWidgetInfoChange?: (payload: { lastSaved: Date | null; selectedClient: Client | null }) => void;
   onRequestClose?: () => void;
@@ -548,6 +555,11 @@ const PetitionEditorModule: React.FC<PetitionEditorModuleProps> = ({
   isFloatingWidget = false,
   initialClientId,
   initialPetitionId,
+  initialDocumentBase64,
+  initialDocumentUrl,
+  initialDocumentName,
+  initialCloudFileId,
+  initialDocumentRequestId,
   onUnsavedChanges,
   onWidgetInfoChange,
   onRequestClose,
@@ -594,6 +606,7 @@ const PetitionEditorModule: React.FC<PetitionEditorModuleProps> = ({
   const [formattingWithAI, setFormattingWithAI] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
+  const [documentImportLoading, setDocumentImportLoading] = useState(false);
 
   // Sidebar
   const [sidebarOpen, setSidebarOpen] = useState(true);
@@ -726,6 +739,7 @@ const PetitionEditorModule: React.FC<PetitionEditorModuleProps> = ({
   // Petições salvas
   const [savedPetitions, setSavedPetitions] = useState<SavedPetition[]>([]);
   const [savedPetitionsLoading, setSavedPetitionsLoading] = useState(true);
+  const [sourceCloudFile, setSourceCloudFile] = useState<CloudFile | null>(null);
 
   // Clientes
   const [clients, setClients] = useState<Client[]>([]);
@@ -1973,20 +1987,58 @@ Regras:
   // Modal fullscreen
   const [isFullscreen, setIsFullscreen] = useState(true);
   const [isMinimized, setIsMinimized] = useState(false);
-  const [showStartScreen, setShowStartScreen] = useState<boolean>(() => isFloatingWidget && !initialPetitionId);
+  const [showStartScreen, setShowStartScreen] = useState<boolean>(() => isFloatingWidget && !initialPetitionId && !initialDocumentBase64 && !initialDocumentUrl);
 
-  // Helper para mostrar mensagem de sucesso temporária (desativado para não poluir o topo)
+  const applyInitialClientIfNeeded = useCallback(() => {
+    if (!initialClientId) return null;
+    const client = clients.find((c) => c.id === initialClientId) || null;
+    if (client) {
+      setSelectedClient(client);
+      setSidebarTab('blocks');
+    }
+    return client;
+  }, [initialClientId, clients]);
+
+  // Helper para mostrar mensagem de sucesso temporária
   const showSuccessMessage = (msg: string) => {
-    // Desativado para não ocupar espaço no topo
-    // setSuccess(msg);
-    // window.setTimeout(() => setSuccess(null), 3000);
+    setSuccess(msg);
+    window.setTimeout(() => setSuccess((current) => (current === msg ? null : current)), 5000);
   };
+
+  useEffect(() => {
+    if (!initialCloudFileId) {
+      setSourceCloudFile(null);
+      return;
+    }
+
+    let cancelled = false;
+    supabase
+      .from('cloud_files')
+      .select('*')
+      .eq('id', initialCloudFileId)
+      .maybeSingle()
+      .then(({ data, error }) => {
+        if (cancelled) return;
+        if (error) {
+          console.error('Erro ao carregar arquivo origem do Cloud:', error);
+          return;
+        }
+        setSourceCloudFile((data as CloudFile | null) ?? null);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [initialCloudFileId]);
 
   // Salvar petição
   const savePetition = async () => {
     const startSeq = contentChangeSeqRef.current;
     // Regra: salvar apenas documentos vinculados a cliente
     if (!selectedClient?.id) {
+      if (initialClientId) {
+        return;
+      }
       if (!window.__autoSaving) setError('Selecione um cliente antes de salvar a petição');
       return;
     }
@@ -2044,6 +2096,13 @@ Regras:
           next.sort((a, b) => new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime());
           return next;
         });
+      }
+
+      if (sourceCloudFile) {
+        const exportedName = initialDocumentName || sourceCloudFile.original_name || `${title}.docx`;
+        const blob = await editor.exportDocx(exportedName.endsWith('.docx') ? exportedName : `${exportedName}.docx`);
+        const updatedCloudFile = await cloudService.replaceFileContents(sourceCloudFile, blob, exportedName.endsWith('.docx') ? exportedName : `${exportedName}.docx`);
+        setSourceCloudFile(updatedCloudFile);
       }
 
       setHasUnsavedChanges(contentChangeSeqRef.current !== startSeq);
@@ -2694,6 +2753,67 @@ Regras:
     return null;
   };
 
+  const importInitialDocument = useCallback(async (dataBase64: string, fileName?: string) => {
+    try {
+      setDocumentImportLoading(true);
+      applyInitialClientIfNeeded();
+      const editor = await waitForEditorReady();
+      if (!editor) {
+        setError('Editor não disponível');
+        return;
+      }
+
+      const arrayBuffer = base64ToArrayBuffer(dataBase64);
+      await editor.loadDocx(arrayBuffer, fileName || 'documento.docx');
+      captureAndApplyDocFontSoon(editor);
+      setShowStartScreen(false);
+      setHasUnsavedChanges(true);
+      showSuccessMessage('Documento importado. As alterações ficam em rascunho e serão salvas automaticamente no editor.');
+      if (!petitionTitle || petitionTitle === 'Nova Petição Trabalhista') {
+        const cleanName = String(fileName || 'Documento importado').replace(/\.[^.]+$/, '');
+        setPetitionTitle(cleanName || 'Documento importado');
+      }
+    } catch (err) {
+      console.error('Erro ao importar documento inicial:', err);
+      setError('Erro ao abrir documento inicial');
+    } finally {
+      setDocumentImportLoading(false);
+    }
+  }, [applyInitialClientIfNeeded, petitionTitle]);
+
+  const importInitialDocumentFromUrl = useCallback(async (documentUrl: string, fileName?: string) => {
+    try {
+      setDocumentImportLoading(true);
+      applyInitialClientIfNeeded();
+      const response = await fetch(documentUrl);
+      if (!response.ok) {
+        throw new Error('Falha ao baixar documento inicial');
+      }
+
+      const arrayBuffer = await response.arrayBuffer();
+      const editor = await waitForEditorReady();
+      if (!editor) {
+        setError('Editor não disponível');
+        return;
+      }
+
+      await editor.loadDocx(arrayBuffer, fileName || 'documento.docx');
+      captureAndApplyDocFontSoon(editor);
+      setShowStartScreen(false);
+      setHasUnsavedChanges(true);
+      showSuccessMessage('Documento importado. As alterações ficam em rascunho e serão salvas automaticamente no editor.');
+      if (!petitionTitle || petitionTitle === 'Nova Petição Trabalhista') {
+        const cleanName = String(fileName || 'Documento importado').replace(/\.[^.]+$/, '');
+        setPetitionTitle(cleanName || 'Documento importado');
+      }
+    } catch (err) {
+      console.error('Erro ao importar documento inicial por URL:', err);
+      setError('Erro ao abrir documento inicial');
+    } finally {
+      setDocumentImportLoading(false);
+    }
+  }, [applyInitialClientIfNeeded, petitionTitle]);
+
   const loadDefaultTemplate = async () => {
     if (!isOnlineRef.current) {
       setError('Você está offline. O Peticionamento é 100% online: reconecte para editar/salvar.');
@@ -3194,6 +3314,18 @@ Regras:
 
     initialLoadDoneRef.current = true;
 
+    if (initialDocumentBase64) {
+      setShowStartScreen(false);
+      void importInitialDocument(initialDocumentBase64, initialDocumentName);
+      return;
+    }
+
+    if (initialDocumentUrl) {
+      setShowStartScreen(false);
+      void importInitialDocumentFromUrl(initialDocumentUrl, initialDocumentName);
+      return;
+    }
+
     // Se tiver petição inicial, carregar
     if (initialPetitionId) {
       const petition = savedPetitions.find(p => p.id === initialPetitionId);
@@ -3209,7 +3341,6 @@ Regras:
       if (client) {
         setSelectedClient(client);
         setSidebarTab('blocks');
-        window.setTimeout(() => savePetition(), 0);
         // Filtrar petições do cliente para mostrar opções
         const clientPetitions = savedPetitions.filter(p => p.client_id === initialClientId);
         if (clientPetitions.length > 0) {
@@ -3217,7 +3348,35 @@ Regras:
         }
       }
     }
-  }, [loading, isFloatingWidget, initialClientId, initialPetitionId, clients, savedPetitions]);
+  }, [loading, isFloatingWidget, initialClientId, initialPetitionId, initialDocumentBase64, initialDocumentUrl, initialDocumentName, clients, savedPetitions, importInitialDocument, importInitialDocumentFromUrl]);
+
+  useEffect(() => {
+    if (!initialClientId) return;
+    if (selectedClient?.id === initialClientId) return;
+    const client = clients.find((c) => c.id === initialClientId);
+    if (!client) return;
+    setSelectedClient(client);
+    setSidebarTab('blocks');
+  }, [initialClientId, clients, selectedClient?.id]);
+
+  const lastImportedRequestIdRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!isFloatingWidget) return;
+    if (loading) return;
+    if (!initialDocumentBase64 && !initialDocumentUrl) return;
+    if (!initialDocumentRequestId) return;
+    if (lastImportedRequestIdRef.current === initialDocumentRequestId) return;
+
+    lastImportedRequestIdRef.current = initialDocumentRequestId;
+    if (initialDocumentUrl) {
+      void importInitialDocumentFromUrl(initialDocumentUrl, initialDocumentName);
+      return;
+    }
+
+    if (initialDocumentBase64) {
+      void importInitialDocument(initialDocumentBase64, initialDocumentName);
+    }
+  }, [isFloatingWidget, loading, initialDocumentBase64, initialDocumentUrl, initialDocumentName, initialDocumentRequestId, importInitialDocument, importInitialDocumentFromUrl]);
 
   const blockIndexMap = useMemo(() => {
     const map = new Map<
@@ -4048,6 +4207,35 @@ Regras:
           </button>
         </div>
       </div>
+
+      {success && (
+        <div className="mx-3 mt-2 px-3 py-2 bg-emerald-50 border border-emerald-200 rounded-lg flex items-center gap-2 text-sm text-emerald-700">
+          <CheckCircle2 className="w-4 h-4" />
+          {success}
+          <button onClick={() => setSuccess(null)} className="ml-auto">
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+      )}
+
+      {documentImportLoading && (
+        <div className="absolute inset-0 z-[140] flex items-center justify-center bg-slate-950/35 backdrop-blur-sm">
+          <div className="w-full max-w-md mx-4 rounded-3xl border border-orange-200/70 bg-white/95 shadow-[0_30px_90px_rgba(15,23,42,0.28)] p-6">
+            <div className="flex items-center gap-4">
+              <div className="relative flex h-14 w-14 items-center justify-center rounded-2xl bg-gradient-to-br from-orange-500 to-amber-500 text-white shadow-lg">
+                <Loader2 className="w-7 h-7 animate-spin" />
+              </div>
+              <div className="min-w-0">
+                <div className="text-base font-bold text-slate-900">Carregando documento...</div>
+                <div className="mt-1 text-sm text-slate-600">Importando o arquivo no editor de petições e aplicando o vínculo do cliente da pasta.</div>
+              </div>
+            </div>
+            <div className="mt-5 h-2 overflow-hidden rounded-full bg-orange-100">
+              <div className="h-full w-1/2 rounded-full bg-gradient-to-r from-orange-500 to-amber-500 animate-pulse" />
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Mensagens */}
       {error && (

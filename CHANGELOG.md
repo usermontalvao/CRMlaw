@@ -1,5 +1,90 @@
 # Changelog
 
+## 1.9.700
+- **Cloud**: Adicionadas ações de download para arquivos e pastas. Arquivos agora podem ser baixados diretamente e pastas com múltiplos arquivos são baixadas em `.zip` mantendo a estrutura interna.
+
+## 1.9.699
+- **Cloud/Petição**: Restaurado o fluxo direto de abertura de arquivos Word do `Cloud` para o editor de petições, sem passar pelo modal intermediário do preview embutido.
+
+## 1.9.698
+- **Cloud/Petição**: Corrigida a regressão na abertura de documentos no editor de petições; o comportamento antigo do editor foi restaurado e a importação reforçada via `Import` do Syncfusion ficou restrita ao fluxo do `Cloud`.
+
+## 1.9.697
+- **Cloud**: Corrigida a abertura de alguns arquivos Word que apareciam em branco no editor/preview do `Cloud`; o carregamento agora usa a conversão via serviço `Import` do Syncfusion também para `.docx`, tornando a importação mais robusta.
+
+## 1.9.696
+- **Cloud/Petição**: Corrigida a sincronização entre o editor de petições e o arquivo original do `Cloud`; ao salvar um documento aberto a partir do `Cloud`, o sistema agora sobrescreve o mesmo arquivo no storage em vez de atualizar apenas o histórico interno do editor.
+
+## 1.9.695
+- **Cloud**: Restaurado o menu de botão direito em arquivos no explorador, impedindo o menu nativo do navegador e exibindo novamente ações rápidas como abrir, abrir no módulo de petição, mover e excluir.
+
+## 1.9.694
+- **Cloud/Petição**: Reforçado o reaproveitamento automático do cliente vinculado à pasta/arquivo do `Cloud`, evitando que o editor volte a exigir vínculo manual enquanto a lista de clientes termina de carregar.
+- **Cloud/Petição**: Adicionado overlay visual de `Carregando documento...` durante a importação do `.doc`, com feedback mais bonito e mais claro ao usuário.
+
+## 1.9.693
+- **Cloud/Petição**: Adicionado aviso visível após importar `.doc`, informando que o documento ficou em rascunho e será salvo automaticamente no editor.
+- **Cloud/Petição**: Ajustado o fluxo para aplicar automaticamente o cliente vindo da pasta do `Cloud` antes da importação, evitando exigência desnecessária de vinculação manual.
+
+## 1.9.692
+- **Cloud/Petição**: Corrigida a abertura de arquivos `.doc` que ficavam presos na tela inicial do editor de petições; agora o editor monta diretamente quando há documento inicial para importar.
+
+## 1.9.691
+- **Cloud/Petição**: Corrigido o fluxo de abertura de arquivos `.doc` para enviar a referência assinada do arquivo ao editor de petições, evitando travamento no widget por transporte do documento em `base64`.
+
+## 1.9.690
+- **Cloud/Petição**: Arquivos `.doc` legados agora abrem diretamente no editor de petições usando conversão server-side do Syncfusion, sem necessidade de download ou conversão manual.
+
+## 1.9.689
+- **Cloud**: Arquivos `.doc` legados agora são baixados diretamente para abertura no Microsoft Word instalado, já que o editor web não suporta esse formato nativamente.
+
+## 1.9.688
+- **Cloud/Petição**: Ajustado o importador do `SyncfusionEditor` para preservar o tipo real de arquivos `.doc`, evitando que documentos legados fossem enviados ao editor como se fossem `.docx`.
+
+## 1.9.687
+- **Cloud**: Corrigida a abertura de arquivos `.doc` quando o editor de petição já estava aberto, forçando nova importação do documento para evitar que nada acontecesse após o aviso de sucesso.
+
+## 1.9.686
+- **Cloud**: Corrigida a integração de arquivos `.doc` com o editor de petição para abrir o documento já importado diretamente no editor, sem cair na tela inicial genérica.
+
+## 1.9.685
+- **Cloud**: Corrigida a abertura de arquivos `.doc` para que não caiam mais no preview genérico; agora seguem o fluxo de edição/documento Word no módulo Cloud e no editor de petição.
+
+## 1.9.684
+- **Cloud**: Adicionado menu contextual de botão direito para pastas, com ações rápidas como abrir, alterar status, compartilhar, focar o vínculo com cliente, criar subpasta e excluir pasta.
+
+## 1.9.683
+- **Cloud**: O painel lateral de detalhes agora permanece oculto no conteúdo quando nenhuma pasta ou arquivo estiver selecionado, evitando ruído visual desnecessário.
+
+## 1.9.682
+- **Cloud**: Restaurada uma área visível para adicionar mais etiquetas diretamente no painel da pasta, sem depender apenas do modal de criação.
+- **Cloud**: Ajustado o visual do preview e overlays para uma apresentação clara, reduzindo o aspecto escuro indesejado nos modais do módulo.
+- **Cloud**: Arquivos `.doc`/`.docx` agora abrem em editor Syncfusion em tela cheia no fluxo do `Cloud`, com ações de minimizar/fechar e atalho para abrir no módulo de petição.
+
+## 1.9.681
+- **Cloud**: Adicionadas etiquetas de pasta com estados iniciais `Pendente` e `Concluído`, seleção por pasta e opção de cadastrar novas etiquetas diretamente no modal de criação.
+- **Cloud**: Corrigido o upload de arquivos com nomes problemáticos para o storage, sanitizando caracteres inválidos que causavam erro de chave ao subir documentos.
+- **Cloud**: Melhorado o modal de nova pasta com visual claro e mais organizado, além de incluir vínculo com cliente e definição de etiqueta inicial.
+- **Cloud**: Quando a pasta não possui cliente vinculado, o painel lateral agora permite vincular um cliente diretamente.
+
+## 1.9.680
+- **Cloud**: Refinada novamente a interface do módulo `Cloud` para reduzir ruído visual, removendo duplicações de localização e fortalecendo a hierarquia da barra superior e do breadcrumb.
+- **Cloud**: Aplicado o tema laranja do sistema no explorador, botões principais e estados de destaque, substituindo o acento azul anterior.
+- **Cloud**: Mantida a lateral esquerda, agora com uso mais útil para navegação e recentes, e o painel direito foi enriquecido com metadados e ações mais relevantes para arquivos e pastas.
+
+## 1.9.679
+- **Cloud**: Ajustado o módulo `Cloud` para ocupar melhor a largura útil da área principal, reduzindo a sensação de janela estreita no explorador.
+- **Cloud**: Convertido o visual principal para uma apresentação clara no modo claro, com fundos claros, bordas suaves e contraste mais leve sem perder a estrutura estilo Explorer.
+
+## 1.9.678
+- **Cloud**: Redesenhado o módulo `Cloud` para uma experiência inspirada no Windows Explorer, com painel lateral em árvore, barra superior de ações, breadcrumb, área central em colunas e painel lateral de detalhes para arquivos e pastas.
+- **Cloud**: Mantidas no novo layout as funções já criadas de upload por arrastar/soltar, mover arquivo, preview de PDF/imagem/DOCX, vínculo com cliente e compartilhamento público com senha.
+
+## 1.9.677
+- **Cloud**: Criada a primeira base do novo módulo `Cloud`, com estrutura de pastas e subpastas, vínculo opcional com clientes, upload de arquivos por arrastar/soltar, movimentação de arquivos entre pastas, preview de PDF/imagem e abertura de `.docx` com `SyncfusionEditor` em modo leitura.
+- **Compartilhamento**: Adicionada base de compartilhamento público de pasta com link dedicado e opção de senha, incluindo página pública inicial para acesso aos arquivos compartilhados.
+- **Infraestrutura**: Adicionados `cloud.service`, `cloud.types`, `CloudModule`, `PublicCloudSharePage` e migration `20260308_cloud_module.sql` com tabelas, bucket e políticas iniciais para o ecossistema Cloud.
+
 ## 1.9.676
 - **Notificações**: Corrigidos fluxos inconsistentes no sistema de notificações, incluindo auto-notificação residual em ações originadas por intimações, destinatário incorreto em menções do feed, uso de tipos semânticos mais adequados (`process_created`, `signature_completed`, `poll_invite`) e remoção do uso legado do serviço local de notificações no `App`.
 - **Estabilidade**: Ajustados `App.tsx`, `NotificationBell`, `CalendarModule`, `IntimationsModule`, `ProcessesModule`, `feedPolls.service`, `signature.service` e tipos de `user_notification` para restaurar compilação limpa e navegação consistente a partir das notificações.

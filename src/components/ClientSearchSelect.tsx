@@ -169,21 +169,21 @@ export const ClientSearchSelect: React.FC<ClientSearchSelectProps> = ({
             onBlur={() => setTimeout(() => setSearchOpen(false), 200)}
             placeholder={placeholder}
             required={required}
-            className="w-full rounded-lg border border-zinc-200 dark:border-zinc-700/50 bg-white dark:bg-zinc-800 text-zinc-900 dark:text-white h-11 px-4 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/50 placeholder:text-zinc-500"
+            className="w-full rounded-xl border border-slate-200 bg-white text-slate-900 h-11 px-4 text-sm focus:outline-none focus:ring-2 focus:ring-orange-100 focus:border-orange-400 placeholder:text-slate-400"
           />
         )}
 
         {/* Cliente selecionado */}
         {value && selectedClientName && (
-          <div className="flex items-center justify-between w-full rounded-lg border border-zinc-200 dark:border-zinc-700/50 h-11 px-4 text-sm bg-white dark:bg-zinc-800">
-            <span className="text-zinc-900 dark:text-white font-medium truncate">{selectedClientName}</span>
+          <div className="flex items-center justify-between w-full rounded-xl border border-slate-200 h-11 px-4 text-sm bg-white">
+            <span className="text-slate-900 font-medium truncate">{selectedClientName}</span>
             <button
               type="button"
               onClick={handleClear}
-              className="ml-2 p-1 hover:bg-zinc-100 dark:hover:bg-zinc-600 rounded transition flex-shrink-0"
+              className="ml-2 p-1 hover:bg-slate-100 rounded transition flex-shrink-0"
               title="Remover seleção"
             >
-              <X className="w-4 h-4 text-zinc-400" />
+              <X className="w-4 h-4 text-slate-400" />
             </button>
           </div>
         )}
@@ -209,7 +209,7 @@ export const ClientSearchSelect: React.FC<ClientSearchSelectProps> = ({
                     type="button"
                     onMouseDown={(e) => e.preventDefault()}
                     onClick={() => handleCreateNew({ full_name: searchTerm })}
-                    className="w-full text-left px-3 py-2.5 hover:bg-sky-50 transition flex items-center gap-2 text-sky-600 font-medium"
+                    className="w-full text-left px-3 py-2.5 hover:bg-orange-50 transition flex items-center gap-2 text-orange-600 font-medium"
                     style={{ background: '#ffffff' }}
                   >
                     <Plus className="w-4 h-4" />
@@ -244,7 +244,7 @@ export const ClientSearchSelect: React.FC<ClientSearchSelectProps> = ({
                 type="button"
                 onMouseDown={(e) => e.preventDefault()}
                 onClick={() => handleCreateNew()}
-                className="w-full text-left px-3 py-2.5 hover:bg-sky-50 transition border-t border-zinc-200 flex items-center gap-2 text-sky-600 font-medium"
+                className="w-full text-left px-3 py-2.5 hover:bg-orange-50 transition border-t border-zinc-200 flex items-center gap-2 text-orange-600 font-medium"
                 style={{ background: '#ffffff' }}
               >
                 <Plus className="w-4 h-4" />
