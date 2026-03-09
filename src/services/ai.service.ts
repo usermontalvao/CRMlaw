@@ -101,6 +101,77 @@ class AIService {
     throw new Error('Nenhum provedor de IA disponível');
   }
 
+  async editLegalTextWithContext(params: {
+    instruction: string;
+    selectedText: string;
+    contextBlocks?: Array<{
+      title: string;
+      category?: string;
+      tags?: string[];
+      content: string;
+    }>;
+  }): Promise<string> {
+    if (!this.isEnabled()) {
+      throw new Error('Serviço de IA não está disponível');
+    }
+
+    const instruction = String(params.instruction || '').trim();
+    const selectedText = String(params.selectedText || '').trim();
+    const contextBlocks = Array.isArray(params.contextBlocks) ? params.contextBlocks : [];
+
+    if (!instruction) throw new Error('Informe a instrução de edição para a IA');
+    if (!selectedText) throw new Error('Selecione um trecho do documento para editar');
+
+    const formattedBlocks = contextBlocks
+      .slice(0, 5)
+      .map((block, index) => {
+        const title = String(block.title || `Bloco ${index + 1}`).trim();
+        const category = String(block.category || '').trim();
+        const tags = Array.isArray(block.tags) ? block.tags.filter(Boolean).join(', ') : '';
+        const content = String(block.content || '').trim().slice(0, 1800);
+
+        return [
+          `Bloco ${index + 1}: ${title}`,
+          category ? `Categoria: ${category}` : '',
+          tags ? `Tags: ${tags}` : '',
+          'Conteúdo de referência:',
+          content,
+        ].filter(Boolean).join('\n');
+      })
+      .join('\n\n----------------\n\n');
+
+    const systemPrompt = `Você é um editor jurídico especialista em petições brasileiras.
+
+Sua função é editar APENAS o trecho selecionado de um documento jurídico, seguindo a instrução do usuário e usando os blocos fornecidos como base de conhecimento de estilo, estrutura argumentativa e vocabulário técnico.
+
+Regras obrigatórias:
+- Edite apenas o trecho selecionado, sem mencionar o restante do documento.
+- Preserve o sentido jurídico quando a instrução não pedir mudança de tese.
+- Não invente fatos, datas, números, nomes, pedidos, documentos ou fundamentos não presentes no trecho selecionado ou nos blocos de contexto.
+- Use os blocos apenas como referência de linguagem, técnica e organização argumentativa.
+- Mantenha o texto pronto para substituição direta no editor.
+- Não use markdown.
+- Não use cercas de código.
+- Não adicione explicações, notas, títulos extras ou comentários.
+- Retorne somente o texto final editado.`;
+
+    const userPrompt = [
+      `Instrução do usuário:\n${instruction}`,
+      `Trecho selecionado para edição:\n${selectedText}`,
+      formattedBlocks ? `Blocos de referência:\n${formattedBlocks}` : 'Blocos de referência: nenhum bloco relevante foi encontrado.',
+      'Retorne apenas a versão final editada do trecho selecionado.',
+    ].join('\n\n');
+
+    const content = await this.generateText(systemPrompt, userPrompt, 1200);
+    const output = String(content || '').trim();
+
+    if (!output) {
+      throw new Error('IA não retornou texto para a edição solicitada');
+    }
+
+    return output;
+  }
+
   /**
    * Verifica se deve usar fallback OpenAI (Groq em cooldown)
    */

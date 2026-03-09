@@ -63,6 +63,10 @@ class PushNotificationService {
       return false;
     }
 
+    if (import.meta.env.DEV) {
+      return false;
+    }
+
     try {
       this.registration = await navigator.serviceWorker.register('/sw.js');
       console.log('Service Worker registrado com sucesso');

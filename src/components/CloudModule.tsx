@@ -19,7 +19,7 @@ import {
   FolderPlus,
   HardDrive,
   Home,
-  Image as ImageIcon,
+  ImageIcon,
   History,
   LayoutGrid,
   Link2,
@@ -2552,10 +2552,9 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
                           {isImageFile(file.mime_type) && previewUrl ? (
                             <img src={previewUrl} alt={file.original_name} className="w-full h-36 object-cover bg-white" />
                           ) : isPdfFile(file.mime_type, file.original_name) && previewUrl ? (
-                            <div className="h-36 flex items-center justify-center bg-slate-100 overflow-hidden">
-                              <Document file={previewUrl} loading={<div className="text-xs text-slate-400">Carregando preview...</div>}>
-                                <Page pageNumber={1} width={150} renderTextLayer={false} renderAnnotationLayer={false} />
-                              </Document>
+                            <div className="h-36 flex flex-col items-center justify-center bg-slate-100 overflow-hidden gap-2">
+                              <FileText className="w-10 h-10 text-red-500" />
+                              <span className="text-[11px] font-medium text-slate-500">Preview de PDF</span>
                             </div>
                           ) : (
                             <div className="h-36 flex items-center justify-center bg-slate-50">
@@ -2739,12 +2738,6 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
                       <FileText className="w-4 h-4" />
                       {isWordFile(selectedFile.mime_type, selectedFile.original_name) ? 'Abrir editor' : 'Abrir preview'}
                     </button>
-                    {isWordFile(selectedFile.mime_type, selectedFile.original_name) && (
-                      <button onClick={handleOpenInPetitionModule} className="inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg bg-orange-50 hover:bg-orange-100 text-orange-700 text-sm border border-orange-200">
-                        <FileText className="w-4 h-4" />
-                        Abrir no módulo petição
-                      </button>
-                    )}
                     <button
                       onClick={() => handleDownloadFile(selectedFile)}
                       className="inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-800 text-sm border border-slate-200"
@@ -2971,10 +2964,6 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
                     <button onClick={() => setPreviewFile(null)} className="px-3 py-1.5 rounded-lg border border-slate-200 text-slate-600 text-sm hover:bg-slate-50 inline-flex items-center gap-2">
                       <Minimize2 className="w-4 h-4" />
                       Minimizar
-                    </button>
-                    <button onClick={handleOpenInPetitionModule} className="px-3 py-1.5 rounded-lg bg-orange-50 text-orange-700 border border-orange-200 text-sm hover:bg-orange-100 inline-flex items-center gap-2">
-                      <FileText className="w-4 h-4" />
-                      Abrir no módulo petição
                     </button>
                   </>
                 )}
@@ -3204,19 +3193,6 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
             >
               {isWordFile(selectedContextFile.mime_type, selectedContextFile.original_name) ? 'Abrir editor' : 'Abrir preview'}
             </button>
-            {isWordFile(selectedContextFile.mime_type, selectedContextFile.original_name) && (
-              <button
-                type="button"
-                onClick={() => {
-                  setSelectedItemKey(`file:${selectedContextFile.id}`);
-                  setContextMenu(null);
-                  window.setTimeout(() => handleOpenInPetitionModule(), 0);
-                }}
-                className="w-full px-3 py-2.5 text-left text-sm text-slate-700 hover:bg-slate-50 transition"
-              >
-                Abrir no módulo petição
-              </button>
-            )}
             <button
               type="button"
               onClick={() => {

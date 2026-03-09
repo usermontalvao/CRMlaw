@@ -15,6 +15,8 @@ if (syncfusionLicenseKey) {
   registerLicense(syncfusionLicenseKey);
 }
 
+const isDev = import.meta.env.DEV;
+
 // Detectar rotas especiais antes de forçar "/"
 const currentPath = window.location.pathname;
 const currentHash = window.location.hash;
@@ -43,7 +45,7 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
   </React.StrictMode>,
 );
 
-if ('serviceWorker' in navigator) {
+if (!isDev && 'serviceWorker' in navigator) {
   window.addEventListener('load', () => {
     navigator.serviceWorker
       .register('/sw.js')

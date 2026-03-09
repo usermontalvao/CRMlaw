@@ -44,11 +44,21 @@ const DEFAULT_PROPERTIES_PANE_WIDTH = 180;
 const MIN_PROPERTIES_PANE_WIDTH = 160;
 const MAX_PROPERTIES_PANE_WIDTH = 420;
 
- const PROPERTIES_PANE_PINNED_KEY = 'syncfusion-properties-pane-pinned-v1';
- const PROPERTIES_PANE_COLLAPSED_WIDTH = 64;
+const PROPERTIES_PANE_PINNED_KEY = 'syncfusion-properties-pane-pinned-v1';
+const PROPERTIES_PANE_COLLAPSED_WIDTH = 64;
 
-// Service URL from environment
-const SYNCFUSION_SERVICE_URL = import.meta.env.VITE_SYNC_FUSION || 'https://ej2services.syncfusion.com/production/web-services/api/documenteditor/';
+// Service URL: endpoint oficial Syncfusion (funcional e documentado)
+const SYNCFUSION_SERVICE_URL = 'https://document.syncfusion.com/web-services/docx-editor/api/documenteditor/';
+
+const applySyncfusionServiceUrl = (editor: any) => {
+  if (!editor) return;
+  try {
+    console.log('[SyncfusionEditor] Aplicando serviceUrl:', SYNCFUSION_SERVICE_URL);
+    editor.serviceUrl = SYNCFUSION_SERVICE_URL;
+  } catch {
+    // ignore
+  }
+};
 
 export interface SyncfusionEditorRef {
   // Get document content as SFDT (Syncfusion Document Text format)
@@ -58,7 +68,6 @@ export interface SyncfusionEditorRef {
   convertSfdtToFragment: (sfdt: string) => Promise<string>;
   // Load DOCX file from ArrayBuffer
   loadDocx: (arrayBuffer: ArrayBuffer, fileName?: string) => Promise<void>;
-  loadDocxViaImport: (arrayBuffer: ArrayBuffer, fileName?: string) => Promise<void>;
   // Export as DOCX blob
   exportDocx: (fileName?: string) => Promise<Blob>;
   // Export as PDF blob
@@ -241,31 +250,11 @@ const SyncfusionEditor = forwardRef<SyncfusionEditorRef, SyncfusionEditorProps>(
         const openDocx = async () => {
           const editor = containerRef.current?.documentEditor as any;
           if (!editor) return;
+          applySyncfusionServiceUrl(editor);
 
-          const lowerFileName = String(fileName || '').toLowerCase();
-          const isLegacyDoc = lowerFileName.endsWith('.doc') && !lowerFileName.endsWith('.docx');
-
-          if (isLegacyDoc) {
-            const formData = new FormData();
-            const blob = new Blob([arrayBuffer], { type: 'application/msword' });
-            formData.append('files', blob, fileName);
-
-            const response = await fetch(`${SYNCFUSION_SERVICE_URL}Import`, {
-              method: 'POST',
-              body: formData,
-            });
-
-            if (!response.ok) {
-              throw new Error('Falha ao converter arquivo .doc');
-            }
-
-            const sfdt = await response.text();
-            editor.open(sfdt);
-            return;
-          }
-
-          const fileMimeType = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
-          const blob = new Blob([arrayBuffer], { type: fileMimeType });
+          const blob = new Blob([arrayBuffer], {
+            type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+          });
           const file = new File([blob], fileName, { type: blob.type });
           await editor.open(file);
         };
@@ -274,7 +263,7 @@ const SyncfusionEditor = forwardRef<SyncfusionEditorRef, SyncfusionEditorProps>(
           try {
             await openDocx();
           } catch (err) {
-            console.error('Erro ao carregar documento:', err);
+            console.error('Erro ao carregar DOCX:', err);
             throw err;
           }
           return;
@@ -287,62 +276,7 @@ const SyncfusionEditor = forwardRef<SyncfusionEditorRef, SyncfusionEditorProps>(
                 await openDocx();
                 resolve();
               } catch (err) {
-                console.error('Erro ao carregar documento:', err);
-                reject(err);
-              }
-            })();
-          });
-        });
-      },
-
-      loadDocxViaImport: async (arrayBuffer: ArrayBuffer, fileName = 'document.docx') => {
-        if (!arrayBuffer) return;
-
-        const openDocx = async () => {
-          const editor = containerRef.current?.documentEditor as any;
-          if (!editor) return;
-
-          const lowerFileName = String(fileName || '').toLowerCase();
-          const isLegacyDoc = lowerFileName.endsWith('.doc') && !lowerFileName.endsWith('.docx');
-
-          const formData = new FormData();
-          const fileMimeType = isLegacyDoc
-            ? 'application/msword'
-            : 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
-          const blob = new Blob([arrayBuffer], { type: fileMimeType });
-          formData.append('files', blob, fileName);
-
-          const response = await fetch(`${SYNCFUSION_SERVICE_URL}Import`, {
-            method: 'POST',
-            body: formData,
-          });
-
-          if (!response.ok) {
-            throw new Error(`Falha ao converter arquivo ${isLegacyDoc ? '.doc' : '.docx'}`);
-          }
-
-          const sfdt = await response.text();
-          editor.open(sfdt);
-        };
-
-        if (createdRef.current && containerRef.current?.documentEditor) {
-          try {
-            await openDocx();
-          } catch (err) {
-            console.error('Erro ao carregar documento:', err);
-            throw err;
-          }
-          return;
-        }
-
-        return new Promise<void>((resolve, reject) => {
-          enqueueOrRun(() => {
-            (async () => {
-              try {
-                await openDocx();
-                resolve();
-              } catch (err) {
-                console.error('Erro ao carregar documento:', err);
+                console.error('Erro ao carregar DOCX:', err);
                 reject(err);
               }
             })();
@@ -860,6 +794,7 @@ const SyncfusionEditor = forwardRef<SyncfusionEditorRef, SyncfusionEditorProps>(
       // Garante que existe um documento inicializado (evita crashes do Ruler/Selection quando sectionFormat ainda não existe)
       try {
         const editor: any = containerRef.current?.documentEditor as any;
+        applySyncfusionServiceUrl(editor);
         editor?.openBlank?.();
         
         // Forçar resize inicial

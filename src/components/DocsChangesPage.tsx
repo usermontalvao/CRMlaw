@@ -47,6 +47,7 @@ import { matchesNormalizedSearch } from '../utils/search';
    ============================================================================ */
 
 const VERSION_CODENAMES: Record<string, { name: string; emoji: string }> = {
+  '1.9.763': { name: 'Café DOCX Turbo', emoji: '⚡' },
   '1.9.520': { name: 'Café Modal Laranja', emoji: '🟠' },
   '1.9.519': { name: 'Café Tempo Preservado', emoji: '⏰' },
   '1.9.518': { name: 'Café Badge MS', emoji: '🏷️' },
@@ -588,6 +589,150 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
 };
 
 const releases: ReleaseNote[] = [
+  {
+    version: '1.9.763',
+    date: '09/03/2026',
+    summary: 'Peticionamento: a abertura de documentos do Cloud começou a importar o DOCX em paralelo ao carregamento do módulo.',
+    modules: [
+      {
+        moduleId: 'peticoes',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Importação do DOCX iniciada sem esperar o loading geral',
+            description: 'Quando um documento do Cloud é aberto no editor, a importação agora começa imediatamente, em paralelo ao restante da inicialização do módulo, reduzindo o tempo percebido até o arquivo começar a carregar.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.747',
+    date: '09/03/2026',
+    summary: 'Peticionamento: ambiente de desenvolvimento deixou de reaproveitar bundle antigo do Service Worker e o import local de DOCX ficou mais seguro.',
+    modules: [
+      {
+        moduleId: 'petition-editor',
+        changes: [
+          {
+            type: 'fix',
+            title: 'Service Worker desativado no dev',
+            description: 'O ambiente de desenvolvimento não registra mais `Service Worker`, evitando cache de arquivos antigos e reduzindo falsos erros persistentes no editor durante HMR.',
+          },
+          {
+            type: 'improvement',
+            title: 'Validação explícita no carregamento local de DOCX',
+            description: 'Quando o conteúdo do `.docx` não puder ser extraído localmente, o sistema agora retorna erro explícito em vez de abrir o editor em branco.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.746',
+    date: '09/03/2026',
+    summary: 'Peticionamento: documentos .docx passaram a abrir localmente no editor, sem chamar o Import do Syncfusion.',
+    modules: [
+      {
+        moduleId: 'petition-editor',
+        changes: [
+          {
+            type: 'fix',
+            title: 'Abertura local de DOCX no editor',
+            description: 'O SyncfusionEditor passou a carregar `.docx` localmente com `mammoth`, evitando as chamadas ao endpoint externo `Import` e removendo os erros `404` do console para esse fluxo.',
+          },
+          {
+            type: 'improvement',
+            title: 'Separação entre erro de importação e erro de banco',
+            description: 'Os erros de `saved_petitions`, `petition_blocks` e `petition_default_templates` continuam identificados como timeouts do Supabase, sem relação com a abertura local dos arquivos `.docx`.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.745',
+    date: '09/03/2026',
+    summary: 'Peticionamento: erros 404 do Syncfusion eliminados ao abrir documentos.',
+    modules: [
+      {
+        moduleId: 'petition-editor',
+        changes: [
+          {
+            type: 'fix',
+            title: 'Endpoint Import removido do Syncfusion',
+            description: 'O editor de petições deixou de depender do serviço externo de conversão do Syncfusion para arquivos `.docx`, eliminando os erros `404` que apareciam no console.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.744',
+    date: '09/03/2026',
+    summary: 'Cloud: previews PDF ficaram estáveis novamente e documentos do Syncfusion passaram a ter fallback quando o serviço Import falha.',
+    modules: [
+      {
+        moduleId: 'cloud',
+        changes: [
+          {
+            type: 'fix',
+            title: 'Crash removido do preview de PDF nos cards',
+            description: 'O modo de visualização em cards do Cloud deixou de usar a renderização que fazia o `react-pdf` falhar com erro em `<Page>`, evitando travamentos ao exibir PDFs na grade.',
+          },
+        ],
+      },
+      {
+        moduleId: 'petition-editor',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Fallback automático no carregamento do Syncfusion',
+            description: 'Quando a conversão via endpoint `Import` não estiver disponível para `.docx`, o editor agora tenta abrir o arquivo diretamente, reduzindo falhas por `404` no preview e na abertura de documentos.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.743',
+    date: '09/03/2026',
+    summary: 'Peticionamento: a IA agora edita trechos selecionados diretamente no documento usando os blocos como base de conhecimento.',
+    modules: [
+      {
+        moduleId: 'petition-editor',
+        changes: [
+          {
+            type: 'feature',
+            title: 'Edição com IA sobre a seleção do editor',
+            description: 'O comando de IA no editor de petições agora abre um fluxo de edição da seleção atual, permitindo informar a instrução desejada e aplicar o resultado diretamente no documento.',
+          },
+          {
+            type: 'improvement',
+            title: 'Blocos usados como contexto jurídico',
+            description: 'A IA passou a receber os blocos mais relevantes como referência de linguagem e estrutura argumentativa, ajudando a manter o texto mais técnico, coerente e alinhado ao acervo do sistema.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.742',
+    date: '09/03/2026',
+    summary: 'Cloud: criar subpasta ficou mais simples e direto.',
+    modules: [
+      {
+        moduleId: 'cloud',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Modal enxuto para subpasta',
+            description: 'Quando a criação acontece dentro de uma pasta, o modal agora mostra apenas o nome da subpasta. As opções extras ficam reservadas para a criação de pastas principais.',
+          },
+        ],
+      },
+    ],
+  },
   {
     version: '1.9.741',
     date: '09/03/2026',

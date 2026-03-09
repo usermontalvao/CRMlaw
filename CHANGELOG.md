@@ -1,5 +1,94 @@
 # Changelog
   
+  ## 1.9.763
+  - **Peticionamento/Performance**: A abertura de documentos do Cloud no editor agora inicia em paralelo ao carregamento do módulo, reduzindo o tempo percebido até o DOCX começar a abrir.
+
+  ## 1.9.762
+  - **Cloud/UX**: Removida a duplicidade entre `Abrir editor` e `Abrir no módulo petição` nos arquivos Word do Cloud, mantendo apenas uma ação de abertura.
+
+  ## 1.9.761
+  - **Peticionamento/DOCX**: Corrigido o endpoint de importação de DOCX para usar o serviço oficial documentado da Syncfusion: `https://document.syncfusion.com/web-services/docx-editor/api/documenteditor/`.
+  - **Peticionamento/DOCX**: Resolve definitivamente o erro `404` que ocorria com o endpoint antigo `ej2services.syncfusion.com`.
+  - **Peticionamento/DOCX**: Atualizada a Edge Function `syncfusion-import` para usar o mesmo endpoint oficial.
+
+  ## 1.9.760
+  - **Peticionamento/DOCX**: Forçada a aplicação do `serviceUrl` diretamente no `documentEditor` interno do Syncfusion durante a criação do editor e antes do `editor.open(file)`.
+  - **Peticionamento/DOCX**: Corrige o cenário em que o container recebia a URL configurada, mas a conversão interna de `.docx` ainda caía no endpoint padrão `ej2services.syncfusion.com`.
+
+  ## 1.9.759
+  - **Peticionamento/DOCX**: Removida a conversão manual/proxy de `.docx` no `SyncfusionEditor`.
+  - **Peticionamento/DOCX**: O carregamento voltou ao fluxo padrão do Syncfusion, usando apenas `editor.open(file)`.
+
+  ## 1.9.758
+  - **Peticionamento/DOCX**: Criada Edge Function `syncfusion-import` no Supabase para fazer proxy do serviço de conversão DOCX → SFDT.
+  - **Peticionamento/DOCX**: O `SyncfusionEditor` agora tenta a Edge Function primeiro, com fallback para o endpoint público do Syncfusion.
+  - **Peticionamento/DOCX**: Resolve o erro `404` do endpoint público `ej2services.syncfusion.com` que não é confiável para produção.
+
+  ## 1.9.757
+  - **Peticionamento/DOCX**: Restaurado `SyncfusionEditor.tsx` do commit `3994aeb` (versão que funcionava com formatação preservada).
+  - **Peticionamento/DOCX**: O fluxo volta ao comportamento original: `.docx` abre via `editor.open(file)` e `.doc` usa o serviço `Import`.
+
+  ## 1.9.756
+  - **Peticionamento/DOCX**: Arquivos `.docx` agora são carregados via `mammoth.convertToHtml`, preservando formatação básica (negrito, itálico, listas, parágrafos) sem depender do endpoint `Import` do Syncfusion.
+  - **Peticionamento/DOCX**: Elimina o erro `404` no console mantendo a formatação do documento.
+
+  ## 1.9.755
+  - **Peticionamento/DOCX**: Arquivos `.docx` agora são carregados diretamente via `mammoth` no `SyncfusionEditor`, eliminando completamente a chamada ao endpoint `Import` do Syncfusion e o erro `404` no console.
+  - **Peticionamento/DOCX**: Arquivos `.doc` legados continuam usando o serviço `Import` quando disponível.
+
+  ## 1.9.754
+  - **Peticionamento/DOCX**: Corrigido o fluxo de importação no `SyncfusionEditor` após confirmar via stack trace que `editor.open(file)` também dispara `Import` internamente no Syncfusion para arquivos `.docx`.
+  - **Peticionamento/DOCX**: Quando essa abertura nativa falhar com `404` no endpoint `Import`, o editor agora aplica fallback local com `mammoth`, evitando quebra no carregamento do documento.
+
+  ## 1.9.753
+  - **Peticionamento/DOCX**: Restaurada a penúltima versão do `git` para `src/components/SyncfusionEditor.tsx` (commit base `3994aeb`). O fluxo volta a abrir arquivos `.docx` diretamente no editor.
+  - **Peticionamento/DOCX**: Arquivos `.doc` continuam usando o serviço `Import`, e o método `loadDocxViaImport` permanece disponível para fluxos que precisam forçar conversão server-side.
+
+  ## 1.9.752
+  - **Peticionamento/DOCX**: Restaurada a versão anterior ao ajuste `1.9.751`, voltando a priorizar a conversão via serviço `Import` para abertura de `.docx` no `SyncfusionEditor`.
+  - **Peticionamento/DOCX**: Mantido o fallback local com `mammoth` apenas quando a conversão do `Import` falhar.
+
+  ## 1.9.751
+  - **Peticionamento/DOCX**: Restaurado o comportamento anterior do `SyncfusionEditor` conforme o fluxo que estava funcionando no `git`: arquivos `.docx` voltam a abrir diretamente no editor, enquanto arquivos `.doc` continuam usando o serviço `Import`.
+  - **Peticionamento/DOCX**: Mantido o método `loadDocxViaImport` para os fluxos que precisam forçar a conversão server-side.
+
+  ## 1.9.750
+  - **Peticionamento/DOCX**: O `SyncfusionEditor` voltou a priorizar a conversão via serviço `Import` também para arquivos `.docx`, preservando a formatação original do documento sempre que o endpoint estiver disponível.
+  - **Peticionamento/DOCX**: O fallback local com `mammoth` foi mantido apenas como contingência quando a conversão com formatação falhar.
+
+  ## 1.9.749
+  - **SQL/Peticionamento**: O script `sql/optimize_petition_editor.sql` agora valida a existência de colunas antes de criar índices, evitando falhas em bancos com schema legado sem `user_id` ou outras colunas opcionais.
+  - **SQL/Peticionamento**: Mantida a execução idempotente para índices e publicação realtime, permitindo reaplicar o script com segurança.
+
+  ## 1.9.748
+  - **Syncfusion Editor**: Restaurado `serviceUrl` para evitar erro 404 ao utilizar o botão 'Abrir' da barra de ferramentas nativa.
+  - **DOCX Local Loading**: Adicionado log de depuração para inspecionar o tamanho do `ArrayBuffer` e validar falhas de download.
+  - **Resiliência de Rede**: Melhorado o tratamento de erros no `PetitionEditorModule` para identificar timeouts do Supabase e arquivos vazios (0 bytes).
+  - **Performance de Banco**: Criado script de otimização `sql/optimize_petition_editor.sql` com índices estratégicos para as tabelas `petition_blocks`, `saved_petitions` e `petition_default_templates` para mitigar erros 500 (Statement Timeout).
+
+  ## 1.9.747
+  - **Dev/Peticionamento**: O `Service Worker` foi desabilitado no ambiente de desenvolvimento para evitar cache de bundles antigos interferindo no carregamento atual do editor.
+  - **Peticionamento**: O carregamento local de arquivos `.docx` agora falha com erro explícito quando não houver conteúdo legível extraído, evitando abertura silenciosa em branco.
+
+  ## 1.9.746
+  - **Peticionamento**: Arquivos `.docx` agora são carregados localmente no `SyncfusionEditor` com `mammoth`, eliminando as chamadas ao endpoint `Import` do Syncfusion e os erros `404` correspondentes no console.
+  - **Peticionamento**: Arquivos `.doc` legados continuam dependendo de conversão server-side, enquanto os erros `500` atuais de listas/modelos permanecem relacionados ao banco/Supabase.
+
+  ## 1.9.745
+  - **Peticionamento**: Removida a dependência do endpoint `Import` do Syncfusion para arquivos `.docx`, eliminando os erros `404` no console ao abrir documentos no editor.
+
+  ## 1.9.744
+  - **Cloud**: Corrigido o crash do preview em `Cards` para arquivos PDF, removendo a renderização frágil que derrubava o componente `<Page>` do `react-pdf`.
+  - **Cloud/Peticionamento**: Ajustado o carregamento de arquivos `.docx` no editor Syncfusion com fallback automático quando o endpoint `Import` estiver indisponível ou retornar `404`.
+
+  ## 1.9.743
+  - **Peticionamento**: Adicionada edição de seleção com IA diretamente no editor Syncfusion.
+  - **Peticionamento**: A IA agora usa os blocos mais relevantes como base de conhecimento para refinar o trecho selecionado com linguagem jurídica mais técnica e coerente.
+
+  ## 1.9.742
+  - **Cloud**: Ao criar subpasta, o modal foi simplificado para exibir apenas o campo `Nome da subpasta`.
+  - **Cloud**: As opções de etiqueta, vínculo com cliente e cadastro de nova etiqueta continuam disponíveis apenas para criação de pasta principal.
+
   ## 1.9.741
   - **Cloud**: Adicionada opção de `Girar 90°` também no preview do arquivo para imagens e PDFs.
   - **Cloud**: O preview reaproveita a mesma rotação rápida do card, com bloqueio durante o processamento para evitar giros múltiplos acidentais.

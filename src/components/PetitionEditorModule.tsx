@@ -1165,6 +1165,9 @@ const PetitionEditorModule: React.FC<PetitionEditorModuleProps> = ({
   const [companyCnpjInput, setCompanyCnpjInput] = useState('');
   const [companyLookupLoading, setCompanyLookupLoading] = useState(false);
   const [companyLookupResultText, setCompanyLookupResultText] = useState<string | null>(null);
+  const [showAiEditModal, setShowAiEditModal] = useState(false);
+  const [aiEditInstruction, setAiEditInstruction] = useState('');
+  const [aiEditSelectedText, setAiEditSelectedText] = useState('');
 
   const openBlockModal = (block?: PetitionBlock) => {
     setError(null);
@@ -2785,15 +2788,23 @@ Regras:
     try {
       setDocumentImportLoading(true);
       applyInitialClientIfNeeded();
+      
+      console.log(`[PetitionEditor] Baixando documento da URL: ${documentUrl}`);
       const response = await fetch(documentUrl);
       if (!response.ok) {
-        throw new Error('Falha ao baixar documento inicial');
+        throw new Error(`Falha ao baixar documento: ${response.status} ${response.statusText}`);
       }
 
       const arrayBuffer = await response.arrayBuffer();
+      console.log(`[PetitionEditor] Documento baixado. Tamanho: ${arrayBuffer.byteLength} bytes`);
+
+      if (arrayBuffer.byteLength === 0) {
+        throw new Error('O documento baixado está vazio (0 bytes). Verifique se o link é válido.');
+      }
+
       const editor = await waitForEditorReady();
       if (!editor) {
-        setError('Editor não disponível');
+        setError('O editor Syncfusion não carregou a tempo. Tente recarregar a página.');
         return;
       }
 
@@ -2801,14 +2812,15 @@ Regras:
       captureAndApplyDocFontSoon(editor);
       setShowStartScreen(false);
       setHasUnsavedChanges(true);
-      showSuccessMessage('Documento importado. As alterações ficam em rascunho e serão salvas automaticamente no editor.');
+      showSuccessMessage('Documento importado com sucesso.');
       if (!petitionTitle || petitionTitle === 'Nova Petição Trabalhista') {
         const cleanName = String(fileName || 'Documento importado').replace(/\.[^.]+$/, '');
         setPetitionTitle(cleanName || 'Documento importado');
       }
-    } catch (err) {
+    } catch (err: any) {
       console.error('Erro ao importar documento inicial por URL:', err);
-      setError('Erro ao abrir documento inicial');
+      const msg = err?.message || 'Erro desconhecido';
+      setError(`Não foi possível abrir o documento: ${msg}`);
     } finally {
       setDocumentImportLoading(false);
     }
@@ -2826,13 +2838,21 @@ Regras:
       // Se não tiver em memória, tentar do banco
       if (!parsed) {
         try {
+          console.log('[PetitionEditor] Buscando modelo padrão no Supabase...');
           const template = await petitionEditorService.getDefaultTemplate();
           if (template) {
+            console.log('[PetitionEditor] Modelo padrão encontrado no banco.');
             parsed = { name: template.name, dataBase64: template.dataBase64 };
             defaultTemplateMemoryRef.current = parsed;
+          } else {
+            console.log('[PetitionEditor] Nenhum modelo padrão encontrado no banco.');
           }
-        } catch (dbErr) {
+        } catch (dbErr: any) {
           console.error('Erro ao buscar modelo padrão do banco:', dbErr);
+          const isTimeout = dbErr?.message?.includes('timeout') || dbErr?.code === '500';
+          if (isTimeout) {
+            setError('O banco de dados demorou muito para responder (timeout). Tente recarregar ou use um arquivo local.');
+          }
           // Fallback para localStorage
           const raw = window.localStorage.getItem(DEFAULT_TEMPLATE_STORAGE_KEY);
           const fallback = raw ? (JSON.parse(raw) as { name?: string; dataBase64?: string }) : null;
@@ -3309,22 +3329,29 @@ Regras:
   const initialLoadDoneRef = useRef(false);
   useEffect(() => {
     if (initialLoadDoneRef.current) return;
-    if (loading) return;
     if (!isFloatingWidget) return;
 
-    initialLoadDoneRef.current = true;
+    if (!loading && !initialDocumentBase64 && !initialDocumentUrl && !initialPetitionId) {
+      initialLoadDoneRef.current = true;
+    }
 
     if (initialDocumentBase64) {
+      initialLoadDoneRef.current = true;
       setShowStartScreen(false);
       void importInitialDocument(initialDocumentBase64, initialDocumentName);
       return;
     }
 
     if (initialDocumentUrl) {
+      initialLoadDoneRef.current = true;
       setShowStartScreen(false);
       void importInitialDocumentFromUrl(initialDocumentUrl, initialDocumentName);
       return;
     }
+
+    if (loading) return;
+
+    initialLoadDoneRef.current = true;
 
     // Se tiver petição inicial, carregar
     if (initialPetitionId) {
@@ -3362,7 +3389,6 @@ Regras:
   const lastImportedRequestIdRef = useRef<string | null>(null);
   useEffect(() => {
     if (!isFloatingWidget) return;
-    if (loading) return;
     if (!initialDocumentBase64 && !initialDocumentUrl) return;
     if (!initialDocumentRequestId) return;
     if (lastImportedRequestIdRef.current === initialDocumentRequestId) return;
@@ -3401,14 +3427,59 @@ Regras:
         titleN: normalizeSearchText(b.title),
         tagsText,
         tagsN: normalizeSearchText(tagsText),
+
         contentN: normalizeSearchText(plain),
-        hayForSidebar: normalizeTag(`${b.title}\n${tagsText}\n${plain}`),
+        hayForSidebar: `${normalizeSearchText(b.title)} ${normalizeSearchText(tagsText)} ${normalizeSearchText(plain)}`.trim(),
         tags,
       });
     }
 
     return map;
   }, [blocks]);
+
+  const getRelevantBlocksForAiEdit = useCallback((selectedText: string) => {
+    const query = normalizeSearchText(selectedText);
+    const terms = parseSearchTerms(selectedText);
+
+    return (blocks || [])
+      .filter((block) => Boolean(block?.is_active) && String((block.document_type || 'petition') as any) === String(selectedDocumentType))
+      .map((block) => {
+        const idx = blockIndexMap.get(block.id);
+        const hay = idx?.hayForSidebar || '';
+        let score = 0;
+
+        if (query) {
+          if (hay.includes(query)) score += 80;
+          if ((idx?.titleN || '').includes(query)) score += 35;
+          if ((idx?.tagsN || '').includes(query)) score += 25;
+          if ((idx?.contentN || '').includes(query)) score += 20;
+        }
+
+        for (const term of terms) {
+          if (hay.includes(term)) score += 12;
+          if ((idx?.tagsN || '').includes(term)) score += 10;
+          if ((idx?.titleN || '').includes(term)) score += 8;
+        }
+
+        if (block.is_default) score += 6;
+
+        return {
+          block,
+          score,
+          plain: idx?.plain ?? sfdtToPlainText(block.content),
+          tags: idx?.tags ?? getBlockTagsForUI(block),
+        };
+      })
+      .filter((item) => item.score > 0)
+      .sort((a, b) => b.score - a.score)
+      .slice(0, 5)
+      .map((item) => ({
+        title: item.block.title,
+        category: getCategoryLabel(String(item.block.category || 'outros')),
+        tags: item.tags,
+        content: item.plain,
+      }));
+  }, [blocks, selectedDocumentType, blockIndexMap]);
 
   // Filtrar blocos
   const filteredBlocks = useMemo(() => {
@@ -3664,10 +3735,38 @@ Regras:
     }, 0);
   };
 
+  const openAiEditModalFromSelection = useCallback((selectedText: string) => {
+    const text = String(selectedText || '').trim();
+    if (!text) {
+      setError('Selecione um trecho do documento para editar com IA');
+      return;
+    }
+
+    setError(null);
+    setAiEditInstruction('Melhore a redação jurídica, preservando o sentido e deixando o texto mais técnico e claro.');
+    setAiEditSelectedText(text);
+    setShowAiEditModal(true);
+  }, []);
+
   // Formatar qualificação com IA
   const handleFormatQualification = async (selectedText: string) => {
+    openAiEditModalFromSelection(selectedText);
+  };
+
+  const handleApplyAiEdit = async () => {
     if (!isOnlineRef.current) {
       setError('Você está offline. O Peticionamento é 100% online: reconecte para editar/salvar.');
+      return;
+    }
+
+    const selectedText = String(aiEditSelectedText || '').trim();
+    const instruction = String(aiEditInstruction || '').trim();
+    if (!selectedText) {
+      setError('Selecione um trecho do documento para editar com IA');
+      return;
+    }
+    if (!instruction) {
+      setError('Informe o que a IA deve fazer no trecho selecionado');
       return;
     }
 
@@ -3675,52 +3774,30 @@ Regras:
       setFormattingWithAI(true);
       setError(null);
 
-      // Chamar IA para formatar
-      const formatted = await aiService.formatQualification(selectedText);
+      const contextBlocks = getRelevantBlocksForAiEdit(selectedText);
+      const editedText = await aiService.editLegalTextWithContext({
+        instruction,
+        selectedText,
+        contextBlocks,
+      });
 
-      // Substituir o texto selecionado pelo texto formatado
       const editor = editorRef.current;
-      if (editor) {
-        // Primeiro deleta o texto selecionado
-        const selection = (editor as any).containerRef?.current?.documentEditor?.selection;
-        if (selection) {
-          selection.delete();
-        }
-        
-        // Verifica se é uma qualificação (tem padrão de nome, nacionalidade, etc.)
-        const isQualification = /[A-Z\s]{5,},\s*(brasileiro|brasileira)/i.test(formatted);
-        
-        if (isQualification) {
-          // Aplica negrito apenas para qualificações (nome até a primeira vírgula)
-          const nameEndIndex = formatted.indexOf(',');
-          if (nameEndIndex > 0) {
-            const name = formatted.substring(0, nameEndIndex);
-            const rest = formatted.substring(nameEndIndex);
-            
-            editor.setBold(true);
-            editor.insertText(name);
-            editor.setBold(false);
-            editor.insertText(rest);
-          } else {
-            // Se não encontrar vírgula, insere tudo em negrito
-            editor.setBold(true);
-            editor.insertText(formatted);
-            editor.setBold(false);
-          }
-        } else {
-          // Para outros tipos de texto, insere sem formatação especial
-          editor.insertText(formatted);
-        }
-        
-        setHasUnsavedChanges(true);
-        showSuccessMessage('Texto formatado com IA');
-        
-        // Salvar automaticamente após formatar
-        window.setTimeout(() => savePetitionActionRef.current?.(), 500);
+      if (!editor) throw new Error('Editor não disponível');
+
+      editor.focus();
+      const selection = (editor as any).containerRef?.current?.documentEditor?.selection;
+      if (selection) {
+        selection.delete();
       }
+
+      editor.insertText(editedText);
+      setHasUnsavedChanges(true);
+      setShowAiEditModal(false);
+      showSuccessMessage('Trecho editado com IA');
+      window.setTimeout(() => savePetitionActionRef.current?.(), 500);
     } catch (err) {
-      console.error('Erro ao formatar qualificação:', err);
-      setError(err instanceof Error ? err.message : 'Erro ao formatar qualificação com IA');
+      console.error('Erro ao editar trecho com IA:', err);
+      setError(err instanceof Error ? err.message : 'Erro ao editar trecho com IA');
     } finally {
       setFormattingWithAI(false);
     }
@@ -5186,6 +5263,67 @@ Regras:
                 </div>
               </div>
             </div>
+          </main>
+        </aside>
+      )}
+
+      {showAiEditModal && (
+        <aside className="fixed inset-0 z-[110] flex items-start justify-center p-2 sm:p-6 pt-12 bg-slate-900/40 backdrop-blur-sm overflow-y-auto">
+          <main className="bg-white rounded-2xl shadow-[0_24px_60px_rgba(15,23,42,0.12)] border border-slate-200 w-full max-w-3xl my-4 overflow-hidden flex flex-col mx-auto transition-all duration-300">
+            <div className="h-2 w-full shrink-0 bg-orange-600" style={{ backgroundColor: '#ea580c' }} />
+
+            <header className="relative px-4 sm:px-6 py-4 sm:py-5 border-b border-slate-100 flex items-center justify-between sticky top-0 bg-white z-10">
+              <div>
+                <div className="text-[10px] sm:text-[11px] font-bold uppercase tracking-[0.2em] text-slate-400 leading-none">IA no documento</div>
+                <h3 className="mt-2 text-base sm:text-lg font-bold text-slate-900 uppercase tracking-tight leading-tight">Editar seleção com IA</h3>
+                <div className="mt-1 text-xs text-slate-500">A IA usa os blocos como base de conhecimento para refinar o trecho selecionado.</div>
+              </div>
+              <button
+                onClick={() => setShowAiEditModal(false)}
+                className="absolute top-2 sm:top-4 right-2 sm:right-4 p-2 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-xl transition-all duration-200 hover:rotate-90"
+                title="Fechar"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </header>
+
+            <div className="px-6 py-6 space-y-6">
+              <div>
+                <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-[0.15em] mb-2">Instrução para a IA</label>
+                <textarea
+                  value={aiEditInstruction}
+                  onChange={(e) => setAiEditInstruction(e.target.value)}
+                  rows={4}
+                  className="w-full px-4 py-3 text-sm border border-slate-200 rounded-xl focus:ring-2 focus:ring-amber-500/20 focus:border-amber-400 bg-slate-50 transition-all leading-relaxed text-slate-700 font-medium"
+                  placeholder="Ex.: Reescreva esse trecho com linguagem mais técnica, mais objetiva e com melhor conexão lógica, sem mudar o pedido."
+                  autoFocus
+                />
+              </div>
+
+              <div>
+                <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-[0.15em] mb-2">Trecho selecionado</label>
+                <div className="w-full px-4 py-3 text-sm border border-slate-200 rounded-xl bg-white text-slate-700 leading-relaxed whitespace-pre-wrap max-h-[240px] overflow-y-auto">
+                  {aiEditSelectedText}
+                </div>
+              </div>
+            </div>
+
+            <footer className="px-6 py-5 border-t border-slate-100 flex flex-col sm:flex-row justify-end gap-3 bg-slate-50">
+              <button
+                onClick={() => setShowAiEditModal(false)}
+                className="w-full sm:w-auto px-6 py-3 text-sm font-bold rounded-xl transition-all shadow-md petition-btn-slate"
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={handleApplyAiEdit}
+                disabled={formattingWithAI}
+                className="w-full sm:w-auto font-bold px-8 py-3 rounded-xl transition-all shadow-md flex items-center justify-center gap-2 petition-btn-orange disabled:opacity-70 disabled:cursor-not-allowed"
+              >
+                {formattingWithAI ? <Loader2 className="w-4 h-4 animate-spin" /> : <Pencil className="w-4 h-4" />}
+                <span>Aplicar edição no documento</span>
+              </button>
+            </footer>
           </main>
         </aside>
       )}
