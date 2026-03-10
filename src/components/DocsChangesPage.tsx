@@ -47,6 +47,7 @@ import { matchesNormalizedSearch } from '../utils/search';
    ============================================================================ */
 
 const VERSION_CODENAMES: Record<string, { name: string; emoji: string }> = {
+  '1.9.804': { name: 'Café Fluxo Estável', emoji: '🧾' },
   '1.9.803': { name: 'Café Painel Livre', emoji: '🪟' },
   '1.9.802': { name: 'Café Coluna Clara', emoji: '📚' },
   '1.9.801': { name: 'Café Árvore Leve', emoji: '🌿' },
@@ -629,6 +630,33 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
 };
 
 const releases: ReleaseNote[] = [
+  {
+    version: '1.9.804',
+    date: '10/03/2026',
+    summary: 'Cloud: abertura de DOCX no editor de petições ficou mais estável e sem carga duplicada.',
+    modules: [
+      {
+        moduleId: 'cloud',
+        changes: [
+          {
+            type: 'fix',
+            title: 'Cloud evita reimportação duplicada no editor de petições',
+            description: 'O fluxo de abertura de arquivos Word vindos do Cloud agora respeita o identificador da requisição inicial para não baixar/importar o mesmo documento mais de uma vez.',
+          },
+        ],
+      },
+      {
+        moduleId: 'peticoes',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Widget do editor reduz carga pesada ao abrir DOCX inicial',
+            description: 'Quando o editor é aberto apenas para importar um documento inicial, a listagem de petições salvas deixa de ser carregada nesse momento, reduzindo risco de timeout no banco.',
+          },
+        ],
+      },
+    ],
+  },
   {
     version: '1.9.803',
     date: '10/03/2026',

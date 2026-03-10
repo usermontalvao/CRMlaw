@@ -551,6 +551,8 @@ interface PetitionEditorModuleProps {
   onRequestMinimize?: () => void;
 }
 
+let lastHandledInitialDocumentRequestId: string | null = null;
+
 const PetitionEditorModule: React.FC<PetitionEditorModuleProps> = ({
   isFloatingWidget = false,
   initialClientId,
@@ -591,6 +593,7 @@ const PetitionEditorModule: React.FC<PetitionEditorModuleProps> = ({
     'Usuário';
 
   const userDisplayName = formatUserDisplayName(rawUserDisplayName) || 'Usuário';
+  const isCloudImportMode = isFloatingWidget && Boolean(initialDocumentBase64 || initialDocumentUrl);
 
   const getGreeting = () => {
     const hour = new Date().getHours();
@@ -879,6 +882,7 @@ const PetitionEditorModule: React.FC<PetitionEditorModuleProps> = ({
 
   useEffect(() => {
     if (!user?.id) return;
+    if (isCloudImportMode) return;
 
     const scheduleRefresh = () => {
       if (realtimeRefreshTimerRef.current) {
@@ -919,7 +923,7 @@ const PetitionEditorModule: React.FC<PetitionEditorModuleProps> = ({
       }
       supabase.removeChannel(channel);
     };
-  }, [user?.id]);
+  }, [user?.id, isCloudImportMode]);
 
   useEffect(() => {
     if (autoSaveTimerRef.current) return;
@@ -2788,15 +2792,13 @@ Regras:
     try {
       setDocumentImportLoading(true);
       applyInitialClientIfNeeded();
-      
-      console.log(`[PetitionEditor] Baixando documento da URL: ${documentUrl}`);
+
       const response = await fetch(documentUrl);
       if (!response.ok) {
         throw new Error(`Falha ao baixar documento: ${response.status} ${response.statusText}`);
       }
 
       const arrayBuffer = await response.arrayBuffer();
-      console.log(`[PetitionEditor] Documento baixado. Tamanho: ${arrayBuffer.byteLength} bytes`);
 
       if (arrayBuffer.byteLength === 0) {
         throw new Error('O documento baixado está vazio (0 bytes). Verifique se o link é válido.');
@@ -3133,7 +3135,7 @@ Regras:
       setSavedPetitionsLoading(true);
 
       const [petitionsData, clientsData, areasData] = await Promise.all([
-        petitionEditorService.listPetitions(),
+        isCloudImportMode ? Promise.resolve([]) : petitionEditorService.listPetitions(),
         loadClients(),
         petitionEditorService.listLegalAreas(),
       ]);
@@ -3336,6 +3338,7 @@ Regras:
     }
 
     if (initialDocumentBase64) {
+      if (initialDocumentRequestId) return;
       initialLoadDoneRef.current = true;
       setShowStartScreen(false);
       void importInitialDocument(initialDocumentBase64, initialDocumentName);
@@ -3343,6 +3346,7 @@ Regras:
     }
 
     if (initialDocumentUrl) {
+      if (initialDocumentRequestId) return;
       initialLoadDoneRef.current = true;
       setShowStartScreen(false);
       void importInitialDocumentFromUrl(initialDocumentUrl, initialDocumentName);
@@ -3392,7 +3396,9 @@ Regras:
     if (!initialDocumentBase64 && !initialDocumentUrl) return;
     if (!initialDocumentRequestId) return;
     if (lastImportedRequestIdRef.current === initialDocumentRequestId) return;
+    if (lastHandledInitialDocumentRequestId === initialDocumentRequestId) return;
 
+    lastHandledInitialDocumentRequestId = initialDocumentRequestId;
     lastImportedRequestIdRef.current = initialDocumentRequestId;
     if (initialDocumentUrl) {
       void importInitialDocumentFromUrl(initialDocumentUrl, initialDocumentName);

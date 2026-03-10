@@ -53,7 +53,6 @@ const SYNCFUSION_SERVICE_URL = 'https://document.syncfusion.com/web-services/doc
 const applySyncfusionServiceUrl = (editor: any) => {
   if (!editor) return;
   try {
-    console.log('[SyncfusionEditor] Aplicando serviceUrl:', SYNCFUSION_SERVICE_URL);
     editor.serviceUrl = SYNCFUSION_SERVICE_URL;
   } catch {
     // ignore

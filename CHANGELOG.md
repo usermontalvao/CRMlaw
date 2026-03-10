@@ -1,5 +1,10 @@
 # Changelog
   
+  ## 1.9.804
+  - **Cloud/Peticionamento**: Corrigida a abertura de arquivos Word vindos do Cloud para evitar importação duplicada do documento no editor de petições.
+  - **Peticionamento/Performance**: O widget flutuante do editor deixa de carregar a lista pesada de petições salvas quando é aberto apenas para importar um documento inicial, reduzindo risco de `statement timeout`.
+  - **Peticionamento/Logs**: Removidos logs ruidosos do fluxo de importação inicial e da configuração do Syncfusion.
+
   ## 1.9.803
   - **Cloud/UX**: O painel de detalhes agora abre como drawer overlay à direita, preservando a largura da área principal e permitindo abrir/fechar os detalhes sob demanda.
   - **Cloud/Cards**: A visualização em cards passou a usar grid responsivo com largura mínima por card, reduzindo deformações quando o espaço disponível diminui.
