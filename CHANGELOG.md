@@ -1,5 +1,51 @@
 # Changelog
   
+  ## 1.9.800
+  - **Cloud/Caixa de entrada**: Corrigida a identificação de pastas e arquivos arrastados ao soltar na `Caixa de entrada`, resolvendo cenários em que o highlight aparecia mas a restauração/desarquivamento não era executado.
+
+  ## 1.9.799
+  - **Cloud/Sidebar**: Corrigida a identificação de pastas/arquivos arrastados ao soltar em `Arquivado` e `Lixeira`, resolvendo o caso em que o highlight aparecia mas nenhuma ação era executada.
+
+  ## 1.9.798
+  - **Cloud/Sidebar**: `Arquivado` e `Lixeira` agora aceitam drop direto de arquivos e pastas na lateral, executando arquivamento ou envio para lixeira com feedback visual.
+
+  ## 1.9.797
+  - **Cloud/Caixa de entrada**: Agora é possível arrastar pastas e arquivos de `Arquivado` ou `Lixeira` para a `Caixa de entrada`, restaurando/desarquivando o item automaticamente.
+
+  ## 1.9.796
+  - **Cloud/Lixeira**: Corrigido o filtro da view da Lixeira para usar `delete_scheduled_for`, eliminando o bug onde o contador mostrava itens mas a tela renderizava vazia.
+
+  ## 1.9.795
+  - **Cloud/Lixeira**: Corrigida lógica de filtro para exibir corretamente pastas e arquivos de topo na Lixeira, evitando visualização vazia quando há itens.
+  - **Cloud/UX**: Modal de upload já está com tema claro - se ainda aparecer escuro, limpe o cache do navegador (Ctrl+Shift+R).
+
+  ## 1.9.794
+  - **Cloud/Arquivado**: Corrigida a contagem para considerar apenas itens de topo no Arquivado, sem somar arquivos que já estão dentro de pastas arquivadas.
+  - **Cloud/Lixeira**: Corrigida a visualização e contagem para considerar apenas itens de topo da Lixeira, sem exibir ou somar arquivos internos de pastas já deletadas.
+
+  ## 1.9.793
+  - **Cloud/Lixeira**: Corrigida regressão onde pastas excluídas ainda estavam sendo arquivadas em vez de irem para a Lixeira, causando a visualização vazia.
+  - **Cloud/UX**: Refinado o modal animado de upload para remover o restante do visual escuro no tema claro.
+
+  ## 1.9.792
+  - **Cloud/UX**: Ajustado o visual dos modais animados de carregamento e exclusão para respeitar corretamente o tema claro, removendo a aparência escura indevida.
+
+  ## 1.9.791
+  - **Cloud/UX**: Melhorada a animação de carregamento principal do Cloud com card animado, barra dinâmica e estados visuais mais premium.
+  - **Cloud/UX**: Reforçada a animação do modal de exclusão/processamento com transições mais visíveis, indicador circular, brilho dinâmico e feedback visual para sucesso/erro.
+
+  ## 1.9.790
+  - **Cloud/Sidebar**: Corrigidos os contadores de `Arquivado` e `Lixeira` para mostrar a quantidade real de objetos, independentemente da pasta ou visualização atual.
+
+  ## 1.9.789
+  - **Cloud/Sidebar**: Removido o bloco `Recentes` da lateral do Cloud.
+  - **Cloud/Sidebar**: `Arquivado` e `Lixeira` foram reposicionados para baixo da árvore de pastas ativas.
+
+  ## 1.9.788
+  - **Cloud/Lixeira**: Restaurada a lixeira dedicada do Cloud. Excluir item volta a enviar para a Lixeira em vez de confundir com Arquivado.
+  - **Cloud/Arquivado**: O Arquivado volta a representar apenas itens arquivados manualmente, sem reativar exclusão automática.
+  - **Cloud/Bugfix**: Ajustados filtros, restauração e contadores para separar corretamente itens da Lixeira e do Arquivado.
+
   ## 1.9.787
   - **Cloud/Arquivado**: Corrigida a hierarquia da área `Arquivado` para impedir que subpastas e arquivos de uma pasta pai arquivada apareçam soltos no nível raiz.
   - **Cloud/UX**: A visualização do Arquivado agora respeita melhor a estrutura original das pastas arquivadas.

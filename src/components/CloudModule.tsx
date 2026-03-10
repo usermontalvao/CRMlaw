@@ -37,6 +37,7 @@ import {
   RotateCw,
   Scissors,
   Search,
+  AlertCircle,
   Share2,
   Tag,
   Trash2,
@@ -368,6 +369,8 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
   const [uploadQueueItems, setUploadQueueItems] = useState<UploadQueueItem[]>([]);
   const uploadQueueItemsRef = useRef<UploadQueueItem[]>([]);
   const [archivedFiles, setArchivedFiles] = useState<CloudFile[]>([]);
+  const [trashedFiles, setTrashedFiles] = useState<CloudFile[]>([]);
+  const [trashedFolders, setTrashedFolders] = useState<CloudFolder[]>([]);
   const [favoriteFolderIds, setFavoriteFolderIds] = useState<string[]>([]);
   const [showAdvancedFilters, setShowAdvancedFilters] = useState(false);
   const [searchFilters, setSearchFilters] = useState<CloudSearchFilters>(EMPTY_CLOUD_SEARCH_FILTERS);
@@ -570,9 +573,35 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
   }, [uploadQueueItems]);
 
   const archivedFolders = useMemo(
-    () => allFolders.filter((item) => Boolean(item.archived_at)).sort((a, b) => new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime()),
+    () => allFolders.filter((item) => Boolean(item.archived_at) && !item.delete_scheduled_for).sort((a, b) => new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime()),
     [allFolders],
   );
+
+  const archivedRootFolders = useMemo(() => {
+    const archivedFolderIds = new Set(archivedFolders.map((item) => item.id));
+    return archivedFolders.filter((item) => !item.parent_id || !archivedFolderIds.has(item.parent_id));
+  }, [archivedFolders]);
+
+  const archivedRootFiles = useMemo(() => {
+    const archivedFolderIds = new Set(archivedFolders.map((item) => item.id));
+    return archivedFiles.filter((item) => !archivedFolderIds.has(item.folder_id));
+  }, [archivedFiles, archivedFolders]);
+
+  const trashedRootFolders = useMemo(() => {
+    const trashedFolderIds = new Set(trashedFolders.map((item) => item.id));
+    return trashedFolders.filter((item) => {
+      if (!item.parent_id) return true;
+      return !trashedFolderIds.has(item.parent_id);
+    });
+  }, [trashedFolders]);
+
+  const trashedRootFiles = useMemo(() => {
+    const trashedFolderIds = new Set(trashedFolders.map((item) => item.id));
+    return trashedFiles.filter((item) => {
+      if (!item.folder_id) return true;
+      return !trashedFolderIds.has(item.folder_id);
+    });
+  }, [trashedFiles, trashedFolders]);
 
   const breadcrumbLabel = useMemo(() => {
     if (isArchivedView) return 'Cloud / Arquivado';
@@ -594,24 +623,38 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
       setLoading(true);
       const viewingArchivedFolder = currentFolder?.archived_at != null;
       const archivedAllFiles = await cloudService.listAllFiles(true);
-      const [foldersData, filesData, allFoldersData, allFilesData, clientsData, archivedFilesData] = await Promise.all([
+      const [foldersData, filesData, allFoldersData, allFilesData, clientsData, archivedFilesData, trashedFoldersData, trashedFilesData] = await Promise.all([
         isTrashView || isArchivedView ? Promise.resolve([]) : cloudService.listFolders(currentFolderId, viewingArchivedFolder),
         isTrashView || isArchivedView ? Promise.resolve([]) : currentFolderId ? cloudService.listFiles(currentFolderId) : Promise.resolve([]),
         cloudService.listAllFolders(true),
         Promise.resolve(archivedAllFiles),
         clientService.listClients(),
         cloudService.listArchivedFiles(),
+        cloudService.listTrashedFolders(),
+        cloudService.listTrashedFiles(),
       ]);
       setAllFolders(allFoldersData);
       setAllFiles(allFilesData);
       setClients(clientsData);
       setArchivedFiles(archivedFilesData);
+      setTrashedFolders(trashedFoldersData);
+      setTrashedFiles(trashedFilesData);
       if (isTrashView) {
-        setFolders(allFoldersData.filter((item) => Boolean(item.archived_at)).sort((a, b) => new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime()));
-        setFiles(archivedFilesData);
+        const trashedFolderIds = new Set(trashedFoldersData.map((item) => item.id));
+        setFolders(trashedFoldersData.filter((item) => {
+          if (!item.parent_id) return true;
+          return !trashedFolderIds.has(item.parent_id);
+        }));
+        setFiles(trashedFilesData.filter((item) => {
+          if (!item.folder_id) return true;
+          return !trashedFolderIds.has(item.folder_id);
+        }));
       } else if (isArchivedView) {
-        setFolders(allFoldersData.filter((item) => Boolean(item.archived_at)).sort((a, b) => new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime()));
-        setFiles(archivedAllFiles.filter((item) => Boolean(item.archived_at)).sort((a, b) => new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime()));
+        const archivedFoldersData = allFoldersData.filter((item) => Boolean(item.archived_at) && !item.delete_scheduled_for).sort((a, b) => new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime());
+        const archivedFolderIds = new Set(archivedFoldersData.map((item) => item.id));
+        const archivedVisibleFiles = archivedAllFiles.filter((item) => Boolean(item.archived_at) && !item.delete_scheduled_for).sort((a, b) => new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime());
+        setFolders(archivedFoldersData.filter((item) => !item.parent_id || !archivedFolderIds.has(item.parent_id)));
+        setFiles(archivedVisibleFiles.filter((item) => !archivedFolderIds.has(item.folder_id)));
       } else {
         setFolders(foldersData);
         setFiles(filesData);
@@ -954,7 +997,7 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
             return !parentFolder?.archived_at;
           })
       : isTrashView
-        ? folders.filter((item) => Boolean(item.archived_at))
+        ? folders.filter((item) => Boolean(item.delete_scheduled_for))
         : folders;
     const term = searchTerm.trim().toLowerCase();
 
@@ -1574,10 +1617,10 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
 
     try {
       for (const file of filesToDelete) {
-        await cloudService.archiveFile(file.id);
+        await cloudService.trashFile(file.id);
       }
       for (const folder of foldersToDelete) {
-        await cloudService.archiveFolder(folder.id);
+        await cloudService.trashFolder(folder.id);
       }
 
       setSelectedItemKey(null);
@@ -2166,7 +2209,7 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
         stage: 'processing',
         error: null,
       });
-      await cloudService.archiveFile(file.id);
+      await cloudService.trashFile(file.id);
       setDeleteModalState({
         open: true,
         title: file.original_name,
@@ -2197,7 +2240,7 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
   const handleRestoreArchivedFile = async (file: CloudFile) => {
     try {
       await cloudService.restoreFile(file.id);
-      toast.success('Cloud', 'Arquivo restaurado com sucesso.');
+      toast.success('Cloud', file.delete_scheduled_for ? 'Arquivo restaurado da lixeira com sucesso.' : 'Arquivo restaurado com sucesso.');
       await loadData();
     } catch (error: any) {
       toast.error('Cloud', error.message || 'Erro ao restaurar arquivo.');
@@ -2245,28 +2288,28 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
   };
 
   const handleEmptyTrash = async () => {
-    if (archivedFiles.length === 0 && archivedFolders.length === 0) {
+    if (files.length === 0 && folders.length === 0) {
       toast.info('Cloud', 'A lixeira já está vazia.');
       return;
     }
 
-    const confirmed = window.confirm(`Esvaziar a lixeira e excluir permanentemente ${archivedFiles.length} arquivo(s) e ${archivedFolders.length} pasta(s)?`);
+    const confirmed = window.confirm(`Esvaziar a lixeira e excluir permanentemente ${files.length} arquivo(s) e ${folders.length} pasta(s)?`);
     if (!confirmed) return;
 
     try {
       setDeleteModalState({
         open: true,
-        title: `${archivedFiles.length + archivedFolders.length} item(ns) da lixeira`,
+        title: `${files.length + folders.length} item(ns) da lixeira`,
         kind: 'file',
         stage: 'processing',
         error: null,
       });
 
-      for (const file of archivedFiles) {
+      for (const file of files) {
         await cloudService.deleteFile(file);
       }
 
-      for (const folder of archivedFolders) {
+      for (const folder of folders) {
         await cloudService.deleteFolder(folder.id);
       }
 
@@ -2307,29 +2350,99 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
     setDropTargetFolderId(null);
   };
 
+  const handleDropOnSpecialView = async (target: 'archived' | 'trash') => {
+    if (!draggingItemKey) return;
+
+    try {
+      if (draggingItemKey.startsWith('file:')) {
+        const fileId = draggingItemKey.replace('file:', '');
+        const file = files.find((item) => item.id === fileId)
+          ?? archivedFiles.find((item) => item.id === fileId)
+          ?? trashedFiles.find((item) => item.id === fileId)
+          ?? allFiles.find((item) => item.id === fileId);
+        if (!file) return;
+
+        if (target === 'archived') {
+          if (file.archived_at && !file.delete_scheduled_for) return;
+          await cloudService.archiveFile(file.id);
+          toast.success('Cloud', 'Arquivo arquivado com sucesso.');
+        } else {
+          if (file.delete_scheduled_for) return;
+          await cloudService.trashFile(file.id);
+          toast.success('Cloud', 'Arquivo enviado para a lixeira.');
+        }
+      } else if (draggingItemKey.startsWith('folder:')) {
+        const folderId = draggingItemKey.replace('folder:', '');
+        const folder = folders.find((item) => item.id === folderId)
+          ?? archivedFolders.find((item) => item.id === folderId)
+          ?? trashedFolders.find((item) => item.id === folderId)
+          ?? allFolders.find((item) => item.id === folderId);
+        if (!folder) return;
+
+        if (target === 'archived') {
+          if (folder.archived_at && !folder.delete_scheduled_for) return;
+          await cloudService.archiveFolder(folder.id);
+          toast.success('Cloud', 'Pasta arquivada com sucesso.');
+        } else {
+          if (folder.delete_scheduled_for) return;
+          await cloudService.trashFolder(folder.id);
+          toast.success('Cloud', 'Pasta enviada para a lixeira.');
+        }
+      }
+
+      await loadData();
+    } catch (error: any) {
+      toast.error('Cloud', error.message || `Erro ao mover item para ${target === 'archived' ? 'Arquivado' : 'Lixeira'}.`);
+    } finally {
+      setDraggingItemKey(null);
+      setDropTargetFolderId(null);
+    }
+  };
+
   const handleDropOnFolder = async (targetFolderId: string | null) => {
     if (!draggingItemKey) return;
 
     try {
       if (draggingItemKey.startsWith('file:')) {
         const fileId = draggingItemKey.replace('file:', '');
-        const file = files.find((item) => item.id === fileId);
-        if (!file || file.folder_id === targetFolderId) return;
+        const file = files.find((item) => item.id === fileId)
+          ?? archivedFiles.find((item) => item.id === fileId)
+          ?? trashedFiles.find((item) => item.id === fileId)
+          ?? allFiles.find((item) => item.id === fileId);
+        if (!file) return;
+
+        const isSpecialStateFile = Boolean(file.delete_scheduled_for || file.archived_at);
+        if (!isSpecialStateFile && file.folder_id === targetFolderId) return;
 
         const targetFolder = allFolders.find((item) => item.id === targetFolderId) ?? null;
         if (!targetFolderId) {
+          if (isSpecialStateFile) {
+            await cloudService.restoreFile(fileId);
+            toast.success('Cloud', file.delete_scheduled_for ? 'Arquivo restaurado da lixeira.' : 'Arquivo desarquivado com sucesso.');
+            return;
+          }
           toast.info('Cloud', 'Arquivos não podem ser movidos para a raiz diretamente. Envie-os ou mantenha-os em uma pasta.');
           return;
         }
 
+        if (file.delete_scheduled_for || file.archived_at) {
+          await cloudService.restoreFile(fileId);
+        }
+
         await cloudService.moveFile(fileId, targetFolderId, targetFolder?.client_id || null);
-        toast.success('Cloud', 'Arquivo movido com sucesso.');
+        toast.success('Cloud', file.delete_scheduled_for ? 'Arquivo restaurado e movido com sucesso.' : file.archived_at ? 'Arquivo desarquivado e movido com sucesso.' : 'Arquivo movido com sucesso.');
       } else if (draggingItemKey.startsWith('folder:')) {
         const folderId = draggingItemKey.replace('folder:', '');
         if (folderId === targetFolderId) return;
 
-        const folder = allFolders.find((item) => item.id === folderId);
-        if (!folder || folder.parent_id === targetFolderId) return;
+        const folder = folders.find((item) => item.id === folderId)
+          ?? archivedFolders.find((item) => item.id === folderId)
+          ?? trashedFolders.find((item) => item.id === folderId)
+          ?? allFolders.find((item) => item.id === folderId);
+        if (!folder) return;
+
+        const isSpecialStateFolder = Boolean(folder.delete_scheduled_for || folder.archived_at);
+        if (!isSpecialStateFolder && folder.parent_id === targetFolderId) return;
 
         const isDescendant = (parentId: string, childId: string): boolean => {
           const children = folderChildrenMap.get(parentId) ?? [];
@@ -2345,8 +2458,23 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
           return;
         }
 
-        await cloudService.updateFolder(folderId, { parent_id: targetFolderId });
-        toast.success('Cloud', targetFolderId ? 'Pasta movida com sucesso.' : 'Pasta movida para a raiz com sucesso.');
+        if (folder.delete_scheduled_for) {
+          await cloudService.restoreFolder(folderId);
+        }
+
+        await cloudService.updateFolder(folderId, {
+          parent_id: targetFolderId,
+          archived_at: null,
+          delete_scheduled_for: null,
+        });
+        toast.success(
+          'Cloud',
+          folder.delete_scheduled_for
+            ? (targetFolderId ? 'Pasta restaurada e movida com sucesso.' : 'Pasta restaurada para a Caixa de entrada com sucesso.')
+            : folder.archived_at
+              ? (targetFolderId ? 'Pasta desarquivada e movida com sucesso.' : 'Pasta desarquivada para a Caixa de entrada com sucesso.')
+              : (targetFolderId ? 'Pasta movida com sucesso.' : 'Pasta movida para a raiz com sucesso.'),
+        );
       }
 
       await loadData();
@@ -2623,7 +2751,7 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
   };
 
   const handleDeleteFolder = async (folder: CloudFolder) => {
-    if (folder.archived_at) {
+    if (folder.delete_scheduled_for) {
       const confirmedPermanent = window.confirm(`Excluir permanentemente a pasta "${folder.name}"?`);
       if (!confirmedPermanent) return;
 
@@ -2675,7 +2803,7 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
         stage: 'processing',
         error: null,
       });
-      await cloudService.archiveFolder(folder.id);
+      await cloudService.trashFolder(folder.id);
       if (currentFolderId === folder.id) {
         setCurrentFolderId(folder.parent_id || null);
       }
@@ -2730,14 +2858,19 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
 
   const handleUnarchiveFolder = async (folder: CloudFolder) => {
     try {
-      await cloudService.updateFolder(folder.id, {
-        archived_at: null,
-        delete_scheduled_for: null,
-      });
-      toast.success('Cloud', 'Pasta desarquivada com sucesso.');
+      if (folder.delete_scheduled_for) {
+        await cloudService.restoreFolder(folder.id);
+        toast.success('Cloud', 'Pasta restaurada da lixeira com sucesso.');
+      } else {
+        await cloudService.updateFolder(folder.id, {
+          archived_at: null,
+          delete_scheduled_for: null,
+        });
+        toast.success('Cloud', 'Pasta desarquivada com sucesso.');
+      }
       await loadData();
     } catch (error: any) {
-      toast.error('Cloud', error.message || 'Erro ao desarquivar pasta.');
+      toast.error('Cloud', error.message || 'Erro ao restaurar pasta.');
     }
   };
 
@@ -3024,7 +3157,11 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
                 setSelectedItemKey('root');
               }}
               className={`w-full flex items-center gap-2 rounded-xl px-3 py-2.5 text-sm ${
-                currentFolderId === null ? 'bg-orange-100 text-orange-900 border border-orange-200' : 'text-slate-700 hover:bg-slate-50 border border-transparent'
+                dropTargetFolderId === '__root__'
+                  ? 'bg-orange-100 text-orange-900 border border-orange-300'
+                  : currentFolderId === null
+                    ? 'bg-orange-100 text-orange-900 border border-orange-200'
+                    : 'text-slate-700 hover:bg-slate-50 border border-transparent'
               }`}
               onDragOver={(e) => {
                 e.preventDefault();
@@ -3039,8 +3176,9 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
               }}
             >
               <HardDrive className="w-4 h-4 text-orange-600" />
-              <span className="font-medium">Este Computador</span>
+              <span className="font-medium">Caixa de entrada</span>
             </button>
+            {renderTree(rootFolders)}
             <button
               type="button"
               onClick={() => {
@@ -3048,13 +3186,28 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
                 setSelectedItemKey(`folder:${CLOUD_ARCHIVED_FOLDER_ID}`);
                 setSelectedItemKeys([`folder:${CLOUD_ARCHIVED_FOLDER_ID}`]);
               }}
-              className={`mt-1 w-full flex items-center gap-2 rounded-xl px-3 py-2.5 text-sm ${
-                isArchivedView ? 'bg-amber-100 text-amber-800 border border-amber-200' : 'text-slate-700 hover:bg-slate-50 border border-transparent'
+              className={`mt-2 w-full flex items-center gap-2 rounded-xl px-3 py-2.5 text-sm ${
+                dropTargetFolderId === CLOUD_ARCHIVED_FOLDER_ID
+                  ? 'bg-amber-100 text-amber-800 border border-amber-300'
+                  : isArchivedView
+                    ? 'bg-amber-100 text-amber-800 border border-amber-200'
+                    : 'text-slate-700 hover:bg-slate-50 border border-transparent'
               }`}
+              onDragOver={(e) => {
+                e.preventDefault();
+                if (draggingItemKey) {
+                  setDropTargetFolderId(CLOUD_ARCHIVED_FOLDER_ID);
+                }
+              }}
+              onDragLeave={() => setDropTargetFolderId(null)}
+              onDrop={(e) => {
+                e.preventDefault();
+                void handleDropOnSpecialView('archived');
+              }}
             >
               <FolderOpen className="w-4 h-4 text-amber-500" />
               <span className="font-medium">Arquivado</span>
-              <span className="ml-auto rounded-full border border-amber-200 bg-white px-2 py-0.5 text-[10px] text-amber-700">{archivedFolders.length}</span>
+              <span className="ml-auto rounded-full border border-amber-200 bg-white px-2 py-0.5 text-[10px] text-amber-700">{archivedRootFolders.length + archivedRootFiles.length}</span>
             </button>
             <button
               type="button"
@@ -3064,14 +3217,28 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
                 setSelectedItemKeys([`folder:${CLOUD_TRASH_FOLDER_ID}`]);
               }}
               className={`mt-1 w-full flex items-center gap-2 rounded-xl px-3 py-2.5 text-sm ${
-                isTrashView ? 'bg-red-100 text-red-700 border border-red-200' : 'text-slate-700 hover:bg-slate-50 border border-transparent'
+                dropTargetFolderId === CLOUD_TRASH_FOLDER_ID
+                  ? 'bg-red-100 text-red-700 border border-red-300'
+                  : isTrashView
+                    ? 'bg-red-100 text-red-700 border border-red-200'
+                    : 'text-slate-700 hover:bg-slate-50 border border-transparent'
               }`}
+              onDragOver={(e) => {
+                e.preventDefault();
+                if (draggingItemKey) {
+                  setDropTargetFolderId(CLOUD_TRASH_FOLDER_ID);
+                }
+              }}
+              onDragLeave={() => setDropTargetFolderId(null)}
+              onDrop={(e) => {
+                e.preventDefault();
+                void handleDropOnSpecialView('trash');
+              }}
             >
               <Trash2 className="w-4 h-4 text-red-500" />
               <span className="font-medium">Lixeira</span>
-              <span className="ml-auto rounded-full border border-red-200 bg-white px-2 py-0.5 text-[10px] text-red-600">{archivedFiles.length + archivedFolders.length}</span>
+              <span className="ml-auto rounded-full border border-red-200 bg-white px-2 py-0.5 text-[10px] text-red-600">{trashedRootFiles.length + trashedRootFolders.length}</span>
             </button>
-            {renderTree(rootFolders)}
             </div>
 
             <div className="space-y-2 rounded-2xl border border-slate-200 bg-white/80 p-3 shadow-sm">
@@ -3092,30 +3259,6 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
                       className="w-full flex items-center gap-2 rounded-xl px-3 py-2 text-sm text-slate-700 hover:bg-slate-50"
                     >
                       <Pin className="w-4 h-4 text-orange-500" />
-                      <span className="truncate">{folder.name}</span>
-                    </button>
-                  ))
-                )}
-              </div>
-            </div>
-
-            <div className="space-y-2 rounded-2xl border border-slate-200 bg-white/80 p-3 shadow-sm">
-              <p className="text-[11px] uppercase tracking-[0.16em] text-slate-400 font-semibold">Recentes</p>
-              <div className="space-y-1">
-                {quickAccessFolders.length === 0 ? (
-                  <p className="px-2 text-xs text-slate-500">Nenhuma pasta recente.</p>
-                ) : (
-                  quickAccessFolders.map((folder) => (
-                    <button
-                      key={folder.id}
-                      type="button"
-                      onClick={() => {
-                        setCurrentFolderId(folder.id);
-                        setSelectedItemKey(`folder:${folder.id}`);
-                      }}
-                      className="w-full flex items-center gap-2 rounded-xl px-3 py-2 text-sm text-slate-700 hover:bg-slate-50"
-                    >
-                      <History className="w-4 h-4 text-slate-400" />
                       <span className="truncate">{folder.name}</span>
                     </button>
                   ))
@@ -3173,16 +3316,54 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
                 const target = getEventTargetElement(e.target);
                 if (target?.closest('[data-cloud-item="true"]')) return;
                 e.preventDefault();
-                clearExplorerSelection();
-                setContextMenu({ x: e.clientX, y: e.clientY, type: 'blank' });
               }}
             >
               {loading ? (
-                <div className="h-full flex items-center justify-center text-slate-500"><Loader2 className="w-6 h-6 animate-spin mr-2" />Carregando...</div>
+                <div className="h-full flex items-center justify-center px-6">
+                  <motion.div
+                    initial={{ opacity: 0, y: 10, scale: 0.98 }}
+                    animate={{ opacity: 1, y: 0, scale: 1 }}
+                    transition={{ duration: 0.24 }}
+                    className="relative w-full max-w-md overflow-hidden rounded-[28px] border border-orange-100 bg-white/95 px-8 py-10 text-center shadow-[0_24px_70px_rgba(15,23,42,0.12)]"
+                  >
+                    <motion.div
+                      animate={{ x: ['-100%', '100%'] }}
+                      transition={{ repeat: Infinity, duration: 1.8, ease: 'linear' }}
+                      className="pointer-events-none absolute inset-y-0 left-0 w-24 bg-gradient-to-r from-transparent via-orange-100/70 to-transparent"
+                    />
+                    <div className="relative mx-auto flex h-20 w-20 items-center justify-center rounded-[24px] border border-orange-200 bg-gradient-to-br from-orange-50 via-white to-amber-50 shadow-[0_12px_35px_rgba(249,115,22,0.18)]">
+                      <motion.div
+                        animate={{ scale: [1, 1.12, 1], opacity: [0.35, 0.12, 0.35] }}
+                        transition={{ repeat: Infinity, duration: 1.6, ease: 'easeInOut' }}
+                        className="absolute inset-0 rounded-[24px] border border-orange-300/40"
+                      />
+                      <motion.div
+                        animate={{ rotate: 360 }}
+                        transition={{ repeat: Infinity, duration: 1.15, ease: 'linear' }}
+                        className="absolute inset-[10px] rounded-[18px] border-2 border-orange-200 border-t-orange-500"
+                      />
+                      <Cloud className="relative h-8 w-8 text-orange-500" />
+                    </div>
+                    <h3 className="mt-6 text-xl font-semibold text-slate-900">Carregando seu Cloud</h3>
+                    <p className="mt-2 text-sm text-slate-500">Organizando pastas, arquivos e atalhos para exibir tudo com fluidez.</p>
+                    <div className="mt-6 h-2.5 overflow-hidden rounded-full bg-orange-100/80">
+                      <motion.div
+                        className="h-full rounded-full bg-gradient-to-r from-orange-400 via-orange-500 to-amber-300"
+                        animate={{ x: ['-35%', '115%'], width: ['28%', '42%', '28%'] }}
+                        transition={{ repeat: Infinity, duration: 1.4, ease: 'easeInOut' }}
+                      />
+                    </div>
+                    <div className="mt-4 flex items-center justify-center gap-2 text-[11px] font-medium uppercase tracking-[0.24em] text-orange-500/80">
+                      <motion.span animate={{ opacity: [0.35, 1, 0.35] }} transition={{ repeat: Infinity, duration: 1.1, delay: 0 }}>Sincronizando</motion.span>
+                      <motion.span animate={{ opacity: [0.35, 1, 0.35] }} transition={{ repeat: Infinity, duration: 1.1, delay: 0.18 }}>Pastas</motion.span>
+                      <motion.span animate={{ opacity: [0.35, 1, 0.35] }} transition={{ repeat: Infinity, duration: 1.1, delay: 0.36 }}>Arquivos</motion.span>
+                    </div>
+                  </motion.div>
+                </div>
               ) : explorerRows.length === 0 ? (
                 <div className="h-full flex flex-col items-center justify-center text-slate-500 gap-4 px-6">
                   <div className="w-20 h-20 rounded-3xl bg-orange-50 flex items-center justify-center border border-orange-100">
-                    <FolderOpen className="w-10 h-10 text-orange-300" />
+                    <FolderPlus className="w-10 h-10 text-orange-400" />
                   </div>
                   <div className="text-center">
                     <p className="font-medium text-slate-900">{isTrashView ? 'A lixeira está vazia' : isArchivedView ? 'Nenhuma pasta arquivada' : 'Esta pasta está vazia'}</p>
@@ -3780,7 +3961,7 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
                     ) : null}
                     <button onClick={() => handleDeleteFile(selectedFile)} className="inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg bg-red-50 hover:bg-red-100 text-red-600 text-sm border border-red-200">
                       <Trash2 className="w-4 h-4" />
-                      {selectedFile.archived_at ? 'Enviar para lixeira' : 'Excluir arquivo'}
+                      Excluir arquivo
                     </button>
                   </div>
                 </>
@@ -4332,7 +4513,7 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
               type="button"
               onClick={() => {
                 setContextMenu(null);
-                if (selectedContextFile.archived_at) {
+                if (selectedContextFile.archived_at && !selectedContextFile.delete_scheduled_for) {
                   void handleRestoreArchivedFile(selectedContextFile);
                   return;
                 }
@@ -4340,7 +4521,7 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
               }}
               className="w-full px-3 py-2.5 text-left text-sm font-medium text-red-600 hover:bg-red-50 transition"
             >
-              {selectedContextFile.archived_at ? 'Desarquivar arquivo' : 'Excluir arquivo'}
+              {selectedContextFile.archived_at && !selectedContextFile.delete_scheduled_for ? 'Desarquivar arquivo' : 'Excluir arquivo'}
             </button>
           </div>
         </div>
@@ -4453,31 +4634,31 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            className="fixed inset-0 z-[150] bg-slate-950/45 backdrop-blur-md flex items-center justify-center p-4"
+            className="fixed inset-0 z-[150] bg-slate-100/80 backdrop-blur-sm flex items-center justify-center p-4"
           >
             <motion.div
               initial={{ scale: 0.96, y: 18, opacity: 0 }}
               animate={{ scale: 1, y: 0, opacity: 1 }}
               exit={{ scale: 0.98, y: 12, opacity: 0 }}
               transition={{ duration: 0.22 }}
-              className="w-full max-w-2xl overflow-hidden rounded-[28px] border border-white/15 bg-[radial-gradient(circle_at_top,_rgba(251,146,60,0.28),_rgba(15,23,42,0.98)_52%)] text-white shadow-[0_30px_80px_rgba(0,0,0,0.45)]"
+              className="w-full max-w-2xl overflow-hidden rounded-[28px] border border-orange-100 bg-white text-slate-900 shadow-[0_30px_80px_rgba(15,23,42,0.16)]"
             >
-              <div className="border-b border-white/10 px-6 py-5">
+              <div className="border-b border-orange-100 px-6 py-5">
                 <div className="flex items-start justify-between gap-4">
                   <div className="flex items-start gap-4 min-w-0">
-                    <div className="flex h-14 w-14 items-center justify-center rounded-2xl border border-orange-300/30 bg-orange-400/15 shadow-[0_0_30px_rgba(249,115,22,0.25)]">
-                      {uploadQueueSummary.failedItems > 0 ? <RotateCcw className="w-6 h-6 text-orange-200" /> : uploadQueueSummary.completedItems === uploadQueueSummary.totalItems ? <CheckCircle2 className="w-6 h-6 text-emerald-300" /> : <Upload className="w-6 h-6 text-orange-200" />}
+                    <div className="flex h-14 w-14 items-center justify-center rounded-2xl border border-orange-200 bg-orange-50 shadow-[0_0_30px_rgba(249,115,22,0.14)]">
+                      {uploadQueueSummary.failedItems > 0 ? <RotateCcw className="w-6 h-6 text-orange-500" /> : uploadQueueSummary.completedItems === uploadQueueSummary.totalItems ? <CheckCircle2 className="w-6 h-6 text-emerald-500" /> : <Upload className="w-6 h-6 text-orange-500" />}
                     </div>
                     <div className="min-w-0">
-                      <p className="text-[11px] uppercase tracking-[0.28em] text-orange-200/80">Central de Transferência</p>
-                      <h3 className="mt-1 text-2xl font-semibold text-white">
+                      <p className="text-[11px] uppercase tracking-[0.28em] text-orange-600/80">Central de Transferência</p>
+                      <h3 className="mt-1 text-2xl font-semibold text-slate-900">
                         {uploadQueueSummary.failedItems > 0
                           ? 'Alguns arquivos precisaram de atenção'
                           : uploadQueueSummary.completedItems === uploadQueueSummary.totalItems
                             ? 'Upload concluído com sucesso'
                             : 'Enviando seus documentos'}
                       </h3>
-                      <p className="mt-1 text-sm text-slate-200/80">
+                      <p className="mt-1 text-sm text-slate-600">
                         {uploadQueueSummary.failedItems > 0
                           ? 'Você pode tentar novamente apenas os arquivos que falharam.'
                           : uploadQueueSummary.completedItems === uploadQueueSummary.totalItems
@@ -4490,19 +4671,19 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
                     <button
                       type="button"
                       onClick={clearFinishedUploads}
-                      className="rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-xs font-medium text-slate-100 hover:bg-white/10"
+                      className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-medium text-slate-700 hover:bg-slate-50"
                     >
                       Fechar
                     </button>
                   ) : null}
                 </div>
 
-                <div className="mt-5 rounded-2xl border border-white/10 bg-black/15 p-4">
+                <div className="mt-5 rounded-2xl border border-orange-100 bg-orange-50/60 p-4">
                   <div className="flex items-center justify-between gap-3 text-sm">
-                    <span className="text-slate-200">Progresso do lote</span>
-                    <span className="font-semibold text-white">{uploadQueueSummary.totalProgress}%</span>
+                    <span className="text-slate-600">Progresso do lote</span>
+                    <span className="font-semibold text-slate-900">{uploadQueueSummary.totalProgress}%</span>
                   </div>
-                  <div className="mt-3 h-3 overflow-hidden rounded-full bg-white/10">
+                  <div className="mt-3 h-3 overflow-hidden rounded-full bg-orange-100">
                     <motion.div
                       className={`h-full rounded-full ${uploadQueueSummary.failedItems > 0 ? 'bg-gradient-to-r from-amber-400 to-orange-500' : uploadQueueSummary.completedItems === uploadQueueSummary.totalItems ? 'bg-gradient-to-r from-emerald-400 to-emerald-500' : 'bg-gradient-to-r from-orange-400 via-orange-500 to-amber-300'}`}
                       animate={{ width: `${uploadQueueSummary.totalProgress}%` }}
@@ -4510,44 +4691,44 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
                     />
                   </div>
                   <div className="mt-3 flex flex-wrap gap-2 text-xs">
-                    <span className="rounded-full border border-white/10 bg-white/5 px-2.5 py-1 text-slate-100">{uploadQueueSummary.completedItems} concluído(s)</span>
-                    {uploadQueueSummary.uploadingItems ? <span className="rounded-full border border-orange-300/20 bg-orange-400/10 px-2.5 py-1 text-orange-100">{uploadQueueSummary.uploadingItems} enviando</span> : null}
-                    {uploadQueueSummary.failedItems ? <span className="rounded-full border border-red-300/20 bg-red-400/10 px-2.5 py-1 text-red-100">{uploadQueueSummary.failedItems} falhou(ram)</span> : null}
+                    <span className="rounded-full border border-slate-200 bg-white px-2.5 py-1 text-slate-700">{uploadQueueSummary.completedItems} concluído(s)</span>
+                    {uploadQueueSummary.uploadingItems ? <span className="rounded-full border border-orange-200 bg-orange-50 px-2.5 py-1 text-orange-700">{uploadQueueSummary.uploadingItems} enviando</span> : null}
+                    {uploadQueueSummary.failedItems ? <span className="rounded-full border border-red-200 bg-red-50 px-2.5 py-1 text-red-700">{uploadQueueSummary.failedItems} falhou(ram)</span> : null}
                   </div>
                 </div>
               </div>
 
               <div className="max-h-[45vh] space-y-3 overflow-auto px-6 py-5">
                 {uploadQueueItems.map((item) => (
-                  <div key={item.id} className="rounded-2xl border border-white/10 bg-white/5 p-4 backdrop-blur-sm">
+                  <div key={item.id} className="rounded-2xl border border-slate-200 bg-white p-4 backdrop-blur-sm shadow-sm">
                     <div className="flex items-start justify-between gap-3">
                       <div className="min-w-0">
-                        <p className="truncate text-sm font-semibold text-white">{item.fileName}</p>
-                        <p className="mt-1 truncate text-xs text-slate-300">{item.folderLabel} • {formatFileSize(item.fileSize)}</p>
+                        <p className="truncate text-sm font-semibold text-slate-900">{item.fileName}</p>
+                        <p className="mt-1 truncate text-xs text-slate-500">{item.folderLabel} • {formatFileSize(item.fileSize)}</p>
                       </div>
                       <div className="flex items-center gap-2">
-                        <span className={`inline-flex items-center rounded-full px-2.5 py-1 text-[11px] font-medium ${item.status === 'completed' ? 'border border-emerald-300/20 bg-emerald-400/10 text-emerald-100' : item.status === 'failed' ? 'border border-red-300/20 bg-red-400/10 text-red-100' : item.status === 'uploading' ? 'border border-orange-300/20 bg-orange-400/10 text-orange-100' : 'border border-white/10 bg-white/5 text-slate-200'}`}>
+                        <span className={`inline-flex items-center rounded-full px-2.5 py-1 text-[11px] font-medium ${item.status === 'completed' ? 'border border-emerald-200 bg-emerald-50 text-emerald-700' : item.status === 'failed' ? 'border border-red-200 bg-red-50 text-red-700' : item.status === 'uploading' ? 'border border-orange-200 bg-orange-50 text-orange-700' : 'border border-slate-200 bg-slate-50 text-slate-600'}`}>
                           {item.status === 'completed' ? 'Concluído' : item.status === 'failed' ? 'Falhou' : item.status === 'uploading' ? 'Enviando' : 'Na fila'}
                         </span>
                         {item.status === 'failed' ? (
                           <button
                             type="button"
                             onClick={() => void retryUploadItem(item.id)}
-                            className="rounded-xl border border-white/10 bg-white/5 px-3 py-1.5 text-[11px] font-medium text-white hover:bg-white/10"
+                            className="rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-[11px] font-medium text-slate-700 hover:bg-slate-50"
                           >
                             Tentar novamente
                           </button>
                         ) : null}
                       </div>
                     </div>
-                    <div className="mt-3 h-2.5 overflow-hidden rounded-full bg-white/10">
+                    <div className="mt-3 h-2.5 overflow-hidden rounded-full bg-slate-100">
                       <motion.div
                         className={`h-full rounded-full ${item.status === 'failed' ? 'bg-gradient-to-r from-red-400 to-red-500' : item.status === 'completed' ? 'bg-gradient-to-r from-emerald-400 to-emerald-500' : 'bg-gradient-to-r from-orange-400 to-amber-300'}`}
                         animate={{ width: `${item.progress}%` }}
                         transition={{ duration: 0.25 }}
                       />
                     </div>
-                    {item.error ? <p className="mt-2 text-xs text-red-200">{item.error}</p> : null}
+                    {item.error ? <p className="mt-2 text-xs text-red-600">{item.error}</p> : null}
                   </div>
                 ))}
               </div>
@@ -4563,29 +4744,50 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            className="fixed inset-0 z-[151] bg-slate-950/50 backdrop-blur-md flex items-center justify-center p-4"
+            className="fixed inset-0 z-[151] bg-white/55 backdrop-blur-md flex items-center justify-center p-4"
           >
             <motion.div
               initial={{ scale: 0.94, y: 16, opacity: 0 }}
               animate={{ scale: 1, y: 0, opacity: 1 }}
               exit={{ scale: 0.98, y: 12, opacity: 0 }}
-              className="w-full max-w-md overflow-hidden rounded-[28px] border border-white/15 bg-[radial-gradient(circle_at_top,_rgba(248,113,113,0.2),_rgba(15,23,42,0.98)_58%)] text-white shadow-[0_30px_80px_rgba(0,0,0,0.5)]"
+              transition={{ type: 'spring', stiffness: 260, damping: 24 }}
+              className="w-full max-w-md overflow-hidden rounded-[28px] border border-red-100 bg-[radial-gradient(circle_at_top,_rgba(248,113,113,0.14),_rgba(255,255,255,0.98)_62%)] text-slate-900 shadow-[0_30px_80px_rgba(15,23,42,0.16)]"
             >
-              <div className="px-6 py-6">
+              <div className="relative overflow-hidden px-6 py-6">
+                <motion.div
+                  animate={deleteModalState.stage === 'processing' ? { x: ['-100%', '100%'] } : { opacity: 0.6 }}
+                  transition={deleteModalState.stage === 'processing' ? { repeat: Infinity, duration: 1.5, ease: 'linear' } : { duration: 0.2 }}
+                  className="pointer-events-none absolute inset-y-0 left-0 w-24 bg-gradient-to-r from-transparent via-red-100/70 to-transparent"
+                />
                 <div className="flex flex-col items-center text-center">
                   <motion.div
-                    animate={deleteModalState.stage === 'processing' ? { y: [0, -8, 0], rotate: [0, -2, 2, 0], opacity: [1, 0.9, 1] } : { scale: 1 }}
-                    transition={deleteModalState.stage === 'processing' ? { repeat: Infinity, duration: 1.4 } : { duration: 0.2 }}
-                    className={`relative flex h-24 w-24 items-center justify-center rounded-3xl border ${deleteModalState.stage === 'success' ? 'border-emerald-300/20 bg-emerald-400/10' : deleteModalState.stage === 'error' ? 'border-red-300/20 bg-red-400/10' : 'border-white/10 bg-white/5'}`}
+                    animate={deleteModalState.stage === 'processing'
+                      ? { y: [0, -10, 0], rotate: [0, -4, 4, 0], opacity: [1, 0.9, 1], scale: [1, 1.03, 1] }
+                      : deleteModalState.stage === 'success'
+                        ? { scale: [1, 1.08, 1], rotate: [0, -2, 2, 0] }
+                        : { x: [0, -6, 6, -4, 4, 0] }}
+                    transition={deleteModalState.stage === 'processing'
+                      ? { repeat: Infinity, duration: 1.35, ease: 'easeInOut' }
+                      : deleteModalState.stage === 'success'
+                        ? { duration: 0.45 }
+                        : { duration: 0.42 }}
+                    className={`relative flex h-24 w-24 items-center justify-center rounded-3xl border ${deleteModalState.stage === 'success' ? 'border-emerald-200 bg-emerald-50' : deleteModalState.stage === 'error' ? 'border-red-200 bg-red-50' : 'border-red-100 bg-white'}`}
                   >
-                    {deleteModalState.kind === 'folder' ? <Folder className="w-11 h-11 text-amber-200" /> : <FileText className="w-11 h-11 text-red-200" />}
-                    {deleteModalState.stage === 'processing' ? <motion.div initial={{ opacity: 0.4 }} animate={{ opacity: [0.2, 0.8, 0.2], scale: [0.9, 1.15, 0.9] }} transition={{ repeat: Infinity, duration: 1.2 }} className="absolute inset-0 rounded-3xl border border-red-300/20" /> : null}
+                    {deleteModalState.kind === 'folder' ? <Folder className="w-11 h-11 text-amber-500" /> : <FileText className="w-11 h-11 text-red-500" />}
+                    {deleteModalState.stage === 'processing' ? (
+                      <>
+                        <motion.div initial={{ opacity: 0.4 }} animate={{ opacity: [0.2, 0.8, 0.2], scale: [0.9, 1.15, 0.9] }} transition={{ repeat: Infinity, duration: 1.2 }} className="absolute inset-0 rounded-3xl border border-red-300/40" />
+                        <motion.div animate={{ rotate: 360 }} transition={{ repeat: Infinity, duration: 1.4, ease: 'linear' }} className="absolute inset-[7px] rounded-[20px] border-2 border-transparent border-t-orange-300 border-r-red-300/70" />
+                      </>
+                    ) : null}
+                    {deleteModalState.stage === 'success' ? <motion.div initial={{ scale: 0.6, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} transition={{ duration: 0.3 }} className="absolute -right-1 -top-1 rounded-full border border-emerald-200 bg-emerald-50 p-1.5"><CheckCircle2 className="h-4 w-4 text-emerald-600" /></motion.div> : null}
+                    {deleteModalState.stage === 'error' ? <motion.div initial={{ scale: 0.6, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} transition={{ duration: 0.25 }} className="absolute -right-1 -top-1 rounded-full border border-red-200 bg-red-50 p-1.5"><AlertCircle className="h-4 w-4 text-red-600" /></motion.div> : null}
                   </motion.div>
 
-                  <h3 className="mt-5 text-2xl font-semibold text-white">
+                  <h3 className="mt-5 text-2xl font-semibold text-slate-900">
                     {deleteModalState.stage === 'processing' ? 'Excluindo documento' : deleteModalState.stage === 'success' ? 'Documento removido' : 'Não foi possível excluir'}
                   </h3>
-                  <p className="mt-2 text-sm text-slate-200/80">
+                  <p className="mt-2 text-sm text-slate-600">
                     {deleteModalState.stage === 'processing'
                       ? `Processando ${deleteModalState.title}...`
                       : deleteModalState.stage === 'success'
@@ -4593,18 +4795,25 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
                         : deleteModalState.error || 'Tente novamente em instantes.'}
                   </p>
 
-                  <div className="mt-6 w-full rounded-2xl border border-white/10 bg-white/5 p-4">
-                    <div className="flex items-center justify-between text-xs text-slate-300">
+                  <div className="mt-6 w-full rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                    <div className="flex items-center justify-between text-xs text-slate-500">
                       <span>Status</span>
-                      <span className="font-semibold text-white">{deleteModalState.stage === 'processing' ? 'Excluindo...' : deleteModalState.stage === 'success' ? 'Concluído' : 'Falhou'}</span>
+                      <span className="font-semibold text-slate-900">{deleteModalState.stage === 'processing' ? 'Excluindo...' : deleteModalState.stage === 'success' ? 'Concluído' : 'Falhou'}</span>
                     </div>
-                    <div className="mt-3 h-2.5 overflow-hidden rounded-full bg-white/10">
+                    <div className="mt-3 h-2.5 overflow-hidden rounded-full bg-slate-200">
                       <motion.div
                         className={`h-full rounded-full ${deleteModalState.stage === 'success' ? 'bg-gradient-to-r from-emerald-400 to-emerald-500' : deleteModalState.stage === 'error' ? 'bg-gradient-to-r from-red-400 to-red-500' : 'bg-gradient-to-r from-red-400 via-orange-400 to-amber-300'}`}
                         animate={{ width: deleteModalState.stage === 'processing' ? ['22%', '78%', '45%'] : deleteModalState.stage === 'success' ? '100%' : '100%' }}
                         transition={deleteModalState.stage === 'processing' ? { repeat: Infinity, duration: 1.3 } : { duration: 0.25 }}
                       />
                     </div>
+                    {deleteModalState.stage === 'processing' ? (
+                      <div className="mt-4 flex items-center justify-center gap-2 text-[11px] uppercase tracking-[0.24em] text-red-500/85">
+                        <motion.span animate={{ opacity: [0.35, 1, 0.35] }} transition={{ repeat: Infinity, duration: 1.1, delay: 0 }}>Preparando</motion.span>
+                        <motion.span animate={{ opacity: [0.35, 1, 0.35] }} transition={{ repeat: Infinity, duration: 1.1, delay: 0.18 }}>Movendo</motion.span>
+                        <motion.span animate={{ opacity: [0.35, 1, 0.35] }} transition={{ repeat: Infinity, duration: 1.1, delay: 0.36 }}>Finalizando</motion.span>
+                      </div>
+                    ) : null}
                   </div>
 
                   {deleteModalState.stage === 'error' ? (
@@ -4612,7 +4821,7 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
                       <button
                         type="button"
                         onClick={() => setDeleteModalState((prev) => ({ ...prev, open: false }))}
-                        className="rounded-xl border border-white/10 bg-white/5 px-4 py-2.5 text-sm font-medium text-white hover:bg-white/10"
+                        className="rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-medium text-slate-700 hover:bg-slate-50"
                       >
                         Fechar
                       </button>

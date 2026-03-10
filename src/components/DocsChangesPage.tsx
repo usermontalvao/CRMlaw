@@ -47,6 +47,19 @@ import { matchesNormalizedSearch } from '../utils/search';
    ============================================================================ */
 
 const VERSION_CODENAMES: Record<string, { name: string; emoji: string }> = {
+  '1.9.800': { name: 'Café Entrada Viva', emoji: '📬' },
+  '1.9.799': { name: 'Café Drop Preciso', emoji: '🎯' },
+  '1.9.798': { name: 'Café Atalho Vivo', emoji: '🧲' },
+  '1.9.797': { name: 'Café Caixa Viva', emoji: '📥' },
+  '1.9.796': { name: 'Café Lixeira Coerente', emoji: '🗃️' },
+  '1.9.795': { name: 'Café Filtro Certo', emoji: '🔍' },
+  '1.9.794': { name: 'Café Topo Limpo', emoji: '🧼' },
+  '1.9.793': { name: 'Café Lixeira Visível', emoji: '🧺' },
+  '1.9.792': { name: 'Café Claro Coerente', emoji: '☀️' },
+  '1.9.791': { name: 'Café Movimento Vivo', emoji: '✨' },
+  '1.9.790': { name: 'Café Contagem Real', emoji: '🔢' },
+  '1.9.789': { name: 'Café Sidebar Direta', emoji: '🧭' },
+  '1.9.788': { name: 'Café Lixeira Restaurada', emoji: '🗑️' },
   '1.9.787': { name: 'Café Hierarquia Clara', emoji: '🗂️' },
   '1.9.786': { name: 'Café Link Estável', emoji: '🛡️' },
   '1.9.785': { name: 'Café Link Aberto', emoji: '🔓' },
@@ -613,6 +626,252 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
 };
 
 const releases: ReleaseNote[] = [
+  {
+    version: '1.9.800',
+    date: '10/03/2026',
+    summary: 'Cloud: correção do drop na Caixa de entrada para restaurar e desarquivar itens corretamente.',
+    modules: [
+      {
+        moduleId: 'cloud',
+        changes: [
+          {
+            type: 'fix',
+            title: 'Caixa de entrada resolve corretamente o item arrastado',
+            description: 'O drop na Caixa de entrada agora localiza o arquivo ou pasta em todas as coleções relevantes antes de restaurar, desarquivar ou mover para a raiz.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.799',
+    date: '10/03/2026',
+    summary: 'Cloud: correção do drop de pastas e arquivos na sidebar de Arquivado e Lixeira.',
+    modules: [
+      {
+        moduleId: 'cloud',
+        changes: [
+          {
+            type: 'fix',
+            title: 'Drop lateral resolve corretamente o item arrastado',
+            description: 'A sidebar agora localiza a pasta ou arquivo arrastado em todas as coleções relevantes antes de executar arquivamento ou envio para lixeira.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.798',
+    date: '10/03/2026',
+    summary: 'Cloud: atalhos de Arquivado e Lixeira agora funcionam como destinos reais de arrastar e soltar.',
+    modules: [
+      {
+        moduleId: 'cloud',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Arquivado e Lixeira aceitam drop na sidebar',
+            description: 'Os atalhos laterais agora recebem arquivos e pastas por drag and drop, com highlight visual e execução automática da ação correspondente.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.797',
+    date: '10/03/2026',
+    summary: 'Cloud: arrastar para a Caixa de entrada agora restaura e desarquiva itens automaticamente.',
+    modules: [
+      {
+        moduleId: 'cloud',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Caixa de entrada aceita drop de Arquivado e Lixeira',
+            description: 'Ao arrastar itens especiais para a Caixa de entrada, o Cloud restaura ou desarquiva automaticamente e move o item para a raiz quando aplicável.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.796',
+    date: '10/03/2026',
+    summary: 'Cloud: correção final da Lixeira vazia com contador preenchido.',
+    modules: [
+      {
+        moduleId: 'cloud',
+        changes: [
+          {
+            type: 'fix',
+            title: 'Lixeira não cai mais em estado vazio incorreto',
+            description: 'A filtragem da view da Lixeira passou a considerar `delete_scheduled_for`, fazendo a grade renderizar os itens corretamente quando o contador indica conteúdo.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.795',
+    date: '10/03/2026',
+    summary: 'Cloud: correção de filtro da Lixeira para exibir itens corretamente.',
+    modules: [
+      {
+        moduleId: 'cloud',
+        changes: [
+          {
+            type: 'fix',
+            title: 'Lixeira exibe itens corretamente',
+            description: 'Corrigida a lógica de filtro que causava a Lixeira aparecer vazia mesmo com itens presentes.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.794',
+    date: '10/03/2026',
+    summary: 'Cloud: Arquivado e Lixeira agora contam e exibem apenas itens de topo.',
+    modules: [
+      {
+        moduleId: 'cloud',
+        changes: [
+          {
+            type: 'fix',
+            title: 'Arquivado sem duplicar filhos internos',
+            description: 'A contagem e a listagem do Arquivado passaram a ignorar arquivos que já estão dentro de pastas arquivadas de topo.',
+          },
+          {
+            type: 'fix',
+            title: 'Lixeira mostra apenas itens de topo',
+            description: 'A Lixeira deixou de exibir e somar arquivos internos de pastas já deletadas, mostrando apenas os itens principais da view.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.793',
+    date: '10/03/2026',
+    summary: 'Cloud: correção da Lixeira para pastas e limpeza final do modal de upload no tema claro.',
+    modules: [
+      {
+        moduleId: 'cloud',
+        changes: [
+          {
+            type: 'fix',
+            title: 'Pastas voltam a ir para a Lixeira',
+            description: 'A exclusão de pastas voltou a usar o fluxo real da Lixeira, evitando que itens sumissem da visualização esperada.',
+          },
+          {
+            type: 'fix',
+            title: 'Modal de upload sem fundo escuro residual',
+            description: 'O modal animado de upload foi ajustado para ficar totalmente coerente com o tema claro da interface.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.792',
+    date: '10/03/2026',
+    summary: 'Cloud: modais animados ajustados para tema claro.',
+    modules: [
+      {
+        moduleId: 'cloud',
+        changes: [
+          {
+            type: 'fix',
+            title: 'Modais animados coerentes no tema claro',
+            description: 'Os modais de carregamento e exclusão do Cloud deixaram de usar visual escuro indevido quando a interface está em tema claro.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.791',
+    date: '10/03/2026',
+    summary: 'Cloud: animações de carregamento e exclusão mais visíveis e refinadas.',
+    modules: [
+      {
+        moduleId: 'cloud',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Loading mais premium no Cloud',
+            description: 'A tela de carregamento ganhou card animado, barra dinâmica e microanimações para transmitir progresso com mais clareza.',
+          },
+          {
+            type: 'improvement',
+            title: 'Exclusão com feedback visual reforçado',
+            description: 'O modal de exclusão/processamento agora tem animação mais evidente durante processamento e estados mais claros para sucesso e erro.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.790',
+    date: '10/03/2026',
+    summary: 'Cloud: contadores reais de objetos em Arquivado e Lixeira na sidebar.',
+    modules: [
+      {
+        moduleId: 'cloud',
+        changes: [
+          {
+            type: 'fix',
+            title: 'Contagem real em Arquivado e Lixeira',
+            description: 'Os badges da sidebar agora exibem a quantidade total real de objetos arquivados e na lixeira, sem depender da pasta aberta no momento.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.789',
+    date: '10/03/2026',
+    summary: 'Cloud: limpeza da sidebar com remoção de Recentes e reposicionamento de Arquivado/Lixeira abaixo das pastas ativas.',
+    modules: [
+      {
+        moduleId: 'cloud',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Sidebar mais direta',
+            description: 'O bloco Recentes foi removido da lateral do Cloud para reduzir ruído visual e simplificar a navegação.',
+          },
+          {
+            type: 'improvement',
+            title: 'Arquivado e Lixeira abaixo das pastas ativas',
+            description: 'A navegação foi reorganizada para posicionar Arquivado e Lixeira abaixo da árvore principal de pastas ativas.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.788',
+    date: '10/03/2026',
+    summary: 'Cloud: restauração da separação entre Lixeira e Arquivado, sem exclusão automática no arquivamento.',
+    modules: [
+      {
+        moduleId: 'cloud',
+        changes: [
+          {
+            type: 'fix',
+            title: 'Lixeira dedicada restaurada',
+            description: 'Excluir arquivos e pastas voltou a enviar itens para a Lixeira do Cloud, em vez de misturá-los com o Arquivado.',
+          },
+          {
+            type: 'fix',
+            title: 'Arquivado separado da Lixeira',
+            description: 'O Arquivado voltou a exibir apenas itens arquivados manualmente, mantendo o comportamento sem exclusão automática.',
+          },
+        ],
+      },
+    ],
+  },
   {
     version: '1.9.787',
     date: '10/03/2026',

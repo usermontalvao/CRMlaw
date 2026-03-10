@@ -55,6 +55,7 @@ class CloudService {
 
     query = parentId ? query.eq('parent_id', parentId) : query.is('parent_id', null);
     if (!includeArchived) query = query.is('archived_at', null);
+    query = query.is('delete_scheduled_for', null);
 
     const { data, error } = await query;
     if (error) throw new Error(error.message);
@@ -68,6 +69,7 @@ class CloudService {
       .order('name', { ascending: true });
 
     if (!includeArchived) query = query.is('archived_at', null);
+    query = query.is('delete_scheduled_for', null);
 
     const { data, error } = await query;
 
@@ -136,6 +138,50 @@ class CloudService {
     });
   }
 
+  async trashFolder(folderId: string): Promise<CloudFolder> {
+    const [childFolders, childFiles] = await Promise.all([
+      this.listFolders(folderId, true),
+      this.listFiles(folderId, true),
+    ]);
+
+    for (const childFolder of childFolders) {
+      if (!childFolder.delete_scheduled_for) {
+        await this.trashFolder(childFolder.id);
+      }
+    }
+
+    for (const childFile of childFiles) {
+      if (!childFile.delete_scheduled_for) {
+        await this.trashFile(childFile.id);
+      }
+    }
+
+    return this.updateFolder(folderId, {
+      archived_at: null,
+      delete_scheduled_for: new Date().toISOString(),
+    });
+  }
+
+  async restoreFolder(folderId: string): Promise<CloudFolder> {
+    const [childFolders, childFiles] = await Promise.all([
+      this.listTrashedFolders(folderId),
+      this.listTrashedFiles(folderId),
+    ]);
+
+    for (const childFolder of childFolders) {
+      await this.restoreFolder(childFolder.id);
+    }
+
+    for (const childFile of childFiles) {
+      await this.restoreFile(childFile.id);
+    }
+
+    return this.updateFolder(folderId, {
+      archived_at: null,
+      delete_scheduled_for: null,
+    });
+  }
+
   async updateFolder(folderId: string, payload: UpdateCloudFolderDTO): Promise<CloudFolder> {
     const { data, error } = await supabase
       .from(this.foldersTable)
@@ -178,6 +224,7 @@ class CloudService {
       .order('original_name', { ascending: true });
 
     if (!includeArchived) query = query.is('archived_at', null);
+    query = query.is('delete_scheduled_for', null);
 
     const { data, error } = await query;
 
@@ -192,6 +239,7 @@ class CloudService {
       .order('original_name', { ascending: true });
 
     if (!includeArchived) query = query.is('archived_at', null);
+    query = query.is('delete_scheduled_for', null);
 
     const { data, error } = await query;
 
@@ -204,8 +252,44 @@ class CloudService {
       .from(this.filesTable)
       .select('*')
       .not('archived_at', 'is', null)
+      .is('delete_scheduled_for', null)
       .order('updated_at', { ascending: false });
 
+    if (error) throw new Error(error.message);
+    return (data as CloudFile[]) ?? [];
+  }
+
+  async listTrashedFolders(parentId?: string | null): Promise<CloudFolder[]> {
+    let query = supabase
+      .from(this.foldersTable)
+      .select('*')
+      .not('delete_scheduled_for', 'is', null)
+      .order('updated_at', { ascending: false });
+
+    if (parentId === undefined) {
+      const { data, error } = await query;
+      if (error) throw new Error(error.message);
+      return (data as CloudFolder[]) ?? [];
+    }
+
+    query = parentId ? query.eq('parent_id', parentId) : query.is('parent_id', null);
+    const { data, error } = await query;
+    if (error) throw new Error(error.message);
+    return (data as CloudFolder[]) ?? [];
+  }
+
+  async listTrashedFiles(folderId?: string): Promise<CloudFile[]> {
+    let query = supabase
+      .from(this.filesTable)
+      .select('*')
+      .not('delete_scheduled_for', 'is', null)
+      .order('updated_at', { ascending: false });
+
+    if (folderId) {
+      query = query.eq('folder_id', folderId);
+    }
+
+    const { data, error } = await query;
     if (error) throw new Error(error.message);
     return (data as CloudFile[]) ?? [];
   }
@@ -265,6 +349,21 @@ class CloudService {
       .update({
         folder_id: targetFolderId,
         client_id: targetClientId || null,
+      })
+      .eq('id', fileId)
+      .select('*')
+      .single();
+
+    if (error) throw new Error(error.message);
+    return data as CloudFile;
+  }
+
+  async trashFile(fileId: string): Promise<CloudFile> {
+    const { data, error } = await supabase
+      .from(this.filesTable)
+      .update({
+        archived_at: null,
+        delete_scheduled_for: new Date().toISOString(),
       })
       .eq('id', fileId)
       .select('*')
