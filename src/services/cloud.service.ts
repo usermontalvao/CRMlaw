@@ -34,16 +34,7 @@ class CloudService {
   private sharesTable = 'cloud_folder_shares';
 
   private async ensureBucket() {
-    try {
-      const { data } = await supabase.storage.getBucket(CLOUD_BUCKET);
-      if (data) return;
-      await supabase.storage.createBucket(CLOUD_BUCKET, {
-        public: false,
-        fileSizeLimit: 1024 * 1024 * 200,
-      });
-    } catch (error) {
-      console.warn('Bucket cloud-files check/creation skipped:', error);
-    }
+    return;
   }
 
   async hashPassword(password: string) {

@@ -2544,7 +2544,7 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
     setAuditLog([]);
     setAuditLogLoading(true);
 
-    const bucketsToTry = ['document-templates', 'generated-documents', 'signatures'];
+    const bucketsToTry = ['document-templates', 'generated-documents', 'signatures', 'cloud-files'];
 
     const tryGetSignedUrl = async (path: string): Promise<string | null> => {
       if (!path) return null;

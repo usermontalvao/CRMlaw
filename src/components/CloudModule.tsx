@@ -67,6 +67,30 @@ const isDocxFile = (mime?: string | null, name?: string) => {
   return mime === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' || lower.endsWith('.docx');
 };
 
+type CloudDragEntry = {
+  isDirectory: boolean;
+  isFile: boolean;
+  fullPath?: string;
+};
+
+type CloudDragFileEntry = CloudDragEntry & {
+  file: (callback: (file: File) => void, errorCallback?: (error: DOMException) => void) => void;
+};
+
+type CloudDragDirectoryEntry = CloudDragEntry & {
+  createReader: () => {
+    readEntries: (
+      successCallback: (entries: CloudDragEntry[]) => void,
+      errorCallback?: (error: DOMException) => void,
+    ) => void;
+  };
+};
+
+type CloudDroppedFile = {
+  file: File;
+  relativePath: string;
+};
+
 const isTextPreviewFile = (mime?: string | null, name?: string) => {
   const lower = String(name || '').toLowerCase();
   return Boolean(
@@ -821,18 +845,11 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
     }
   };
 
-  const handleUploadFiles = async (list: FileList | File[]) => {
-    if (!currentFolderId) {
-      toast.info('Cloud', 'Crie ou selecione uma pasta antes de enviar arquivos.');
-      return;
-    }
-
-    const filesToUpload = Array.from(list);
+  const uploadFilesToFolder = async (folderId: string, filesToUpload: File[], clientId?: string | null) => {
     if (filesToUpload.length === 0) return;
-
     try {
       setUploading(true);
-      await cloudService.uploadFiles(currentFolderId, filesToUpload, currentFolder?.client_id || null);
+      await cloudService.uploadFiles(folderId, filesToUpload, clientId || null);
       toast.success('Cloud', `${filesToUpload.length} arquivo(s) enviado(s).`);
       await loadData();
     } catch (error: any) {
@@ -843,6 +860,201 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
       if (fileInputRef.current) fileInputRef.current.value = '';
     }
   };
+
+  const handleUploadFiles = async (list: FileList | File[]) => {
+    if (!currentFolderId) {
+      toast.info('Cloud', 'Crie ou selecione uma pasta antes de enviar arquivos.');
+      return;
+    }
+
+    const filesToUpload = Array.from(list);
+    if (filesToUpload.length === 0) return;
+    await uploadFilesToFolder(currentFolderId, filesToUpload, currentFolder?.client_id || null);
+  };
+
+  const readFileEntry = useCallback((entry: CloudDragFileEntry, pathSegments: string[]) => {
+    return new Promise<CloudDroppedFile>((resolve, reject) => {
+      entry.file(
+        (file) => {
+          const normalizedSegments = pathSegments.filter(Boolean);
+          const relativePath = [...normalizedSegments, file.name].join('/');
+          resolve({ file, relativePath });
+        },
+        reject,
+      );
+    });
+  }, []);
+
+  const readDirectoryEntries = useCallback((directoryEntry: CloudDragDirectoryEntry) => {
+    return new Promise<CloudDragEntry[]>((resolve, reject) => {
+      const reader = directoryEntry.createReader();
+      const entries: CloudDragEntry[] = [];
+
+      const readBatch = () => {
+        reader.readEntries(
+          (batch) => {
+            if (!batch.length) {
+              resolve(entries);
+              return;
+            }
+
+            entries.push(...batch);
+            readBatch();
+          },
+          reject,
+        );
+      };
+
+      readBatch();
+    });
+  }, []);
+
+  const collectFilesFromEntry = useCallback(async (entry: CloudDragEntry, pathSegments: string[] = []): Promise<CloudDroppedFile[]> => {
+    if (entry.isFile) {
+      return [await readFileEntry(entry as CloudDragFileEntry, pathSegments)];
+    }
+
+    if (entry.isDirectory) {
+      const directoryName = String(entry.fullPath || '').split('/').filter(Boolean).pop() || '';
+      const nextPathSegments = directoryName ? [...pathSegments, directoryName] : pathSegments;
+      const childEntries = await readDirectoryEntries(entry as CloudDragDirectoryEntry);
+      const nestedFiles = await Promise.all(childEntries.map((childEntry) => collectFilesFromEntry(childEntry, nextPathSegments)));
+      return nestedFiles.flat();
+    }
+
+    return [];
+  }, [readDirectoryEntries, readFileEntry]);
+
+  const extractFilesFromDrop = useCallback(async (event: React.DragEvent<HTMLDivElement>) => {
+    const items = Array.from(event.dataTransfer.items || []);
+    const itemEntries = items
+      .map((item) => {
+        const dragItem = item as DataTransferItem & { webkitGetAsEntry?: () => CloudDragEntry | null };
+        return typeof dragItem.webkitGetAsEntry === 'function' ? dragItem.webkitGetAsEntry() : null;
+      })
+      .filter((entry): entry is CloudDragEntry => Boolean(entry));
+
+    if (itemEntries.length > 0) {
+      const groupedFiles = await Promise.all(itemEntries.map((entry) => collectFilesFromEntry(entry)));
+      const files = groupedFiles.flat();
+      if (files.length > 0) return files;
+    }
+
+    return Array.from(event.dataTransfer.files || []).map((file) => ({ file, relativePath: file.name }));
+  }, [collectFilesFromEntry]);
+
+  const ensureFolderPath = useCallback(async (
+    pathSegments: string[],
+    options: { parentId: string | null; clientId: string | null; cache: Map<string, CloudFolder> },
+  ) => {
+    let parentId = options.parentId;
+    let currentFolderResult: CloudFolder | null = null;
+
+    for (const segment of pathSegments) {
+      const trimmedSegment = segment.trim();
+      if (!trimmedSegment) continue;
+
+      const cacheKey = `${parentId ?? 'root'}::${trimmedSegment.toLowerCase()}`;
+      const cachedFolder = options.cache.get(cacheKey)
+        ?? allFolders.find((folder) => (folder.parent_id ?? null) === parentId && folder.name.trim().toLowerCase() === trimmedSegment.toLowerCase())
+        ?? null;
+
+      if (cachedFolder) {
+        currentFolderResult = cachedFolder;
+        parentId = cachedFolder.id;
+        options.cache.set(cacheKey, cachedFolder);
+        continue;
+      }
+
+      const createdFolder = await cloudService.createFolder({
+        name: trimmedSegment,
+        parent_id: parentId,
+        client_id: options.clientId || null,
+      });
+
+      options.cache.set(cacheKey, createdFolder);
+      currentFolderResult = createdFolder;
+      parentId = createdFolder.id;
+    }
+
+    return currentFolderResult;
+  }, [allFolders]);
+
+  const uploadDroppedFiles = useCallback(async (droppedFiles: CloudDroppedFile[]) => {
+    const pendingByFolder = new Map<string, { clientId: string | null; files: File[] }>();
+    const folderCache = new Map<string, CloudFolder>();
+    let skippedRootFiles = 0;
+
+    for (const droppedFile of droppedFiles) {
+      const segments = droppedFile.relativePath.split('/').filter(Boolean);
+      const folderSegments = segments.slice(0, -1);
+
+      let targetFolderId = currentFolderId;
+      let targetClientId = currentFolder?.client_id || null;
+
+      if (folderSegments.length > 0) {
+        const ensuredFolder = await ensureFolderPath(folderSegments, {
+          parentId: currentFolderId ?? null,
+          clientId: currentFolder?.client_id || null,
+          cache: folderCache,
+        });
+
+        targetFolderId = ensuredFolder?.id ?? null;
+        targetClientId = ensuredFolder?.client_id || currentFolder?.client_id || null;
+      }
+
+      if (!targetFolderId) {
+        skippedRootFiles += 1;
+        continue;
+      }
+
+      const existing = pendingByFolder.get(targetFolderId) ?? { clientId: targetClientId, files: [] };
+      existing.files.push(droppedFile.file);
+      existing.clientId = existing.clientId || targetClientId;
+      pendingByFolder.set(targetFolderId, existing);
+    }
+
+    if (pendingByFolder.size === 0) {
+      if (skippedRootFiles > 0) {
+        toast.info('Cloud', 'Arquivos soltos ainda precisam de uma pasta selecionada. Para arrastar na raiz, use uma pasta/diretório.');
+      } else {
+        toast.info('Cloud', 'Nenhum arquivo encontrado para envio.');
+      }
+      return;
+    }
+
+    try {
+      setUploading(true);
+      let uploadedCount = 0;
+
+      for (const [folderId, batch] of pendingByFolder.entries()) {
+        await cloudService.uploadFiles(folderId, batch.files, batch.clientId);
+        uploadedCount += batch.files.length;
+      }
+
+      await loadData();
+      toast.success('Cloud', `${uploadedCount} arquivo(s) enviado(s).`);
+
+      if (skippedRootFiles > 0) {
+        toast.info('Cloud', `${skippedRootFiles} arquivo(s) solto(s) na raiz foram ignorados por não pertencerem a uma pasta.`);
+      }
+    } catch (error: any) {
+      toast.error('Cloud', error?.message || 'Erro no upload.');
+    } finally {
+      setUploading(false);
+      setDragActive(false);
+      if (fileInputRef.current) fileInputRef.current.value = '';
+    }
+  }, [cloudService, currentFolder, currentFolderId, ensureFolderPath, loadData, toast]);
+
+  const handleDropUpload = useCallback(async (event: React.DragEvent<HTMLDivElement>) => {
+    try {
+      const files = await extractFilesFromDrop(event);
+      await uploadDroppedFiles(files);
+    } catch (error: any) {
+      toast.error('Cloud', error?.message || 'Não foi possível ler os arquivos da pasta arrastada.');
+    }
+  }, [extractFilesFromDrop, toast, uploadDroppedFiles]);
 
   const uploadClipboardImage = useCallback(async (blob: Blob) => {
     if (!currentFolderId) {
@@ -2185,7 +2397,7 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
             onDrop={(e) => {
               e.preventDefault();
               setDragActive(false);
-              if (e.dataTransfer.files) handleUploadFiles(e.dataTransfer.files);
+              handleDropUpload(e);
             }}
             onClick={(e) => {
               const target = getEventTargetElement(e.target);

@@ -1,5 +1,27 @@
 # Changelog
   
+  ## 1.9.770
+  - **Cloud/Upload**: Corrigida a leitura do caminho no arraste de pasta para preservar o nome da pasta raiz e recriar a estrutura completa no Cloud, inclusive quando o drop acontece em `/cloud`.
+
+  ## 1.9.769
+  - **Cloud/Upload**: Ajustada a tipagem do suporte a arrastar pasta para manter a leitura recursiva de diretórios compatível com os navegadores sem depender de tipos DOM ausentes no build.
+
+  ## 1.9.768
+  - **Cloud/Upload**: O Cloud agora aceita arrastar pasta com arquivos, lendo os itens internos do diretório e enviando tudo pelo mesmo fluxo de upload já usado para arquivos avulsos.
+
+  ## 1.9.767
+  - **Cloud/Upload**: O arraste de pasta no Cloud agora é interceptado e rejeitado com mensagem clara, evitando tentativas inválidas de upload que geravam erro ao tratar diretório como arquivo.
+
+  ## 1.9.766
+  - **Service Worker**: Incrementada versão do cache para forçar limpeza de URLs antigas que causavam `ERR_ACCESS_DENIED` em arquivos do Cloud.
+
+  ## 1.9.765
+  - **Assinaturas/Cloud**: Ajustada a busca de URLs assinadas no módulo de assinaturas para também tentar o bucket `cloud-files`, evitando `ERR_ACCESS_DENIED` ao abrir selfie e assinatura salvas no Cloud.
+
+  ## 1.9.764
+  - **Cloud/Storage**: Removidas novamente as chamadas administrativas de bucket no frontend do Cloud, eliminando os erros `400` em `storage/v1/bucket/cloud-files`.
+  - **Assinaturas**: Corrigido o update de solicitações para não falhar com `406` ao coercionar o retorno para um único objeto JSON.
+
   ## 1.9.763
   - **Peticionamento/Performance**: A abertura de documentos do Cloud no editor agora inicia em paralelo ao carregamento do módulo, reduzindo o tempo percebido até o DOCX começar a abrir.
 

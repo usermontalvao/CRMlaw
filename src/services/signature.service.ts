@@ -290,10 +290,21 @@ class SignatureService {
       .update(payload)
       .eq('id', id)
       .select()
-      .single();
+      .maybeSingle();
 
     if (error) throw new Error(error.message);
-    return data;
+
+    if (data) return data;
+
+    const { data: refreshed, error: refreshError } = await supabase
+      .from(this.requestsTable)
+      .select('*')
+      .eq('id', id)
+      .maybeSingle();
+
+    if (refreshError) throw new Error(refreshError.message);
+    if (!refreshed) throw new Error('Solicitação de assinatura não encontrada após atualização.');
+    return refreshed;
   }
 
   async cancelRequest(id: string): Promise<void> {

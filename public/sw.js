@@ -1,10 +1,10 @@
 // Service Worker para Push Notifications
 
-const CACHE_NAME = 'crm-cache-v5'; // Incrementado para forçar atualização
+const CACHE_NAME = 'crm-cache-v6'; // Incrementado para forçar atualização
 
 // Install event
 self.addEventListener('install', (event) => {
-  console.log('Service Worker instalado - v5');
+  console.log('Service Worker instalado - v6');
   
   // Pré-cache dos arquivos essenciais
   event.waitUntil(
@@ -27,7 +27,7 @@ self.addEventListener('install', (event) => {
 
 // Activate event
 self.addEventListener('activate', (event) => {
-  console.log('Service Worker ativado - v5');
+  console.log('Service Worker ativado - v6');
   event.waitUntil(
     caches.keys().then((cacheNames) => {
       return Promise.all(

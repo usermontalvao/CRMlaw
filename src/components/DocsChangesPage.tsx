@@ -47,6 +47,13 @@ import { matchesNormalizedSearch } from '../utils/search';
    ============================================================================ */
 
 const VERSION_CODENAMES: Record<string, { name: string; emoji: string }> = {
+  '1.9.770': { name: 'Café Raiz Preservada', emoji: '🌳' },
+  '1.9.769': { name: 'Café Pasta Compatível', emoji: '🧩' },
+  '1.9.768': { name: 'Café Pasta Arrastável', emoji: '🗂️' },
+  '1.9.767': { name: 'Café Pasta Segura', emoji: '📁' },
+  '1.9.766': { name: 'Café Cache Limpo', emoji: '🧹' },
+  '1.9.765': { name: 'Café Assinatura em Nuvem', emoji: '✍️' },
+  '1.9.764': { name: 'Café Cloud Estável', emoji: '☁️' },
   '1.9.763': { name: 'Café DOCX Turbo', emoji: '⚡' },
   '1.9.520': { name: 'Café Modal Laranja', emoji: '🟠' },
   '1.9.519': { name: 'Café Tempo Preservado', emoji: '⏰' },
@@ -589,6 +596,135 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
 };
 
 const releases: ReleaseNote[] = [
+  {
+    version: '1.9.770',
+    date: '09/03/2026',
+    summary: 'Cloud: o nome da pasta raiz arrastada passou a ser preservado ao recriar a estrutura no upload por diretório.',
+    modules: [
+      {
+        moduleId: 'cloud',
+        changes: [
+          {
+            type: 'fix',
+            title: 'Pasta raiz arrastada agora também é criada no Cloud',
+            description: 'A coleta recursiva dos arquivos deixou de depender apenas do `fullPath` do navegador e passou a carregar explicitamente os segmentos da pasta raiz, garantindo a criação da pasta principal e das subpastas ao arrastar um diretório para a raiz do Cloud.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.769',
+    date: '09/03/2026',
+    summary: 'Cloud: suporte a pasta arrastada ficou compatível com a tipagem do navegador e build do projeto.',
+    modules: [
+      {
+        moduleId: 'cloud',
+        changes: [
+          {
+            type: 'fix',
+            title: 'Leitura de diretórios compatível com o build TypeScript',
+            description: 'A leitura recursiva de diretórios no drag-and-drop do Cloud passou a usar tipagem compatível com APIs específicas do navegador, mantendo o suporte a pastas inclusive na raiz sem depender de tipos DOM que podem não existir no ambiente de build.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.768',
+    date: '09/03/2026',
+    summary: 'Cloud: arrastar pasta com arquivos passou a funcionar usando leitura recursiva do diretório no navegador.',
+    modules: [
+      {
+        moduleId: 'cloud',
+        changes: [
+          {
+            type: 'feature',
+            title: 'Upload por arraste agora aceita diretórios',
+            description: 'Quando uma pasta é arrastada para o Cloud, o módulo agora percorre os arquivos internos do diretório e reaproveita o fluxo normal de upload, sem disparar erro por tentar tratar a pasta como arquivo único.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.767',
+    date: '09/03/2026',
+    summary: 'Cloud: arraste de pasta passou a ser rejeitado explicitamente para evitar uploads inválidos.',
+    modules: [
+      {
+        moduleId: 'cloud',
+        changes: [
+          {
+            type: 'fix',
+            title: 'Validação explícita no drop de diretórios',
+            description: 'Quando uma pasta inteira é arrastada para o Cloud, o sistema agora bloqueia o envio com mensagem orientativa em vez de tentar tratar o diretório como arquivo e disparar erros de acesso inválido.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.766',
+    date: '09/03/2026',
+    summary: 'Service Worker: cache incrementado para limpar URLs antigas do Cloud.',
+    modules: [
+      {
+        moduleId: 'sistema',
+        changes: [
+          {
+            type: 'fix',
+            title: 'Cache do Service Worker atualizado para v6',
+            description: 'A versão do cache foi incrementada para forçar a limpeza de URLs antigas que causavam `ERR_ACCESS_DENIED` ao acessar arquivos do Cloud.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.765',
+    date: '09/03/2026',
+    summary: 'Assinaturas: o módulo passou a tentar também o bucket cloud-files ao gerar URLs temporárias para selfie e assinatura.',
+    modules: [
+      {
+        moduleId: 'assinaturas',
+        changes: [
+          {
+            type: 'fix',
+            title: 'Pré-visualização de selfie e assinatura agora busca no bucket cloud-files',
+            description: 'O módulo de assinaturas passou a incluir o bucket `cloud-files` na resolução de URLs assinadas, evitando erros de acesso negado quando os arquivos do signatário foram armazenados fora dos buckets tradicionais do fluxo de assinatura.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.764',
+    date: '09/03/2026',
+    summary: 'Cloud e Assinaturas: removidos erros de bucket no frontend e ajustado o update de solicitações para não falhar com 406.',
+    modules: [
+      {
+        moduleId: 'cloud',
+        changes: [
+          {
+            type: 'fix',
+            title: 'Frontend não tenta mais administrar bucket do Storage',
+            description: 'O Cloud voltou a ignorar checagem/criação de bucket no navegador, eliminando os erros `400` em `storage/v1/bucket/cloud-files` causados por chamadas administrativas sem permissão.',
+          },
+        ],
+      },
+      {
+        moduleId: 'assinaturas',
+        changes: [
+          {
+            type: 'fix',
+            title: 'Atualização de solicitação tolera retorno vazio do Supabase',
+            description: 'O serviço de assinaturas deixou de usar coerção rígida para um único objeto no update da solicitação, evitando o erro `406` quando o Supabase não retorna exatamente uma linha no corpo da atualização.',
+          },
+        ],
+      },
+    ],
+  },
   {
     version: '1.9.763',
     date: '09/03/2026',
