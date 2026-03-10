@@ -68,6 +68,7 @@ export interface SyncfusionEditorRef {
   convertSfdtToFragment: (sfdt: string) => Promise<string>;
   // Load DOCX file from ArrayBuffer
   loadDocx: (arrayBuffer: ArrayBuffer, fileName?: string) => Promise<void>;
+  loadDocxViaImport: (arrayBuffer: ArrayBuffer, fileName?: string) => Promise<void>;
   // Export as DOCX blob
   exportDocx: (fileName?: string) => Promise<Blob>;
   // Export as PDF blob
@@ -284,9 +285,32 @@ const SyncfusionEditor = forwardRef<SyncfusionEditorRef, SyncfusionEditorProps>(
         });
       },
 
+      loadDocxViaImport: async (arrayBuffer: ArrayBuffer, fileName = 'document.docx') => {
+        if (!arrayBuffer) return;
+
+        const openDocx = async () => {
+          const editor = containerRef.current?.documentEditor;
+          if (!editor) return;
+          applySyncfusionServiceUrl(editor);
+          const blob = new Blob([arrayBuffer], { type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' });
+          const file = new File([blob], fileName, { type: blob.type });
+
+          await new Promise<void>((resolve, reject) => {
+            try {
+              editor.open(file);
+              window.setTimeout(() => resolve(), 150);
+            } catch (error) {
+              reject(error);
+            }
+          });
+        };
+
+        await openDocx();
+      },
+
       exportDocx: async (fileName = 'documento.docx') => {
         const editor = containerRef.current?.documentEditor;
-        if (!editor) throw new Error('Editor não inicializado');
+        if (!editor) throw new Error('Editor não disponível');
 
         return new Promise<Blob>((resolve, reject) => {
           try {

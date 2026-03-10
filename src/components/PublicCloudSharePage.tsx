@@ -18,6 +18,7 @@ interface PublicCloudSharePageProps {
 const PublicCloudSharePage: React.FC<PublicCloudSharePageProps> = ({ token }) => {
   const editorRef = useRef<SyncfusionEditorRef | null>(null);
   const [password, setPassword] = useState('');
+  const [requiresPassword, setRequiresPassword] = useState<boolean | null>(null);
   const [authorized, setAuthorized] = useState(false);
   const [share, setShare] = useState<CloudFolderShare | null>(null);
   const [rootFolder, setRootFolder] = useState<CloudFolder | null>(null);
@@ -44,14 +45,17 @@ const PublicCloudSharePage: React.FC<PublicCloudSharePageProps> = ({ token }) =>
   }, [allFolders, currentFolder]);
 
   const loadFolderContent = async (folderId: string) => {
-    const [foldersData, filesData, allFoldersData] = await Promise.all([
+    const [foldersData, filesData] = await Promise.all([
       cloudService.listPublicFolders(folderId),
       cloudService.listPublicFiles(folderId),
-      cloudService.listAllFolders(),
     ]);
     setFolders(foldersData);
     setFiles(filesData);
-    setAllFolders(allFoldersData);
+    setAllFolders((prev) => {
+      const nextMap = new Map(prev.map((item) => [item.id, item]));
+      foldersData.forEach((item) => nextMap.set(item.id, item));
+      return Array.from(nextMap.values());
+    });
   };
 
   const handleAccess = async () => {
@@ -60,8 +64,10 @@ const PublicCloudSharePage: React.FC<PublicCloudSharePageProps> = ({ token }) =>
       setError(null);
       const result = await cloudService.resolvePublicShare(token, password);
       setShare(result.share);
+      setRequiresPassword(Boolean(result.share.password_hash));
       setRootFolder(result.folder);
       setCurrentFolderId(result.folder.id);
+      setAllFolders([result.folder]);
       await loadFolderContent(result.folder.id);
       setAuthorized(true);
     } catch (err: any) {
@@ -72,8 +78,40 @@ const PublicCloudSharePage: React.FC<PublicCloudSharePageProps> = ({ token }) =>
   };
 
   useEffect(() => {
+    let active = true;
+
+    const bootstrapShare = async () => {
+      try {
+        setLoading(true);
+        setError(null);
+        const info = await cloudService.getPublicShareInfo(token);
+        if (!active) return;
+        setShare(info.share);
+        setRequiresPassword(info.requiresPassword);
+        if (!info.requiresPassword) {
+          await handleAccess();
+        }
+      } catch (err: any) {
+        if (active) {
+          setError(err.message || 'Não foi possível acessar a pasta.');
+        }
+      } finally {
+        if (active) {
+          setLoading(false);
+        }
+      }
+    };
+
+    void bootstrapShare();
+
+    return () => {
+      active = false;
+    };
+  }, [token]);
+
+  useEffect(() => {
     if (authorized && currentFolderId) {
-      loadFolderContent(currentFolderId).catch((err) => setError(err.message || 'Erro ao carregar conteúdo.'));
+      void loadFolderContent(currentFolderId).catch((err) => setError(err.message || 'Erro ao carregar conteúdo.'));
     }
   }, [authorized, currentFolderId]);
 
@@ -116,15 +154,21 @@ const PublicCloudSharePage: React.FC<PublicCloudSharePageProps> = ({ token }) =>
               <p className="text-sm text-slate-400">Acesse os arquivos públicos desta pasta.</p>
             </div>
           </div>
-          <div>
-            <label className="block text-sm font-medium text-slate-300 mb-1">Senha</label>
-            <div className="relative">
-              <Lock className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
-              <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} className="w-full pl-9 pr-3 py-2.5 rounded-xl bg-slate-800 border border-slate-700 text-white text-sm" placeholder="Digite a senha se existir" />
+          {requiresPassword ? (
+            <div>
+              <label className="block text-sm font-medium text-slate-300 mb-1">Senha</label>
+              <div className="relative">
+                <Lock className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
+                <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} className="w-full pl-9 pr-3 py-2.5 rounded-xl bg-slate-800 border border-slate-700 text-white text-sm" placeholder="Digite a senha da pasta" />
+              </div>
             </div>
-          </div>
+          ) : requiresPassword === false ? (
+            <div className="rounded-2xl border border-emerald-800 bg-emerald-950/40 px-4 py-3 text-sm text-emerald-300">
+              Esta pasta não exige senha. O acesso será liberado automaticamente.
+            </div>
+          ) : null}
           {error && <p className="text-sm text-red-400">{error}</p>}
-          <button onClick={handleAccess} disabled={loading} className="w-full px-4 py-3 rounded-xl bg-sky-600 hover:bg-sky-700 text-white font-medium inline-flex items-center justify-center gap-2 disabled:opacity-50">
+          <button onClick={handleAccess} disabled={loading || requiresPassword === false} className="w-full px-4 py-3 rounded-xl bg-sky-600 hover:bg-sky-700 text-white font-medium inline-flex items-center justify-center gap-2 disabled:opacity-50">
             {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Cloud className="w-4 h-4" />}Acessar pasta
           </button>
         </div>

@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { AnimatePresence, motion } from 'framer-motion';
 import JSZip from 'jszip';
 import { DndContext, PointerSensor, closestCenter, useSensor, useSensors, type DragEndEvent } from '@dnd-kit/core';
 import { SortableContext, arrayMove, rectSortingStrategy, useSortable } from '@dnd-kit/sortable';
@@ -17,6 +18,7 @@ import {
   Folder,
   FolderOpen,
   FolderPlus,
+  Filter,
   HardDrive,
   Home,
   ImageIcon,
@@ -30,6 +32,7 @@ import {
   MoreHorizontal,
   Pin,
   GripVertical,
+  CheckCircle2,
   RotateCcw,
   RotateCw,
   Scissors,
@@ -48,7 +51,7 @@ import { ClientSearchSelect } from './ClientSearchSelect';
 import SyncfusionEditor, { type SyncfusionEditorRef } from './SyncfusionEditor';
 import { events, SYSTEM_EVENTS } from '../utils/events';
 import type { Client } from '../types/client.types';
-import type { CloudFile, CloudFolder, CloudFolderShare } from '../types/cloud.types';
+import type { CloudActivityLog, CloudFile, CloudFolder, CloudFolderShare } from '../types/cloud.types';
 
 pdfjs.GlobalWorkerOptions.workerSrc = `//unpkg.com/pdfjs-dist@${pdfjs.version}/build/pdf.worker.min.mjs`;
 
@@ -68,6 +71,7 @@ const isDocxFile = (mime?: string | null, name?: string) => {
 };
 
 type CloudDragEntry = {
+  name?: string;
   isDirectory: boolean;
   isFile: boolean;
   fullPath?: string;
@@ -89,6 +93,22 @@ type CloudDragDirectoryEntry = CloudDragEntry & {
 type CloudDroppedFile = {
   file: File;
   relativePath: string;
+};
+
+type UploadQueueStatus = 'pending' | 'uploading' | 'completed' | 'failed';
+
+type UploadQueueItem = {
+  id: string;
+  file: File;
+  fileName: string;
+  fileSize: number;
+  relativePath: string;
+  folderId: string;
+  folderLabel: string;
+  clientId: string | null;
+  status: UploadQueueStatus;
+  progress: number;
+  error: string | null;
 };
 
 const isTextPreviewFile = (mime?: string | null, name?: string) => {
@@ -124,8 +144,14 @@ const formatDateTime = (value?: string | null) => {
   });
 };
 
+const getAutoUploadFolderName = () => {
+  const now = new Date();
+  const pad = (value: number) => String(value).padStart(2, '0');
+  return `Upload ${pad(now.getDate())}-${pad(now.getMonth() + 1)}-${now.getFullYear()} ${pad(now.getHours())}-${pad(now.getMinutes())}`;
+};
+
 const formatArchiveDeletionLabel = (value?: string | null) => {
-  if (!value) return 'Sem exclusão agendada';
+  if (!value) return 'Sem exclusão automática';
   const targetDate = new Date(value);
   if (Number.isNaN(targetDate.getTime())) return value;
   const diffMs = targetDate.getTime() - Date.now();
@@ -173,6 +199,29 @@ const DEFAULT_FOLDER_LABELS: FolderLabelConfig[] = [
 const CLOUD_FOLDER_LABELS_STORAGE_KEY = 'cloud-folder-labels-v1';
 const CLOUD_FOLDER_LABEL_ASSIGNMENTS_STORAGE_KEY = 'cloud-folder-label-assignments-v1';
 const CLOUD_VIEW_MODE_STORAGE_KEY = 'cloud-view-mode-v1';
+const CLOUD_FAVORITE_FOLDER_IDS_STORAGE_KEY = 'cloud-favorite-folder-ids-v1';
+const CLOUD_ARCHIVED_FOLDER_ID = '__cloud_archived__';
+const CLOUD_TRASH_FOLDER_ID = '__cloud_trash__';
+
+type CloudSearchFilters = {
+  extension: string;
+  clientId: string;
+  labelId: string;
+  dateFrom: string;
+  dateTo: string;
+  sizeMinKb: string;
+  sizeMaxKb: string;
+};
+
+const EMPTY_CLOUD_SEARCH_FILTERS: CloudSearchFilters = {
+  extension: '',
+  clientId: '',
+  labelId: '',
+  dateFrom: '',
+  dateTo: '',
+  sizeMinKb: '',
+  sizeMaxKb: '',
+};
 
 const normalizeLabelId = (value: string) =>
   String(value || '')
@@ -316,9 +365,71 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
   const [renameModalOpen, setRenameModalOpen] = useState(false);
   const [renameTarget, setRenameTarget] = useState<{ type: 'file' | 'folder'; id: string; currentName: string } | null>(null);
   const [renameValue, setRenameValue] = useState('');
+  const [uploadQueueItems, setUploadQueueItems] = useState<UploadQueueItem[]>([]);
+  const uploadQueueItemsRef = useRef<UploadQueueItem[]>([]);
+  const [archivedFiles, setArchivedFiles] = useState<CloudFile[]>([]);
+  const [favoriteFolderIds, setFavoriteFolderIds] = useState<string[]>([]);
+  const [showAdvancedFilters, setShowAdvancedFilters] = useState(false);
+  const [searchFilters, setSearchFilters] = useState<CloudSearchFilters>(EMPTY_CLOUD_SEARCH_FILTERS);
+  const [bulkRenameModalOpen, setBulkRenameModalOpen] = useState(false);
+  const [bulkRenamePrefix, setBulkRenamePrefix] = useState('');
+  const [bulkRenameSuffix, setBulkRenameSuffix] = useState('');
+  const [bulkRenameSearch, setBulkRenameSearch] = useState('');
+  const [bulkRenameReplace, setBulkRenameReplace] = useState('');
+  const [bulkMoveModalOpen, setBulkMoveModalOpen] = useState(false);
+  const [bulkMoveTargetFolderId, setBulkMoveTargetFolderId] = useState('');
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [deleteModalState, setDeleteModalState] = useState<{
+    open: boolean;
+    title: string;
+    kind: 'file' | 'folder';
+    stage: 'processing' | 'success' | 'error';
+    error: string | null;
+  }>({
+    open: false,
+    title: '',
+    kind: 'file',
+    stage: 'processing',
+    error: null,
+  });
+  const uploadModalAutoCloseRef = useRef<number | null>(null);
+  const deleteModalAutoCloseRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    uploadQueueItemsRef.current = uploadQueueItems;
+  }, [uploadQueueItems]);
+
+  useEffect(() => {
+    return () => {
+      if (uploadModalAutoCloseRef.current) {
+        window.clearTimeout(uploadModalAutoCloseRef.current);
+        uploadModalAutoCloseRef.current = null;
+      }
+      if (deleteModalAutoCloseRef.current) {
+        window.clearTimeout(deleteModalAutoCloseRef.current);
+        deleteModalAutoCloseRef.current = null;
+      }
+    };
+  }, []);
+
+  const hasActiveAdvancedFilters = useMemo(() => {
+    return Boolean(
+      searchFilters.extension
+      || searchFilters.clientId
+      || searchFilters.labelId
+      || searchFilters.dateFrom
+      || searchFilters.dateTo
+      || searchFilters.sizeMinKb
+      || searchFilters.sizeMaxKb,
+    );
+  }, [searchFilters]);
+
+  const hasGlobalSearch = useMemo(() => Boolean(searchTerm.trim() || hasActiveAdvancedFilters), [hasActiveAdvancedFilters, searchTerm]);
+  const isArchivedView = currentFolderId === CLOUD_ARCHIVED_FOLDER_ID;
+  const isTrashView = currentFolderId === CLOUD_TRASH_FOLDER_ID;
 
   const currentFolder = useMemo(
-    () => (currentFolderId ? allFolders.find((item) => item.id === currentFolderId) ?? null : null),
+    () => (currentFolderId && currentFolderId !== CLOUD_TRASH_FOLDER_ID && currentFolderId !== CLOUD_ARCHIVED_FOLDER_ID ? allFolders.find((item) => item.id === currentFolderId) ?? null : null),
     [allFolders, currentFolderId],
   );
 
@@ -337,6 +448,12 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
   }, [allFolders]);
 
   const breadcrumb = useMemo(() => {
+    if (isArchivedView) {
+      return [{ id: CLOUD_ARCHIVED_FOLDER_ID, name: 'Arquivado' } as CloudFolder];
+    }
+    if (isTrashView) {
+      return [{ id: CLOUD_TRASH_FOLDER_ID, name: 'Lixeira' } as CloudFolder];
+    }
     const items: CloudFolder[] = [];
     let cursor = currentFolder;
     while (cursor) {
@@ -344,7 +461,7 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
       cursor = cursor.parent_id ? allFolders.find((item) => item.id === cursor?.parent_id) ?? null : null;
     }
     return items;
-  }, [allFolders, currentFolder]);
+  }, [allFolders, currentFolder, isArchivedView, isTrashView]);
 
   const rootFolders = useMemo(() => folderChildrenMap.get(null) ?? [], [folderChildrenMap]);
 
@@ -379,9 +496,15 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
       .slice(0, 6);
   }, [allFolders]);
 
+  const favoriteFolders = useMemo(() => {
+    return favoriteFolderIds
+      .map((folderId) => allFolders.find((folder) => folder.id === folderId) ?? null)
+      .filter((folder): folder is CloudFolder => Boolean(folder));
+  }, [allFolders, favoriteFolderIds]);
+
   const currentClient = useMemo(
-    () => clients.find((item) => item.id === currentFolder?.client_id) ?? null,
-    [clients, currentFolder],
+    () => (isTrashView || isArchivedView ? null : clients.find((item) => item.id === currentFolder?.client_id) ?? null),
+    [clients, currentFolder, isArchivedView, isTrashView],
   );
 
   const selectedFile = useMemo(() => {
@@ -428,15 +551,35 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
     return clients.find((item) => item.id === clientId) ?? null;
   }, [clients, selectedFile, selectedFolder]);
 
+  const uploadQueueSummary = useMemo(() => {
+    const totalItems = uploadQueueItems.length;
+    const completedItems = uploadQueueItems.filter((item) => item.status === 'completed').length;
+    const failedItems = uploadQueueItems.filter((item) => item.status === 'failed').length;
+    const uploadingItems = uploadQueueItems.filter((item) => item.status === 'uploading').length;
+    const totalProgress = totalItems === 0
+      ? 0
+      : Math.round(uploadQueueItems.reduce((sum, item) => sum + item.progress, 0) / totalItems);
+
+    return {
+      totalItems,
+      completedItems,
+      failedItems,
+      uploadingItems,
+      totalProgress,
+    };
+  }, [uploadQueueItems]);
+
   const archivedFolders = useMemo(
     () => allFolders.filter((item) => Boolean(item.archived_at)).sort((a, b) => new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime()),
     [allFolders],
   );
 
   const breadcrumbLabel = useMemo(() => {
+    if (isArchivedView) return 'Cloud / Arquivado';
+    if (isTrashView) return 'Cloud / Lixeira';
     if (breadcrumb.length === 0) return 'Cloud / Raiz';
     return `Cloud / ${breadcrumb.map((item) => item.name).join(' / ')}`;
-  }, [breadcrumb]);
+  }, [breadcrumb, isArchivedView, isTrashView]);
 
   const getFolderLabel = useCallback(
     (folderId: string) => {
@@ -450,24 +593,35 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
     try {
       setLoading(true);
       const viewingArchivedFolder = currentFolder?.archived_at != null;
-      const [foldersData, filesData, allFoldersData, allFilesData, clientsData] = await Promise.all([
-        cloudService.listFolders(currentFolderId, viewingArchivedFolder),
-        currentFolderId ? cloudService.listFiles(currentFolderId) : Promise.resolve([]),
+      const archivedAllFiles = await cloudService.listAllFiles(true);
+      const [foldersData, filesData, allFoldersData, allFilesData, clientsData, archivedFilesData] = await Promise.all([
+        isTrashView || isArchivedView ? Promise.resolve([]) : cloudService.listFolders(currentFolderId, viewingArchivedFolder),
+        isTrashView || isArchivedView ? Promise.resolve([]) : currentFolderId ? cloudService.listFiles(currentFolderId) : Promise.resolve([]),
         cloudService.listAllFolders(true),
-        cloudService.listAllFiles(),
+        Promise.resolve(archivedAllFiles),
         clientService.listClients(),
+        cloudService.listArchivedFiles(),
       ]);
-      setFolders(foldersData);
-      setFiles(filesData);
       setAllFolders(allFoldersData);
       setAllFiles(allFilesData);
       setClients(clientsData);
+      setArchivedFiles(archivedFilesData);
+      if (isTrashView) {
+        setFolders(allFoldersData.filter((item) => Boolean(item.archived_at)).sort((a, b) => new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime()));
+        setFiles(archivedFilesData);
+      } else if (isArchivedView) {
+        setFolders(allFoldersData.filter((item) => Boolean(item.archived_at)).sort((a, b) => new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime()));
+        setFiles(archivedAllFiles.filter((item) => Boolean(item.archived_at)).sort((a, b) => new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime()));
+      } else {
+        setFolders(foldersData);
+        setFiles(filesData);
+      }
     } catch (error: any) {
       toast.error('Cloud', error.message || 'Erro ao carregar arquivos.');
     } finally {
       setLoading(false);
     }
-  }, [currentFolder?.archived_at, currentFolderId, toast]);
+  }, [currentFolder?.archived_at, currentFolderId, isArchivedView, isTrashView, toast]);
 
   useEffect(() => {
     loadData();
@@ -734,10 +888,27 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
   }, [viewMode]);
 
   useEffect(() => {
+    try {
+      const storedFavorites = window.localStorage.getItem(CLOUD_FAVORITE_FOLDER_IDS_STORAGE_KEY);
+      if (!storedFavorites) return;
+      const parsedFavorites = JSON.parse(storedFavorites);
+      if (Array.isArray(parsedFavorites)) {
+        setFavoriteFolderIds(parsedFavorites.filter((item): item is string => typeof item === 'string'));
+      }
+    } catch {
+      // ignore
+    }
+  }, []);
+
+  useEffect(() => {
+    window.localStorage.setItem(CLOUD_FAVORITE_FOLDER_IDS_STORAGE_KEY, JSON.stringify(favoriteFolderIds));
+  }, [favoriteFolderIds]);
+
+  useEffect(() => {
     if (viewMode !== 'cards') return;
 
     const term = searchTerm.trim().toLowerCase();
-    const previewFiles = files
+    const previewFiles = (hasGlobalSearch ? allFiles : files)
       .filter((file) => !term || file.original_name.toLowerCase().includes(term))
       .filter((file) => isImageFile(file.mime_type) || isPdfFile(file.mime_type, file.original_name));
     if (previewFiles.length === 0) {
@@ -770,19 +941,76 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
     return () => {
       cancelled = true;
     };
-  }, [files, searchTerm, viewMode]);
+  }, [allFiles, files, hasGlobalSearch, searchTerm, viewMode]);
 
   const filteredFolders = useMemo(() => {
-    if (!searchTerm.trim()) return folders;
-    const term = searchTerm.toLowerCase();
-    return folders.filter((item) => item.name.toLowerCase().includes(term));
-  }, [folders, searchTerm]);
+    const sourceFolders = hasGlobalSearch
+      ? allFolders.filter((item) => !item.archived_at)
+      : isArchivedView
+        ? folders.filter((item) => {
+            if (!item.archived_at) return false;
+            if (!item.parent_id) return true;
+            const parentFolder = allFolders.find((folder) => folder.id === item.parent_id) ?? null;
+            return !parentFolder?.archived_at;
+          })
+      : isTrashView
+        ? folders.filter((item) => Boolean(item.archived_at))
+        : folders;
+    const term = searchTerm.trim().toLowerCase();
+
+    return sourceFolders.filter((item) => {
+      const matchesTerm = !term || item.name.toLowerCase().includes(term);
+      const matchesClient = !searchFilters.clientId || (item.client_id || '') === searchFilters.clientId;
+      const matchesLabel = !searchFilters.labelId || folderLabelAssignments[item.id] === searchFilters.labelId;
+
+      const updatedAtTime = new Date(item.updated_at).getTime();
+      const fromTime = searchFilters.dateFrom ? new Date(`${searchFilters.dateFrom}T00:00:00`).getTime() : null;
+      const toTime = searchFilters.dateTo ? new Date(`${searchFilters.dateTo}T23:59:59`).getTime() : null;
+      const matchesDate = (!fromTime || updatedAtTime >= fromTime) && (!toTime || updatedAtTime <= toTime);
+
+      return matchesTerm && matchesClient && matchesLabel && matchesDate;
+    });
+  }, [allFolders, folderLabelAssignments, folders, hasGlobalSearch, isArchivedView, isTrashView, searchFilters, searchTerm]);
 
   const filteredFiles = useMemo(() => {
-    if (!searchTerm.trim()) return files;
-    const term = searchTerm.toLowerCase();
-    return files.filter((item) => item.original_name.toLowerCase().includes(term));
-  }, [files, searchTerm]);
+    const sourceFiles = hasGlobalSearch
+      ? allFiles.filter((item) => !item.archived_at)
+      : isArchivedView
+        ? files.filter((item) => {
+            if (!item.archived_at) return false;
+            const parentFolder = allFolders.find((folder) => folder.id === item.folder_id) ?? null;
+            return !parentFolder?.archived_at;
+          })
+        : files;
+    const term = searchTerm.trim().toLowerCase();
+
+    return sourceFiles.filter((item) => {
+      const parentFolder = allFolders.find((folder) => folder.id === item.folder_id) ?? null;
+      const folderPath = parentFolder ? [parentFolder.name] : [];
+      let cursor = parentFolder;
+      while (cursor?.parent_id) {
+        cursor = allFolders.find((folder) => folder.id === cursor?.parent_id) ?? null;
+        if (cursor) folderPath.unshift(cursor.name);
+      }
+
+      const matchesTerm = !term || [item.original_name, parentFolder?.name || '', folderPath.join(' / ')]
+        .some((value) => value.toLowerCase().includes(term));
+      const matchesExtension = !searchFilters.extension || (item.extension || '').toLowerCase() === searchFilters.extension.toLowerCase();
+      const matchesClient = !searchFilters.clientId || (item.client_id || '') === searchFilters.clientId;
+      const matchesLabel = !searchFilters.labelId || (parentFolder ? folderLabelAssignments[parentFolder.id] === searchFilters.labelId : false);
+
+      const updatedAtTime = new Date(item.updated_at).getTime();
+      const fromTime = searchFilters.dateFrom ? new Date(`${searchFilters.dateFrom}T00:00:00`).getTime() : null;
+      const toTime = searchFilters.dateTo ? new Date(`${searchFilters.dateTo}T23:59:59`).getTime() : null;
+      const matchesDate = (!fromTime || updatedAtTime >= fromTime) && (!toTime || updatedAtTime <= toTime);
+
+      const minSize = searchFilters.sizeMinKb ? Number(searchFilters.sizeMinKb) * 1024 : null;
+      const maxSize = searchFilters.sizeMaxKb ? Number(searchFilters.sizeMaxKb) * 1024 : null;
+      const matchesSize = (!minSize || item.file_size >= minSize) && (!maxSize || item.file_size <= maxSize);
+
+      return matchesTerm && matchesExtension && matchesClient && matchesLabel && matchesDate && matchesSize;
+    });
+  }, [allFiles, allFolders, files, folderLabelAssignments, hasGlobalSearch, searchFilters, searchTerm]);
 
   const explorerRows = useMemo(
     () => [
@@ -796,6 +1024,28 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
     () => explorerRows.map((row) => (row.kind === 'folder' ? `folder:${row.folder.id}` : `file:${row.file.id}`)),
     [explorerRows],
   );
+
+  const bulkMoveOptions = useMemo(() => {
+    const selectedFolderIds = new Set(selectedFolderKeys.map((key) => key.replace('folder:', '')));
+    const walk = (parentId: string | null, depth = 0): Array<{ id: string; label: string }> => {
+      const children = (folderChildrenMap.get(parentId) ?? [])
+        .filter((folder) => !selectedFolderIds.has(folder.id));
+
+      return children.flatMap((folder) => {
+        const prefix = depth === 0 ? '' : `${'— '.repeat(depth)}`;
+        return [
+          { id: folder.id, label: `${prefix}${folder.name}` },
+          ...walk(folder.id, depth + 1),
+        ];
+      });
+    };
+
+    return walk(null);
+  }, [folderChildrenMap, selectedFolderKeys]);
+
+  const availableExtensions = useMemo(() => {
+    return Array.from(new Set(allFiles.map((file) => (file.extension || '').toLowerCase()).filter(Boolean))).sort((a, b) => a.localeCompare(b, 'pt-BR'));
+  }, [allFiles]);
 
   const moveTargetOptions = useMemo(() => {
     const currentFolderIdToExclude = selectedFileToMove?.folder_id || null;
@@ -845,31 +1095,129 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
     }
   };
 
-  const uploadFilesToFolder = async (folderId: string, filesToUpload: File[], clientId?: string | null) => {
-    if (filesToUpload.length === 0) return;
+  const updateUploadQueueItem = useCallback((itemId: string, updater: (item: UploadQueueItem) => UploadQueueItem) => {
+    setUploadQueueItems((prev) => prev.map((item) => (item.id === itemId ? updater(item) : item)));
+  }, []);
+
+  const clearFinishedUploads = useCallback(() => {
+    setUploadQueueItems((prev) => prev.filter((item) => item.status === 'uploading' || item.status === 'pending'));
+  }, []);
+
+  useEffect(() => {
+    if (uploadModalAutoCloseRef.current) {
+      window.clearTimeout(uploadModalAutoCloseRef.current);
+      uploadModalAutoCloseRef.current = null;
+    }
+
+    if (
+      uploadQueueSummary.totalItems > 0
+      && uploadQueueSummary.completedItems === uploadQueueSummary.totalItems
+      && uploadQueueSummary.failedItems === 0
+      && uploadQueueSummary.uploadingItems === 0
+    ) {
+      uploadModalAutoCloseRef.current = window.setTimeout(() => {
+        clearFinishedUploads();
+      }, 1400);
+    }
+  }, [clearFinishedUploads, uploadQueueSummary]);
+
+  const processUploadQueue = useCallback(async (itemIds?: string[], sourceItems?: UploadQueueItem[]) => {
+    const targetIds = itemIds ? new Set(itemIds) : null;
+    let successCount = 0;
+
     try {
       setUploading(true);
-      await cloudService.uploadFiles(folderId, filesToUpload, clientId || null);
-      toast.success('Cloud', `${filesToUpload.length} arquivo(s) enviado(s).`);
-      await loadData();
-    } catch (error: any) {
-      toast.error('Cloud', error.message || 'Erro no upload.');
+
+      const queueSource = sourceItems ?? uploadQueueItemsRef.current;
+      const queueSnapshot = queueSource.filter((item) => {
+        if (targetIds && !targetIds.has(item.id)) return false;
+        return item.status === 'pending' || item.status === 'failed';
+      });
+
+      for (const queueItem of queueSnapshot) {
+        updateUploadQueueItem(queueItem.id, (item) => ({
+          ...item,
+          status: 'uploading',
+          progress: Math.max(item.progress, 20),
+          error: null,
+        }));
+
+        try {
+          updateUploadQueueItem(queueItem.id, (item) => ({ ...item, progress: 55 }));
+          await cloudService.uploadFile(queueItem.folderId, queueItem.file, queueItem.clientId || null);
+          updateUploadQueueItem(queueItem.id, (item) => ({
+            ...item,
+            status: 'completed',
+            progress: 100,
+            error: null,
+          }));
+          successCount += 1;
+        } catch (error: any) {
+          updateUploadQueueItem(queueItem.id, (item) => ({
+            ...item,
+            status: 'failed',
+            progress: 100,
+            error: error?.message || 'Erro no upload.',
+          }));
+        }
+      }
+
+      if (successCount > 0) {
+        await loadData();
+        toast.success('Cloud', `${successCount} arquivo(s) enviado(s).`);
+      }
     } finally {
       setUploading(false);
       setDragActive(false);
       if (fileInputRef.current) fileInputRef.current.value = '';
     }
-  };
+  }, [cloudService, loadData, toast, updateUploadQueueItem]);
 
-  const handleUploadFiles = async (list: FileList | File[]) => {
-    if (!currentFolderId) {
-      toast.info('Cloud', 'Crie ou selecione uma pasta antes de enviar arquivos.');
+  const enqueueUploads = useCallback(async (items: UploadQueueItem[]) => {
+    if (items.length === 0) {
+      toast.info('Cloud', 'Nenhum arquivo encontrado para envio.');
       return;
     }
 
+    setUploadQueueItems((prev) => [...items, ...prev]);
+    await processUploadQueue(items.map((item) => item.id), items);
+  }, [processUploadQueue, toast]);
+
+  const retryUploadItem = useCallback(async (itemId: string) => {
+    updateUploadQueueItem(itemId, (item) => ({
+      ...item,
+      status: 'pending',
+      progress: 0,
+      error: null,
+    }));
+    await processUploadQueue([itemId]);
+  }, [processUploadQueue, updateUploadQueueItem]);
+
+  const uploadFilesToFolder = async (folderId: string, filesToUpload: File[], clientId?: string | null) => {
+    if (filesToUpload.length === 0) return;
+    const queueItems: UploadQueueItem[] = filesToUpload.map((file) => ({
+      id: crypto.randomUUID(),
+      file,
+      fileName: file.name,
+      fileSize: file.size,
+      relativePath: file.name,
+      folderId,
+      folderLabel: currentFolder?.name || 'Pasta atual',
+      clientId: clientId || null,
+      status: 'pending',
+      progress: 0,
+      error: null,
+    }));
+
+    await enqueueUploads(queueItems);
+  };
+
+  const handleUploadFiles = async (list: FileList | File[]) => {
     const filesToUpload = Array.from(list);
     if (filesToUpload.length === 0) return;
-    await uploadFilesToFolder(currentFolderId, filesToUpload, currentFolder?.client_id || null);
+    const droppedFiles = filesToUpload.map((file) => ({ file, relativePath: file.name }));
+    const preparedItems = await prepareUploadQueueItems(droppedFiles);
+    await enqueueUploads(preparedItems);
   };
 
   const readFileEntry = useCallback((entry: CloudDragFileEntry, pathSegments: string[]) => {
@@ -915,7 +1263,7 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
     }
 
     if (entry.isDirectory) {
-      const directoryName = String(entry.fullPath || '').split('/').filter(Boolean).pop() || '';
+      const directoryName = String(entry.name || String(entry.fullPath || '').split('/').filter(Boolean).pop() || '').trim();
       const nextPathSegments = directoryName ? [...pathSegments, directoryName] : pathSegments;
       const childEntries = await readDirectoryEntries(entry as CloudDragDirectoryEntry);
       const nestedFiles = await Promise.all(childEntries.map((childEntry) => collectFilesFromEntry(childEntry, nextPathSegments)));
@@ -932,7 +1280,7 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
         const dragItem = item as DataTransferItem & { webkitGetAsEntry?: () => CloudDragEntry | null };
         return typeof dragItem.webkitGetAsEntry === 'function' ? dragItem.webkitGetAsEntry() : null;
       })
-      .filter((entry): entry is CloudDragEntry => Boolean(entry));
+      .filter(Boolean) as CloudDragEntry[];
 
     if (itemEntries.length > 0) {
       const groupedFiles = await Promise.all(itemEntries.map((entry) => collectFilesFromEntry(entry)));
@@ -980,17 +1328,17 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
     return currentFolderResult;
   }, [allFolders]);
 
-  const uploadDroppedFiles = useCallback(async (droppedFiles: CloudDroppedFile[]) => {
-    const pendingByFolder = new Map<string, { clientId: string | null; files: File[] }>();
+  const prepareUploadQueueItems = useCallback(async (droppedFiles: CloudDroppedFile[]) => {
     const folderCache = new Map<string, CloudFolder>();
-    let skippedRootFiles = 0;
+    const preparedItems: UploadQueueItem[] = [];
+    let autoRootFolder: CloudFolder | null = null;
 
     for (const droppedFile of droppedFiles) {
       const segments = droppedFile.relativePath.split('/').filter(Boolean);
       const folderSegments = segments.slice(0, -1);
-
       let targetFolderId = currentFolderId;
       let targetClientId = currentFolder?.client_id || null;
+      let folderLabel = currentFolder?.name || 'Pasta atual';
 
       if (folderSegments.length > 0) {
         const ensuredFolder = await ensureFolderPath(folderSegments, {
@@ -1001,51 +1349,45 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
 
         targetFolderId = ensuredFolder?.id ?? null;
         targetClientId = ensuredFolder?.client_id || currentFolder?.client_id || null;
+        folderLabel = folderSegments.join(' / ');
+      } else if (!currentFolderId) {
+        if (!autoRootFolder) {
+          autoRootFolder = await cloudService.createFolder({
+            name: getAutoUploadFolderName(),
+            parent_id: null,
+            client_id: null,
+          });
+        }
+
+        targetFolderId = autoRootFolder.id;
+        targetClientId = autoRootFolder.client_id || null;
+        folderLabel = autoRootFolder.name;
       }
 
-      if (!targetFolderId) {
-        skippedRootFiles += 1;
-        continue;
-      }
+      if (!targetFolderId) continue;
 
-      const existing = pendingByFolder.get(targetFolderId) ?? { clientId: targetClientId, files: [] };
-      existing.files.push(droppedFile.file);
-      existing.clientId = existing.clientId || targetClientId;
-      pendingByFolder.set(targetFolderId, existing);
+      preparedItems.push({
+        id: crypto.randomUUID(),
+        file: droppedFile.file,
+        fileName: droppedFile.file.name,
+        fileSize: droppedFile.file.size,
+        relativePath: droppedFile.relativePath,
+        folderId: targetFolderId,
+        folderLabel,
+        clientId: targetClientId,
+        status: 'pending',
+        progress: 0,
+        error: null,
+      });
     }
 
-    if (pendingByFolder.size === 0) {
-      if (skippedRootFiles > 0) {
-        toast.info('Cloud', 'Arquivos soltos ainda precisam de uma pasta selecionada. Para arrastar na raiz, use uma pasta/diretório.');
-      } else {
-        toast.info('Cloud', 'Nenhum arquivo encontrado para envio.');
-      }
-      return;
-    }
+    return preparedItems;
+  }, [cloudService, currentFolder, currentFolderId, ensureFolderPath]);
 
-    try {
-      setUploading(true);
-      let uploadedCount = 0;
-
-      for (const [folderId, batch] of pendingByFolder.entries()) {
-        await cloudService.uploadFiles(folderId, batch.files, batch.clientId);
-        uploadedCount += batch.files.length;
-      }
-
-      await loadData();
-      toast.success('Cloud', `${uploadedCount} arquivo(s) enviado(s).`);
-
-      if (skippedRootFiles > 0) {
-        toast.info('Cloud', `${skippedRootFiles} arquivo(s) solto(s) na raiz foram ignorados por não pertencerem a uma pasta.`);
-      }
-    } catch (error: any) {
-      toast.error('Cloud', error?.message || 'Erro no upload.');
-    } finally {
-      setUploading(false);
-      setDragActive(false);
-      if (fileInputRef.current) fileInputRef.current.value = '';
-    }
-  }, [cloudService, currentFolder, currentFolderId, ensureFolderPath, loadData, toast]);
+  const uploadDroppedFiles = useCallback(async (droppedFiles: CloudDroppedFile[]) => {
+    const preparedItems = await prepareUploadQueueItems(droppedFiles);
+    await enqueueUploads(preparedItems);
+  }, [enqueueUploads, prepareUploadQueueItems]);
 
   const handleDropUpload = useCallback(async (event: React.DragEvent<HTMLDivElement>) => {
     try {
@@ -1187,6 +1529,18 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
 
   const openSelectedItem = (itemKey: string | null) => {
     if (!itemKey) return;
+    if (itemKey === `folder:${CLOUD_ARCHIVED_FOLDER_ID}`) {
+      setCurrentFolderId(CLOUD_ARCHIVED_FOLDER_ID);
+      setSelectedItemKey(itemKey);
+      setSelectedItemKeys([itemKey]);
+      return;
+    }
+    if (itemKey === `folder:${CLOUD_TRASH_FOLDER_ID}`) {
+      setCurrentFolderId(CLOUD_TRASH_FOLDER_ID);
+      setSelectedItemKey(itemKey);
+      setSelectedItemKeys([itemKey]);
+      return;
+    }
     if (itemKey.startsWith('folder:')) {
       const folderId = itemKey.replace('folder:', '');
       setCurrentFolderId(folderId);
@@ -1220,16 +1574,16 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
 
     try {
       for (const file of filesToDelete) {
-        await cloudService.deleteFile(file);
+        await cloudService.archiveFile(file.id);
       }
       for (const folder of foldersToDelete) {
-        await cloudService.deleteFolder(folder.id);
+        await cloudService.archiveFolder(folder.id);
       }
 
       setSelectedItemKey(null);
       setSelectedItemKeys([]);
       setSelectionAnchorKey(null);
-      toast.success('Cloud', 'Itens selecionados removidos com sucesso.');
+      toast.success('Cloud', 'Itens enviados para a lixeira com sucesso.');
       await loadData();
     } catch (error: any) {
       toast.error('Cloud', error.message || 'Erro ao remover itens selecionados.');
@@ -1427,6 +1781,36 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
         setSelectedItemKey(explorerItemKeys[0]);
         setSelectionAnchorKey(explorerItemKeys[0]);
         setContextMenu(null);
+        return;
+      }
+
+      if (event.key === 'F2' && selectedItemKey) {
+        event.preventDefault();
+        if (selectedItemKey.startsWith('file:')) {
+          const fileId = selectedItemKey.replace('file:', '');
+          const file = files.find((item) => item.id === fileId) ?? null;
+          if (file) openRenameModal('file', file.id, file.original_name);
+          return;
+        }
+
+        if (selectedItemKey.startsWith('folder:')) {
+          const folderId = selectedItemKey.replace('folder:', '');
+          const folder = allFolders.find((item) => item.id === folderId) ?? null;
+          if (folder) openRenameModal('folder', folder.id, folder.name);
+        }
+        return;
+      }
+
+      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'm' && selectedItemKeys.length > 0) {
+        event.preventDefault();
+        setBulkMoveTargetFolderId('');
+        setBulkMoveModalOpen(true);
+        return;
+      }
+
+      if ((event.ctrlKey || event.metaKey) && event.shiftKey && event.key.toLowerCase() === 'r' && selectedItemKeys.length > 0) {
+        event.preventDefault();
+        setBulkRenameModalOpen(true);
         return;
       }
 
@@ -1775,11 +2159,142 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
 
   const handleDeleteFile = async (file: CloudFile) => {
     try {
-      await cloudService.deleteFile(file);
-      toast.success('Cloud', 'Arquivo removido.');
+      setDeleteModalState({
+        open: true,
+        title: file.original_name,
+        kind: 'file',
+        stage: 'processing',
+        error: null,
+      });
+      await cloudService.archiveFile(file.id);
+      setDeleteModalState({
+        open: true,
+        title: file.original_name,
+        kind: 'file',
+        stage: 'success',
+        error: null,
+      });
+      if (deleteModalAutoCloseRef.current) {
+        window.clearTimeout(deleteModalAutoCloseRef.current);
+      }
+      deleteModalAutoCloseRef.current = window.setTimeout(() => {
+        setDeleteModalState((prev) => ({ ...prev, open: false }));
+      }, 1100);
+      toast.success('Cloud', 'Arquivo enviado para a lixeira.');
       await loadData();
     } catch (error: any) {
+      setDeleteModalState({
+        open: true,
+        title: file.original_name,
+        kind: 'file',
+        stage: 'error',
+        error: error.message || 'Erro ao remover arquivo.',
+      });
       toast.error('Cloud', error.message || 'Erro ao remover arquivo.');
+    }
+  };
+
+  const handleRestoreArchivedFile = async (file: CloudFile) => {
+    try {
+      await cloudService.restoreFile(file.id);
+      toast.success('Cloud', 'Arquivo restaurado com sucesso.');
+      await loadData();
+    } catch (error: any) {
+      toast.error('Cloud', error.message || 'Erro ao restaurar arquivo.');
+    }
+  };
+
+  const handleDeleteFilePermanently = async (file: CloudFile) => {
+    const confirmed = window.confirm(`Excluir permanentemente o arquivo "${file.original_name}"?`);
+    if (!confirmed) return;
+
+    try {
+      setDeleteModalState({
+        open: true,
+        title: file.original_name,
+        kind: 'file',
+        stage: 'processing',
+        error: null,
+      });
+      await cloudService.deleteFile(file);
+      setDeleteModalState({
+        open: true,
+        title: file.original_name,
+        kind: 'file',
+        stage: 'success',
+        error: null,
+      });
+      if (deleteModalAutoCloseRef.current) {
+        window.clearTimeout(deleteModalAutoCloseRef.current);
+      }
+      deleteModalAutoCloseRef.current = window.setTimeout(() => {
+        setDeleteModalState((prev) => ({ ...prev, open: false }));
+      }, 1100);
+      toast.success('Cloud', 'Arquivo excluído permanentemente.');
+      await loadData();
+    } catch (error: any) {
+      setDeleteModalState({
+        open: true,
+        title: file.original_name,
+        kind: 'file',
+        stage: 'error',
+        error: error.message || 'Erro ao excluir arquivo permanentemente.',
+      });
+      toast.error('Cloud', error.message || 'Erro ao excluir arquivo permanentemente.');
+    }
+  };
+
+  const handleEmptyTrash = async () => {
+    if (archivedFiles.length === 0 && archivedFolders.length === 0) {
+      toast.info('Cloud', 'A lixeira já está vazia.');
+      return;
+    }
+
+    const confirmed = window.confirm(`Esvaziar a lixeira e excluir permanentemente ${archivedFiles.length} arquivo(s) e ${archivedFolders.length} pasta(s)?`);
+    if (!confirmed) return;
+
+    try {
+      setDeleteModalState({
+        open: true,
+        title: `${archivedFiles.length + archivedFolders.length} item(ns) da lixeira`,
+        kind: 'file',
+        stage: 'processing',
+        error: null,
+      });
+
+      for (const file of archivedFiles) {
+        await cloudService.deleteFile(file);
+      }
+
+      for (const folder of archivedFolders) {
+        await cloudService.deleteFolder(folder.id);
+      }
+
+      setDeleteModalState({
+        open: true,
+        title: 'Lixeira esvaziada',
+        kind: 'file',
+        stage: 'success',
+        error: null,
+      });
+      if (deleteModalAutoCloseRef.current) {
+        window.clearTimeout(deleteModalAutoCloseRef.current);
+      }
+      deleteModalAutoCloseRef.current = window.setTimeout(() => {
+        setDeleteModalState((prev) => ({ ...prev, open: false }));
+      }, 1200);
+
+      toast.success('Cloud', 'Lixeira esvaziada com sucesso.');
+      await loadData();
+    } catch (error: any) {
+      setDeleteModalState({
+        open: true,
+        title: 'Lixeira',
+        kind: 'file',
+        stage: 'error',
+        error: error.message || 'Erro ao esvaziar a lixeira.',
+      });
+      toast.error('Cloud', error.message || 'Erro ao esvaziar a lixeira.');
     }
   };
 
@@ -1925,6 +2440,81 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
     setFolderLabelAssignments((prev) => ({ ...prev, [folderId]: labelId }));
   };
 
+  const handleToggleFavoriteFolder = useCallback((folderId: string) => {
+    setFavoriteFolderIds((prev) => (
+      prev.includes(folderId)
+        ? prev.filter((id) => id !== folderId)
+        : [folderId, ...prev]
+    ));
+  }, []);
+
+  const resetAdvancedFilters = useCallback(() => {
+    setSearchFilters(EMPTY_CLOUD_SEARCH_FILTERS);
+    setShowAdvancedFilters(false);
+  }, []);
+
+  const handleBulkRename = useCallback(async () => {
+    const targetFiles = files.filter((item) => selectedFileKeys.includes(`file:${item.id}`));
+    const targetFolders = allFolders.filter((item) => selectedFolderKeys.includes(`folder:${item.id}`));
+    if (targetFiles.length === 0 && targetFolders.length === 0) return;
+
+    const buildName = (name: string) => {
+      let nextName = name;
+      if (bulkRenameSearch) {
+        nextName = nextName.split(bulkRenameSearch).join(bulkRenameReplace);
+      }
+      return `${bulkRenamePrefix}${nextName}${bulkRenameSuffix}`.trim();
+    };
+
+    try {
+      for (const file of targetFiles) {
+        const nextName = buildName(file.original_name);
+        if (nextName) await cloudService.renameFile(file.id, nextName);
+      }
+
+      for (const folder of targetFolders) {
+        const nextName = buildName(folder.name);
+        if (nextName) await cloudService.updateFolder(folder.id, { name: nextName });
+      }
+
+      setBulkRenameModalOpen(false);
+      setBulkRenamePrefix('');
+      setBulkRenameSuffix('');
+      setBulkRenameSearch('');
+      setBulkRenameReplace('');
+      toast.success('Cloud', 'Itens renomeados em lote com sucesso.');
+      await loadData();
+    } catch (error: any) {
+      toast.error('Cloud', error.message || 'Erro ao renomear em lote.');
+    }
+  }, [allFolders, bulkRenamePrefix, bulkRenameReplace, bulkRenameSearch, bulkRenameSuffix, cloudService, files, loadData, selectedFileKeys, selectedFolderKeys, toast]);
+
+  const handleBulkMove = useCallback(async () => {
+    if (!bulkMoveTargetFolderId) return;
+
+    const targetFiles = files.filter((item) => selectedFileKeys.includes(`file:${item.id}`));
+    const targetFolders = allFolders.filter((item) => selectedFolderKeys.includes(`folder:${item.id}`));
+    const targetFolder = allFolders.find((item) => item.id === bulkMoveTargetFolderId) ?? null;
+
+    try {
+      for (const file of targetFiles) {
+        await cloudService.moveFile(file.id, bulkMoveTargetFolderId, targetFolder?.client_id || null);
+      }
+
+      for (const folder of targetFolders) {
+        if (folder.id === bulkMoveTargetFolderId) continue;
+        await cloudService.updateFolder(folder.id, { parent_id: bulkMoveTargetFolderId });
+      }
+
+      setBulkMoveModalOpen(false);
+      setBulkMoveTargetFolderId('');
+      toast.success('Cloud', 'Itens movidos em lote com sucesso.');
+      await loadData();
+    } catch (error: any) {
+      toast.error('Cloud', error.message || 'Erro ao mover itens em lote.');
+    }
+  }, [allFolders, bulkMoveTargetFolderId, cloudService, files, loadData, selectedFileKeys, selectedFolderKeys, toast]);
+
   const handleLinkFolderClient = async (folderId: string, clientId: string) => {
     try {
       await cloudService.updateFolder(folderId, { client_id: clientId || null });
@@ -2033,31 +2623,94 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
   };
 
   const handleDeleteFolder = async (folder: CloudFolder) => {
-    const confirmed = window.confirm(`Deseja excluir a pasta "${folder.name}"?`);
+    if (folder.archived_at) {
+      const confirmedPermanent = window.confirm(`Excluir permanentemente a pasta "${folder.name}"?`);
+      if (!confirmedPermanent) return;
+
+      try {
+        setDeleteModalState({
+          open: true,
+          title: folder.name,
+          kind: 'folder',
+          stage: 'processing',
+          error: null,
+        });
+        await cloudService.deleteFolder(folder.id);
+        setDeleteModalState({
+          open: true,
+          title: folder.name,
+          kind: 'folder',
+          stage: 'success',
+          error: null,
+        });
+        if (deleteModalAutoCloseRef.current) {
+          window.clearTimeout(deleteModalAutoCloseRef.current);
+        }
+        deleteModalAutoCloseRef.current = window.setTimeout(() => {
+          setDeleteModalState((prev) => ({ ...prev, open: false }));
+        }, 1100);
+        toast.success('Cloud', 'Pasta excluída permanentemente.');
+        await loadData();
+      } catch (error: any) {
+        setDeleteModalState({
+          open: true,
+          title: folder.name,
+          kind: 'folder',
+          stage: 'error',
+          error: error.message || 'Erro ao excluir pasta.',
+        });
+        toast.error('Cloud', error.message || 'Erro ao excluir pasta.');
+      }
+      return;
+    }
+
+    const confirmed = window.confirm(`Enviar a pasta "${folder.name}" para a lixeira?`);
     if (!confirmed) return;
 
     try {
-      await cloudService.deleteFolder(folder.id);
-      setFolderLabelAssignments((prev) => {
-        const next = { ...prev };
-        delete next[folder.id];
-        return next;
+      setDeleteModalState({
+        open: true,
+        title: folder.name,
+        kind: 'folder',
+        stage: 'processing',
+        error: null,
       });
+      await cloudService.archiveFolder(folder.id);
       if (currentFolderId === folder.id) {
         setCurrentFolderId(folder.parent_id || null);
       }
       if (selectedItemKey === `folder:${folder.id}`) {
         setSelectedItemKey(null);
       }
-      toast.success('Cloud', 'Pasta excluída com sucesso.');
+      setDeleteModalState({
+        open: true,
+        title: folder.name,
+        kind: 'folder',
+        stage: 'success',
+        error: null,
+      });
+      if (deleteModalAutoCloseRef.current) {
+        window.clearTimeout(deleteModalAutoCloseRef.current);
+      }
+      deleteModalAutoCloseRef.current = window.setTimeout(() => {
+        setDeleteModalState((prev) => ({ ...prev, open: false }));
+      }, 1100);
+      toast.success('Cloud', 'Pasta enviada para a lixeira.');
       await loadData();
     } catch (error: any) {
+      setDeleteModalState({
+        open: true,
+        title: folder.name,
+        kind: 'folder',
+        stage: 'error',
+        error: error.message || 'Erro ao excluir pasta.',
+      });
       toast.error('Cloud', error.message || 'Erro ao excluir pasta.');
     }
   };
 
   const handleArchiveFolder = async (folder: CloudFolder) => {
-    const confirmed = window.confirm(`Arquivar a pasta "${folder.name}"? Ela ficará agendada para exclusão automática em 30 dias.`);
+    const confirmed = window.confirm(`Arquivar a pasta "${folder.name}"?`);
     if (!confirmed) return;
 
     try {
@@ -2068,7 +2721,7 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
       if (selectedItemKey === `folder:${folder.id}`) {
         setSelectedItemKey(null);
       }
-      toast.success('Cloud', 'Pasta arquivada. Exclusão agendada para 30 dias.');
+      toast.success('Cloud', 'Pasta arquivada com sucesso.');
       await loadData();
     } catch (error: any) {
       toast.error('Cloud', error.message || 'Erro ao arquivar pasta.');
@@ -2214,42 +2867,52 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
   };
 
   return (
-    <div className="w-full h-[calc(100vh-10rem)] min-h-[720px] rounded-2xl overflow-hidden border border-slate-200 bg-white shadow-sm flex flex-col">
-      <div className="h-12 border-b border-slate-200 bg-slate-50 px-4 flex items-center justify-between gap-3">
-        <div className="flex items-center gap-3 min-w-0">
-          <div className="w-8 h-8 rounded-lg bg-orange-100 flex items-center justify-center">
-            <Cloud className="w-4 h-4 text-orange-600" />
-          </div>
-          <div className="min-w-0">
-            <p className="text-sm font-semibold text-slate-900 truncate">{breadcrumbLabel}</p>
-          </div>
-        </div>
-        <div className="flex items-center gap-2">
-          {uploading ? <Loader2 className="w-4 h-4 text-orange-600 animate-spin" /> : null}
-          <span className="text-[11px] text-slate-500">{explorerRows.length} item(ns)</span>
-        </div>
-      </div>
+    <div className="w-full min-h-[calc(100vh-8rem)] lg:h-[calc(100vh-10rem)] rounded-2xl overflow-hidden border border-slate-200 bg-white shadow-sm flex flex-col">
 
-      <div className="h-12 border-b border-slate-200 bg-white px-3 flex items-center gap-2">
-        <button onClick={() => fileInputRef.current?.click()} className="inline-flex items-center gap-2 px-3 py-1.5 rounded-md bg-orange-500 hover:bg-orange-600 text-white text-sm shadow-sm">
+      <div className="border-b border-slate-200 bg-white px-3 py-3 flex flex-wrap items-center gap-2">
+        <button
+          type="button"
+          onClick={() => setSidebarOpen((prev) => !prev)}
+          className="inline-flex lg:hidden items-center gap-2 px-3 py-1.5 rounded-lg bg-white hover:bg-slate-50 text-slate-700 text-sm border border-slate-200 shadow-sm"
+        >
+          <Cloud className="w-4 h-4 text-orange-600" />
+          {sidebarOpen ? 'Ocultar navegação' : 'Navegação'}
+        </button>
+        <button onClick={() => fileInputRef.current?.click()} className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg bg-orange-500 hover:bg-orange-600 text-white text-sm shadow-sm shadow-orange-500/20">
           <Upload className="w-4 h-4" />
           Enviar
         </button>
-        <button onClick={handlePastePrintFromClipboard} className="inline-flex items-center gap-2 px-3 py-1.5 rounded-md bg-white hover:bg-slate-50 text-slate-700 text-sm border border-slate-200">
-          <Clipboard className="w-4 h-4" />
-          Colar print
-        </button>
-        <button onClick={handleOpenCreateFolder} className="inline-flex items-center gap-2 px-3 py-1.5 rounded-md bg-orange-50 hover:bg-orange-100 text-orange-700 text-sm border border-orange-200">
+        <button onClick={handleOpenCreateFolder} className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg bg-white hover:bg-slate-50 text-slate-700 text-sm border border-slate-200 shadow-sm">
           <FolderPlus className="w-4 h-4" />
           Nova pasta
         </button>
         {selectedImageFiles.length > 0 ? (
-          <button onClick={() => openConvertImagesModal()} className="inline-flex items-center gap-2 px-3 py-1.5 rounded-md bg-slate-900 hover:bg-slate-800 text-white text-sm shadow-sm">
+          <button onClick={() => openConvertImagesModal()} className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg bg-slate-900 hover:bg-slate-800 text-white text-sm shadow-sm">
             <FileText className="w-4 h-4" />
             Converter PDF ({selectedImageFiles.length})
           </button>
         ) : null}
-        <div className="inline-flex items-center rounded-lg border border-slate-200 bg-white p-1 ml-1">
+        {selectedItemKeys.length > 1 ? (
+          <>
+            <button onClick={() => setBulkRenameModalOpen(true)} className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg bg-white hover:bg-slate-50 text-slate-700 text-sm border border-slate-200 shadow-sm">
+              <Tag className="w-4 h-4" />
+              Renomear em lote
+            </button>
+            <button onClick={() => setBulkMoveModalOpen(true)} className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg bg-white hover:bg-slate-50 text-slate-700 text-sm border border-slate-200 shadow-sm">
+              <MoveRight className="w-4 h-4" />
+              Mover itens
+            </button>
+          </>
+        ) : null}
+        <button
+          type="button"
+          onClick={() => setShowAdvancedFilters((prev) => !prev)}
+          className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm border shadow-sm ${showAdvancedFilters || hasActiveAdvancedFilters ? 'bg-orange-50 text-orange-700 border-orange-200' : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50'}`}
+        >
+          <Filter className="w-4 h-4" />
+          Filtros
+        </button>
+        <div className="inline-flex items-center rounded-xl border border-slate-200 bg-white p-1 shadow-sm">
           <button
             type="button"
             onClick={() => setViewMode('list')}
@@ -2268,34 +2931,100 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
           </button>
         </div>
         <input ref={fileInputRef} type="file" multiple className="hidden" onChange={(e) => e.target.files && handleUploadFiles(e.target.files)} />
-        <div className="ml-auto flex items-center gap-2 w-full max-w-md">
+        <div className="flex items-center gap-2 w-full lg:ml-auto lg:max-w-md">
           <div className="relative w-full">
             <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
             <input
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
-              placeholder="Pesquisar nesta pasta"
+              placeholder={hasGlobalSearch ? 'Buscar em todo o Cloud' : 'Pesquisar nesta pasta'}
               className="w-full rounded-md border border-slate-200 bg-white text-sm text-slate-900 placeholder:text-slate-400 pl-9 pr-3 py-2 focus:outline-none focus:border-orange-400 focus:ring-2 focus:ring-orange-100"
             />
           </div>
         </div>
       </div>
 
-      <div className="flex-1 min-h-0 flex">
-        <aside className="w-[280px] border-r border-slate-200 bg-slate-50 flex flex-col">
-          <div className="px-3 py-3 border-b border-slate-200">
-            <p className="text-[11px] uppercase tracking-[0.18em] text-slate-400 font-semibold">Cloud / Raiz</p>
+      {showAdvancedFilters ? (
+        <div className="border-b border-slate-200 bg-slate-50 px-3 py-3">
+          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-3">
+            <select value={searchFilters.clientId} onChange={(e) => setSearchFilters((prev) => ({ ...prev, clientId: e.target.value }))} className="w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm bg-white text-slate-900 focus:outline-none focus:ring-2 focus:ring-orange-100 focus:border-orange-400">
+              <option value="">Todos os clientes</option>
+              {clients.map((client) => <option key={client.id} value={client.id}>{client.full_name}</option>)}
+            </select>
+            <select value={searchFilters.labelId} onChange={(e) => setSearchFilters((prev) => ({ ...prev, labelId: e.target.value }))} className="w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm bg-white text-slate-900 focus:outline-none focus:ring-2 focus:ring-orange-100 focus:border-orange-400">
+              <option value="">Todas as etiquetas</option>
+              {folderLabels.map((label) => <option key={label.id} value={label.id}>{label.name}</option>)}
+            </select>
+            <select value={searchFilters.extension} onChange={(e) => setSearchFilters((prev) => ({ ...prev, extension: e.target.value }))} className="w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm bg-white text-slate-900 focus:outline-none focus:ring-2 focus:ring-orange-100 focus:border-orange-400">
+              <option value="">Todas as extensões</option>
+              {availableExtensions.map((extension) => <option key={extension} value={extension}>{extension.toUpperCase()}</option>)}
+            </select>
+            <div className="grid grid-cols-2 gap-3">
+              <input type="date" value={searchFilters.dateFrom} onChange={(e) => setSearchFilters((prev) => ({ ...prev, dateFrom: e.target.value }))} className="w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm bg-white text-slate-900 focus:outline-none focus:ring-2 focus:ring-orange-100 focus:border-orange-400" />
+              <input type="date" value={searchFilters.dateTo} onChange={(e) => setSearchFilters((prev) => ({ ...prev, dateTo: e.target.value }))} className="w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm bg-white text-slate-900 focus:outline-none focus:ring-2 focus:ring-orange-100 focus:border-orange-400" />
+            </div>
+            <input type="number" min="0" value={searchFilters.sizeMinKb} onChange={(e) => setSearchFilters((prev) => ({ ...prev, sizeMinKb: e.target.value }))} placeholder="Tamanho mín. KB" className="w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm bg-white text-slate-900 focus:outline-none focus:ring-2 focus:ring-orange-100 focus:border-orange-400" />
+            <input type="number" min="0" value={searchFilters.sizeMaxKb} onChange={(e) => setSearchFilters((prev) => ({ ...prev, sizeMaxKb: e.target.value }))} placeholder="Tamanho máx. KB" className="w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm bg-white text-slate-900 focus:outline-none focus:ring-2 focus:ring-orange-100 focus:border-orange-400" />
           </div>
+          <div className="mt-3 flex items-center justify-end gap-2">
+            <button onClick={resetAdvancedFilters} className="px-3 py-2 rounded-lg border border-slate-200 bg-white text-sm text-slate-700 hover:bg-slate-50">Limpar filtros</button>
+          </div>
+        </div>
+      ) : null}
+
+      <div className="border-b border-slate-200 bg-gradient-to-b from-slate-50 to-slate-100/80 px-4 py-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex items-center flex-wrap gap-2 text-sm text-slate-600 min-w-0">
+          <button onClick={() => setCurrentFolderId(null)} className="inline-flex items-center gap-1 rounded-md px-2 py-1 hover:bg-white/70 hover:text-slate-900"><Home className="w-4 h-4" />Cloud</button>
+          {breadcrumb.map((item) => (
+            <React.Fragment key={item.id}>
+              <ChevronRight className="w-4 h-4 text-slate-400" />
+              <button onClick={() => setCurrentFolderId(item.id)} className="rounded-md px-2 py-1 hover:bg-white/70 hover:text-slate-900 truncate max-w-[220px]">{item.name}</button>
+            </React.Fragment>
+          ))}
+        </div>
+        <div className="flex items-center gap-2 text-xs text-slate-500">
+          <span className="whitespace-nowrap rounded-full border border-slate-200 bg-white px-2.5 py-1">{currentClient?.full_name || 'Sem cliente'}</span>
+          {uploading ? <Loader2 className="w-4 h-4 text-orange-600 animate-spin" /> : null}
+          {uploadQueueSummary.totalItems > 0 ? (
+            <span className="rounded-full border border-orange-200 bg-orange-50 px-2 py-0.5 text-orange-700">
+              Uploads {uploadQueueSummary.completedItems}/{uploadQueueSummary.totalItems}
+            </span>
+          ) : null}
+          {!isTrashView && !isArchivedView && selectedFolder && !selectedFolder.archived_at ? (
+            <button
+              type="button"
+              onClick={() => void handleArchiveFolder(selectedFolder)}
+              className="inline-flex items-center gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-1.5 text-xs font-medium text-amber-700 hover:bg-amber-100"
+            >
+              <FolderOpen className="w-4 h-4" />
+              Arquivar pasta
+            </button>
+          ) : null}
+          {isTrashView ? (
+            <button
+              type="button"
+              onClick={() => void handleEmptyTrash()}
+              className="inline-flex items-center gap-2 rounded-lg border border-red-200 bg-red-50 px-3 py-1.5 text-xs font-medium text-red-700 hover:bg-red-100"
+            >
+              <Trash2 className="w-4 h-4" />
+              Esvaziar lixeira
+            </button>
+          ) : null}
+        </div>
+      </div>
+
+      <div className="flex-1 min-h-0 flex flex-col lg:flex-row">
+        <aside className={`${sidebarOpen ? 'flex' : 'hidden'} lg:flex w-full lg:w-[300px] border-b lg:border-b-0 lg:border-r border-slate-200 bg-[linear-gradient(180deg,#f8fafc_0%,#f1f5f9_100%)] flex-col max-h-[45vh] lg:max-h-none`}>
           <div className="flex-1 overflow-auto p-2 space-y-4">
-            <div className="space-y-1">
+            <div className="space-y-1 rounded-2xl border border-slate-200 bg-white/80 p-2 shadow-sm">
             <button
               type="button"
               onClick={() => {
                 setCurrentFolderId(null);
                 setSelectedItemKey('root');
               }}
-              className={`w-full flex items-center gap-2 rounded-md px-2 py-2 text-sm ${
-                currentFolderId === null ? 'bg-orange-100 text-orange-900' : 'text-slate-700 hover:bg-orange-50'
+              className={`w-full flex items-center gap-2 rounded-xl px-3 py-2.5 text-sm ${
+                currentFolderId === null ? 'bg-orange-100 text-orange-900 border border-orange-200' : 'text-slate-700 hover:bg-slate-50 border border-transparent'
               }`}
               onDragOver={(e) => {
                 e.preventDefault();
@@ -2310,13 +3039,68 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
               }}
             >
               <HardDrive className="w-4 h-4 text-orange-600" />
-              <span>Cloud</span>
+              <span className="font-medium">Este Computador</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setCurrentFolderId(CLOUD_ARCHIVED_FOLDER_ID);
+                setSelectedItemKey(`folder:${CLOUD_ARCHIVED_FOLDER_ID}`);
+                setSelectedItemKeys([`folder:${CLOUD_ARCHIVED_FOLDER_ID}`]);
+              }}
+              className={`mt-1 w-full flex items-center gap-2 rounded-xl px-3 py-2.5 text-sm ${
+                isArchivedView ? 'bg-amber-100 text-amber-800 border border-amber-200' : 'text-slate-700 hover:bg-slate-50 border border-transparent'
+              }`}
+            >
+              <FolderOpen className="w-4 h-4 text-amber-500" />
+              <span className="font-medium">Arquivado</span>
+              <span className="ml-auto rounded-full border border-amber-200 bg-white px-2 py-0.5 text-[10px] text-amber-700">{archivedFolders.length}</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setCurrentFolderId(CLOUD_TRASH_FOLDER_ID);
+                setSelectedItemKey(`folder:${CLOUD_TRASH_FOLDER_ID}`);
+                setSelectedItemKeys([`folder:${CLOUD_TRASH_FOLDER_ID}`]);
+              }}
+              className={`mt-1 w-full flex items-center gap-2 rounded-xl px-3 py-2.5 text-sm ${
+                isTrashView ? 'bg-red-100 text-red-700 border border-red-200' : 'text-slate-700 hover:bg-slate-50 border border-transparent'
+              }`}
+            >
+              <Trash2 className="w-4 h-4 text-red-500" />
+              <span className="font-medium">Lixeira</span>
+              <span className="ml-auto rounded-full border border-red-200 bg-white px-2 py-0.5 text-[10px] text-red-600">{archivedFiles.length + archivedFolders.length}</span>
             </button>
             {renderTree(rootFolders)}
             </div>
 
-            <div className="space-y-2">
-              <p className="px-2 text-[11px] uppercase tracking-[0.16em] text-slate-400 font-semibold">Recentes</p>
+            <div className="space-y-2 rounded-2xl border border-slate-200 bg-white/80 p-3 shadow-sm">
+              <p className="text-[11px] uppercase tracking-[0.16em] text-slate-400 font-semibold">Acesso rápido</p>
+              <div className="space-y-1">
+                {favoriteFolders.length === 0 ? (
+                  <p className="px-2 text-xs text-slate-500">Nenhuma pasta fixada.</p>
+                ) : (
+                  favoriteFolders.map((folder) => (
+                    <button
+                      key={folder.id}
+                      type="button"
+                      onClick={() => {
+                        setCurrentFolderId(folder.id);
+                        setSelectedItemKey(`folder:${folder.id}`);
+                        setSelectedItemKeys([`folder:${folder.id}`]);
+                      }}
+                      className="w-full flex items-center gap-2 rounded-xl px-3 py-2 text-sm text-slate-700 hover:bg-slate-50"
+                    >
+                      <Pin className="w-4 h-4 text-orange-500" />
+                      <span className="truncate">{folder.name}</span>
+                    </button>
+                  ))
+                )}
+              </div>
+            </div>
+
+            <div className="space-y-2 rounded-2xl border border-slate-200 bg-white/80 p-3 shadow-sm">
+              <p className="text-[11px] uppercase tracking-[0.16em] text-slate-400 font-semibold">Recentes</p>
               <div className="space-y-1">
                 {quickAccessFolders.length === 0 ? (
                   <p className="px-2 text-xs text-slate-500">Nenhuma pasta recente.</p>
@@ -2329,7 +3113,7 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
                         setCurrentFolderId(folder.id);
                         setSelectedItemKey(`folder:${folder.id}`);
                       }}
-                      className="w-full flex items-center gap-2 rounded-md px-2 py-2 text-sm text-slate-700 hover:bg-orange-50"
+                      className="w-full flex items-center gap-2 rounded-xl px-3 py-2 text-sm text-slate-700 hover:bg-slate-50"
                     >
                       <History className="w-4 h-4 text-slate-400" />
                       <span className="truncate">{folder.name}</span>
@@ -2339,52 +3123,10 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
               </div>
             </div>
 
-            <div className="space-y-2">
-              <p className="px-2 text-[11px] uppercase tracking-[0.16em] text-slate-400 font-semibold">Arquivadas</p>
-              <div className="space-y-1">
-                {archivedFolders.length === 0 ? (
-                  <p className="px-2 text-xs text-slate-500">Nenhuma pasta arquivada.</p>
-                ) : (
-                  archivedFolders.map((folder) => (
-                    <button
-                      key={folder.id}
-                      type="button"
-                      onClick={() => {
-                        setCurrentFolderId(folder.id);
-                        setSelectedItemKey(`folder:${folder.id}`);
-                        setSelectedItemKeys([`folder:${folder.id}`]);
-                      }}
-                      className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-left hover:border-orange-200 hover:bg-orange-50/40 transition"
-                    >
-                      <div className="flex items-start gap-2">
-                        <FolderOpen className="w-4 h-4 text-amber-500 mt-0.5 flex-shrink-0" />
-                        <div className="min-w-0">
-                          <p className="truncate text-sm font-medium text-slate-800">{folder.name}</p>
-                          <p className="text-[11px] text-slate-500 truncate">Exclusão: {formatArchiveDeletionLabel(folder.delete_scheduled_for)}</p>
-                        </div>
-                      </div>
-                    </button>
-                  ))
-                )}
-              </div>
-            </div>
           </div>
         </aside>
 
         <section className="flex-1 min-w-0 flex flex-col bg-white">
-          <div className="px-4 py-3 border-b border-slate-200 bg-slate-50 flex items-center justify-between gap-4">
-            <div className="flex items-center flex-wrap gap-2 text-sm text-slate-600 min-w-0">
-              <button onClick={() => setCurrentFolderId(null)} className="hover:text-slate-900 inline-flex items-center gap-1"><Home className="w-4 h-4" />Cloud</button>
-              {breadcrumb.map((item) => (
-                <React.Fragment key={item.id}>
-                  <ChevronRight className="w-4 h-4 text-slate-400" />
-                  <button onClick={() => setCurrentFolderId(item.id)} className="hover:text-slate-900 truncate max-w-[220px]">{item.name}</button>
-                </React.Fragment>
-              ))}
-            </div>
-            <div className="text-xs text-slate-500 whitespace-nowrap">{currentClient?.full_name || 'Sem cliente'}</div>
-          </div>
-
           <div
             onDragOver={(e) => {
               e.preventDefault();
@@ -2407,7 +3149,7 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
             className={`relative flex-1 min-h-0 flex flex-col ${dragActive ? 'bg-sky-50' : ''}`}
           >
             {viewMode === 'list' ? (
-              <div className="grid grid-cols-[minmax(320px,2.6fr)_170px_170px_130px_220px] gap-3 px-4 py-2 border-b border-slate-200 text-[11px] uppercase tracking-[0.16em] text-slate-400 bg-slate-50">
+              <div className="hidden md:grid md:grid-cols-[minmax(260px,2.6fr)_170px_170px_130px_220px] gap-3 px-4 py-2 border-b border-slate-200 text-[11px] uppercase tracking-[0.16em] text-slate-400 bg-slate-50">
                 <span>Nome</span>
                 <span>Data de modificação</span>
                 <span>Tipo</span>
@@ -2443,19 +3185,26 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
                     <FolderOpen className="w-10 h-10 text-orange-300" />
                   </div>
                   <div className="text-center">
-                    <p className="font-medium text-slate-900">Esta pasta está vazia</p>
-                    <p className="text-sm text-slate-500">Crie pastas ou arraste arquivos para dentro.</p>
+                    <p className="font-medium text-slate-900">{isTrashView ? 'A lixeira está vazia' : isArchivedView ? 'Nenhuma pasta arquivada' : 'Esta pasta está vazia'}</p>
+                    <p className="text-sm text-slate-500">{isTrashView ? 'Itens excluídos aparecerão aqui.' : isArchivedView ? 'Pastas arquivadas aparecerão aqui.' : 'Crie pastas ou arraste arquivos para dentro.'}</p>
                   </div>
-                  <div className="flex items-center gap-2">
-                    <button onClick={() => fileInputRef.current?.click()} className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-orange-500 hover:bg-orange-600 text-white text-sm">
-                      <Upload className="w-4 h-4" />
-                      Enviar arquivos
+                  {!isTrashView && !isArchivedView ? (
+                    <div className="flex items-center gap-2">
+                      <button onClick={() => fileInputRef.current?.click()} className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-orange-500 hover:bg-orange-600 text-white text-sm">
+                        <Upload className="w-4 h-4" />
+                        Enviar arquivos
+                      </button>
+                      <button onClick={handleOpenCreateFolder} className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-orange-50 hover:bg-orange-100 text-orange-700 text-sm border border-orange-200">
+                        <FolderPlus className="w-4 h-4" />
+                        Criar pasta
+                      </button>
+                    </div>
+                  ) : isTrashView ? (
+                    <button onClick={() => void handleEmptyTrash()} className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-red-50 hover:bg-red-100 text-red-700 text-sm border border-red-200">
+                      <Trash2 className="w-4 h-4" />
+                      Esvaziar lixeira
                     </button>
-                    <button onClick={handleOpenCreateFolder} className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-orange-50 hover:bg-orange-100 text-orange-700 text-sm border border-orange-200">
-                      <FolderPlus className="w-4 h-4" />
-                      Criar pasta
-                    </button>
-                  </div>
+                  ) : null}
                 </div>
               ) : viewMode === 'list' ? (
                 explorerRows.map((row) => {
@@ -2469,6 +3218,7 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
                     const hasClientLink = Boolean(folder.client_id);
                     const showClientLinkBadge = !folder.parent_id;
                     const showFolderStatusBadge = !folder.parent_id;
+                    const isFavorite = favoriteFolderIds.includes(folder.id);
                     return (
                       <div
                         key={folder.id}
@@ -2487,7 +3237,7 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
                           e.preventDefault();
                           void handleDropOnFolder(folder.id);
                         }}
-                        className={`grid grid-cols-[minmax(320px,2.6fr)_170px_170px_130px_220px] gap-3 px-4 py-2.5 border-b border-slate-100 text-sm cursor-pointer ${
+                        className={`flex flex-col gap-2 px-4 py-3 border-b border-slate-100 text-sm cursor-pointer md:grid md:grid-cols-[minmax(260px,2.6fr)_170px_170px_130px_220px] md:gap-3 md:py-2.5 ${
                           isDropTarget ? 'bg-orange-100 border-orange-300' : isSelected ? 'bg-orange-50' : 'hover:bg-slate-50'
                         }`}
                         onClick={(event) => {
@@ -2522,25 +3272,39 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
                                 Arquivada
                               </span>
                             ) : null}
+                            {isFavorite ? <Pin className="w-3.5 h-3.5 text-orange-500" /> : null}
                           </div>
                         </div>
-                        <span className="text-slate-500">{formatDateTime(folder.updated_at)}</span>
-                        <span className="text-slate-500">Pasta de arquivos</span>
-                        <span className="text-slate-500">{formatFileSize(folderSizeMap.get(folder.id) ?? 0)}</span>
+                        <span className="text-slate-500 text-xs md:text-sm">{formatDateTime(folder.updated_at)}</span>
+                        <span className="text-slate-500 text-xs md:text-sm">Pasta de arquivos</span>
+                        <span className="text-slate-500 text-xs md:text-sm">{formatFileSize(folderSizeMap.get(folder.id) ?? 0)}</span>
                         <div className="flex items-center justify-between gap-2 min-w-0">
                           <span className="text-slate-500 truncate">{client?.full_name || '—'}</span>
-                          <button
-                            type="button"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              setSelectedItemKey(itemKey);
-                              setSelectedItemKeys([itemKey]);
-                              setContextMenu({ x: e.clientX, y: e.clientY, type: 'folder', folderId: folder.id });
-                            }}
-                            className="p-1 rounded-md hover:bg-slate-100 text-slate-400 hover:text-slate-600"
-                          >
-                            <MoreHorizontal className="w-4 h-4" />
-                          </button>
+                          <div className="flex items-center gap-1">
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleToggleFavoriteFolder(folder.id);
+                              }}
+                              className={`p-1 rounded-md hover:bg-slate-100 ${isFavorite ? 'text-orange-500' : 'text-slate-400 hover:text-slate-600'}`}
+                              title={isFavorite ? 'Desafixar pasta' : 'Fixar pasta'}
+                            >
+                              <Pin className="w-4 h-4" />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setSelectedItemKey(itemKey);
+                                setSelectedItemKeys([itemKey]);
+                                setContextMenu({ x: e.clientX, y: e.clientY, type: 'folder', folderId: folder.id });
+                              }}
+                              className="p-1 rounded-md hover:bg-slate-100 text-slate-400 hover:text-slate-600"
+                            >
+                              <MoreHorizontal className="w-4 h-4" />
+                            </button>
+                          </div>
                         </div>
                       </div>
                     );
@@ -2550,6 +3314,7 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
                   const client = clients.find((item) => item.id === file.client_id);
                   const itemKey = `file:${file.id}`;
                   const isSelected = selectedItemKeys.includes(itemKey);
+                  const parentFolder = allFolders.find((folder) => folder.id === file.folder_id) ?? null;
                   return (
                     <div
                       key={file.id}
@@ -2557,7 +3322,7 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
                       draggable
                       onDragStart={() => handleDragStart(itemKey)}
                       onDragEnd={handleDragEnd}
-                      className={`grid grid-cols-[minmax(320px,2.4fr)_170px_170px_130px_220px] gap-3 px-4 py-2.5 border-b border-slate-100 text-sm cursor-pointer ${
+                      className={`flex flex-col gap-2 px-4 py-3 border-b border-slate-100 text-sm cursor-pointer md:grid md:grid-cols-[minmax(260px,2.4fr)_170px_170px_130px_220px] md:gap-3 md:py-2.5 ${
                         isSelected ? 'bg-orange-50' : 'hover:bg-slate-50'
                       }`}
                       onClick={(event) => {
@@ -2592,10 +3357,10 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
                         {isPdfFile(file.mime_type, file.original_name) ? <FileText className="w-4 h-4 text-red-500 flex-shrink-0" /> : isImageFile(file.mime_type) ? <ImageIcon className="w-4 h-4 text-emerald-500 flex-shrink-0" /> : <File className="w-4 h-4 text-sky-500 flex-shrink-0" />}
                         <span className="truncate text-slate-900">{file.original_name}</span>
                       </div>
-                      <span className="text-slate-500">{formatDateTime(file.updated_at)}</span>
-                      <span className="text-slate-500">{getFileTypeLabel(file)}</span>
-                      <span className="text-slate-500">{formatFileSize(file.file_size)}</span>
-                      <span className="text-slate-500 truncate">{client?.full_name || '—'}</span>
+                      <span className="text-slate-500 text-xs md:text-sm">{formatDateTime(file.updated_at)}</span>
+                      <span className="text-slate-500 text-xs md:text-sm">{getFileTypeLabel(file)}</span>
+                      <span className="text-slate-500 text-xs md:text-sm">{formatFileSize(file.file_size)}</span>
+                      <span className="text-slate-500 truncate text-xs md:text-sm">{hasGlobalSearch ? `${parentFolder?.name || '—'} • ${client?.full_name || '—'}` : client?.full_name || '—'}</span>
                     </div>
                   );
                 })
@@ -2611,6 +3376,7 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
                       const hasClientLink = Boolean(folder.client_id);
                       const showClientLinkBadge = !folder.parent_id;
                       const showFolderStatusBadge = !folder.parent_id;
+                      const isFavorite = favoriteFolderIds.includes(folder.id);
 
                       const isDropTarget = dropTargetFolderId === folder.id;
                       return (
@@ -2631,7 +3397,7 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
                             e.preventDefault();
                             void handleDropOnFolder(folder.id);
                           }}
-                          className={`rounded-2xl border p-3 bg-white shadow-sm cursor-pointer transition ${isDropTarget ? 'border-orange-400 bg-orange-100' : isSelected ? 'border-orange-300 bg-orange-50/40' : 'border-slate-200 hover:border-orange-200 hover:shadow-md'}`}
+                          className={`rounded-xl border px-3 py-2.5 bg-white shadow-sm cursor-pointer transition ${isDropTarget ? 'border-orange-400 bg-orange-100' : isSelected ? 'border-orange-300 bg-orange-50/40' : 'border-slate-200 hover:border-orange-200 hover:shadow-md'}`}
                           onClick={(event) => {
                             event.stopPropagation();
                             event.preventDefault();
@@ -2645,15 +3411,18 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
                             setContextMenu({ x: e.clientX, y: e.clientY, type: 'folder', folderId: folder.id });
                           }}
                         >
-                          <div className="flex items-start justify-between gap-3">
-                            <div className="flex items-center gap-3 min-w-0">
-                              <div className="w-10 h-10 rounded-2xl bg-amber-50 border border-amber-100 flex items-center justify-center">
-                                <Folder className="w-4 h-4 text-amber-500" />
+                          <div className="flex items-start justify-between gap-2">
+                            <div className="flex items-start gap-2.5 min-w-0">
+                              <div className="relative h-12 w-14 flex-shrink-0">
+                                <div className="absolute left-1 top-1 h-3.5 w-6 rounded-t-md bg-amber-300 border border-amber-400 border-b-0" />
+                                <div className="absolute inset-x-0 top-3 h-8 rounded-md bg-gradient-to-b from-amber-300 to-amber-400 border border-amber-500 shadow-[inset_0_1px_0_rgba(255,255,255,0.35)]" />
+                                <div className="absolute right-1 top-4 h-4 w-5 rounded-sm bg-white/80 border border-amber-200" />
+                                <Folder className="absolute left-4 top-4 w-5 h-5 text-amber-700/80" />
                               </div>
-                              <div className="min-w-0">
-                                <p className="truncate font-medium text-slate-900">{folder.name}</p>
-                                <div className="mt-1 flex flex-wrap items-center gap-2">
-                                  <p className="text-xs text-slate-500">Pasta de arquivos</p>
+                              <div className="min-w-0 flex-1 pt-0.5">
+                                <p className="truncate text-sm font-medium text-slate-900 leading-tight">{folder.name}</p>
+                                <div className="mt-1 flex flex-wrap items-center gap-1.5">
+                                  {isFavorite ? <Pin className="w-3.5 h-3.5 text-orange-500" /> : null}
                                   {showClientLinkBadge ? (
                                     <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] font-medium ${hasClientLink ? 'border-emerald-200 bg-emerald-50 text-emerald-700' : 'border-slate-200 bg-slate-100 text-slate-500'}`}>
                                       {hasClientLink ? 'Vinculada' : 'Sem vínculo'}
@@ -2662,20 +3431,32 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
                                 </div>
                               </div>
                             </div>
-                            <button
-                              type="button"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                setSelectedItemKey(itemKey);
-                                setSelectedItemKeys([itemKey]);
-                                setContextMenu({ x: e.clientX, y: e.clientY, type: 'folder', folderId: folder.id });
-                              }}
-                              className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-400 hover:text-slate-600"
-                            >
-                              <MoreHorizontal className="w-4 h-4" />
-                            </button>
+                            <div className="flex items-start gap-1">
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleToggleFavoriteFolder(folder.id);
+                                }}
+                                className={`p-1 rounded-lg hover:bg-slate-100 ${isFavorite ? 'text-orange-500' : 'text-slate-400 hover:text-slate-600'}`}
+                              >
+                                <Pin className="w-3.5 h-3.5" />
+                              </button>
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setSelectedItemKey(itemKey);
+                                  setSelectedItemKeys([itemKey]);
+                                  setContextMenu({ x: e.clientX, y: e.clientY, type: 'folder', folderId: folder.id });
+                                }}
+                                className="p-1 rounded-lg hover:bg-slate-100 text-slate-400 hover:text-slate-600"
+                              >
+                                <MoreHorizontal className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
                           </div>
-                          <div className="mt-3 flex flex-wrap gap-2">
+                          <div className="mt-2 flex flex-wrap gap-1.5">
                             {showFolderStatusBadge ? (
                               <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] font-medium ${folderLabel.bgClass} ${folderLabel.textClass} ${folderLabel.borderClass}`}>
                                 {folderLabel.name}
@@ -2687,10 +3468,9 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
                               </span>
                             ) : null}
                           </div>
-                          <div className="mt-3 space-y-1 text-xs text-slate-500">
-                            <p>Cliente: <span className="text-slate-700">{client?.full_name || '—'}</span></p>
+                          <div className="mt-2 space-y-1 text-[11px] text-slate-500">
+                            <p className="truncate">Cliente: <span className="text-slate-700">{client?.full_name || '—'}</span></p>
                             <p>Modificado: <span className="text-slate-700">{formatDateTime(folder.updated_at)}</span></p>
-                            {folder.delete_scheduled_for ? <p>Exclusão: <span className="text-slate-700">{formatArchiveDeletionLabel(folder.delete_scheduled_for)}</span></p> : null}
                           </div>
                         </div>
                       );
@@ -2764,9 +3544,21 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
                           {isImageFile(file.mime_type) && previewUrl ? (
                             <img src={previewUrl} alt={file.original_name} className="w-full h-36 object-cover bg-white" />
                           ) : isPdfFile(file.mime_type, file.original_name) && previewUrl ? (
-                            <div className="h-36 flex flex-col items-center justify-center bg-slate-100 overflow-hidden gap-2">
-                              <FileText className="w-10 h-10 text-red-500" />
-                              <span className="text-[11px] font-medium text-slate-500">Preview de PDF</span>
+                            <div className="h-36 flex items-center justify-center bg-slate-100 overflow-hidden">
+                              <Document
+                                file={previewUrl}
+                                loading={<div className="flex flex-col items-center justify-center gap-2 text-slate-500"><Loader2 className="w-5 h-5 animate-spin" /><span className="text-[11px] font-medium">Carregando PDF</span></div>}
+                                error={<div className="flex flex-col items-center justify-center gap-2 text-slate-500"><FileText className="w-10 h-10 text-red-500" /><span className="text-[11px] font-medium">Preview indisponível</span></div>}
+                                className="flex h-full w-full items-center justify-center"
+                              >
+                                <Page
+                                  pageNumber={1}
+                                  width={220}
+                                  renderAnnotationLayer={false}
+                                  renderTextLayer={false}
+                                  loading={<div className="flex flex-col items-center justify-center gap-2 text-slate-500"><Loader2 className="w-5 h-5 animate-spin" /><span className="text-[11px] font-medium">Gerando preview</span></div>}
+                                />
+                              </Document>
                             </div>
                           ) : (
                             <div className="h-36 flex items-center justify-center bg-slate-50">
@@ -2852,12 +3644,6 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
                       <p className="text-slate-400 text-xs">Local</p>
                       <p className="text-slate-700">{breadcrumbLabel}</p>
                     </div>
-                    {selectedFolder.delete_scheduled_for ? (
-                      <div>
-                        <p className="text-slate-400 text-xs">Exclusão agendada</p>
-                        <p className="text-slate-700">{formatArchiveDeletionLabel(selectedFolder.delete_scheduled_for)}</p>
-                      </div>
-                    ) : null}
                   </div>
                 </div>
                 <div className="rounded-xl border border-slate-200 bg-white p-4 space-y-3">
@@ -2986,9 +3772,15 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
                       <MoveRight className="w-4 h-4" />
                       Mover arquivo
                     </button>
+                    {selectedFile.archived_at ? (
+                      <button onClick={() => void handleRestoreArchivedFile(selectedFile)} className="inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg bg-emerald-50 hover:bg-emerald-100 text-emerald-700 text-sm border border-emerald-200">
+                        <FolderOpen className="w-4 h-4" />
+                        Desarquivar arquivo
+                      </button>
+                    ) : null}
                     <button onClick={() => handleDeleteFile(selectedFile)} className="inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg bg-red-50 hover:bg-red-100 text-red-600 text-sm border border-red-200">
                       <Trash2 className="w-4 h-4" />
-                      Excluir arquivo
+                      {selectedFile.archived_at ? 'Enviar para lixeira' : 'Excluir arquivo'}
                     </button>
                   </div>
                 </>
@@ -3220,6 +4012,16 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
             >
               Abrir pasta
             </button>
+            <button
+              type="button"
+              onClick={() => {
+                handleToggleFavoriteFolder(selectedContextFolder.id);
+                setContextMenu(null);
+              }}
+              className="w-full px-3 py-2.5 text-left text-sm text-slate-700 hover:bg-slate-50 transition"
+            >
+              {favoriteFolderIds.includes(selectedContextFolder.id) ? 'Desafixar pasta' : 'Fixar em favoritos'}
+            </button>
             <div className="border-t border-slate-100" />
             {folderLabels.map((label) => (
               <button
@@ -3301,6 +4103,30 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
             >
               Renomear pasta
             </button>
+            {selectedItemKeys.length > 1 ? (
+              <>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setContextMenu(null);
+                    setBulkRenameModalOpen(true);
+                  }}
+                  className="w-full px-3 py-2.5 text-left text-sm text-slate-700 hover:bg-slate-50 transition"
+                >
+                  Renomear seleção
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setContextMenu(null);
+                    setBulkMoveModalOpen(true);
+                  }}
+                  className="w-full px-3 py-2.5 text-left text-sm text-slate-700 hover:bg-slate-50 transition"
+                >
+                  Mover seleção
+                </button>
+              </>
+            ) : null}
             <div className="border-t border-slate-100" />
             <button
               type="button"
@@ -3477,16 +4303,44 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
             >
               Copiar link
             </button>
+            {selectedItemKeys.length > 1 ? (
+              <>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setContextMenu(null);
+                    setBulkRenameModalOpen(true);
+                  }}
+                  className="w-full px-3 py-2.5 text-left text-sm text-slate-700 hover:bg-slate-50 transition"
+                >
+                  Renomear seleção
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setContextMenu(null);
+                    setBulkMoveModalOpen(true);
+                  }}
+                  className="w-full px-3 py-2.5 text-left text-sm text-slate-700 hover:bg-slate-50 transition"
+                >
+                  Mover seleção
+                </button>
+              </>
+            ) : null}
             <div className="border-t border-slate-100" />
             <button
               type="button"
               onClick={() => {
                 setContextMenu(null);
+                if (selectedContextFile.archived_at) {
+                  void handleRestoreArchivedFile(selectedContextFile);
+                  return;
+                }
                 handleDeleteFile(selectedContextFile);
               }}
               className="w-full px-3 py-2.5 text-left text-sm font-medium text-red-600 hover:bg-red-50 transition"
             >
-              Excluir arquivo
+              {selectedContextFile.archived_at ? 'Desarquivar arquivo' : 'Excluir arquivo'}
             </button>
           </div>
         </div>
@@ -3528,6 +4382,248 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
           </div>
         </div>
       )}
+
+      {bulkRenameModalOpen && (
+        <div className="fixed inset-0 z-[125] bg-slate-900/25 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="w-full max-w-xl rounded-3xl bg-white shadow-[0_24px_70px_rgba(15,23,42,0.18)] border border-slate-200 overflow-hidden">
+            <div className="h-2 w-full bg-gradient-to-r from-orange-500 to-orange-600" />
+            <div className="p-5 sm:p-6 space-y-5 bg-white">
+              <div className="flex items-center justify-between gap-4">
+                <div>
+                  <p className="text-[11px] uppercase tracking-[0.18em] text-slate-400 font-semibold">Cloud</p>
+                  <h3 className="text-xl font-semibold text-slate-900">Renomear em lote</h3>
+                </div>
+                <button onClick={() => setBulkRenameModalOpen(false)} className="rounded-xl p-2 hover:bg-slate-100 transition"><X className="w-5 h-5 text-slate-400" /></button>
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                <input value={bulkRenamePrefix} onChange={(e) => setBulkRenamePrefix(e.target.value)} placeholder="Prefixo" className="w-full rounded-xl border border-slate-200 px-4 py-3 text-sm bg-white text-slate-900 focus:outline-none focus:ring-2 focus:ring-orange-100 focus:border-orange-400" />
+                <input value={bulkRenameSuffix} onChange={(e) => setBulkRenameSuffix(e.target.value)} placeholder="Sufixo" className="w-full rounded-xl border border-slate-200 px-4 py-3 text-sm bg-white text-slate-900 focus:outline-none focus:ring-2 focus:ring-orange-100 focus:border-orange-400" />
+                <input value={bulkRenameSearch} onChange={(e) => setBulkRenameSearch(e.target.value)} placeholder="Texto a buscar" className="w-full rounded-xl border border-slate-200 px-4 py-3 text-sm bg-white text-slate-900 focus:outline-none focus:ring-2 focus:ring-orange-100 focus:border-orange-400" />
+                <input value={bulkRenameReplace} onChange={(e) => setBulkRenameReplace(e.target.value)} placeholder="Substituir por" className="w-full rounded-xl border border-slate-200 px-4 py-3 text-sm bg-white text-slate-900 focus:outline-none focus:ring-2 focus:ring-orange-100 focus:border-orange-400" />
+              </div>
+              <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600">
+                {selectedItemKeys.length} item(ns) selecionado(s)
+              </div>
+              <div className="flex justify-end gap-2">
+                <button onClick={() => setBulkRenameModalOpen(false)} className="px-4 py-2.5 rounded-xl border border-slate-200 bg-white text-sm font-medium text-slate-700 hover:bg-slate-50">Cancelar</button>
+                <button onClick={() => void handleBulkRename()} className="px-5 py-2.5 rounded-xl bg-orange-500 text-white text-sm font-medium hover:bg-orange-600">Aplicar</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {bulkMoveModalOpen && (
+        <div className="fixed inset-0 z-[125] bg-slate-900/25 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="w-full max-w-xl rounded-3xl bg-white shadow-[0_24px_70px_rgba(15,23,42,0.18)] border border-slate-200 overflow-hidden">
+            <div className="h-2 w-full bg-gradient-to-r from-orange-500 to-orange-600" />
+            <div className="p-5 sm:p-6 space-y-5 bg-white">
+              <div className="flex items-center justify-between gap-4">
+                <div>
+                  <p className="text-[11px] uppercase tracking-[0.18em] text-slate-400 font-semibold">Cloud</p>
+                  <h3 className="text-xl font-semibold text-slate-900">Mover itens em lote</h3>
+                </div>
+                <button onClick={() => setBulkMoveModalOpen(false)} className="rounded-xl p-2 hover:bg-slate-100 transition"><X className="w-5 h-5 text-slate-400" /></button>
+              </div>
+              <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600">
+                {selectedItemKeys.length} item(ns) selecionado(s)
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1">Pasta de destino</label>
+                <select value={bulkMoveTargetFolderId} onChange={(e) => setBulkMoveTargetFolderId(e.target.value)} className="w-full rounded-xl border border-slate-200 px-4 py-3 text-sm bg-white text-slate-900 focus:outline-none focus:ring-2 focus:ring-orange-100 focus:border-orange-400">
+                  <option value="">Selecione a pasta destino</option>
+                  {bulkMoveOptions.map((folder) => (
+                    <option key={folder.id} value={folder.id}>{folder.label}</option>
+                  ))}
+                </select>
+              </div>
+              <div className="flex justify-end gap-2">
+                <button onClick={() => setBulkMoveModalOpen(false)} className="px-4 py-2.5 rounded-xl border border-slate-200 bg-white text-sm font-medium text-slate-700 hover:bg-slate-50">Cancelar</button>
+                <button onClick={() => void handleBulkMove()} className="px-5 py-2.5 rounded-xl bg-orange-500 text-white text-sm font-medium hover:bg-orange-600">Mover</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      <AnimatePresence>
+        {uploadQueueSummary.totalItems > 0 ? (
+          <motion.div
+            key="upload-progress-modal"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[150] bg-slate-950/45 backdrop-blur-md flex items-center justify-center p-4"
+          >
+            <motion.div
+              initial={{ scale: 0.96, y: 18, opacity: 0 }}
+              animate={{ scale: 1, y: 0, opacity: 1 }}
+              exit={{ scale: 0.98, y: 12, opacity: 0 }}
+              transition={{ duration: 0.22 }}
+              className="w-full max-w-2xl overflow-hidden rounded-[28px] border border-white/15 bg-[radial-gradient(circle_at_top,_rgba(251,146,60,0.28),_rgba(15,23,42,0.98)_52%)] text-white shadow-[0_30px_80px_rgba(0,0,0,0.45)]"
+            >
+              <div className="border-b border-white/10 px-6 py-5">
+                <div className="flex items-start justify-between gap-4">
+                  <div className="flex items-start gap-4 min-w-0">
+                    <div className="flex h-14 w-14 items-center justify-center rounded-2xl border border-orange-300/30 bg-orange-400/15 shadow-[0_0_30px_rgba(249,115,22,0.25)]">
+                      {uploadQueueSummary.failedItems > 0 ? <RotateCcw className="w-6 h-6 text-orange-200" /> : uploadQueueSummary.completedItems === uploadQueueSummary.totalItems ? <CheckCircle2 className="w-6 h-6 text-emerald-300" /> : <Upload className="w-6 h-6 text-orange-200" />}
+                    </div>
+                    <div className="min-w-0">
+                      <p className="text-[11px] uppercase tracking-[0.28em] text-orange-200/80">Central de Transferência</p>
+                      <h3 className="mt-1 text-2xl font-semibold text-white">
+                        {uploadQueueSummary.failedItems > 0
+                          ? 'Alguns arquivos precisaram de atenção'
+                          : uploadQueueSummary.completedItems === uploadQueueSummary.totalItems
+                            ? 'Upload concluído com sucesso'
+                            : 'Enviando seus documentos'}
+                      </h3>
+                      <p className="mt-1 text-sm text-slate-200/80">
+                        {uploadQueueSummary.failedItems > 0
+                          ? 'Você pode tentar novamente apenas os arquivos que falharam.'
+                          : uploadQueueSummary.completedItems === uploadQueueSummary.totalItems
+                            ? 'Tudo certo. O modal vai desaparecer sozinho.'
+                            : 'Aguarde enquanto o Cloud organiza e envia os arquivos para a pasta correta.'}
+                      </p>
+                    </div>
+                  </div>
+                  {uploadQueueSummary.failedItems > 0 ? (
+                    <button
+                      type="button"
+                      onClick={clearFinishedUploads}
+                      className="rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-xs font-medium text-slate-100 hover:bg-white/10"
+                    >
+                      Fechar
+                    </button>
+                  ) : null}
+                </div>
+
+                <div className="mt-5 rounded-2xl border border-white/10 bg-black/15 p-4">
+                  <div className="flex items-center justify-between gap-3 text-sm">
+                    <span className="text-slate-200">Progresso do lote</span>
+                    <span className="font-semibold text-white">{uploadQueueSummary.totalProgress}%</span>
+                  </div>
+                  <div className="mt-3 h-3 overflow-hidden rounded-full bg-white/10">
+                    <motion.div
+                      className={`h-full rounded-full ${uploadQueueSummary.failedItems > 0 ? 'bg-gradient-to-r from-amber-400 to-orange-500' : uploadQueueSummary.completedItems === uploadQueueSummary.totalItems ? 'bg-gradient-to-r from-emerald-400 to-emerald-500' : 'bg-gradient-to-r from-orange-400 via-orange-500 to-amber-300'}`}
+                      animate={{ width: `${uploadQueueSummary.totalProgress}%` }}
+                      transition={{ duration: 0.3 }}
+                    />
+                  </div>
+                  <div className="mt-3 flex flex-wrap gap-2 text-xs">
+                    <span className="rounded-full border border-white/10 bg-white/5 px-2.5 py-1 text-slate-100">{uploadQueueSummary.completedItems} concluído(s)</span>
+                    {uploadQueueSummary.uploadingItems ? <span className="rounded-full border border-orange-300/20 bg-orange-400/10 px-2.5 py-1 text-orange-100">{uploadQueueSummary.uploadingItems} enviando</span> : null}
+                    {uploadQueueSummary.failedItems ? <span className="rounded-full border border-red-300/20 bg-red-400/10 px-2.5 py-1 text-red-100">{uploadQueueSummary.failedItems} falhou(ram)</span> : null}
+                  </div>
+                </div>
+              </div>
+
+              <div className="max-h-[45vh] space-y-3 overflow-auto px-6 py-5">
+                {uploadQueueItems.map((item) => (
+                  <div key={item.id} className="rounded-2xl border border-white/10 bg-white/5 p-4 backdrop-blur-sm">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <p className="truncate text-sm font-semibold text-white">{item.fileName}</p>
+                        <p className="mt-1 truncate text-xs text-slate-300">{item.folderLabel} • {formatFileSize(item.fileSize)}</p>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <span className={`inline-flex items-center rounded-full px-2.5 py-1 text-[11px] font-medium ${item.status === 'completed' ? 'border border-emerald-300/20 bg-emerald-400/10 text-emerald-100' : item.status === 'failed' ? 'border border-red-300/20 bg-red-400/10 text-red-100' : item.status === 'uploading' ? 'border border-orange-300/20 bg-orange-400/10 text-orange-100' : 'border border-white/10 bg-white/5 text-slate-200'}`}>
+                          {item.status === 'completed' ? 'Concluído' : item.status === 'failed' ? 'Falhou' : item.status === 'uploading' ? 'Enviando' : 'Na fila'}
+                        </span>
+                        {item.status === 'failed' ? (
+                          <button
+                            type="button"
+                            onClick={() => void retryUploadItem(item.id)}
+                            className="rounded-xl border border-white/10 bg-white/5 px-3 py-1.5 text-[11px] font-medium text-white hover:bg-white/10"
+                          >
+                            Tentar novamente
+                          </button>
+                        ) : null}
+                      </div>
+                    </div>
+                    <div className="mt-3 h-2.5 overflow-hidden rounded-full bg-white/10">
+                      <motion.div
+                        className={`h-full rounded-full ${item.status === 'failed' ? 'bg-gradient-to-r from-red-400 to-red-500' : item.status === 'completed' ? 'bg-gradient-to-r from-emerald-400 to-emerald-500' : 'bg-gradient-to-r from-orange-400 to-amber-300'}`}
+                        animate={{ width: `${item.progress}%` }}
+                        transition={{ duration: 0.25 }}
+                      />
+                    </div>
+                    {item.error ? <p className="mt-2 text-xs text-red-200">{item.error}</p> : null}
+                  </div>
+                ))}
+              </div>
+            </motion.div>
+          </motion.div>
+        ) : null}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {deleteModalState.open ? (
+          <motion.div
+            key="delete-document-modal"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[151] bg-slate-950/50 backdrop-blur-md flex items-center justify-center p-4"
+          >
+            <motion.div
+              initial={{ scale: 0.94, y: 16, opacity: 0 }}
+              animate={{ scale: 1, y: 0, opacity: 1 }}
+              exit={{ scale: 0.98, y: 12, opacity: 0 }}
+              className="w-full max-w-md overflow-hidden rounded-[28px] border border-white/15 bg-[radial-gradient(circle_at_top,_rgba(248,113,113,0.2),_rgba(15,23,42,0.98)_58%)] text-white shadow-[0_30px_80px_rgba(0,0,0,0.5)]"
+            >
+              <div className="px-6 py-6">
+                <div className="flex flex-col items-center text-center">
+                  <motion.div
+                    animate={deleteModalState.stage === 'processing' ? { y: [0, -8, 0], rotate: [0, -2, 2, 0], opacity: [1, 0.9, 1] } : { scale: 1 }}
+                    transition={deleteModalState.stage === 'processing' ? { repeat: Infinity, duration: 1.4 } : { duration: 0.2 }}
+                    className={`relative flex h-24 w-24 items-center justify-center rounded-3xl border ${deleteModalState.stage === 'success' ? 'border-emerald-300/20 bg-emerald-400/10' : deleteModalState.stage === 'error' ? 'border-red-300/20 bg-red-400/10' : 'border-white/10 bg-white/5'}`}
+                  >
+                    {deleteModalState.kind === 'folder' ? <Folder className="w-11 h-11 text-amber-200" /> : <FileText className="w-11 h-11 text-red-200" />}
+                    {deleteModalState.stage === 'processing' ? <motion.div initial={{ opacity: 0.4 }} animate={{ opacity: [0.2, 0.8, 0.2], scale: [0.9, 1.15, 0.9] }} transition={{ repeat: Infinity, duration: 1.2 }} className="absolute inset-0 rounded-3xl border border-red-300/20" /> : null}
+                  </motion.div>
+
+                  <h3 className="mt-5 text-2xl font-semibold text-white">
+                    {deleteModalState.stage === 'processing' ? 'Excluindo documento' : deleteModalState.stage === 'success' ? 'Documento removido' : 'Não foi possível excluir'}
+                  </h3>
+                  <p className="mt-2 text-sm text-slate-200/80">
+                    {deleteModalState.stage === 'processing'
+                      ? `Processando ${deleteModalState.title}...`
+                      : deleteModalState.stage === 'success'
+                        ? `${deleteModalState.title} foi processado com sucesso.`
+                        : deleteModalState.error || 'Tente novamente em instantes.'}
+                  </p>
+
+                  <div className="mt-6 w-full rounded-2xl border border-white/10 bg-white/5 p-4">
+                    <div className="flex items-center justify-between text-xs text-slate-300">
+                      <span>Status</span>
+                      <span className="font-semibold text-white">{deleteModalState.stage === 'processing' ? 'Excluindo...' : deleteModalState.stage === 'success' ? 'Concluído' : 'Falhou'}</span>
+                    </div>
+                    <div className="mt-3 h-2.5 overflow-hidden rounded-full bg-white/10">
+                      <motion.div
+                        className={`h-full rounded-full ${deleteModalState.stage === 'success' ? 'bg-gradient-to-r from-emerald-400 to-emerald-500' : deleteModalState.stage === 'error' ? 'bg-gradient-to-r from-red-400 to-red-500' : 'bg-gradient-to-r from-red-400 via-orange-400 to-amber-300'}`}
+                        animate={{ width: deleteModalState.stage === 'processing' ? ['22%', '78%', '45%'] : deleteModalState.stage === 'success' ? '100%' : '100%' }}
+                        transition={deleteModalState.stage === 'processing' ? { repeat: Infinity, duration: 1.3 } : { duration: 0.25 }}
+                      />
+                    </div>
+                  </div>
+
+                  {deleteModalState.stage === 'error' ? (
+                    <div className="mt-5 flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setDeleteModalState((prev) => ({ ...prev, open: false }))}
+                        className="rounded-xl border border-white/10 bg-white/5 px-4 py-2.5 text-sm font-medium text-white hover:bg-white/10"
+                      >
+                        Fechar
+                      </button>
+                    </div>
+                  ) : null}
+                </div>
+              </div>
+            </motion.div>
+          </motion.div>
+        ) : null}
+      </AnimatePresence>
 
       {imagePdfModalOpen && (
         <div className="fixed inset-0 z-[125] bg-slate-900/45 backdrop-blur-sm flex items-center justify-center p-4">

@@ -47,6 +47,23 @@ import { matchesNormalizedSearch } from '../utils/search';
    ============================================================================ */
 
 const VERSION_CODENAMES: Record<string, { name: string; emoji: string }> = {
+  '1.9.787': { name: 'Café Hierarquia Clara', emoji: '🗂️' },
+  '1.9.786': { name: 'Café Link Estável', emoji: '🛡️' },
+  '1.9.785': { name: 'Café Link Aberto', emoji: '🔓' },
+  '1.9.784': { name: 'Café Arquivo Manual', emoji: '📦' },
+  '1.9.783': { name: 'Café Arquivo Polido', emoji: '✨' },
+  '1.9.782': { name: 'Café Arquivo Vivo', emoji: '🗄️' },
+  '1.9.781': { name: 'Café Pasta Compacta', emoji: '📁' },
+  '1.9.780': { name: 'Café Lixeira Acessível', emoji: '🧺' },
+  '1.9.779': { name: 'Café Pasta Lixeira', emoji: '🗂️' },
+  '1.9.778': { name: 'Café Explorer Laranja', emoji: '🪟' },
+  '1.9.777': { name: 'Café Lixeira Windows', emoji: '🗑️' },
+  '1.9.776': { name: 'Café Galáxia Modal', emoji: '🌌' },
+  '1.9.775': { name: 'Café Nuvem Fluida', emoji: '📱' },
+  '1.9.774': { name: 'Café Lixeira Viva', emoji: '🗑️' },
+  '1.9.773': { name: 'Café Busca Total', emoji: '🔎' },
+  '1.9.772': { name: 'Café Fila na Nuvem', emoji: '☁️' },
+  '1.9.771': { name: 'Café PDF Visível', emoji: '📕' },
   '1.9.770': { name: 'Café Raiz Preservada', emoji: '🌳' },
   '1.9.769': { name: 'Café Pasta Compatível', emoji: '🧩' },
   '1.9.768': { name: 'Café Pasta Arrastável', emoji: '🗂️' },
@@ -596,6 +613,385 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
 };
 
 const releases: ReleaseNote[] = [
+  {
+    version: '1.9.787',
+    date: '10/03/2026',
+    summary: 'Cloud: correção da hierarquia do Arquivado para manter subpastas e arquivos dentro da pasta pai arquivada.',
+    modules: [
+      {
+        moduleId: 'cloud',
+        changes: [
+          {
+            type: 'fix',
+            title: 'Hierarquia correta no Arquivado',
+            description: 'Subpastas e arquivos de uma pasta pai arquivada deixaram de aparecer soltos na raiz do Arquivado, respeitando a estrutura original.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.786',
+    date: '10/03/2026',
+    summary: 'Cloud: correção mais profunda do link público para evitar timeout/500 ao resolver a pasta compartilhada.',
+    modules: [
+      {
+        moduleId: 'cloud',
+        changes: [
+          {
+            type: 'fix',
+            title: 'Link público sem consulta pesada da pasta raiz',
+            description: 'O Cloud deixou de depender da leitura direta da pasta raiz compartilhada no acesso público, reduzindo o risco de timeout e erro 500.',
+          },
+          {
+            type: 'improvement',
+            title: 'Fluxo público mais estável para links sem senha',
+            description: 'O acesso automático de links públicos sem senha foi mantido com comportamento mais estável e mensagens mais claras para o usuário final.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.785',
+    date: '10/03/2026',
+    summary: 'Cloud: correção do compartilhamento público para links sem senha e redução de consultas desnecessárias no carregamento público.',
+    modules: [
+      {
+        moduleId: 'cloud',
+        changes: [
+          {
+            type: 'fix',
+            title: 'Link público sem senha não pede senha',
+            description: 'A página pública do Cloud agora detecta corretamente quando o link não possui senha e entra automaticamente sem exibir campo de senha desnecessário.',
+          },
+          {
+            type: 'improvement',
+            title: 'Carregamento público mais leve',
+            description: 'A lógica da página pública foi simplificada para evitar consultas extras de pastas, reduzindo risco de timeout e erro 500 no acesso compartilhado.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.784',
+    date: '10/03/2026',
+    summary: 'Cloud: arquivamento sem exclusão automática, com comportamento totalmente manual no Arquivado.',
+    modules: [
+      {
+        moduleId: 'cloud',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Arquivado sem exclusão automática',
+            description: 'Itens arquivados deixaram de ter prazo automático de exclusão, permanecendo arquivados até ação manual do usuário.',
+          },
+          {
+            type: 'improvement',
+            title: 'Interface do Arquivado mais clara',
+            description: 'Mensagens e indicadores relacionados a exclusão automática/agendada foram removidos do Cloud para refletir o novo comportamento manual.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.783',
+    date: '09/03/2026',
+    summary: 'Cloud: correção do card de pasta e refinamento da área Arquivado com arquivos arquivados e ações mais consistentes.',
+    modules: [
+      {
+        moduleId: 'cloud',
+        changes: [
+          {
+            type: 'fix',
+            title: 'Correção do layout dos cards de pasta',
+            description: 'Foi corrigido o empilhamento incorreto dos botões de ação no cabeçalho dos cards de pasta, estabilizando o layout visual.',
+          },
+          {
+            type: 'improvement',
+            title: 'Arquivado agora mostra arquivos e pastas',
+            description: 'A área `Arquivado` foi ampliada para listar também arquivos arquivados, deixando a visão mais completa.',
+          },
+          {
+            type: 'improvement',
+            title: 'Ações melhores para arquivos arquivados',
+            description: 'Arquivos arquivados agora podem ser desarquivados com mais facilidade pela interface lateral e pelo menu de contexto.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.782',
+    date: '09/03/2026',
+    summary: 'Cloud: nova área Arquivado na navegação com visualização dedicada para pastas arquivadas e ação de arquivar mais acessível.',
+    modules: [
+      {
+        moduleId: 'cloud',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Área Arquivado na navegação do Cloud',
+            description: 'Foi adicionada uma área `Arquivado` ao lado de `Este Computador` e `Lixeira`, permitindo navegar rapidamente pelas pastas arquivadas.',
+          },
+          {
+            type: 'improvement',
+            title: 'Ação de arquivar mais acessível',
+            description: 'O Cloud passou a exibir a ação de arquivar pasta de forma mais visível, facilitando o fluxo de organização sem depender apenas de menus de contexto.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.781',
+    date: '09/03/2026',
+    summary: 'Cloud: pastas mais compactas e com visual mais próximo do Explorer do Windows.',
+    modules: [
+      {
+        moduleId: 'cloud',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Pastas menores e mais compactas',
+            description: 'Os cards de pastas no Cloud foram reduzidos para ocupar menos espaço visual e deixar a navegação mais limpa.',
+          },
+          {
+            type: 'improvement',
+            title: 'Visual de pasta inspirado no Explorer',
+            description: 'O desenho visual da pasta foi refinado para se aproximar mais do estilo do Windows Explorer apresentado como referência.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.780',
+    date: '09/03/2026',
+    summary: 'Cloud: ação de esvaziar lixeira agora fica visível no topo da própria pasta Lixeira.',
+    modules: [
+      {
+        moduleId: 'cloud',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Botão de esvaziar lixeira visível no topo',
+            description: 'A visualização da pasta Lixeira agora exibe o botão `Esvaziar lixeira` no topo da interface, deixando a ação mais fácil de encontrar.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.779',
+    date: '09/03/2026',
+    summary: 'Cloud: lixeira transformada em pasta/área real, com pastas excluídas indo para a lixeira e lateral mais limpa sem histórico recente.',
+    modules: [
+      {
+        moduleId: 'cloud',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Lixeira como pasta real do Cloud',
+            description: 'A lixeira deixou de ser apenas um bloco lateral e passou a funcionar como uma área/pasta navegável do Cloud, exibindo itens arquivados no painel principal.',
+          },
+          {
+            type: 'improvement',
+            title: 'Pastas excluídas agora vão para a lixeira',
+            description: 'Ao excluir uma pasta, o sistema arquiva a árvore inteira de pastas e arquivos para a lixeira antes de qualquer remoção permanente.',
+          },
+          {
+            type: 'improvement',
+            title: 'Sidebar mais simples e sem histórico recente',
+            description: 'O bloco de histórico recente foi removido da lateral para evitar confusão e concentrar a navegação em acesso rápido, recentes e lixeira.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.778',
+    date: '09/03/2026',
+    summary: 'Cloud: refinamento visual para ficar mais próximo do Explorer do Windows, com toolbar mais limpa e navegação mais familiar.',
+    modules: [
+      {
+        moduleId: 'cloud',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Toolbar mais limpa e sem botão de colar print',
+            description: 'O botão visual de colar print foi removido da barra superior para reduzir poluição visual, mantendo o recurso disponível via `Ctrl+V`.',
+          },
+          {
+            type: 'improvement',
+            title: 'Cloud mais parecido com o Explorer do Windows',
+            description: 'A barra superior, o breadcrumb e a navegação lateral receberam refinamentos visuais para aproximar o módulo da sensação de uso do Windows Explorer.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.777',
+    date: '09/03/2026',
+    summary: 'Cloud: lixeira dedicada na lateral com ação de esvaziar lixeira e melhor separação visual entre histórico, arquivados e itens excluídos.',
+    modules: [
+      {
+        moduleId: 'cloud',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Lixeira dedicada com ação de esvaziar',
+            description: 'Os arquivos excluídos passaram a ficar em uma lixeira própria na lateral, com visual destacado e botão para esvaziar lixeira de forma rápida, no estilo Windows.',
+          },
+          {
+            type: 'improvement',
+            title: 'Sidebar do Cloud mais organizada',
+            description: 'A navegação lateral foi reorganizada para separar melhor favoritos, recentes, pastas arquivadas, lixeira e histórico recente, reduzindo a sensação de mistura entre blocos de informação.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.776',
+    date: '09/03/2026',
+    summary: 'Cloud: feedback visual premium para uploads e exclusões, com modal de progresso e animação de remoção de documentos.',
+    modules: [
+      {
+        moduleId: 'cloud',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Upload com modal premium de progresso',
+            description: 'Os uploads do Cloud agora aparecem em um modal central com progresso do lote, status por arquivo, visual mais amigável e fechamento automático após conclusão total bem-sucedida.',
+          },
+          {
+            type: 'improvement',
+            title: 'Exclusão com animação e feedback visual de processamento',
+            description: 'Ao excluir ou enviar arquivos para a lixeira, o Cloud passou a mostrar um modal animado exibindo o documento sendo processado, com estados de sucesso e erro mais claros.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.775',
+    date: '09/03/2026',
+    summary: 'Cloud: melhoria visual e responsiva com painel adaptável, breadcrumb mais limpo e hierarquia de navegação mais clara.',
+    modules: [
+      {
+        moduleId: 'cloud',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Cloud mais limpo e sem cabeçalhos redundantes',
+            description: 'O topo do módulo foi simplificado com remoção do rótulo redundante `Cloud / Raiz` e do contador superior de itens, reduzindo ruído visual.',
+          },
+          {
+            type: 'improvement',
+            title: 'Responsividade e hierarquia visual refinadas',
+            description: 'O painel lateral passou a ser recolhível no mobile, a toolbar agora se reorganiza melhor em telas menores e a navegação por breadcrumb ganhou mais destaque na hierarquia da interface.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.774',
+    date: '09/03/2026',
+    summary: 'Cloud: a Fase 3 trouxe lixeira real para arquivos e histórico recente de atividades integrado ao backend.',
+    modules: [
+      {
+        moduleId: 'cloud',
+        changes: [
+          {
+            type: 'feature',
+            title: 'Lixeira real para arquivos do Cloud',
+            description: 'Arquivos removidos no Cloud passaram a ser arquivados primeiro, com data de exclusão agendada, restauração rápida e opção explícita de exclusão permanente pela lateral.',
+          },
+          {
+            type: 'feature',
+            title: 'Histórico recente de ações do Cloud',
+            description: 'Foi adicionada uma base de logs de atividades no backend para registrar criação, atualização, arquivamento, restauração e remoção de arquivos, pastas e links compartilhados, exibindo os eventos recentes na lateral do módulo.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.773',
+    date: '09/03/2026',
+    summary: 'Cloud: a Fase 2 adicionou busca global, filtros avançados, favoritos e ações em lote com atalhos e menu de contexto reforçados.',
+    modules: [
+      {
+        moduleId: 'cloud',
+        changes: [
+          {
+            type: 'feature',
+            title: 'Busca global com filtros avançados',
+            description: 'O Cloud passou a buscar arquivos e pastas em escopo global quando há termos ou filtros ativos, com filtros por cliente, etiqueta, extensão, intervalo de datas e tamanho do arquivo.',
+          },
+          {
+            type: 'feature',
+            title: 'Favoritos e organização rápida de pastas',
+            description: 'Pastas podem ser fixadas localmente em favoritos para acesso rápido na lateral e também diretamente pela lista, pelos cards e pelo menu de contexto.',
+          },
+          {
+            type: 'improvement',
+            title: 'Ações em lote e atalhos do explorador',
+            description: 'O explorador do Cloud ganhou renomeação em lote, movimentação em lote, atalhos como `F2`, `Ctrl+M` e `Ctrl+Shift+R`, além de opções extras no menu de contexto para seleções múltiplas.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.772',
+    date: '09/03/2026',
+    summary: 'Cloud: a Fase 1 trouxe fila de uploads com retry, progresso visual e envio automático na raiz com pasta dedicada.',
+    modules: [
+      {
+        moduleId: 'cloud',
+        changes: [
+          {
+            type: 'feature',
+            title: 'Fila de uploads com retry e progresso visual',
+            description: 'O Cloud agora mostra uma fila por arquivo com estado de envio, falha, conclusão, barra de progresso por item e consolidado do lote, além de permitir tentar novamente apenas os uploads que falharam.',
+          },
+          {
+            type: 'improvement',
+            title: 'Upload automático de arquivos soltos na raiz',
+            description: 'Arquivos enviados diretamente na raiz do Cloud passam a ser encaminhados automaticamente para uma pasta de upload gerada na hora, evitando bloqueios quando não há pasta previamente aberta.',
+          },
+          {
+            type: 'improvement',
+            title: 'Estrutura de pasta recriada com mais consistência no drag-and-drop',
+            description: 'A leitura de diretórios arrastados passou a preservar melhor os nomes reais das entradas do navegador para recriar a hierarquia de pastas e subpastas com mais fidelidade.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.771',
+    date: '09/03/2026',
+    summary: 'Cloud: os cards de PDF passaram a mostrar a primeira página real como preview.',
+    modules: [
+      {
+        moduleId: 'cloud',
+        changes: [
+          {
+            type: 'fix',
+            title: 'Preview real de PDF no modo cards',
+            description: 'Os cards de arquivos PDF no Cloud deixaram de exibir apenas um placeholder textual e passaram a renderizar a primeira página do documento com `react-pdf`, facilitando a identificação visual do arquivo.',
+          },
+        ],
+      },
+    ],
+  },
   {
     version: '1.9.770',
     date: '09/03/2026',

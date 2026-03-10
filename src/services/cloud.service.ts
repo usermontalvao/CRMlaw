@@ -1,8 +1,10 @@
 import { supabase } from '../config/supabase';
 import type {
+  CloudActivityLog,
   CloudFile,
   CloudFolder,
   CloudFolderShare,
+  CloudPublicShareInfo,
   CloudShareAccessResult,
   CreateCloudFolderDTO,
   CreateCloudShareDTO,
@@ -32,6 +34,7 @@ class CloudService {
   private foldersTable = 'cloud_folders';
   private filesTable = 'cloud_files';
   private sharesTable = 'cloud_folder_shares';
+  private activityTable = 'cloud_activity_logs';
 
   private async ensureBucket() {
     return;
@@ -110,12 +113,26 @@ class CloudService {
   }
 
   async archiveFolder(folderId: string): Promise<CloudFolder> {
-    const deleteAt = new Date();
-    deleteAt.setDate(deleteAt.getDate() + 30);
+    const [childFolders, childFiles] = await Promise.all([
+      this.listFolders(folderId, true),
+      this.listFiles(folderId, true),
+    ]);
+
+    for (const childFolder of childFolders) {
+      if (!childFolder.archived_at) {
+        await this.archiveFolder(childFolder.id);
+      }
+    }
+
+    for (const childFile of childFiles) {
+      if (!childFile.archived_at) {
+        await this.archiveFile(childFile.id);
+      }
+    }
 
     return this.updateFolder(folderId, {
       archived_at: new Date().toISOString(),
-      delete_scheduled_for: deleteAt.toISOString(),
+      delete_scheduled_for: null,
     });
   }
 
@@ -133,8 +150,8 @@ class CloudService {
 
   async deleteFolder(folderId: string): Promise<void> {
     const [childFolders, childFiles] = await Promise.all([
-      this.listFolders(folderId),
-      this.listFiles(folderId),
+      this.listFolders(folderId, true),
+      this.listFiles(folderId, true),
     ]);
 
     for (const childFolder of childFolders) {
@@ -153,67 +170,90 @@ class CloudService {
     if (error) throw new Error(error.message);
   }
 
-  async listFiles(folderId: string): Promise<CloudFile[]> {
-    const { data, error } = await supabase
+  async listFiles(folderId: string, includeArchived = false): Promise<CloudFile[]> {
+    let query = supabase
       .from(this.filesTable)
       .select('*')
       .eq('folder_id', folderId)
       .order('original_name', { ascending: true });
 
+    if (!includeArchived) query = query.is('archived_at', null);
+
+    const { data, error } = await query;
+
     if (error) throw new Error(error.message);
     return (data as CloudFile[]) ?? [];
   }
 
-  async listAllFiles(): Promise<CloudFile[]> {
-    const { data, error } = await supabase
+  async listAllFiles(includeArchived = true): Promise<CloudFile[]> {
+    let query = supabase
       .from(this.filesTable)
       .select('*')
       .order('original_name', { ascending: true });
 
+    if (!includeArchived) query = query.is('archived_at', null);
+
+    const { data, error } = await query;
+
     if (error) throw new Error(error.message);
     return (data as CloudFile[]) ?? [];
   }
 
-  async uploadFiles(folderId: string, files: File[], clientId?: string | null): Promise<CloudFile[]> {
+  async listArchivedFiles(): Promise<CloudFile[]> {
+    const { data, error } = await supabase
+      .from(this.filesTable)
+      .select('*')
+      .not('archived_at', 'is', null)
+      .order('updated_at', { ascending: false });
+
+    if (error) throw new Error(error.message);
+    return (data as CloudFile[]) ?? [];
+  }
+
+  async uploadFile(folderId: string, file: File, clientId?: string | null): Promise<CloudFile> {
     await this.ensureBucket();
 
+    const safeOriginalName = sanitizeStorageSegment(file.name);
+    const safeName = `${crypto.randomUUID()}_${safeOriginalName}`;
+    const storagePath = `${folderId}/${safeName}`;
+
+    const { error: uploadError } = await supabase.storage
+      .from(CLOUD_BUCKET)
+      .upload(storagePath, file, {
+        contentType: file.type || 'application/octet-stream',
+        upsert: false,
+      });
+
+    if (uploadError) {
+      throw new Error(uploadError.message);
+    }
+
+    const { data, error } = await supabase
+      .from(this.filesTable)
+      .insert({
+        folder_id: folderId,
+        client_id: clientId || null,
+        original_name: file.name,
+        storage_path: storagePath,
+        mime_type: file.type || 'application/octet-stream',
+        file_size: file.size,
+        extension: file.name.includes('.') ? file.name.split('.').pop()?.toLowerCase() ?? null : null,
+      })
+      .select('*')
+      .single();
+
+    if (error) {
+      await supabase.storage.from(CLOUD_BUCKET).remove([storagePath]);
+      throw new Error(error.message);
+    }
+
+    return data as CloudFile;
+  }
+
+  async uploadFiles(folderId: string, files: File[], clientId?: string | null): Promise<CloudFile[]> {
     const created: CloudFile[] = [];
     for (const file of files) {
-      const safeOriginalName = sanitizeStorageSegment(file.name);
-      const safeName = `${crypto.randomUUID()}_${safeOriginalName}`;
-      const storagePath = `${folderId}/${safeName}`;
-
-      const { error: uploadError } = await supabase.storage
-        .from(CLOUD_BUCKET)
-        .upload(storagePath, file, {
-          contentType: file.type || 'application/octet-stream',
-          upsert: false,
-        });
-
-      if (uploadError) {
-        throw new Error(uploadError.message);
-      }
-
-      const { data, error } = await supabase
-        .from(this.filesTable)
-        .insert({
-          folder_id: folderId,
-          client_id: clientId || null,
-          original_name: file.name,
-          storage_path: storagePath,
-          mime_type: file.type || 'application/octet-stream',
-          file_size: file.size,
-          extension: file.name.includes('.') ? file.name.split('.').pop()?.toLowerCase() ?? null : null,
-        })
-        .select('*')
-        .single();
-
-      if (error) {
-        await supabase.storage.from(CLOUD_BUCKET).remove([storagePath]);
-        throw new Error(error.message);
-      }
-
-      created.push(data as CloudFile);
+      created.push(await this.uploadFile(folderId, file, clientId || null));
     }
 
     return created;
@@ -272,6 +312,36 @@ class CloudService {
     const { error } = await supabase.from(this.filesTable).delete().eq('id', file.id);
     if (error) throw new Error(error.message);
     await supabase.storage.from(CLOUD_BUCKET).remove([file.storage_path]);
+  }
+
+  async archiveFile(fileId: string): Promise<CloudFile> {
+    const { data, error } = await supabase
+      .from(this.filesTable)
+      .update({
+        archived_at: new Date().toISOString(),
+        delete_scheduled_for: null,
+      })
+      .eq('id', fileId)
+      .select('*')
+      .single();
+
+    if (error) throw new Error(error.message);
+    return data as CloudFile;
+  }
+
+  async restoreFile(fileId: string): Promise<CloudFile> {
+    const { data, error } = await supabase
+      .from(this.filesTable)
+      .update({
+        archived_at: null,
+        delete_scheduled_for: null,
+      })
+      .eq('id', fileId)
+      .select('*')
+      .single();
+
+    if (error) throw new Error(error.message);
+    return data as CloudFile;
   }
 
   async renameFile(fileId: string, newName: string): Promise<CloudFile> {
@@ -449,6 +519,17 @@ class CloudService {
     return (data as CloudFolderShare[]) ?? [];
   }
 
+  async listActivityLogs(limit = 40): Promise<CloudActivityLog[]> {
+    const { data, error } = await supabase
+      .from(this.activityTable)
+      .select('*')
+      .order('created_at', { ascending: false })
+      .limit(limit);
+
+    if (error) throw new Error(error.message);
+    return (data as CloudActivityLog[]) ?? [];
+  }
+
   async disableShare(shareId: string): Promise<void> {
     const { error } = await supabase
       .from(this.sharesTable)
@@ -479,14 +560,40 @@ class CloudService {
       }
     }
 
-    const folder = await this.getFolder(data.folder_id);
-    if (!folder) {
-      throw new Error('A pasta compartilhada não foi encontrada.');
+    return {
+      share: data as CloudFolderShare,
+      folder: {
+        id: data.folder_id,
+        name: 'Pasta compartilhada',
+        parent_id: null,
+        client_id: null,
+        archived_at: null,
+        delete_scheduled_for: null,
+        created_by: data.created_by ?? null,
+        updated_by: data.created_by ?? null,
+        created_at: data.created_at,
+        updated_at: data.updated_at,
+      },
+    };
+  }
+
+  async getPublicShareInfo(token: string): Promise<CloudPublicShareInfo> {
+    const { data, error } = await supabase
+      .from(this.sharesTable)
+      .select('*')
+      .eq('token', token)
+      .eq('is_active', true)
+      .maybeSingle();
+
+    if (error) throw new Error(error.message);
+    if (!data) throw new Error('Link público não encontrado.');
+    if (data.expires_at && new Date(data.expires_at).getTime() < Date.now()) {
+      throw new Error('Este link público expirou.');
     }
 
     return {
       share: data as CloudFolderShare,
-      folder,
+      requiresPassword: Boolean(data.password_hash),
     };
   }
 
@@ -495,7 +602,7 @@ class CloudService {
   }
 
   async listPublicFiles(folderId: string): Promise<CloudFile[]> {
-    return this.listFiles(folderId);
+    return this.listFiles(folderId, false);
   }
 
   buildPublicShareUrl(token: string) {

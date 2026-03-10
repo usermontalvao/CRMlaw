@@ -34,9 +34,22 @@ export interface CloudFile {
   mime_type?: string | null;
   file_size: number;
   extension?: string | null;
+  archived_at?: string | null;
+  delete_scheduled_for?: string | null;
   created_by?: string | null;
   created_at: string;
   updated_at: string;
+}
+
+export interface CloudActivityLog {
+  id: string;
+  entity_type: 'file' | 'folder' | 'share';
+  entity_id: string;
+  action: string;
+  description?: string | null;
+  metadata?: Record<string, unknown> | null;
+  created_by?: string | null;
+  created_at: string;
 }
 
 export interface CreateCloudShareDTO {
@@ -70,4 +83,9 @@ export interface CloudBreadcrumbItem {
 export interface CloudShareAccessResult {
   share: CloudFolderShare;
   folder: CloudFolder;
+}
+
+export interface CloudPublicShareInfo {
+  share: CloudFolderShare;
+  requiresPassword: boolean;
 }

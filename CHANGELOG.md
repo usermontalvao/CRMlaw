@@ -1,5 +1,75 @@
 # Changelog
   
+  ## 1.9.787
+  - **Cloud/Arquivado**: Corrigida a hierarquia da área `Arquivado` para impedir que subpastas e arquivos de uma pasta pai arquivada apareçam soltos no nível raiz.
+  - **Cloud/UX**: A visualização do Arquivado agora respeita melhor a estrutura original das pastas arquivadas.
+
+  ## 1.9.786
+  - **Cloud/Compartilhamento Público**: Corrigido o fluxo de acesso público para evitar a busca direta da pasta raiz compartilhada, reduzindo o risco de `statement timeout` e erro `500` no link público.
+  - **Cloud/Compartilhamento Público**: Mensagem de link sem senha foi mantida mais clara, com acesso automático quando o compartilhamento não exige senha.
+
+  ## 1.9.785
+  - **Cloud/Compartilhamento Público**: A página pública da pasta agora só exibe campo de senha quando o link realmente possui senha.
+  - **Cloud/Compartilhamento Público**: Links sem senha passam a entrar automaticamente na pasta compartilhada, sem exigir interação desnecessária.
+  - **Cloud/Bugfix**: O carregamento público foi simplificado para evitar consultas desnecessárias na página compartilhada, reduzindo risco de timeout/erro 500.
+
+  ## 1.9.784
+  - **Cloud/Arquivado**: Removida a exclusão automática de itens arquivados. O arquivamento agora funciona apenas como estado manual até você restaurar ou excluir manualmente.
+  - **Cloud/UI**: Textos e indicadores de agendamento automático foram removidos da interface do Arquivado.
+
+  ## 1.9.783
+  - **Cloud/Bugfix**: Corrigido o layout dos cards de pasta no modo visual, evitando quebra/empilhamento incorreto dos botões de ação no canto superior.
+  - **Cloud/Arquivado**: A área `Arquivado` passou a exibir também arquivos arquivados, não apenas pastas.
+  - **Cloud/UX**: Adicionadas ações mais coerentes para arquivos arquivados, incluindo opção de desarquivar diretamente pela interface e pelo menu de contexto.
+
+  ## 1.9.782
+  - **Cloud/Arquivado**: Adicionada a área `Arquivado` na navegação do Cloud, ao lado de `Este Computador` e `Lixeira`.
+  - **Cloud/Arquivamento**: Pastas arquivadas agora podem ser visualizadas em uma área dedicada, com ação de arquivar mais acessível na interface.
+
+  ## 1.9.781
+  - **Cloud/Pastas**: Os cards de pastas ficaram menores e mais compactos, com visual mais próximo do Explorer do Windows.
+  - **Cloud/UI**: O ícone visual de pasta foi redesenhado para se aproximar do estilo mostrado na referência enviada.
+
+  ## 1.9.780
+  - **Cloud/Lixeira**: Adicionado botão visível de `Esvaziar lixeira` no topo da visualização da lixeira, facilitando o acesso à ação dentro da própria pasta.
+
+  ## 1.9.779
+  - **Cloud/Lixeira**: A lixeira passou a funcionar como uma pasta/área real do Cloud, navegável pela lateral, exibindo arquivos e pastas arquivados no conteúdo principal.
+  - **Cloud/Exclusão**: Excluir pastas agora envia a árvore inteira para a lixeira em vez de remover permanentemente de imediato.
+  - **Cloud/UI**: Removido o bloco `Histórico recente` da lateral para reduzir confusão visual.
+
+  ## 1.9.778
+  - **Cloud/Explorer**: Removido o botão `Colar print` da toolbar, mantendo a funcionalidade disponível pelo atalho `Ctrl+V`.
+  - **Cloud/UI**: Barra superior, breadcrumb e navegação lateral foram refinados para deixar o módulo mais próximo da experiência visual do Windows Explorer.
+
+  ## 1.9.777
+  - **Cloud/Lixeira**: A lateral do Cloud foi reorganizada com uma lixeira dedicada, visual próprio para arquivos excluídos e ação de `Esvaziar lixeira` no estilo Windows.
+  - **Cloud/Organização**: Pastas arquivadas, lixeira e histórico recente foram separados em blocos mais claros para reduzir confusão visual na navegação lateral.
+
+  ## 1.9.776
+  - **Cloud/Upload**: A antiga fila visual inline foi substituída por um modal premium de progresso com status por arquivo, barra animada, fechamento automático no sucesso total e ação de tentar novamente nos itens com falha.
+  - **Cloud/Exclusão**: A exclusão e o envio para lixeira agora exibem um modal animado mostrando o documento sendo removido, com feedback visual de processamento, sucesso e erro.
+
+  ## 1.9.775
+  - **Cloud/UI**: Removido o cabeçalho redundante com `Cloud / Raiz` e o contador superior de itens, deixando a navegação mais limpa.
+  - **Cloud/Responsivo**: Melhorada a responsividade do módulo com painel lateral recolhível no mobile, toolbar adaptável e layout de lista mais flexível em telas menores.
+  - **Cloud/UX**: Reforçada a hierarquia visual com breadcrumb dedicado e melhor distribuição das informações entre navegação, ações e conteúdo.
+
+  ## 1.9.774
+  - **Cloud/Lixeira**: Arquivos do Cloud agora vão para a lixeira antes da exclusão definitiva, com restauração rápida e indicação de data prevista para remoção permanente.
+  - **Cloud/Histórico**: Adicionada base de histórico de atividades no banco e painel lateral com eventos recentes de arquivos, pastas e links compartilhados.
+
+  ## 1.9.773
+  - **Cloud/Busca**: Adicionada busca global com filtros por cliente, etiqueta, extensão, data e tamanho, permitindo localizar arquivos e pastas com mais precisão em todo o Cloud.
+  - **Cloud/Organização**: Adicionados favoritos locais para pastas, renomeação em lote, movimentação em lote, atalhos de teclado (`F2`, `Ctrl+M`, `Ctrl+Shift+R`) e reforço do menu de contexto com ações rápidas para seleção múltipla.
+
+  ## 1.9.772
+  - **Cloud/Upload**: Adicionada fila de upload com estados por arquivo (`na fila`, `enviando`, `concluído`, `falhou`), retry individual e barra de progresso visual por item e total do lote.
+  - **Cloud/Raiz**: Arquivos soltos enviados na raiz do Cloud agora criam automaticamente uma pasta de upload, enquanto o arraste de diretórios passou a preservar melhor a estrutura completa de pastas e subpastas.
+
+  ## 1.9.771
+  - **Cloud/PDF**: Corrigido o preview de PDFs no modo cards do Cloud para renderizar a primeira página real do documento, em vez de exibir apenas um placeholder com ícone.
+
   ## 1.9.770
   - **Cloud/Upload**: Corrigida a leitura do caminho no arraste de pasta para preservar o nome da pasta raiz e recriar a estrutura completa no Cloud, inclusive quando o drop acontece em `/cloud`.
 
