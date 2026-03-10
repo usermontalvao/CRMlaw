@@ -1,5 +1,9 @@
 # Changelog
   
+  ## 1.9.805
+  - **Cloud/UX**: Ajustada a interação entre seleção e abertura de itens para que o painel lateral de detalhes não roube a intenção de duplo clique ao entrar em pastas.
+  - **Cloud/Navegação**: A abertura automática do drawer de detalhes agora respeita um pequeno atraso cancelável, melhorando a fluidez ao navegar por pastas e arquivos.
+
   ## 1.9.804
   - **Cloud/Peticionamento**: Corrigida a abertura de arquivos Word vindos do Cloud para evitar importação duplicada do documento no editor de petições.
   - **Peticionamento/Performance**: O widget flutuante do editor deixa de carregar a lista pesada de petições salvas quando é aberto apenas para importar um documento inicial, reduzindo risco de `statement timeout`.

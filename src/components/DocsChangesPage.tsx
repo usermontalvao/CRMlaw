@@ -47,6 +47,7 @@ import { matchesNormalizedSearch } from '../utils/search';
    ============================================================================ */
 
 const VERSION_CODENAMES: Record<string, { name: string; emoji: string }> = {
+  '1.9.805': { name: 'Café Clique Fino', emoji: '🖱️' },
   '1.9.804': { name: 'Café Fluxo Estável', emoji: '🧾' },
   '1.9.803': { name: 'Café Painel Livre', emoji: '🪟' },
   '1.9.802': { name: 'Café Coluna Clara', emoji: '📚' },
@@ -630,6 +631,28 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
 };
 
 const releases: ReleaseNote[] = [
+  {
+    version: '1.9.805',
+    date: '10/03/2026',
+    summary: 'Cloud: navegação por clique ficou mais fluida sem o drawer atrapalhar o duplo clique.',
+    modules: [
+      {
+        moduleId: 'cloud',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Drawer de detalhes respeita melhor a intenção de navegação',
+            description: 'A abertura automática do painel de detalhes ganhou um pequeno atraso cancelável, reduzindo a sensação de que a lateral abre cedo demais quando você quer apenas dar duplo clique e entrar na pasta.',
+          },
+          {
+            type: 'improvement',
+            title: 'Duplo clique de pastas e arquivos ficou mais previsível',
+            description: 'Ao navegar no Cloud, o duplo clique agora cancela a abertura automática do drawer antes de entrar na pasta ou abrir o arquivo, deixando a experiência mais próxima de um explorador tradicional.',
+          },
+        ],
+      },
+    ],
+  },
   {
     version: '1.9.804',
     date: '10/03/2026',

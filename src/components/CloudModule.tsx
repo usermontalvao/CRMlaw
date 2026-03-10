@@ -399,6 +399,7 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
   });
   const uploadModalAutoCloseRef = useRef<number | null>(null);
   const deleteModalAutoCloseRef = useRef<number | null>(null);
+  const detailsDrawerAutoOpenRef = useRef<number | null>(null);
 
   useEffect(() => {
     uploadQueueItemsRef.current = uploadQueueItems;
@@ -413,6 +414,10 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
       if (deleteModalAutoCloseRef.current) {
         window.clearTimeout(deleteModalAutoCloseRef.current);
         deleteModalAutoCloseRef.current = null;
+      }
+      if (detailsDrawerAutoOpenRef.current) {
+        window.clearTimeout(detailsDrawerAutoOpenRef.current);
+        detailsDrawerAutoOpenRef.current = null;
       }
     };
   }, []);
@@ -525,10 +530,21 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
   }, [allFolders, folders, selectedItemKey]);
 
   const clearExplorerSelection = useCallback(() => {
+    if (detailsDrawerAutoOpenRef.current) {
+      window.clearTimeout(detailsDrawerAutoOpenRef.current);
+      detailsDrawerAutoOpenRef.current = null;
+    }
     setSelectedItemKey(null);
     setSelectedItemKeys([]);
     setSelectionAnchorKey(null);
     setContextMenu(null);
+  }, []);
+
+  const cancelDetailsDrawerAutoOpen = useCallback(() => {
+    if (detailsDrawerAutoOpenRef.current) {
+      window.clearTimeout(detailsDrawerAutoOpenRef.current);
+      detailsDrawerAutoOpenRef.current = null;
+    }
   }, []);
 
   const selectedFileKeys = useMemo(
@@ -557,10 +573,16 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
   }, [clients, selectedFile, selectedFolder]);
 
   useEffect(() => {
+    cancelDetailsDrawerAutoOpen();
     if (selectedFile || selectedFolder) {
-      setDetailsDrawerOpen(true);
+      detailsDrawerAutoOpenRef.current = window.setTimeout(() => {
+        setDetailsDrawerOpen(true);
+        detailsDrawerAutoOpenRef.current = null;
+      }, 220);
+      return;
     }
-  }, [selectedFile, selectedFolder]);
+    setDetailsDrawerOpen(false);
+  }, [cancelDetailsDrawerAutoOpen, selectedFile, selectedFolder]);
 
   const uploadQueueSummary = useMemo(() => {
     const totalItems = uploadQueueItems.length;
@@ -3448,7 +3470,11 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
                           event.preventDefault();
                           applySelection(itemKey, { additive: event.ctrlKey || event.metaKey || event.altKey });
                         }}
-                        onDoubleClick={() => setCurrentFolderId(folder.id)}
+                        onDoubleClick={() => {
+                          cancelDetailsDrawerAutoOpen();
+                          setDetailsDrawerOpen(false);
+                          setCurrentFolderId(folder.id);
+                        }}
                         onContextMenu={(e) => {
                           e.preventDefault();
                           setSelectedItemKey(itemKey);
@@ -3540,6 +3566,8 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
                         setContextMenu({ x: e.clientX, y: e.clientY, type: 'file', fileId: file.id });
                       }}
                       onDoubleClick={() => {
+                        cancelDetailsDrawerAutoOpen();
+                        setDetailsDrawerOpen(false);
                         if (isWordFile(file.mime_type, file.original_name)) {
                           handleOpenDocxEditor(file);
                           return;
@@ -3609,7 +3637,11 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
                             event.preventDefault();
                             applySelection(itemKey, { additive: event.ctrlKey || event.metaKey || event.altKey });
                           }}
-                          onDoubleClick={() => setCurrentFolderId(folder.id)}
+                          onDoubleClick={() => {
+                            cancelDetailsDrawerAutoOpen();
+                            setDetailsDrawerOpen(false);
+                            setCurrentFolderId(folder.id);
+                          }}
                           onContextMenu={(e) => {
                             e.preventDefault();
                             setSelectedItemKey(itemKey);
@@ -3703,6 +3735,8 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
                           applySelection(itemKey, { additive: event.ctrlKey || event.metaKey || event.altKey });
                         }}
                         onDoubleClick={() => {
+                          cancelDetailsDrawerAutoOpen();
+                          setDetailsDrawerOpen(false);
                           if (isWordFile(file.mime_type, file.original_name)) {
                             handleOpenDocxEditor(file);
                             return;
