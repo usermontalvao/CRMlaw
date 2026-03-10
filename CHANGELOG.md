@@ -1,5 +1,15 @@
 # Changelog
   
+  ## 1.9.803
+  - **Cloud/UX**: O painel de detalhes agora abre como drawer overlay à direita, preservando a largura da área principal e permitindo abrir/fechar os detalhes sob demanda.
+  - **Cloud/Cards**: A visualização em cards passou a usar grid responsivo com largura mínima por card, reduzindo deformações quando o espaço disponível diminui.
+
+  ## 1.9.802
+  - **Cloud/Sidebar**: Ajustado o layout da árvore lateral para deixar as informações auxiliares abaixo do nome da pasta, reforçando a leitura vertical e reduzindo a sensação de conteúdo espremido.
+
+  ## 1.9.801
+  - **Cloud/Sidebar**: Melhorada a árvore lateral de pastas para evitar esmagamento visual em nomes longos, com título em até duas linhas e selo de vínculo posicionado abaixo do nome.
+
   ## 1.9.800
   - **Cloud/Caixa de entrada**: Corrigida a identificação de pastas e arquivos arrastados ao soltar na `Caixa de entrada`, resolvendo cenários em que o highlight aparecia mas a restauração/desarquivamento não era executado.
 

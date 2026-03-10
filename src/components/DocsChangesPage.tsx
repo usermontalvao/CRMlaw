@@ -47,6 +47,9 @@ import { matchesNormalizedSearch } from '../utils/search';
    ============================================================================ */
 
 const VERSION_CODENAMES: Record<string, { name: string; emoji: string }> = {
+  '1.9.803': { name: 'Café Painel Livre', emoji: '🪟' },
+  '1.9.802': { name: 'Café Coluna Clara', emoji: '📚' },
+  '1.9.801': { name: 'Café Árvore Leve', emoji: '🌿' },
   '1.9.800': { name: 'Café Entrada Viva', emoji: '📬' },
   '1.9.799': { name: 'Café Drop Preciso', emoji: '🎯' },
   '1.9.798': { name: 'Café Atalho Vivo', emoji: '🧲' },
@@ -626,6 +629,62 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
 };
 
 const releases: ReleaseNote[] = [
+  {
+    version: '1.9.803',
+    date: '10/03/2026',
+    summary: 'Cloud: painel de detalhes virou drawer overlay e os cards ganharam grid responsivo.',
+    modules: [
+      {
+        moduleId: 'cloud',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Painel de detalhes em drawer overlay',
+            description: 'Ao selecionar uma pasta ou arquivo, os detalhes agora deslizam pela direita sem comprimir a área principal do explorador.',
+          },
+          {
+            type: 'improvement',
+            title: 'Cards com distribuição responsiva mais estável',
+            description: 'A grade de cards passou a usar colunas automáticas com largura mínima, preservando melhor o layout quando o espaço disponível muda.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.802',
+    date: '10/03/2026',
+    summary: 'Cloud: informações auxiliares da árvore lateral agora aparecem abaixo do nome da pasta.',
+    modules: [
+      {
+        moduleId: 'cloud',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Árvore lateral com leitura mais vertical',
+            description: 'O layout dos itens da árvore agora prioriza nome no topo e informações auxiliares logo abaixo, com espaçamento mais claro entre seta, ícone e conteúdo.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.801',
+    date: '10/03/2026',
+    summary: 'Cloud: árvore lateral mais legível para nomes longos de pastas.',
+    modules: [
+      {
+        moduleId: 'cloud',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Sidebar evita esmagamento de nomes longos',
+            description: 'Os itens da árvore lateral agora usam até duas linhas para o nome da pasta e deixam o selo de vínculo abaixo, preservando leitura e hierarquia visual.',
+          },
+        ],
+      },
+    ],
+  },
   {
     version: '1.9.800',
     date: '10/03/2026',

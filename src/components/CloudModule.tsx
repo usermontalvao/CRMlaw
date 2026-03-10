@@ -23,6 +23,7 @@ import {
   Home,
   ImageIcon,
   History,
+  Info,
   LayoutGrid,
   Link2,
   Loader2,
@@ -382,6 +383,7 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
   const [bulkMoveModalOpen, setBulkMoveModalOpen] = useState(false);
   const [bulkMoveTargetFolderId, setBulkMoveTargetFolderId] = useState('');
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [detailsDrawerOpen, setDetailsDrawerOpen] = useState(false);
   const [deleteModalState, setDeleteModalState] = useState<{
     open: boolean;
     title: string;
@@ -553,6 +555,12 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
     const clientId = selectedFile?.client_id || selectedFolder?.client_id || null;
     return clients.find((item) => item.id === clientId) ?? null;
   }, [clients, selectedFile, selectedFolder]);
+
+  useEffect(() => {
+    if (selectedFile || selectedFolder) {
+      setDetailsDrawerOpen(true);
+    }
+  }, [selectedFile, selectedFolder]);
 
   const uploadQueueSummary = useMemo(() => {
     const totalItems = uploadQueueItems.length;
@@ -2953,7 +2961,7 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
       return (
         <div key={folder.id}>
           <div
-            className={`flex items-center gap-1 rounded-md px-2 py-1.5 text-sm transition ${
+            className={`flex items-start gap-1 rounded-md px-2 py-1.5 text-sm transition ${
               isDropTarget ? 'bg-orange-200 ring-2 ring-orange-400' : isActive ? 'bg-orange-100 text-orange-900' : 'text-slate-700 hover:bg-orange-50'
             }`}
             style={{ paddingLeft: `${8 + depth * 16}px` }}
@@ -2972,7 +2980,7 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
             <button
               type="button"
               onClick={() => children.length > 0 && toggleTreeFolder(folder.id)}
-              className="w-4 h-4 flex items-center justify-center text-slate-400"
+              className="mt-1 flex h-4 w-4 items-center justify-center text-slate-400"
             >
               {children.length > 0 ? (expanded ? <ChevronDown className="w-3 h-3" /> : <ChevronRight className="w-3 h-3" />) : null}
             </button>
@@ -2982,15 +2990,19 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
                 setCurrentFolderId(folder.id);
                 setSelectedItemKey(`folder:${folder.id}`);
               }}
-              className="flex items-center gap-2 min-w-0 flex-1 text-left"
+              className="flex min-w-0 flex-1 items-start gap-2 text-left"
             >
-              {isActive ? <FolderOpen className="w-4 h-4 text-orange-500" /> : <Folder className="w-4 h-4 text-orange-500" />}
-              <span className="truncate">{folder.name}</span>
-              {showClientLinkBadge ? (
-                <span className={`inline-flex items-center rounded-full border px-1.5 py-0.5 text-[10px] font-medium ${hasClientLink ? 'border-emerald-200 bg-emerald-50 text-emerald-700' : 'border-slate-200 bg-slate-100 text-slate-500'}`}>
-                  {hasClientLink ? 'Vinculada' : 'Sem vínculo'}
+              {isActive ? <FolderOpen className="mt-0.5 h-4 w-4 flex-shrink-0 text-orange-500" /> : <Folder className="mt-0.5 h-4 w-4 flex-shrink-0 text-orange-500" />}
+              <span className="flex min-w-0 flex-1 flex-col gap-1">
+                <span className="block overflow-hidden text-ellipsis break-words text-[13px] leading-5 text-inherit" style={{ display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical' }} title={folder.name}>
+                  {folder.name}
                 </span>
-              ) : null}
+                {showClientLinkBadge ? (
+                  <span className={`inline-flex max-w-fit items-center rounded-full border px-1.5 py-0.5 text-[10px] font-medium ${hasClientLink ? 'border-emerald-200 bg-emerald-50 text-emerald-700' : 'border-slate-200 bg-slate-100 text-slate-500'}`}>
+                    {hasClientLink ? 'Vinculada' : 'Sem vínculo'}
+                  </span>
+                ) : null}
+              </span>
             </button>
           </div>
           {expanded && children.length > 0 ? renderTree(children, depth + 1) : null}
@@ -3141,6 +3153,16 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
             >
               <Trash2 className="w-4 h-4" />
               Esvaziar lixeira
+            </button>
+          ) : null}
+          {selectedFolder || selectedFile ? (
+            <button
+              type="button"
+              onClick={() => setDetailsDrawerOpen((prev) => !prev)}
+              className={`inline-flex items-center gap-2 rounded-lg border px-3 py-1.5 text-xs font-medium ${detailsDrawerOpen ? 'border-slate-300 bg-slate-900 text-white hover:bg-slate-800' : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50'}`}
+            >
+              <Info className="w-4 h-4" />
+              {detailsDrawerOpen ? 'Ocultar detalhes' : 'Mostrar detalhes'}
             </button>
           ) : null}
         </div>
@@ -3546,7 +3568,10 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
                   );
                 })
               ) : (
-                <div className="p-4 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4 gap-3">
+                <div
+                  className="grid gap-3 p-4"
+                  style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))' }}
+                >
                   {explorerRows.map((row) => {
                     if (row.kind === 'folder') {
                       const folder = row.folder;
@@ -3780,196 +3805,229 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
             ) : null}
           </div>
         </section>
+      </div>
 
-        {(selectedFolder || selectedFile) ? (
-          <aside className="w-[300px] border-l border-slate-200 bg-slate-50 flex flex-col">
-            <div className="flex-1 overflow-auto p-4 space-y-4">
-              {selectedFolder ? (
-                <>
-                <div className="rounded-xl border border-slate-200 bg-white p-4 space-y-3">
-                  <div className="flex items-center gap-3">
-                    <FolderOpen className="w-8 h-8 text-amber-500" />
-                    <div className="min-w-0">
-                      <p className="text-slate-900 font-semibold truncate">{selectedFolder.name}</p>
-                      <p className="text-xs text-slate-500">Pasta</p>
-                    </div>
-                  </div>
-                  <div className="flex flex-wrap gap-2">
-                    {folderLabels.map((label) => {
-                      const active = getFolderLabel(selectedFolder.id).id === label.id;
-                      return (
-                        <button
-                          key={label.id}
-                          type="button"
-                          onClick={() => handleAssignFolderLabel(selectedFolder.id, label.id)}
-                          className={`inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-xs font-medium transition ${
-                            active ? `${label.bgClass} ${label.textClass} ${label.borderClass}` : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'
-                          }`}
-                        >
-                          <Tag className="w-3 h-3" />
-                          {label.name}
-                        </button>
-                      );
-                    })}
-                  </div>
-                  <div className="space-y-2 text-sm">
-                    <div>
-                      <p className="text-slate-400 text-xs">Cliente</p>
-                      <p className="text-slate-700">{clients.find((item) => item.id === selectedFolder.client_id)?.full_name || 'Sem cliente vinculado'}</p>
-                    </div>
-                    <div>
-                      <p className="text-slate-400 text-xs">Modificado</p>
-                      <p className="text-slate-700">{formatDateTime(selectedFolder.updated_at)}</p>
-                    </div>
-                    <div>
-                      <p className="text-slate-400 text-xs">Local</p>
-                      <p className="text-slate-700">{breadcrumbLabel}</p>
-                    </div>
-                  </div>
+      <AnimatePresence>
+        {(selectedFolder || selectedFile) && detailsDrawerOpen ? (
+          <>
+            <motion.div
+              key="cloud-details-drawer-backdrop"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: 0.18 }}
+              className="absolute inset-0 z-20 bg-slate-900/20 backdrop-blur-[1px]"
+              onClick={() => setDetailsDrawerOpen(false)}
+            />
+            <motion.aside
+              key="cloud-details-drawer"
+              initial={{ x: '100%', opacity: 0.98 }}
+              animate={{ x: 0, opacity: 1 }}
+              exit={{ x: '100%', opacity: 0.98 }}
+              transition={{ type: 'spring', stiffness: 280, damping: 28 }}
+              className="absolute inset-y-0 right-0 z-30 flex w-full max-w-[340px] flex-col border-l border-slate-200 bg-slate-50 shadow-[-12px_0_40px_rgba(15,23,42,0.12)]"
+            >
+              <div className="flex items-center justify-between border-b border-slate-200 bg-white px-4 py-3">
+                <div>
+                  <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">Painel</p>
+                  <p className="text-sm font-medium text-slate-900">Detalhes do item</p>
                 </div>
-                <div className="rounded-xl border border-slate-200 bg-white p-4 space-y-3">
-                  <p className="text-sm font-medium text-slate-900">Vincular cliente</p>
-                  <ClientSearchSelect
-                    value={selectedFolder.client_id || ''}
-                    onChange={(clientId) => handleLinkFolderClient(selectedFolder.id, clientId)}
-                    placeholder="Buscar cliente para vincular"
-                    allowCreate={false}
-                  />
-                </div>
-                <div className="rounded-xl border border-slate-200 bg-white p-4 space-y-3">
-                  <p className="text-sm font-medium text-slate-900">Adicionar mais etiqueta</p>
-                  <div className="grid grid-cols-1 gap-3">
-                    <input
-                      value={newLabelName}
-                      onChange={(e) => setNewLabelName(e.target.value)}
-                      placeholder="Ex: Protocolado"
-                      className="w-full rounded-xl border border-slate-200 px-4 py-3 text-sm bg-white text-slate-900 focus:outline-none focus:ring-2 focus:ring-orange-100 focus:border-orange-400"
-                    />
-                    <div className="flex items-center gap-3">
-                      <input type="color" value={newLabelColor} onChange={(e) => setNewLabelColor(e.target.value)} className="w-16 h-11 rounded-xl border border-slate-200 bg-white p-1" />
-                      <button type="button" onClick={handleCreateCustomLabel} className="flex-1 px-4 py-2.5 rounded-xl bg-orange-50 text-orange-700 border border-orange-200 text-sm font-medium hover:bg-orange-100">
-                        Adicionar mais
-                      </button>
-                    </div>
-                  </div>
-                </div>
-                {selectedFolder.archived_at ? (
-                  <button
-                    onClick={() => handleUnarchiveFolder(selectedFolder)}
-                    className="w-full inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg bg-emerald-50 hover:bg-emerald-100 text-emerald-700 text-sm border border-emerald-200"
-                  >
-                    <FolderOpen className="w-4 h-4" />
-                    Desarquivar pasta
-                  </button>
-                ) : (
-                  <button
-                    onClick={() => handleArchiveFolder(selectedFolder)}
-                    className="w-full inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg bg-amber-50 hover:bg-amber-100 text-amber-700 text-sm border border-amber-200"
-                  >
-                    <FolderOpen className="w-4 h-4" />
-                    Arquivar pasta
-                  </button>
-                )}
                 <button
-                  onClick={() => handleDownloadFolder(selectedFolder)}
-                  className="w-full inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-800 text-sm border border-slate-200"
+                  type="button"
+                  onClick={() => setDetailsDrawerOpen(false)}
+                  className="rounded-xl p-2 text-slate-400 transition hover:bg-slate-100 hover:text-slate-700"
                 >
-                  <Download className="w-4 h-4" />
-                  Baixar pasta
+                  <X className="w-5 h-5" />
                 </button>
-                <button
-                  onClick={() => {
-                    setSelectedFolderForShare(selectedFolder);
-                    setSharePassword('');
-                    setShareExpiresAt('');
-                    setShareLink('');
-                    setShareModalOpen(true);
-                  }}
-                  className="w-full inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg bg-orange-500 hover:bg-orange-600 text-white text-sm"
-                >
-                  <Share2 className="w-4 h-4" />
-                  Compartilhar pasta
-                </button>
-                </>
-              ) : selectedFile ? (
-                <>
+              </div>
+              <div className="flex-1 overflow-auto p-4 space-y-4">
+                {selectedFolder ? (
+                  <>
                   <div className="rounded-xl border border-slate-200 bg-white p-4 space-y-3">
                     <div className="flex items-center gap-3">
-                      {isPdfFile(selectedFile.mime_type, selectedFile.original_name) ? <FileText className="w-6 h-6 text-red-500" /> : isImageFile(selectedFile.mime_type) ? <ImageIcon className="w-6 h-6 text-emerald-500" /> : <File className="w-6 h-6 text-sky-500" />}
+                      <FolderOpen className="w-8 h-8 text-amber-500" />
                       <div className="min-w-0">
-                        <p className="text-slate-900 font-semibold truncate">{selectedFile.original_name}</p>
-                        <div className="mt-1">
-                          <span className="inline-flex items-center rounded-full border border-slate-200 bg-slate-50 px-2 py-0.5 text-[11px] font-medium text-slate-700">
-                            {getFileTypeLabel(selectedFile)}
-                          </span>
-                        </div>
+                        <p className="text-slate-900 font-semibold truncate">{selectedFolder.name}</p>
+                        <p className="text-xs text-slate-500">Pasta</p>
+                      </div>
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      {folderLabels.map((label) => {
+                        const active = getFolderLabel(selectedFolder.id).id === label.id;
+                        return (
+                          <button
+                            key={label.id}
+                            type="button"
+                            onClick={() => handleAssignFolderLabel(selectedFolder.id, label.id)}
+                            className={`inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-xs font-medium transition ${
+                              active ? `${label.bgClass} ${label.textClass} ${label.borderClass}` : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'
+                            }`}
+                          >
+                            <Tag className="w-3 h-3" />
+                            {label.name}
+                          </button>
+                        );
+                      })}
+                    </div>
+                    <div className="space-y-2 text-sm">
+                      <div>
+                        <p className="text-slate-400 text-xs">Cliente</p>
+                        <p className="text-slate-700">{clients.find((item) => item.id === selectedFolder.client_id)?.full_name || 'Sem cliente vinculado'}</p>
+                      </div>
+                      <div>
+                        <p className="text-slate-400 text-xs">Modificado</p>
+                        <p className="text-slate-700">{formatDateTime(selectedFolder.updated_at)}</p>
+                      </div>
+                      <div>
+                        <p className="text-slate-400 text-xs">Local</p>
+                        <p className="text-slate-700">{breadcrumbLabel}</p>
                       </div>
                     </div>
                   </div>
-                  <div className="grid grid-cols-1 gap-2">
-                    <button onClick={() => {
-                      if (isWordFile(selectedFile.mime_type, selectedFile.original_name)) {
-                        handleOpenDocxEditor(selectedFile);
-                        return;
-                      }
-                      setPreviewFile(selectedFile);
-                    }} className="inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg bg-orange-500 hover:bg-orange-600 text-white text-sm">
-                      <FileText className="w-4 h-4" />
-                      {isWordFile(selectedFile.mime_type, selectedFile.original_name) ? 'Abrir editor' : 'Abrir preview'}
-                    </button>
-                    <button
-                      onClick={() => handleDownloadFile(selectedFile)}
-                      className="inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-800 text-sm border border-slate-200"
-                    >
-                      <Download className="w-4 h-4" />
-                      Baixar arquivo
-                    </button>
-                    {isImageFile(selectedFile.mime_type) ? (
-                      <button
-                        onClick={() => openConvertImagesModal(selectedImageFiles.some((item) => item.id === selectedFile.id) ? undefined : [selectedFile])}
-                        className="inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg bg-slate-900 hover:bg-slate-800 text-white text-sm"
-                      >
-                        <FileText className="w-4 h-4" />
-                        Converter PDF
-                      </button>
-                    ) : null}
-                    {isPdfFile(selectedFile.mime_type, selectedFile.original_name) ? (
-                      <button
-                        onClick={() => void openPdfToolsModal(selectedFile)}
-                        className="inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg bg-slate-900 hover:bg-slate-800 text-white text-sm"
-                      >
-                        <Scissors className="w-4 h-4" />
-                        Hub PDF
-                      </button>
-                    ) : null}
-                    <button
-                      onClick={() => {
-                        setSelectedFileToMove(selectedFile);
-                        setTargetFolderId('');
-                        setMoveModalOpen(true);
-                      }}
-                      className="inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-800 text-sm border border-slate-200"
-                    >
-                      <MoveRight className="w-4 h-4" />
-                      Mover arquivo
-                    </button>
-                    {selectedFile.archived_at ? (
-                      <button onClick={() => void handleRestoreArchivedFile(selectedFile)} className="inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg bg-emerald-50 hover:bg-emerald-100 text-emerald-700 text-sm border border-emerald-200">
-                        <FolderOpen className="w-4 h-4" />
-                        Desarquivar arquivo
-                      </button>
-                    ) : null}
-                    <button onClick={() => handleDeleteFile(selectedFile)} className="inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg bg-red-50 hover:bg-red-100 text-red-600 text-sm border border-red-200">
-                      <Trash2 className="w-4 h-4" />
-                      Excluir arquivo
-                    </button>
+                  <div className="rounded-xl border border-slate-200 bg-white p-4 space-y-3">
+                    <p className="text-sm font-medium text-slate-900">Vincular cliente</p>
+                    <ClientSearchSelect
+                      value={selectedFolder.client_id || ''}
+                      onChange={(clientId) => handleLinkFolderClient(selectedFolder.id, clientId)}
+                      placeholder="Buscar cliente para vincular"
+                      allowCreate={false}
+                    />
                   </div>
-                </>
-              ) : null}
-            </div>
-          </aside>
+                  <div className="rounded-xl border border-slate-200 bg-white p-4 space-y-3">
+                    <p className="text-sm font-medium text-slate-900">Adicionar mais etiqueta</p>
+                    <div className="grid grid-cols-1 gap-3">
+                      <input
+                        value={newLabelName}
+                        onChange={(e) => setNewLabelName(e.target.value)}
+                        placeholder="Ex: Protocolado"
+                        className="w-full rounded-xl border border-slate-200 px-4 py-3 text-sm bg-white text-slate-900 focus:outline-none focus:ring-2 focus:ring-orange-100 focus:border-orange-400"
+                      />
+                      <div className="flex items-center gap-3">
+                        <input type="color" value={newLabelColor} onChange={(e) => setNewLabelColor(e.target.value)} className="w-16 h-11 rounded-xl border border-slate-200 bg-white p-1" />
+                        <button type="button" onClick={handleCreateCustomLabel} className="flex-1 px-4 py-2.5 rounded-xl bg-orange-50 text-orange-700 border border-orange-200 text-sm font-medium hover:bg-orange-100">
+                          Adicionar mais
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                  {selectedFolder.archived_at ? (
+                    <button
+                      onClick={() => handleUnarchiveFolder(selectedFolder)}
+                      className="w-full inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg bg-emerald-50 hover:bg-emerald-100 text-emerald-700 text-sm border border-emerald-200"
+                    >
+                      <FolderOpen className="w-4 h-4" />
+                      Desarquivar pasta
+                    </button>
+                  ) : (
+                    <button
+                      onClick={() => handleArchiveFolder(selectedFolder)}
+                      className="w-full inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg bg-amber-50 hover:bg-amber-100 text-amber-700 text-sm border border-amber-200"
+                    >
+                      <FolderOpen className="w-4 h-4" />
+                      Arquivar pasta
+                    </button>
+                  )}
+                  <button
+                    onClick={() => handleDownloadFolder(selectedFolder)}
+                    className="w-full inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-800 text-sm border border-slate-200"
+                  >
+                    <Download className="w-4 h-4" />
+                    Baixar pasta
+                  </button>
+                  <button
+                    onClick={() => {
+                      setSelectedFolderForShare(selectedFolder);
+                      setSharePassword('');
+                      setShareExpiresAt('');
+                      setShareLink('');
+                      setShareModalOpen(true);
+                    }}
+                    className="w-full inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg bg-orange-500 hover:bg-orange-600 text-white text-sm"
+                  >
+                    <Share2 className="w-4 h-4" />
+                    Compartilhar pasta
+                  </button>
+                  </>
+                ) : selectedFile ? (
+                  <>
+                    <div className="rounded-xl border border-slate-200 bg-white p-4 space-y-3">
+                      <div className="flex items-center gap-3">
+                        {isPdfFile(selectedFile.mime_type, selectedFile.original_name) ? <FileText className="w-6 h-6 text-red-500" /> : isImageFile(selectedFile.mime_type) ? <ImageIcon className="w-6 h-6 text-emerald-500" /> : <File className="w-6 h-6 text-sky-500" />}
+                        <div className="min-w-0">
+                          <p className="text-slate-900 font-semibold truncate">{selectedFile.original_name}</p>
+                          <div className="mt-1">
+                            <span className="inline-flex items-center rounded-full border border-slate-200 bg-slate-50 px-2 py-0.5 text-[11px] font-medium text-slate-700">
+                              {getFileTypeLabel(selectedFile)}
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-1 gap-2">
+                      <button onClick={() => {
+                        if (isWordFile(selectedFile.mime_type, selectedFile.original_name)) {
+                          handleOpenDocxEditor(selectedFile);
+                          return;
+                        }
+                        setPreviewFile(selectedFile);
+                      }} className="inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg bg-orange-500 hover:bg-orange-600 text-white text-sm">
+                        <FileText className="w-4 h-4" />
+                        {isWordFile(selectedFile.mime_type, selectedFile.original_name) ? 'Abrir editor' : 'Abrir preview'}
+                      </button>
+                      <button
+                        onClick={() => handleDownloadFile(selectedFile)}
+                        className="inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-800 text-sm border border-slate-200"
+                      >
+                        <Download className="w-4 h-4" />
+                        Baixar arquivo
+                      </button>
+                      {isImageFile(selectedFile.mime_type) ? (
+                        <button
+                          onClick={() => openConvertImagesModal(selectedImageFiles.some((item) => item.id === selectedFile.id) ? undefined : [selectedFile])}
+                          className="inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg bg-slate-900 hover:bg-slate-800 text-white text-sm"
+                        >
+                          <FileText className="w-4 h-4" />
+                          Converter PDF
+                        </button>
+                      ) : null}
+                      {isPdfFile(selectedFile.mime_type, selectedFile.original_name) ? (
+                        <button
+                          onClick={() => void openPdfToolsModal(selectedFile)}
+                          className="inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg bg-slate-900 hover:bg-slate-800 text-white text-sm"
+                        >
+                          <Scissors className="w-4 h-4" />
+                          Hub PDF
+                        </button>
+                      ) : null}
+                      <button
+                        onClick={() => {
+                          setSelectedFileToMove(selectedFile);
+                          setTargetFolderId('');
+                          setMoveModalOpen(true);
+                        }}
+                        className="inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-800 text-sm border border-slate-200"
+                      >
+                        <MoveRight className="w-4 h-4" />
+                        Mover arquivo
+                      </button>
+                      {selectedFile.archived_at ? (
+                        <button onClick={() => void handleRestoreArchivedFile(selectedFile)} className="inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg bg-emerald-50 hover:bg-emerald-100 text-emerald-700 text-sm border border-emerald-200">
+                          <FolderOpen className="w-4 h-4" />
+                          Desarquivar arquivo
+                        </button>
+                      ) : null}
+                      <button onClick={() => handleDeleteFile(selectedFile)} className="inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg bg-red-50 hover:bg-red-100 text-red-600 text-sm border border-red-200">
+                        <Trash2 className="w-4 h-4" />
+                        Excluir arquivo
+                      </button>
+                    </div>
+                  </>
+                ) : null}
+              </div>
+            </motion.aside>
+          </>
         ) : null}
-      </div>
+      </AnimatePresence>
 
       {folderModalOpen && (
         <div className="fixed inset-0 z-[120] bg-slate-900/25 backdrop-blur-sm flex items-center justify-center p-4">
