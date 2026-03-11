@@ -69,6 +69,8 @@ const isWordFile = (mime?: string | null, name?: string) => {
     || lower.endsWith('.doc');
 };
 
+type CloudCardSize = 'small' | 'medium' | 'large';
+
 const isDocxFile = (mime?: string | null, name?: string) => {
   const lower = String(name || '').toLowerCase();
   return mime === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' || lower.endsWith('.docx');
@@ -212,6 +214,9 @@ const CLOUD_FOLDER_LABELS_STORAGE_KEY = 'cloud-folder-labels-v1';
 const CLOUD_FOLDER_LABEL_ASSIGNMENTS_STORAGE_KEY = 'cloud-folder-label-assignments-v1';
 const CLOUD_VIEW_MODE_STORAGE_KEY = 'cloud-view-mode-v1';
 const CLOUD_FAVORITE_FOLDER_IDS_STORAGE_KEY = 'cloud-favorite-folder-ids-v1';
+const CLOUD_FAVORITE_FILE_IDS_STORAGE_KEY = 'cloud-favorite-file-ids-v1';
+const CLOUD_RECENT_FILE_IDS_STORAGE_KEY = 'cloud-recent-file-ids-v1';
+const CLOUD_CARD_SIZE_STORAGE_KEY = 'cloud-card-size-v1';
 const CLOUD_ARCHIVED_FOLDER_ID = '__cloud_archived__';
 const CLOUD_TRASH_FOLDER_ID = '__cloud_trash__';
 
@@ -259,6 +264,12 @@ const getInitialCloudViewMode = (): CloudViewMode => {
   if (typeof window === 'undefined') return 'list';
   const stored = window.localStorage.getItem(CLOUD_VIEW_MODE_STORAGE_KEY);
   return stored === 'cards' ? 'cards' : 'list';
+};
+
+const getInitialCloudCardSize = (): CloudCardSize => {
+  if (typeof window === 'undefined') return 'medium';
+  const stored = window.localStorage.getItem(CLOUD_CARD_SIZE_STORAGE_KEY);
+  return stored === 'small' || stored === 'large' ? stored : 'medium';
 };
 
 const getEventTargetElement = (target: EventTarget | null): Element | null => {
@@ -310,6 +321,8 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
   const toast = useToastContext();
   const editorRef = useRef<SyncfusionEditorRef | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const explorerViewportRef = useRef<HTMLDivElement | null>(null);
+  const itemElementMapRef = useRef<Record<string, HTMLDivElement | null>>({});
   const [clients, setClients] = useState<Client[]>([]);
   const [allFolders, setAllFolders] = useState<CloudFolder[]>([]);
   const [allFiles, setAllFiles] = useState<CloudFile[]>([]);
@@ -343,6 +356,7 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
   const [selectedItemKeys, setSelectedItemKeys] = useState<string[]>([]);
   const [selectionAnchorKey, setSelectionAnchorKey] = useState<string | null>(null);
   const [viewMode, setViewMode] = useState<CloudViewMode>(getInitialCloudViewMode);
+  const [cardSize, setCardSize] = useState<CloudCardSize>(getInitialCloudCardSize);
   const [expandedFolders, setExpandedFolders] = useState<Record<string, boolean>>({});
   const [folderLabels, setFolderLabels] = useState<FolderLabelConfig[]>(DEFAULT_FOLDER_LABELS);
   const [folderLabelAssignments, setFolderLabelAssignments] = useState<Record<string, string>>({});
@@ -383,6 +397,8 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
   const [trashedFiles, setTrashedFiles] = useState<CloudFile[]>([]);
   const [trashedFolders, setTrashedFolders] = useState<CloudFolder[]>([]);
   const [favoriteFolderIds, setFavoriteFolderIds] = useState<string[]>([]);
+  const [favoriteFileIds, setFavoriteFileIds] = useState<string[]>([]);
+  const [recentFileIds, setRecentFileIds] = useState<string[]>([]);
   const [showAdvancedFilters, setShowAdvancedFilters] = useState(false);
   const [searchFilters, setSearchFilters] = useState<CloudSearchFilters>(EMPTY_CLOUD_SEARCH_FILTERS);
   const [bulkRenameModalOpen, setBulkRenameModalOpen] = useState(false);
@@ -395,6 +411,10 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
   const [clipboardSelection, setClipboardSelection] = useState<{ mode: 'copy' | 'cut'; itemKeys: string[] } | null>(null);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [detailsDrawerOpen, setDetailsDrawerOpen] = useState(false);
+  const [inlineRenameTarget, setInlineRenameTarget] = useState<{ type: 'file' | 'folder'; id: string; currentName: string } | null>(null);
+  const [inlineRenameValue, setInlineRenameValue] = useState('');
+  const [selectionBox, setSelectionBox] = useState<{ startX: number; startY: number; currentX: number; currentY: number } | null>(null);
+  const [dragVisualState, setDragVisualState] = useState<{ folderId: string | null; mode: 'move' | 'copy' | 'cut' | null } | null>(null);
   const [deleteModalState, setDeleteModalState] = useState<{
     open: boolean;
     title: string;
@@ -432,6 +452,18 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
       }
     };
   }, []);
+
+  const cardGridMinWidth = useMemo(() => {
+    if (cardSize === 'small') return 190;
+    if (cardSize === 'large') return 280;
+    return 220;
+  }, [cardSize]);
+
+  const cardPreviewHeightClass = useMemo(() => {
+    if (cardSize === 'small') return 'h-28';
+    if (cardSize === 'large') return 'h-44';
+    return 'h-36';
+  }, [cardSize]);
 
   const hasActiveAdvancedFilters = useMemo(() => {
     return Boolean(
@@ -523,6 +555,18 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
       .filter((folder): folder is CloudFolder => Boolean(folder));
   }, [allFolders, favoriteFolderIds]);
 
+  const favoriteFiles = useMemo(() => {
+    return favoriteFileIds
+      .map((fileId) => allFiles.find((file) => file.id === fileId) ?? null)
+      .filter((file): file is CloudFile => Boolean(file));
+  }, [allFiles, favoriteFileIds]);
+
+  const recentFiles = useMemo(() => {
+    return recentFileIds
+      .map((fileId) => allFiles.find((file) => file.id === fileId) ?? null)
+      .filter((file): file is CloudFile => Boolean(file));
+  }, [allFiles, recentFileIds]);
+
   const currentClient = useMemo(
     () => (isTrashView || isArchivedView ? null : clients.find((item) => item.id === currentFolder?.client_id) ?? null),
     [clients, currentFolder, isArchivedView, isTrashView],
@@ -549,6 +593,8 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
     setSelectedItemKeys([]);
     setSelectionAnchorKey(null);
     setContextMenu(null);
+    setInlineRenameTarget(null);
+    setInlineRenameValue('');
   }, []);
 
   const cancelDetailsDrawerAutoOpen = useCallback(() => {
@@ -582,6 +628,8 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
     const clientId = selectedFile?.client_id || selectedFolder?.client_id || null;
     return clients.find((item) => item.id === clientId) ?? null;
   }, [clients, selectedFile, selectedFolder]);
+
+  const headerClient = useMemo(() => selectedClient ?? currentClient, [currentClient, selectedClient]);
 
   useEffect(() => {
     cancelDetailsDrawerAutoOpen();
@@ -981,6 +1029,10 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
   }, [viewMode]);
 
   useEffect(() => {
+    window.localStorage.setItem(CLOUD_CARD_SIZE_STORAGE_KEY, cardSize);
+  }, [cardSize]);
+
+  useEffect(() => {
     try {
       const storedFavorites = window.localStorage.getItem(CLOUD_FAVORITE_FOLDER_IDS_STORAGE_KEY);
       if (!storedFavorites) return;
@@ -996,6 +1048,40 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
   useEffect(() => {
     window.localStorage.setItem(CLOUD_FAVORITE_FOLDER_IDS_STORAGE_KEY, JSON.stringify(favoriteFolderIds));
   }, [favoriteFolderIds]);
+
+  useEffect(() => {
+    try {
+      const storedFavoriteFiles = window.localStorage.getItem(CLOUD_FAVORITE_FILE_IDS_STORAGE_KEY);
+      if (!storedFavoriteFiles) return;
+      const parsedFavoriteFiles = JSON.parse(storedFavoriteFiles);
+      if (Array.isArray(parsedFavoriteFiles)) {
+        setFavoriteFileIds(parsedFavoriteFiles.filter((item): item is string => typeof item === 'string'));
+      }
+    } catch {
+      setFavoriteFileIds([]);
+    }
+  }, []);
+
+  useEffect(() => {
+    window.localStorage.setItem(CLOUD_FAVORITE_FILE_IDS_STORAGE_KEY, JSON.stringify(favoriteFileIds));
+  }, [favoriteFileIds]);
+
+  useEffect(() => {
+    try {
+      const storedRecentFiles = window.localStorage.getItem(CLOUD_RECENT_FILE_IDS_STORAGE_KEY);
+      if (!storedRecentFiles) return;
+      const parsedRecentFiles = JSON.parse(storedRecentFiles);
+      if (Array.isArray(parsedRecentFiles)) {
+        setRecentFileIds(parsedRecentFiles.filter((item): item is string => typeof item === 'string'));
+      }
+    } catch {
+      setRecentFileIds([]);
+    }
+  }, []);
+
+  useEffect(() => {
+    window.localStorage.setItem(CLOUD_RECENT_FILE_IDS_STORAGE_KEY, JSON.stringify(recentFileIds));
+  }, [recentFileIds]);
 
   useEffect(() => {
     if (viewMode !== 'cards') return;
@@ -1120,6 +1206,57 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
     () => explorerRows.map((row) => (row.kind === 'folder' ? `folder:${row.folder.id}` : `file:${row.file.id}`)),
     [explorerRows],
   );
+
+  const syncBoxSelection = useCallback((nextBox: { startX: number; startY: number; currentX: number; currentY: number }) => {
+    const container = explorerViewportRef.current;
+    if (!container) return;
+
+    const containerRect = container.getBoundingClientRect();
+    const left = Math.min(nextBox.startX, nextBox.currentX) - containerRect.left + container.scrollLeft;
+    const right = Math.max(nextBox.startX, nextBox.currentX) - containerRect.left + container.scrollLeft;
+    const top = Math.min(nextBox.startY, nextBox.currentY) - containerRect.top + container.scrollTop;
+    const bottom = Math.max(nextBox.startY, nextBox.currentY) - containerRect.top + container.scrollTop;
+    const selectedKeysInBox = explorerItemKeys.filter((itemKey) => {
+      const element = itemElementMapRef.current[itemKey];
+      if (!element) return false;
+      const rect = element.getBoundingClientRect();
+      const itemLeft = rect.left - containerRect.left + container.scrollLeft;
+      const itemRight = itemLeft + rect.width;
+      const itemTop = rect.top - containerRect.top + container.scrollTop;
+      const itemBottom = itemTop + rect.height;
+      return itemRight >= left && itemLeft <= right && itemBottom >= top && itemTop <= bottom;
+    });
+
+    setSelectedItemKeys(selectedKeysInBox);
+    setSelectedItemKey(selectedKeysInBox[selectedKeysInBox.length - 1] ?? null);
+    setSelectionAnchorKey(selectedKeysInBox[0] ?? null);
+  }, [explorerItemKeys]);
+
+  useEffect(() => {
+    if (!selectionBox) return;
+
+    const handlePointerMove = (event: PointerEvent) => {
+      const nextBox = {
+        startX: selectionBox.startX,
+        startY: selectionBox.startY,
+        currentX: event.clientX,
+        currentY: event.clientY,
+      };
+      setSelectionBox(nextBox);
+      syncBoxSelection(nextBox);
+    };
+
+    const handlePointerUp = () => {
+      setSelectionBox(null);
+    };
+
+    window.addEventListener('pointermove', handlePointerMove);
+    window.addEventListener('pointerup', handlePointerUp);
+    return () => {
+      window.removeEventListener('pointermove', handlePointerMove);
+      window.removeEventListener('pointerup', handlePointerUp);
+    };
+  }, [selectionBox, syncBoxSelection]);
 
   const previewPdfFiles = useMemo(
     () => filteredFiles.filter((file) => isPdfFile(file.mime_type, file.original_name)),
@@ -1601,6 +1738,8 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
   };
 
   const applySelection = (itemKey: string, options?: { additive?: boolean; range?: boolean }) => {
+    setInlineRenameTarget(null);
+    setInlineRenameValue('');
     if (options?.range && selectionAnchorKey && explorerItemKeys.length > 0) {
       const anchorIndex = explorerItemKeys.indexOf(selectionAnchorKey);
       const targetIndex = explorerItemKeys.indexOf(itemKey);
@@ -1639,7 +1778,59 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
     setSelectedItemKeys([nextKey]);
     setSelectionAnchorKey(nextKey);
     setContextMenu(null);
+    setInlineRenameTarget(null);
+    setInlineRenameValue('');
   }, [explorerItemKeys, selectedItemKey]);
+
+  const rememberRecentFile = useCallback((fileId: string) => {
+    setRecentFileIds((prev) => [fileId, ...prev.filter((item) => item !== fileId)].slice(0, 15));
+  }, []);
+
+  const handleToggleFavoriteFile = useCallback((fileId: string) => {
+    setFavoriteFileIds((prev) => (
+      prev.includes(fileId)
+        ? prev.filter((id) => id !== fileId)
+        : [fileId, ...prev]
+    ));
+  }, []);
+
+  const startInlineRename = useCallback((target: { type: 'file' | 'folder'; id: string; currentName: string }) => {
+    setRenameModalOpen(false);
+    setRenameTarget(null);
+    setRenameValue('');
+    setInlineRenameTarget(target);
+    if (target.type === 'file' && target.currentName.toLowerCase().endsWith('.pdf')) {
+      setInlineRenameValue(target.currentName.slice(0, -4));
+    } else {
+      setInlineRenameValue(target.currentName);
+    }
+  }, []);
+
+  const cancelInlineRename = useCallback(() => {
+    setInlineRenameTarget(null);
+    setInlineRenameValue('');
+  }, []);
+
+  const commitInlineRename = useCallback(async () => {
+    if (!inlineRenameTarget || !inlineRenameValue.trim()) return;
+
+    try {
+      if (inlineRenameTarget.type === 'file') {
+        const nextName = inlineRenameTarget.currentName.toLowerCase().endsWith('.pdf')
+          ? `${inlineRenameValue.trim()}.pdf`
+          : inlineRenameValue.trim();
+        await cloudService.renameFile(inlineRenameTarget.id, nextName);
+        toast.success('Cloud', 'Arquivo renomeado com sucesso.');
+      } else {
+        await cloudService.updateFolder(inlineRenameTarget.id, { name: inlineRenameValue.trim() });
+        toast.success('Cloud', 'Pasta renomeada com sucesso.');
+      }
+      cancelInlineRename();
+      await loadData();
+    } catch (error: any) {
+      toast.error('Cloud', error.message || 'Erro ao renomear.');
+    }
+  }, [cancelInlineRename, cloudService, inlineRenameTarget, inlineRenameValue, loadData, toast]);
 
   const openSelectedItem = (itemKey: string | null) => {
     if (!itemKey) return;
@@ -1667,6 +1858,7 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
       const fileId = itemKey.replace('file:', '');
       const file = files.find((item) => item.id === fileId) ?? null;
       if (!file) return;
+      rememberRecentFile(file.id);
       if (isWordFile(file.mime_type, file.original_name)) {
         void handleOpenDocxEditor(file);
         return;
@@ -2305,11 +2497,13 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
 
   const handleDragStart = (itemKey: string) => {
     setDraggingItemKey(itemKey);
+    setDragVisualState({ folderId: null, mode: clipboardSelection?.mode || 'move' });
   };
 
   const handleDragEnd = () => {
     setDraggingItemKey(null);
     setDropTargetFolderId(null);
+    setDragVisualState(null);
   };
 
   const handleDropOnSpecialView = async (target: 'archived' | 'trash') => {
@@ -2358,6 +2552,7 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
     } finally {
       setDraggingItemKey(null);
       setDropTargetFolderId(null);
+      setDragVisualState(null);
     }
   };
 
@@ -2596,6 +2791,7 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
     }
 
     setClipboardSelection({ mode, itemKeys: nextKeys });
+    setDragVisualState((prev) => prev ? { ...prev, mode } : prev);
     toast.success('Cloud', mode === 'copy' ? 'Seleção copiada. Escolha a pasta de destino e use Colar.' : 'Seleção recortada. Escolha a pasta de destino e use Colar.');
   }, [selectedItemKeys, toast]);
 
@@ -2647,6 +2843,7 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
         }
 
         setClipboardSelection(null);
+        setDragVisualState(null);
         toast.success('Cloud', 'Itens colados com sucesso.');
       }
 
@@ -2660,6 +2857,14 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
     const handleKeyDown = (event: KeyboardEvent) => {
       const target = event.target as HTMLElement | null;
       const tagName = target?.tagName?.toLowerCase();
+      if (inlineRenameTarget) {
+        if (event.key === 'Escape') {
+          event.preventDefault();
+          cancelInlineRename();
+        }
+        return;
+      }
+
       if (tagName === 'input' || tagName === 'textarea' || tagName === 'select' || target?.isContentEditable) return;
       if (folderModalOpen || moveModalOpen || shareModalOpen || imagePdfModalOpen || pdfToolsModalOpen) return;
 
@@ -2678,14 +2883,14 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
         if (selectedItemKey.startsWith('file:')) {
           const fileId = selectedItemKey.replace('file:', '');
           const file = files.find((item) => item.id === fileId) ?? null;
-          if (file) openRenameModal('file', file.id, file.original_name);
+          if (file) startInlineRename({ type: 'file', id: file.id, currentName: file.original_name });
           return;
         }
 
         if (selectedItemKey.startsWith('folder:')) {
           const folderId = selectedItemKey.replace('folder:', '');
           const folder = allFolders.find((item) => item.id === folderId) ?? null;
-          if (folder) openRenameModal('folder', folder.id, folder.name);
+          if (folder) startInlineRename({ type: 'folder', id: folder.id, currentName: folder.name });
         }
         return;
       }
@@ -2781,7 +2986,7 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [selectedItemKey, selectedItemKeys, folderModalOpen, moveModalOpen, shareModalOpen, imagePdfModalOpen, pdfToolsModalOpen, files, allFolders, moveSelectionByOffset, openSelectedItem, viewMode, explorerItemKeys, handleDeleteSelectedItems, handlePasteClipboardToFolder, handleStoreSelectionInClipboard, clipboardSelection, currentFolder]);
+  }, [selectedItemKey, selectedItemKeys, folderModalOpen, moveModalOpen, shareModalOpen, imagePdfModalOpen, pdfToolsModalOpen, files, allFolders, moveSelectionByOffset, openSelectedItem, viewMode, explorerItemKeys, handleDeleteSelectedItems, handlePasteClipboardToFolder, handleStoreSelectionInClipboard, clipboardSelection, currentFolder, inlineRenameTarget, cancelInlineRename, startInlineRename]);
 
   const toggleTreeFolder = (folderId: string) => {
     setExpandedFolders((prev) => ({ ...prev, [folderId]: !prev[folderId] }));
@@ -2962,6 +3167,7 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
   const handleDownloadFile = async (file: CloudFile) => {
     try {
       await downloadSingleFile(file);
+      rememberRecentFile(file.id);
       toast.success('Cloud', 'Download iniciado.');
     } catch (error: any) {
       toast.error('Cloud', error.message || 'Erro ao baixar arquivo.');
@@ -3363,6 +3569,13 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
             Cards
           </button>
         </div>
+        {viewMode === 'cards' ? (
+          <div className="inline-flex items-center rounded-xl border border-slate-200 bg-white p-1 shadow-sm">
+            <button type="button" onClick={() => setCardSize('small')} className={`rounded-md px-2.5 py-1.5 text-sm transition ${cardSize === 'small' ? 'bg-orange-50 text-orange-700' : 'text-slate-600 hover:bg-slate-50'}`}>P</button>
+            <button type="button" onClick={() => setCardSize('medium')} className={`rounded-md px-2.5 py-1.5 text-sm transition ${cardSize === 'medium' ? 'bg-orange-50 text-orange-700' : 'text-slate-600 hover:bg-slate-50'}`}>M</button>
+            <button type="button" onClick={() => setCardSize('large')} className={`rounded-md px-2.5 py-1.5 text-sm transition ${cardSize === 'large' ? 'bg-orange-50 text-orange-700' : 'text-slate-600 hover:bg-slate-50'}`}>G</button>
+          </div>
+        ) : null}
         <input ref={fileInputRef} type="file" multiple className="hidden" onChange={(e) => e.target.files && handleUploadFiles(e.target.files)} />
         <div className="flex items-center gap-2 w-full lg:ml-auto lg:max-w-md">
           <div className="relative w-full">
@@ -3416,7 +3629,7 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
           ))}
         </div>
         <div className="flex items-center gap-2 text-xs text-slate-500">
-          <span className="whitespace-nowrap rounded-full border border-slate-200 bg-white px-2.5 py-1">{currentClient?.full_name || 'Sem cliente'}</span>
+          <span className="whitespace-nowrap rounded-full border border-slate-200 bg-white px-2.5 py-1">{headerClient?.full_name || 'Sem cliente'}</span>
           {uploading ? <Loader2 className="w-4 h-4 text-orange-600 animate-spin" /> : null}
           {uploadQueueSummary.totalItems > 0 ? (
             <span className="rounded-full border border-orange-200 bg-orange-50 px-2 py-0.5 text-orange-700">
@@ -3576,6 +3789,41 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
               </div>
             </div>
 
+            <div className="space-y-2 rounded-2xl border border-slate-200 bg-white/80 p-3 shadow-sm">
+              <p className="text-[11px] uppercase tracking-[0.16em] text-slate-400 font-semibold">Arquivos favoritos</p>
+              <div className="space-y-1">
+                {favoriteFiles.length === 0 ? (
+                  <p className="px-2 text-xs text-slate-500">Nenhum arquivo fixado.</p>
+                ) : (
+                  favoriteFiles.slice(0, 8).map((file) => (
+                    <button key={file.id} type="button" onClick={() => openSelectedItem(`file:${file.id}`)} className="w-full flex items-center gap-2 rounded-xl px-3 py-2 text-sm text-slate-700 hover:bg-slate-50">
+                      <Pin className="w-4 h-4 text-orange-500" />
+                      <span className="truncate">{file.original_name}</span>
+                    </button>
+                  ))
+                )}
+              </div>
+            </div>
+
+            <div className="space-y-2 rounded-2xl border border-slate-200 bg-white/80 p-3 shadow-sm">
+              <div className="flex items-center justify-between gap-2">
+                <p className="text-[11px] uppercase tracking-[0.16em] text-slate-400 font-semibold">Recentes</p>
+                <History className="w-4 h-4 text-slate-400" />
+              </div>
+              <div className="space-y-1">
+                {recentFiles.length === 0 ? (
+                  <p className="px-2 text-xs text-slate-500">Nenhum arquivo recente.</p>
+                ) : (
+                  recentFiles.slice(0, 8).map((file) => (
+                    <button key={file.id} type="button" onClick={() => openSelectedItem(`file:${file.id}`)} className="w-full flex items-center gap-2 rounded-xl px-3 py-2 text-sm text-slate-700 hover:bg-slate-50">
+                      <History className="w-4 h-4 text-slate-400" />
+                      <span className="truncate">{file.original_name}</span>
+                    </button>
+                  ))
+                )}
+              </div>
+            </div>
+
           </div>
         </aside>
 
@@ -3616,7 +3864,16 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
             )}
 
             <div
+              ref={explorerViewportRef}
               className="overflow-visible"
+              onPointerDown={(e) => {
+                if (e.button !== 0) return;
+                const target = getEventTargetElement(e.target);
+                if (target?.closest('[data-cloud-item="true"]') || target?.closest('button') || target?.closest('input') || target?.closest('a')) return;
+                const nextBox = { startX: e.clientX, startY: e.clientY, currentX: e.clientX, currentY: e.clientY };
+                clearExplorerSelection();
+                setSelectionBox(nextBox);
+              }}
               onClick={(e) => {
                 const target = getEventTargetElement(e.target);
                 if (target?.closest('[data-cloud-item="true"]')) return;
@@ -3630,6 +3887,17 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
                 setContextMenu({ x: e.clientX, y: e.clientY, type: 'blank' });
               }}
             >
+              {selectionBox ? (
+                <div
+                  className="pointer-events-none absolute z-20 rounded-lg border border-orange-400 bg-orange-200/20"
+                  style={{
+                    left: Math.min(selectionBox.startX, selectionBox.currentX) - (explorerViewportRef.current?.getBoundingClientRect().left ?? 0) + (explorerViewportRef.current?.scrollLeft ?? 0),
+                    top: Math.min(selectionBox.startY, selectionBox.currentY) - (explorerViewportRef.current?.getBoundingClientRect().top ?? 0) + (explorerViewportRef.current?.scrollTop ?? 0),
+                    width: Math.abs(selectionBox.currentX - selectionBox.startX),
+                    height: Math.abs(selectionBox.currentY - selectionBox.startY),
+                  }}
+                />
+              ) : null}
               {loading ? (
                 <div className="flex items-center justify-center px-6 py-20">
                   <motion.div
@@ -3716,6 +3984,7 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
                       <div
                         key={folder.id}
                         data-cloud-item="true"
+                        ref={(node) => { itemElementMapRef.current[itemKey] = node; }}
                         draggable
                         onDragStart={() => handleDragStart(itemKey)}
                         onDragEnd={handleDragEnd}
@@ -3723,9 +3992,13 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
                           e.preventDefault();
                           if (draggingItemKey && draggingItemKey !== itemKey) {
                             setDropTargetFolderId(folder.id);
+                            setDragVisualState({ folderId: folder.id, mode: clipboardSelection?.mode || 'move' });
                           }
                         }}
-                        onDragLeave={() => setDropTargetFolderId(null)}
+                        onDragLeave={() => {
+                          setDropTargetFolderId(null);
+                          setDragVisualState((prev) => prev?.folderId === folder.id ? null : prev);
+                        }}
                         onDrop={(e) => {
                           e.preventDefault();
                           void handleDropOnFolder(folder.id);
@@ -3753,7 +4026,28 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
                         <div className="flex items-center gap-3 min-w-0">
                           <Folder className="w-4 h-4 text-amber-500 flex-shrink-0" />
                           <div className="min-w-0 flex items-center gap-2">
-                            <span className="truncate text-slate-900">{folder.name}</span>
+                            {inlineRenameTarget?.type === 'folder' && inlineRenameTarget.id === folder.id ? (
+                              <input
+                                value={inlineRenameValue}
+                                onChange={(e) => setInlineRenameValue(e.target.value)}
+                                onClick={(e) => e.stopPropagation()}
+                                onKeyDown={(e) => {
+                                  if (e.key === 'Enter') {
+                                    e.preventDefault();
+                                    void commitInlineRename();
+                                  }
+                                  if (e.key === 'Escape') {
+                                    e.preventDefault();
+                                    cancelInlineRename();
+                                  }
+                                }}
+                                onBlur={() => { void commitInlineRename(); }}
+                                className="min-w-[180px] rounded-md border border-orange-300 bg-white px-2 py-1 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-orange-100"
+                                autoFocus
+                              />
+                            ) : (
+                              <span className="truncate text-slate-900">{folder.name}</span>
+                            )}
                             {showClientLinkBadge ? (
                               <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] font-medium ${hasClientLink ? 'border-emerald-200 bg-emerald-50 text-emerald-700' : 'border-slate-200 bg-slate-100 text-slate-500'}`}>
                                 {hasClientLink ? 'Vinculada' : 'Sem vínculo'}
@@ -3767,6 +4061,11 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
                             {folder.archived_at ? (
                               <span className="inline-flex items-center rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[11px] font-medium text-amber-700">
                                 Arquivada
+                              </span>
+                            ) : null}
+                            {dragVisualState?.folderId === folder.id && dragVisualState.mode ? (
+                              <span className="inline-flex items-center rounded-full border border-orange-200 bg-orange-50 px-2 py-0.5 text-[11px] font-medium text-orange-700">
+                                {dragVisualState.mode === 'copy' ? 'Copiar para pasta' : dragVisualState.mode === 'cut' ? 'Recortar para pasta' : 'Mover para pasta'}
                               </span>
                             ) : null}
                             {isFavorite ? <Pin className="w-3.5 h-3.5 text-orange-500" /> : null}
@@ -3812,10 +4111,12 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
                   const itemKey = `file:${file.id}`;
                   const isSelected = selectedItemKeys.includes(itemKey);
                   const parentFolder = allFolders.find((folder) => folder.id === file.folder_id) ?? null;
+                  const isFavorite = favoriteFileIds.includes(file.id);
                   return (
                     <div
                       key={file.id}
                       data-cloud-item="true"
+                      ref={(node) => { itemElementMapRef.current[itemKey] = node; }}
                       draggable
                       onDragStart={() => handleDragStart(itemKey)}
                       onDragEnd={handleDragEnd}
@@ -3854,19 +4155,77 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
                           />
                         ) : null}
                         {isPdfFile(file.mime_type, file.original_name) ? <FileText className="w-4 h-4 text-red-500 flex-shrink-0" /> : isImageFile(file.mime_type) ? <ImageIcon className="w-4 h-4 text-emerald-500 flex-shrink-0" /> : <File className="w-4 h-4 text-sky-500 flex-shrink-0" />}
-                        <span className="truncate text-slate-900">{file.original_name}</span>
+                        {inlineRenameTarget?.type === 'file' && inlineRenameTarget.id === file.id ? (
+                          file.original_name.toLowerCase().endsWith('.pdf') ? (
+                            <div className="flex min-w-[220px] overflow-hidden rounded-md border border-orange-300 bg-white">
+                              <input
+                                value={inlineRenameValue}
+                                onChange={(e) => setInlineRenameValue(e.target.value)}
+                                onClick={(e) => e.stopPropagation()}
+                                onKeyDown={(e) => {
+                                  if (e.key === 'Enter') {
+                                    e.preventDefault();
+                                    void commitInlineRename();
+                                  }
+                                  if (e.key === 'Escape') {
+                                    e.preventDefault();
+                                    cancelInlineRename();
+                                  }
+                                }}
+                                onBlur={() => { void commitInlineRename(); }}
+                                className="flex-1 px-2 py-1 text-sm text-slate-900 focus:outline-none"
+                                autoFocus
+                              />
+                              <span className="inline-flex items-center border-l border-slate-200 bg-slate-50 px-2 text-xs text-slate-500">.pdf</span>
+                            </div>
+                          ) : (
+                            <input
+                              value={inlineRenameValue}
+                              onChange={(e) => setInlineRenameValue(e.target.value)}
+                              onClick={(e) => e.stopPropagation()}
+                              onKeyDown={(e) => {
+                                if (e.key === 'Enter') {
+                                  e.preventDefault();
+                                  void commitInlineRename();
+                                }
+                                if (e.key === 'Escape') {
+                                  e.preventDefault();
+                                  cancelInlineRename();
+                                }
+                              }}
+                              onBlur={() => { void commitInlineRename(); }}
+                              className="min-w-[220px] rounded-md border border-orange-300 bg-white px-2 py-1 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-orange-100"
+                              autoFocus
+                            />
+                          )
+                        ) : (
+                          <span className="truncate text-slate-900">{file.original_name}</span>
+                        )}
                       </div>
                       <span className="text-slate-500 text-xs md:text-sm">{formatDateTime(file.updated_at)}</span>
                       <span className="text-slate-500 text-xs md:text-sm">{getFileTypeLabel(file)}</span>
                       <span className="text-slate-500 text-xs md:text-sm">{formatFileSize(file.file_size)}</span>
-                      <span className="text-slate-500 truncate text-xs md:text-sm">{hasGlobalSearch ? `${parentFolder?.name || '—'} • ${client?.full_name || '—'}` : client?.full_name || '—'}</span>
+                      <div className="flex items-center justify-between gap-2 min-w-0">
+                        <span className="text-slate-500 truncate text-xs md:text-sm">{hasGlobalSearch ? `${parentFolder?.name || '—'} • ${client?.full_name || '—'}` : client?.full_name || '—'}</span>
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleToggleFavoriteFile(file.id);
+                          }}
+                          className={`p-1 rounded-md hover:bg-slate-100 ${isFavorite ? 'text-orange-500' : 'text-slate-400 hover:text-slate-600'}`}
+                          title={isFavorite ? 'Desafixar arquivo' : 'Fixar arquivo'}
+                        >
+                          <Pin className="w-4 h-4" />
+                        </button>
+                      </div>
                     </div>
                   );
                 })
               ) : (
                 <div
                   className="grid items-start gap-3 p-4"
-                  style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))' }}
+                  style={{ gridTemplateColumns: `repeat(auto-fill, minmax(${cardGridMinWidth}px, 1fr))` }}
                 >
                   {explorerRows.map((row) => {
                     if (row.kind === 'folder') {
@@ -3885,6 +4244,7 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
                         <div
                           key={folder.id}
                           data-cloud-item="true"
+                          ref={(node) => { itemElementMapRef.current[itemKey] = node; }}
                           draggable
                           onDragStart={() => handleDragStart(itemKey)}
                           onDragEnd={handleDragEnd}
@@ -3892,9 +4252,13 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
                             e.preventDefault();
                             if (draggingItemKey && draggingItemKey !== itemKey) {
                               setDropTargetFolderId(folder.id);
+                              setDragVisualState({ folderId: folder.id, mode: clipboardSelection?.mode || 'move' });
                             }
                           }}
-                          onDragLeave={() => setDropTargetFolderId(null)}
+                          onDragLeave={() => {
+                            setDropTargetFolderId(null);
+                            setDragVisualState((prev) => prev?.folderId === folder.id ? null : prev);
+                          }}
                           onDrop={(e) => {
                             e.preventDefault();
                             void handleDropOnFolder(folder.id);
@@ -3927,7 +4291,28 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
                                 <Folder className="absolute left-2.5 top-2.5 w-4 h-4 text-amber-700/80" />
                               </div>
                               <div className="min-w-0 flex-1 pt-0.5">
-                                <p className="truncate text-sm font-medium text-slate-900 leading-tight">{folder.name}</p>
+                                {inlineRenameTarget?.type === 'folder' && inlineRenameTarget.id === folder.id ? (
+                                  <input
+                                    value={inlineRenameValue}
+                                    onChange={(e) => setInlineRenameValue(e.target.value)}
+                                    onClick={(e) => e.stopPropagation()}
+                                    onKeyDown={(e) => {
+                                      if (e.key === 'Enter') {
+                                        e.preventDefault();
+                                        void commitInlineRename();
+                                      }
+                                      if (e.key === 'Escape') {
+                                        e.preventDefault();
+                                        cancelInlineRename();
+                                      }
+                                    }}
+                                    onBlur={() => { void commitInlineRename(); }}
+                                    className="w-full rounded-md border border-orange-300 bg-white px-2 py-1 text-sm font-medium text-slate-900 focus:outline-none focus:ring-2 focus:ring-orange-100"
+                                    autoFocus
+                                  />
+                                ) : (
+                                  <p className="truncate text-sm font-medium text-slate-900 leading-tight">{folder.name}</p>
+                                )}
                                 <div className="mt-1 flex flex-wrap items-center gap-1.5">
                                   {isFavorite ? <Pin className="w-3.5 h-3.5 text-orange-500" /> : null}
                                   {showClientLinkBadge ? (
@@ -3974,6 +4359,11 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
                                 Arquivada
                               </span>
                             ) : null}
+                            {dragVisualState?.folderId === folder.id && dragVisualState.mode ? (
+                              <span className="inline-flex items-center rounded-full border border-orange-200 bg-orange-50 px-2 py-0.5 text-[11px] font-medium text-orange-700">
+                                {dragVisualState.mode === 'copy' ? 'Copiar para pasta' : dragVisualState.mode === 'cut' ? 'Recortar para pasta' : 'Mover para pasta'}
+                              </span>
+                            ) : null}
                           </div>
                         </div>
                       );
@@ -3990,6 +4380,7 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
                       <div
                         key={file.id}
                         data-cloud-item="true"
+                        ref={(node) => { itemElementMapRef.current[itemKey] = node; }}
                         draggable
                         onDragStart={() => handleDragStart(itemKey)}
                         onDragEnd={handleDragEnd}
@@ -4045,11 +4436,23 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
                             >
                               <Download className="w-4 h-4" />
                             </button>
+                            <button
+                              type="button"
+                              onClick={(event) => {
+                                event.stopPropagation();
+                                event.preventDefault();
+                                handleToggleFavoriteFile(file.id);
+                              }}
+                              className={`inline-flex h-8 w-8 items-center justify-center rounded-full border border-slate-200 bg-white/95 shadow-sm hover:bg-slate-50 ${favoriteFileIds.includes(file.id) ? 'text-orange-500' : 'text-slate-700'}`}
+                              title={favoriteFileIds.includes(file.id) ? 'Desafixar arquivo' : 'Fixar arquivo'}
+                            >
+                              <Pin className="w-4 h-4" />
+                            </button>
                           </div>
                           {isImageFile(file.mime_type) && previewUrl ? (
-                            <img src={previewUrl} alt={file.original_name} className="w-full h-36 object-cover bg-white" />
+                            <img src={previewUrl} alt={file.original_name} className={`w-full ${cardPreviewHeightClass} object-cover bg-white`} />
                           ) : isPdfFile(file.mime_type, file.original_name) && previewUrl ? (
-                            <div className="h-36 flex items-center justify-center bg-slate-100 overflow-hidden">
+                            <div className={`${cardPreviewHeightClass} flex items-center justify-center bg-slate-100 overflow-hidden`}>
                               <Document
                                 key={`card-pdf-${file.id}-${previewUrl}`}
                                 file={previewUrl}
@@ -4068,7 +4471,7 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
                               </Document>
                             </div>
                           ) : (
-                            <div className="h-36 flex items-center justify-center bg-slate-50">
+                            <div className={`${cardPreviewHeightClass} flex items-center justify-center bg-slate-50`}>
                               {isPdfFile(file.mime_type, file.original_name) ? <FileText className="w-8 h-8 text-red-500" /> : isImageFile(file.mime_type) ? <ImageIcon className="w-8 h-8 text-emerald-500" /> : <File className="w-8 h-8 text-sky-500" />}
                             </div>
                           )}
@@ -4076,7 +4479,52 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
                         <div className="flex items-start justify-between gap-3">
                           <div className="flex items-center gap-3 min-w-0">
                             <div className="min-w-0">
-                              <p className="truncate font-medium text-slate-900">{file.original_name}</p>
+                              {inlineRenameTarget?.type === 'file' && inlineRenameTarget.id === file.id ? (
+                                file.original_name.toLowerCase().endsWith('.pdf') ? (
+                                  <div className="flex overflow-hidden rounded-md border border-orange-300 bg-white">
+                                    <input
+                                      value={inlineRenameValue}
+                                      onChange={(e) => setInlineRenameValue(e.target.value)}
+                                      onClick={(e) => e.stopPropagation()}
+                                      onKeyDown={(e) => {
+                                        if (e.key === 'Enter') {
+                                          e.preventDefault();
+                                          void commitInlineRename();
+                                        }
+                                        if (e.key === 'Escape') {
+                                          e.preventDefault();
+                                          cancelInlineRename();
+                                        }
+                                      }}
+                                      onBlur={() => { void commitInlineRename(); }}
+                                      className="flex-1 px-2 py-1 text-sm text-slate-900 focus:outline-none"
+                                      autoFocus
+                                    />
+                                    <span className="inline-flex items-center border-l border-slate-200 bg-slate-50 px-2 text-xs text-slate-500">.pdf</span>
+                                  </div>
+                                ) : (
+                                  <input
+                                    value={inlineRenameValue}
+                                    onChange={(e) => setInlineRenameValue(e.target.value)}
+                                    onClick={(e) => e.stopPropagation()}
+                                    onKeyDown={(e) => {
+                                      if (e.key === 'Enter') {
+                                        e.preventDefault();
+                                        void commitInlineRename();
+                                      }
+                                      if (e.key === 'Escape') {
+                                        e.preventDefault();
+                                        cancelInlineRename();
+                                      }
+                                    }}
+                                    onBlur={() => { void commitInlineRename(); }}
+                                    className="w-full rounded-md border border-orange-300 bg-white px-2 py-1 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-orange-100"
+                                    autoFocus
+                                  />
+                                )
+                              ) : (
+                                <p className="truncate font-medium text-slate-900">{file.original_name}</p>
+                              )}
                             </div>
                           </div>
                           <span className="inline-flex items-center rounded-full border border-slate-200 bg-slate-50 px-2 py-0.5 text-[11px] font-medium text-slate-700">
@@ -4825,6 +5273,99 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
               className="w-full px-3 py-2.5 text-left text-sm font-medium text-red-600 hover:bg-red-50 transition"
             >
               Excluir pasta
+            </button>
+          </div>
+        </div>
+      )}
+
+      {contextMenu && selectedContextFile && (
+        <div
+          className="fixed z-[140]"
+          style={{ left: contextMenu.x, top: contextMenu.y }}
+          onClick={(e) => e.stopPropagation()}
+          onContextMenu={(e) => e.preventDefault()}
+        >
+          <div className="w-64 rounded-xl border border-slate-200 bg-white shadow-xl overflow-hidden">
+            <button
+              type="button"
+              onClick={() => openFileFromContextMenu(selectedContextFile)}
+              className="w-full px-3 py-2.5 text-left text-sm font-medium text-slate-700 hover:bg-slate-50 transition"
+            >
+              Abrir arquivo
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                handleToggleFavoriteFile(selectedContextFile.id);
+                setContextMenu(null);
+              }}
+              className="w-full px-3 py-2.5 text-left text-sm text-slate-700 hover:bg-slate-50 transition"
+            >
+              {favoriteFileIds.includes(selectedContextFile.id) ? 'Desafixar arquivo' : 'Fixar em favoritos'}
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setContextMenu(null);
+                startInlineRename({ type: 'file', id: selectedContextFile.id, currentName: selectedContextFile.original_name });
+              }}
+              className="w-full px-3 py-2.5 text-left text-sm text-slate-700 hover:bg-slate-50 transition"
+            >
+              Renomear arquivo
+            </button>
+            <div className="border-t border-slate-100" />
+            <button
+              type="button"
+              onClick={() => {
+                setContextMenu(null);
+                handleStoreSelectionInClipboard('copy', [`file:${selectedContextFile.id}`]);
+              }}
+              className="w-full px-3 py-2.5 text-left text-sm text-slate-700 hover:bg-slate-50 transition flex items-center gap-2"
+            >
+              <Copy className="w-4 h-4 text-slate-500" />
+              Copiar
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setContextMenu(null);
+                handleStoreSelectionInClipboard('cut', [`file:${selectedContextFile.id}`]);
+              }}
+              className="w-full px-3 py-2.5 text-left text-sm text-slate-700 hover:bg-slate-50 transition flex items-center gap-2"
+            >
+              <Scissors className="w-4 h-4 text-slate-500" />
+              Recortar
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setContextMenu(null);
+                void handleDownloadFile(selectedContextFile);
+              }}
+              className="w-full px-3 py-2.5 text-left text-sm text-slate-700 hover:bg-slate-50 transition"
+            >
+              Baixar arquivo
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setContextMenu(null);
+                void handleDuplicateFile(selectedContextFile);
+              }}
+              className="w-full px-3 py-2.5 text-left text-sm text-slate-700 hover:bg-slate-50 transition"
+            >
+              Criar cópia
+            </button>
+            <div className="border-t border-slate-100" />
+            <button
+              type="button"
+              onClick={() => {
+                setContextMenu(null);
+                handleDeleteFile(selectedContextFile);
+              }}
+              className="w-full px-3 py-2.5 text-left text-sm font-medium text-red-600 hover:bg-red-50 transition"
+            >
+              Excluir arquivo
             </button>
           </div>
         </div>

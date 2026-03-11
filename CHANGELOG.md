@@ -1,5 +1,19 @@
 # Changelog
   
+  ## 1.9.832
+  - **Cloud/Crash**: Corrigido o erro `Cannot access 'explorerItemKeys' before initialization` causado pela ordem de inicialização dos hooks da seleção por caixa no `CloudModule`.
+
+  ## 1.9.831
+  - **Cloud/Header**: Corrigido o chip de cliente no topo para priorizar o cliente do item selecionado antes do cliente da pasta aberta, evitando exibir `Sem cliente` ao clicar em pasta vinculada.
+
+  ## 1.9.830
+  - **Cloud/Produtividade**: Implementado renomear inline em lista/cards com suporte ao `F2`, `Enter` e `Esc` no estilo desktop.
+  - **Cloud/Seleção**: Adicionada seleção por caixa ao arrastar no espaço vazio do explorador.
+  - **Cloud/Cards**: Adicionado zoom dos cards com tamanhos pequeno, médio e grande, persistido localmente.
+  - **Cloud/Favoritos**: Arquivos agora também podem ser fixados em favoritos pela lista, cards e menu contextual.
+  - **Cloud/Recentes**: Adicionado bloco de arquivos recentes com rastreamento de abertura e download.
+  - **Cloud/Drag and Drop**: Melhorado o feedback visual de pasta alvo e do estado da ação (`mover`, `copiar`, `recortar`).
+
   ## 1.9.829
   - **Cloud/Rolagem**: Removidos os scrolls internos da navegação lateral e da área principal de arquivos para priorizar rolagem única da página.
   - **Cloud/Sidebar**: A navegação lateral agora acompanha a página com comportamento `sticky`, sem criar rolagem própria.

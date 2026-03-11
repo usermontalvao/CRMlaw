@@ -47,6 +47,9 @@ import { matchesNormalizedSearch } from '../utils/search';
    ============================================================================ */
 
 const VERSION_CODENAMES: Record<string, { name: string; emoji: string }> = {
+  '1.9.832': { name: 'Café Hook em Ordem', emoji: '🪝' },
+  '1.9.831': { name: 'Café Cliente no Topo', emoji: '🏷️' },
+  '1.9.830': { name: 'Café Desktop Cloud', emoji: '🖥️' },
   '1.9.829': { name: 'Café Scroll Único', emoji: '🧭' },
   '1.9.828': { name: 'Café Card Enxuto', emoji: '📚' },
   '1.9.827': { name: 'Café Quatro por Linha', emoji: '🧱' },
@@ -655,6 +658,72 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
 };
 
 const releases: ReleaseNote[] = [
+  {
+    version: '1.9.832',
+    date: '11/03/2026',
+    summary: 'Cloud: corrigido crash de render causado pela ordem de inicialização dos hooks de seleção por caixa.',
+    modules: [
+      {
+        moduleId: 'cloud',
+        changes: [
+          {
+            type: 'fix',
+            title: 'Render do Cloud estabilizado',
+            description: 'O bloco de seleção por caixa foi reordenado para só depender de explorerItemKeys após sua inicialização, eliminando o ReferenceError no carregamento do módulo.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.831',
+    date: '11/03/2026',
+    summary: 'Cloud: corrigido o cliente exibido no topo ao selecionar pasta vinculada.',
+    modules: [
+      {
+        moduleId: 'cloud',
+        changes: [
+          {
+            type: 'fix',
+            title: 'Cliente do header acompanha a seleção',
+            description: 'O badge do topo agora prioriza o cliente da pasta ou arquivo selecionado, em vez de mostrar apenas o cliente da pasta atualmente aberta.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.830',
+    date: '11/03/2026',
+    summary: 'Cloud: produtividade ampliada com renomear inline, seleção por caixa, favoritos de arquivos, recentes e zoom dos cards.',
+    modules: [
+      {
+        moduleId: 'cloud',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Renomear inline estilo desktop',
+            description: 'Arquivos e pastas passaram a permitir renomeação inline no modo lista e cards com suporte a F2, Enter e Escape.',
+          },
+          {
+            type: 'improvement',
+            title: 'Seleção por caixa e zoom dos cards',
+            description: 'O explorador agora aceita seleção por arraste no espaço vazio e oferece controle de densidade visual dos cards em três tamanhos.',
+          },
+          {
+            type: 'improvement',
+            title: 'Favoritos de arquivos e recentes',
+            description: 'Arquivos podem ser fixados em favoritos e o módulo mantém uma lista de recentes a partir de abertura e download.',
+          },
+          {
+            type: 'improvement',
+            title: 'Drag and drop mais claro',
+            description: 'O feedback visual de arrastar e soltar passou a indicar melhor a pasta alvo e o estado da operação entre mover, copiar e recortar.',
+          },
+        ],
+      },
+    ],
+  },
   {
     version: '1.9.829',
     date: '11/03/2026',
