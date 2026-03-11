@@ -34,6 +34,7 @@ import {
   Pin,
   GripVertical,
   CheckCircle2,
+  XCircle,
   RotateCcw,
   RotateCw,
   Scissors,
@@ -838,6 +839,20 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
   }, [previewFile, toast, currentFolder]);
 
   useEffect(() => {
+    if (!previewFile) return;
+    const nextPreviewFile = allFiles.find((item) => item.id === previewFile.id) ?? files.find((item) => item.id === previewFile.id) ?? null;
+    if (!nextPreviewFile) {
+      setPreviewFile(null);
+      setPreviewUrl(null);
+      return;
+    }
+    if (nextPreviewFile.original_name !== previewFile.original_name || nextPreviewFile.storage_path !== previewFile.storage_path || nextPreviewFile.updated_at !== previewFile.updated_at) {
+      setPreviewFile(nextPreviewFile);
+      setPreviewUrl(null);
+    }
+  }, [allFiles, files, previewFile]);
+
+  useEffect(() => {
     if (!selectedFile || isWordFile(selectedFile.mime_type, selectedFile.original_name)) {
       setDetailPreviewUrl(null);
       setDetailPreviewText(null);
@@ -990,6 +1005,9 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
     }
 
     let cancelled = false;
+    const previewFileIds = new Set(previewFiles.map((file) => file.id));
+
+    setCardPreviewUrls((prev) => Object.fromEntries(Object.entries(prev).filter(([fileId]) => previewFileIds.has(fileId))));
 
     const loadCardPreviews = async () => {
       try {
@@ -3015,13 +3033,13 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
               className="flex min-w-0 flex-1 items-start gap-2 text-left"
             >
               {isActive ? <FolderOpen className="mt-0.5 h-4 w-4 flex-shrink-0 text-orange-500" /> : <Folder className="mt-0.5 h-4 w-4 flex-shrink-0 text-orange-500" />}
-              <span className="flex min-w-0 flex-1 flex-col gap-1">
-                <span className="block overflow-hidden text-ellipsis break-words text-[13px] leading-5 text-inherit" style={{ display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical' }} title={folder.name}>
+              <span className="flex min-w-0 flex-1 items-start gap-1.5">
+                <span className="block min-w-0 flex-1 overflow-hidden text-ellipsis break-words text-[13px] leading-5 text-inherit" style={{ display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical' }} title={folder.name}>
                   {folder.name}
                 </span>
                 {showClientLinkBadge ? (
-                  <span className={`inline-flex max-w-fit items-center rounded-full border px-1.5 py-0.5 text-[10px] font-medium ${hasClientLink ? 'border-emerald-200 bg-emerald-50 text-emerald-700' : 'border-slate-200 bg-slate-100 text-slate-500'}`}>
-                    {hasClientLink ? 'Vinculada' : 'Sem vínculo'}
+                  <span className={`mt-0.5 inline-flex h-5 w-5 flex-shrink-0 items-center justify-center rounded-full border ${hasClientLink ? 'border-emerald-200 bg-emerald-50 text-emerald-700' : 'border-red-200 bg-red-50 text-red-600'}`} title={hasClientLink ? 'Pasta vinculada' : 'Pasta sem vínculo'}>
+                    {hasClientLink ? <CheckCircle2 className="h-3 w-3" /> : <XCircle className="h-3 w-3" />}
                   </span>
                 ) : null}
               </span>
@@ -3786,12 +3804,14 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
                           ) : isPdfFile(file.mime_type, file.original_name) && previewUrl ? (
                             <div className="h-36 flex items-center justify-center bg-slate-100 overflow-hidden">
                               <Document
+                                key={`card-pdf-${file.id}-${previewUrl}`}
                                 file={previewUrl}
                                 loading={<div className="flex flex-col items-center justify-center gap-2 text-slate-500"><Loader2 className="w-5 h-5 animate-spin" /><span className="text-[11px] font-medium">Carregando PDF</span></div>}
                                 error={<div className="flex flex-col items-center justify-center gap-2 text-slate-500"><FileText className="w-10 h-10 text-red-500" /><span className="text-[11px] font-medium">Preview indisponível</span></div>}
                                 className="flex h-full w-full items-center justify-center"
                               >
                                 <Page
+                                  key={`card-pdf-page-${file.id}-${previewUrl}`}
                                   pageNumber={1}
                                   width={220}
                                   renderAnnotationLayer={false}

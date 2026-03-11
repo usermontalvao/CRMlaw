@@ -1,5 +1,21 @@
 # Changelog
   
+  ## 1.9.809
+  - **Cloud/PDF**: Corrigido o erro que podia quebrar o preview após enviar vários documentos ou renomear arquivos no Cloud.
+  - **Cloud/UX**: O ciclo de vida dos previews foi estabilizado para limpar estados inválidos e remontar o preview PDF quando a URL/arquivo muda.
+
+  ## 1.9.808
+  - **Cloud/Sidebar**: O ícone de vínculo das pastas na árvore lateral foi reposicionado para aparecer ao lado do nome, em vez de abaixo.
+  - **Cloud/UX**: A leitura da lista lateral ficou mais compacta e alinhada visualmente.
+
+  ## 1.9.807
+  - **Cloud/Sidebar**: O indicador de vínculo na árvore lateral agora aparece apenas como ícone visual, sem texto, deixando a leitura mais limpa.
+  - **Cloud/UX**: Pastas vinculadas exibem apenas o ícone verde e pastas sem vínculo exibem apenas o ícone vermelho.
+
+  ## 1.9.806
+  - **Cloud/Sidebar**: O selo lateral das pastas agora usa status visual mais direto: `Corrigido` em verde quando há vínculo e `X` em vermelho quando não há.
+  - **Cloud/UX**: Refinado o feedback visual da árvore lateral para facilitar leitura rápida do estado de cada pasta.
+
   ## 1.9.805
   - **Cloud/UX**: Ajustada a interação entre seleção e abertura de itens para que o painel lateral de detalhes não roube a intenção de duplo clique ao entrar em pastas.
   - **Cloud/Navegação**: A abertura automática do drawer de detalhes agora respeita um pequeno atraso cancelável, melhorando a fluidez ao navegar por pastas e arquivos.

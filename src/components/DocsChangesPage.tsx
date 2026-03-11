@@ -47,6 +47,10 @@ import { matchesNormalizedSearch } from '../utils/search';
    ============================================================================ */
 
 const VERSION_CODENAMES: Record<string, { name: string; emoji: string }> = {
+  '1.9.809': { name: 'Café Preview Estável', emoji: '📄' },
+  '1.9.808': { name: 'Café Linha Clara', emoji: '📍' },
+  '1.9.807': { name: 'Café Ícone Direto', emoji: '✅' },
+  '1.9.806': { name: 'Café Selo Claro', emoji: '🟢' },
   '1.9.805': { name: 'Café Clique Fino', emoji: '🖱️' },
   '1.9.804': { name: 'Café Fluxo Estável', emoji: '🧾' },
   '1.9.803': { name: 'Café Painel Livre', emoji: '🪟' },
@@ -631,6 +635,74 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
 };
 
 const releases: ReleaseNote[] = [
+  {
+    version: '1.9.809',
+    date: '11/03/2026',
+    summary: 'Cloud: preview de PDF ficou estável após uploads em lote e renomeações.',
+    modules: [
+      {
+        moduleId: 'cloud',
+        changes: [
+          {
+            type: 'fix',
+            title: 'Preview PDF não quebra mais após atualizar arquivos',
+            description: 'O Cloud agora limpa estados de preview inválidos e força a remontagem do `react-pdf` quando o arquivo ou a URL muda após uploads ou renomeações.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.808',
+    date: '11/03/2026',
+    summary: 'Cloud: o ícone de vínculo da árvore lateral agora fica ao lado do nome da pasta.',
+    modules: [
+      {
+        moduleId: 'cloud',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Ícone de vínculo lateral fica ao lado do nome da pasta',
+            description: 'Agora o ícone de vínculo fica ao lado do nome da pasta na árvore lateral.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.807',
+    date: '11/03/2026',
+    summary: 'Cloud: o indicador de vínculo na árvore lateral ficou mais limpo, só com ícone.',
+    modules: [
+      {
+        moduleId: 'cloud',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Indicador de vínculo ficou somente visual',
+            description: 'Na árvore lateral do Cloud, o status de vínculo das pastas agora usa apenas ícone colorido, sem texto, deixando a interface mais limpa e objetiva.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.806',
+    date: '11/03/2026',
+    summary: 'Cloud: badges da árvore lateral ficaram mais diretos, com leitura visual verde/vermelha.',
+    modules: [
+      {
+        moduleId: 'cloud',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Selo lateral de pasta ficou mais claro visualmente',
+            description: 'Na árvore lateral do Cloud, o antigo texto de vínculo foi substituído por um selo mais direto: `Corrigido` em verde quando a pasta está vinculada e `X` em vermelho quando não está.',
+          },
+        ],
+      },
+    ],
+  },
   {
     version: '1.9.805',
     date: '10/03/2026',
