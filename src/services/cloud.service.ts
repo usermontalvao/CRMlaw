@@ -195,10 +195,19 @@ class CloudService {
   }
 
   async deleteFolder(folderId: string): Promise<void> {
-    const [childFolders, childFiles] = await Promise.all([
+    const [activeChildFolders, trashedChildFolders, activeChildFiles, trashedChildFiles] = await Promise.all([
       this.listFolders(folderId, true),
+      this.listTrashedFolders(folderId),
       this.listFiles(folderId, true),
+      this.listTrashedFiles(folderId),
     ]);
+
+    const childFolders = [...activeChildFolders, ...trashedChildFolders].filter(
+      (childFolder, index, list) => list.findIndex((item) => item.id === childFolder.id) === index,
+    );
+    const childFiles = [...activeChildFiles, ...trashedChildFiles].filter(
+      (childFile, index, list) => list.findIndex((item) => item.id === childFile.id) === index,
+    );
 
     for (const childFolder of childFolders) {
       await this.deleteFolder(childFolder.id);
@@ -516,6 +525,98 @@ class CloudService {
     }
 
     return data as CloudFile;
+  }
+
+  async duplicateFileToFolder(fileId: string, targetFolderId: string, targetClientId?: string | null): Promise<CloudFile> {
+    await this.ensureBucket();
+
+    const { data: original, error: fetchError } = await supabase
+      .from(this.filesTable)
+      .select('*')
+      .eq('id', fileId)
+      .single();
+
+    if (fetchError || !original) throw new Error(fetchError?.message ?? 'Arquivo não encontrado.');
+
+    const file = original as CloudFile;
+    const signedUrl = await this.getFileSignedUrl(file.storage_path);
+    const response = await fetch(signedUrl);
+    if (!response.ok) throw new Error('Não foi possível baixar o arquivo original.');
+    const blob = await response.blob();
+
+    const nameParts = file.original_name.split('.');
+    const ext = nameParts.length > 1 ? nameParts.pop() : null;
+    const baseName = nameParts.join('.');
+    const copyName = ext ? `${baseName} (cópia).${ext}` : `${file.original_name} (cópia)`;
+
+    const safeOriginalName = sanitizeStorageSegment(copyName);
+    const safeName = `${crypto.randomUUID()}_${safeOriginalName}`;
+    const storagePath = `${targetFolderId}/${safeName}`;
+
+    const { error: uploadError } = await supabase.storage
+      .from(CLOUD_BUCKET)
+      .upload(storagePath, blob, {
+        contentType: file.mime_type || 'application/octet-stream',
+        upsert: false,
+      });
+
+    if (uploadError) throw new Error(uploadError.message);
+
+    const { data, error } = await supabase
+      .from(this.filesTable)
+      .insert({
+        folder_id: targetFolderId,
+        client_id: targetClientId ?? file.client_id,
+        original_name: copyName,
+        storage_path: storagePath,
+        mime_type: file.mime_type,
+        file_size: file.file_size,
+        extension: file.extension,
+      })
+      .select('*')
+      .single();
+
+    if (error) {
+      await supabase.storage.from(CLOUD_BUCKET).remove([storagePath]);
+      throw new Error(error.message);
+    }
+
+    return data as CloudFile;
+  }
+
+  async duplicateFolderToFolder(folderId: string, targetParentId: string | null, targetClientId?: string | null): Promise<CloudFolder> {
+    const sourceFolder = await this.getFolder(folderId);
+    if (!sourceFolder) throw new Error('Pasta não encontrada.');
+
+    const rootCopy = await this.createFolder({
+      name: `${sourceFolder.name} (cópia)`,
+      parent_id: targetParentId,
+      client_id: targetClientId ?? sourceFolder.client_id ?? null,
+    });
+
+    const duplicateChildren = async (sourceId: string, targetId: string, inheritedClientId: string | null) => {
+      const [childFolders, childFiles] = await Promise.all([
+        this.listFolders(sourceId, false),
+        this.listFiles(sourceId, false),
+      ]);
+
+      for (const childFile of childFiles) {
+        await this.duplicateFileToFolder(childFile.id, targetId, inheritedClientId);
+      }
+
+      for (const childFolder of childFolders) {
+        const createdChild = await this.createFolder({
+          name: childFolder.name,
+          parent_id: targetId,
+          client_id: inheritedClientId ?? childFolder.client_id ?? null,
+        });
+
+        await duplicateChildren(childFolder.id, createdChild.id, inheritedClientId ?? childFolder.client_id ?? null);
+      }
+    };
+
+    await duplicateChildren(folderId, rootCopy.id, targetClientId ?? sourceFolder.client_id ?? null);
+    return rootCopy;
   }
 
   async getFileSignedUrl(storagePath: string, expiresIn = 60 * 60): Promise<string> {

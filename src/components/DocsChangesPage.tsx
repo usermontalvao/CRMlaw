@@ -47,6 +47,26 @@ import { matchesNormalizedSearch } from '../utils/search';
    ============================================================================ */
 
 const VERSION_CODENAMES: Record<string, { name: string; emoji: string }> = {
+  '1.9.829': { name: 'Café Scroll Único', emoji: '🧭' },
+  '1.9.828': { name: 'Café Card Enxuto', emoji: '📚' },
+  '1.9.827': { name: 'Café Quatro por Linha', emoji: '🧱' },
+  '1.9.826': { name: 'Café PDF Fixo', emoji: '📄' },
+  '1.9.825': { name: 'Café Ícone Compacto', emoji: '🗂️' },
+  '1.9.824': { name: 'Café Modal Acima', emoji: '🪟' },
+  '1.9.823': { name: 'Café Pasta no Vazio', emoji: '📁' },
+  '1.9.822': { name: 'Café Galeria PDF', emoji: '🧾' },
+  '1.9.821': { name: 'Café Ctrl Vivo', emoji: '⌨️' },
+  '1.9.820': { name: 'Café Lateral Quieto', emoji: '🧱' },
+  '1.9.819': { name: 'Café Miniatura Viva', emoji: '🖼️' },
+  '1.9.818': { name: 'Café Ordem Certa', emoji: '🧩' },
+  '1.9.817': { name: 'Café Cola Rápida', emoji: '📎' },
+  '1.9.816': { name: 'Café Tecla Del', emoji: '⌫' },
+  '1.9.815': { name: 'Café Pasta Raiz', emoji: '🗂️' },
+  '1.9.814': { name: 'Café Área de Transferência', emoji: '📋' },
+  '1.9.813': { name: 'Café Atalho de Pasta', emoji: '✂️' },
+  '1.9.812': { name: 'Café Espaço Livre', emoji: '🗑️' },
+  '1.9.811': { name: 'Café Lixeira Clara', emoji: '🧺' },
+  '1.9.810': { name: 'Café Modal Claro', emoji: '🪟' },
   '1.9.809': { name: 'Café Preview Estável', emoji: '📄' },
   '1.9.808': { name: 'Café Linha Clara', emoji: '📍' },
   '1.9.807': { name: 'Café Ícone Direto', emoji: '✅' },
@@ -635,6 +655,376 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
 };
 
 const releases: ReleaseNote[] = [
+  {
+    version: '1.9.829',
+    date: '11/03/2026',
+    summary: 'Cloud: a interface passou a usar rolagem única da página com sidebar sticky.',
+    modules: [
+      {
+        moduleId: 'cloud',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Scroll único na página',
+            description: 'Os containers internos do Cloud deixaram de rolar separadamente, permitindo que a rolagem aconteça de forma natural na página inteira.',
+          },
+          {
+            type: 'improvement',
+            title: 'Sidebar sticky sem scroll próprio',
+            description: 'A navegação lateral passou a acompanhar a página com comportamento sticky no desktop, mantendo-se visível sem criar uma segunda barra de rolagem interna.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.828',
+    date: '11/03/2026',
+    summary: 'Cloud: os cards de pasta deixaram de ficar esticados com áreas vazias grandes.',
+    modules: [
+      {
+        moduleId: 'cloud',
+        changes: [
+          {
+            type: 'fix',
+            title: 'Pastas sem espaço vazio excessivo no cards',
+            description: 'O grid do modo cards passou a alinhar os itens pelo topo e os cards de pasta agora respeitam a altura do próprio conteúdo, evitando blocos vazios grandes ao lado de arquivos com preview.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.827',
+    date: '11/03/2026',
+    summary: 'Cloud: o modo cards aproveita melhor a largura e acomoda 4 itens por linha com mais facilidade.',
+    modules: [
+      {
+        moduleId: 'cloud',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Quatro cards por linha com mais frequência',
+            description: 'A largura mínima dos cards foi reduzida no explorador para permitir 4 itens por linha em resoluções mais largas, sem apertar desnecessariamente a interface.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.826',
+    date: '11/03/2026',
+    summary: 'Cloud: o modal de renomear agora protege a extensão .pdf contra mudanças acidentais.',
+    modules: [
+      {
+        moduleId: 'cloud',
+        changes: [
+          {
+            type: 'fix',
+            title: 'Extensão .pdf bloqueada no renomear',
+            description: 'Arquivos PDF passaram a exibir a extensão fixa no modal de renomeação, permitindo editar apenas o nome base e evitando alteração acidental da extensão.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.825',
+    date: '11/03/2026',
+    summary: 'Cloud: os cards de pasta ficaram mais compactos e sem metadados abaixo.',
+    modules: [
+      {
+        moduleId: 'cloud',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Cards de pasta mais compactos',
+            description: 'O modo cards das pastas foi ajustado para um visual mais enxuto, com ícone menor e proporções mais próximas do estilo de ícones do Windows.',
+          },
+          {
+            type: 'improvement',
+            title: 'Sem cliente e modificado abaixo da pasta',
+            description: 'As linhas informativas abaixo dos cards de pasta foram removidas para deixar a grade mais limpa e focada no nome da pasta.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.824',
+    date: '11/03/2026',
+    summary: 'Cloud: o modal de renomear agora aparece acima do modal de preview.',
+    modules: [
+      {
+        moduleId: 'cloud',
+        changes: [
+          {
+            type: 'fix',
+            title: 'Renomear acima do preview',
+            description: 'O empilhamento dos modais foi ajustado para que as janelas de renomeação simples e em lote abram acima do modal de visualização de arquivos.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.823',
+    date: '11/03/2026',
+    summary: 'Cloud: criar nova pasta ficou acessível no vazio e mais visível na tela inicial.',
+    modules: [
+      {
+        moduleId: 'cloud',
+        changes: [
+          {
+            type: 'fix',
+            title: 'Menu contextual no espaço vazio funcionando',
+            description: 'O botão direito no espaço vazio do explorador agora abre corretamente o menu com a opção de criar nova pasta.',
+          },
+          {
+            type: 'improvement',
+            title: 'Ação Nova pasta mais clara no estado vazio',
+            description: 'O botão do estado vazio/inicial foi padronizado para `Nova pasta`, deixando a criação de pastas mais evidente para o usuário.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.822',
+    date: '11/03/2026',
+    summary: 'Cloud: o modal de preview de PDF virou uma galeria com ações rápidas do arquivo.',
+    modules: [
+      {
+        moduleId: 'cloud',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Navegação entre PDFs no modal de preview',
+            description: 'O preview de PDF agora permite avançar e voltar entre os PDFs filtrados da tela, além de listar miniaturas/nomes em uma faixa inferior tipo galeria.',
+          },
+          {
+            type: 'feature',
+            title: 'Ações rápidas no modal de preview',
+            description: 'Foram adicionadas ações de renomear, baixar, excluir e abrir o Hub PDF diretamente no cabeçalho do modal de visualização do PDF.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.821',
+    date: '11/03/2026',
+    summary: 'Cloud: a árvore lateral agora respeita Ctrl/Cmd e Shift para seleção de pastas.',
+    modules: [
+      {
+        moduleId: 'cloud',
+        changes: [
+          {
+            type: 'fix',
+            title: 'Ctrl/Cmd e Shift funcionando na árvore lateral',
+            description: 'Os cliques nas pastas da barra lateral passaram a reutilizar a lógica central de seleção do Cloud, permitindo seleção aditiva e por intervalo sem perder a seleção atual.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.820',
+    date: '11/03/2026',
+    summary: 'Cloud: o painel lateral de detalhes não abre mais sozinho durante a seleção.',
+    modules: [
+      {
+        moduleId: 'cloud',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Painel de detalhes apenas sob comando do usuário',
+            description: 'A abertura automática do painel lateral foi removida, evitando interferência quando o usuário seleciona vários itens no explorador do Cloud.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.819',
+    date: '11/03/2026',
+    summary: 'Cloud: o Hub PDF agora mostra miniaturas reais das páginas na área de seleção.',
+    modules: [
+      {
+        moduleId: 'cloud',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Miniaturas reais em Páginas do PDF',
+            description: 'A grade de seleção do Hub PDF passou a renderizar o preview visual de cada página, facilitando a escolha correta sem depender apenas do número da página.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.818',
+    date: '11/03/2026',
+    summary: 'Cloud: corrigido o crash causado pela ordem de inicialização do atalho de colar.',
+    modules: [
+      {
+        moduleId: 'cloud',
+        changes: [
+          {
+            type: 'fix',
+            title: 'Ctrl+V sem ReferenceError no Cloud',
+            description: 'O efeito global de atalhos foi reposicionado para executar apenas após a criação do handler de colagem, impedindo a quebra do módulo ao renderizar.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.817',
+    date: '11/03/2026',
+    summary: 'Cloud: subpastas agora exibem a ação Colar e o teclado aceita copiar, recortar e colar diretamente.',
+    modules: [
+      {
+        moduleId: 'cloud',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Colar visível na pasta atual e em subpastas',
+            description: 'A barra superior do Cloud agora mostra a ação Colar sempre que existir conteúdo no clipboard interno e houver uma pasta atual válida.',
+          },
+          {
+            type: 'feature',
+            title: 'Atalhos Ctrl+C, Ctrl+X e Ctrl+V no Cloud',
+            description: 'O explorador passou a aceitar copiar, recortar e colar itens usando atalhos do teclado, sem depender apenas do menu contextual.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.816',
+    date: '11/03/2026',
+    summary: 'Cloud: a tecla Delete/Del voltou a remover corretamente os itens selecionados.',
+    modules: [
+      {
+        moduleId: 'cloud',
+        changes: [
+          {
+            type: 'fix',
+            title: 'Atalho Delete sincronizado com a seleção atual',
+            description: 'O listener global do Cloud passou a usar o handler de exclusão memoizado e a aceitar tanto Delete quanto Del para enviar a seleção para a lixeira.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.815',
+    date: '11/03/2026',
+    summary: 'Cloud: ao jogar ou enviar uma pasta, a estrutura agora preserva corretamente a pasta raiz.',
+    modules: [
+      {
+        moduleId: 'cloud',
+        changes: [
+          {
+            type: 'fix',
+            title: 'Importação de pasta mantém a pasta principal',
+            description: 'O Cloud passou a respeitar o caminho relativo completo fornecido pelo navegador, impedindo que apenas os arquivos internos sejam recriados sem a pasta raiz.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.814',
+    date: '11/03/2026',
+    summary: 'Cloud: agora há ações explícitas de copiar, colar e criar cópia para itens e seleções.',
+    modules: [
+      {
+        moduleId: 'cloud',
+        changes: [
+          {
+            type: 'feature',
+            title: 'Copiar, recortar e colar no próprio Cloud',
+            description: 'Arquivos, pastas e seleções agora podem ser copiados ou recortados e colados em outra pasta pelo menu contextual e pelo menu da área em branco.',
+          },
+          {
+            type: 'improvement',
+            title: 'Criar cópia para arquivo e pasta',
+            description: 'Itens individuais agora possuem a ação Criar cópia, incluindo duplicação recursiva do conteúdo das pastas.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.813',
+    date: '11/03/2026',
+    summary: 'Cloud: seleção agora pode ser recortada ou copiada diretamente para uma pasta-alvo.',
+    modules: [
+      {
+        moduleId: 'cloud',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Recortar e copiar seleção para uma pasta pelo menu contextual',
+            description: 'O menu das pastas agora oferece atalhos para mover a seleção para a pasta escolhida ou duplicar arquivos e subpastas diretamente nela.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.812',
+    date: '11/03/2026',
+    summary: 'Cloud: esvaziar a lixeira agora garante remoção definitiva inclusive em itens aninhados.',
+    modules: [
+      {
+        moduleId: 'cloud',
+        changes: [
+          {
+            type: 'fix',
+            title: 'Lixeira libera espaço de forma consistente',
+            description: 'A exclusão permanente de pastas agora percorre também subpastas e arquivos já marcados na lixeira, removendo registros e blobs físicos do storage para liberar espaço corretamente.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.811',
+    date: '11/03/2026',
+    summary: 'Cloud: o modal de esvaziamento da lixeira também voltou a ficar claro e legível.',
+    modules: [
+      {
+        moduleId: 'cloud',
+        changes: [
+          {
+            type: 'fix',
+            title: 'Modal de lixeira esvaziada sem fundo preto',
+            description: 'O estado de sucesso do esvaziamento da lixeira agora usa uma base branca explícita e uma camada interna clara para impedir vazamento visual do tema escuro.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.810',
+    date: '11/03/2026',
+    summary: 'Cloud: modais de transferência e exclusão voltaram a aparecer claros e legíveis.',
+    modules: [
+      {
+        moduleId: 'cloud',
+        changes: [
+          {
+            type: 'fix',
+            title: 'Modal preto de progresso do Cloud corrigido',
+            description: 'Os modais de upload e exclusão agora forçam superfícies claras e contraste consistente para evitar fundo escuro/preto e texto ilegível em temas escuros.',
+          },
+        ],
+      },
+    ],
+  },
   {
     version: '1.9.809',
     date: '11/03/2026',

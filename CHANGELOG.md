@@ -1,5 +1,85 @@
 # Changelog
   
+  ## 1.9.829
+  - **Cloud/Rolagem**: Removidos os scrolls internos da navegação lateral e da área principal de arquivos para priorizar rolagem única da página.
+  - **Cloud/Sidebar**: A navegação lateral agora acompanha a página com comportamento `sticky`, sem criar rolagem própria.
+
+  ## 1.9.828
+  - **Cloud/Cards**: Corrigido o bug de pastas com espaço vazio excessivo no modo cards.
+  - **Cloud/Layout**: Os cards de pasta não esticam mais para acompanhar a altura de arquivos vizinhos na mesma linha.
+
+  ## 1.9.827
+  - **Cloud/Cards**: Ajustada a grade do modo cards para caber 4 itens por linha com mais conforto em larguras maiores.
+  - **Cloud/Layout**: Reduzida a largura mínima dos cards no explorador para aproveitar melhor o espaço horizontal disponível.
+
+  ## 1.9.826
+  - **Cloud/Renomear PDF**: A extensão `.pdf` foi protegida no modal de renomear para evitar alteração acidental.
+  - **Cloud/Renomear PDF**: O campo de edição agora altera apenas o nome base do arquivo, mantendo `.pdf` fixo no final.
+
+  ## 1.9.825
+  - **Cloud/Cards**: Os cards de pasta ficaram mais compactos, com ícone menor em estilo mais próximo do Windows.
+  - **Cloud/Cards**: Removidas as informações abaixo das pastas em modo cards, como cliente e data de modificação.
+
+  ## 1.9.824
+  - **Cloud/Modal Renomear**: Corrigida a sobreposição para o modal de renomear abrir acima do modal de preview/view.
+  - **Cloud/Empilhamento**: Ajustado o `z-index` dos modais de renomeação para evitar que fiquem escondidos atrás da visualização do arquivo.
+
+  ## 1.9.823
+  - **Cloud/Nova pasta**: Corrigido o clique com botão direito no espaço vazio para abrir o menu contextual com a ação `Nova pasta`.
+  - **Cloud/Estado vazio**: A ação de criação de pasta na tela vazia/inicial foi padronizada como `Nova pasta` para ficar mais visível.
+
+  ## 1.9.822
+  - **Cloud/PDF Preview**: O modal de visualização de PDF agora permite navegar entre outros PDFs da lista em modo galeria.
+  - **Cloud/PDF Preview**: Adicionadas ações rápidas no modal para `Renomear`, `Baixar`, `Excluir` e abrir o `Hub PDF`.
+
+  ## 1.9.821
+  - **Cloud/Seleção**: Corrigido o `Ctrl`/`Cmd` na árvore lateral para permitir seleção aditiva de pastas sem substituir a seleção atual.
+  - **Cloud/Atalhos de clique**: A árvore lateral passou a respeitar também `Shift+clique` para seleção em intervalo usando a mesma lógica do explorador principal.
+
+  ## 1.9.820
+  - **Cloud/Lateral**: O painel lateral de detalhes não abre mais automaticamente ao selecionar arquivos ou pastas.
+  - **Cloud/Seleção**: Melhorada a experiência de multisseleção, evitando que o painel lateral atrapalhe a marcação de vários itens.
+
+  ## 1.9.819
+  - **Cloud/PDF**: A seção `Páginas do PDF` agora mostra miniaturas reais das páginas em vez de apenas blocos numerados.
+  - **Cloud/Preview**: Melhorada a seleção visual de páginas no Hub PDF com preview imediato do conteúdo de cada página.
+
+  ## 1.9.818
+  - **Cloud/Crash**: Corrigido o erro `Cannot access 'handlePasteClipboardToFolder' before initialization` que derrubava o Cloud após a adição do atalho de colar.
+  - **Cloud/Atalhos**: O listener global do teclado foi reordenado para inicializar depois dos handlers de clipboard, mantendo `Ctrl+V` funcional sem quebrar a tela.
+
+  ## 1.9.817
+  - **Cloud/Colar**: Adicionado botão visível de `Colar` na barra superior da pasta atual, inclusive em subpastas, quando há itens copiados ou recortados.
+  - **Cloud/Atalhos**: Adicionados `Ctrl+C`, `Ctrl+X` e `Ctrl+V` para copiar, recortar e colar diretamente no Cloud.
+
+  ## 1.9.816
+  - **Cloud/Atalhos**: Corrigido o atalho do teclado para `Delete/Del` voltar a enviar itens selecionados para a lixeira.
+  - **Cloud/Seleção**: O handler de exclusão por teclado agora permanece sincronizado com a seleção atual do explorador.
+
+  ## 1.9.815
+  - **Cloud/Upload de pastas**: Corrigido o envio de pastas para preservar a pasta raiz ao arrastar/jogar conteúdo no Cloud.
+  - **Cloud/Estrutura**: O módulo agora usa o caminho relativo real do navegador ao importar arquivos, evitando que apenas os arquivos internos sejam recriados soltos no destino.
+
+  ## 1.9.814
+  - **Cloud/Clipboard**: Adicionadas as ações `Copiar`, `Recortar` e `Colar` para arquivos, pastas e seleções dentro do módulo Cloud.
+  - **Cloud/Cópias**: Adicionada a ação `Criar cópia` para arquivos e pastas, incluindo duplicação de subpastas e arquivos internos.
+
+  ## 1.9.813
+  - **Cloud/Ações**: Adicionadas as opções `Recortar seleção para cá` e `Copiar seleção para cá` no menu das pastas.
+  - **Cloud/UX**: Agora é possível enviar itens selecionados diretamente para uma pasta-alvo, movendo ou criando cópias do conteúdo sem sair do fluxo atual.
+
+  ## 1.9.812
+  - **Cloud/Lixeira**: Garantida a exclusão definitiva ao esvaziar a lixeira, inclusive para itens aninhados já marcados como removidos.
+  - **Cloud/Storage**: Pastas apagadas agora percorrem também arquivos e subpastas que já estavam na lixeira, removendo registros e arquivos físicos para liberar espaço.
+
+  ## 1.9.811
+  - **Cloud/Lixeira**: Corrigido o modal de esvaziamento da lixeira que ainda podia aparecer com fundo preto no estado de sucesso.
+  - **Cloud/UX**: O feedback visual da remoção permanente agora mantém base branca e contraste estável também ao concluir o esvaziamento.
+
+  ## 1.9.810
+  - **Cloud/Modal**: Corrigido o modal de transferência e exclusão que podia aparecer com fundo escuro/preto e texto com baixo contraste.
+  - **Cloud/UX**: As superfícies dos modais de progresso agora forçam tema claro para manter legibilidade consistente durante upload e exclusão.
+
   ## 1.9.809
   - **Cloud/PDF**: Corrigido o erro que podia quebrar o preview após enviar vários documentos ou renomear arquivos no Cloud.
   - **Cloud/UX**: O ciclo de vida dos previews foi estabilizado para limpar estados inválidos e remontar o preview PDF quando a URL/arquivo muda.
