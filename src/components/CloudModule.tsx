@@ -2260,6 +2260,16 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
     }
   };
 
+  const closePdfToolsModal = () => {
+    setPdfToolsModalOpen(false);
+    setSelectedPdfToolFile(null);
+    setPdfToolPreviewUrl(null);
+    setPdfToolPages([]);
+    setSelectedPdfPageIndexes([]);
+    setPdfToolSaveAsCopy(false);
+    setPdfToolMode('home');
+  };
+
   const togglePdfPageSelection = (pageIndex: number) => {
     setSelectedPdfPageIndexes((prev) => (
       prev.includes(pageIndex)

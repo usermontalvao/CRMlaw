@@ -47,6 +47,7 @@ import { matchesNormalizedSearch } from '../utils/search';
    ============================================================================ */
 
 const VERSION_CODENAMES: Record<string, { name: string; emoji: string }> = {
+  '1.9.884': { name: 'Café Modal Fechado', emoji: '🧩' },
   '1.9.883': { name: 'Café Estado Restaurado', emoji: '🩹' },
   '1.9.882': { name: 'Café ZIP Direto', emoji: '🗂️' },
   '1.9.881': { name: 'Café Entrada Limpa', emoji: '🧹' },
@@ -694,6 +695,23 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
 };
 
 const releases: ReleaseNote[] = [
+  {
+    version: '1.9.884',
+    date: '12/03/2026',
+    summary: 'Cloud: corrigido o erro de build no hub de PDF com a restauração da função de fechamento do modal.',
+    modules: [
+      {
+        moduleId: 'cloud',
+        changes: [
+          {
+            type: 'fix',
+            title: 'Fechamento do hub PDF restaurado',
+            description: 'O Cloud voltou a declarar a função `closePdfToolsModal`, eliminando o erro de build e restabelecendo o fechamento correto do modal de ferramentas PDF.',
+          },
+        ],
+      },
+    ],
+  },
   {
     version: '1.9.883',
     date: '12/03/2026',

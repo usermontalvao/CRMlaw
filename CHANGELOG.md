@@ -1,5 +1,8 @@
 # Changelog
   
+  ## 1.9.884
+- **Cloud**: Corrigido o erro de build causado pela ausência de `closePdfToolsModal`, restaurando o fechamento correto do hub de PDF.
+
   ## 1.9.883
 - **Cloud**: Corrigido o erro de runtime no `CloudModule` ao baixar pasta, restaurando a state de controle usada pelo botão de preparação do download.
 
