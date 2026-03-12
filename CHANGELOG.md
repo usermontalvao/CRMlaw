@@ -1,5 +1,14 @@
 # Changelog
   
+  ## 1.9.888
+- **Cloud**: Corrigido o upload duplicado ao arrastar arquivos de fora para dentro do módulo, evitando que o mesmo drop fosse processado ao mesmo tempo pela janela e pela área central.
+
+  ## 1.9.887
+- **Cloud**: O sufixo `(cópia)` agora só é aplicado ao copiar arquivos ou pastas para o mesmo destino de origem; ao colar em outra pasta, o nome original é preservado.
+
+  ## 1.9.886
+- **Cloud**: O renomear arquivo passou a travar a extensão em todos os fluxos relevantes, incluindo modal e renomeação inline, evitando alteração acidental do sufixo do arquivo.
+
   ## 1.9.885
 - **Cloud**: O modal de converter imagens em PDF passou a abrir acima do preview, com fechamento do preview atual para evitar sobreposição incorreta.
 

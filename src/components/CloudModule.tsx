@@ -263,6 +263,20 @@ const arrayBufferToBase64 = (buffer: ArrayBuffer) => {
 const getRandomImageFileName = (extension = 'png') => `print_${crypto.randomUUID().replace(/-/g, '').slice(0, 12)}.${extension}`;
 const getRandomPdfFileName = () => `print_${crypto.randomUUID().replace(/-/g, '').slice(0, 12)}.pdf`;
 
+const splitFileNameAndExtension = (fileName: string) => {
+  const trimmed = String(fileName || '').trim();
+  const match = trimmed.match(/^(.*?)(\.[^./\\]+)$/);
+  if (!match) {
+    return { baseName: trimmed, extension: '' };
+  }
+
+  const [, rawBaseName, extension] = match;
+  return {
+    baseName: rawBaseName || trimmed,
+    extension,
+  };
+};
+
 const getInitialCloudViewMode = (): CloudViewMode => {
   if (typeof window === 'undefined') return 'list';
   const stored = window.localStorage.getItem(CLOUD_VIEW_MODE_STORAGE_KEY);
@@ -1976,6 +1990,7 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
 
     const handleDocumentDrop = (event: DragEvent) => {
       if (!hasFileDragPayload(event.dataTransfer)) return;
+      if (event.defaultPrevented) return;
       const inside = isWithinCloudCenter(event.clientX, event.clientY);
       setDragActive(false);
       if (!inside || !event.dataTransfer) return;
@@ -2144,11 +2159,8 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
     setRenameTarget(null);
     setRenameValue('');
     setInlineRenameTarget(target);
-    if (target.type === 'file' && target.currentName.toLowerCase().endsWith('.pdf')) {
-      setInlineRenameValue(target.currentName.slice(0, -4));
-    } else {
-      setInlineRenameValue(target.currentName);
-    }
+    const { baseName, extension } = splitFileNameAndExtension(target.currentName);
+    setInlineRenameValue(target.type === 'file' && extension ? baseName : target.currentName);
   }, []);
 
   const cancelInlineRename = useCallback(() => {
@@ -2161,9 +2173,8 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
 
     try {
       if (inlineRenameTarget.type === 'file') {
-        const nextName = inlineRenameTarget.currentName.toLowerCase().endsWith('.pdf')
-          ? `${inlineRenameValue.trim()}.pdf`
-          : inlineRenameValue.trim();
+        const { extension } = splitFileNameAndExtension(inlineRenameTarget.currentName);
+        const nextName = `${inlineRenameValue.trim()}${extension}`;
         await cloudService.renameFile(inlineRenameTarget.id, nextName);
         toast.success('Cloud', 'Arquivo renomeado com sucesso.');
       } else {
@@ -2998,11 +3009,8 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
 
   const openRenameModal = (type: 'file' | 'folder', id: string, currentName: string) => {
     setRenameTarget({ type, id, currentName });
-    if (type === 'file' && currentName.toLowerCase().endsWith('.pdf')) {
-      setRenameValue(currentName.slice(0, -4));
-    } else {
-      setRenameValue(currentName);
-    }
+    const { baseName, extension } = splitFileNameAndExtension(currentName);
+    setRenameValue(type === 'file' && extension ? baseName : currentName);
     setRenameModalOpen(true);
   };
 
@@ -3011,9 +3019,8 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
 
     try {
       if (renameTarget.type === 'file') {
-        const nextName = renameTarget.currentName.toLowerCase().endsWith('.pdf')
-          ? `${renameValue.trim()}.pdf`
-          : renameValue.trim();
+        const { extension } = splitFileNameAndExtension(renameTarget.currentName);
+        const nextName = `${renameValue.trim()}${extension}`;
         await cloudService.renameFile(renameTarget.id, nextName);
         toast.success('Cloud', 'Arquivo renomeado com sucesso.');
       } else {
@@ -4117,6 +4124,7 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
             onDrop={(e) => {
               if (!hasFileDragPayload(e.dataTransfer)) return;
               e.preventDefault();
+              e.stopPropagation();
               setDragActive(false);
               void handleDropUpload(e.dataTransfer);
             }}
@@ -4487,7 +4495,7 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
                         ) : null}
                         {isPdfFile(file.mime_type, file.original_name) ? <FileText className="w-4 h-4 text-red-500 flex-shrink-0" /> : isImageFile(file.mime_type) ? <ImageIcon className="w-4 h-4 text-emerald-500 flex-shrink-0" /> : <File className="w-4 h-4 text-sky-500 flex-shrink-0" />}
                         {inlineRenameTarget?.type === 'file' && inlineRenameTarget.id === file.id ? (
-                          file.original_name.toLowerCase().endsWith('.pdf') ? (
+                          splitFileNameAndExtension(file.original_name).extension ? (
                             <div className="flex min-w-[220px] overflow-hidden rounded-md border border-orange-300 bg-white">
                               <input
                                 value={inlineRenameValue}
@@ -4507,7 +4515,7 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
                                 className="flex-1 px-2 py-1 text-sm text-slate-900 focus:outline-none"
                                 autoFocus
                               />
-                              <span className="inline-flex items-center border-l border-slate-200 bg-slate-50 px-2 text-xs text-slate-500">.pdf</span>
+                              <span className="inline-flex items-center border-l border-slate-200 bg-slate-50 px-2 text-xs text-slate-500">{splitFileNameAndExtension(file.original_name).extension}</span>
                             </div>
                           ) : (
                             <input
@@ -6084,8 +6092,8 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
               </div>
               <div>
                 <label className="block text-sm font-medium text-slate-700 mb-1">Novo nome</label>
-                {renameTarget.type === 'file' && renameTarget.currentName.toLowerCase().endsWith('.pdf') ? (
-                  <div className="flex overflow-hidden rounded-xl border border-slate-200 bg-white focus-within:ring-2 focus-within:ring-orange-100 focus-within:border-orange-400">
+                {renameTarget.type === 'file' && splitFileNameAndExtension(renameTarget.currentName).extension ? (
+                  <div className="flex overflow-hidden rounded-xl border border-orange-300 bg-white shadow-[0_0_0_3px_rgba(249,115,22,0.08)]">
                     <input
                       value={renameValue}
                       onChange={(e) => setRenameValue(e.target.value)}
@@ -6100,7 +6108,7 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
                       autoFocus
                     />
                     <div className="inline-flex items-center border-l border-slate-200 bg-slate-50 px-4 text-sm font-medium text-slate-500 select-none">
-                      .pdf
+                      {splitFileNameAndExtension(renameTarget.currentName).extension}
                     </div>
                   </div>
                 ) : (

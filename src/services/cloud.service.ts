@@ -544,10 +544,13 @@ class CloudService {
     if (!response.ok) throw new Error('Não foi possível baixar o arquivo original.');
     const blob = await response.blob();
 
+    const isSameFolderCopy = file.folder_id === targetFolderId;
     const nameParts = file.original_name.split('.');
     const ext = nameParts.length > 1 ? nameParts.pop() : null;
     const baseName = nameParts.join('.');
-    const copyName = ext ? `${baseName} (cópia).${ext}` : `${file.original_name} (cópia)`;
+    const copyName = isSameFolderCopy
+      ? (ext ? `${baseName} (cópia).${ext}` : `${file.original_name} (cópia)`)
+      : file.original_name;
 
     const safeOriginalName = sanitizeStorageSegment(copyName);
     const safeName = `${crypto.randomUUID()}_${safeOriginalName}`;
@@ -588,8 +591,10 @@ class CloudService {
     const sourceFolder = await this.getFolder(folderId);
     if (!sourceFolder) throw new Error('Pasta não encontrada.');
 
+    const isSameParentCopy = (sourceFolder.parent_id ?? null) === targetParentId;
+
     const rootCopy = await this.createFolder({
-      name: `${sourceFolder.name} (cópia)`,
+      name: isSameParentCopy ? `${sourceFolder.name} (cópia)` : sourceFolder.name,
       parent_id: targetParentId,
       client_id: targetClientId ?? sourceFolder.client_id ?? null,
     });

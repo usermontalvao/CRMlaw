@@ -47,6 +47,9 @@ import { matchesNormalizedSearch } from '../utils/search';
    ============================================================================ */
 
 const VERSION_CODENAMES: Record<string, { name: string; emoji: string }> = {
+  '1.9.888': { name: 'Café Drop Único', emoji: '🫳' },
+  '1.9.887': { name: 'Café Cópia Inteligente', emoji: '📄' },
+  '1.9.886': { name: 'Café Extensão Travada', emoji: '🔒' },
   '1.9.885': { name: 'Café Modal Acima', emoji: '🪟' },
   '1.9.884': { name: 'Café Modal Fechado', emoji: '🧩' },
   '1.9.883': { name: 'Café Estado Restaurado', emoji: '🩹' },
@@ -696,6 +699,57 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
 };
 
 const releases: ReleaseNote[] = [
+  {
+    version: '1.9.888',
+    date: '12/03/2026',
+    summary: 'Cloud: o arraste de arquivos externos passou a processar o drop apenas uma vez, evitando uploads duplicados.',
+    modules: [
+      {
+        moduleId: 'cloud',
+        changes: [
+          {
+            type: 'fix',
+            title: 'Drop externo sem duplicação',
+            description: 'O Cloud agora bloqueia o segundo processamento do mesmo evento de drop quando arquivos são arrastados de fora para dentro da área central, impedindo que o mesmo arquivo seja enviado duas vezes.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.887',
+    date: '12/03/2026',
+    summary: 'Cloud: ao colar itens em outra pasta, o sistema agora preserva o nome original e usa o marcador de cópia apenas quando o destino é o mesmo da origem.',
+    modules: [
+      {
+        moduleId: 'cloud',
+        changes: [
+          {
+            type: 'fix',
+            title: 'Sufixo de cópia só no mesmo destino',
+            description: 'Arquivos e pastas copiados entre pastas diferentes no Cloud deixam de receber automaticamente o sufixo `(cópia)`. Esse marcador permanece apenas quando a duplicação acontece no mesmo local de origem, evitando nomes desnecessariamente alterados.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.886',
+    date: '12/03/2026',
+    summary: 'Cloud: a renomeação de arquivos passou a preservar automaticamente a extensão no modal e no modo inline.',
+    modules: [
+      {
+        moduleId: 'cloud',
+        changes: [
+          {
+            type: 'fix',
+            title: 'Extensão protegida ao renomear',
+            description: 'O Cloud agora separa nome base e extensão em todos os fluxos principais de renomear arquivo, mantendo o sufixo visível e bloqueado para evitar alterações acidentais como .docx, .pdf, .jpg e similares.',
+          },
+        ],
+      },
+    ],
+  },
   {
     version: '1.9.885',
     date: '12/03/2026',
