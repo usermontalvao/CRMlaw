@@ -92,12 +92,27 @@ import type { Lead } from './types/lead.types';
 import type { CreateClientDTO } from './types/client.types';
 
 type ClientSearchResult = Awaited<ReturnType<typeof clientService.searchClients>>[number];
+type CloudHeaderActionDetail = {
+  action: 'upload' | 'create-folder' | 'toggle-filters' | 'set-view-mode' | 'set-card-size';
+  value?: 'list' | 'cards' | 'small' | 'medium' | 'large';
+};
+type CloudHeaderStateDetail = {
+  viewMode: 'list' | 'cards';
+  cardSize: 'small' | 'medium' | 'large';
+  showFilters: boolean;
+};
+
+const dispatchCloudHeaderAction = (detail: CloudHeaderActionDetail) => {
+  if (typeof window === 'undefined') return;
+  window.dispatchEvent(new CustomEvent('cloud-header-action', { detail }));
+};
 
 const MainApp: React.FC = () => {
   const { currentModule: activeModule, moduleParams, navigateTo, setModuleParams, clearModuleParams } = useNavigation();
   const { theme, toggleTheme } = useTheme();
   const [isMobileNavOpen, setIsMobileNavOpen] = useState(false);
   const [isOnline, setIsOnline] = useState(navigator.onLine);
+  const [cloudHeaderState, setCloudHeaderState] = useState<CloudHeaderStateDetail>({ viewMode: 'list', cardSize: 'medium', showFilters: false });
   const { canView, canCreate, canEdit, canDelete, loading: permissionsLoading, isAdmin } = usePermissions();
   
   // Estados para o seletor de mês do módulo Prazos
@@ -118,6 +133,17 @@ const MainApp: React.FC = () => {
     navigator.serviceWorker.addEventListener('message', handler);
     return () => navigator.serviceWorker.removeEventListener('message', handler);
   }, [navigateTo]);
+
+  useEffect(() => {
+    const handleCloudHeaderState = (event: Event) => {
+      const detail = (event as CustomEvent<CloudHeaderStateDetail>).detail;
+      if (!detail) return;
+      setCloudHeaderState(detail);
+    };
+
+    window.addEventListener('cloud-header-state', handleCloudHeaderState as EventListener);
+    return () => window.removeEventListener('cloud-header-state', handleCloudHeaderState as EventListener);
+  }, []);
 
   // Detectar status de conexão
   useEffect(() => {
@@ -1186,32 +1212,52 @@ useEffect(() => {
               {/* Botões do Cloud - aparecem apenas quando o módulo Cloud está ativo */}
               {activeModule === 'cloud' && (
                 <div className="flex items-center gap-2 flex-wrap">
-                  <button className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg bg-orange-500 hover:bg-orange-600 text-white text-sm shadow-sm shadow-orange-500/20">
+                  <button
+                    type="button"
+                    onClick={() => dispatchCloudHeaderAction({ action: 'upload' })}
+                    className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg bg-orange-500 hover:bg-orange-600 text-white text-sm shadow-sm shadow-orange-500/20"
+                  >
                     <Upload className="w-4 h-4" />
                     Enviar
                   </button>
-                  <button className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg bg-white hover:bg-slate-50 text-slate-700 text-sm border border-slate-200 shadow-sm">
+                  <button
+                    type="button"
+                    onClick={() => dispatchCloudHeaderAction({ action: 'create-folder' })}
+                    className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg bg-white hover:bg-slate-50 text-slate-700 text-sm border border-slate-200 shadow-sm"
+                  >
                     <FolderPlus className="w-4 h-4" />
                     Nova pasta
                   </button>
-                  <button className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm border shadow-sm bg-white text-slate-700 border-slate-200 hover:bg-slate-50">
+                  <button
+                    type="button"
+                    onClick={() => dispatchCloudHeaderAction({ action: 'toggle-filters' })}
+                    className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm border shadow-sm ${cloudHeaderState.showFilters ? 'bg-orange-50 text-orange-700 border-orange-200' : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50'}`}
+                  >
                     <Filter className="w-4 h-4" />
                     Filtros
                   </button>
                   <div className="inline-flex items-center rounded-xl border border-slate-200 bg-white p-1 shadow-sm">
-                    <button className="inline-flex items-center gap-1 rounded-md px-2.5 py-1.5 text-sm transition text-slate-600 hover:bg-slate-50">
+                    <button
+                      type="button"
+                      onClick={() => dispatchCloudHeaderAction({ action: 'set-view-mode', value: 'list' })}
+                      className={`inline-flex items-center gap-1 rounded-md px-2.5 py-1.5 text-sm transition ${cloudHeaderState.viewMode === 'list' ? 'bg-orange-50 text-orange-700' : 'text-slate-600 hover:bg-slate-50'}`}
+                    >
                       <List className="w-4 h-4" />
                       Lista
                     </button>
-                    <button className="inline-flex items-center gap-1 rounded-md px-2.5 py-1.5 text-sm transition bg-orange-50 text-orange-700">
+                    <button
+                      type="button"
+                      onClick={() => dispatchCloudHeaderAction({ action: 'set-view-mode', value: 'cards' })}
+                      className={`inline-flex items-center gap-1 rounded-md px-2.5 py-1.5 text-sm transition ${cloudHeaderState.viewMode === 'cards' ? 'bg-orange-50 text-orange-700' : 'text-slate-600 hover:bg-slate-50'}`}
+                    >
                       <LayoutGrid className="w-4 h-4" />
                       Cards
                     </button>
                   </div>
                   <div className="inline-flex items-center rounded-xl border border-slate-200 bg-white p-1 shadow-sm">
-                    <button className="rounded-md px-2.5 py-1.5 text-sm transition text-slate-600 hover:bg-slate-50">P</button>
-                    <button className="rounded-md px-2.5 py-1.5 text-sm transition bg-orange-50 text-orange-700">M</button>
-                    <button className="rounded-md px-2.5 py-1.5 text-sm transition text-slate-600 hover:bg-slate-50">G</button>
+                    <button type="button" onClick={() => dispatchCloudHeaderAction({ action: 'set-card-size', value: 'small' })} className={`rounded-md px-2.5 py-1.5 text-sm transition ${cloudHeaderState.cardSize === 'small' ? 'bg-orange-50 text-orange-700' : 'text-slate-600 hover:bg-slate-50'}`}>P</button>
+                    <button type="button" onClick={() => dispatchCloudHeaderAction({ action: 'set-card-size', value: 'medium' })} className={`rounded-md px-2.5 py-1.5 text-sm transition ${cloudHeaderState.cardSize === 'medium' ? 'bg-orange-50 text-orange-700' : 'text-slate-600 hover:bg-slate-50'}`}>M</button>
+                    <button type="button" onClick={() => dispatchCloudHeaderAction({ action: 'set-card-size', value: 'large' })} className={`rounded-md px-2.5 py-1.5 text-sm transition ${cloudHeaderState.cardSize === 'large' ? 'bg-orange-50 text-orange-700' : 'text-slate-600 hover:bg-slate-50'}`}>G</button>
                   </div>
                 </div>
               )}

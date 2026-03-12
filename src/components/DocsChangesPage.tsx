@@ -47,6 +47,7 @@ import { matchesNormalizedSearch } from '../utils/search';
    ============================================================================ */
 
 const VERSION_CODENAMES: Record<string, { name: string; emoji: string }> = {
+  '1.9.859': { name: 'Café Pasta Escalada', emoji: '📁' },
   '1.9.848': { name: 'Café Nuvem Limpa', emoji: '✨' },
   '1.9.847': { name: 'Café Cloud Vivo', emoji: '☁️' },
   '1.9.846': { name: 'Café Sidebar Ampla', emoji: '🧭' },
@@ -669,6 +670,23 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
 };
 
 const releases: ReleaseNote[] = [
+  {
+    version: '1.9.859',
+    date: '12/03/2026',
+    summary: 'Cloud: os controles P/M/G agora também ajustam visualmente os cards de pasta no modo cards.',
+    modules: [
+      {
+        moduleId: 'cloud',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Escala de pastas integrada ao P/M/G',
+            description: 'Os cards de pasta agora acompanham o tamanho pequeno, médio e grande com ajuste de altura, padding, espaçamento e ícone, mantendo consistência visual com os arquivos.',
+          },
+        ],
+      },
+    ],
+  },
   {
     version: '1.9.848',
     date: '11/03/2026',

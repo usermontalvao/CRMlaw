@@ -1,5 +1,16 @@
 # Changelog
   
+  ## 1.9.859
+- **Cloud/Cards**: Os controles `P/M/G` agora também alteram o tamanho visual dos cards de pasta, incluindo altura, padding, espaçamento e ícone, mantendo consistência com os arquivos.
+
+  ## 1.9.858
+- **Cloud/Header**: Os controles `Lista/Cards` e `P/M/G` do header global agora refletem corretamente o estado ativo do `CloudModule`, inclusive o botão de `Filtros`.
+- **Cloud/UX**: Adicionada transição visual curta na troca entre os modos `Lista` e `Cards`, deixando a mudança de visualização perceptível.
+
+  ## 1.9.856
+- **Cloud/Hub PDF**: Clarificada a interface do Hub PDF quando há múltiplos PDFs selecionados. O cabeçalho e o resumo agora deixam explícita a diferença entre o `PDF atual` aberto para edição e os `PDFs selecionados para juntar`.
+- **Cloud/Hub PDF**: Adicionada uma listagem visual dos PDFs selecionados para juntar dentro do Hub, com destaque para o arquivo atualmente aberto.
+
   ## 1.9.848
 - **Cloud/Loading**: Removidas as bordas visíveis do card e do núcleo da animação de carregamento, mantendo apenas brilho e profundidade visual.
 - **Cloud/UX**: O loading ficou mais limpo e leve, sem contornos marcados ao redor da animação.

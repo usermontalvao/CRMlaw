@@ -285,6 +285,15 @@ interface CloudModuleProps {
 
 type CloudViewMode = 'list' | 'cards';
 type PdfToolMode = 'home' | 'organize' | 'rotate' | 'remove';
+type CloudHeaderActionDetail = {
+  action: 'upload' | 'create-folder' | 'toggle-filters' | 'set-view-mode' | 'set-card-size';
+  value?: 'list' | 'cards' | 'small' | 'medium' | 'large';
+};
+type CloudHeaderStateDetail = {
+  viewMode: 'list' | 'cards';
+  cardSize: 'small' | 'medium' | 'large';
+  showFilters: boolean;
+};
 
 const SortablePdfPageCard: React.FC<{
   id: string;
@@ -463,6 +472,45 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
     if (cardSize === 'small') return 'h-28';
     if (cardSize === 'large') return 'h-44';
     return 'h-36';
+  }, [cardSize]);
+
+  const folderCardSizeClasses = useMemo(() => {
+    if (cardSize === 'small') {
+      return {
+        cardClass: 'px-3 py-2.5 min-h-[82px]',
+        contentGapClass: 'gap-2.5',
+        iconWrapperClass: 'h-9 w-11',
+        iconTopTabClass: 'left-1 top-0.5 h-2.5 w-5',
+        iconBodyClass: 'top-2.5 h-6',
+        iconBadgeClass: 'right-1 top-3 h-2.5 w-3',
+        folderIconClass: 'left-2.5 top-3.5 w-4 h-4',
+        titlePaddingClass: 'pt-0.5',
+      };
+    }
+
+    if (cardSize === 'large') {
+      return {
+        cardClass: 'px-4 py-3.5 min-h-[108px]',
+        contentGapClass: 'gap-3.5',
+        iconWrapperClass: 'h-12 w-16',
+        iconTopTabClass: 'left-2 top-1 h-3.5 w-6.5',
+        iconBodyClass: 'top-3.5 h-7.5',
+        iconBadgeClass: 'right-2 top-4 h-3.5 w-4',
+        folderIconClass: 'left-4 top-4.5 w-5.5 h-5.5',
+        titlePaddingClass: 'pt-1.5',
+      };
+    }
+
+    return {
+      cardClass: 'px-3.5 py-3 min-h-[92px]',
+      contentGapClass: 'gap-3',
+      iconWrapperClass: 'h-11 w-14',
+      iconTopTabClass: 'left-1.5 top-1 h-3 w-6',
+      iconBodyClass: 'top-3 h-7',
+      iconBadgeClass: 'right-1.5 top-3.5 h-3 w-3.5',
+      folderIconClass: 'left-3.5 top-4 w-5 h-5',
+      titlePaddingClass: 'pt-1',
+    };
   }, [cardSize]);
 
   const hasActiveAdvancedFilters = useMemo(() => {
@@ -1031,6 +1079,55 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
   useEffect(() => {
     window.localStorage.setItem(CLOUD_CARD_SIZE_STORAGE_KEY, cardSize);
   }, [cardSize]);
+
+  useEffect(() => {
+    window.dispatchEvent(new CustomEvent<CloudHeaderStateDetail>('cloud-header-state', {
+      detail: {
+        viewMode,
+        cardSize,
+        showFilters: showAdvancedFilters,
+      },
+    }));
+  }, [viewMode, cardSize, showAdvancedFilters]);
+
+  useEffect(() => {
+    const handleCloudHeaderAction = (event: Event) => {
+      const detail = (event as CustomEvent<CloudHeaderActionDetail>).detail;
+      if (!detail) return;
+
+      if (detail.action === 'upload') {
+        fileInputRef.current?.click();
+        return;
+      }
+
+      if (detail.action === 'create-folder') {
+        setFolderName('');
+        setFolderClientId(currentFolder?.client_id || '');
+        setSelectedFolderLabelId('pendente');
+        setNewLabelName('');
+        setNewLabelColor('#f97316');
+        setFolderModalOpen(true);
+        return;
+      }
+
+      if (detail.action === 'toggle-filters') {
+        setShowAdvancedFilters((prev) => !prev);
+        return;
+      }
+
+      if (detail.action === 'set-view-mode' && (detail.value === 'list' || detail.value === 'cards')) {
+        setViewMode(detail.value);
+        return;
+      }
+
+      if (detail.action === 'set-card-size' && (detail.value === 'small' || detail.value === 'medium' || detail.value === 'large')) {
+        setCardSize(detail.value);
+      }
+    };
+
+    window.addEventListener('cloud-header-action', handleCloudHeaderAction as EventListener);
+    return () => window.removeEventListener('cloud-header-action', handleCloudHeaderAction as EventListener);
+  }, [currentFolder]);
 
   useEffect(() => {
     try {
@@ -3936,7 +4033,16 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
                     </button>
                   ) : null}
                 </div>
-              ) : viewMode === 'list' ? (
+              ) : (
+                <AnimatePresence mode="wait" initial={false}>
+                  <motion.div
+                    key={`cloud-view-${viewMode}`}
+                    initial={{ opacity: 0, y: 8 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: -8 }}
+                    transition={{ duration: 0.18 }}
+                  >
+                {viewMode === 'list' ? (
                 explorerRows.map((row) => {
                   if (row.kind === 'folder') {
                     const folder = row.folder;
@@ -3987,11 +4093,12 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
                         }}
                         onContextMenu={(e) => {
                           e.preventDefault();
-                          // Se o item já não estiver selecionado, adicioná-lo à seleção
-                          if (!selectedItemKeys.includes(itemKey)) {
-                            applySelection(itemKey, { additive: true });
+                          if (selectedItemKeys.includes(itemKey)) {
+                            setSelectedItemKey(itemKey);
                           } else {
                             setSelectedItemKey(itemKey);
+                            setSelectedItemKeys([itemKey]);
+                            setSelectionAnchorKey(itemKey);
                           }
                           setContextMenu({ x: e.clientX, y: e.clientY, type: 'folder', folderId: folder.id });
                         }}
@@ -4065,8 +4172,13 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
                               type="button"
                               onClick={(e) => {
                                 e.stopPropagation();
-                                setSelectedItemKey(itemKey);
-                                setSelectedItemKeys([itemKey]);
+                                if (selectedItemKeys.includes(itemKey)) {
+                                  setSelectedItemKey(itemKey);
+                                } else {
+                                  setSelectedItemKey(itemKey);
+                                  setSelectedItemKeys([itemKey]);
+                                  setSelectionAnchorKey(itemKey);
+                                }
                                 setContextMenu({ x: e.clientX, y: e.clientY, type: 'folder', folderId: folder.id });
                               }}
                               className="p-1 rounded-md hover:bg-slate-100 text-slate-400 hover:text-slate-600"
@@ -4103,11 +4215,12 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
                       }}
                       onContextMenu={(e) => {
                         e.preventDefault();
-                        // Se o item já não estiver selecionado, adicioná-lo à seleção
-                        if (!selectedItemKeys.includes(itemKey)) {
-                          applySelection(itemKey, { additive: true });
+                        if (selectedItemKeys.includes(itemKey)) {
+                          setSelectedItemKey(itemKey);
                         } else {
                           setSelectedItemKey(itemKey);
+                          setSelectedItemKeys([itemKey]);
+                          setSelectionAnchorKey(itemKey);
                         }
                         setContextMenu({ x: e.clientX, y: e.clientY, type: 'file', fileId: file.id });
                       }}
@@ -4211,12 +4324,12 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
                       const itemKey = `folder:${folder.id}`;
                       const isSelected = selectedItemKeys.includes(itemKey);
                       const folderLabel = getFolderLabel(folder.id);
+                      const isDropTarget = dropTargetFolderId === folder.id;
                       const hasClientLink = Boolean(folder.client_id);
                       const showClientLinkBadge = !folder.parent_id;
                       const showFolderStatusBadge = !folder.parent_id;
                       const isFavorite = favoriteFolderIds.includes(folder.id);
 
-                      const isDropTarget = dropTargetFolderId === folder.id;
                       return (
                         <div
                           key={folder.id}
@@ -4240,7 +4353,7 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
                             e.preventDefault();
                             void handleDropOnFolder(folder.id);
                           }}
-                          className={`rounded-xl border px-3 py-2.5 bg-white shadow-sm cursor-pointer transition ${isDropTarget ? 'border-orange-400 bg-orange-100' : isSelected ? 'border-orange-300 bg-orange-50/40' : 'border-slate-200 hover:border-orange-200 hover:shadow-md'}`}
+                          className={`rounded-xl border bg-white shadow-sm cursor-pointer transition ${folderCardSizeClasses.cardClass} ${isDropTarget ? 'border-orange-400 bg-orange-100' : isSelected ? 'border-orange-300 bg-orange-50/40' : 'border-slate-200 hover:border-orange-200 hover:shadow-md'}`}
                           onClick={(event) => {
                             event.stopPropagation();
                             event.preventDefault();
@@ -4264,14 +4377,14 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
                           style={{ height: 'fit-content' }}
                         >
                           <div className="flex items-start justify-between gap-2">
-                            <div className="flex items-start gap-2.5 min-w-0">
-                              <div className="relative h-8 w-10 flex-shrink-0">
-                                <div className="absolute left-1 top-0.5 h-2.5 w-4.5 rounded-t-md bg-amber-300 border border-amber-400 border-b-0" />
-                                <div className="absolute inset-x-0 top-2 h-5.5 rounded-md bg-gradient-to-b from-amber-300 to-amber-400 border border-amber-500 shadow-[inset_0_1px_0_rgba(255,255,255,0.35)]" />
-                                <div className="absolute right-1 top-2.5 h-2.5 w-3 rounded-sm bg-white/80 border border-amber-200" />
-                                <Folder className="absolute left-2.5 top-2.5 w-4 h-4 text-amber-700/80" />
+                            <div className={`flex items-start min-w-0 ${folderCardSizeClasses.contentGapClass}`}>
+                              <div className={`relative flex-shrink-0 ${folderCardSizeClasses.iconWrapperClass}`}>
+                                <div className={`absolute rounded-t-md bg-amber-300 border border-amber-400 border-b-0 ${folderCardSizeClasses.iconTopTabClass}`} />
+                                <div className={`absolute inset-x-0 rounded-md bg-gradient-to-b from-amber-300 to-amber-400 border border-amber-500 shadow-[inset_0_1px_0_rgba(255,255,255,0.35)] ${folderCardSizeClasses.iconBodyClass}`} />
+                                <div className={`absolute rounded-sm bg-white/80 border border-amber-200 ${folderCardSizeClasses.iconBadgeClass}`} />
+                                <Folder className={`absolute text-amber-700/80 ${folderCardSizeClasses.folderIconClass}`} />
                               </div>
-                              <div className="min-w-0 flex-1 pt-0.5">
+                              <div className={`min-w-0 flex-1 ${folderCardSizeClasses.titlePaddingClass}`}>
                                 {inlineRenameTarget?.type === 'folder' && inlineRenameTarget.id === folder.id ? (
                                   <input
                                     value={inlineRenameValue}
@@ -4311,21 +4424,26 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
                                   e.stopPropagation();
                                   handleToggleFavoriteFolder(folder.id);
                                 }}
-                                className={`p-1 rounded-lg hover:bg-slate-100 ${isFavorite ? 'text-orange-500' : 'text-slate-400 hover:text-slate-600'}`}
+                                className={`p-1.5 rounded-lg hover:bg-slate-100 ${isFavorite ? 'text-orange-500' : 'text-slate-400 hover:text-slate-600'}`}
                               >
-                                <Pin className="w-3.5 h-3.5" />
+                                <Pin className="w-4 h-4" />
                               </button>
                               <button
                                 type="button"
                                 onClick={(e) => {
                                   e.stopPropagation();
-                                  setSelectedItemKey(itemKey);
-                                  setSelectedItemKeys([itemKey]);
+                                  if (selectedItemKeys.includes(itemKey)) {
+                                    setSelectedItemKey(itemKey);
+                                  } else {
+                                    setSelectedItemKey(itemKey);
+                                    setSelectedItemKeys([itemKey]);
+                                    setSelectionAnchorKey(itemKey);
+                                  }
                                   setContextMenu({ x: e.clientX, y: e.clientY, type: 'folder', folderId: folder.id });
                                 }}
-                                className="p-1 rounded-lg hover:bg-slate-100 text-slate-400 hover:text-slate-600"
+                                className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-400 hover:text-slate-600"
                               >
-                                <MoreHorizontal className="w-3.5 h-3.5" />
+                                <MoreHorizontal className="w-4 h-4" />
                               </button>
                             </div>
                           </div>
@@ -4387,6 +4505,9 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
                             applySelection(itemKey, { additive: true });
                           } else {
                             setSelectedItemKey(itemKey);
+                            if (!selectedItemKeys.length) {
+                              setSelectedItemKeys([itemKey]);
+                            }
                           }
                           setContextMenu({ x: e.clientX, y: e.clientY, type: 'file', fileId: file.id });
                         }}
@@ -4435,7 +4556,9 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
                             </button>
                           </div>
                           {isImageFile(file.mime_type) && previewUrl ? (
-                            <img src={previewUrl} alt={file.original_name} className={`w-full ${cardPreviewHeightClass} object-cover bg-white`} />
+                            <div className={`${cardPreviewHeightClass} flex items-center justify-center bg-slate-100 p-2`}>
+                              <img src={previewUrl} alt={file.original_name} className="h-full w-full rounded-xl object-contain bg-white" />
+                            </div>
                           ) : isPdfFile(file.mime_type, file.original_name) && previewUrl ? (
                             <div className={`${cardPreviewHeightClass} flex items-center justify-center bg-slate-100 overflow-hidden`}>
                               <Document
@@ -4529,6 +4652,9 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
                     );
                   })}
                 </div>
+              )}
+                  </motion.div>
+                </AnimatePresence>
               )}
             </div>
 
@@ -6098,6 +6224,11 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
               <div className="min-w-0">
                 <p className="text-[11px] uppercase tracking-[0.18em] text-slate-400 font-semibold">Cloud</p>
                 <h3 className="text-base sm:text-lg font-semibold text-slate-900 truncate">Hub PDF - {selectedPdfToolFile.original_name}</h3>
+                <p className="text-xs text-slate-500 mt-0.5">
+                  {selectedPdfFiles.length > 1
+                    ? `${selectedPdfFiles.length} PDFs selecionados para juntar • editando agora: ${selectedPdfToolFile.original_name}`
+                    : 'Editando o PDF atual'}
+                </p>
               </div>
               <div className="flex items-center gap-2">
                 {pdfToolMode !== 'home' ? (
@@ -6227,11 +6358,51 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
                     )}
                   </div>
 
+                  {selectedPdfFiles.length > 1 ? (
+                    <div className="rounded-2xl border border-slate-200 bg-white p-4">
+                      <div className="flex items-center justify-between gap-4 mb-3">
+                        <div>
+                          <p className="text-sm font-medium text-slate-900">PDFs selecionados para juntar</p>
+                          <p className="text-xs text-slate-500">Estes são os arquivos que entrarão na união dos PDFs.</p>
+                        </div>
+                        <span className="inline-flex items-center rounded-full border border-amber-200 bg-amber-50 px-2.5 py-1 text-[11px] font-medium text-amber-700">
+                          {selectedPdfFiles.length} selecionados
+                        </span>
+                      </div>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3">
+                        {selectedPdfFiles.map((file) => {
+                          const isCurrent = file.id === selectedPdfToolFile.id;
+                          return (
+                            <div
+                              key={file.id}
+                              className={`rounded-xl border p-3 ${isCurrent ? 'border-orange-300 bg-orange-50' : 'border-slate-200 bg-slate-50/70'}`}
+                            >
+                              <div className="flex items-start justify-between gap-3">
+                                <div className="min-w-0 flex items-start gap-2">
+                                  <FileText className={`w-4 h-4 mt-0.5 flex-shrink-0 ${isCurrent ? 'text-orange-600' : 'text-slate-500'}`} />
+                                  <div className="min-w-0">
+                                    <p className={`text-sm font-medium truncate ${isCurrent ? 'text-orange-900' : 'text-slate-900'}`}>{file.original_name}</p>
+                                    <p className="text-xs text-slate-500 truncate">{formatFileSize(file.file_size)}</p>
+                                  </div>
+                                </div>
+                                {isCurrent ? (
+                                  <span className="inline-flex items-center rounded-full border border-orange-200 bg-white px-2 py-0.5 text-[10px] font-semibold text-orange-700">
+                                    Atual
+                                  </span>
+                                ) : null}
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  ) : null}
+
                   <div className="rounded-2xl border border-slate-200 bg-white p-4 text-sm text-slate-600">
                     <p><span className="font-medium text-slate-900">PDF atual:</span> {selectedPdfToolFile.original_name}</p>
                     <p><span className="font-medium text-slate-900">Total de páginas:</span> {pdfToolPages.length}</p>
                     <p><span className="font-medium text-slate-900">Páginas selecionadas:</span> {selectedPdfPageIndexes.length}</p>
-                    <p><span className="font-medium text-slate-900">PDFs selecionados para juntar:</span> {selectedPdfFiles.length}</p>
+                    <p><span className="font-medium text-slate-900">PDFs selecionados para juntar:</span> {selectedPdfFiles.length}{selectedPdfFiles.length > 1 ? ' (incluindo o PDF atual)' : ''}</p>
                   </div>
                 </div>
               </div>
