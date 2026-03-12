@@ -1,5 +1,84 @@
 # Changelog
   
+  ## 1.9.883
+- **Cloud**: Corrigido o erro de runtime no `CloudModule` ao baixar pasta, restaurando a state de controle usada pelo botão de preparação do download.
+
+  ## 1.9.882
+- **Cloud**: O download de pasta ficou mais confiável no primeiro clique, com bloqueio contra cliques repetidos e indicador visual enquanto o ZIP é preparado.
+
+  ## 1.9.881
+- **Cloud**: Pastas arquivadas e itens da lixeira deixaram de aparecer na árvore da Caixa de entrada, ficando visíveis apenas nas visões apropriadas.
+
+  ## 1.9.880
+- **Cloud**: O arrastar e soltar de arquivos passou a reconhecer toda a área central do Cloud, com overlay visual grande e drop permitido em qualquer ponto útil do painel.
+
+  ## 1.9.879
+- **Cloud**: O modo em cards passou a manter a área vazia abaixo da grade como parte real da dropzone, aceitando arrastar arquivos também nesse espaço livre.
+
+  ## 1.9.878
+- **Cloud**: A área vazia abaixo da listagem/cards passou a fazer parte real da dropzone, aceitando arrastar arquivos também no espaço livre do painel.
+
+  ## 1.9.877
+- **Cloud**: A área de arrastar arquivos no explorador foi expandida para ocupar toda a região útil, facilitando o drop em qualquer espaço livre da listagem/cards.
+
+  ## 1.9.876
+- **Cloud**: A rotação rápida de imagens e PDFs passou a atualizar a listagem sem exibir o carregamento global do Cloud.
+- **Cloud**: O carregamento inicial foi desacoplado da identidade interna do `loadData`, reduzindo recarregamentos visuais desnecessários após ações rápidas.
+
+  ## 1.9.875
+- **Cloud/PDF**: O preview principal de PDF no Cloud passou a centralizar melhor a página, com área de visualização ajustada para evitar corte lateral e deslocamento do conteúdo.
+
+  ## 1.9.874
+- **Cloud/PDF**: Corrigido o crash do preview de PDFs no Hub PDF ao forçar remontagem limpa do `react-pdf` quando o arquivo ou a URL do preview mudam.
+- **Cloud**: Removidas duplicações acidentais no `CloudModule` que estavam quebrando o build e causando erro 500 no recarregamento do Vite.
+
+  ## 1.9.873
+- **Cloud**: Recarregamentos após ações como copiar, colar e mover itens passaram a ocorrer de forma silenciosa, evitando sensação de tela recarregando à toa.
+- **Cloud**: O carregamento principal foi estabilizado para não ser reexecutado desnecessariamente quando apenas a referência interna da pasta atual muda.
+
+  ## 1.9.872
+- **Cloud/Word**: A conversão client-side de Word para PDF passou a forçar layout A4, renderizar cabeçalho/rodapé e capturar cada página separadamente para reduzir distorções de formatação.
+
+  ## 1.9.871
+- **Cloud/Word**: Corrigida a geração de PDF em branco ao alinhar o container de renderização do DOCX com a implementação estável já usada no módulo de documentos.
+
+  ## 1.9.870
+- **Cloud/Word**: A conversão de Word para PDF foi substituída por uma solução baseada em `docx-preview` + `html2canvas` + `jsPDF`, removendo a dependência do Syncfusion para essa funcionalidade.
+
+  ## 1.9.869
+- **Cloud/Word**: O editor oculto da conversão passou a permanecer invisível dentro da viewport, reduzindo travas de renderização/exportação em segundo plano.
+- **Cloud/Word**: A exportação PDF do Syncfusion agora reaplica o `serviceUrl` e força ajuste de layout antes do `saveAsBlob('Pdf')`.
+
+  ## 1.9.868
+- **Cloud/Word**: O editor oculto usado na conversão para PDF agora possui identificador exclusivo, evitando conflito interno com outras instâncias do editor e reduzindo timeouts na exportação.
+
+  ## 1.9.867
+- **Cloud/Word**: A conversão de Word para PDF passou a aguardar um sinal real de documento carregado no editor antes da exportação.
+- **Cloud/Word**: O botão de conversão agora mostra `Convertendo...` imediatamente após o clique para indicar que a ação foi iniciada.
+
+  ## 1.9.866
+- **Cloud/Word**: A conversão de Word para PDF não força mais atualização visual do preview durante o processamento.
+- **Cloud/Word**: Removida a validação frágil de renderização completa antes da exportação, reduzindo falhas com a mensagem de demora excessiva para renderizar.
+
+  ## 1.9.865
+- **Cloud/Word**: A conversão de Word para PDF agora valida a renderização das páginas antes de exportar e interrompe com erro controlado quando excede o tempo limite, evitando ficar processando indefinidamente.
+
+  ## 1.9.864
+- **Cloud/Word**: O aviso `Estamos convertendo...` foi reposicionado para o topo da tela, evitando conflito com o botão de mensagens.
+- **Cloud/Word**: Corrigido o fluxo de conversão Word->PDF no Cloud com espera real do carregamento do documento no editor antes da exportação.
+
+  ## 1.9.863
+- **Cloud/Word**: Adicionado feedback visual animado com a mensagem `Estamos convertendo...` durante a conversão de Word para PDF no Cloud.
+
+  ## 1.9.862
+- **Cloud/Word**: A conversão de `.docx` para PDF no Cloud foi estabilizada com exportação via editor Syncfusion, preservando melhor paginação, layout e tipografia do documento.
+
+  ## 1.9.861
+- **Cloud/Word**: Adicionada a função de converter arquivos Word `.docx` em PDF diretamente no Cloud, com ação disponível no menu contextual e nas ações do arquivo selecionado.
+
+  ## 1.9.860
+- **Cloud/PDF Preview**: Corrigido o reflash automático do modal de PDF ao navegar no Cloud. O preview não recarrega mais apenas por mudança de pasta ou atualização visual incidental.
+
   ## 1.9.859
 - **Cloud/Cards**: Os controles `P/M/G` agora também alteram o tamanho visual dos cards de pasta, incluindo altura, padding, espaçamento e ícone, mantendo consistência com os arquivos.
 

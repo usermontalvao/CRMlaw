@@ -328,6 +328,17 @@ const SyncfusionEditor = forwardRef<SyncfusionEditorRef, SyncfusionEditorProps>(
 
         return new Promise<Blob>((resolve, reject) => {
           try {
+            applySyncfusionServiceUrl(editor as any);
+            try {
+              if (typeof (editor as any).resize === 'function') {
+                (editor as any).resize();
+              }
+              if (pageFit && typeof (editor as any).fitPage === 'function') {
+                (editor as any).fitPage(pageFit as any);
+              }
+            } catch {
+              // ignore
+            }
             editor.saveAsBlob('Pdf' as any).then((blob: Blob) => {
               resolve(blob);
             }).catch(reject);

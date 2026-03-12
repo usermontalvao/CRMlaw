@@ -1,6 +1,9 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import JSZip from 'jszip';
+import { renderAsync } from 'docx-preview';
+import html2canvas from 'html2canvas';
+import jsPDF from 'jspdf';
 import { DndContext, PointerSensor, closestCenter, useSensor, useSensors, type DragEndEvent } from '@dnd-kit/core';
 import { SortableContext, arrayMove, rectSortingStrategy, useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
@@ -330,6 +333,7 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
   const toast = useToastContext();
   const editorRef = useRef<SyncfusionEditorRef | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const cloudCenterDropRef = useRef<HTMLElement | null>(null);
   const explorerViewportRef = useRef<HTMLDivElement | null>(null);
   const itemElementMapRef = useRef<Record<string, HTMLDivElement | null>>({});
   const [clients, setClients] = useState<Client[]>([]);
@@ -389,6 +393,8 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
   const [pdfToolSaveAsCopy, setPdfToolSaveAsCopy] = useState(false);
   const [pdfToolMode, setPdfToolMode] = useState<PdfToolMode>('home');
   const [quickActionFileId, setQuickActionFileId] = useState<string | null>(null);
+  const [downloadingFolderId, setDownloadingFolderId] = useState<string | null>(null);
+  const [wordToPdfFileId, setWordToPdfFileId] = useState<string | null>(null);
   const [contextMenu, setContextMenu] = useState<
     | { x: number; y: number; type: 'folder'; folderId: string }
     | { x: number; y: number; type: 'file'; fileId: string }
@@ -533,6 +539,7 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
     () => (currentFolderId && currentFolderId !== CLOUD_TRASH_FOLDER_ID && currentFolderId !== CLOUD_ARCHIVED_FOLDER_ID ? allFolders.find((item) => item.id === currentFolderId) ?? null : null),
     [allFolders, currentFolderId],
   );
+  const currentFolderArchived = currentFolder?.archived_at != null;
 
   const folderChildrenMap = useMemo(() => {
     const map = new Map<string | null, CloudFolder[]>();
@@ -547,6 +554,25 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
     }
     return map;
   }, [allFolders]);
+
+  const inboxFolders = useMemo(
+    () => allFolders.filter((item) => !item.archived_at && !item.delete_scheduled_for),
+    [allFolders],
+  );
+
+  const inboxFolderChildrenMap = useMemo(() => {
+    const map = new Map<string | null, CloudFolder[]>();
+    for (const folder of inboxFolders) {
+      const key = folder.parent_id ?? null;
+      const current = map.get(key) ?? [];
+      current.push(folder);
+      map.set(key, current);
+    }
+    for (const list of map.values()) {
+      list.sort((a, b) => a.name.localeCompare(b.name, 'pt-BR'));
+    }
+    return map;
+  }, [inboxFolders]);
 
   const breadcrumb = useMemo(() => {
     if (isArchivedView) {
@@ -564,7 +590,7 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
     return items;
   }, [allFolders, currentFolder, isArchivedView, isTrashView]);
 
-  const rootFolders = useMemo(() => folderChildrenMap.get(null) ?? [], [folderChildrenMap]);
+  const rootFolders = useMemo(() => inboxFolderChildrenMap.get(null) ?? [], [inboxFolderChildrenMap]);
 
   const folderSizeMap = useMemo(() => {
     const cache = new Map<string, number>();
@@ -750,10 +776,13 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
     [folderLabelAssignments, folderLabels],
   );
 
-  const loadData = useCallback(async () => {
+  const loadData = useCallback(async (options?: { showLoading?: boolean }) => {
+    const showLoading = options?.showLoading ?? false;
     try {
-      setLoading(true);
-      const viewingArchivedFolder = currentFolder?.archived_at != null;
+      if (showLoading) {
+        setLoading(true);
+      }
+      const viewingArchivedFolder = currentFolderArchived;
       const archivedAllFiles = await cloudService.listAllFiles(true);
       const [foldersData, filesData, allFoldersData, allFilesData, clientsData, archivedFilesData, trashedFoldersData, trashedFilesData] = await Promise.all([
         isTrashView || isArchivedView ? Promise.resolve([]) : cloudService.listFolders(currentFolderId, viewingArchivedFolder),
@@ -794,13 +823,15 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
     } catch (error: any) {
       toast.error('Cloud', error.message || 'Erro ao carregar arquivos.');
     } finally {
-      setLoading(false);
+      if (showLoading) {
+        setLoading(false);
+      }
     }
-  }, [currentFolder?.archived_at, currentFolderId, isArchivedView, isTrashView, toast]);
+  }, [currentFolderArchived, currentFolderId, isArchivedView, isTrashView, toast]);
 
   useEffect(() => {
-    loadData();
-  }, [loadData]);
+    void loadData({ showLoading: true });
+  }, [currentFolderArchived, currentFolderId, isArchivedView, isTrashView]);
 
   const movePdfToolPage = (index: number, direction: -1 | 1) => {
     setPdfToolPages((prev) => {
@@ -860,7 +891,7 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
       }
 
       realtimeRefreshTimerRef.current = window.setTimeout(() => {
-        void loadData();
+        void loadData({ showLoading: false });
       }, 200);
     };
 
@@ -937,10 +968,11 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
     return () => {
       if (revokedUrl) URL.revokeObjectURL(revokedUrl);
     };
-  }, [previewFile, toast, currentFolder]);
+  }, [previewFile, toast]);
 
   useEffect(() => {
     if (!previewFile) return;
+    if (wordToPdfFileId) return;
     const nextPreviewFile = allFiles.find((item) => item.id === previewFile.id) ?? files.find((item) => item.id === previewFile.id) ?? null;
     if (!nextPreviewFile) {
       setPreviewFile(null);
@@ -951,7 +983,7 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
       setPreviewFile(nextPreviewFile);
       setPreviewUrl(null);
     }
-  }, [allFiles, files, previewFile]);
+  }, [allFiles, files, previewFile, wordToPdfFileId]);
 
   useEffect(() => {
     if (!selectedFile || isWordFile(selectedFile.mime_type, selectedFile.original_name)) {
@@ -1127,7 +1159,7 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
 
     window.addEventListener('cloud-header-action', handleCloudHeaderAction as EventListener);
     return () => window.removeEventListener('cloud-header-action', handleCloudHeaderAction as EventListener);
-  }, [currentFolder]);
+  }, [currentFolder?.client_id]);
 
   useEffect(() => {
     try {
@@ -1462,6 +1494,151 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
     }
   };
 
+  const handleConvertWordToPdf = useCallback(async (file: CloudFile) => {
+    if (wordToPdfFileId) return;
+    if (!isDocxFile(file.mime_type, file.original_name)) {
+      toast.info('Cloud', 'A conversão automática para PDF está disponível no Cloud para arquivos .docx.');
+      return;
+    }
+
+    try {
+      setWordToPdfFileId(file.id);
+      const signedUrl = await cloudService.getFileSignedUrl(file.storage_path);
+      const response = await fetch(signedUrl);
+      if (!response.ok) throw new Error('Não foi possível baixar o arquivo Word.');
+      const docxBlob = await response.blob();
+
+      const container = document.createElement('div');
+      container.className = 'cloud-docx-to-pdf-render';
+      container.style.cssText = `
+        position: fixed;
+        left: -9999px;
+        top: 0;
+        width: 794px;
+        background: white;
+        font-family: 'Times New Roman', Times, serif;
+      `;
+      const style = document.createElement('style');
+      style.textContent = `
+        .cloud-docx-to-pdf-render .docx-wrapper-wrapper {
+          background: transparent !important;
+          padding: 0 !important;
+          display: flex !important;
+          justify-content: center !important;
+        }
+        .cloud-docx-to-pdf-render .docx-wrapper {
+          background: transparent !important;
+          padding: 0 !important;
+          width: auto !important;
+          max-width: none !important;
+        }
+        .cloud-docx-to-pdf-render .docx-wrapper > section,
+        .cloud-docx-to-pdf-render .docx-wrapper > article,
+        .cloud-docx-to-pdf-render .docx-wrapper > section > article {
+          width: 794px !important;
+          min-width: 794px !important;
+          max-width: 794px !important;
+          margin: 0 auto 20px auto !important;
+          background: white !important;
+          box-shadow: none !important;
+          border: none !important;
+          border-radius: 0 !important;
+        }
+      `;
+      document.head.appendChild(style);
+      document.body.appendChild(container);
+
+      try {
+        await renderAsync(docxBlob, container, undefined, {
+          className: 'docx-wrapper',
+          inWrapper: true,
+          ignoreWidth: false,
+          ignoreHeight: false,
+          breakPages: true,
+          renderHeaders: true,
+          renderFooters: true,
+          renderFootnotes: true,
+        });
+
+        const pageWidth = 210;
+        const pageHeight = 297;
+
+        const pdf = new jsPDF({
+          orientation: 'portrait',
+          unit: 'mm',
+          format: 'a4',
+          compress: true,
+        });
+
+        await new Promise((resolve) => window.setTimeout(resolve, 350));
+
+        const docxWrapper = (container.querySelector('.docx-wrapper') as HTMLElement | null) ?? container;
+        const topLevelPages = Array.from(docxWrapper.children).filter((node) => {
+          if (!(node instanceof HTMLElement)) return false;
+          const tag = node.tagName.toLowerCase();
+          return tag === 'section' || tag === 'article' || node.classList.contains('docx');
+        }) as HTMLElement[];
+        const pages = topLevelPages.length > 0 ? topLevelPages : [docxWrapper];
+
+        for (let pageIndex = 0; pageIndex < pages.length; pageIndex += 1) {
+          const pageElement = pages[pageIndex];
+          const originalBoxShadow = pageElement.style.boxShadow;
+          pageElement.style.boxShadow = 'none';
+
+          const canvas = await html2canvas(pageElement, {
+            scale: 1.5,
+            useCORS: true,
+            allowTaint: true,
+            backgroundColor: '#ffffff',
+            logging: false,
+            width: pageElement.scrollWidth || 794,
+            windowWidth: pageElement.scrollWidth || 794,
+            imageTimeout: 0,
+          });
+
+          pageElement.style.boxShadow = originalBoxShadow;
+
+          const imgData = canvas.toDataURL('image/jpeg', 0.88);
+          const imgWidth = pageWidth;
+          const imgHeight = (canvas.height * pageWidth) / canvas.width;
+
+          if (pageIndex > 0) pdf.addPage();
+
+          if (imgHeight <= pageHeight) {
+            pdf.addImage(imgData, 'JPEG', 0, 0, imgWidth, imgHeight, undefined, 'FAST');
+            continue;
+          }
+
+          const totalSlices = Math.max(1, Math.ceil(imgHeight / pageHeight));
+          for (let sliceIndex = 0; sliceIndex < totalSlices; sliceIndex += 1) {
+            if (sliceIndex > 0) pdf.addPage();
+            const yOffset = -(sliceIndex * pageHeight);
+            pdf.addImage(imgData, 'JPEG', 0, yOffset, imgWidth, imgHeight, undefined, 'FAST');
+          }
+        }
+
+        const pdfBlob = pdf.output('blob');
+        const nextName = `${file.original_name.replace(/\.[^/.]+$/i, '')}.pdf`;
+        const pdfFile = new window.File([pdfBlob], nextName, { type: 'application/pdf' });
+
+        await cloudService.uploadFiles(file.folder_id, [pdfFile], file.client_id || null);
+        toast.success('Cloud', 'Arquivo Word convertido em PDF com sucesso.');
+        await loadData();
+      } finally {
+        document.head.removeChild(style);
+        document.body.removeChild(container);
+      }
+    } catch (error: any) {
+      toast.error('Cloud', error?.message || 'Erro ao converter Word em PDF.');
+    } finally {
+      const activeElement = document.activeElement;
+      if (activeElement instanceof HTMLElement) {
+        activeElement.blur();
+      }
+      setWordToPdfFileId(null);
+    }
+  }, [cloudService, loadData, toast, wordToPdfFileId]);
+
   const updateUploadQueueItem = useCallback((itemId: string, updater: (item: UploadQueueItem) => UploadQueueItem) => {
     setUploadQueueItems((prev) => prev.map((item) => (item.id === itemId ? updater(item) : item)));
   }, []);
@@ -1640,8 +1817,15 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
     return [];
   }, [readDirectoryEntries, readFileEntry]);
 
-  const extractFilesFromDrop = useCallback(async (event: React.DragEvent<HTMLDivElement>) => {
-    const items = Array.from(event.dataTransfer.items || []);
+  const hasFileDragPayload = useCallback((dataTransfer?: DataTransfer | null) => {
+    if (!dataTransfer) return false;
+    if (Array.from(dataTransfer.items || []).some((item) => item.kind === 'file')) return true;
+    if ((dataTransfer.files?.length || 0) > 0) return true;
+    return Array.from(dataTransfer.types || []).includes('Files');
+  }, []);
+
+  const extractFilesFromDataTransfer = useCallback(async (dataTransfer: DataTransfer) => {
+    const items = Array.from(dataTransfer.items || []);
     const itemEntries = items
       .map((item) => {
         const dragItem = item as DataTransferItem & { webkitGetAsEntry?: () => CloudDragEntry | null };
@@ -1655,7 +1839,7 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
       if (files.length > 0) return files;
     }
 
-    return Array.from(event.dataTransfer.files || []).map((file) => ({ file, relativePath: normalizeDroppedRelativePath(file) }));
+    return Array.from(dataTransfer.files || []).map((file) => ({ file, relativePath: normalizeDroppedRelativePath(file) }));
   }, [collectFilesFromEntry]);
 
   const ensureFolderPath = useCallback(async (
@@ -1756,14 +1940,59 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
     await enqueueUploads(preparedItems);
   }, [enqueueUploads, prepareUploadQueueItems]);
 
-  const handleDropUpload = useCallback(async (event: React.DragEvent<HTMLDivElement>) => {
+  const handleDropUpload = useCallback(async (dataTransfer: DataTransfer) => {
     try {
-      const files = await extractFilesFromDrop(event);
+      const files = await extractFilesFromDataTransfer(dataTransfer);
       await uploadDroppedFiles(files);
     } catch (error: any) {
       toast.error('Cloud', error?.message || 'Não foi possível ler os arquivos da pasta arrastada.');
     }
-  }, [extractFilesFromDrop, toast, uploadDroppedFiles]);
+  }, [extractFilesFromDataTransfer, toast, uploadDroppedFiles]);
+
+  useEffect(() => {
+    const isWithinCloudCenter = (clientX: number, clientY: number) => {
+      const element = cloudCenterDropRef.current;
+      if (!element) return false;
+      const rect = element.getBoundingClientRect();
+      return clientX >= rect.left && clientX <= rect.right && clientY >= rect.top && clientY <= rect.bottom;
+    };
+
+    const handleDocumentDragOver = (event: DragEvent) => {
+      if (!hasFileDragPayload(event.dataTransfer)) return;
+      if (!isWithinCloudCenter(event.clientX, event.clientY)) {
+        if (dragActive) setDragActive(false);
+        return;
+      }
+      event.preventDefault();
+      if (!dragActive) setDragActive(true);
+    };
+
+    const handleDocumentDragLeave = (event: DragEvent) => {
+      if (!hasFileDragPayload(event.dataTransfer)) return;
+      if (event.clientX <= 0 || event.clientY <= 0 || event.clientX >= window.innerWidth || event.clientY >= window.innerHeight) {
+        setDragActive(false);
+      }
+    };
+
+    const handleDocumentDrop = (event: DragEvent) => {
+      if (!hasFileDragPayload(event.dataTransfer)) return;
+      const inside = isWithinCloudCenter(event.clientX, event.clientY);
+      setDragActive(false);
+      if (!inside || !event.dataTransfer) return;
+      event.preventDefault();
+      void handleDropUpload(event.dataTransfer);
+    };
+
+    window.addEventListener('dragover', handleDocumentDragOver);
+    window.addEventListener('dragleave', handleDocumentDragLeave);
+    window.addEventListener('drop', handleDocumentDrop);
+
+    return () => {
+      window.removeEventListener('dragover', handleDocumentDragOver);
+      window.removeEventListener('dragleave', handleDocumentDragLeave);
+      window.removeEventListener('drop', handleDocumentDrop);
+    };
+  }, [dragActive, handleDropUpload, hasFileDragPayload]);
 
   const uploadClipboardImage = useCallback(async (blob: Blob) => {
     if (!currentFolderId) {
@@ -2323,7 +2552,6 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
 
     try {
       setQuickActionFileId(file.id);
-      setUploading(true);
       const signedUrl = await cloudService.getFileSignedUrl(file.storage_path);
       const response = await fetch(signedUrl);
       if (!response.ok) {
@@ -2348,11 +2576,10 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
         toast.success('Cloud', 'PDF girado com sucesso.');
       }
 
-      await loadData();
+      await loadData({ showLoading: false });
     } catch (error: any) {
       toast.error('Cloud', error.message || 'Erro ao girar arquivo.');
     } finally {
-      setUploading(false);
       setQuickActionFileId(null);
     }
   };
@@ -3535,7 +3762,7 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
 
   const renderTree = (items: CloudFolder[], depth = 0): React.ReactNode => {
     return items.map((folder) => {
-      const children = folderChildrenMap.get(folder.id) ?? [];
+      const children = inboxFolderChildrenMap.get(folder.id) ?? [];
       const expanded = expandedFolders[folder.id] ?? false;
       const isActive = currentFolderId === folder.id;
 
@@ -3866,9 +4093,10 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
           </div>
         </aside>
 
-        <section className="flex-1 min-w-0 flex flex-col bg-white overflow-visible">
+        <section ref={cloudCenterDropRef} className="flex-1 min-w-0 flex flex-col bg-white overflow-visible">
           <div
             onDragOver={(e) => {
+              if (!hasFileDragPayload(e.dataTransfer)) return;
               e.preventDefault();
               setDragActive(true);
             }}
@@ -3877,16 +4105,17 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
               setDragActive(false);
             }}
             onDrop={(e) => {
+              if (!hasFileDragPayload(e.dataTransfer)) return;
               e.preventDefault();
               setDragActive(false);
-              handleDropUpload(e);
+              void handleDropUpload(e.dataTransfer);
             }}
             onClick={(e) => {
               const target = getEventTargetElement(e.target);
               if (target?.closest('[data-cloud-item="true"]')) return;
               clearExplorerSelection();
             }}
-            className={`relative flex flex-col overflow-visible ${dragActive ? 'bg-sky-50' : ''}`}
+            className={`relative flex min-h-full flex-1 flex-col overflow-visible ${dragActive ? 'bg-sky-50' : ''}`}
           >
             {viewMode === 'list' ? (
               <div className="hidden md:grid md:grid-cols-[minmax(260px,2.6fr)_170px_170px_130px_220px] gap-3 px-4 py-2 border-b border-slate-100 text-[11px] uppercase tracking-[0.16em] text-slate-400 bg-slate-50/80">
@@ -3904,7 +4133,7 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
 
             <div
               ref={explorerViewportRef}
-              className="overflow-visible"
+              className="min-h-full flex-1 overflow-visible"
               onPointerDown={(e) => {
                 if (e.button !== 0) return;
                 const target = getEventTargetElement(e.target);
@@ -4041,9 +4270,11 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
                     animate={{ opacity: 1, y: 0 }}
                     exit={{ opacity: 0, y: -8 }}
                     transition={{ duration: 0.18 }}
+                    className="flex min-h-full flex-1 flex-col"
                   >
-                {viewMode === 'list' ? (
-                explorerRows.map((row) => {
+                    {viewMode === 'list' ? (
+                      <div className="flex min-h-full flex-1 flex-col">
+                  {explorerRows.map((row) => {
                   if (row.kind === 'folder') {
                     const folder = row.folder;
                     const client = clients.find((item) => item.id === folder.client_id);
@@ -4311,13 +4542,15 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
                       </div>
                     </div>
                   );
-                })
-              ) : (
-                <div
-                  className="grid items-start gap-3 p-4"
-                  style={{ gridTemplateColumns: `repeat(auto-fill, minmax(${cardGridMinWidth}px, 1fr))` }}
-                >
-                  {explorerRows.map((row) => {
+                  })}
+                        <div className="flex-1" />
+                      </div>
+                    ) : (
+                      <div
+                        className="grid min-h-full w-full flex-1 content-start items-start gap-3 p-4"
+                        style={{ gridTemplateColumns: `repeat(auto-fill, minmax(${cardGridMinWidth}px, 1fr))` }}
+                      >
+                        {explorerRows.map((row) => {
                     if (row.kind === 'folder') {
                       const folder = row.folder;
                       const client = clients.find((item) => item.id === folder.client_id);
@@ -4562,14 +4795,14 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
                           ) : isPdfFile(file.mime_type, file.original_name) && previewUrl ? (
                             <div className={`${cardPreviewHeightClass} flex items-center justify-center bg-slate-100 overflow-hidden`}>
                               <Document
-                                key={`card-pdf-${file.id}-${previewUrl}`}
+                                key={`${file.id}-${previewUrl}`}
                                 file={previewUrl}
                                 loading={<div className="flex flex-col items-center justify-center gap-2 text-slate-500"><Loader2 className="w-5 h-5 animate-spin" /><span className="text-[11px] font-medium">Carregando PDF</span></div>}
                                 error={<div className="flex flex-col items-center justify-center gap-2 text-slate-500"><FileText className="w-10 h-10 text-red-500" /><span className="text-[11px] font-medium">Preview indisponível</span></div>}
                                 className="flex h-full w-full items-center justify-center"
                               >
                                 <Page
-                                  key={`card-pdf-page-${file.id}-${previewUrl}`}
+                                  key={`${file.id}-${previewUrl}-page-1`}
                                   pageNumber={1}
                                   width={220}
                                   renderAnnotationLayer={false}
@@ -4650,17 +4883,27 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
                         </div>
                       </div>
                     );
-                  })}
-                </div>
-              )}
+                        })}
+                        <div className="col-span-full min-h-[160px] w-full" />
+                      </div>
+                    )}
                   </motion.div>
                 </AnimatePresence>
               )}
             </div>
 
             {dragActive ? (
-              <div className="absolute inset-x-0 bottom-0 mx-3 mb-3 rounded-xl border border-dashed border-orange-300 bg-orange-50 p-4 text-sm text-orange-900 shadow-lg">
-                Solte os arquivos aqui para enviar para <span className="font-semibold">{currentFolder?.name || 'a pasta atual'}</span>
+              <div className="pointer-events-none absolute inset-0 z-20 flex items-center justify-center bg-slate-950/12 backdrop-blur-[2px] p-4">
+                <div className="w-full max-w-3xl rounded-[32px] border border-dashed border-orange-300 bg-white/96 px-8 py-12 text-center shadow-[0_30px_90px_rgba(15,23,42,0.16)]">
+                  <div className="mx-auto flex h-20 w-20 items-center justify-center rounded-[28px] bg-gradient-to-br from-orange-50 via-white to-amber-50 shadow-[0_18px_45px_rgba(249,115,22,0.20)]">
+                    <Upload className="h-9 w-9 text-orange-500" />
+                  </div>
+                  <p className="mt-6 text-[11px] font-semibold uppercase tracking-[0.32em] text-orange-500/80">Upload no Cloud</p>
+                  <h3 className="mt-3 text-3xl font-semibold text-slate-900">Solte os arquivos aqui</h3>
+                  <p className="mt-3 text-base text-slate-600">
+                    Envie diretamente para <span className="font-semibold text-slate-900">{currentFolder?.name || 'a pasta atual'}</span>
+                  </p>
+                </div>
               </div>
             ) : null}
           </div>
@@ -4788,11 +5031,12 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
                     </button>
                   )}
                   <button
-                    onClick={() => handleDownloadFolder(selectedFolder)}
-                    className="w-full inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-800 text-sm border border-slate-200"
+                    onClick={() => void handleDownloadFolder(selectedFolder)}
+                    disabled={downloadingFolderId === selectedFolder.id}
+                    className="w-full inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-800 text-sm border border-slate-200 disabled:cursor-not-allowed disabled:opacity-70"
                   >
-                    <Download className="w-4 h-4" />
-                    Baixar pasta
+                    {downloadingFolderId === selectedFolder.id ? <Loader2 className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4" />}
+                    {downloadingFolderId === selectedFolder.id ? 'Preparando download...' : 'Baixar pasta'}
                   </button>
                   <button
                     onClick={() => {
@@ -4841,6 +5085,16 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
                         <Download className="w-4 h-4" />
                         Baixar arquivo
                       </button>
+                      {isWordFile(selectedFile.mime_type, selectedFile.original_name) ? (
+                        <button
+                          onClick={() => void handleConvertWordToPdf(selectedFile)}
+                          disabled={wordToPdfFileId === selectedFile.id}
+                          className="inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg bg-slate-900 hover:bg-slate-800 text-white text-sm disabled:cursor-not-allowed disabled:opacity-70"
+                        >
+                          {wordToPdfFileId === selectedFile.id ? <Loader2 className="w-4 h-4 animate-spin" /> : <FileText className="w-4 h-4" />}
+                          {wordToPdfFileId === selectedFile.id ? 'Convertendo...' : 'Converter em PDF'}
+                        </button>
+                      ) : null}
                       {isImageFile(selectedFile.mime_type) ? (
                         <button
                           onClick={() => openConvertImagesModal(selectedImageFiles.some((item) => item.id === selectedFile.id) ? undefined : [selectedFile])}
@@ -5044,8 +5298,8 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
       )}
 
       {previewFile && (
-        <div className={`fixed inset-0 z-[130] bg-slate-900/25 backdrop-blur-sm flex justify-center ${isPdfFile(previewFile.mime_type, previewFile.original_name) ? 'items-stretch p-0' : 'items-center p-4'}`}>
-          <div className={`w-full ${isDocxFile(previewFile.mime_type, previewFile.original_name) ? 'max-w-[98vw] h-[94vh]' : isPdfFile(previewFile.mime_type, previewFile.original_name) ? 'max-w-6xl h-screen' : 'max-w-6xl h-[88vh]'} ${isPdfFile(previewFile.mime_type, previewFile.original_name) ? 'rounded-none' : 'rounded-2xl'} bg-white shadow-[0_24px_70px_rgba(15,23,42,0.18)] border border-slate-200 overflow-hidden flex flex-col`}>
+        <div className={`fixed inset-0 z-[130] bg-slate-900/25 backdrop-blur-sm flex justify-center ${isPdfFile(previewFile.mime_type, previewFile.original_name) ? 'items-center p-3 sm:p-4' : 'items-center p-4'}`}>
+          <div className={`w-full ${isDocxFile(previewFile.mime_type, previewFile.original_name) ? 'max-w-[98vw] h-[94vh]' : isPdfFile(previewFile.mime_type, previewFile.original_name) ? 'max-w-[96vw] h-[94vh]' : 'max-w-6xl h-[88vh]'} rounded-2xl bg-white shadow-[0_24px_70px_rgba(15,23,42,0.18)] border border-slate-200 overflow-hidden flex flex-col`}>
             <div className="flex items-center justify-between px-4 py-3 border-b border-slate-200 bg-white">
               <div>
                 <h3 className="font-semibold text-slate-900">{previewFile.original_name}</h3>
@@ -5132,7 +5386,7 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
                 <button onClick={() => setPreviewFile(null)} className="p-2 rounded-lg hover:bg-slate-100"><X className="w-5 h-5 text-slate-400" /></button>
               </div>
             </div>
-            <div className="flex-1 bg-slate-100 overflow-auto relative">
+            <div className={`flex-1 relative ${isPdfFile(previewFile.mime_type, previewFile.original_name) ? 'bg-slate-200 overflow-auto' : 'bg-slate-100 overflow-auto'}`}>
               {isPdfFile(previewFile.mime_type, previewFile.original_name) && canNavigatePreviewPdf ? (
                 <>
                   <button
@@ -5176,7 +5430,18 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
                   <SyncfusionEditor ref={editorRef} readOnly={false} height="100%" enableToolbar={true} showPropertiesPane={true} showNavigationPane={false} />
                 </div>
               ) : isPdfFile(previewFile.mime_type, previewFile.original_name) && previewUrl ? (
-                <iframe src={previewUrl} className="w-full h-full bg-white" title={previewFile.original_name} />
+                <div className="min-h-full w-full overflow-auto p-3 sm:p-6">
+                  <div className="mx-auto flex min-h-full w-full max-w-[1120px] items-start justify-center rounded-2xl bg-slate-300/40 p-2 sm:p-4">
+                    <div className="w-full max-w-[900px] rounded-xl bg-white shadow-[0_18px_50px_rgba(15,23,42,0.16)] overflow-hidden">
+                      <iframe
+                        key={`${previewFile.id}-${previewUrl}`}
+                        src={previewUrl}
+                        className="block h-[75vh] sm:h-[78vh] w-full bg-white"
+                        title={previewFile.original_name}
+                      />
+                    </div>
+                  </div>
+                </div>
               ) : isImageFile(previewFile.mime_type) && previewUrl ? (
                 <div className="h-full flex items-center justify-center p-6"><img src={previewUrl} alt={previewFile.original_name} className="max-w-full max-h-full object-contain rounded-xl shadow" /></div>
               ) : previewUrl ? (
@@ -5302,11 +5567,12 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
               type="button"
               onClick={() => {
                 setContextMenu(null);
-                handleDownloadFolder(selectedContextFolder);
+                void handleDownloadFolder(selectedContextFolder);
               }}
-              className="w-full px-3 py-2.5 text-left text-sm text-slate-700 hover:bg-slate-50 transition"
+              disabled={downloadingFolderId === selectedContextFolder.id}
+              className="w-full px-3 py-2.5 text-left text-sm text-slate-700 hover:bg-slate-50 transition disabled:cursor-not-allowed disabled:opacity-70"
             >
-              Baixar pasta
+              {downloadingFolderId === selectedContextFolder.id ? 'Preparando download...' : 'Baixar pasta'}
             </button>
             <button
               type="button"
@@ -5654,6 +5920,16 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
               className={`w-full px-3 py-2.5 text-left text-sm text-slate-700 hover:bg-slate-50 transition ${isImageFile(selectedContextFile.mime_type) ? '' : 'hidden'}`}
             >
               Converter em PDF
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setContextMenu(null);
+                void handleConvertWordToPdf(selectedContextFile);
+              }}
+              className={`w-full px-3 py-2.5 text-left text-sm text-slate-700 hover:bg-slate-50 transition ${isWordFile(selectedContextFile.mime_type, selectedContextFile.original_name) ? '' : 'hidden'}`}
+            >
+              Converter Word em PDF
             </button>
             <button
               type="button"
@@ -6236,7 +6512,7 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
                     Voltar
                   </button>
                 ) : null}
-                <button onClick={() => setPdfToolsModalOpen(false)} className="rounded-xl p-2 hover:bg-slate-100 transition"><X className="w-5 h-5 text-slate-400" /></button>
+                <button onClick={closePdfToolsModal} className="rounded-xl p-2 hover:bg-slate-100 transition"><X className="w-5 h-5 text-slate-400" /></button>
               </div>
             </div>
 
@@ -6320,7 +6596,7 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
                       </div>
                     </div>
                     {pdfToolPreviewUrl ? (
-                      <Document file={pdfToolPreviewUrl} loading={<div className="py-6 text-center text-sm text-slate-500">Carregando miniaturas do PDF...</div>}>
+                      <Document key={`thumbs-${selectedPdfToolFile.id}-${pdfToolPreviewUrl}`} file={pdfToolPreviewUrl} loading={<div className="py-6 text-center text-sm text-slate-500">Carregando miniaturas do PDF...</div>}>
                         <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-6 xl:grid-cols-7 gap-3">
                           {pdfToolPages.map((page, idx) => {
                             const selected = selectedPdfPageIndexes.includes(idx);
@@ -6332,6 +6608,7 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
                               >
                                 <div className="bg-slate-50 p-2 min-h-[170px] flex items-center justify-center">
                                   <Page
+                                    key={`thumb-${selectedPdfToolFile.id}-${page.sourceIndex}-${idx}-${page.rotation}`}
                                     pageNumber={page.sourceIndex + 1}
                                     width={110}
                                     rotate={page.rotation}
@@ -6425,7 +6702,7 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
 
                 <div className="flex-1 min-h-0 overflow-auto p-4 sm:p-5">
                   {pdfToolPreviewUrl ? (
-                    <Document file={pdfToolPreviewUrl} loading={<div className="h-full flex items-center justify-center text-slate-500">Carregando PDF...</div>}>
+                    <Document key={`editor-${selectedPdfToolFile.id}-${pdfToolPreviewUrl}`} file={pdfToolPreviewUrl} loading={<div className="h-full flex items-center justify-center text-slate-500">Carregando PDF...</div>}>
                       <DndContext sensors={pdfToolSensors} collisionDetection={closestCenter} onDragEnd={handlePdfToolDragEnd}>
                         <SortableContext items={pdfToolPageIds} strategy={rectSortingStrategy}>
                           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5">
@@ -6450,7 +6727,7 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
                                     </div>
 
                                     <div className="flex justify-center bg-slate-50 rounded-xl p-2 min-h-[240px]">
-                                      <Page pageNumber={page.sourceIndex + 1} width={170} rotate={page.rotation} renderTextLayer={false} renderAnnotationLayer={false} />
+                                      <Page key={`editor-page-${selectedPdfToolFile.id}-${page.sourceIndex}-${index}-${page.rotation}`} pageNumber={page.sourceIndex + 1} width={170} rotate={page.rotation} renderTextLayer={false} renderAnnotationLayer={false} />
                                     </div>
 
                                     <div className="mt-3 flex items-center justify-between gap-2">
@@ -6510,7 +6787,7 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
                         Remover selecionadas
                       </button>
                     ) : null}
-                    <button onClick={() => setPdfToolsModalOpen(false)} className="px-4 py-2.5 rounded-xl border border-slate-200 bg-white text-sm font-medium text-slate-700 hover:bg-slate-50">Fechar</button>
+                    <button onClick={closePdfToolsModal} className="px-4 py-2.5 rounded-xl border border-slate-200 bg-white text-sm font-medium text-slate-700 hover:bg-slate-50">Fechar</button>
                     <button onClick={savePdfToolChanges} disabled={pdfToolSaving} className="px-5 py-2.5 rounded-xl bg-orange-500 text-white text-sm font-medium hover:bg-orange-600 disabled:opacity-70">
                       {pdfToolSaving ? 'Salvando...' : 'Salvar PDF'}
                     </button>

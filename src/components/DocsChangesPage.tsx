@@ -47,6 +47,30 @@ import { matchesNormalizedSearch } from '../utils/search';
    ============================================================================ */
 
 const VERSION_CODENAMES: Record<string, { name: string; emoji: string }> = {
+  '1.9.883': { name: 'Café Estado Restaurado', emoji: '🩹' },
+  '1.9.882': { name: 'Café ZIP Direto', emoji: '🗂️' },
+  '1.9.881': { name: 'Café Entrada Limpa', emoji: '🧹' },
+  '1.9.880': { name: 'Café Página Solta', emoji: '📥' },
+  '1.9.879': { name: 'Café Cards Soltos', emoji: '🃏' },
+  '1.9.878': { name: 'Café Drop no Vazio', emoji: '🫳' },
+  '1.9.877': { name: 'Café Drop Ampliado', emoji: '🪂' },
+  '1.9.876': { name: 'Café Ação Silenciosa', emoji: '🫧' },
+  '1.9.875': { name: 'Café Página Centralizada', emoji: '🧭' },
+  '1.9.874': { name: 'Café PDF Refeito', emoji: '🧱' },
+  '1.9.873': { name: 'Café Cloud Silencioso', emoji: '🤫' },
+  '1.9.872': { name: 'Café Página Fiel', emoji: '📐' },
+  '1.9.871': { name: 'Café PDF Visível', emoji: '📃' },
+  '1.9.870': { name: 'Café Conversão Alternativa', emoji: '🔄' },
+  '1.9.869': { name: 'Café Exportação Visível', emoji: '🧩' },
+  '1.9.868': { name: 'Café Editor Único', emoji: '🆔' },
+  '1.9.867': { name: 'Café Conversão Sinalizada', emoji: '📡' },
+  '1.9.866': { name: 'Café Conversão Serena', emoji: '🛡️' },
+  '1.9.865': { name: 'Café Conversão Limitada', emoji: '⏱️' },
+  '1.9.864': { name: 'Café Conversão no Topo', emoji: '🚀' },
+  '1.9.863': { name: 'Café Conversão Viva', emoji: '✨' },
+  '1.9.862': { name: 'Café Word Fiel', emoji: '🧾' },
+  '1.9.861': { name: 'Café Word em PDF', emoji: '📄' },
+  '1.9.860': { name: 'Café PDF Estável', emoji: '📄' },
   '1.9.859': { name: 'Café Pasta Escalada', emoji: '📁' },
   '1.9.848': { name: 'Café Nuvem Limpa', emoji: '✨' },
   '1.9.847': { name: 'Café Cloud Vivo', emoji: '☁️' },
@@ -670,6 +694,449 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
 };
 
 const releases: ReleaseNote[] = [
+  {
+    version: '1.9.883',
+    date: '12/03/2026',
+    summary: 'Cloud: corrigido o erro de runtime que impedia a renderização correta do botão de download de pasta após a melhoria do fluxo de ZIP.',
+    modules: [
+      {
+        moduleId: 'cloud',
+        changes: [
+          {
+            type: 'fix',
+            title: 'State de download de pasta restaurada',
+            description: 'O Cloud voltou a declarar corretamente a state usada pelo botão de baixar pasta, eliminando o ReferenceError e permitindo o carregamento normal da tela.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.882',
+    date: '12/03/2026',
+    summary: 'Cloud: o download de pasta passou a responder melhor no primeiro clique e exibe estado de preparação enquanto o arquivo ZIP é montado.',
+    modules: [
+      {
+        moduleId: 'cloud',
+        changes: [
+          {
+            type: 'fix',
+            title: 'Download de pasta mais confiável',
+            description: 'O Cloud agora bloqueia cliques repetidos durante a preparação do ZIP, mostra um estado visual de carregamento e usa um disparo de download mais robusto para reduzir falhas no primeiro clique.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.881',
+    date: '12/03/2026',
+    summary: 'Cloud: a árvore da Caixa de entrada passou a esconder pastas arquivadas e itens da lixeira da navegação padrão.',
+    modules: [
+      {
+        moduleId: 'cloud',
+        changes: [
+          {
+            type: 'fix',
+            title: 'Arquivados fora da Caixa de entrada',
+            description: 'A árvore lateral e a navegação padrão da Caixa de entrada agora usam apenas pastas ativas, evitando que itens arquivados ou da lixeira apareçam misturados na entrada.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.880',
+    date: '12/03/2026',
+    summary: 'Cloud: a área central do módulo passou a funcionar como dropzone ampla, com overlay visual de upload durante o arraste.',
+    modules: [
+      {
+        moduleId: 'cloud',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Dropzone ampla na área central do Cloud',
+            description: 'O Cloud agora detecta arraste de arquivos em toda a área central útil do módulo, exibe um overlay grande com mensagem contextual e aceita o drop sem depender apenas do box interno da listagem.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.879',
+    date: '12/03/2026',
+    summary: 'Cloud: o modo em cards passou a aceitar drag and drop também na área vazia abaixo da grade.',
+    modules: [
+      {
+        moduleId: 'cloud',
+        changes: [
+          {
+            type: 'fix',
+            title: 'Dropzone estendida no modo cards',
+            description: 'A grade de cards agora mantém um preenchimento de largura total dentro do próprio grid, permitindo soltar arquivos também no espaço vazio abaixo dos cards visíveis.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.878',
+    date: '12/03/2026',
+    summary: 'Cloud: o espaço vazio abaixo da listagem/cards passou a aceitar arrastar arquivos como parte da dropzone do explorador.',
+    modules: [
+      {
+        moduleId: 'cloud',
+        changes: [
+          {
+            type: 'fix',
+            title: 'Drop permitido também no espaço vazio do painel',
+            description: 'A visualização do explorador agora preenche a altura restante do painel e mantém uma área flexível no fim da lista, fazendo com que o drop funcione também abaixo dos itens visíveis.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.877',
+    date: '12/03/2026',
+    summary: 'Cloud: a área de arrastar arquivos no explorador foi ampliada para aceitar drops em toda a região útil da tela.',
+    modules: [
+      {
+        moduleId: 'cloud',
+        changes: [
+          {
+            type: 'fix',
+            title: 'Dropzone ocupando toda a área do explorador',
+            description: 'O contêiner principal do explorador e o viewport interno passaram a preencher toda a altura disponível, permitindo arrastar e soltar arquivos em qualquer espaço livre do Cloud.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.876',
+    date: '12/03/2026',
+    summary: 'Cloud: ações rápidas como girar imagem/PDF deixaram de disparar o carregamento global e o módulo ficou mais estável contra recarregamentos visuais desnecessários.',
+    modules: [
+      {
+        moduleId: 'cloud',
+        changes: [
+          {
+            type: 'fix',
+            title: 'Rotação rápida sem recarregar o Cloud inteiro',
+            description: 'A rotação rápida de imagens e PDFs deixou de acionar o estado global de operação do Cloud e passou a atualizar a listagem de forma silenciosa.',
+          },
+          {
+            type: 'fix',
+            title: 'Menos recarregamentos visuais após ações rápidas',
+            description: 'O efeito de carregamento inicial foi ajustado para responder apenas à troca real de pasta ou modo, evitando reexecuções desnecessárias quando apenas callbacks internos mudam.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.875',
+    date: '12/03/2026',
+    summary: 'Cloud: o preview principal de PDF foi reajustado para exibir a página centralizada e sem corte lateral dentro do viewer.',
+    modules: [
+      {
+        moduleId: 'cloud',
+        changes: [
+          {
+            type: 'fix',
+            title: 'Preview de PDF centralizado no viewer',
+            description: 'O modal principal de preview do Cloud deixou de esticar o visualizador em tela cheia e passou a usar uma área centralizada com padding e largura controlada, reduzindo cortes na margem esquerda e deslocamentos da página.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.874',
+    date: '12/03/2026',
+    summary: 'Cloud: o Hub PDF voltou a abrir previews com estabilidade e o módulo deixou de quebrar o recarregamento do Vite após as últimas alterações.',
+    modules: [
+      {
+        moduleId: 'cloud',
+        changes: [
+          {
+            type: 'fix',
+            title: 'Preview de PDF com remontagem segura',
+            description: 'O Hub PDF passou a remontar `Document` e `Page` do react-pdf sempre que o arquivo/URL muda, reduzindo crashes ligados ao worker ao fechar ou trocar rapidamente o preview.',
+          },
+          {
+            type: 'fix',
+            title: 'CloudModule recompilando corretamente',
+            description: 'Foram removidas duplicações acidentais de bloco e exportação no CloudModule que estavam causando erro de compilação e falha 500 no hot reload do Vite.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.873',
+    date: '12/03/2026',
+    summary: 'Cloud: ações como copiar, colar e mover itens deixaram de provocar sensação de recarregamento desnecessário da tela.',
+    modules: [
+      {
+        moduleId: 'cloud',
+        changes: [
+          {
+            type: 'fix',
+            title: 'Refresh silencioso após ações',
+            description: 'Após operações como copiar, colar, mover e duplicar itens, o Cloud passou a atualizar os dados sem reativar o loading geral da tela, reduzindo a sensação de recarregamento inteiro do módulo.',
+          },
+          {
+            type: 'improvement',
+            title: 'Dependências de carga estabilizadas',
+            description: 'O carregamento principal do Cloud deixou de depender de mudanças transitórias na referência da pasta atual, evitando execuções extras de reload sem mudança real de contexto.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.872',
+    date: '12/03/2026',
+    summary: 'Cloud: a conversão Word para PDF no navegador passou a preservar melhor a paginação e o layout do documento.',
+    modules: [
+      {
+        moduleId: 'cloud',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Captura por página com layout A4 forçado',
+            description: 'O Cloud agora renderiza o DOCX com quebra de páginas, cabeçalho e rodapé, forçando largura A4 e capturando cada página separadamente para reduzir quebras e deformações de formatação.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.871',
+    date: '12/03/2026',
+    summary: 'Cloud: corrigida a conversão de Word para PDF que estava gerando páginas em branco.',
+    modules: [
+      {
+        moduleId: 'cloud',
+        changes: [
+          {
+            type: 'fix',
+            title: 'PDF não sai mais em branco',
+            description: 'O Cloud passou a usar o mesmo padrão de container offscreen estável do módulo de documentos para renderizar o DOCX antes da captura, evitando PDFs brancos.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.870',
+    date: '12/03/2026',
+    summary: 'Cloud: a conversão de Word para PDF foi substituída por uma solução baseada em docx-preview + html2canvas + jsPDF, removendo a dependência do Syncfusion.',
+    modules: [
+      {
+        moduleId: 'cloud',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Conversão Word para PDF sem Syncfusion',
+            description: 'A conversão de arquivos .docx para PDF no Cloud passou a usar docx-preview para renderizar o documento e html2canvas + jsPDF para gerar o PDF, eliminando timeouts e dependência do editor Syncfusion.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.869',
+    date: '12/03/2026',
+    summary: 'Cloud: a exportação Word para PDF foi reforçada com ajuste de layout antes do PDF e com o editor oculto renderizando invisível dentro da viewport.',
+    modules: [
+      {
+        moduleId: 'cloud',
+        changes: [
+          {
+            type: 'fix',
+            title: 'Exportação Syncfusion reforçada',
+            description: 'Antes de gerar o PDF, o Cloud reaplica o serviceUrl do Syncfusion e força atualização de layout no editor, reduzindo casos em que o saveAsBlob ficava preso em timeout.',
+          },
+          {
+            type: 'improvement',
+            title: 'Editor oculto renderizando dentro da viewport',
+            description: 'A instância invisível usada para converter Word em PDF deixou de ficar muito distante da viewport e passou a renderizar de forma invisível no próprio plano da página, diminuindo travas offscreen.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.868',
+    date: '12/03/2026',
+    summary: 'Cloud: o editor oculto da conversão Word para PDF passou a usar identificador exclusivo, reduzindo conflitos internos entre instâncias do editor.',
+    modules: [
+      {
+        moduleId: 'cloud',
+        changes: [
+          {
+            type: 'fix',
+            title: 'Editor oculto com id exclusivo',
+            description: 'A instância oculta do Syncfusion usada para converter Word em PDF no Cloud agora possui id próprio, evitando colisões com o editor visível e reduzindo falhas por timeout.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.867',
+    date: '12/03/2026',
+    summary: 'Cloud: a conversão de Word para PDF agora sinaliza melhor o carregamento do documento e responde visualmente ao clique de forma imediata.',
+    modules: [
+      {
+        moduleId: 'cloud',
+        changes: [
+          {
+            type: 'fix',
+            title: 'Conversão aguardando sinal real do editor',
+            description: 'O Cloud passou a esperar o evento de documento carregado do editor oculto antes de exportar o PDF, reduzindo casos em que a conversão parecia não iniciar e terminava em timeout.',
+          },
+          {
+            type: 'improvement',
+            title: 'Feedback imediato no botão',
+            description: 'Ao clicar em converter, o botão muda instantaneamente para “Convertendo...”, deixando claro que a ação foi disparada.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.866',
+    date: '12/03/2026',
+    summary: 'Cloud: a conversão de Word para PDF foi suavizada para evitar refresh visual durante o processo e reduzir falhas por espera excessiva de renderização.',
+    modules: [
+      {
+        moduleId: 'cloud',
+        changes: [
+          {
+            type: 'fix',
+            title: 'Conversão sem refresh visual do preview',
+            description: 'Enquanto o Word é convertido em PDF no Cloud, o preview atual não é mais atualizado incidentalmente, evitando sensação de página recarregando durante o processamento.',
+          },
+          {
+            type: 'improvement',
+            title: 'Espera de conversão menos frágil',
+            description: 'A geração de PDF deixou de depender da detecção visual completa das páginas renderizadas antes da exportação, reduzindo o erro de demora excessiva para renderizar.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.865',
+    date: '12/03/2026',
+    summary: 'Cloud: a conversão de Word para PDF passou a validar a renderização antes da exportação e não fica mais presa indefinidamente sem resposta.',
+    modules: [
+      {
+        moduleId: 'cloud',
+        changes: [
+          {
+            type: 'fix',
+            title: 'Conversão com timeout controlado',
+            description: 'O Cloud agora aguarda a renderização real das páginas no editor oculto antes de exportar o PDF e encerra com erro controlado quando a conversão ultrapassa o tempo limite.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.864',
+    date: '12/03/2026',
+    summary: 'Cloud: a conversão de Word para PDF ficou mais estável e o aviso de processamento foi movido para o topo da interface.',
+    modules: [
+      {
+        moduleId: 'cloud',
+        changes: [
+          {
+            type: 'fix',
+            title: 'Conversão com carregamento validado',
+            description: 'O Cloud agora espera o Word realmente carregar no editor oculto antes de exportar para PDF, reduzindo casos em que a conversão demorava e não concluía.',
+          },
+          {
+            type: 'improvement',
+            title: 'Aviso de conversão reposicionado',
+            description: 'A mensagem “Estamos convertendo...” foi movida para o topo central da tela para não competir visualmente com o botão de mensagens.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.863',
+    date: '12/03/2026',
+    summary: 'Cloud: a conversão de Word para PDF agora mostra feedback animado enquanto o arquivo está sendo processado.',
+    modules: [
+      {
+        moduleId: 'cloud',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Animação de conversão em andamento',
+            description: 'A interface do Cloud passou a exibir a mensagem animada “Estamos convertendo...” durante a conversão de Word para PDF, deixando o processamento mais claro para o usuário.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.862',
+    date: '12/03/2026',
+    summary: 'Cloud: a conversão de Word para PDF foi ajustada para preservar melhor o layout original do documento.',
+    modules: [
+      {
+        moduleId: 'cloud',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Conversão Word->PDF mais fiel',
+            description: 'A geração de PDF de arquivos .docx no Cloud passou a usar exportação via Syncfusion, reduzindo bugs visuais de paginação, fontes e quebra de layout.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.861',
+    date: '12/03/2026',
+    summary: 'Cloud: agora é possível converter arquivos Word .docx em PDF diretamente pela interface.',
+    modules: [
+      {
+        moduleId: 'cloud',
+        changes: [
+          {
+            type: 'feature',
+            title: 'Conversão de Word para PDF no Cloud',
+            description: 'Arquivos .docx agora podem ser convertidos em PDF direto no Cloud, com upload automático do PDF gerado para a mesma pasta do documento original.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.860',
+    date: '12/03/2026',
+    summary: 'Cloud: o modal de preview PDF deixou de recarregar automaticamente por mudanças incidentais de navegação.',
+    modules: [
+      {
+        moduleId: 'cloud',
+        changes: [
+          {
+            type: 'fix',
+            title: 'Preview PDF sem recarga incidental',
+            description: 'O efeito de carregamento do preview foi estabilizado para não recarregar o PDF apenas por mudança de pasta atual enquanto o mesmo arquivo continua aberto.',
+          },
+        ],
+      },
+    ],
+  },
   {
     version: '1.9.859',
     date: '12/03/2026',
