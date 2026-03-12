@@ -47,6 +47,7 @@ import { matchesNormalizedSearch } from '../utils/search';
    ============================================================================ */
 
 const VERSION_CODENAMES: Record<string, { name: string; emoji: string }> = {
+  '1.9.885': { name: 'Café Modal Acima', emoji: '🪟' },
   '1.9.884': { name: 'Café Modal Fechado', emoji: '🧩' },
   '1.9.883': { name: 'Café Estado Restaurado', emoji: '🩹' },
   '1.9.882': { name: 'Café ZIP Direto', emoji: '🗂️' },
@@ -695,6 +696,23 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
 };
 
 const releases: ReleaseNote[] = [
+  {
+    version: '1.9.885',
+    date: '12/03/2026',
+    summary: 'Cloud: o modal de converter imagens em PDF passou a abrir acima do preview, sem ficar escondido atrás da visualização atual.',
+    modules: [
+      {
+        moduleId: 'cloud',
+        changes: [
+          {
+            type: 'fix',
+            title: 'Conversão PDF acima do preview',
+            description: 'Ao converter uma imagem em PDF a partir do preview, o Cloud agora fecha a visualização atual e abre o modal de conversão em uma camada superior, evitando que ele fique atrás do modal já aberto.',
+          },
+        ],
+      },
+    ],
+  },
   {
     version: '1.9.884',
     date: '12/03/2026',

@@ -5362,6 +5362,7 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
                         setImagePdfName(`convertido-${previewFile.original_name.replace(/\.[^/.]+$/, '')}`);
                         setImagePdfItems([previewFile]);
                         setImagePdfModalOpen(true);
+                        setPreviewFile(null);
                       }}
                       className="px-3 py-1.5 rounded-lg bg-orange-500 text-white text-sm hover:bg-orange-600 inline-flex items-center gap-2"
                     >
@@ -6402,7 +6403,7 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
       </AnimatePresence>
 
       {imagePdfModalOpen && (
-        <div className="fixed inset-0 z-[125] bg-slate-900/45 backdrop-blur-sm flex items-center justify-center p-4">
+        <div className="fixed inset-0 z-[140] bg-slate-900/45 backdrop-blur-sm flex items-center justify-center p-4">
           <div className="w-full max-w-4xl rounded-3xl bg-white text-slate-900 shadow-[0_25px_60px_rgba(15,23,42,0.22)] border border-slate-200 overflow-hidden">
             <div className="h-2 w-full bg-gradient-to-r from-orange-500 to-orange-600" />
             <div className="p-5 sm:p-6 space-y-5 bg-white">

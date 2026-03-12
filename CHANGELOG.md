@@ -1,5 +1,8 @@
 # Changelog
   
+  ## 1.9.885
+- **Cloud**: O modal de converter imagens em PDF passou a abrir acima do preview, com fechamento do preview atual para evitar sobreposição incorreta.
+
   ## 1.9.884
 - **Cloud**: Corrigido o erro de build causado pela ausência de `closePdfToolsModal`, restaurando o fechamento correto do hub de PDF.
 
