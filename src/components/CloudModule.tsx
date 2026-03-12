@@ -1276,6 +1276,25 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
     setPreviewFile(previewPdfFiles[nextIndex]);
   }, [previewPdfFiles, previewPdfIndex]);
 
+  // Navegação de imagens
+  const previewImageFiles = useMemo(
+    () => filteredFiles.filter((file) => isImageFile(file.mime_type)),
+    [filteredFiles],
+  );
+
+  const previewImageIndex = useMemo(() => {
+    if (!previewFile || !isImageFile(previewFile.mime_type)) return -1;
+    return previewImageFiles.findIndex((file) => file.id === previewFile.id);
+  }, [previewFile, previewImageFiles]);
+
+  const canNavigatePreviewImage = previewImageIndex !== -1 && previewImageFiles.length > 1;
+
+  const openPreviewImageByOffset = useCallback((offset: number) => {
+    if (previewImageFiles.length === 0 || previewImageIndex === -1) return;
+    const nextIndex = (previewImageIndex + offset + previewImageFiles.length) % previewImageFiles.length;
+    setPreviewFile(previewImageFiles[nextIndex]);
+  }, [previewImageFiles, previewImageIndex]);
+
   const bulkMoveOptions = useMemo(() => {
     const selectedFolderIds = new Set(selectedFolderKeys.map((key) => key.replace('folder:', '')));
     const walk = (parentId: string | null, depth = 0): Array<{ id: string; label: string }> => {
@@ -4018,8 +4037,12 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
                         }}
                         onContextMenu={(e) => {
                           e.preventDefault();
-                          setSelectedItemKey(itemKey);
-                          setSelectedItemKeys([itemKey]);
+                          // Se o item já não estiver selecionado, adicioná-lo à seleção
+                          if (!selectedItemKeys.includes(itemKey)) {
+                            applySelection(itemKey, { additive: true });
+                          } else {
+                            setSelectedItemKey(itemKey);
+                          }
                           setContextMenu({ x: e.clientX, y: e.clientY, type: 'folder', folderId: folder.id });
                         }}
                       >
@@ -4130,8 +4153,12 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
                       }}
                       onContextMenu={(e) => {
                         e.preventDefault();
-                        setSelectedItemKey(itemKey);
-                        setSelectedItemKeys([itemKey]);
+                        // Se o item já não estiver selecionado, adicioná-lo à seleção
+                        if (!selectedItemKeys.includes(itemKey)) {
+                          applySelection(itemKey, { additive: true });
+                        } else {
+                          setSelectedItemKey(itemKey);
+                        }
                         setContextMenu({ x: e.clientX, y: e.clientY, type: 'file', fileId: file.id });
                       }}
                       onDoubleClick={() => {
@@ -4276,8 +4303,12 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
                           }}
                           onContextMenu={(e) => {
                             e.preventDefault();
-                            setSelectedItemKey(itemKey);
-                            setSelectedItemKeys([itemKey]);
+                            // Se o item já não estiver selecionado, adicioná-lo à seleção
+                            if (!selectedItemKeys.includes(itemKey)) {
+                              applySelection(itemKey, { additive: true });
+                            } else {
+                              setSelectedItemKey(itemKey);
+                            }
                             setContextMenu({ x: e.clientX, y: e.clientY, type: 'folder', folderId: folder.id });
                           }}
                           style={{ height: 'fit-content' }}
@@ -4401,8 +4432,12 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
                         }}
                         onContextMenu={(e) => {
                           e.preventDefault();
-                          setSelectedItemKey(itemKey);
-                          setSelectedItemKeys([itemKey]);
+                          // Se o item já não estiver selecionado, adicioná-lo à seleção
+                          if (!selectedItemKeys.includes(itemKey)) {
+                            applySelection(itemKey, { additive: true });
+                          } else {
+                            setSelectedItemKey(itemKey);
+                          }
                           setContextMenu({ x: e.clientX, y: e.clientY, type: 'file', fileId: file.id });
                         }}
                       >
@@ -4938,7 +4973,7 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
             <div className="flex items-center justify-between px-4 py-3 border-b border-slate-200 bg-white">
               <div>
                 <h3 className="font-semibold text-slate-900">{previewFile.original_name}</h3>
-                <p className="text-xs text-slate-500">{isDocxFile(previewFile.mime_type, previewFile.original_name) ? 'Editor de documento' : isPdfFile(previewFile.mime_type, previewFile.original_name) ? `Preview do PDF${previewPdfIndex !== -1 ? ` • ${previewPdfIndex + 1} de ${previewPdfFiles.length}` : ''}` : 'Preview do arquivo'}</p>
+                <p className="text-xs text-slate-500">{isDocxFile(previewFile.mime_type, previewFile.original_name) ? 'Editor de documento' : isPdfFile(previewFile.mime_type, previewFile.original_name) ? `Preview do PDF${previewPdfIndex !== -1 ? ` • ${previewPdfIndex + 1} de ${previewPdfFiles.length}` : ''}` : isImageFile(previewFile.mime_type) ? `Preview da Imagem${previewImageIndex !== -1 ? ` • ${previewImageIndex + 1} de ${previewImageFiles.length}` : ''}` : 'Preview do arquivo'}</p>
               </div>
               <div className="flex items-center gap-2 flex-wrap justify-end">
                 {isPdfFile(previewFile.mime_type, previewFile.original_name) ? (
@@ -4979,7 +5014,30 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
                     </button>
                   </>
                 ) : null}
-                {(isImageFile(previewFile.mime_type) || isPdfFile(previewFile.mime_type, previewFile.original_name)) ? (
+                {isImageFile(previewFile.mime_type) ? (
+                  <>
+                    <button
+                      onClick={() => {
+                        setSelectedImageFileIds([previewFile.id]);
+                        setImagePdfName(`convertido-${previewFile.original_name.replace(/\.[^/.]+$/, '')}`);
+                        setImagePdfItems([previewFile]);
+                        setImagePdfModalOpen(true);
+                      }}
+                      className="px-3 py-1.5 rounded-lg bg-orange-500 text-white text-sm hover:bg-orange-600 inline-flex items-center gap-2"
+                    >
+                      <FileText className="w-4 h-4" />
+                      Converter para PDF
+                    </button>
+                    <button
+                      onClick={() => void handleRotateFileQuick(previewFile, 90)}
+                      disabled={quickActionFileId === previewFile.id}
+                      className="px-3 py-1.5 rounded-lg border border-slate-200 text-slate-600 text-sm hover:bg-slate-50 inline-flex items-center gap-2 disabled:cursor-not-allowed disabled:opacity-70"
+                    >
+                      {quickActionFileId === previewFile.id ? <Loader2 className="w-4 h-4 animate-spin" /> : <RotateCw className="w-4 h-4" />}
+                      Girar 90°
+                    </button>
+                  </>
+                ) : isPdfFile(previewFile.mime_type, previewFile.original_name) ? (
                   <button
                     onClick={() => void handleRotateFileQuick(previewFile, 90)}
                     disabled={quickActionFileId === previewFile.id}
@@ -5013,6 +5071,24 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
                   <button
                     type="button"
                     onClick={() => openPreviewPdfByOffset(1)}
+                    className="absolute right-4 top-1/2 z-10 -translate-y-1/2 inline-flex h-11 w-11 items-center justify-center rounded-full border border-slate-200 bg-white/95 text-slate-700 shadow-sm hover:bg-slate-50"
+                  >
+                    <ChevronRight className="w-5 h-5" />
+                  </button>
+                </>
+              ) : null}
+              {isImageFile(previewFile.mime_type) && canNavigatePreviewImage ? (
+                <>
+                  <button
+                    type="button"
+                    onClick={() => openPreviewImageByOffset(-1)}
+                    className="absolute left-4 top-1/2 z-10 -translate-y-1/2 inline-flex h-11 w-11 items-center justify-center rounded-full border border-slate-200 bg-white/95 text-slate-700 shadow-sm hover:bg-slate-50"
+                  >
+                    <ChevronLeft className="w-5 h-5" />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => openPreviewImageByOffset(1)}
                     className="absolute right-4 top-1/2 z-10 -translate-y-1/2 inline-flex h-11 w-11 items-center justify-center rounded-full border border-slate-200 bg-white/95 text-slate-700 shadow-sm hover:bg-slate-50"
                   >
                     <ChevronRight className="w-5 h-5" />

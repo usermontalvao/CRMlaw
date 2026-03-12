@@ -47,7 +47,7 @@ import { matchesNormalizedSearch } from '../utils/search';
    ============================================================================ */
 
 const VERSION_CODENAMES: Record<string, { name: string; emoji: string }> = {
-  '1.9.832': { name: 'Café Hook em Ordem', emoji: '🪝' },
+  '1.9.834': { name: 'Café Preview Navegável', emoji: '🖼️' },
   '1.9.831': { name: 'Café Cliente no Topo', emoji: '🏷️' },
   '1.9.830': { name: 'Café Desktop Cloud', emoji: '🖥️' },
   '1.9.829': { name: 'Café Scroll Único', emoji: '🧭' },
@@ -687,6 +687,70 @@ const releases: ReleaseNote[] = [
             type: 'fix',
             title: 'Cliente do header acompanha a seleção',
             description: 'O badge do topo agora prioriza o cliente da pasta ou arquivo selecionado, em vez de mostrar apenas o cliente da pasta atualmente aberta.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.833',
+    date: '11/03/2026',
+    summary: 'Cloud: seleção múltipla corrigida e preview de imagens com navegação e conversão para PDF.',
+    modules: [
+      {
+        moduleId: 'cloud',
+        changes: [
+          {
+            type: 'fix',
+            title: 'Seleção múltipla mantida no menu contextual',
+            description: 'Ao abrir menu contextual com botão direito, a seleção múltipla agora é preservada em vez de resetar para apenas o item clicado.',
+          },
+          {
+            type: 'improvement',
+            title: 'Navegação entre imagens no preview',
+            description: 'Preview de imagens agora possui setas (← →) para navegar entre todas as imagens da pasta, similar aos PDFs.',
+          },
+          {
+            type: 'improvement',
+            title: 'Converter imagem para PDF direto do preview',
+            description: 'Botão "Converter para PDF" adicionado diretamente no preview de imagens, abrindo o modal de conversão com a imagem pré-selecionada.',
+          },
+          {
+            type: 'improvement',
+            title: 'Contador de imagens no header do preview',
+            description: 'Header do preview agora mostra "Imagem X de Y" para facilitar a navegação e saber quantas imagens existem.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.834',
+    date: '11/03/2026',
+    summary: 'Cloud: seleção múltipla corrigida e preview de imagens com navegação e conversão para PDF.',
+    modules: [
+      {
+        moduleId: 'cloud',
+        changes: [
+          {
+            type: 'fix',
+            title: 'Seleção múltipla mantida no menu contextual',
+            description: 'Ao abrir menu contextual com botão direito, a seleção múltipla agora é preservada em vez de resetar para apenas o item clicado.',
+          },
+          {
+            type: 'improvement',
+            title: 'Navegação entre imagens no preview',
+            description: 'Preview de imagens agora possui setas (← →) para navegar entre todas as imagens da pasta, similar aos PDFs.',
+          },
+          {
+            type: 'improvement',
+            title: 'Converter imagem para PDF direto do preview',
+            description: 'Botão "Converter para PDF" adicionado diretamente no preview de imagens, abrindo o modal de conversão com a imagem pré-selecionada.',
+          },
+          {
+            type: 'improvement',
+            title: 'Contador de imagens no header do preview',
+            description: 'Header do preview agora mostra "Imagem X de Y" para facilitar a navegação e saber quantas imagens existem.',
           },
         ],
       },

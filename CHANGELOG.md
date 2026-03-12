@@ -1,6 +1,20 @@
 # Changelog
   
-  ## 1.9.832
+  ## 1.9.834
+- **Cloud/Seleção**: Corrigido menu contextual para manter seleção múltipla ao abrir com botão direito.
+- **Cloud/Preview**: Adicionada navegação com setas entre imagens no preview (← →).
+- **Cloud/Preview**: Adicionado botão "Converter para PDF" diretamente no preview de imagens.
+- **Cloud/Preview**: Melhorado header do preview para mostrar contador de imagens (ex: "1 de 5").
+- **Cloud/Ferramentas**: Mantido botão "Girar 90°" para imagens e PDFs no preview.
+
+## 1.9.833
+- **Cloud/Seleção**: Corrigido menu contextual para manter seleção múltipla ao abrir com botão direito.
+- **Cloud/Preview**: Adicionada navegação com setas entre imagens no preview (← →).
+- **Cloud/Preview**: Adicionado botão "Converter para PDF" diretamente no preview de imagens.
+- **Cloud/Preview**: Melhorado header do preview para mostrar contador de imagens (ex: "1 de 5").
+- **Cloud/Ferramentas**: Mantido botão "Girar 90°" para imagens e PDFs no preview.
+
+## 1.9.832
   - **Cloud/Crash**: Corrigido o erro `Cannot access 'explorerItemKeys' before initialization` causado pela ordem de inicialização dos hooks da seleção por caixa no `CloudModule`.
 
   ## 1.9.831
