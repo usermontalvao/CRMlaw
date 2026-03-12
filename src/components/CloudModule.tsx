@@ -454,9 +454,9 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
   }, []);
 
   const cardGridMinWidth = useMemo(() => {
-    if (cardSize === 'small') return 190;
-    if (cardSize === 'large') return 280;
-    return 220;
+    if (cardSize === 'small') return 250;
+    if (cardSize === 'large') return 340;
+    return 300;
   }, [cardSize]);
 
   const cardPreviewHeightClass = useMemo(() => {
@@ -3507,9 +3507,9 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
   };
 
   return (
-    <div className="w-full rounded-2xl border border-slate-200 bg-white shadow-sm flex flex-col overflow-visible">
+    <div className="w-full border border-slate-200 bg-white shadow-sm flex flex-col overflow-visible">
 
-      <div className="border-b border-slate-200 bg-white px-3 py-3 flex flex-wrap items-center gap-2">
+      <div className="border-b border-slate-200 bg-white px-2 py-2 flex flex-wrap items-center gap-2">
         <button
           type="button"
           onClick={() => setSidebarOpen((prev) => !prev)}
@@ -3518,99 +3518,11 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
           <Cloud className="w-4 h-4 text-orange-600" />
           {sidebarOpen ? 'Ocultar navegação' : 'Navegação'}
         </button>
-        <button onClick={() => fileInputRef.current?.click()} className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg bg-orange-500 hover:bg-orange-600 text-white text-sm shadow-sm shadow-orange-500/20">
-          <Upload className="w-4 h-4" />
-          Enviar
-        </button>
-        <button onClick={handleOpenCreateFolder} className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg bg-white hover:bg-slate-50 text-slate-700 text-sm border border-slate-200 shadow-sm">
-          <FolderPlus className="w-4 h-4" />
-          Nova pasta
-        </button>
-        {canStoreSelectionInClipboard ? (
-          <>
-            <button onClick={() => handleStoreSelectionInClipboard('copy')} className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg bg-white hover:bg-slate-50 text-slate-700 text-sm border border-slate-200 shadow-sm">
-              <Copy className="w-4 h-4" />
-              Copiar
-            </button>
-            <button onClick={() => handleStoreSelectionInClipboard('cut')} className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg bg-white hover:bg-slate-50 text-slate-700 text-sm border border-slate-200 shadow-sm">
-              <Scissors className="w-4 h-4" />
-              Recortar
-            </button>
-          </>
-        ) : null}
-        {canPasteClipboardIntoCurrentFolder ? (
-          <button onClick={() => void handlePasteClipboardToFolder(currentFolder)} className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg bg-orange-500 hover:bg-orange-600 text-white text-sm shadow-sm shadow-orange-500/20">
-            <Clipboard className="w-4 h-4" />
-            Colar
-          </button>
-        ) : null}
-        {selectedImageFiles.length > 0 ? (
-          <button onClick={() => openConvertImagesModal()} className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg bg-slate-900 hover:bg-slate-800 text-white text-sm shadow-sm">
-            <FileText className="w-4 h-4" />
-            Converter PDF ({selectedImageFiles.length})
-          </button>
-        ) : null}
-        {selectedItemKeys.length > 1 ? (
-          <>
-            <button onClick={() => setBulkRenameModalOpen(true)} className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg bg-white hover:bg-slate-50 text-slate-700 text-sm border border-slate-200 shadow-sm">
-              <Tag className="w-4 h-4" />
-              Renomear em lote
-            </button>
-            <button onClick={() => setBulkMoveModalOpen(true)} className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg bg-white hover:bg-slate-50 text-slate-700 text-sm border border-slate-200 shadow-sm">
-              <MoveRight className="w-4 h-4" />
-              Mover itens
-            </button>
-          </>
-        ) : null}
-        <button
-          type="button"
-          onClick={() => setShowAdvancedFilters((prev) => !prev)}
-          className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm border shadow-sm ${showAdvancedFilters || hasActiveAdvancedFilters ? 'bg-orange-50 text-orange-700 border-orange-200' : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50'}`}
-        >
-          <Filter className="w-4 h-4" />
-          Filtros
-        </button>
-        <div className="inline-flex items-center rounded-xl border border-slate-200 bg-white p-1 shadow-sm">
-          <button
-            type="button"
-            onClick={() => setViewMode('list')}
-            className={`inline-flex items-center gap-1 rounded-md px-2.5 py-1.5 text-sm transition ${viewMode === 'list' ? 'bg-orange-50 text-orange-700' : 'text-slate-600 hover:bg-slate-50'}`}
-          >
-            <List className="w-4 h-4" />
-            Lista
-          </button>
-          <button
-            type="button"
-            onClick={() => setViewMode('cards')}
-            className={`inline-flex items-center gap-1 rounded-md px-2.5 py-1.5 text-sm transition ${viewMode === 'cards' ? 'bg-orange-50 text-orange-700' : 'text-slate-600 hover:bg-slate-50'}`}
-          >
-            <LayoutGrid className="w-4 h-4" />
-            Cards
-          </button>
-        </div>
-        {viewMode === 'cards' ? (
-          <div className="inline-flex items-center rounded-xl border border-slate-200 bg-white p-1 shadow-sm">
-            <button type="button" onClick={() => setCardSize('small')} className={`rounded-md px-2.5 py-1.5 text-sm transition ${cardSize === 'small' ? 'bg-orange-50 text-orange-700' : 'text-slate-600 hover:bg-slate-50'}`}>P</button>
-            <button type="button" onClick={() => setCardSize('medium')} className={`rounded-md px-2.5 py-1.5 text-sm transition ${cardSize === 'medium' ? 'bg-orange-50 text-orange-700' : 'text-slate-600 hover:bg-slate-50'}`}>M</button>
-            <button type="button" onClick={() => setCardSize('large')} className={`rounded-md px-2.5 py-1.5 text-sm transition ${cardSize === 'large' ? 'bg-orange-50 text-orange-700' : 'text-slate-600 hover:bg-slate-50'}`}>G</button>
-          </div>
-        ) : null}
         <input ref={fileInputRef} type="file" multiple className="hidden" onChange={(e) => e.target.files && handleUploadFiles(e.target.files)} />
-        <div className="flex items-center gap-2 w-full lg:ml-auto lg:max-w-md">
-          <div className="relative w-full">
-            <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
-            <input
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              placeholder={hasGlobalSearch ? 'Buscar em todo o Cloud' : 'Pesquisar nesta pasta'}
-              className="w-full rounded-md border border-slate-200 bg-white text-sm text-slate-900 placeholder:text-slate-400 pl-9 pr-3 py-2 focus:outline-none focus:border-orange-400 focus:ring-2 focus:ring-orange-100"
-            />
-          </div>
-        </div>
       </div>
 
       {showAdvancedFilters ? (
-        <div className="border-b border-slate-200 bg-slate-50 px-3 py-3">
+        <div className="border-b border-slate-200 bg-slate-50 px-2 py-2.5">
           <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-3">
             <select value={searchFilters.clientId} onChange={(e) => setSearchFilters((prev) => ({ ...prev, clientId: e.target.value }))} className="w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm bg-white text-slate-900 focus:outline-none focus:ring-2 focus:ring-orange-100 focus:border-orange-400">
               <option value="">Todos os clientes</option>
@@ -3637,18 +3549,29 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
         </div>
       ) : null}
 
-      <div className="border-b border-slate-200 bg-gradient-to-b from-slate-50 to-slate-100/80 px-4 py-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-        <div className="flex items-center flex-wrap gap-2 text-sm text-slate-600 min-w-0">
-          <button onClick={() => setCurrentFolderId(null)} className="inline-flex items-center gap-1 rounded-md px-2 py-1 hover:bg-white/70 hover:text-slate-900"><Home className="w-4 h-4" />Cloud</button>
+      <div className="border-b border-slate-200 bg-gradient-to-b from-slate-50 to-slate-100/80 px-3 py-1 flex flex-col gap-1.5 xl:flex-row xl:items-center xl:justify-between">
+        <div className="flex items-center flex-wrap gap-1 text-sm text-slate-600 min-w-0 xl:flex-[0.9]">
+          <button onClick={() => setCurrentFolderId(null)} className="inline-flex items-center gap-1 rounded-md px-2 py-0.5 hover:bg-white/70 hover:text-slate-900"><Home className="w-4 h-4" /></button>
           {breadcrumb.map((item) => (
             <React.Fragment key={item.id}>
               <ChevronRight className="w-4 h-4 text-slate-400" />
-              <button onClick={() => setCurrentFolderId(item.id)} className="rounded-md px-2 py-1 hover:bg-white/70 hover:text-slate-900 truncate max-w-[220px]">{item.name}</button>
+              <button onClick={() => setCurrentFolderId(item.id)} className="rounded-md px-2 py-0.5 hover:bg-white/70 hover:text-slate-900 truncate max-w-[220px]">{item.name}</button>
             </React.Fragment>
           ))}
         </div>
-        <div className="flex items-center gap-2 text-xs text-slate-500">
-          <span className="whitespace-nowrap rounded-full border border-slate-200 bg-white px-2.5 py-1">{headerClient?.full_name || 'Sem cliente'}</span>
+        <div className="w-full xl:max-w-2xl xl:flex-[1.25] xl:px-1">
+          <div className="relative w-full flex items-center gap-2">
+            <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+            <input
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              placeholder={hasGlobalSearch ? 'Buscar em todo o Cloud' : 'Pesquisar nesta pasta'}
+              className="w-full rounded-xl border border-slate-200 bg-white text-sm text-slate-900 placeholder:text-slate-400 pl-9 pr-3 py-1.5 shadow-sm focus:outline-none focus:border-orange-400 focus:ring-2 focus:ring-orange-100"
+            />
+            <span className="whitespace-nowrap rounded-full border border-slate-200 bg-white px-2.5 py-1 text-xs text-slate-500">{headerClient?.full_name || 'Sem cliente'}</span>
+          </div>
+        </div>
+        <div className="flex items-center gap-2 text-xs text-slate-500 flex-wrap xl:justify-end xl:flex-[0.9]">
           {uploading ? <Loader2 className="w-4 h-4 text-orange-600 animate-spin" /> : null}
           {uploadQueueSummary.totalItems > 0 ? (
             <span className="rounded-full border border-orange-200 bg-orange-50 px-2 py-0.5 text-orange-700">
@@ -3689,8 +3612,8 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
       </div>
 
       <div className="flex flex-col lg:flex-row lg:items-start">
-        <aside className={`${sidebarOpen ? 'flex' : 'hidden'} lg:sticky lg:top-24 lg:self-start lg:flex w-full lg:w-[300px] border-b lg:border-b-0 lg:border-r border-slate-200 bg-[linear-gradient(180deg,#f8fafc_0%,#f1f5f9_100%)] flex-col`}>
-          <div className="p-2 space-y-4">
+        <aside className={`${sidebarOpen ? 'flex' : 'hidden'} lg:sticky lg:top-20 lg:self-start lg:flex w-full lg:w-[340px] border-b lg:border-b-0 lg:border-r border-slate-100 bg-[linear-gradient(180deg,#f8fafc_0%,#f1f5f9_100%)] flex-col`}>
+          <div className="p-2 space-y-3">
             <div className="space-y-1 rounded-2xl border border-slate-200 bg-white/80 p-2 shadow-sm">
             <button
               type="button"
@@ -3718,7 +3641,7 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
               }}
             >
               <HardDrive className="w-4 h-4 text-orange-600" />
-              <span className="font-medium">Caixa de entrada</span>
+              <span className="min-w-0 truncate font-medium">Caixa de entrada</span>
             </button>
             {renderTree(rootFolders)}
             <button
@@ -3748,7 +3671,7 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
               }}
             >
               <FolderOpen className="w-4 h-4 text-amber-500" />
-              <span className="font-medium">Arquivado</span>
+              <span className="min-w-0 truncate font-medium">Arquivado</span>
               <span className="ml-auto rounded-full border border-amber-200 bg-white px-2 py-0.5 text-[10px] text-amber-700">{archivedRootFolders.length + archivedRootFiles.length}</span>
             </button>
             <button
@@ -3778,7 +3701,7 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
               }}
             >
               <Trash2 className="w-4 h-4 text-red-500" />
-              <span className="font-medium">Lixeira</span>
+              <span className="min-w-0 truncate font-medium">Lixeira</span>
               <span className="ml-auto rounded-full border border-red-200 bg-white px-2 py-0.5 text-[10px] text-red-600">{trashedRootFiles.length + trashedRootFolders.length}</span>
             </button>
             </div>
@@ -3798,10 +3721,10 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
                         setSelectedItemKey(`folder:${folder.id}`);
                         setSelectedItemKeys([`folder:${folder.id}`]);
                       }}
-                      className="w-full flex items-center gap-2 rounded-xl px-3 py-2 text-sm text-slate-700 hover:bg-slate-50"
+                      className="w-full min-w-0 flex items-center gap-2 rounded-xl px-3 py-2 text-sm text-slate-700 hover:bg-slate-50"
                     >
                       <Pin className="w-4 h-4 text-orange-500" />
-                      <span className="truncate">{folder.name}</span>
+                      <span className="min-w-0 flex-1 truncate">{folder.name}</span>
                     </button>
                   ))
                 )}
@@ -3815,9 +3738,9 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
                   <p className="px-2 text-xs text-slate-500">Nenhum arquivo fixado.</p>
                 ) : (
                   favoriteFiles.slice(0, 8).map((file) => (
-                    <button key={file.id} type="button" onClick={() => openSelectedItem(`file:${file.id}`)} className="w-full flex items-center gap-2 rounded-xl px-3 py-2 text-sm text-slate-700 hover:bg-slate-50">
+                    <button key={file.id} type="button" onClick={() => openSelectedItem(`file:${file.id}`)} className="w-full min-w-0 flex items-center gap-2 rounded-xl px-3 py-2 text-sm text-slate-700 hover:bg-slate-50">
                       <Pin className="w-4 h-4 text-orange-500" />
-                      <span className="truncate">{file.original_name}</span>
+                      <span className="min-w-0 flex-1 truncate">{file.original_name}</span>
                     </button>
                   ))
                 )}
@@ -3834,9 +3757,9 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
                   <p className="px-2 text-xs text-slate-500">Nenhum arquivo recente.</p>
                 ) : (
                   recentFiles.slice(0, 8).map((file) => (
-                    <button key={file.id} type="button" onClick={() => openSelectedItem(`file:${file.id}`)} className="w-full flex items-center gap-2 rounded-xl px-3 py-2 text-sm text-slate-700 hover:bg-slate-50">
+                    <button key={file.id} type="button" onClick={() => openSelectedItem(`file:${file.id}`)} className="w-full min-w-0 flex items-center gap-2 rounded-xl px-3 py-2 text-sm text-slate-700 hover:bg-slate-50">
                       <History className="w-4 h-4 text-slate-400" />
-                      <span className="truncate">{file.original_name}</span>
+                      <span className="min-w-0 flex-1 truncate">{file.original_name}</span>
                     </button>
                   ))
                 )}
@@ -3869,7 +3792,7 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
             className={`relative flex flex-col overflow-visible ${dragActive ? 'bg-sky-50' : ''}`}
           >
             {viewMode === 'list' ? (
-              <div className="hidden md:grid md:grid-cols-[minmax(260px,2.6fr)_170px_170px_130px_220px] gap-3 px-4 py-2 border-b border-slate-200 text-[11px] uppercase tracking-[0.16em] text-slate-400 bg-slate-50">
+              <div className="hidden md:grid md:grid-cols-[minmax(260px,2.6fr)_170px_170px_130px_220px] gap-3 px-4 py-2 border-b border-slate-100 text-[11px] uppercase tracking-[0.16em] text-slate-400 bg-slate-50/80">
                 <span>Nome</span>
                 <span>Data de modificação</span>
                 <span>Tipo</span>
@@ -3877,7 +3800,7 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
                 <span>Cliente</span>
               </div>
             ) : (
-              <div className="px-4 py-2 border-b border-slate-200 text-[11px] uppercase tracking-[0.16em] text-slate-400 bg-slate-50">
+              <div className="px-4 py-2 border-b border-slate-100 text-[11px] uppercase tracking-[0.16em] text-slate-400 bg-slate-50/80">
                 Exibição em cards
               </div>
             )}
@@ -3918,49 +3841,76 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
                 />
               ) : null}
               {loading ? (
-                <div className="flex items-center justify-center px-6 py-20">
+                <div className="flex items-center justify-center px-4 py-14">
                   <motion.div
                     initial={{ opacity: 0, y: 10, scale: 0.98 }}
                     animate={{ opacity: 1, y: 0, scale: 1 }}
                     transition={{ duration: 0.24 }}
-                    className="relative w-full max-w-md overflow-hidden rounded-[28px] border border-orange-100 bg-white/95 px-8 py-10 text-center shadow-[0_24px_70px_rgba(15,23,42,0.12)]"
+                    className="relative w-full max-w-md overflow-hidden rounded-[28px] bg-[radial-gradient(circle_at_top,#fff7ed_0%,#ffffff_34%,#fffaf5_100%)] px-8 py-10 text-center shadow-[0_24px_70px_rgba(15,23,42,0.12)]"
                   >
                     <motion.div
                       animate={{ x: ['-100%', '100%'] }}
-                      transition={{ repeat: Infinity, duration: 1.8, ease: 'linear' }}
-                      className="pointer-events-none absolute inset-y-0 left-0 w-24 bg-gradient-to-r from-transparent via-orange-100/70 to-transparent"
+                      transition={{ repeat: Infinity, duration: 2.4, ease: 'linear' }}
+                      className="pointer-events-none absolute inset-y-0 left-0 w-32 bg-gradient-to-r from-transparent via-orange-100/50 to-transparent"
                     />
-                    <div className="relative mx-auto flex h-20 w-20 items-center justify-center rounded-[24px] border border-orange-200 bg-gradient-to-br from-orange-50 via-white to-amber-50 shadow-[0_12px_35px_rgba(249,115,22,0.18)]">
+                    <motion.div
+                      animate={{ scale: [1, 1.015, 1], y: [0, -1, 0] }}
+                      transition={{ repeat: Infinity, duration: 2.8, ease: 'easeInOut' }}
+                      className="relative mx-auto flex h-20 w-20 items-center justify-center rounded-[24px] bg-gradient-to-br from-orange-50 via-white to-amber-50 shadow-[0_12px_35px_rgba(249,115,22,0.18)]"
+                    >
                       <motion.div
-                        animate={{ scale: [1, 1.12, 1], opacity: [0.35, 0.12, 0.35] }}
-                        transition={{ repeat: Infinity, duration: 1.6, ease: 'easeInOut' }}
-                        className="absolute inset-0 rounded-[24px] border border-orange-300/40"
+                        animate={{ scale: [1, 1.18, 1], opacity: [0.32, 0.08, 0.32] }}
+                        transition={{ repeat: Infinity, duration: 2.1, ease: 'easeInOut' }}
+                        className="absolute inset-0 rounded-[24px] shadow-[inset_0_0_0_1px_rgba(253,186,116,0.28)]"
+                      />
+                      <motion.div
+                        animate={{ scale: [0.88, 1.28], opacity: [0.18, 0] }}
+                        transition={{ repeat: Infinity, duration: 1.8, ease: 'easeOut' }}
+                        className="absolute inset-[-8px] rounded-[30px] shadow-[inset_0_0_0_1px_rgba(254,215,170,0.45)]"
                       />
                       <motion.div
                         animate={{ rotate: 360 }}
-                        transition={{ repeat: Infinity, duration: 1.15, ease: 'linear' }}
-                        className="absolute inset-[10px] rounded-[18px] border-2 border-orange-200 border-t-orange-500"
-                      />
-                      <Cloud className="relative h-8 w-8 text-orange-500" />
-                    </div>
+                        transition={{ repeat: Infinity, duration: 3.4, ease: 'linear' }}
+                        className="absolute inset-[8px] rounded-[20px] shadow-[inset_0_0_0_1px_rgba(253,186,116,0.32)]"
+                      >
+                        <div className="absolute -top-1 left-1/2 h-2.5 w-2.5 -translate-x-1/2 rounded-full bg-gradient-to-r from-orange-400 to-amber-300 shadow-[0_0_14px_rgba(251,146,60,0.55)]" />
+                      </motion.div>
+                      <motion.div
+                        animate={{ y: [0, -2, 0], scale: [1, 1.04, 1] }}
+                        transition={{ repeat: Infinity, duration: 1.7, ease: 'easeInOut' }}
+                        className="relative"
+                      >
+                        <Cloud className="h-8 w-8 text-orange-500 drop-shadow-[0_4px_10px_rgba(249,115,22,0.35)]" />
+                      </motion.div>
+                    </motion.div>
                     <h3 className="mt-6 text-xl font-semibold text-slate-900">Carregando seu Cloud</h3>
                     <p className="mt-2 text-sm text-slate-500">Organizando pastas, arquivos e atalhos para exibir tudo com fluidez.</p>
-                    <div className="mt-6 h-2.5 overflow-hidden rounded-full bg-orange-100/80">
+                    <div className="mt-6 overflow-hidden rounded-full bg-orange-100/80 shadow-inner shadow-orange-200/40">
                       <motion.div
-                        className="h-full rounded-full bg-gradient-to-r from-orange-400 via-orange-500 to-amber-300"
-                        animate={{ x: ['-35%', '115%'], width: ['28%', '42%', '28%'] }}
-                        transition={{ repeat: Infinity, duration: 1.4, ease: 'easeInOut' }}
-                      />
+                        className="relative h-2.5 rounded-full bg-gradient-to-r from-orange-400 via-orange-500 to-amber-300"
+                        animate={{ x: ['-20%', '108%'], width: ['24%', '46%', '30%'] }}
+                        transition={{ repeat: Infinity, duration: 1.8, ease: 'easeInOut' }}
+                      >
+                        <motion.div
+                          animate={{ x: ['-100%', '180%'] }}
+                          transition={{ repeat: Infinity, duration: 1.1, ease: 'linear' }}
+                          className="absolute inset-y-0 left-0 w-16 bg-gradient-to-r from-transparent via-white/60 to-transparent"
+                        />
+                      </motion.div>
                     </div>
-                    <div className="mt-4 flex items-center justify-center gap-2 text-[11px] font-medium uppercase tracking-[0.24em] text-orange-500/80">
-                      <motion.span animate={{ opacity: [0.35, 1, 0.35] }} transition={{ repeat: Infinity, duration: 1.1, delay: 0 }}>Sincronizando</motion.span>
-                      <motion.span animate={{ opacity: [0.35, 1, 0.35] }} transition={{ repeat: Infinity, duration: 1.1, delay: 0.18 }}>Pastas</motion.span>
-                      <motion.span animate={{ opacity: [0.35, 1, 0.35] }} transition={{ repeat: Infinity, duration: 1.1, delay: 0.36 }}>Arquivos</motion.span>
+                    <div className="mt-4 flex items-center justify-center gap-2 text-[11px] font-medium uppercase tracking-[0.24em] text-orange-500/85">
+                      <motion.span animate={{ opacity: [0.4, 1, 0.4], y: [0, -1, 0] }} transition={{ repeat: Infinity, duration: 1.4, delay: 0 }}>Sincronizando</motion.span>
+                      <motion.span animate={{ opacity: [0.3, 1, 0.3], scale: [0.95, 1, 0.95] }} transition={{ repeat: Infinity, duration: 1.4, delay: 0.18 }} className="inline-flex h-1.5 w-1.5 rounded-full bg-orange-300" />
+                      <motion.span animate={{ opacity: [0.4, 1, 0.4], y: [0, -1, 0] }} transition={{ repeat: Infinity, duration: 1.4, delay: 0.24 }}>Pastas</motion.span>
+                      <motion.span animate={{ opacity: [0.3, 1, 0.3], scale: [0.95, 1, 0.95] }} transition={{ repeat: Infinity, duration: 1.4, delay: 0.42 }} className="inline-flex h-1.5 w-1.5 rounded-full bg-amber-300" />
+                      <motion.span animate={{ opacity: [0.4, 1, 0.4], y: [0, -1, 0] }} transition={{ repeat: Infinity, duration: 1.4, delay: 0.48 }}>Arquivos</motion.span>
+                      <motion.span animate={{ opacity: [0.3, 1, 0.3], scale: [0.95, 1, 0.95] }} transition={{ repeat: Infinity, duration: 1.4, delay: 0.66 }} className="inline-flex h-1.5 w-1.5 rounded-full bg-orange-400" />
+                      <motion.span animate={{ opacity: [0.4, 1, 0.4], y: [0, -1, 0] }} transition={{ repeat: Infinity, duration: 1.4, delay: 0.72 }}>Atalhos</motion.span>
                     </div>
                   </motion.div>
                 </div>
               ) : explorerRows.length === 0 ? (
-                <div className="flex flex-col items-center justify-center text-slate-500 gap-4 px-6 py-20">
+                <div className="flex flex-col items-center justify-center text-slate-500 gap-4 px-4 py-14">
                   <div className="w-20 h-20 rounded-3xl bg-orange-50 flex items-center justify-center border border-orange-100">
                     <FolderPlus className="w-10 h-10 text-orange-400" />
                   </div>
@@ -4583,7 +4533,7 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
             </div>
 
             {dragActive ? (
-              <div className="absolute inset-x-0 bottom-0 mx-6 mb-6 rounded-xl border border-dashed border-orange-300 bg-orange-50 p-4 text-sm text-orange-900 shadow-lg">
+              <div className="absolute inset-x-0 bottom-0 mx-3 mb-3 rounded-xl border border-dashed border-orange-300 bg-orange-50 p-4 text-sm text-orange-900 shadow-lg">
                 Solte os arquivos aqui para enviar para <span className="font-semibold">{currentFolder?.name || 'a pasta atual'}</span>
               </div>
             ) : null}
@@ -4812,18 +4762,18 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
           </>
         ) : null}
       </AnimatePresence>
-
+  
       {folderModalOpen && (
         <div className="fixed inset-0 z-[120] bg-slate-900/25 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="w-full max-w-2xl rounded-3xl bg-white shadow-[0_24px_70px_rgba(15,23,42,0.18)] border border-slate-200 overflow-hidden">
+          <div className="w-full max-w-3xl rounded-3xl bg-white shadow-[0_24px_70px_rgba(15,23,42,0.18)] border border-slate-200 overflow-hidden">
             <div className="h-2 w-full bg-gradient-to-r from-orange-500 to-orange-600" />
-            <div className="p-6 space-y-5 bg-white">
-              <div className="flex items-center justify-between">
+            <div className="p-5 sm:p-6 space-y-5 bg-white">
+              <div className="flex items-center justify-between gap-4">
                 <div>
                   <p className="text-[11px] uppercase tracking-[0.18em] text-slate-400 font-semibold">Cloud</p>
                   <h3 className="text-xl font-semibold text-slate-900">Nova pasta</h3>
                 </div>
-                <button onClick={() => setFolderModalOpen(false)} className="p-2 rounded-lg hover:bg-slate-100"><X className="w-5 h-5 text-slate-400" /></button>
+                <button onClick={() => setFolderModalOpen(false)} className="rounded-xl p-2 hover:bg-slate-100 transition"><X className="w-5 h-5 text-slate-400" /></button>
               </div>
               {currentFolderId ? (
                 <div>
@@ -4962,14 +4912,14 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
                 <button onClick={() => setShareModalOpen(false)} className="px-4 py-2.5 rounded-xl border border-slate-200 bg-white text-sm font-medium text-slate-700 hover:bg-slate-50">Fechar</button>
                 <button onClick={handleCreateShare} className="px-5 py-2.5 rounded-xl bg-orange-500 text-white text-sm font-medium hover:bg-orange-600">{activeShare ? 'Salvar link' : 'Gerar link'}</button>
               </div>
-            </div>
           </div>
+        </div>
         </div>
       )}
 
       {previewFile && (
-        <div className="fixed inset-0 z-[130] bg-slate-900/25 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className={`w-full ${isDocxFile(previewFile.mime_type, previewFile.original_name) ? 'max-w-[98vw] h-[94vh]' : 'max-w-6xl h-[88vh]'} rounded-2xl bg-white shadow-[0_24px_70px_rgba(15,23,42,0.18)] border border-slate-200 overflow-hidden flex flex-col`}>
+        <div className={`fixed inset-0 z-[130] bg-slate-900/25 backdrop-blur-sm flex justify-center ${isPdfFile(previewFile.mime_type, previewFile.original_name) ? 'items-stretch p-0' : 'items-center p-4'}`}>
+          <div className={`w-full ${isDocxFile(previewFile.mime_type, previewFile.original_name) ? 'max-w-[98vw] h-[94vh]' : isPdfFile(previewFile.mime_type, previewFile.original_name) ? 'max-w-6xl h-screen' : 'max-w-6xl h-[88vh]'} ${isPdfFile(previewFile.mime_type, previewFile.original_name) ? 'rounded-none' : 'rounded-2xl'} bg-white shadow-[0_24px_70px_rgba(15,23,42,0.18)] border border-slate-200 overflow-hidden flex flex-col`}>
             <div className="flex items-center justify-between px-4 py-3 border-b border-slate-200 bg-white">
               <div>
                 <h3 className="font-semibold text-slate-900">{previewFile.original_name}</h3>
@@ -5048,12 +4998,10 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
                   </button>
                 ) : null}
                 {isDocxFile(previewFile.mime_type, previewFile.original_name) && (
-                  <>
-                    <button onClick={() => setPreviewFile(null)} className="px-3 py-1.5 rounded-lg border border-slate-200 text-slate-600 text-sm hover:bg-slate-50 inline-flex items-center gap-2">
-                      <Minimize2 className="w-4 h-4" />
-                      Minimizar
-                    </button>
-                  </>
+                  <button onClick={() => setPreviewFile(null)} className="px-3 py-1.5 rounded-lg border border-slate-200 text-slate-600 text-sm hover:bg-slate-50 inline-flex items-center gap-2">
+                    <Minimize2 className="w-4 h-4" />
+                    Minimizar
+                  </button>
                 )}
                 <button onClick={() => setPreviewFile(null)} className="p-2 rounded-lg hover:bg-slate-100"><X className="w-5 h-5 text-slate-400" /></button>
               </div>

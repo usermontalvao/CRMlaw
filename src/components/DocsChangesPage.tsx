@@ -47,7 +47,18 @@ import { matchesNormalizedSearch } from '../utils/search';
    ============================================================================ */
 
 const VERSION_CODENAMES: Record<string, { name: string; emoji: string }> = {
-  '1.9.834': { name: 'Café Preview Navegável', emoji: '🖼️' },
+  '1.9.848': { name: 'Café Nuvem Limpa', emoji: '✨' },
+  '1.9.847': { name: 'Café Cloud Vivo', emoji: '☁️' },
+  '1.9.846': { name: 'Café Sidebar Ampla', emoji: '🧭' },
+  '1.9.845': { name: 'Café PDF Vertical', emoji: '📏' },
+  '1.9.844': { name: 'Café PDF Alto', emoji: '📐' },
+  '1.9.843': { name: 'Café PDF Expandido', emoji: '📄' },
+  '1.9.842': { name: 'Café Breadcrumb Leve', emoji: '🪶' },
+  '1.9.840': { name: 'Café Grid Aberto', emoji: '🧱' },
+  '1.9.839': { name: 'Café Tela Ampla', emoji: '🖥️' },
+  '1.9.838': { name: 'Café Busca Contextual', emoji: '🔎' },
+  '1.9.837': { name: 'Café Menu Único', emoji: '🧭' },
+  '1.9.836': { name: 'Café Header Global', emoji: '🌐' },
   '1.9.831': { name: 'Café Cliente no Topo', emoji: '🏷️' },
   '1.9.830': { name: 'Café Desktop Cloud', emoji: '🖥️' },
   '1.9.829': { name: 'Café Scroll Único', emoji: '🧭' },
@@ -659,66 +670,269 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
 
 const releases: ReleaseNote[] = [
   {
-    version: '1.9.832',
+    version: '1.9.848',
     date: '11/03/2026',
-    summary: 'Cloud: corrigido crash de render causado pela ordem de inicialização dos hooks de seleção por caixa.',
+    summary: 'Cloud: loading com visual mais limpo, sem bordas aparentes na animação.',
     modules: [
       {
         moduleId: 'cloud',
         changes: [
           {
-            type: 'fix',
-            title: 'Render do Cloud estabilizado',
-            description: 'O bloco de seleção por caixa foi reordenado para só depender de explorerItemKeys após sua inicialização, eliminando o ReferenceError no carregamento do módulo.',
+            type: 'improvement',
+            title: 'Animação sem contorno visível',
+            description: 'Foram removidas as bordas mais marcadas do card e do núcleo visual do loading, mantendo apenas o brilho e a sensação de profundidade.',
           },
         ],
       },
     ],
   },
   {
-    version: '1.9.831',
+    version: '1.9.847',
     date: '11/03/2026',
-    summary: 'Cloud: corrigido o cliente exibido no topo ao selecionar pasta vinculada.',
+    summary: 'Cloud: animação de carregamento refinada com mais fluidez e sensação visual premium.',
     modules: [
       {
         moduleId: 'cloud',
         changes: [
           {
-            type: 'fix',
-            title: 'Cliente do header acompanha a seleção',
-            description: 'O badge do topo agora prioriza o cliente da pasta ou arquivo selecionado, em vez de mostrar apenas o cliente da pasta atualmente aberta.',
+            type: 'improvement',
+            title: 'Loading mais fluido e sofisticado',
+            description: 'A tela de carregamento do Cloud ganhou movimentos mais suaves no ícone, brilho sutil e composição visual mais elegante durante a espera.',
+          },
+          {
+            type: 'improvement',
+            title: 'Progresso e status mais vivos',
+            description: 'A barra animada e os indicadores de sincronização foram refinados para transmitir atividade contínua com melhor acabamento visual.',
           },
         ],
       },
     ],
   },
   {
-    version: '1.9.833',
+    version: '1.9.846',
     date: '11/03/2026',
-    summary: 'Cloud: seleção múltipla corrigida e preview de imagens com navegação e conversão para PDF.',
+    summary: 'Cloud: sidebar mais larga para leitura de nomes, com ellipsis em itens extensos.',
+    modules: [
+      {
+        moduleId: 'cloud',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Sidebar mais larga e legível',
+            description: 'A coluna lateral do Cloud foi ampliada para reduzir quebras de nomes em clientes e pastas, deixando a navegação mais limpa e rápida.',
+          },
+          {
+            type: 'improvement',
+            title: 'Ellipsis em nomes longos',
+            description: 'Itens extensos agora usam truncamento com reticências na sidebar, evitando múltiplas linhas e preservando o alinhamento visual.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.845',
+    date: '11/03/2026',
+    summary: 'Cloud: preview de PDF com altura total real da página e largura preservada.',
+    modules: [
+      {
+        moduleId: 'cloud',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'PDF em altura total real',
+            description: 'O preview de PDF agora encosta no topo e no rodapé da página, removendo margens verticais do modal sem expandir a largura lateral.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.844',
+    date: '11/03/2026',
+    summary: 'Cloud: preview de PDF mais alto, mantendo a largura tradicional do modal.',
+    modules: [
+      {
+        moduleId: 'cloud',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Altura ampliada sem mexer na largura',
+            description: 'O modal de preview de PDF manteve a largura anterior e recebeu apenas aumento de altura para melhorar a leitura sem alterar o enquadramento lateral.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.843',
+    date: '11/03/2026',
+    summary: 'Cloud: preview de PDF expandido para usar a altura total da página.',
+    modules: [
+      {
+        moduleId: 'cloud',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Modal PDF em altura total',
+            description: 'O modal de visualização de PDF do Cloud agora ocupa toda a altura da página, oferecendo mais espaço útil para leitura do documento.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.842',
+    date: '11/03/2026',
+    summary: 'Cloud: breadcrumb mais limpo, header mais compacto, sidebar mais densa e cards maiores.',
+    modules: [
+      {
+        moduleId: 'cloud',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Breadcrumb sem o título redundante',
+            description: 'O texto "Cloud" foi removido do topo contextual, mantendo apenas o ícone inicial e a navegação da pasta atual.',
+          },
+          {
+            type: 'improvement',
+            title: 'Barra de busca mais compacta',
+            description: 'A altura vertical do bloco de busca foi reduzida mais uma vez, deixando mais área livre para o conteúdo principal.',
+          },
+          {
+            type: 'improvement',
+            title: 'Status e busca mais próximos',
+            description: 'O badge de cliente foi mantido junto ao campo de busca para melhorar leitura, contexto e equilíbrio visual.',
+          },
+          {
+            type: 'improvement',
+            title: 'Cards e sidebar refinados',
+            description: 'Os cards ganharam largura mínima maior e a sidebar ficou mais compacta para mostrar mais itens sem desperdiçar espaço.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.840',
+    date: '11/03/2026',
+    summary: 'Cloud: menos padding externo, grid mais aberto e divisória visual mais suave.',
+    modules: [
+      {
+        moduleId: 'cloud',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Padding externo reduzido',
+            description: 'O módulo Cloud ficou mais próximo do navbar e das laterais para aumentar a área útil de trabalho e reduzir a sensação de conteúdo encaixotado.',
+          },
+          {
+            type: 'improvement',
+            title: 'Grid de cards expandido',
+            description: 'A largura mínima dos cards foi ampliada para melhorar o aproveitamento horizontal e permitir uma distribuição visual mais profissional no explorador.',
+          },
+          {
+            type: 'improvement',
+            title: 'Divisória mais leve entre sidebar e conteúdo',
+            description: 'O cabeçalho do explorador e a linha divisória lateral foram suavizados para alinhar melhor a transição entre a navegação e a área de cards.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.839',
+    date: '11/03/2026',
+    summary: 'Cloud: navbar limpa e área de trabalho mais ampla com menos espaço desperdiçado.',
+    modules: [
+      {
+        moduleId: 'cloud',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Título removido do navbar superior',
+            description: 'A escrita "Cloud" foi removida do topo para evitar redundância, já que o módulo já está identificado na navegação lateral e pelos controles do header.',
+          },
+          {
+            type: 'improvement',
+            title: 'Área útil ampliada',
+            description: 'O container principal do Cloud teve paddings e espaçamentos externos reduzidos para deixar a sidebar e a grade de arquivos ocuparem melhor a tela.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.838',
+    date: '11/03/2026',
+    summary: 'Cloud: busca contextual reposicionada entre breadcrumb e status para um cabeçalho mais equilibrado.',
+    modules: [
+      {
+        moduleId: 'cloud',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Busca integrada ao cabeçalho contextual',
+            description: 'O campo "Pesquisar nesta pasta" saiu do canto direito isolado e passou a ocupar a barra contextual entre o breadcrumb do Cloud e o status do cliente.',
+          },
+          {
+            type: 'improvement',
+            title: 'Hierarquia visual mais equilibrada',
+            description: 'Título, busca e status agora formam um único bloco de contexto, reduzindo espaço vazio e deixando a interface mais organizada.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.837',
+    date: '11/03/2026',
+    summary: 'Cloud: removido menu duplicado na área de conteúdo, mantendo apenas a navbar superior.',
     modules: [
       {
         moduleId: 'cloud',
         changes: [
           {
             type: 'fix',
-            title: 'Seleção múltipla mantida no menu contextual',
-            description: 'Ao abrir menu contextual com botão direito, a seleção múltipla agora é preservada em vez de resetar para apenas o item clicado.',
+            title: 'Menu duplicado removido',
+            description: 'Removido o segundo bloco com Enviar, Nova pasta, Filtros, Lista/Cards e P/M/G dentro da área de conteúdo do Cloud.',
           },
           {
             type: 'improvement',
-            title: 'Navegação entre imagens no preview',
-            description: 'Preview de imagens agora possui setas (← →) para navegar entre todas as imagens da pasta, similar aos PDFs.',
+            title: 'Hierarquia visual corrigida',
+            description: 'A interface agora mantém apenas o menu da navbar superior, melhorando organização, leitura e consistência do layout.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.836',
+    date: '11/03/2026',
+    summary: 'Cloud: botões de ação movidos para o header principal do sistema.',
+    modules: [
+      {
+        moduleId: 'cloud',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Botões movidos para header global',
+            description: 'Botões "Enviar", "Nova pasta", "Filtros", "Lista/Cards" e "P/M/G" movidos do CloudModule para o header principal do sistema.',
           },
           {
             type: 'improvement',
-            title: 'Converter imagem para PDF direto do preview',
-            description: 'Botão "Converter para PDF" adicionado diretamente no preview de imagens, abrindo o modal de conversão com a imagem pré-selecionada.',
+            title: 'Exibição condicional no header',
+            description: 'Botões do Cloud aparecem no header global apenas quando o módulo Cloud está ativo, mantendo o layout limpo em outros módulos.',
           },
           {
             type: 'improvement',
-            title: 'Contador de imagens no header do preview',
-            description: 'Header do preview agora mostra "Imagem X de Y" para facilitar a navegação e saber quantas imagens existem.',
+            title: 'Design consistente',
+            description: 'Botões no header seguem o design padrão do sistema com shadow, border e hover effects consistentes.',
+          },
+          {
+            type: 'improvement',
+            title: 'Header do Cloud simplificado',
+            description: 'Header do CloudModule agora contém apenas busca e navegação mobile, reduzindo poluição visual.',
           },
         ],
       },

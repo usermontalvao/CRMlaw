@@ -29,6 +29,11 @@ import {
   Newspaper,
   RefreshCw,
   Plus,
+  Upload,
+  FolderPlus,
+  Filter,
+  List,
+  LayoutGrid,
 } from 'lucide-react';
 import Login from './components/Login';
 import OfflinePage from './components/OfflinePage';
@@ -1153,30 +1158,63 @@ useEffect(() => {
                     {activeModule === 'chat' && 'Chat da Equipe'}
                     {activeModule === 'tarefas' && 'Tarefas'}
                     {activeModule === 'documentos' && 'Documentos'}
-                    {activeModule === 'cloud' && 'Cloud'}
                     {activeModule === 'assinaturas' && 'Assinatura Digital'}
                     {activeModule === 'configuracoes' && 'Configurações'}
                   </h2>
-                  <p className="hidden md:block text-xs sm:text-sm text-slate-600 mt-1 truncate">
-                    {activeModule === 'dashboard' && 'Visão geral do escritório e métricas'}
-                    {activeModule === 'feed' && 'Acompanhe as novidades e publicações da equipe'}
-                    {activeModule === 'leads' && 'Gerencie leads e converta em clientes'}
-                    {activeModule === 'clientes' && 'Gerencie todos os seus clientes e informações'}
-                    {activeModule === 'processos' && 'Acompanhe processos e andamentos'}
-                    {activeModule === 'requerimentos' && 'Gerencie requerimentos administrativos do INSS'}
-                    {activeModule === 'prazos' && 'Controle compromissos e prazos vinculados aos seus casos'}
-                    {activeModule === 'intimacoes' && 'Consulte comunicações processuais do DJEN'}
-                    {activeModule === 'financeiro' && 'Acompanhe acordos, parcelas e honorários do escritório'}
-                    {activeModule === 'agenda' && 'Organize compromissos e prazos'}
-                    {activeModule === 'chat' && 'Converse com a equipe em tempo real'}
-                    {activeModule === 'tarefas' && 'Gerencie suas tarefas e lembretes'}
-                    {activeModule === 'documentos' && 'Crie modelos e gere documentos personalizados'}
-                    {activeModule === 'cloud' && 'Gerencie arquivos, pastas, previews e compartilhamentos'}
-                    {activeModule === 'assinaturas' && 'Assine documentos com biometria facial e assinatura digital'}
-                    {activeModule === 'configuracoes' && 'Gerencie usuários, permissões e preferências do sistema'}
-                  </p>
+                  {activeModule !== 'cloud' ? (
+                    <p className="hidden md:block text-xs sm:text-sm text-slate-600 mt-1 truncate">
+                      {activeModule === 'dashboard' && 'Visão geral do escritório e métricas'}
+                      {activeModule === 'feed' && 'Acompanhe as novidades e publicações da equipe'}
+                      {activeModule === 'leads' && 'Gerencie leads e converta em clientes'}
+                      {activeModule === 'clientes' && 'Gerencie todos os seus clientes e informações'}
+                      {activeModule === 'processos' && 'Acompanhe processos e andamentos'}
+                      {activeModule === 'requerimentos' && 'Gerencie requerimentos administrativos do INSS'}
+                      {activeModule === 'prazos' && 'Controle compromissos e prazos vinculados aos seus casos'}
+                      {activeModule === 'intimacoes' && 'Consulte comunicações processuais do DJEN'}
+                      {activeModule === 'financeiro' && 'Acompanhe acordos, parcelas e honorários do escritório'}
+                      {activeModule === 'agenda' && 'Organize compromissos e prazos'}
+                      {activeModule === 'chat' && 'Converse com a equipe em tempo real'}
+                      {activeModule === 'tarefas' && 'Gerencie suas tarefas e lembretes'}
+                      {activeModule === 'documentos' && 'Crie modelos e gere documentos personalizados'}
+                      {activeModule === 'assinaturas' && 'Assine documentos com biometria facial e assinatura digital'}
+                      {activeModule === 'configuracoes' && 'Gerencie usuários, permissões e preferências do sistema'}
+                    </p>
+                  ) : <div className="min-w-0" />}
                 </div>
               </div>
+              
+              {/* Botões do Cloud - aparecem apenas quando o módulo Cloud está ativo */}
+              {activeModule === 'cloud' && (
+                <div className="flex items-center gap-2 flex-wrap">
+                  <button className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg bg-orange-500 hover:bg-orange-600 text-white text-sm shadow-sm shadow-orange-500/20">
+                    <Upload className="w-4 h-4" />
+                    Enviar
+                  </button>
+                  <button className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg bg-white hover:bg-slate-50 text-slate-700 text-sm border border-slate-200 shadow-sm">
+                    <FolderPlus className="w-4 h-4" />
+                    Nova pasta
+                  </button>
+                  <button className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm border shadow-sm bg-white text-slate-700 border-slate-200 hover:bg-slate-50">
+                    <Filter className="w-4 h-4" />
+                    Filtros
+                  </button>
+                  <div className="inline-flex items-center rounded-xl border border-slate-200 bg-white p-1 shadow-sm">
+                    <button className="inline-flex items-center gap-1 rounded-md px-2.5 py-1.5 text-sm transition text-slate-600 hover:bg-slate-50">
+                      <List className="w-4 h-4" />
+                      Lista
+                    </button>
+                    <button className="inline-flex items-center gap-1 rounded-md px-2.5 py-1.5 text-sm transition bg-orange-50 text-orange-700">
+                      <LayoutGrid className="w-4 h-4" />
+                      Cards
+                    </button>
+                  </div>
+                  <div className="inline-flex items-center rounded-xl border border-slate-200 bg-white p-1 shadow-sm">
+                    <button className="rounded-md px-2.5 py-1.5 text-sm transition text-slate-600 hover:bg-slate-50">P</button>
+                    <button className="rounded-md px-2.5 py-1.5 text-sm transition bg-orange-50 text-orange-700">M</button>
+                    <button className="rounded-md px-2.5 py-1.5 text-sm transition text-slate-600 hover:bg-slate-50">G</button>
+                  </div>
+                </div>
+              )}
               
               <div className="flex items-center gap-1.5 sm:gap-2 lg:gap-3 flex-shrink-0">
                 <div className="hidden lg:block relative w-48 xl:w-64">
@@ -1383,7 +1421,7 @@ useEffect(() => {
         </header>
 
         {/* Main Content */}
-        <main className={`${activeModule === 'chat' ? 'px-0 py-0 space-y-0 overflow-hidden' : 'px-3 sm:px-4 lg:px-6 xl:px-8 space-y-4 sm:space-y-6'} flex-1 min-h-0 ${activeModule === 'agenda' ? 'py-0' : activeModule === 'chat' ? 'py-0' : 'py-4 sm:py-6'}`}>
+        <main className={`${activeModule === 'chat' ? 'px-0 py-0 space-y-0 overflow-hidden' : activeModule === 'cloud' ? 'px-0 sm:px-1 lg:px-2 xl:px-3 space-y-2 sm:space-y-3' : 'px-3 sm:px-4 lg:px-6 xl:px-8 space-y-4 sm:space-y-6'} flex-1 min-h-0 ${activeModule === 'agenda' ? 'py-0' : activeModule === 'chat' ? 'py-0' : activeModule === 'cloud' ? 'py-1 sm:py-2' : 'py-4 sm:py-6'}`}>
           {profileBanner && (
             <div className="bg-emerald-50 border border-emerald-200 text-emerald-700 px-4 py-3 rounded-lg text-sm flex justify-between items-center">
               <span>{profileBanner}</span>

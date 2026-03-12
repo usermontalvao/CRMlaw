@@ -1,6 +1,69 @@
 # Changelog
   
-  ## 1.9.834
+  ## 1.9.848
+- **Cloud/Loading**: Removidas as bordas visíveis do card e do núcleo da animação de carregamento, mantendo apenas brilho e profundidade visual.
+- **Cloud/UX**: O loading ficou mais limpo e leve, sem contornos marcados ao redor da animação.
+
+  ## 1.9.847
+- **Cloud/Loading**: A animação da tela de carregamento do Cloud ficou mais fluida, com camadas de movimento mais suaves no ícone e transições visuais mais elegantes.
+- **Cloud/UX**: A barra de progresso e os indicadores de sincronização foram refinados para transmitir carregamento ativo de forma mais moderna e limpa.
+
+  ## 1.9.846
+- **Cloud/Sidebar**: Largura da coluna lateral ampliada para melhorar a leitura dos nomes de clientes e pastas na árvore e listas rápidas.
+- **Cloud/UX**: Nomes longos agora usam truncamento com ellipsis em vez de quebrar em várias linhas na sidebar.
+
+  ## 1.9.845
+- **Cloud/PDF Preview**: O preview de PDF agora ocupa a altura total real da página, sem margem superior ou inferior.
+- **Cloud/View**: A largura tradicional do modal foi preservada, com expansão aplicada apenas no eixo vertical.
+
+  ## 1.9.844
+- **Cloud/PDF Preview**: Mantida a largura anterior do modal de preview, com ajuste aplicado somente na altura.
+- **Cloud/View**: O PDF continua com mais altura útil, sem abrir em largura total.
+
+  ## 1.9.843
+- **Cloud/PDF Preview**: Modal de visualização de PDF ajustado para ocupar a altura total da página.
+- **Cloud/View**: A área de preview agora usa a tela inteira, aumentando a leitura e a área útil do documento.
+
+  ## 1.9.842
+- **Cloud/Breadcrumb**: Removido o texto `Cloud`, mantendo um breadcrumb mais limpo com o ícone inicial e a pasta atual.
+- **Cloud/Header**: Barra de busca compactada novamente com menor altura vertical para liberar mais área útil.
+- **Cloud/UX**: Badge `Sem cliente` mantido colado ao campo de busca para leitura mais natural.
+- **Cloud/Cards**: Cards ampliados mais uma vez para ocupar melhor telas largas.
+- **Cloud/Sidebar**: Espaçamento vertical da lateral reduzido para mostrar mais itens sem scroll.
+
+  ## 1.9.841
+- **Cloud/Header**: Reduzida a altura da barra contextual com menos padding vertical no bloco da busca.
+- **Cloud/UX**: O status `Sem cliente` foi aproximado da busca para melhorar o equilíbrio visual da barra superior.
+- **Cloud/Cards**: Cards ampliados novamente com largura mínima maior para reduzir o vazio horizontal no explorador.
+
+  ## 1.9.840
+- **Cloud/Layout**: Reduzido ainda mais o padding externo do módulo para aproximar o conteúdo do navbar e das bordas laterais.
+- **Cloud/Cards**: Grid ampliado com largura mínima maior para aproveitar melhor a área horizontal e exibir mais conteúdo por linha.
+- **Cloud/Divisória**: Suavizado o alinhamento visual entre sidebar e área de cards com bordas mais leves no cabeçalho do explorador.
+
+  ## 1.9.839
+- **Cloud/Navbar**: Removido o título `Cloud` do navbar superior para eliminar redundância visual.
+- **Cloud/Layout**: Reduzidos paddings e margens do módulo para aproveitar melhor a largura e a altura da tela.
+- **Cloud/Workspace**: Sidebar e área principal ficaram mais próximas do navbar e das bordas, ampliando a área útil de trabalho.
+
+## 1.9.838
+- **Cloud/Layout**: Campo `Pesquisar nesta pasta` reposicionado para a barra contextual do Cloud, ao lado do breadcrumb e do status do cliente.
+- **Cloud/UI**: Removido o visual isolado da busca no canto direito do cabeçalho de conteúdo.
+- **Cloud/UX**: Melhorado o equilíbrio visual da seção com título, busca e status agrupados em um único bloco.
+
+## 1.9.837
+- **Cloud/UI**: Removido o menu de ações duplicado dentro da área de conteúdo do Cloud.
+- **Cloud/Navbar**: Mantido apenas o menu superior com Enviar, Nova pasta, Filtros, Lista/Cards e P/M/G.
+- **Cloud/UX**: Melhorada a hierarquia visual com redução de redundância e poluição na interface.
+
+## 1.9.836
+- **Cloud/UI**: Botões de ação movidos para o header principal do sistema.
+- **Cloud/Header**: Enviar, Nova pasta, Filtros, Lista/Cards e P/M/G agora aparecem no header global.
+- **Cloud/Header**: Botões são exibidos apenas quando o módulo Cloud está ativo.
+- **Cloud/Header**: Design consistente com outros botões do sistema (shadow, border, hover effects).
+- **Cloud/Organização**: Header do CloudModule agora contém apenas busca e navegação mobile.
+
+## 1.9.834
 - **Cloud/Seleção**: Corrigido menu contextual para manter seleção múltipla ao abrir com botão direito.
 - **Cloud/Preview**: Adicionada navegação com setas entre imagens no preview (← →).
 - **Cloud/Preview**: Adicionado botão "Converter para PDF" diretamente no preview de imagens.
