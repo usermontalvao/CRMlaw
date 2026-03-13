@@ -216,7 +216,13 @@ const renderFolderIssueBadgeContent = (folder: CloudFolder) => {
   return <span>{getFolderIssueLabel(folder)}</span>;
 };
 
+const shouldShowFolderLabelBadge = (folder: CloudFolder, label: FolderLabelConfig) => {
+  if (label.id === 'pendente' || label.id === 'concluido') return false;
+  return !folder.parent_id;
+};
+
 const getFileTypeLabel = (file: CloudFile) => {
+  if (file.mime_type?.startsWith('image/')) return 'Imagem';
   if (isPdfFile(file.mime_type, file.original_name)) return 'PDF';
   if (isImageFile(file.mime_type)) return 'Imagem';
   if (isVideoFile(file.mime_type, file.original_name)) return 'Vídeo';
@@ -2302,12 +2308,16 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
   }, []);
 
   const handleToggleFavoriteFile = useCallback((fileId: string) => {
-    setFavoriteFileIds((prev) => (
-      prev.includes(fileId)
-        ? prev.filter((id) => id !== fileId)
-        : [fileId, ...prev]
-    ));
-  }, []);
+    const fileName = allFiles.find((file) => file.id === fileId)?.original_name || 'Arquivo';
+    let added = false;
+    setFavoriteFileIds((prev) => {
+      added = !prev.includes(fileId);
+      return added
+        ? [fileId, ...prev]
+        : prev.filter((id) => id !== fileId);
+    });
+    toast.success('Cloud', added ? `${fileName} fixado nos favoritos.` : `${fileName} removido dos favoritos.`);
+  }, [allFiles, toast]);
 
   const startInlineRename = useCallback((target: { type: 'file' | 'folder'; id: string; currentName: string }) => {
     setRenameModalOpen(false);
@@ -4502,7 +4512,7 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
                     const isDropTarget = dropTargetFolderId === folder.id;
                     const hasClientLink = Boolean(folder.client_id);
                     const showClientLinkBadge = !folder.parent_id;
-                    const showFolderStatusBadge = !folder.parent_id;
+                    const showFolderStatusBadge = shouldShowFolderLabelBadge(folder, folderLabel);
                     const isFavorite = favoriteFolderIds.includes(folder.id);
                     return (
                       <div
@@ -4792,7 +4802,7 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
                       const isDropTarget = dropTargetFolderId === folder.id;
                       const hasClientLink = Boolean(folder.client_id);
                       const showClientLinkBadge = !folder.parent_id;
-                      const showFolderStatusBadge = !folder.parent_id;
+                      const showFolderStatusBadge = shouldShowFolderLabelBadge(folder, folderLabel);
                       const isFavorite = favoriteFolderIds.includes(folder.id);
 
                       return (
@@ -6222,99 +6232,6 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
         </div>
       ) : null}
 
-      {contextMenu && selectedContextFile && (
-        <div
-          className="fixed z-[140]"
-          style={{ left: contextMenu.x, top: contextMenu.y }}
-          onClick={(e) => e.stopPropagation()}
-          onContextMenu={(e) => e.preventDefault()}
-        >
-          <div className="w-64 rounded-xl border border-slate-200 bg-white shadow-xl overflow-hidden">
-            <button
-              type="button"
-              onClick={() => openFileFromContextMenu(selectedContextFile)}
-              className="w-full px-3 py-2.5 text-left text-sm font-medium text-slate-700 hover:bg-slate-50 transition"
-            >
-              Abrir arquivo
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                handleToggleFavoriteFile(selectedContextFile.id);
-                setContextMenu(null);
-              }}
-              className="w-full px-3 py-2.5 text-left text-sm text-slate-700 hover:bg-slate-50 transition"
-            >
-              {favoriteFileIds.includes(selectedContextFile.id) ? 'Desafixar arquivo' : 'Fixar em favoritos'}
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                setContextMenu(null);
-                startInlineRename({ type: 'file', id: selectedContextFile.id, currentName: selectedContextFile.original_name });
-              }}
-              className="w-full px-3 py-2.5 text-left text-sm text-slate-700 hover:bg-slate-50 transition"
-            >
-              Renomear arquivo
-            </button>
-            <div className="border-t border-slate-100" />
-            <button
-              type="button"
-              onClick={() => {
-                setContextMenu(null);
-                handleStoreSelectionInClipboard('copy', [`file:${selectedContextFile.id}`]);
-              }}
-              className="w-full px-3 py-2.5 text-left text-sm text-slate-700 hover:bg-slate-50 transition flex items-center gap-2"
-            >
-              <Copy className="w-4 h-4 text-slate-500" />
-              Copiar
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                setContextMenu(null);
-                handleStoreSelectionInClipboard('cut', [`file:${selectedContextFile.id}`]);
-              }}
-              className="w-full px-3 py-2.5 text-left text-sm text-slate-700 hover:bg-slate-50 transition flex items-center gap-2"
-            >
-              <Scissors className="w-4 h-4 text-slate-500" />
-              Recortar
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                setContextMenu(null);
-                void handleDownloadFile(selectedContextFile);
-              }}
-              className="w-full px-3 py-2.5 text-left text-sm text-slate-700 hover:bg-slate-50 transition"
-            >
-              Baixar arquivo
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                setContextMenu(null);
-                void handleDuplicateFile(selectedContextFile);
-              }}
-              className="w-full px-3 py-2.5 text-left text-sm text-slate-700 hover:bg-slate-50 transition"
-            >
-              Criar cópia
-            </button>
-            <div className="border-t border-slate-100" />
-            <button
-              type="button"
-              onClick={() => {
-                setContextMenu(null);
-                handleDeleteFile(selectedContextFile);
-              }}
-              className="w-full px-3 py-2.5 text-left text-sm font-medium text-red-600 hover:bg-red-50 transition"
-            >
-              Excluir arquivo
-            </button>
-          </div>
-        </div>
-      )}
-
       {contextMenu && contextMenu.type === 'blank' && (
         <div
           className="fixed z-[140]"
@@ -6426,12 +6343,13 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
 
       {contextMenu && selectedContextFile && (
         <div
+          ref={contextMenuRef}
           className="fixed z-[140]"
           style={{ left: contextMenu.x, top: contextMenu.y }}
           onClick={(e) => e.stopPropagation()}
           onContextMenu={(e) => e.preventDefault()}
         >
-          <div className="w-64 rounded-xl border border-slate-200 bg-white shadow-xl overflow-hidden">
+          <div className="max-h-[70vh] w-64 overflow-y-auto rounded-xl border border-slate-200 bg-white shadow-xl">
             <button
               type="button"
               onClick={() => openFileFromContextMenu(selectedContextFile)}

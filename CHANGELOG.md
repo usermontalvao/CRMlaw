@@ -1,5 +1,20 @@
 # Changelog
   
+  ## 1.9.914
+- **Cloud**: Adicionado scroll ao menu de contexto de arquivos para permitir visualizar todas as opções quando o menu ultrapassar a altura da tela.
+
+  ## 1.9.913
+- **Cloud**: Corrigido o clique do menu de contexto de arquivos após a mudança para fechamento por `mousedown`, adicionando a referência do menu para impedir fechamento prematuro.
+
+  ## 1.9.912
+- **Cloud**: Corrigido o menu de contexto de arquivos que estava com cliques sem ação por renderizar um bloco duplicado sobre o menu principal.
+
+  ## 1.9.911
+- **Cloud**: A ação de fixar/desafixar arquivos e pastas agora mostra confirmação visual imediata, evitando a sensação de clique sem resposta.
+
+  ## 1.9.910
+- **Cloud**: Simplificada a exibição dos badges de pasta para evitar combinações confusas como `Pendente` e `Resolvido` ao mesmo tempo no card.
+
   ## 1.9.909
 - **Assinatura**: Corrigido o erro de build do TypeScript causado pelo uso de `selectedClientId` antes da declaração no carregamento do telefone do cliente.
 

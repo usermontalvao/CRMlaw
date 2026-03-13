@@ -47,6 +47,11 @@ import { matchesNormalizedSearch } from '../utils/search';
    ============================================================================ */
 
 const VERSION_CODENAMES: Record<string, { name: string; emoji: string }> = {
+  '1.9.914': { name: 'Café Menu Completo', emoji: '📜' },
+  '1.9.913': { name: 'Café Clique Liberado', emoji: '🧷' },
+  '1.9.912': { name: 'Café Menu Destravado', emoji: '🖱️' },
+  '1.9.911': { name: 'Café Clique Confirmado', emoji: '📌' },
+  '1.9.910': { name: 'Café Status Claro', emoji: '🏷️' },
   '1.9.909': { name: 'Café Ordem Corrigida', emoji: '🧱' },
   '1.9.908': { name: 'Café Navegação Livre', emoji: '🧭' },
   '1.9.907': { name: 'Café Header Compacto', emoji: '🧩' },
@@ -720,6 +725,91 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
 };
 
 const releases: ReleaseNote[] = [
+  {
+    version: '1.9.914',
+    date: '13/03/2026',
+    summary: 'Cloud: menu de contexto de arquivos passou a ter scroll para exibir todas as ações.',
+    modules: [
+      {
+        moduleId: 'cloud',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Scroll no menu de arquivo',
+            description: 'O menu de contexto de arquivos agora limita a altura na viewport e permite rolagem, garantindo acesso a todas as opções mesmo em telas menores.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.913',
+    date: '13/03/2026',
+    summary: 'Cloud: menu de contexto de arquivos voltou a aceitar clique após ajuste no fechamento global por mousedown.',
+    modules: [
+      {
+        moduleId: 'cloud',
+        changes: [
+          {
+            type: 'fix',
+            title: 'Clique dos itens do menu restaurado',
+            description: 'O menu de contexto de arquivos recebeu a referência usada pela rotina global de fechamento, evitando que o menu fosse encerrado antes da execução dos handlers ao clicar em Abrir, Baixar, Mover, Renomear e demais ações.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.912',
+    date: '13/03/2026',
+    summary: 'Cloud: menu de contexto de arquivos corrigido após conflito entre blocos duplicados.',
+    modules: [
+      {
+        moduleId: 'cloud',
+        changes: [
+          {
+            type: 'fix',
+            title: 'Menu de arquivo voltou a responder',
+            description: 'O bloco duplicado do menu de contexto de arquivos foi removido, restabelecendo o funcionamento dos itens como abrir, baixar, mover, renomear, copiar e excluir.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.911',
+    date: '13/03/2026',
+    summary: 'Cloud: ação de fixar arquivos e pastas passou a exibir confirmação visual imediata.',
+    modules: [
+      {
+        moduleId: 'cloud',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Feedback ao fixar/desafixar',
+            description: 'Os botões de pin no Cloud agora mostram confirmação ao fixar ou remover arquivos e pastas dos favoritos, evitando a impressão de que o clique não funcionou.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.910',
+    date: '13/03/2026',
+    summary: 'Cloud: badges de status das pastas simplificados para evitar conflito visual.',
+    modules: [
+      {
+        moduleId: 'cloud',
+        changes: [
+          {
+            type: 'fix',
+            title: 'Status da pasta sem contradição',
+            description: 'Os cards do Cloud deixaram de exibir simultaneamente etiquetas padrão que conflitam com o status real da pasta, como Pendente junto de Resolvido.',
+          },
+        ],
+      },
+    ],
+  },
   {
     version: '1.9.909',
     date: '13/03/2026',
