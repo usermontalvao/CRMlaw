@@ -44,6 +44,7 @@ import {
   RotateCw,
   Scissors,
   Search,
+  Phone,
   AlertCircle,
   BellRing,
   Share2,
@@ -768,6 +769,17 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
   }, [clients, selectedFile, selectedFolder]);
 
   const headerClient = useMemo(() => selectedClient ?? currentClient, [currentClient, selectedClient]);
+
+  const headerClientPhone = useMemo(
+    () => String(headerClient?.mobile || headerClient?.phone || '').trim(),
+    [headerClient],
+  );
+
+  const headerClientWhatsappLink = useMemo(() => {
+    const digits = headerClientPhone.replace(/\D/g, '');
+    if (!digits) return null;
+    return `https://wa.me/${digits.startsWith('55') ? digits : `55${digits}`}`;
+  }, [headerClientPhone]);
 
   useEffect(() => {
     cancelDetailsDrawerAutoOpen();
@@ -1558,6 +1570,10 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
     setNewLabelName('');
     setNewLabelColor('#f97316');
     setFolderModalOpen(true);
+  };
+
+  const handleOpenCreateFolder = () => {
+    openCreateFolderModal();
   };
 
   const handleCreateFolder = async () => {
@@ -4054,29 +4070,47 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
         </div>
       ) : null}
 
-      <div className="border-b border-slate-200 bg-gradient-to-b from-slate-50 to-slate-100/80 px-3 py-1 flex flex-col gap-1.5 xl:flex-row xl:items-center xl:justify-between">
-        <div className="flex items-center flex-wrap gap-1 text-sm text-slate-600 min-w-0 xl:flex-[0.9]">
+      <div className="border-b border-slate-200 bg-gradient-to-b from-slate-50 to-slate-100/80 px-3 py-1 flex flex-col gap-1.5 xl:flex-row xl:items-center xl:gap-3">
+        <div className="flex min-w-0 flex-1 items-center gap-1 text-sm text-slate-600 overflow-hidden">
           <button onClick={() => setCurrentFolderId(null)} className="inline-flex items-center gap-1 rounded-md px-2 py-0.5 hover:bg-white/70 hover:text-slate-900"><Home className="w-4 h-4" /></button>
           {breadcrumb.map((item) => (
             <React.Fragment key={item.id}>
               <ChevronRight className="w-4 h-4 text-slate-400" />
-              <button onClick={() => setCurrentFolderId(item.id)} className="rounded-md px-2 py-0.5 hover:bg-white/70 hover:text-slate-900 truncate max-w-[220px]">{item.name}</button>
+              <button onClick={() => setCurrentFolderId(item.id)} className="min-w-0 rounded-md px-2 py-0.5 hover:bg-white/70 hover:text-slate-900 truncate max-w-[320px]">{item.name}</button>
             </React.Fragment>
           ))}
         </div>
-        <div className="w-full xl:max-w-2xl xl:flex-[1.25] xl:px-1">
-          <div className="relative w-full flex items-center gap-2">
+        <div className="w-full xl:w-[420px] xl:shrink-0 xl:px-1">
+          <div className="relative flex w-full min-w-0 items-center gap-1.5">
             <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
             <input
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
               placeholder={hasGlobalSearch ? 'Buscar em todo o Cloud' : 'Pesquisar nesta pasta'}
-              className="w-full rounded-xl border border-slate-200 bg-white text-sm text-slate-900 placeholder:text-slate-400 pl-9 pr-3 py-1.5 shadow-sm focus:outline-none focus:border-orange-400 focus:ring-2 focus:ring-orange-100"
+              className="min-w-0 flex-1 rounded-xl border border-slate-200 bg-white text-sm text-slate-900 placeholder:text-slate-400 pl-9 pr-3 py-1.5 shadow-sm focus:outline-none focus:border-orange-400 focus:ring-2 focus:ring-orange-100"
             />
-            <span className="whitespace-nowrap rounded-full border border-slate-200 bg-white px-2.5 py-1 text-xs text-slate-500">{headerClient?.full_name || 'Sem cliente'}</span>
+            <div className="flex max-w-[170px] shrink-0 items-center gap-1">
+              <span className="max-w-[88px] truncate whitespace-nowrap rounded-full border border-slate-200 bg-white px-2 py-1 text-[10px] text-slate-500">{headerClient?.full_name || 'Sem cliente'}</span>
+              {headerClientPhone ? (
+                <span className="inline-flex max-w-[108px] items-center gap-1 whitespace-nowrap rounded-full border border-emerald-200 bg-emerald-50 px-1.5 py-1 text-[10px] text-emerald-700">
+                  <Phone className="h-3 w-3 shrink-0" />
+                  <span className="truncate">{headerClientPhone}</span>
+                  {headerClientWhatsappLink ? (
+                    <a
+                      href={headerClientWhatsappLink}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="inline-flex shrink-0 items-center rounded-full bg-emerald-600 px-1 py-0.5 text-[8px] font-semibold text-white hover:bg-emerald-700 transition"
+                    >
+                      WA.me
+                    </a>
+                  ) : null}
+                </span>
+              ) : null}
+            </div>
           </div>
         </div>
-        <div className="flex items-center gap-2 text-xs text-slate-500 flex-wrap xl:justify-end xl:flex-[0.9]">
+        <div className="flex items-center gap-2 text-xs text-slate-500 flex-wrap xl:justify-end xl:shrink-0">
           {uploading ? <Loader2 className="w-4 h-4 text-orange-600 animate-spin" /> : null}
           {uploadQueueSummary.totalItems > 0 ? (
             <span className="rounded-full border border-orange-200 bg-orange-50 px-2 py-0.5 text-orange-700">

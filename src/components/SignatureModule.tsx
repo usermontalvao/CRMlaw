@@ -5,7 +5,7 @@ import { renderAsync } from 'docx-preview';
 import {
   FileText, Upload, Plus, Trash2, X, Check, Clock, CheckCircle, Send, Copy,
   User, Mail, Loader2, ChevronLeft, Eye, EyeOff, Filter, Search, MousePointer2,
-  Type, Hash, Calendar, PenTool, Users, Download, AlertTriangle, ExternalLink, ChevronRight, ZoomIn, ZoomOut, Shield, Lightbulb, Pencil, Maximize2, Minimize2, LayoutList, LayoutGrid, Globe, FolderOpen,
+  Type, Hash, Calendar, PenTool, Users, Download, AlertTriangle, ExternalLink, ChevronRight, ZoomIn, ZoomOut, Shield, Lightbulb, Pencil, Maximize2, Minimize2, LayoutList, LayoutGrid, Globe, FolderOpen, Phone,
   ArrowUpDown, FileSignature,
 } from 'lucide-react';
 import { useToastContext } from '../contexts/ToastContext';
@@ -23,6 +23,7 @@ import { settingsService } from '../services/settings.service';
 import { useDeleteConfirm } from '../contexts/DeleteConfirmContext';
 import { userNotificationService } from '../services/userNotification.service';
 import { signatureExplorerService } from '../services/signatureExplorer.service';
+import { clientService } from '../services/client.service';
 import { useSilentRefresh } from '../hooks/useSilentRefresh';
 import { useSelectionState } from '../hooks/useSelectionState';
 import FacialCapture from './FacialCapture';
@@ -36,6 +37,7 @@ import type { GeneratedDocument } from '../types/document.types';
 import type { CloudFile, CloudFolder } from '../types/cloud.types';
 import type { SignatureExplorerFolder, SignatureExplorerItem } from '../types/signatureExplorer.types';
 import type { ProcessPracticeArea } from '../types/process.types';
+import type { Client } from '../types/client.types';
 
 pdfjs.GlobalWorkerOptions.workerSrc = `//unpkg.com/pdfjs-dist@${pdfjs.version}/build/pdf.worker.min.mjs`;
 
@@ -129,6 +131,17 @@ const getCounterpartyFolderName = (request: SignatureRequestWithSigners) => {
   return counterparties.join(' + ');
 };
 
+const getPrimaryClientPhone = (client?: Pick<Client, 'phone' | 'mobile'> | null) => String(client?.mobile || client?.phone || '').trim();
+
+const normalizePhoneDigits = (value?: string | null) => String(value || '').replace(/\D/g, '');
+
+const getWhatsappLink = (phone?: string | null) => {
+  const digits = normalizePhoneDigits(phone);
+  if (!digits) return null;
+  const internationalDigits = digits.startsWith('55') ? digits : `55${digits}`;
+  return `https://wa.me/${internationalDigits}`;
+};
+
 interface SignatureModulePrefillData {
   documentPath: string;
   documentName: string;
@@ -158,6 +171,33 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
   useEffect(() => {
     toastRef.current = toast;
   }, [toast]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const loadSelectedClientPhone = async () => {
+      if (!selectedClientId) {
+        setSelectedClientPhone(null);
+        return;
+      }
+
+      try {
+        const client = await clientService.getClientById(selectedClientId);
+        if (cancelled) return;
+        setSelectedClientPhone(getPrimaryClientPhone(client));
+      } catch {
+        if (!cancelled) {
+          setSelectedClientPhone(null);
+        }
+      }
+    };
+
+    void loadSelectedClientPhone();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedClientId]);
 
   const [showPublicAuthSettings, setShowPublicAuthSettings] = useState(false);
   const [publicAuthLoading, setPublicAuthLoading] = useState(false);
@@ -275,6 +315,7 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
 
   const [selectedClientId, setSelectedClientId] = useState<string | null>(null);
   const [selectedClientName, setSelectedClientName] = useState<string | null>(null);
+  const [selectedClientPhone, setSelectedClientPhone] = useState<string | null>(null);
   const [uploadedFile, setUploadedFile] = useState<File | null>(null);
   const [uploadedFiles, setUploadedFiles] = useState<File[]>([]); // Múltiplos arquivos (envelope)
   const [dragOver, setDragOver] = useState(false);
@@ -3227,6 +3268,30 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
             <div className="mb-6">
               <h1 className="text-xl font-semibold text-slate-900">Nova solicitação de assinatura</h1>
               <p className="text-sm text-slate-500 mt-1">Selecione o documento e adicione os signatários</p>
+              {selectedClientName ? (
+                <div className="mt-3 flex flex-wrap items-center gap-2">
+                  <span className="inline-flex items-center rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-sm font-medium text-slate-700">
+                    {selectedClientName}
+                  </span>
+                  {selectedClientPhone ? (
+                    <span className="inline-flex items-center gap-2 rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-sm text-emerald-700">
+                      <Phone className="h-3.5 w-3.5" />
+                      <span>{selectedClientPhone}</span>
+                      {getWhatsappLink(selectedClientPhone) ? (
+                        <a
+                          href={getWhatsappLink(selectedClientPhone) || '#'}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="inline-flex items-center rounded-full bg-emerald-600 px-2 py-0.5 text-[11px] font-semibold text-white hover:bg-emerald-700 transition"
+                          onClick={(event) => event.stopPropagation()}
+                        >
+                          WA.me
+                        </a>
+                      ) : null}
+                    </span>
+                  ) : null}
+                </div>
+              ) : null}
             </div>
             
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-start">

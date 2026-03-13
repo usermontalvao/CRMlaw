@@ -1,5 +1,23 @@
 # Changelog
   
+  ## 1.9.908
+- **Cloud**: O cabeçalho agora prioriza mais espaço para a navegação da pasta, evitando corte prematuro do breadcrumb quando ainda há área livre.
+
+  ## 1.9.907
+- **Cloud**: Ajustado o layout do cabeçalho para exibir nome, telefone e `WA.me` do cliente sem quebrar a barra superior.
+
+  ## 1.9.906
+- **Cloud**: Corrigido o erro em tempo de execução no cabeçalho da pasta após adicionar o telefone do cliente, com a importação do ícone `Phone` que estava ausente.
+
+  ## 1.9.905
+- **Cloud**: O cabeçalho da pasta agora exibe o telefone do cliente com atalho `WA.me` ao lado do nome no topo.
+
+  ## 1.9.904
+- **Cloud**: Corrigida a referência ausente de `handleOpenCreateFolder`, restaurando a ação de `Nova pasta` e eliminando a falha de build no deploy.
+
+  ## 1.9.903
+- **Assinatura**: O cliente selecionado agora exibe o telefone com atalho `WA.me` para abrir o WhatsApp diretamente no fluxo de assinatura.
+
   ## 1.9.902
 - **Cloud**: O download de pasta agora exibe uma tela de carregamento visível com a mensagem `Aguarde... estamos montando a pasta...` enquanto o ZIP é preparado.
 

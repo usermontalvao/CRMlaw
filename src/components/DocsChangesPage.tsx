@@ -47,6 +47,12 @@ import { matchesNormalizedSearch } from '../utils/search';
    ============================================================================ */
 
 const VERSION_CODENAMES: Record<string, { name: string; emoji: string }> = {
+  '1.9.908': { name: 'Café Navegação Livre', emoji: '🧭' },
+  '1.9.907': { name: 'Café Header Compacto', emoji: '🧩' },
+  '1.9.906': { name: 'Café Ícone Restaurado', emoji: '🩹' },
+  '1.9.905': { name: 'Café Telefone no Cloud', emoji: '📞' },
+  '1.9.904': { name: 'Café Cloud Reaberto', emoji: '🛠️' },
+  '1.9.903': { name: 'Café Whats do Cliente', emoji: '📱' },
   '1.9.902': { name: 'Café Pasta em Tela', emoji: '⏳' },
   '1.9.901': { name: 'Café Pasta em Montagem', emoji: '📦' },
   '1.9.900': { name: 'Café Sirene em Alerta', emoji: '🚨' },
@@ -713,6 +719,108 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
 };
 
 const releases: ReleaseNote[] = [
+  {
+    version: '1.9.908',
+    date: '13/03/2026',
+    summary: 'Cloud: breadcrumb do topo ajustado para usar melhor o espaço disponível.',
+    modules: [
+      {
+        moduleId: 'cloud',
+        changes: [
+          {
+            type: 'fix',
+            title: 'Mais espaço para a navegação',
+            description: 'A barra superior do Cloud foi redistribuída para dar prioridade ao breadcrumb da pasta e reduzir o truncamento desnecessário mesmo quando ainda há espaço livre.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.907',
+    date: '13/03/2026',
+    summary: 'Cloud: layout do topo ajustado para acomodar telefone do cliente sem quebrar a barra.',
+    modules: [
+      {
+        moduleId: 'cloud',
+        changes: [
+          {
+            type: 'fix',
+            title: 'Header com telefone compactado',
+            description: 'O cabeçalho do Cloud foi reorganizado para manter busca, nome do cliente, telefone e WA.me alinhados sem deformar a barra superior.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.906',
+    date: '13/03/2026',
+    summary: 'Cloud: corrigido o crash do cabeçalho após a inclusão do telefone do cliente.',
+    modules: [
+      {
+        moduleId: 'cloud',
+        changes: [
+          {
+            type: 'fix',
+            title: 'Import do ícone Phone ajustado',
+            description: 'O Cloud voltou a renderizar normalmente após a correção da importação do ícone Phone usado no cabeçalho com telefone e atalho WA.me.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.905',
+    date: '13/03/2026',
+    summary: 'Cloud: o topo da pasta agora mostra telefone do cliente com atalho para WhatsApp.',
+    modules: [
+      {
+        moduleId: 'cloud',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Telefone do cliente no cabeçalho',
+            description: 'O chip do cliente no topo do Cloud agora exibe também o telefone principal com um atalho WA.me para abrir o WhatsApp diretamente.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.904',
+    date: '13/03/2026',
+    summary: 'Cloud: corrigida a falha de build causada pela ação Nova pasta.',
+    modules: [
+      {
+        moduleId: 'cloud',
+        changes: [
+          {
+            type: 'fix',
+            title: 'Ação Nova pasta restaurada',
+            description: 'A referência ausente de handleOpenCreateFolder foi corrigida no Cloud, restaurando a abertura do modal de criação de pasta e evitando falha de build no deploy.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.903',
+    date: '13/03/2026',
+    summary: 'Assinatura: o cliente selecionado agora mostra telefone e atalho para WhatsApp.',
+    modules: [
+      {
+        moduleId: 'signature',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Telefone do cliente com WA.me',
+            description: 'No fluxo de assinatura, o cliente vinculado ao documento agora exibe o telefone principal com um atalho direto para abrir conversa no WhatsApp via wa.me.',
+          },
+        ],
+      },
+    ],
+  },
   {
     version: '1.9.902',
     date: '13/03/2026',
