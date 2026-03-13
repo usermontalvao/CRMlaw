@@ -47,6 +47,7 @@ import { matchesNormalizedSearch } from '../utils/search';
    ============================================================================ */
 
 const VERSION_CODENAMES: Record<string, { name: string; emoji: string }> = {
+  '1.9.909': { name: 'Café Ordem Corrigida', emoji: '🧱' },
   '1.9.908': { name: 'Café Navegação Livre', emoji: '🧭' },
   '1.9.907': { name: 'Café Header Compacto', emoji: '🧩' },
   '1.9.906': { name: 'Café Ícone Restaurado', emoji: '🩹' },
@@ -719,6 +720,23 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
 };
 
 const releases: ReleaseNote[] = [
+  {
+    version: '1.9.909',
+    date: '13/03/2026',
+    summary: 'Assinatura: corrigido o erro de build por ordem de declaração do estado do cliente.',
+    modules: [
+      {
+        moduleId: 'signature',
+        changes: [
+          {
+            type: 'fix',
+            title: 'selectedClientId usado na ordem correta',
+            description: 'O carregamento do telefone do cliente no módulo Assinatura foi reposicionado para depois da declaração do estado, eliminando o erro de build do TypeScript.',
+          },
+        ],
+      },
+    ],
+  },
   {
     version: '1.9.908',
     date: '13/03/2026',

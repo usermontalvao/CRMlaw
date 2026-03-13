@@ -1,5 +1,8 @@
 # Changelog
   
+  ## 1.9.909
+- **Assinatura**: Corrigido o erro de build do TypeScript causado pelo uso de `selectedClientId` antes da declaração no carregamento do telefone do cliente.
+
   ## 1.9.908
 - **Cloud**: O cabeçalho agora prioriza mais espaço para a navegação da pasta, evitando corte prematuro do breadcrumb quando ainda há área livre.
 

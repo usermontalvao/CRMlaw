@@ -172,33 +172,6 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
     toastRef.current = toast;
   }, [toast]);
 
-  useEffect(() => {
-    let cancelled = false;
-
-    const loadSelectedClientPhone = async () => {
-      if (!selectedClientId) {
-        setSelectedClientPhone(null);
-        return;
-      }
-
-      try {
-        const client = await clientService.getClientById(selectedClientId);
-        if (cancelled) return;
-        setSelectedClientPhone(getPrimaryClientPhone(client));
-      } catch {
-        if (!cancelled) {
-          setSelectedClientPhone(null);
-        }
-      }
-    };
-
-    void loadSelectedClientPhone();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [selectedClientId]);
-
   const [showPublicAuthSettings, setShowPublicAuthSettings] = useState(false);
   const [publicAuthLoading, setPublicAuthLoading] = useState(false);
   const [publicAuthSaving, setPublicAuthSaving] = useState(false);
@@ -320,6 +293,33 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
   const [uploadedFiles, setUploadedFiles] = useState<File[]>([]); // Múltiplos arquivos (envelope)
   const [dragOver, setDragOver] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const loadSelectedClientPhone = async () => {
+      if (!selectedClientId) {
+        setSelectedClientPhone(null);
+        return;
+      }
+
+      try {
+        const client = await clientService.getClientById(selectedClientId);
+        if (cancelled) return;
+        setSelectedClientPhone(getPrimaryClientPhone(client));
+      } catch {
+        if (!cancelled) {
+          setSelectedClientPhone(null);
+        }
+      }
+    };
+
+    void loadSelectedClientPhone();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedClientId]);
 
   const [signers, setSigners] = useState<DraftSigner[]>([
     { id: crypto.randomUUID(), name: '', email: '', cpf: '', role: 'Assinar', order: 1, deliveryMethod: 'email' },
