@@ -5,6 +5,10 @@ export interface CloudFolder {
   client_id?: string | null;
   archived_at?: string | null;
   delete_scheduled_for?: string | null;
+  has_pending_issue?: boolean;
+  alert_level?: 'pendencia' | 'alerta' | null;
+  pending_reason?: string | null;
+  resolved_at?: string | null;
   created_by?: string | null;
   updated_by?: string | null;
   created_at: string;
@@ -15,6 +19,10 @@ export interface CreateCloudFolderDTO {
   name: string;
   parent_id?: string | null;
   client_id?: string | null;
+  has_pending_issue?: boolean;
+  alert_level?: 'pendencia' | 'alerta' | null;
+  pending_reason?: string | null;
+  resolved_at?: string | null;
 }
 
 export interface UpdateCloudFolderDTO {
@@ -23,6 +31,10 @@ export interface UpdateCloudFolderDTO {
   client_id?: string | null;
   archived_at?: string | null;
   delete_scheduled_for?: string | null;
+  has_pending_issue?: boolean;
+  alert_level?: 'pendencia' | 'alerta' | null;
+  pending_reason?: string | null;
+  resolved_at?: string | null;
 }
 
 export interface CloudFile {

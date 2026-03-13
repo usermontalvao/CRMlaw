@@ -1,5 +1,32 @@
 # Changelog
   
+  ## 1.9.902
+- **Cloud**: O download de pasta agora exibe uma tela de carregamento visível com a mensagem `Aguarde... estamos montando a pasta...` enquanto o ZIP é preparado.
+
+  ## 1.9.901
+- **Cloud**: Ao usar `Baixar pasta`, o sistema agora exibe a animação com a mensagem `Aguarde... montando pasta...` enquanto prepara o download do ZIP.
+
+  ## 1.9.900
+- **Cloud**: Pastas marcadas como `alerta` agora exibem uma sirene animada no badge para destacar visualmente o estado crítico.
+
+  ## 1.9.899
+- **Cloud**: O texto do `motivo` de `alerta`/`pendência` nos cards de pasta agora é exibido em vermelho para reforçar o destaque visual.
+
+  ## 1.9.898
+- **Cloud**: Os cards de pasta agora exibem também o `motivo` registrado para `alerta` ou `pendência`, facilitando a visualização sem abrir os detalhes.
+
+  ## 1.9.897
+- **Cloud**: O menu contextual da pasta agora possui rolagem própria para exibir todas as opções, o modal rápido de `alerta`/`pendência` foi ajustado para o visual claro do Cloud e o badge de alerta/pendência passou a aparecer também nos cards de pasta.
+
+  ## 1.9.896
+- **Cloud**: `Marcar alerta` e `Marcar pendência` agora abrem um modal obrigatório para informar o motivo antes de salvar, e o menu contextual da pasta passou a fechar apenas por clique fora.
+
+  ## 1.9.895
+- **Cloud**: O menu contextual das pastas não fecha mais automaticamente ao fazer scroll e agora também permite marcar `pendência`, `alerta` e `resolvido` diretamente pelo menu.
+
+  ## 1.9.894
+- **Cloud**: Pastas agora aceitam `pendência` ou `alerta`, com registro de motivo e ação para marcar como resolvido diretamente no painel de detalhes.
+
   ## 1.9.893
 - **Cloud**: Removido o cabeçalho duplicado do player de vídeo, mantendo apenas o título principal do modal para evitar repetição visual.
 

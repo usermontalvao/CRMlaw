@@ -47,6 +47,15 @@ import { matchesNormalizedSearch } from '../utils/search';
    ============================================================================ */
 
 const VERSION_CODENAMES: Record<string, { name: string; emoji: string }> = {
+  '1.9.902': { name: 'Café Pasta em Tela', emoji: '⏳' },
+  '1.9.901': { name: 'Café Pasta em Montagem', emoji: '📦' },
+  '1.9.900': { name: 'Café Sirene em Alerta', emoji: '🚨' },
+  '1.9.899': { name: 'Café Motivo em Destaque', emoji: '🔴' },
+  '1.9.898': { name: 'Café Motivo no Card', emoji: '🗒️' },
+  '1.9.897': { name: 'Café Alerta Visível', emoji: '🏷️' },
+  '1.9.896': { name: 'Café Motivo Obrigatório', emoji: '📝' },
+  '1.9.895': { name: 'Café Menu Persistente', emoji: '📌' },
+  '1.9.894': { name: 'Café Pasta em Alerta', emoji: '🚨' },
   '1.9.893': { name: 'Café Vídeo Sem Repetição', emoji: '🧽' },
   '1.9.892': { name: 'Café Vídeo Limpo', emoji: '🖥️' },
   '1.9.891': { name: 'Café Vídeo Jurius', emoji: '🎬' },
@@ -704,6 +713,159 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
 };
 
 const releases: ReleaseNote[] = [
+  {
+    version: '1.9.902',
+    date: '13/03/2026',
+    summary: 'Cloud: baixar pasta agora mostra uma tela de carregamento visível durante a montagem do ZIP.',
+    modules: [
+      {
+        moduleId: 'cloud',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Tela de espera no download da pasta',
+            description: 'Ao baixar uma pasta no Cloud, o sistema agora abre uma camada visual central com a mensagem Aguarde... estamos montando a pasta..., tornando o processamento perceptível até o início do download.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.901',
+    date: '13/03/2026',
+    summary: 'Cloud: o download de pasta agora mostra a mensagem Aguarde... montando pasta... durante a preparação do ZIP.',
+    modules: [
+      {
+        moduleId: 'cloud',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Feedback visual ao baixar pasta',
+            description: 'Enquanto o Cloud monta o arquivo ZIP para baixar uma pasta, o botão e o menu contextual passam a exibir a mensagem Aguarde... montando pasta..., deixando o processo mais claro para o usuário.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.900',
+    date: '13/03/2026',
+    summary: 'Cloud: badges de alerta das pastas agora exibem uma sirene animada.',
+    modules: [
+      {
+        moduleId: 'cloud',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Sirene animada no alerta',
+            description: 'Quando uma pasta estiver marcada como alerta no Cloud, o badge agora mostra uma sirene animada para reforçar a urgência visualmente na listagem e nos detalhes.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.899',
+    date: '13/03/2026',
+    summary: 'Cloud: o motivo de alerta ou pendência nos cards de pasta ganhou destaque em vermelho.',
+    modules: [
+      {
+        moduleId: 'cloud',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Motivo com destaque visual maior',
+            description: 'O texto do motivo exibido nos cards de pasta do Cloud agora aparece em vermelho, deixando alertas e pendências mais perceptíveis na listagem.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.898',
+    date: '13/03/2026',
+    summary: 'Cloud: o card da pasta agora mostra o motivo registrado no alerta ou na pendência.',
+    modules: [
+      {
+        moduleId: 'cloud',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Motivo visível no card da pasta',
+            description: 'Além do badge de alerta ou pendência, os cards de pasta do Cloud agora exibem o motivo registrado, facilitando a leitura rápida sem precisar abrir os detalhes da pasta.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.897',
+    date: '13/03/2026',
+    summary: 'Cloud: menu de pasta com rolagem, modal rápido claro e badge visível de alerta/pendência nos cards.',
+    modules: [
+      {
+        moduleId: 'cloud',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Ações rápidas de pasta mais visíveis',
+            description: 'O menu contextual das pastas agora pode ser rolado para mostrar todas as opções, o modal rápido de pendência/alerta foi alinhado ao tema claro do Cloud e os cards de pasta passaram a exibir o badge de alerta ou pendência após o salvamento.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.896',
+    date: '13/03/2026',
+    summary: 'Cloud: ações rápidas de alerta e pendência agora exigem motivo no modal, com fechamento do menu apenas por clique fora.',
+    modules: [
+      {
+        moduleId: 'cloud',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Motivo obrigatório nas ações rápidas de pasta',
+            description: 'Ao marcar alerta ou pendência pelo menu contextual do Cloud, o sistema abre um modal para registrar o motivo antes de salvar. O menu também passou a usar fechamento por clique fora, evitando sumiços indevidos durante a navegação.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.895',
+    date: '13/03/2026',
+    summary: 'Cloud: o menu contextual das pastas ficou persistente no scroll e ganhou ações rápidas de pendência, alerta e resolução.',
+    modules: [
+      {
+        moduleId: 'cloud',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Menu contextual de pasta mais útil',
+            description: 'O menu contextual do Cloud agora permanece aberto durante o scroll e passou a oferecer ações rápidas para marcar pastas como pendência, alerta ou resolvido.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.894',
+    date: '13/03/2026',
+    summary: 'Cloud: pastas agora podem ser marcadas com pendência ou alerta, com motivo e resolução.',
+    modules: [
+      {
+        moduleId: 'cloud',
+        changes: [
+          {
+            type: 'feature',
+            title: 'Pendência e alerta nas pastas',
+            description: 'O Cloud passou a permitir marcar pastas com status de pendência ou alerta, registrar o motivo e marcar a situação como resolvida diretamente pelo painel lateral.',
+          },
+        ],
+      },
+    ],
+  },
   {
     version: '1.9.893',
     date: '13/03/2026',

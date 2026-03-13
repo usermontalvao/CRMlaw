@@ -45,6 +45,7 @@ import {
   Scissors,
   Search,
   AlertCircle,
+  BellRing,
   Share2,
   Tag,
   Trash2,
@@ -187,6 +188,31 @@ const formatArchiveDeletionLabel = (value?: string | null) => {
   const diffMs = targetDate.getTime() - Date.now();
   const diffDays = Math.max(0, Math.ceil(diffMs / (1000 * 60 * 60 * 24)));
   return `${formatDateTime(value)} (${diffDays} dia(s))`;
+};
+
+const getFolderIssueBadgeClass = (folder: CloudFolder) => {
+  if (!folder.has_pending_issue) return 'border-emerald-200 bg-emerald-50 text-emerald-700';
+  if (folder.alert_level === 'alerta') return 'border-red-200 bg-red-50 text-red-700';
+  return 'border-amber-200 bg-amber-50 text-amber-700';
+};
+
+const getFolderIssueLabel = (folder: CloudFolder) => {
+  if (!folder.has_pending_issue) return 'Resolvido';
+  if (folder.alert_level === 'alerta') return 'Alerta';
+  return 'Pendência';
+};
+
+const renderFolderIssueBadgeContent = (folder: CloudFolder) => {
+  if (folder.alert_level === 'alerta' && folder.has_pending_issue) {
+    return (
+      <>
+        <BellRing className="h-3.5 w-3.5 animate-pulse" />
+        <span>Alerta</span>
+      </>
+    );
+  }
+
+  return <span>{getFolderIssueLabel(folder)}</span>;
 };
 
 const getFileTypeLabel = (file: CloudFile) => {
@@ -364,6 +390,7 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
   const cloudCenterDropRef = useRef<HTMLElement | null>(null);
   const explorerViewportRef = useRef<HTMLDivElement | null>(null);
   const itemElementMapRef = useRef<Record<string, HTMLDivElement | null>>({});
+  const contextMenuRef = useRef<HTMLDivElement | null>(null);
   const [clients, setClients] = useState<Client[]>([]);
   const [allFolders, setAllFolders] = useState<CloudFolder[]>([]);
   const [allFiles, setAllFiles] = useState<CloudFile[]>([]);
@@ -377,6 +404,13 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
   const [folderModalOpen, setFolderModalOpen] = useState(false);
   const [folderName, setFolderName] = useState('');
   const [folderClientId, setFolderClientId] = useState('');
+  const [folderIssueEnabled, setFolderIssueEnabled] = useState(false);
+  const [folderIssueLevel, setFolderIssueLevel] = useState<'pendencia' | 'alerta'>('pendencia');
+  const [folderIssueReason, setFolderIssueReason] = useState('');
+  const [folderIssueQuickModalOpen, setFolderIssueQuickModalOpen] = useState(false);
+  const [folderIssueQuickTarget, setFolderIssueQuickTarget] = useState<CloudFolder | null>(null);
+  const [folderIssueQuickLevel, setFolderIssueQuickLevel] = useState<'pendencia' | 'alerta'>('pendencia');
+  const [folderIssueQuickReason, setFolderIssueQuickReason] = useState('');
   const [moveModalOpen, setMoveModalOpen] = useState(false);
   const [selectedFileToMove, setSelectedFileToMove] = useState<CloudFile | null>(null);
   const [targetFolderId, setTargetFolderId] = useState('');
@@ -742,6 +776,19 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
     }
   }, [cancelDetailsDrawerAutoOpen, selectedFile, selectedFolder]);
 
+  useEffect(() => {
+    if (!selectedFolder) {
+      setFolderIssueEnabled(false);
+      setFolderIssueLevel('pendencia');
+      setFolderIssueReason('');
+      return;
+    }
+
+    setFolderIssueEnabled(Boolean(selectedFolder.has_pending_issue));
+    setFolderIssueLevel(selectedFolder.alert_level === 'alerta' ? 'alerta' : 'pendencia');
+    setFolderIssueReason(selectedFolder.pending_reason || '');
+  }, [selectedFolder]);
+
   const uploadQueueSummary = useMemo(() => {
     const totalItems = uploadQueueItems.length;
     const completedItems = uploadQueueItems.filter((item) => item.status === 'completed').length;
@@ -1095,12 +1142,16 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
   }, [currentFolderId]);
 
   useEffect(() => {
-    const closeMenu = () => setContextMenu(null);
-    window.addEventListener('click', closeMenu);
-    window.addEventListener('scroll', closeMenu, true);
+    const closeMenuOnPointerDown = (event: MouseEvent) => {
+      const target = event.target;
+      if (!(target instanceof Node)) return;
+      if (contextMenuRef.current?.contains(target)) return;
+      setContextMenu(null);
+    };
+
+    window.addEventListener('mousedown', closeMenuOnPointerDown);
     return () => {
-      window.removeEventListener('click', closeMenu);
-      window.removeEventListener('scroll', closeMenu, true);
+      window.removeEventListener('mousedown', closeMenuOnPointerDown);
     };
   }, []);
 
@@ -1165,6 +1216,9 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
       if (detail.action === 'create-folder') {
         setFolderName('');
         setFolderClientId(currentFolder?.client_id || '');
+        setFolderIssueEnabled(false);
+        setFolderIssueLevel('pendencia');
+        setFolderIssueReason('');
         setSelectedFolderLabelId('pendente');
         setNewLabelName('');
         setNewLabelColor('#f97316');
@@ -1494,9 +1548,12 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
     return walk(null);
   }, [folderChildrenMap, selectedFileToMove]);
 
-  const handleOpenCreateFolder = () => {
+  const openCreateFolderModal = () => {
     setFolderName('');
     setFolderClientId(currentFolder?.client_id || '');
+    setFolderIssueEnabled(false);
+    setFolderIssueLevel('pendencia');
+    setFolderIssueReason('');
     setSelectedFolderLabelId('pendente');
     setNewLabelName('');
     setNewLabelColor('#f97316');
@@ -1510,6 +1567,10 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
         name: folderName.trim(),
         parent_id: currentFolderId,
         client_id: folderClientId || null,
+        has_pending_issue: folderIssueEnabled,
+        alert_level: folderIssueEnabled ? folderIssueLevel : null,
+        pending_reason: folderIssueEnabled ? folderIssueReason.trim() || null : null,
+        resolved_at: folderIssueEnabled ? null : new Date().toISOString(),
       });
       const refreshedFolders = await cloudService.listAllFolders();
       const createdFolder = refreshedFolders.find((item) => item.name === folderName.trim() && item.parent_id === currentFolderId) ?? null;
@@ -1522,6 +1583,68 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
     } catch (error: any) {
       toast.error('Cloud', error.message || 'Erro ao criar pasta.');
     }
+  };
+
+  const handleUpdateFolderIssue = async (folder: CloudFolder, payload: {
+    has_pending_issue: boolean;
+    alert_level: 'pendencia' | 'alerta' | null;
+    pending_reason: string | null;
+    resolved_at: string | null;
+  }) => {
+    try {
+      await cloudService.updateFolder(folder.id, payload);
+      toast.success('Cloud', payload.has_pending_issue ? 'Status da pasta atualizado.' : 'Pasta marcada como resolvida.');
+      await loadData();
+    } catch (error: any) {
+      toast.error('Cloud', error.message || 'Erro ao atualizar status da pasta.');
+    }
+  };
+
+  const handleMarkFolderAsResolved = async (folder: CloudFolder) => {
+    await handleUpdateFolderIssue(folder, {
+      has_pending_issue: false,
+      alert_level: null,
+      pending_reason: null,
+      resolved_at: new Date().toISOString(),
+    });
+  };
+
+  const handleSubmitFolderIssue = async (folder: CloudFolder) => {
+    await handleUpdateFolderIssue(folder, {
+      has_pending_issue: folderIssueEnabled,
+      alert_level: folderIssueEnabled ? folderIssueLevel : null,
+      pending_reason: folderIssueEnabled ? folderIssueReason.trim() || null : null,
+      resolved_at: folderIssueEnabled ? null : new Date().toISOString(),
+    });
+  };
+
+  const handleOpenFolderIssueQuickModal = (folder: CloudFolder, level: 'pendencia' | 'alerta') => {
+    setFolderIssueQuickTarget(folder);
+    setFolderIssueQuickLevel(level);
+    setFolderIssueQuickReason(folder.pending_reason || '');
+    setFolderIssueQuickModalOpen(true);
+    setContextMenu(null);
+  };
+
+  const handleSubmitFolderIssueQuickModal = async () => {
+    if (!folderIssueQuickTarget) return;
+    const trimmedReason = folderIssueQuickReason.trim();
+    if (!trimmedReason) {
+      toast.error('Cloud', 'Informe o motivo antes de salvar a pendência ou alerta.');
+      return;
+    }
+
+    await handleUpdateFolderIssue(folderIssueQuickTarget, {
+      has_pending_issue: true,
+      alert_level: folderIssueQuickLevel,
+      pending_reason: trimmedReason,
+      resolved_at: null,
+    });
+
+    setFolderIssueQuickModalOpen(false);
+    setFolderIssueQuickTarget(null);
+    setFolderIssueQuickReason('');
+    setFolderIssueQuickLevel('pendencia');
   };
 
   const handleConvertWordToPdf = useCallback(async (file: CloudFile) => {
@@ -3573,6 +3696,7 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
   };
 
   const handleDownloadFolder = async (folder: CloudFolder) => {
+    setDownloadingFolderId(folder.id);
     try {
       const entries = await collectFolderFiles(folder.id);
       if (entries.length === 0) {
@@ -3602,6 +3726,8 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
       toast.success('Cloud', 'Download da pasta iniciado.');
     } catch (error: any) {
       toast.error('Cloud', error.message || 'Erro ao baixar pasta.');
+    } finally {
+      setDownloadingFolderId(null);
     }
   };
 
@@ -4337,6 +4463,8 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
                     const itemKey = `folder:${folder.id}`;
                     const isSelected = selectedItemKeys.includes(itemKey);
                     const folderLabel = getFolderLabel(folder.id);
+                    const folderIssueClass = getFolderIssueBadgeClass(folder);
+                    const folderIssueReason = folder.pending_reason?.trim() || '';
                     const isDropTarget = dropTargetFolderId === folder.id;
                     const hasClientLink = Boolean(folder.client_id);
                     const showClientLinkBadge = !folder.parent_id;
@@ -4392,7 +4520,7 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
                       >
                         <div className="flex items-center gap-3 min-w-0">
                           <Folder className="w-4 h-4 text-amber-500 flex-shrink-0" />
-                          <div className="min-w-0 flex items-center gap-2">
+                          <div className="min-w-0 flex-1">
                             {inlineRenameTarget?.type === 'folder' && inlineRenameTarget.id === folder.id ? (
                               <input
                                 value={inlineRenameValue}
@@ -4415,27 +4543,39 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
                             ) : (
                               <span className="truncate text-slate-900">{folder.name}</span>
                             )}
-                            {showClientLinkBadge ? (
-                              <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] font-medium ${hasClientLink ? 'border-emerald-200 bg-emerald-50 text-emerald-700' : 'border-slate-200 bg-slate-100 text-slate-500'}`}>
-                                {hasClientLink ? 'Vinculada' : 'Sem vínculo'}
+                            <div className="mt-1 flex flex-wrap items-center gap-2">
+                              {showClientLinkBadge ? (
+                                <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] font-medium ${hasClientLink ? 'border-emerald-200 bg-emerald-50 text-emerald-700' : 'border-slate-200 bg-slate-100 text-slate-500'}`}>
+                                  {hasClientLink ? 'Vinculada' : 'Sem vínculo'}
+                                </span>
+                              ) : null}
+                              {showFolderStatusBadge ? (
+                                <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] font-medium ${folderLabel.bgClass} ${folderLabel.textClass} ${folderLabel.borderClass}`}>
+                                  {folderLabel.name}
+                                </span>
+                              ) : null}
+                              <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] font-medium ${folderIssueClass}`}>
+                                <span className="inline-flex items-center gap-1">
+                                  {renderFolderIssueBadgeContent(folder)}
+                                </span>
                               </span>
+                              {folder.archived_at ? (
+                                <span className="inline-flex items-center rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[11px] font-medium text-amber-700">
+                                  Arquivada
+                                </span>
+                              ) : null}
+                              {dragVisualState?.folderId === folder.id && dragVisualState.mode ? (
+                                <span className="inline-flex items-center rounded-full border border-orange-200 bg-orange-50 px-2 py-0.5 text-[11px] font-medium text-orange-700">
+                                  {dragVisualState.mode === 'copy' ? 'Copiar para pasta' : dragVisualState.mode === 'cut' ? 'Recortar para pasta' : 'Mover para pasta'}
+                                </span>
+                              ) : null}
+                              {isFavorite ? <Pin className="w-3.5 h-3.5 text-orange-500" /> : null}
+                            </div>
+                            {folderIssueReason ? (
+                              <p className="mt-1 truncate text-xs text-red-600">
+                                Motivo: {folderIssueReason}
+                              </p>
                             ) : null}
-                            {showFolderStatusBadge ? (
-                              <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] font-medium ${folderLabel.bgClass} ${folderLabel.textClass} ${folderLabel.borderClass}`}>
-                                {folderLabel.name}
-                              </span>
-                            ) : null}
-                            {folder.archived_at ? (
-                              <span className="inline-flex items-center rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[11px] font-medium text-amber-700">
-                                Arquivada
-                              </span>
-                            ) : null}
-                            {dragVisualState?.folderId === folder.id && dragVisualState.mode ? (
-                              <span className="inline-flex items-center rounded-full border border-orange-200 bg-orange-50 px-2 py-0.5 text-[11px] font-medium text-orange-700">
-                                {dragVisualState.mode === 'copy' ? 'Copiar para pasta' : dragVisualState.mode === 'cut' ? 'Recortar para pasta' : 'Mover para pasta'}
-                              </span>
-                            ) : null}
-                            {isFavorite ? <Pin className="w-3.5 h-3.5 text-orange-500" /> : null}
                           </div>
                         </div>
                         <span className="text-slate-500 text-xs md:text-sm">{formatDateTime(folder.updated_at)}</span>
@@ -4613,6 +4753,8 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
                       const itemKey = `folder:${folder.id}`;
                       const isSelected = selectedItemKeys.includes(itemKey);
                       const folderLabel = getFolderLabel(folder.id);
+                      const folderIssueClass = getFolderIssueBadgeClass(folder);
+                      const folderIssueReason = folder.pending_reason?.trim() || '';
                       const isDropTarget = dropTargetFolderId === folder.id;
                       const hasClientLink = Boolean(folder.client_id);
                       const showClientLinkBadge = !folder.parent_id;
@@ -4742,6 +4884,11 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
                                 {folderLabel.name}
                               </span>
                             ) : null}
+                            <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] font-medium ${folderIssueClass}`}>
+                              <span className="inline-flex items-center gap-1">
+                                {renderFolderIssueBadgeContent(folder)}
+                              </span>
+                            </span>
                             {folder.archived_at ? (
                               <span className="inline-flex items-center rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[11px] font-medium text-amber-700">
                                 Arquivada
@@ -4753,6 +4900,11 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
                               </span>
                             ) : null}
                           </div>
+                          {folderIssueReason ? (
+                            <p className="mt-2 line-clamp-2 text-xs text-red-600">
+                              Motivo: {folderIssueReason}
+                            </p>
+                          ) : null}
                         </div>
                       );
                     }
@@ -4948,6 +5100,33 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
               )}
             </div>
 
+            <AnimatePresence>
+              {downloadingFolderId ? (
+                <motion.div
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  exit={{ opacity: 0 }}
+                  transition={{ duration: 0.18 }}
+                  className="absolute inset-0 z-30 flex items-center justify-center bg-white/72 backdrop-blur-[2px] p-4"
+                >
+                  <motion.div
+                    initial={{ scale: 0.96, opacity: 0.9 }}
+                    animate={{ scale: 1, opacity: 1 }}
+                    exit={{ scale: 0.98, opacity: 0 }}
+                    transition={{ type: 'spring', stiffness: 260, damping: 22 }}
+                    className="flex w-full max-w-sm flex-col items-center rounded-3xl border border-orange-200 bg-white px-6 py-7 text-center shadow-[0_24px_70px_rgba(15,23,42,0.16)]"
+                  >
+                    <div className="flex h-16 w-16 items-center justify-center rounded-full bg-orange-50">
+                      <Loader2 className="h-8 w-8 animate-spin text-orange-500" />
+                    </div>
+                    <p className="mt-4 text-sm font-semibold uppercase tracking-[0.18em] text-orange-500">Cloud</p>
+                    <h3 className="mt-2 text-lg font-semibold text-slate-900">Aguarde...</h3>
+                    <p className="mt-1 text-sm text-slate-600">Estamos montando a pasta para download.</p>
+                  </motion.div>
+                </motion.div>
+              ) : null}
+            </AnimatePresence>
+
             {dragActive ? (
               <div className="pointer-events-none absolute inset-0 z-20 flex items-center justify-center bg-slate-950/12 backdrop-blur-[2px] p-4">
                 <div className="w-full max-w-3xl rounded-[32px] border border-dashed border-orange-300 bg-white/96 px-8 py-12 text-center shadow-[0_30px_90px_rgba(15,23,42,0.16)]">
@@ -5034,6 +5213,25 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
                         <p className="text-slate-700">{clients.find((item) => item.id === selectedFolder.client_id)?.full_name || 'Sem cliente vinculado'}</p>
                       </div>
                       <div>
+                        <p className="text-slate-400 text-xs">Status</p>
+                        <div className="mt-1 flex flex-wrap gap-2">
+                          <span className={`inline-flex items-center rounded-full border px-2.5 py-1 text-xs font-medium ${getFolderIssueBadgeClass(selectedFolder)}`}>
+                            <span className="inline-flex items-center gap-1">
+                              {renderFolderIssueBadgeContent(selectedFolder)}
+                            </span>
+                          </span>
+                          {selectedFolder.resolved_at && !selectedFolder.has_pending_issue ? (
+                            <span className="inline-flex items-center rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-xs font-medium text-emerald-700">
+                              Resolvido em {formatDateTime(selectedFolder.resolved_at)}
+                            </span>
+                          ) : null}
+                        </div>
+                      </div>
+                      <div>
+                        <p className="text-slate-400 text-xs">Motivo</p>
+                        <p className="text-slate-700 whitespace-pre-wrap break-words">{selectedFolder.pending_reason || 'Sem motivo registrado'}</p>
+                      </div>
+                      <div>
                         <p className="text-slate-400 text-xs">Modificado</p>
                         <p className="text-slate-700">{formatDateTime(selectedFolder.updated_at)}</p>
                       </div>
@@ -5069,6 +5267,67 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
                       </div>
                     </div>
                   </div>
+                  <div className="rounded-xl border border-slate-200 bg-white p-4 space-y-3">
+                    <div className="flex items-center justify-between gap-3">
+                      <div>
+                        <p className="text-sm font-medium text-slate-900">Pendência e alerta</p>
+                        <p className="text-xs text-slate-500">Registre um motivo e sinalize a pasta para acompanhamento.</p>
+                      </div>
+                      <label className="inline-flex items-center gap-2 text-sm text-slate-700">
+                        <input
+                          type="checkbox"
+                          checked={folderIssueEnabled}
+                          onChange={(e) => setFolderIssueEnabled(e.target.checked)}
+                          className="h-4 w-4 rounded border-slate-300 text-orange-500 focus:ring-orange-400"
+                        />
+                        Ativar
+                      </label>
+                    </div>
+                    <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+                      <div>
+                        <label className="block text-sm font-medium text-slate-700 mb-1">Nível</label>
+                        <select
+                          value={folderIssueLevel}
+                          onChange={(e) => setFolderIssueLevel(e.target.value === 'alerta' ? 'alerta' : 'pendencia')}
+                          disabled={!folderIssueEnabled}
+                          className="w-full rounded-xl border border-slate-200 px-4 py-3 text-sm bg-white text-slate-900 disabled:bg-slate-50 disabled:text-slate-400 focus:outline-none focus:ring-2 focus:ring-orange-100 focus:border-orange-400"
+                        >
+                          <option value="pendencia">Pendência</option>
+                          <option value="alerta">Alerta</option>
+                        </select>
+                      </div>
+                      <div className="flex items-end">
+                        <button
+                          type="button"
+                          onClick={() => void handleMarkFolderAsResolved(selectedFolder)}
+                          disabled={!selectedFolder.has_pending_issue}
+                          className="w-full inline-flex items-center justify-center gap-2 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-medium text-emerald-700 hover:bg-emerald-100 disabled:cursor-not-allowed disabled:opacity-60"
+                        >
+                          <CheckCircle2 className="w-4 h-4" />
+                          Marcar resolvido
+                        </button>
+                      </div>
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-slate-700 mb-1">Motivo</label>
+                      <textarea
+                        value={folderIssueReason}
+                        onChange={(e) => setFolderIssueReason(e.target.value)}
+                        disabled={!folderIssueEnabled}
+                        rows={3}
+                        placeholder="Ex: Aguardando documento do cliente, revisão urgente, prazo sensível..."
+                        className="w-full rounded-xl border border-slate-200 px-4 py-3 text-sm bg-white text-slate-900 disabled:bg-slate-50 disabled:text-slate-400 focus:outline-none focus:ring-2 focus:ring-orange-100 focus:border-orange-400"
+                      />
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => void handleSubmitFolderIssue(selectedFolder)}
+                      className="w-full inline-flex items-center justify-center gap-2 rounded-xl bg-orange-500 px-4 py-2.5 text-sm font-medium text-white hover:bg-orange-600"
+                    >
+                      <AlertCircle className="w-4 h-4" />
+                      Salvar status da pasta
+                    </button>
+                  </div>
                   {selectedFolder.archived_at ? (
                     <button
                       onClick={() => handleUnarchiveFolder(selectedFolder)}
@@ -5092,7 +5351,7 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
                     className="w-full inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-800 text-sm border border-slate-200 disabled:cursor-not-allowed disabled:opacity-70"
                   >
                     {downloadingFolderId === selectedFolder.id ? <Loader2 className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4" />}
-                    {downloadingFolderId === selectedFolder.id ? 'Preparando download...' : 'Baixar pasta'}
+                    {downloadingFolderId === selectedFolder.id ? 'Aguarde... estamos montando a pasta...' : 'Baixar pasta'}
                   </button>
                   <button
                     onClick={() => {
@@ -5234,6 +5493,41 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
                   </div>
                   <ClientSearchSelect value={folderClientId} onChange={(clientId) => setFolderClientId(clientId)} label="Vincular a cliente" required={false} allowCreate={false} />
                   <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4 space-y-3">
+                    <div className="flex items-center justify-between gap-3">
+                      <div>
+                        <p className="text-sm font-medium text-slate-900">Pendência inicial</p>
+                        <p className="text-xs text-slate-500">Opcionalmente já crie a pasta com pendência ou alerta.</p>
+                      </div>
+                      <label className="inline-flex items-center gap-2 text-sm text-slate-700">
+                        <input
+                          type="checkbox"
+                          checked={folderIssueEnabled}
+                          onChange={(e) => setFolderIssueEnabled(e.target.checked)}
+                          className="h-4 w-4 rounded border-slate-300 text-orange-500 focus:ring-orange-400"
+                        />
+                        Ativar
+                      </label>
+                    </div>
+                    <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+                      <select
+                        value={folderIssueLevel}
+                        onChange={(e) => setFolderIssueLevel(e.target.value === 'alerta' ? 'alerta' : 'pendencia')}
+                        disabled={!folderIssueEnabled}
+                        className="w-full rounded-xl border border-slate-200 px-4 py-3 text-sm bg-white text-slate-900 disabled:bg-slate-100 disabled:text-slate-400 focus:outline-none focus:ring-2 focus:ring-orange-100 focus:border-orange-400"
+                      >
+                        <option value="pendencia">Pendência</option>
+                        <option value="alerta">Alerta</option>
+                      </select>
+                      <input
+                        value={folderIssueReason}
+                        onChange={(e) => setFolderIssueReason(e.target.value)}
+                        disabled={!folderIssueEnabled}
+                        placeholder="Motivo da pendência/alerta"
+                        className="w-full rounded-xl border border-slate-200 px-4 py-3 text-sm bg-white text-slate-900 disabled:bg-slate-100 disabled:text-slate-400 focus:outline-none focus:ring-2 focus:ring-orange-100 focus:border-orange-400"
+                      />
+                    </div>
+                  </div>
+                  <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4 space-y-3">
                     <p className="text-sm font-medium text-slate-900">Cadastrar nova etiqueta</p>
                     <div className="grid grid-cols-1 md:grid-cols-[1fr_120px_auto] gap-3">
                       <input value={newLabelName} onChange={(e) => setNewLabelName(e.target.value)} placeholder="Ex: Em análise" className="w-full rounded-xl border border-slate-200 px-4 py-3 text-sm bg-white text-slate-900 focus:outline-none focus:ring-2 focus:ring-orange-100 focus:border-orange-400" />
@@ -5245,6 +5539,41 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
                   </div>
                 </>
               )}
+              <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4 space-y-3">
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    <p className="text-sm font-medium text-slate-900">Pendência inicial</p>
+                    <p className="text-xs text-slate-500">Opcionalmente já crie a pasta com pendência ou alerta.</p>
+                  </div>
+                  <label className="inline-flex items-center gap-2 text-sm text-slate-700">
+                    <input
+                      type="checkbox"
+                      checked={folderIssueEnabled}
+                      onChange={(e) => setFolderIssueEnabled(e.target.checked)}
+                      className="h-4 w-4 rounded border-slate-300 text-orange-500 focus:ring-orange-400"
+                    />
+                    Ativar
+                  </label>
+                </div>
+                <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+                  <select
+                    value={folderIssueLevel}
+                    onChange={(e) => setFolderIssueLevel(e.target.value === 'alerta' ? 'alerta' : 'pendencia')}
+                    disabled={!folderIssueEnabled}
+                    className="w-full rounded-xl border border-slate-200 px-4 py-3 text-sm bg-white text-slate-900 disabled:bg-slate-100 disabled:text-slate-400 focus:outline-none focus:ring-2 focus:ring-orange-100 focus:border-orange-400"
+                  >
+                    <option value="pendencia">Pendência</option>
+                    <option value="alerta">Alerta</option>
+                  </select>
+                  <input
+                    value={folderIssueReason}
+                    onChange={(e) => setFolderIssueReason(e.target.value)}
+                    disabled={!folderIssueEnabled}
+                    placeholder="Motivo da pendência/alerta"
+                    className="w-full rounded-xl border border-slate-200 px-4 py-3 text-sm bg-white text-slate-900 disabled:bg-slate-100 disabled:text-slate-400 focus:outline-none focus:ring-2 focus:ring-orange-100 focus:border-orange-400"
+                  />
+                </div>
+              </div>
               <div className="flex justify-end gap-2">
                 <button onClick={() => setFolderModalOpen(false)} className="px-4 py-2.5 rounded-xl border border-slate-200 text-sm text-slate-700 hover:bg-slate-50">Cancelar</button>
                 <button onClick={handleCreateFolder} className="px-5 py-2.5 rounded-xl bg-orange-500 text-white text-sm font-medium hover:bg-orange-600">Criar pasta</button>
@@ -5561,12 +5890,13 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
 
       {contextMenu && selectedContextFolder && (
         <div
+          ref={contextMenuRef}
           className="fixed z-[140]"
           style={{ left: contextMenu.x, top: contextMenu.y }}
           onClick={(e) => e.stopPropagation()}
           onContextMenu={(e) => e.preventDefault()}
         >
-          <div className="w-64 rounded-xl border border-slate-200 bg-white shadow-xl overflow-hidden">
+          <div className="max-h-[70vh] w-64 overflow-y-auto rounded-xl border border-slate-200 bg-white shadow-xl">
             <button
               type="button"
               onClick={() => openFolderFromContextMenu(selectedContextFolder)}
@@ -5598,6 +5928,27 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
                 Alterar status para: {label.name}
               </button>
             ))}
+            <button
+              type="button"
+              onClick={() => { handleOpenFolderIssueQuickModal(selectedContextFolder, 'pendencia'); }}
+              className="w-full px-3 py-2.5 text-left text-sm text-amber-700 hover:bg-amber-50 transition"
+            >
+              Marcar pendência
+            </button>
+            <button
+              type="button"
+              onClick={() => { handleOpenFolderIssueQuickModal(selectedContextFolder, 'alerta'); }}
+              className="w-full px-3 py-2.5 text-left text-sm text-red-700 hover:bg-red-50 transition"
+            >
+              Marcar alerta
+            </button>
+            <button
+              type="button"
+              onClick={() => { void handleMarkFolderAsResolved(selectedContextFolder); setContextMenu(null); }}
+              className="w-full px-3 py-2.5 text-left text-sm text-emerald-700 hover:bg-emerald-50 transition"
+            >
+              Marcar resolvido
+            </button>
             <div className="border-t border-slate-100" />
             <button
               type="button"
@@ -5655,7 +6006,7 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
               disabled={downloadingFolderId === selectedContextFolder.id}
               className="w-full px-3 py-2.5 text-left text-sm text-slate-700 hover:bg-slate-50 transition disabled:cursor-not-allowed disabled:opacity-70"
             >
-              {downloadingFolderId === selectedContextFolder.id ? 'Preparando download...' : 'Baixar pasta'}
+              {downloadingFolderId === selectedContextFolder.id ? 'Aguarde... estamos montando a pasta...' : 'Baixar pasta'}
             </button>
             <button
               type="button"
@@ -5776,6 +6127,66 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
           </div>
         </div>
       )}
+
+      {folderIssueQuickModalOpen && folderIssueQuickTarget ? (
+        <div className="fixed inset-0 z-[150] flex items-center justify-center bg-slate-900/20 p-4 backdrop-blur-[2px]">
+          <div className="w-full max-w-lg overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-[0_24px_70px_rgba(15,23,42,0.18)]">
+            <div className={`h-2 w-full ${folderIssueQuickLevel === 'alerta' ? 'bg-gradient-to-r from-red-500 to-red-600' : 'bg-gradient-to-r from-amber-500 to-amber-600'}`} />
+            <div className="space-y-4 bg-white p-5 sm:p-6">
+              <div className="flex items-start justify-between gap-4">
+                <div>
+                  <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">Cloud</p>
+                  <h3 className="text-lg font-semibold text-slate-900">{folderIssueQuickLevel === 'alerta' ? 'Marcar alerta' : 'Marcar pendência'}</h3>
+                  <p className="mt-1 text-sm text-slate-500">Pasta: {folderIssueQuickTarget.name}</p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setFolderIssueQuickModalOpen(false);
+                    setFolderIssueQuickTarget(null);
+                    setFolderIssueQuickReason('');
+                    setFolderIssueQuickLevel('pendencia');
+                  }}
+                  className="rounded-xl p-2 transition hover:bg-slate-100"
+                >
+                  <X className="h-5 w-5 text-slate-400" />
+                </button>
+              </div>
+              <div>
+                <label className="mb-1 block text-sm font-medium text-slate-700">Motivo</label>
+                <textarea
+                  value={folderIssueQuickReason}
+                  onChange={(e) => setFolderIssueQuickReason(e.target.value)}
+                  rows={4}
+                  placeholder="Descreva o motivo da pendência ou alerta"
+                  className="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm text-slate-900 placeholder:text-slate-400 focus:border-orange-400 focus:outline-none focus:ring-2 focus:ring-orange-100"
+                />
+              </div>
+              <div className="flex justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setFolderIssueQuickModalOpen(false);
+                    setFolderIssueQuickTarget(null);
+                    setFolderIssueQuickReason('');
+                    setFolderIssueQuickLevel('pendencia');
+                  }}
+                  className="rounded-xl border border-slate-200 px-4 py-2.5 text-sm text-slate-700 hover:bg-slate-50"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="button"
+                  onClick={() => void handleSubmitFolderIssueQuickModal()}
+                  className={`rounded-xl px-4 py-2.5 text-sm font-medium text-white shadow-sm ${folderIssueQuickLevel === 'alerta' ? 'bg-red-500 hover:bg-red-600' : 'bg-amber-500 hover:bg-amber-600'}`}
+                >
+                  Salvar {folderIssueQuickLevel === 'alerta' ? 'alerta' : 'pendência'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      ) : null}
 
       {contextMenu && selectedContextFile && (
         <div
