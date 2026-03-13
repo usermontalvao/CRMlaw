@@ -47,6 +47,7 @@ import { matchesNormalizedSearch } from '../utils/search';
    ============================================================================ */
 
 const VERSION_CODENAMES: Record<string, { name: string; emoji: string }> = {
+  '1.9.889': { name: 'Café Cola em Andamento', emoji: '📋' },
   '1.9.888': { name: 'Café Drop Único', emoji: '🫳' },
   '1.9.887': { name: 'Café Cópia Inteligente', emoji: '📄' },
   '1.9.886': { name: 'Café Extensão Travada', emoji: '🔒' },
@@ -699,6 +700,23 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
 };
 
 const releases: ReleaseNote[] = [
+  {
+    version: '1.9.889',
+    date: '12/03/2026',
+    summary: 'Cloud: o colar agora exibe aviso de progresso enquanto a operação está em andamento.',
+    modules: [
+      {
+        moduleId: 'cloud',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Aviso durante a colagem',
+            description: 'Ao colar arquivos ou pastas no Cloud, o sistema agora mostra um aviso persistente de processamento e impede uma segunda tentativa até a conclusão da colagem atual.',
+          },
+        ],
+      },
+    ],
+  },
   {
     version: '1.9.888',
     date: '12/03/2026',

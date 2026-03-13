@@ -1,5 +1,8 @@
 # Changelog
   
+  ## 1.9.889
+- **Cloud**: Adicionado aviso durante a operação de colar, informando que os itens estão sendo colados e bloqueando nova tentativa até o término.
+
   ## 1.9.888
 - **Cloud**: Corrigido o upload duplicado ao arrastar arquivos de fora para dentro do módulo, evitando que o mesmo drop fosse processado ao mesmo tempo pela janela e pela área central.
 

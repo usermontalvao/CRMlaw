@@ -438,6 +438,7 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
   const [bulkMoveModalOpen, setBulkMoveModalOpen] = useState(false);
   const [bulkMoveTargetFolderId, setBulkMoveTargetFolderId] = useState('');
   const [clipboardSelection, setClipboardSelection] = useState<{ mode: 'copy' | 'cut'; itemKeys: string[] } | null>(null);
+  const [pastingClipboard, setPastingClipboard] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [detailsDrawerOpen, setDetailsDrawerOpen] = useState(false);
   const [inlineRenameTarget, setInlineRenameTarget] = useState<{ type: 'file' | 'folder'; id: string; currentName: string } | null>(null);
@@ -3156,6 +3157,11 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
   }, [selectedItemKeys, toast]);
 
   const handlePasteClipboardToFolder = useCallback(async (targetFolder: CloudFolder | null) => {
+    if (pastingClipboard) {
+      toast.info('Cloud', 'Aguarde a colagem atual terminar.');
+      return;
+    }
+
     if (!clipboardSelection || !targetFolder) {
       toast.info('Cloud', 'Nada para colar no momento.');
       return;
@@ -3172,7 +3178,16 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
       return;
     }
 
+    const itemCount = targetFiles.length + targetFolders.length;
+    const loadingToastId = toast.loading(
+      'Cloud',
+      itemCount === 1
+        ? 'Colando item na pasta selecionada...'
+        : `Colando ${itemCount} itens na pasta selecionada...`,
+    );
+
     try {
+      setPastingClipboard(true);
       if (clipboardSelection.mode === 'copy') {
         for (const file of targetFiles) {
           await cloudService.duplicateFileToFolder(file.id, targetFolder.id, targetFolder.client_id || null);
@@ -3210,8 +3225,11 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
       await loadData();
     } catch (error: any) {
       toast.error('Cloud', error.message || 'Erro ao colar itens na pasta selecionada.');
+    } finally {
+      toast.dismiss(loadingToastId);
+      setPastingClipboard(false);
     }
-  }, [allFiles, allFolders, clipboardSelection, cloudService, isFolderDescendant, loadData, toast]);
+  }, [allFiles, allFolders, clipboardSelection, cloudService, isFolderDescendant, loadData, pastingClipboard, toast]);
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
