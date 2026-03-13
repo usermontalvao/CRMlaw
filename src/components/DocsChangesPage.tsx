@@ -47,6 +47,10 @@ import { matchesNormalizedSearch } from '../utils/search';
    ============================================================================ */
 
 const VERSION_CODENAMES: Record<string, { name: string; emoji: string }> = {
+  '1.9.893': { name: 'Café Vídeo Sem Repetição', emoji: '🧽' },
+  '1.9.892': { name: 'Café Vídeo Limpo', emoji: '🖥️' },
+  '1.9.891': { name: 'Café Vídeo Jurius', emoji: '🎬' },
+  '1.9.890': { name: 'Café PDF Estável', emoji: '📕' },
   '1.9.889': { name: 'Café Cola em Andamento', emoji: '📋' },
   '1.9.888': { name: 'Café Drop Único', emoji: '🫳' },
   '1.9.887': { name: 'Café Cópia Inteligente', emoji: '📄' },
@@ -700,6 +704,74 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
 };
 
 const releases: ReleaseNote[] = [
+  {
+    version: '1.9.893',
+    date: '13/03/2026',
+    summary: 'Cloud: o player de vídeo deixou de repetir o nome do arquivo em dois cabeçalhos.',
+    modules: [
+      {
+        moduleId: 'cloud',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Título duplicado removido do player',
+            description: 'O preview de vídeo do Cloud agora exibe o nome do arquivo apenas no cabeçalho principal do modal, eliminando a repetição visual dentro do player.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.892',
+    date: '13/03/2026',
+    summary: 'Cloud: o player de vídeo foi redesenhado para um visual mais limpo, focado no conteúdo e com branding Jurius discreto.',
+    modules: [
+      {
+        moduleId: 'cloud',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Player de vídeo mais limpo',
+            description: 'O preview de vídeo do Cloud agora usa uma composição mais sóbria e coerente com o restante da interface, reduzindo elementos decorativos e destacando o vídeo em primeiro plano.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.891',
+    date: '13/03/2026',
+    summary: 'Cloud: vídeos agora abrem em um player próprio com identidade visual Jurius.',
+    modules: [
+      {
+        moduleId: 'cloud',
+        changes: [
+          {
+            type: 'feature',
+            title: 'Player de vídeo Jurius no Cloud',
+            description: 'O preview do Cloud agora reconhece vídeos e abre um reprodutor próprio com visual premium da marca Jurius, controles nativos e experiência mais adequada para arquivos de mídia.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.890',
+    date: '13/03/2026',
+    summary: 'Cloud: o preview de PDF das ferramentas ficou estável ao montar páginas apenas depois que o documento termina de carregar.',
+    modules: [
+      {
+        moduleId: 'cloud',
+        changes: [
+          {
+            type: 'fix',
+            title: 'Preview PDF sem crash nas ferramentas',
+            description: 'As ferramentas de PDF do Cloud agora esperam o `Document` do `react-pdf` ficar pronto antes de renderizar as páginas e resetam esse estado ao trocar ou fechar o arquivo, evitando o erro `sendWithPromise` em `null`.',
+          },
+        ],
+      },
+    ],
+  },
   {
     version: '1.9.889',
     date: '12/03/2026',

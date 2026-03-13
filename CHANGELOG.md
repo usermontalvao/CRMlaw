@@ -1,5 +1,17 @@
 # Changelog
   
+  ## 1.9.893
+- **Cloud**: Removido o cabeçalho duplicado do player de vídeo, mantendo apenas o título principal do modal para evitar repetição visual.
+
+  ## 1.9.892
+- **Cloud**: Refinado o player de vídeo para um visual mais limpo e coerente com o Cloud, mantendo a marca Jurius de forma discreta e priorizando o conteúdo do vídeo.
+
+  ## 1.9.891
+- **Cloud**: Adicionado suporte a vídeo com player estilizado da marca Jurius no preview, incluindo reconhecimento nativo de arquivos `.mp4`, `.mov`, `.webm`, `.m4v`, `.avi` e `.mkv`.
+
+  ## 1.9.890
+- **Cloud**: Corrigido o crash do preview de PDF nas ferramentas do Cloud ao garantir que as páginas do `react-pdf` só sejam renderizadas após o documento estar pronto e ao limpar esse estado ao trocar ou fechar o arquivo.
+
   ## 1.9.889
 - **Cloud**: Adicionado aviso durante a operação de colar, informando que os itens estão sendo colados e bloqueando nova tentativa até o término.
 

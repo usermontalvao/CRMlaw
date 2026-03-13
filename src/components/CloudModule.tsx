@@ -14,6 +14,7 @@ import {
   ChevronLeft,
   ChevronRight,
   Clipboard,
+  CloudCog,
   Cloud,
   Copy,
   Download,
@@ -64,6 +65,18 @@ pdfjs.GlobalWorkerOptions.workerSrc = `//unpkg.com/pdfjs-dist@${pdfjs.version}/b
 
 const isImageFile = (mime?: string | null) => Boolean(mime?.startsWith('image/'));
 const isPdfFile = (mime?: string | null, name?: string) => mime === 'application/pdf' || String(name || '').toLowerCase().endsWith('.pdf');
+const isVideoFile = (mime?: string | null, name?: string) => {
+  const lower = String(name || '').toLowerCase();
+  return Boolean(
+    mime?.startsWith('video/')
+    || lower.endsWith('.mp4')
+    || lower.endsWith('.mov')
+    || lower.endsWith('.webm')
+    || lower.endsWith('.m4v')
+    || lower.endsWith('.avi')
+    || lower.endsWith('.mkv')
+  );
+};
 const isWordFile = (mime?: string | null, name?: string) => {
   const lower = String(name || '').toLowerCase();
   return mime === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
@@ -179,6 +192,7 @@ const formatArchiveDeletionLabel = (value?: string | null) => {
 const getFileTypeLabel = (file: CloudFile) => {
   if (isPdfFile(file.mime_type, file.original_name)) return 'PDF';
   if (isImageFile(file.mime_type)) return 'Imagem';
+  if (isVideoFile(file.mime_type, file.original_name)) return 'Vídeo';
   if (isWordFile(file.mime_type, file.original_name)) return 'Documento Word';
   return file.extension?.toUpperCase() || 'Arquivo';
 };
@@ -402,6 +416,7 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
   const [selectedPdfToolFile, setSelectedPdfToolFile] = useState<CloudFile | null>(null);
   const [pdfToolPreviewUrl, setPdfToolPreviewUrl] = useState<string | null>(null);
   const [pdfToolPages, setPdfToolPages] = useState<Array<{ sourceIndex: number; rotation: number }>>([]);
+  const [pdfToolDocumentReady, setPdfToolDocumentReady] = useState(false);
   const [selectedPdfPageIndexes, setSelectedPdfPageIndexes] = useState<number[]>([]);
   const [pdfToolSaving, setPdfToolSaving] = useState(false);
   const [pdfToolSaveAsCopy, setPdfToolSaveAsCopy] = useState(false);
@@ -1016,7 +1031,7 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
         const signedUrl = await cloudService.getFileSignedUrl(selectedFile.storage_path);
         if (cancelled) return;
 
-        if (isImageFile(selectedFile.mime_type) || isPdfFile(selectedFile.mime_type, selectedFile.original_name)) {
+        if (isImageFile(selectedFile.mime_type) || isPdfFile(selectedFile.mime_type, selectedFile.original_name) || isVideoFile(selectedFile.mime_type, selectedFile.original_name)) {
           setDetailPreviewUrl(signedUrl);
           setDetailPreviewText(null);
           return;
@@ -2276,11 +2291,16 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
     setPdfToolsModalOpen(false);
     setSelectedPdfToolFile(null);
     setPdfToolPreviewUrl(null);
+    setPdfToolDocumentReady(false);
     setPdfToolPages([]);
     setSelectedPdfPageIndexes([]);
     setPdfToolSaveAsCopy(false);
     setPdfToolMode('home');
   };
+
+  useEffect(() => {
+    setPdfToolDocumentReady(false);
+  }, [pdfToolPreviewUrl, selectedPdfToolFile?.id]);
 
   const togglePdfPageSelection = (pageIndex: number) => {
     setSelectedPdfPageIndexes((prev) => (
@@ -5092,7 +5112,7 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
                   <>
                     <div className="rounded-xl border border-slate-200 bg-white p-4 space-y-3">
                       <div className="flex items-center gap-3">
-                        {isPdfFile(selectedFile.mime_type, selectedFile.original_name) ? <FileText className="w-6 h-6 text-red-500" /> : isImageFile(selectedFile.mime_type) ? <ImageIcon className="w-6 h-6 text-emerald-500" /> : <File className="w-6 h-6 text-sky-500" />}
+                        {isPdfFile(selectedFile.mime_type, selectedFile.original_name) ? <FileText className="w-6 h-6 text-red-500" /> : isImageFile(selectedFile.mime_type) ? <ImageIcon className="w-6 h-6 text-emerald-500" /> : isVideoFile(selectedFile.mime_type, selectedFile.original_name) ? <CloudCog className="w-6 h-6 text-orange-500" /> : <File className="w-6 h-6 text-sky-500" />}
                         <div className="min-w-0">
                           <p className="text-slate-900 font-semibold truncate">{selectedFile.original_name}</p>
                           <div className="mt-1">
@@ -5335,11 +5355,11 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
 
       {previewFile && (
         <div className={`fixed inset-0 z-[130] bg-slate-900/25 backdrop-blur-sm flex justify-center ${isPdfFile(previewFile.mime_type, previewFile.original_name) ? 'items-center p-3 sm:p-4' : 'items-center p-4'}`}>
-          <div className={`w-full ${isDocxFile(previewFile.mime_type, previewFile.original_name) ? 'max-w-[98vw] h-[94vh]' : isPdfFile(previewFile.mime_type, previewFile.original_name) ? 'max-w-[96vw] h-[94vh]' : 'max-w-6xl h-[88vh]'} rounded-2xl bg-white shadow-[0_24px_70px_rgba(15,23,42,0.18)] border border-slate-200 overflow-hidden flex flex-col`}>
+          <div className={`w-full ${isDocxFile(previewFile.mime_type, previewFile.original_name) ? 'max-w-[98vw] h-[94vh]' : isPdfFile(previewFile.mime_type, previewFile.original_name) ? 'max-w-[96vw] h-[94vh]' : isVideoFile(previewFile.mime_type, previewFile.original_name) ? 'max-w-[96vw] h-[92vh]' : 'max-w-6xl h-[88vh]'} rounded-2xl bg-white shadow-[0_24px_70px_rgba(15,23,42,0.18)] border border-slate-200 overflow-hidden flex flex-col`}>
             <div className="flex items-center justify-between px-4 py-3 border-b border-slate-200 bg-white">
               <div>
                 <h3 className="font-semibold text-slate-900">{previewFile.original_name}</h3>
-                <p className="text-xs text-slate-500">{isDocxFile(previewFile.mime_type, previewFile.original_name) ? 'Editor de documento' : isPdfFile(previewFile.mime_type, previewFile.original_name) ? `Preview do PDF${previewPdfIndex !== -1 ? ` • ${previewPdfIndex + 1} de ${previewPdfFiles.length}` : ''}` : isImageFile(previewFile.mime_type) ? `Preview da Imagem${previewImageIndex !== -1 ? ` • ${previewImageIndex + 1} de ${previewImageFiles.length}` : ''}` : 'Preview do arquivo'}</p>
+                <p className="text-xs text-slate-500">{isDocxFile(previewFile.mime_type, previewFile.original_name) ? 'Editor de documento' : isPdfFile(previewFile.mime_type, previewFile.original_name) ? `Preview do PDF${previewPdfIndex !== -1 ? ` • ${previewPdfIndex + 1} de ${previewPdfFiles.length}` : ''}` : isImageFile(previewFile.mime_type) ? `Preview da Imagem${previewImageIndex !== -1 ? ` • ${previewImageIndex + 1} de ${previewImageFiles.length}` : ''}` : isVideoFile(previewFile.mime_type, previewFile.original_name) ? 'Player de vídeo Jurius' : 'Preview do arquivo'}</p>
               </div>
               <div className="flex items-center gap-2 flex-wrap justify-end">
                 {isPdfFile(previewFile.mime_type, previewFile.original_name) ? (
@@ -5414,6 +5434,15 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
                     Girar 90°
                   </button>
                 ) : null}
+                {isVideoFile(previewFile.mime_type, previewFile.original_name) ? (
+                  <button
+                    onClick={() => handleDownloadFile(previewFile)}
+                    className="px-3 py-1.5 rounded-lg border border-slate-200 text-slate-600 text-sm hover:bg-slate-50 inline-flex items-center gap-2"
+                  >
+                    <Download className="w-4 h-4" />
+                    Baixar
+                  </button>
+                ) : null}
                 {isDocxFile(previewFile.mime_type, previewFile.original_name) && (
                   <button onClick={() => setPreviewFile(null)} className="px-3 py-1.5 rounded-lg border border-slate-200 text-slate-600 text-sm hover:bg-slate-50 inline-flex items-center gap-2">
                     <Minimize2 className="w-4 h-4" />
@@ -5481,6 +5510,23 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
                 </div>
               ) : isImageFile(previewFile.mime_type) && previewUrl ? (
                 <div className="h-full flex items-center justify-center p-6"><img src={previewUrl} alt={previewFile.original_name} className="max-w-full max-h-full object-contain rounded-xl shadow" /></div>
+              ) : isVideoFile(previewFile.mime_type, previewFile.original_name) && previewUrl ? (
+                <div className="flex h-full flex-col bg-slate-950 p-3 sm:p-5">
+                  <div className="mx-auto flex min-h-0 w-full max-w-[1180px] flex-1 overflow-hidden rounded-2xl border border-slate-800 bg-black shadow-[0_18px_50px_rgba(15,23,42,0.35)]">
+                    <video
+                      key={`${previewFile.id}-${previewUrl}`}
+                      src={previewUrl}
+                      className="h-full w-full bg-black object-contain"
+                      controls
+                      controlsList="nodownload"
+                      preload="metadata"
+                    />
+                  </div>
+                  <div className="mx-auto mt-3 flex w-full max-w-[1180px] items-center justify-between gap-3 px-1 text-xs text-slate-400">
+                    <span className="truncate">Cloud Jurius</span>
+                    <span>{formatFileSize(previewFile.file_size || 0)}</span>
+                  </div>
+                </div>
               ) : previewUrl ? (
                 <div className="h-full flex items-center justify-center">
                   <a href={previewUrl} target="_blank" rel="noreferrer" className="px-4 py-2 rounded-lg bg-slate-900 text-white text-sm font-medium">Abrir arquivo</a>
@@ -6632,10 +6678,17 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
                         <button onClick={() => setSelectedPdfPageIndexes([])} className="px-2 py-1 text-xs rounded-md bg-slate-100 hover:bg-slate-200 text-slate-700">Limpar</button>
                       </div>
                     </div>
-                    {pdfToolPreviewUrl ? (
-                      <Document key={`thumbs-${selectedPdfToolFile.id}-${pdfToolPreviewUrl}`} file={pdfToolPreviewUrl} loading={<div className="py-6 text-center text-sm text-slate-500">Carregando miniaturas do PDF...</div>}>
+                    {pdfToolPreviewUrl && selectedPdfToolFile ? (
+                      <Document
+                        key={`thumbs-${selectedPdfToolFile.id}-${pdfToolPreviewUrl}`}
+                        file={pdfToolPreviewUrl}
+                        loading={<div className="py-6 text-center text-sm text-slate-500">Carregando miniaturas do PDF...</div>}
+                        error={<div className="py-6 text-center text-sm text-slate-500">Preview do PDF indisponível no momento.</div>}
+                        onLoadSuccess={() => setPdfToolDocumentReady(true)}
+                        onLoadError={() => setPdfToolDocumentReady(false)}
+                      >
                         <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-6 xl:grid-cols-7 gap-3">
-                          {pdfToolPages.map((page, idx) => {
+                          {(pdfToolDocumentReady ? pdfToolPages : []).map((page, idx) => {
                             const selected = selectedPdfPageIndexes.includes(idx);
                             return (
                               <button
@@ -6738,12 +6791,19 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
                 </div>
 
                 <div className="flex-1 min-h-0 overflow-auto p-4 sm:p-5">
-                  {pdfToolPreviewUrl ? (
-                    <Document key={`editor-${selectedPdfToolFile.id}-${pdfToolPreviewUrl}`} file={pdfToolPreviewUrl} loading={<div className="h-full flex items-center justify-center text-slate-500">Carregando PDF...</div>}>
+                  {pdfToolPreviewUrl && selectedPdfToolFile ? (
+                    <Document
+                      key={`editor-${selectedPdfToolFile.id}-${pdfToolPreviewUrl}`}
+                      file={pdfToolPreviewUrl}
+                      loading={<div className="h-full flex items-center justify-center text-slate-500">Carregando PDF...</div>}
+                      error={<div className="h-full flex items-center justify-center text-slate-500">Preview do PDF indisponível no momento.</div>}
+                      onLoadSuccess={() => setPdfToolDocumentReady(true)}
+                      onLoadError={() => setPdfToolDocumentReady(false)}
+                    >
                       <DndContext sensors={pdfToolSensors} collisionDetection={closestCenter} onDragEnd={handlePdfToolDragEnd}>
                         <SortableContext items={pdfToolPageIds} strategy={rectSortingStrategy}>
                           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5">
-                            {pdfToolPages.map((page, index) => {
+                            {(pdfToolDocumentReady ? pdfToolPages : []).map((page, index) => {
                               const selected = selectedPdfPageIndexes.includes(index);
                               const sortableId = `${page.sourceIndex}-${index}`;
                               return (
