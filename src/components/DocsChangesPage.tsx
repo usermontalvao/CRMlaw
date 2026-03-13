@@ -47,6 +47,7 @@ import { matchesNormalizedSearch } from '../utils/search';
    ============================================================================ */
 
 const VERSION_CODENAMES: Record<string, { name: string; emoji: string }> = {
+  '1.9.915': { name: 'Café Área Ativa', emoji: '🪄' },
   '1.9.914': { name: 'Café Menu Completo', emoji: '📜' },
   '1.9.913': { name: 'Café Clique Liberado', emoji: '🧷' },
   '1.9.912': { name: 'Café Menu Destravado', emoji: '🖱️' },
@@ -725,6 +726,23 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
 };
 
 const releases: ReleaseNote[] = [
+  {
+    version: '1.9.915',
+    date: '13/03/2026',
+    summary: 'Cloud: menu de contexto da área em branco voltou a executar as ações corretamente.',
+    modules: [
+      {
+        moduleId: 'cloud',
+        changes: [
+          {
+            type: 'fix',
+            title: 'Ações da área em branco restauradas',
+            description: 'O menu de contexto aberto fora de arquivos e pastas passou a usar a mesma referência de proteção contra fechamento global, liberando os cliques em Nova pasta, Enviar arquivos, Colar imagem e Atualizar.',
+          },
+        ],
+      },
+    ],
+  },
   {
     version: '1.9.914',
     date: '13/03/2026',

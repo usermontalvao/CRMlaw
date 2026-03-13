@@ -6234,6 +6234,7 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
 
       {contextMenu && contextMenu.type === 'blank' && (
         <div
+          ref={contextMenuRef}
           className="fixed z-[140]"
           style={{ left: contextMenu.x, top: contextMenu.y }}
           onClick={(e) => e.stopPropagation()}

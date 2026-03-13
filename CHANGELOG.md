@@ -1,5 +1,8 @@
 # Changelog
   
+  ## 1.9.915
+- **Cloud**: Corrigido o menu de contexto da área em branco para que opções como `Nova pasta`, `Enviar arquivos`, `Colar imagem` e `Atualizar` executem normalmente sem fechamento prematuro.
+
   ## 1.9.914
 - **Cloud**: Adicionado scroll ao menu de contexto de arquivos para permitir visualizar todas as opções quando o menu ultrapassar a altura da tela.
 
