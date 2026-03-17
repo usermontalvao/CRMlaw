@@ -727,6 +727,23 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
 
 const releases: ReleaseNote[] = [
   {
+    version: '1.9.940',
+    date: '17/03/2026',
+    summary: 'Editor de petições: removido o mini servidor local do Syncfusion e restaurado o uso direto do link público.',
+    modules: [
+      {
+        moduleId: 'petitions',
+        changes: [
+          {
+            type: 'fix',
+            title: 'Link público do Syncfusion restaurado',
+            description: 'Removido o mini servidor local e scripts auxiliares. O editor agora usa diretamente https://document.syncfusion.com/web-services/docx-editor/api/documenteditor/ como fallback padrão, mantendo suporte a VITE_SYNC_FUSION.',
+          },
+        ],
+      },
+    ],
+  },
+  {
     version: '1.9.915',
     date: '13/03/2026',
     summary: 'Cloud: menu de contexto da área em branco voltou a executar as ações corretamente.',

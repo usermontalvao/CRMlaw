@@ -2140,14 +2140,33 @@ Regras:
     isLoadingPetitionRef.current = true;
     setOpeningPetitionId(petition.id);
 
+    let petitionToLoad = petition;
+
+    if (!petitionToLoad.content) {
+      try {
+        const fullPetition = await petitionEditorService.getPetition(petition.id);
+        if (!fullPetition) {
+          throw new Error('Petição não encontrada');
+        }
+        petitionToLoad = fullPetition;
+      } catch (err) {
+        console.error('Erro ao buscar petição completa:', err);
+        setError('Erro ao carregar documento');
+        window.__autoSaving = false;
+        isLoadingPetitionRef.current = false;
+        setOpeningPetitionId(null);
+        return;
+      }
+    }
+
     // Atualizar estados primeiro
-    setCurrentPetitionId(petition.id);
-    setPetitionTitle(petition.title || '');
-    setLastSaved(petition.updated_at ? new Date(petition.updated_at) : null);
+    setCurrentPetitionId(petitionToLoad.id);
+    setPetitionTitle(petitionToLoad.title || '');
+    setLastSaved(petitionToLoad.updated_at ? new Date(petitionToLoad.updated_at) : null);
 
     // Carregar cliente se houver
-    if (petition.client_id) {
-      const client = clients.find((c) => c.id === petition.client_id);
+    if (petitionToLoad.client_id) {
+      const client = clients.find((c) => c.id === petitionToLoad.client_id);
       if (client) {
         setSelectedClient(client);
       }
@@ -2161,9 +2180,9 @@ Regras:
     window.__autoSaving = true;
 
     const editor = editorRef.current;
-    if (editor && petition.content) {
+    if (editor && petitionToLoad.content) {
       try {
-        await editor.loadSfdt(petition.content);
+        await editor.loadSfdt(petitionToLoad.content);
         captureAndApplyDocFontSoon(editor);
         setShowStartScreen(false);
       } catch (err) {
@@ -2178,7 +2197,7 @@ Regras:
     }
 
     // Guardar para carregar depois que o editor estiver pronto
-    pendingPetitionRef.current = petition;
+    pendingPetitionRef.current = petitionToLoad;
     setShowStartScreen(false);
     setPendingPetitionLoadKey((k) => k + 1);
   };

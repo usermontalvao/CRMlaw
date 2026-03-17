@@ -724,7 +724,8 @@ const ProcessesModule: React.FC<ProcessesModuleProps> = ({ forceCreate, entityId
       if (selectedProcessForView) {
         const updated = data.find((item) => item.id === selectedProcessForView.id);
         if (updated) {
-          setSelectedProcessForView(updated);
+          const fullProcess = await processService.getProcessById(updated.id);
+          setSelectedProcessForView(fullProcess ?? updated);
         }
       }
     } catch (err: any) {
@@ -734,25 +735,28 @@ const ProcessesModule: React.FC<ProcessesModuleProps> = ({ forceCreate, entityId
     }
   };
 
-  const handleOpenModal = (process?: Process) => {
+  const handleOpenModal = async (process?: Process) => {
     if (process) {
-      setSelectedProcess(process);
+      const fullProcess = await processService.getProcessById(process.id);
+      const processData = fullProcess ?? process;
+
+      setSelectedProcess(processData);
       setFormData({
-        client_id: process.client_id,
-        process_code: process.process_code || '',
-        status: process.status,
-        distributed_at: toDateInputValue(process.distributed_at),
-        practice_area: process.practice_area,
-        court: process.court || '',
-        responsible_lawyer: process.responsible_lawyer || '',
-        responsible_lawyer_id: process.responsible_lawyer_id || '',
-        hearing_scheduled: process.hearing_scheduled ? 'sim' : 'nao',
-        hearing_date: toDateInputValue(process.hearing_date),
-        hearing_time: toTimeInputValue(process.hearing_time),
-        hearing_mode: process.hearing_mode || 'presencial',
-        notes: '',
+        client_id: processData.client_id,
+        process_code: processData.process_code || '',
+        status: processData.status,
+        distributed_at: toDateInputValue(processData.distributed_at),
+        practice_area: processData.practice_area,
+        court: processData.court || '',
+        responsible_lawyer: processData.responsible_lawyer || '',
+        responsible_lawyer_id: processData.responsible_lawyer_id || '',
+        hearing_scheduled: processData.hearing_scheduled ? 'sim' : 'nao',
+        hearing_date: toDateInputValue(processData.hearing_date),
+        hearing_time: toTimeInputValue(processData.hearing_time),
+        hearing_mode: processData.hearing_mode || 'presencial',
+        notes: processData.notes || '',
       });
-      const client = clientMap.get(process.client_id);
+      const client = clientMap.get(processData.client_id);
       if (client) {
         setClientSearchTerm(client.full_name);
       }
@@ -1118,8 +1122,9 @@ const ProcessesModule: React.FC<ProcessesModuleProps> = ({ forceCreate, entityId
     }
   };
 
-  const handleViewProcess = (process: Process) => {
-    setSelectedProcessForView(process);
+  const handleViewProcess = async (process: Process) => {
+    const fullProcess = await processService.getProcessById(process.id);
+    setSelectedProcessForView(fullProcess ?? process);
     setViewMode('details');
     setNoteDraft('');
     setNoteError(null);

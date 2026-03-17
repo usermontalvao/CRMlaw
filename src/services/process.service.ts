@@ -20,6 +20,7 @@ interface ProcessCache {
 class ProcessService {
   private tableName = 'processes';
   private cache: ProcessCache | null = null;
+  private listSelectFields = 'id, client_id, process_code, status, distributed_at, practice_area, priority, requirement_id, requirement_role, court, responsible_lawyer, responsible_lawyer_id, hearing_scheduled, hearing_date, hearing_time, hearing_mode, djen_synced, djen_last_sync, djen_has_data, created_at, updated_at';
 
   // Invalidate cache
   invalidateCache(): void {
@@ -46,7 +47,7 @@ class ProcessService {
     }
     let query = supabase
       .from(this.tableName)
-      .select('*')
+      .select(this.listSelectFields)
       .order('created_at', { ascending: false });
 
     if (filters?.status) {
@@ -76,9 +77,9 @@ class ProcessService {
       throw new Error(error.message);
     }
 
-    const rows = data ?? [];
+    const rows = ((data ?? []) as unknown) as Process[];
     const result = filters?.search
-      ? rows.filter((item) => matchesNormalizedSearch(filters.search || '', [item.process_code, item.court, item.responsible_lawyer, item.notes]))
+      ? rows.filter((item) => matchesNormalizedSearch(filters.search || '', [item.process_code, item.court, item.responsible_lawyer]))
       : rows;
 
     // Save to cache

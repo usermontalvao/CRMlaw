@@ -534,11 +534,16 @@ class PetitionEditorService {
   async listPetitions(): Promise<SavedPetition[]> {
     const { data, error } = await supabase
       .from(this.petitionsTable)
-      .select('*')
+      .select('id, title, client_id, client_name, process_id, process_number, blocks_used, created_by, created_at, updated_at')
       .order('updated_at', { ascending: false });
 
     if (error) throw new Error(error.message);
-    return data ?? [];
+    return (data ?? []).map((petition) => ({
+      ...petition,
+      content: '',
+      content_delta: null,
+      blocks_used: petition.blocks_used ?? [],
+    }));
   }
 
   async getPetition(id: string): Promise<SavedPetition | null> {

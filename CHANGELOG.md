@@ -1,4 +1,89 @@
 # Changelog
+
+## 1.9.940
+- **Editor de Petições**: Removido o mini servidor local do Syncfusion e restaurado o uso direto do link público `https://document.syncfusion.com/web-services/docx-editor/api/documenteditor/` como fallback padrão do editor.
+- **Scripts**: Removidos os comandos auxiliares do proxy local (`syncfusion-proxy` e `dev:syncfusion`).
+
+## 1.9.939
+- **Editor de Petições**: Adicionado mini servidor local `scripts/syncfusion-proxy.mjs` para atuar como proxy da importação DOCX do Syncfusion durante o desenvolvimento local.
+- **Editor de Petições**: Em ambiente `dev`, o editor agora prioriza automaticamente `http://localhost:3210/api/documenteditor/` antes dos fallbacks por `VITE_SYNC_FUSION` e Edge Function do Supabase.
+- **Scripts**: Adicionados `npm run syncfusion-proxy` e `npm run dev:syncfusion` para subir o proxy local junto com o frontend.
+
+## 1.9.938
+- **Editor de Petições**: Restaurada a solução histórica de importação DOCX baseada na Edge Function `syncfusion-import`, usando o proxy do Supabase como `serviceUrl` padrão do Syncfusion.
+- **Editor de Petições**: Mantido o suporte a `VITE_SYNC_FUSION`, com fallback automático para `functions/v1/syncfusion-import/` quando `VITE_SUPABASE_URL` estiver configurado, evitando chamadas diretas do navegador ao endpoint público `Import`.
+
+## 1.9.937
+- **Editor de Petições**: Restaurado o comportamento anterior do Syncfusion com o botão nativo `Open` novamente ativo na toolbar.
+- **Editor de Petições**: Restaurado o fallback histórico do `serviceUrl` para `https://ej2services.syncfusion.com/production/web-services/api/documenteditor/`, preservando também o suporte à configuração por `VITE_SYNC_FUSION`.
+
+## 1.9.936
+- **Editor de Petições**: Removido o botão nativo `Open` da toolbar do Syncfusion para impedir que a biblioteca dispare importações DOCX diretas pelo endpoint público, evitando novos erros de CORS/504 fora do fluxo controlado do CRM.
+- **Editor de Petições**: O carregamento de modelos e documentos Word permanece disponível apenas pelo fluxo de importação do sistema, que já possui tratamento de erro e mensagens orientativas.
+
+## 1.9.935
+- **Editor de Petições**: Ajustada a configuração do `serviceUrl` do Syncfusion para respeitar `VITE_SYNC_FUSION`, evitando dependência rígida do endpoint público de conversão DOCX.
+- **Editor de Petições**: Melhorado o tratamento de erro na importação de arquivos DOCX para exibir mensagens claras em casos de CORS, indisponibilidade de rede ou timeout do serviço de conversão.
+
+## 1.9.934
+- **Processos**: Otimizada a listagem principal do módulo para carregar apenas metadados leves da tabela `processes`, reduzindo o peso da consulta inicial e evitando timeout/erro 500 em telas dependentes como dashboard, calendário e prazos.
+- **Processos**: Ajustado o módulo de processos para buscar o registro completo apenas ao abrir detalhes ou edição, preservando notas e campos detalhados sem sobrecarregar a listagem geral.
+
+## 1.9.933
+- **Petições**: Otimizado o carregamento inicial do módulo para listar apenas metadados das petições salvas, reduzindo o peso da consulta em `saved_petitions` e evitando timeout ao abrir a tela.
+- **Petições**: Ajustado o fluxo de abertura para buscar o conteúdo completo da petição apenas no momento do carregamento do documento.
+
+## 1.9.932
+- **Agenda**: Adicionadas ações de arquivar/desarquivar prepostos e a aba Arquivados no painel de prepostos.
+- **Agenda**: Adicionado badge visual de preposto nos compromissos do calendário, com exibição de detalhes do vínculo ao abrir o compromisso, incluindo nome, telefone e link para WhatsApp.
+
+## 1.9.931
+- **Agenda**: O rodapé do modal de vínculo de prepostos foi fixado na base para manter o botão salvar/vincular sempre visível durante a rolagem.
+
+## 1.9.930
+- **Agenda**: Adicionada faixa laranja no topo do painel de prepostos como acento visual, alinhado ao tema do sistema.
+
+## 1.9.929
+- **Agenda**: Os modais de prepostos, vínculo e pagamento foram refatorados para seguir o padrão visual do sistema, com header, espaçamento, barra superior, footer e focos alinhados ao tema principal.
+
+## 1.9.928
+- **Agenda**: Ajustado o autocomplete de preposto no modal de vínculo para fechar ao selecionar e removida a exibição do CPF na lista de resultados.
+
+## 1.9.927
+- **Agenda**: Refinada a exibição do autocomplete de preposto no modal de vínculo, com dropdown mais integrado ao campo e opção de limpeza da seleção.
+
+## 1.9.926
+- **Agenda**: Ajustado o autocomplete do preposto no modal de vínculo para exibir resultados apenas após o usuário começar a digitar.
+
+## 1.9.925
+- **Agenda**: Removido o fundo cinza do corpo do modal de vínculo de prepostos, mantendo o conteúdo com fundo branco e visual mais limpo.
+
+## 1.9.924
+- **Agenda**: O modal de vínculo de prepostos agora permite buscar o preposto digitando com filtro em tempo real e recebeu ajuste visual com cabeçalho e blocos mais suaves para evitar aparência excessivamente branca.
+
+## 1.9.923
+- **Agenda**: Adicionado campo de busca por nome específico na aba de cadastro de prepostos, com filtros reorganizados por aba para melhor usabilidade.
+
+## 1.9.922
+- **Agenda**: Removido o visual alaranjado do painel de prepostos, ajustadas abas, filtros e botões para o padrão azul/neutro do sistema e forçado fundo branco explícito nos modais de vínculo e pagamento.
+
+## 1.9.921
+- **Agenda**: Corrigida a estrutura JSX dos modais de vínculo e pagamento de prepostos, removido o visual alaranjado do vínculo e mantido o preenchimento automático da data a partir do compromisso selecionado.
+
+## 1.9.920
+- **Agenda**: O visual do modal de vínculo de prepostos foi ajustado para seguir o padrão visual dos outros modais do sistema, removendo o design laranja e usando estilo consistente.
+
+## 1.9.919
+- **Agenda**: O modal de vínculo de prepostos foi reorganizado com visual mais moderno, melhor hierarquia dos campos, exibição apenas de compromissos futuros e ordenação do mais próximo para o mais distante.
+
+## 1.9.918
+- **Agenda**: O seletor de compromissos no vínculo de prepostos agora também exibe o nome do cliente associado, além de tipo, data, hora e trecho da descrição.
+
+## 1.9.917
+- **Agenda**: O seletor de compromissos no vínculo de prepostos agora exibe mais contexto para localizar itens com facilidade, incluindo tipo, data, hora e trecho da descrição do compromisso.
+
+## 1.9.916
+- **Agenda**: Novo submódulo de **Prepostos** com cadastro independente, vinculação a compromissos, controle de data, status do serviço, valor cobrado, status de pagamento e dados bancários (PIX, banco, agência, conta).
   
   ## 1.9.915
 - **Cloud**: Corrigido o menu de contexto da área em branco para que opções como `Nova pasta`, `Enviar arquivos`, `Colar imagem` e `Atualizar` executem normalmente sem fechamento prematuro.

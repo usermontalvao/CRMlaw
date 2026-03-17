@@ -7,13 +7,14 @@ import interactionPlugin from '@fullcalendar/interaction';
 import listPlugin from '@fullcalendar/list';
 import ptLocale from '@fullcalendar/core/locales/pt-br';
 import type { EventContentArg, EventInput } from '@fullcalendar/core';
-import { Loader2, Calendar as CalendarIcon, X, Filter, FileSpreadsheet, FileText, Plus, History } from 'lucide-react';
+import { Loader2, Calendar as CalendarIcon, X, Filter, FileSpreadsheet, FileText, Plus, History, Users, Briefcase, Phone, MessageCircle } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { deadlineService } from '../services/deadline.service';
 import { processService } from '../services/process.service';
 import { requirementService } from '../services/requirement.service';
 import { clientService } from '../services/client.service';
 import { calendarService } from '../services/calendar.service';
+import { representativeService } from '../services/representative.service';
 import { ClientSearchSelect } from './ClientSearchSelect';
 import { useDeleteConfirm } from '../contexts/DeleteConfirmContext';
 import { userNotificationService } from '../services/userNotification.service';
@@ -24,6 +25,8 @@ import type { Process } from '../types/process.types';
 import type { Requirement } from '../types/requirement.types';
 import type { Client } from '../types/client.types';
 import type { CalendarEvent } from '../types/calendar.types';
+import type { RepresentativeAppointment } from '../types/representative.types';
+import RepresentativesPanel from './RepresentativesPanel';
 
 declare global {
   interface Window {
@@ -96,6 +99,7 @@ type SelectedEvent = {
     clientPhone?: string;
     calendarEventId?: string;
     entityId?: string;
+    representativeAppointments?: RepresentativeAppointment[];
   };
 };
 
@@ -140,6 +144,7 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({
   const [processes, setProcesses] = useState<Process[]>([]);
   const [requirements, setRequirements] = useState<Requirement[]>([]);
   const [calendarEventsData, setCalendarEventsData] = useState<CalendarEvent[]>([]);
+  const [representativeAppointments, setRepresentativeAppointments] = useState<RepresentativeAppointment[]>([]);
   const [selectedEvent, setSelectedEvent] = useState<SelectedEvent | null>(null);
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [legendExpanded, setLegendExpanded] = useState(false);
@@ -174,10 +179,22 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({
   const [showTodayPanel, setShowTodayPanel] = useState(true);
   const [calendarTitle, setCalendarTitle] = useState('');
   const [calendarView, setCalendarView] = useState<'dayGridMonth' | 'timeGridWeek' | 'timeGridDay' | 'listWeek'>('dayGridMonth');
+  const [isRepresentativesPanelOpen, setIsRepresentativesPanelOpen] = useState(false);
   const linkedClient = useMemo(
     () => clients.find((client) => client.id === newEventForm.client_id) || null,
     [clients, newEventForm.client_id],
   );
+
+  const representativeAppointmentsMap = useMemo(() => {
+    const map = new Map<string, RepresentativeAppointment[]>();
+    representativeAppointments.forEach((appointment) => {
+      if (!appointment.calendar_event_id) return;
+      const current = map.get(appointment.calendar_event_id) || [];
+      current.push(appointment);
+      map.set(appointment.calendar_event_id, current);
+    });
+    return map;
+  }, [representativeAppointments]);
 
   const clientMap = useMemo(() => {
     const map = new Map<string, Client>();
@@ -236,11 +253,12 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({
         clientName: event.client_id ? clientMap.get(event.client_id)?.full_name : undefined,
         clientPhone: event.client_id ? (clientMap.get(event.client_id)?.mobile || clientMap.get(event.client_id)?.phone) : undefined,
         calendarEventId: event.id,
+        representativeAppointments: representativeAppointmentsMap.get(event.id) || [],
       },
     });
 
     if (onParamConsumed) onParamConsumed();
-  }, [calendarEventsData, clientMap, focusEventId, onParamConsumed]);
+  }, [calendarEventsData, clientMap, focusEventId, onParamConsumed, representativeAppointmentsMap]);
 
   const currentMonthName = useMemo(() => {
     return calendarTitle || new Date().toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' });
@@ -475,6 +493,18 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({
     return details;
   }, [formatDateTime, selectedEvent]);
 
+  const selectedEventRepresentativeAppointments = useMemo(() => {
+    return selectedEvent?.extendedProps?.representativeAppointments || [];
+  }, [selectedEvent]);
+
+  const buildWhatsAppUrl = useCallback((phone?: string | null) => {
+    if (!phone) return '';
+    const digits = phone.replace(/\D/g, '');
+    if (!digits) return '';
+    const normalized = digits.startsWith('55') ? digits : `55${digits}`;
+    return `https://wa.me/${normalized}`;
+  }, []);
+
   const canCreateLinkedEvent = Boolean(
     selectedEvent &&
       !selectedEvent.extendedProps.calendarEventId &&
@@ -537,17 +567,19 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({
       setLoading(true);
       setError(null);
 
-      const [deadlinesData, processesData, requirementsData, calendarEventsRemote] = await Promise.all([
+      const [deadlinesData, processesData, requirementsData, calendarEventsRemote, representativeAppointmentsData] = await Promise.all([
         deadlineService.listDeadlines(),
         processService.listProcesses(),
         requirementService.listRequirements(),
         calendarService.listEvents(),
+        representativeService.listAppointments(),
       ]);
 
       setDeadlines(deadlinesData);
       setProcesses(processesData);
       setRequirements(requirementsData);
       setCalendarEventsData(calendarEventsRemote);
+      setRepresentativeAppointments(representativeAppointmentsData);
     } catch (err: any) {
       setError(err.message || 'Erro ao carregar dados do calendário');
     } finally {
@@ -661,6 +693,7 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({
       const relatedClient = item.client_id ? clientMap.get(item.client_id) : null;
       const classNames = ['calendar-event', `calendar-chip--${item.event_type}`];
       const hasTime = item.start_at.includes('T') && !item.start_at.endsWith('T00:00:00.000Z') && !item.start_at.endsWith('T00:00:00+00:00');
+      const linkedRepresentativeAppointments = representativeAppointmentsMap.get(item.id) || [];
 
       return {
         id: `calendar-${item.id}`,
@@ -684,10 +717,11 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({
           clientName: relatedClient?.full_name,
           clientPhone: relatedClient?.mobile || relatedClient?.phone,
           calendarEventId: item.id,
+          representativeAppointments: linkedRepresentativeAppointments,
         },
       } as EventInput;
     });
-  }, [calendarEventsData, clientMap]);
+  }, [calendarEventsData, clientMap, representativeAppointmentsMap]);
 
   const allEvents = useMemo(() => {
     const combined = [...systemEvents, ...customEvents];
@@ -703,27 +737,6 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({
   const handleEventClick = useCallback(
     (info: any) => {
       const extendedProps = info.event.extendedProps as Record<string, any>;
-      const calendarEventId = extendedProps?.calendarEventId as string | undefined;
-
-      if (calendarEventId) {
-        const startDate = info.event.start ?? new Date();
-        const isAllDay = info.event.allDay;
-        const existing = calendarEventsData.find((event) => event.id === calendarEventId) || null;
-
-        openEventForm(
-          {
-            title: info.event.title,
-            date: formatDateInputValue(startDate),
-            time: isAllDay ? '' : formatTimeInputValue(startDate),
-            type: (extendedProps.type as EventType) || 'meeting',
-            description: extendedProps.description ?? '',
-            client_id: existing?.client_id ?? '',
-          },
-          calendarEventId,
-        );
-        return;
-      }
-
       setSelectedEvent({
         title: info.event.title,
         start: info.event.startStr,
@@ -732,7 +745,7 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({
         extendedProps,
       });
     },
-    [calendarEventsData, formatDateInputValue, formatTimeInputValue, openEventForm],
+    [],
   );
 
   const handleDateClick = useCallback(
@@ -1428,6 +1441,7 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({
     const extendedProps = event.extendedProps as Record<string, any>;
     const rawType = extendedProps?.type;
     const type = (rawType ? (rawType as EventType) : 'meeting');
+    const linkedRepresentativeAppointments = (extendedProps?.representativeAppointments as RepresentativeAppointment[] | undefined) || [];
 
     const displayTime = timeText && timeText.trim().length > 0 ? timeText : '00';
 
@@ -1437,6 +1451,12 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({
         <span className="calendar-chip__title" title={event.title}>
           {event.title}
         </span>
+        {linkedRepresentativeAppointments.length > 0 && (
+          <span className="ml-1 inline-flex items-center gap-1 rounded-full bg-amber-100 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-amber-800 ring-1 ring-amber-300">
+            <Briefcase className="h-3 w-3" />
+            Preposto
+          </span>
+        )}
       </div>
     );
   }, []);
@@ -1595,6 +1615,15 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({
               title="Exportar PDF"
             >
               <FileText className="w-4 h-4" />
+            </button>
+            <button
+              type="button"
+              onClick={() => setIsRepresentativesPanelOpen(true)}
+              className="inline-flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-amber-700 bg-amber-50 hover:bg-amber-100 rounded-lg border border-amber-200 transition-colors"
+              title="Gerenciar Prepostos"
+            >
+              <Users className="w-4 h-4" />
+              <span className="hidden sm:inline">Prepostos</span>
             </button>
             <button
               type="button"
@@ -1834,6 +1863,48 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({
                 <div className="flex items-center gap-2">
                   <span className="font-semibold text-zinc-700 dark:text-zinc-300">Telefone:</span>
                   <span className="text-zinc-600 dark:text-zinc-400">{selectedEvent.extendedProps.clientPhone}</span>
+                </div>
+              )}
+
+              {selectedEventRepresentativeAppointments.length > 0 && (
+                <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-4 space-y-3">
+                  <div className="flex items-center gap-2 text-amber-800">
+                    <Briefcase className="w-4 h-4" />
+                    <span className="text-sm font-semibold">Preposto vinculado ao compromisso</span>
+                  </div>
+                  <div className="space-y-3">
+                    {selectedEventRepresentativeAppointments.map((appointment) => {
+                      const representative = appointment.representative;
+                      const whatsappUrl = buildWhatsAppUrl(representative?.phone);
+
+                      return (
+                        <div key={appointment.id} className="rounded-lg border border-amber-200 bg-white px-3 py-3 text-sm text-slate-700">
+                          <div className="font-semibold text-slate-900">{representative?.full_name || 'Preposto não encontrado'}</div>
+                          <div className="mt-2 grid gap-2 text-xs sm:text-sm">
+                            <div className="flex items-center gap-2">
+                              <span className="font-semibold text-slate-700">OAB:</span>
+                              <span className="text-slate-600">{(representative as any)?.oab || 'Não informado'}</span>
+                            </div>
+                            <div className="flex items-center gap-2">
+                              <Phone className="w-3.5 h-3.5 text-slate-500" />
+                              <span className="text-slate-600">{representative?.phone || 'Não informado'}</span>
+                            </div>
+                            {whatsappUrl && (
+                              <a
+                                href={whatsappUrl}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="inline-flex items-center gap-2 text-emerald-700 hover:text-emerald-800 font-medium"
+                              >
+                                <MessageCircle className="w-3.5 h-3.5" />
+                                Abrir WhatsApp
+                              </a>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
                 </div>
               )}
 
@@ -2641,6 +2712,21 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({
           </div>,
           document.body,
         )}
+
+      {/* Modal de Prepostos */}
+      {isRepresentativesPanelOpen && createPortal(
+        <div className="fixed inset-0 z-[70] flex items-center justify-center px-3 sm:px-6 py-4">
+          <div
+            className="absolute inset-0 bg-slate-900/70 backdrop-blur-sm"
+            onClick={() => setIsRepresentativesPanelOpen(false)}
+            aria-hidden="true"
+          />
+          <div className="relative w-full max-w-5xl max-h-[92vh] overflow-hidden rounded-2xl shadow-2xl">
+            <RepresentativesPanel onClose={() => setIsRepresentativesPanelOpen(false)} />
+          </div>
+        </div>,
+        document.body,
+      )}
     </div>
   );
 };

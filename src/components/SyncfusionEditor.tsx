@@ -47,8 +47,39 @@ const MAX_PROPERTIES_PANE_WIDTH = 420;
 const PROPERTIES_PANE_PINNED_KEY = 'syncfusion-properties-pane-pinned-v1';
 const PROPERTIES_PANE_COLLAPSED_WIDTH = 64;
 
-// Service URL: endpoint oficial Syncfusion (funcional e documentado)
-const SYNCFUSION_SERVICE_URL = 'https://document.syncfusion.com/web-services/docx-editor/api/documenteditor/';
+const SYNCFUSION_SERVICE_URL =
+  String(import.meta.env.VITE_SYNC_FUSION || '').trim() ||
+  'https://document.syncfusion.com/web-services/docx-editor/api/documenteditor/';
+
+const buildDocxImportError = (error: unknown) => {
+  const message = String((error as any)?.message || '').toLowerCase();
+  const raw = String(error || '');
+
+  if (
+    message.includes('cors') ||
+    message.includes('failed to fetch') ||
+    message.includes('networkerror') ||
+    raw.includes('ERR_FAILED')
+  ) {
+    return new Error(
+      'Não foi possível importar o DOCX porque o serviço de conversão bloqueou a requisição (CORS/rede). Configure `VITE_SYNC_FUSION` com um endpoint próprio do DocumentEditor acessível pelo navegador.'
+    );
+  }
+
+  if (message.includes('504') || message.includes('gateway timeout') || message.includes('timeout')) {
+    return new Error(
+      'O serviço de conversão DOCX do Syncfusion demorou demais para responder. Tente novamente ou configure `VITE_SYNC_FUSION` com um endpoint próprio mais estável.'
+    );
+  }
+
+  if (message.includes('404') || raw.includes('404')) {
+    return new Error(
+      'O proxy de importação do Syncfusion não foi encontrado. Verifique se a Edge Function `syncfusion-import` está publicada no Supabase ou configure `VITE_SYNC_FUSION` com um endpoint válido.'
+    );
+  }
+
+  return new Error('Não foi possível importar o arquivo DOCX no editor. Verifique a configuração de `VITE_SYNC_FUSION`.');
+};
 
 const applySyncfusionServiceUrl = (editor: any) => {
   if (!editor) return;
@@ -264,7 +295,7 @@ const SyncfusionEditor = forwardRef<SyncfusionEditorRef, SyncfusionEditorProps>(
             await openDocx();
           } catch (err) {
             console.error('Erro ao carregar DOCX:', err);
-            throw err;
+            throw buildDocxImportError(err);
           }
           return;
         }
@@ -277,7 +308,7 @@ const SyncfusionEditor = forwardRef<SyncfusionEditorRef, SyncfusionEditorProps>(
                 resolve();
               } catch (err) {
                 console.error('Erro ao carregar DOCX:', err);
-                reject(err);
+                reject(buildDocxImportError(err));
               }
             })();
           });
@@ -299,12 +330,17 @@ const SyncfusionEditor = forwardRef<SyncfusionEditorRef, SyncfusionEditorProps>(
               editor.open(file);
               window.setTimeout(() => resolve(), 150);
             } catch (error) {
-              reject(error);
+              reject(buildDocxImportError(error));
             }
           });
         };
 
-        await openDocx();
+        try {
+          await openDocx();
+        } catch (err) {
+          console.error('Erro ao carregar DOCX via import:', err);
+          throw buildDocxImportError(err);
+        }
       },
 
       exportDocx: async (fileName = 'documento.docx') => {
