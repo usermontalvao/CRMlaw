@@ -7,7 +7,7 @@ import interactionPlugin from '@fullcalendar/interaction';
 import listPlugin from '@fullcalendar/list';
 import ptLocale from '@fullcalendar/core/locales/pt-br';
 import type { EventContentArg, EventInput } from '@fullcalendar/core';
-import { Loader2, Calendar as CalendarIcon, X, Filter, FileSpreadsheet, FileText, Plus, History, Users, Briefcase, Phone, MessageCircle } from 'lucide-react';
+import { Loader2, Calendar as CalendarIcon, X, Filter, FileSpreadsheet, FileText, Plus, History, Users, Briefcase, Phone, MessageCircle, MapPin, ArrowUpRight, User } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { deadlineService } from '../services/deadline.service';
 import { processService } from '../services/process.service';
@@ -19,6 +19,7 @@ import { ClientSearchSelect } from './ClientSearchSelect';
 import { useDeleteConfirm } from '../contexts/DeleteConfirmContext';
 import { userNotificationService } from '../services/userNotification.service';
 import { useAuth } from '../contexts/AuthContext';
+import { supabase } from '../config/supabase';
 import { usePermissions } from '../hooks/usePermissions';
 import type { Deadline } from '../types/deadline.types';
 import type { Process } from '../types/process.types';
@@ -396,13 +397,12 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({
     try {
       const date = new Date(value);
       if (isNaN(date.getTime())) return '';
-      return date.toLocaleString('pt-BR', {
-        day: '2-digit',
-        month: '2-digit',
-        year: 'numeric',
-        hour: '2-digit',
-        minute: '2-digit',
-      });
+      const day = date.getDate().toString().padStart(2, '0');
+      const month = (date.getMonth() + 1).toString().padStart(2, '0');
+      const year = date.getFullYear();
+      const hour = date.getHours().toString().padStart(2, '0');
+      const minute = date.getMinutes().toString().padStart(2, '0');
+      return `${day}/${month}/${year} às ${hour}:${minute}`;
     } catch {
       return '';
     }
@@ -468,21 +468,70 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({
     return moduleLabels[moduleKey] ?? moduleKey;
   }, [moduleLabels, selectedEvent]);
 
-  const selectedEventDataDetails = useMemo(() => {
-    if (!selectedEvent?.extendedProps?.data) return [] as { label: string; value: string }[];
-    const data = selectedEvent.extendedProps.data as Record<string, any>;
-    const details: { label: string; value: string }[] = [];
+  const selectedEventProcess = useMemo(() => {
+    if (selectedEvent?.extendedProps?.moduleLink !== 'processos' || !selectedEvent.extendedProps.entityId) {
+      return null;
+    }
 
-    const pushDetail = (label: string, value?: any, formatter?: (value: any) => string) => {
-      if (value === undefined || value === null || value === '') return;
-      const formatted = formatter ? formatter(value) : String(value);
-      details.push({ label, value: formatted });
+    return processes.find((process) => process.id === selectedEvent.extendedProps.entityId) || null;
+  }, [processes, selectedEvent]);
+
+  const [selectedEventProcessOrgao, setSelectedEventProcessOrgao] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (selectedEvent?.extendedProps?.moduleLink !== 'processos' || !selectedEvent.extendedProps.entityId) {
+      setSelectedEventProcessOrgao(null);
+      return;
+    }
+
+    const processId = selectedEvent.extendedProps.entityId;
+    const process = processes.find((p) => p.id === processId);
+
+    // Se o processo já tem court, não precisa buscar
+    if (process?.court) {
+      setSelectedEventProcessOrgao(null);
+      return;
+    }
+
+    // Buscar última intimação do processo para pegar o órgão
+    const fetchOrgao = async () => {
+      try {
+        const { data, error } = await supabase
+          .from('djen_comunicacoes')
+          .select('nome_orgao')
+          .eq('process_id', processId)
+          .order('data_disponibilizacao', { ascending: false })
+          .limit(1)
+          .maybeSingle();
+
+        if (!error && data?.nome_orgao) {
+          setSelectedEventProcessOrgao(data.nome_orgao);
+        } else {
+          setSelectedEventProcessOrgao(null);
+        }
+      } catch {
+        setSelectedEventProcessOrgao(null);
+      }
     };
 
-    pushDetail('Processo', data.process_code);
+    fetchOrgao();
+  }, [processes, selectedEvent]);
+
+  const selectedEventDataDetails = useMemo(() => {
+    if (!selectedEvent?.extendedProps?.data) return [] as { label: string; value: string; secondaryValue?: string }[];
+    const data = selectedEvent.extendedProps.data as Record<string, any>;
+    const details: { label: string; value: string; secondaryValue?: string }[] = [];
+    const processCourt = data.court || selectedEventProcess?.court || selectedEventProcessOrgao || data.forum || data.vara || data.comarca;
+
+    const pushDetail = (label: string, value?: any, formatter?: (value: any) => string, secondaryValue?: string) => {
+      if (value === undefined || value === null || value === '') return;
+      const formatted = formatter ? formatter(value) : String(value);
+      details.push({ label, value: formatted, secondaryValue });
+    };
+
+    pushDetail('Processo', data.process_code, undefined, processCourt);
     pushDetail('Protocolo', data.protocol);
     pushDetail('Responsável', data.responsible_lawyer);
-    pushDetail('Vara/Órgão', data.court);
     pushDetail('Beneficiário', data.beneficiary);
     pushDetail('Prazo original', data.due_date, formatDateTime);
     pushDetail('Agendado para', data.hearing_date, (date: string) => {
@@ -491,7 +540,7 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({
     });
 
     return details;
-  }, [formatDateTime, selectedEvent]);
+  }, [formatDateTime, selectedEvent, selectedEventProcess, selectedEventProcessOrgao]);
 
   const selectedEventRepresentativeAppointments = useMemo(() => {
     return selectedEvent?.extendedProps?.representativeAppointments || [];
@@ -1454,7 +1503,7 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({
         {linkedRepresentativeAppointments.length > 0 && (
           <span className="ml-1 inline-flex items-center gap-1 rounded-full bg-amber-100 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-amber-800 ring-1 ring-amber-300">
             <Briefcase className="h-3 w-3" />
-            Preposto
+            Correspondente
           </span>
         )}
       </div>
@@ -1620,10 +1669,10 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({
               type="button"
               onClick={() => setIsRepresentativesPanelOpen(true)}
               className="inline-flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-amber-700 bg-amber-50 hover:bg-amber-100 rounded-lg border border-amber-200 transition-colors"
-              title="Gerenciar Prepostos"
+              title="Gerenciar Correspondentes"
             >
               <Users className="w-4 h-4" />
-              <span className="hidden sm:inline">Prepostos</span>
+              <span className="hidden sm:inline">Correspondentes</span>
             </button>
             <button
               type="button"
@@ -1785,200 +1834,231 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({
       {/* Modal de Detalhes do Evento */}
       {selectedEvent && (
         <div
-          className="fixed inset-0 z-[70] flex items-center justify-center px-3 sm:px-6 py-4"
+          className="fixed inset-0 z-[70] flex items-center justify-center p-4"
           onClick={() => setSelectedEvent(null)}
         >
-          <div className="absolute inset-0 bg-slate-900/70 backdrop-blur-sm" aria-hidden="true" />
+          <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" aria-hidden="true" />
           <div
-            className="relative w-full max-w-lg bg-white dark:bg-zinc-900 rounded-2xl shadow-2xl ring-1 ring-black/5 flex flex-col overflow-hidden"
+            className="relative w-full max-w-md overflow-hidden rounded-2xl bg-white shadow-2xl ring-1 ring-black/10"
             onClick={(e) => e.stopPropagation()}
           >
-            <div className="h-2 w-full bg-orange-500" />
-            <div className="px-5 sm:px-8 py-5 border-b border-slate-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 flex items-start justify-between gap-4">
-              <div>
-                <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400 dark:text-slate-500">Evento</p>
-                <h2 className="text-xl font-semibold text-slate-900 dark:text-white">{selectedEvent.title}</h2>
-                {selectedEventModuleLabel && (
-                  <span className="inline-flex items-center gap-1 mt-2 px-3 py-1 rounded-full bg-orange-100 dark:bg-orange-900/30 text-orange-700 dark:text-orange-300 text-xs font-semibold">
-                    {selectedEventModuleLabel}
-                  </span>
-                )}
+            {/* Header */}
+            <div className="border-b border-slate-200 px-5 py-4 bg-white">
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0 flex-1">
+                  <h2 className="truncate text-lg font-semibold text-slate-900">{selectedEvent.title}</h2>
+                  <div className="flex items-center gap-2 mt-1.5">
+                    {selectedEventModuleLabel && (
+                      <span className="inline-flex items-center rounded-md bg-orange-100 px-2 py-0.5 text-xs font-medium text-orange-700">
+                        {selectedEventModuleLabel}
+                      </span>
+                    )}
+                    {selectedEvent.extendedProps.type && (
+                      <span className="inline-flex items-center rounded-md bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-600">
+                        {EVENT_TYPE_LABELS[selectedEvent.extendedProps.type as EventType] ?? selectedEvent.extendedProps.type}
+                      </span>
+                    )}
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setSelectedEvent(null)}
+                  className="rounded-lg p-1.5 text-slate-400 transition hover:bg-slate-100 hover:text-slate-600"
+                  aria-label="Fechar"
+                >
+                  <X className="w-5 h-5" />
+                </button>
               </div>
-              <button
-                type="button"
-                onClick={() => setSelectedEvent(null)}
-                className="p-2 text-slate-400 hover:text-slate-600 dark:text-slate-300 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-white/10 rounded-xl transition"
-                aria-label="Fechar modal"
-              >
-                <X className="w-5 h-5" />
-              </button>
             </div>
-            <div className="p-6 space-y-4 text-sm bg-white dark:bg-zinc-900">
-              <div className="flex items-center gap-2">
-                <span className="font-semibold text-zinc-700 dark:text-zinc-300">Data:</span>
-                <span className="text-zinc-600 dark:text-zinc-400">
-                  {selectedEvent.start
-                    ? new Intl.DateTimeFormat('pt-BR', {
-                        day: '2-digit',
-                        month: 'long',
-                        year: 'numeric',
-                        hour: '2-digit',
-                        minute: '2-digit',
-                      }).format(new Date(selectedEvent.start))
-                    : '—'}
-                </span>
+
+            {/* Body */}
+            <div className="max-h-[60vh] space-y-4 overflow-y-auto bg-white px-5 py-4">
+              {/* Data e Hora */}
+              <div className="flex items-center gap-3">
+                <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-blue-50">
+                  <CalendarIcon className="w-4 h-4 text-blue-600" />
+                </div>
+                <div>
+                  <p className="text-xs text-slate-500">Data e hora</p>
+                  <p className="text-sm font-medium text-slate-900">
+                    {selectedEvent.start
+                      ? formatDateTime(new Date(selectedEvent.start).toISOString())
+                      : '—'}
+                  </p>
+                </div>
               </div>
 
-              {selectedEvent.extendedProps.type && (
-                <div className="flex items-center gap-2">
-                  <span className="font-semibold text-zinc-700 dark:text-zinc-300">Tipo:</span>
-                  <span className="text-zinc-600 dark:text-zinc-400">
-                    {EVENT_TYPE_LABELS[selectedEvent.extendedProps.type as EventType] ?? selectedEvent.extendedProps.type}
-                  </span>
+              {/* Prioridade e Status */}
+              {(selectedEvent.extendedProps.priority || selectedEvent.extendedProps.status) && (
+                <div className="flex items-center gap-4">
+                  {selectedEvent.extendedProps.priority && (
+                    <div className="flex items-center gap-2">
+                      <span className={`w-2 h-2 rounded-full ${
+                        selectedEvent.extendedProps.priority === 'alta' ? 'bg-red-500' :
+                        selectedEvent.extendedProps.priority === 'média' || selectedEvent.extendedProps.priority === 'media' ? 'bg-amber-500' :
+                        'bg-slate-400'
+                      }`} />
+                      <span className="text-sm capitalize text-slate-600">{selectedEvent.extendedProps.priority}</span>
+                    </div>
+                  )}
+                  {selectedEvent.extendedProps.status && (
+                    <span className="rounded-md bg-slate-100 px-2 py-1 text-xs capitalize text-slate-600">
+                      {selectedEvent.extendedProps.status}
+                    </span>
+                  )}
                 </div>
               )}
 
-              {selectedEvent.extendedProps.priority && (
-                <div>
-                  <span className="font-semibold text-zinc-700 dark:text-zinc-300">Prioridade:</span>{' '}
-                  <span className="text-zinc-600 dark:text-zinc-400 capitalize">{selectedEvent.extendedProps.priority}</span>
-                </div>
-              )}
-
-              {selectedEvent.extendedProps.status && (
-                <div className="flex items-center gap-2">
-                  <span className="font-semibold text-zinc-700 dark:text-zinc-300">Status:</span>
-                  <span className="text-zinc-600 dark:text-zinc-400 capitalize">{selectedEvent.extendedProps.status}</span>
-                </div>
-              )}
-
+              {/* Cliente */}
               {selectedEvent.extendedProps.clientName && (
-                <div className="flex items-center gap-2">
-                  <span className="font-semibold text-zinc-700 dark:text-zinc-300">Cliente:</span>
-                  <span className="text-zinc-600 dark:text-zinc-400">{selectedEvent.extendedProps.clientName}</span>
+                <div className="flex items-center gap-3">
+                  <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-violet-50">
+                    <User className="w-4 h-4 text-violet-600" />
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <p className="text-xs text-slate-500">Cliente</p>
+                    <p className="truncate text-sm font-medium text-slate-900">{selectedEvent.extendedProps.clientName}</p>
+                  </div>
                 </div>
               )}
 
+              {/* Telefone do Cliente */}
               {selectedEvent.extendedProps.clientPhone && (
-                <div className="flex items-center gap-2">
-                  <span className="font-semibold text-zinc-700 dark:text-zinc-300">Telefone:</span>
-                  <span className="text-zinc-600 dark:text-zinc-400">{selectedEvent.extendedProps.clientPhone}</span>
+                <div className="flex items-center gap-3">
+                  <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-emerald-50">
+                    <Phone className="w-4 h-4 text-emerald-600" />
+                  </div>
+                  <div>
+                    <p className="text-xs text-slate-500">Telefone</p>
+                    <p className="text-sm font-medium text-slate-900">{selectedEvent.extendedProps.clientPhone}</p>
+                  </div>
                 </div>
               )}
 
+              {/* Correspondente Vinculado */}
               {selectedEventRepresentativeAppointments.length > 0 && (
-                <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-4 space-y-3">
-                  <div className="flex items-center gap-2 text-amber-800">
-                    <Briefcase className="w-4 h-4" />
-                    <span className="text-sm font-semibold">Preposto vinculado ao compromisso</span>
-                  </div>
-                  <div className="space-y-3">
-                    {selectedEventRepresentativeAppointments.map((appointment) => {
-                      const representative = appointment.representative;
-                      const whatsappUrl = buildWhatsAppUrl(representative?.phone);
+                <div className="pt-2">
+                  <p className="mb-2 text-xs font-medium uppercase tracking-wide text-slate-500">Correspondente</p>
+                  {selectedEventRepresentativeAppointments.map((appointment) => {
+                    const representative = appointment.representative;
+                    const whatsappUrl = buildWhatsAppUrl(representative?.phone);
+                    const representativeName = representative?.full_name || 'Não encontrado';
 
-                      return (
-                        <div key={appointment.id} className="rounded-lg border border-amber-200 bg-white px-3 py-3 text-sm text-slate-700">
-                          <div className="font-semibold text-slate-900">{representative?.full_name || 'Preposto não encontrado'}</div>
-                          <div className="mt-2 grid gap-2 text-xs sm:text-sm">
-                            <div className="flex items-center gap-2">
-                              <span className="font-semibold text-slate-700">OAB:</span>
-                              <span className="text-slate-600">{(representative as any)?.oab || 'Não informado'}</span>
+                    return (
+                      <div key={appointment.id} className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+                        <div className="flex items-center justify-between gap-3">
+                          <div className="flex items-center gap-3 min-w-0">
+                            <div className="w-9 h-9 rounded-full bg-amber-500 flex items-center justify-center text-white text-sm font-semibold shrink-0">
+                              {representativeName.charAt(0).toUpperCase()}
                             </div>
-                            <div className="flex items-center gap-2">
-                              <Phone className="w-3.5 h-3.5 text-slate-500" />
-                              <span className="text-slate-600">{representative?.phone || 'Não informado'}</span>
+                            <div className="min-w-0">
+                              <p className="truncate text-sm font-medium text-slate-900">{representativeName}</p>
+                              <p className="text-xs text-slate-500">{(representative as any)?.oab || 'OAB não informada'}</p>
                             </div>
-                            {whatsappUrl && (
-                              <a
-                                href={whatsappUrl}
-                                target="_blank"
-                                rel="noreferrer"
-                                className="inline-flex items-center gap-2 text-emerald-700 hover:text-emerald-800 font-medium"
-                              >
-                                <MessageCircle className="w-3.5 h-3.5" />
-                                Abrir WhatsApp
-                              </a>
-                            )}
                           </div>
+                          {whatsappUrl ? (
+                            <a
+                              href={whatsappUrl}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-500 hover:bg-emerald-600 text-white text-xs font-medium transition"
+                            >
+                              <MessageCircle className="w-3.5 h-3.5" />
+                              WhatsApp
+                            </a>
+                          ) : (
+                            <span className="text-xs text-slate-400">Sem telefone</span>
+                          )}
                         </div>
-                      );
-                    })}
-                  </div>
+                        {appointment.diligence_location && (
+                          <div className="mt-2 flex items-center gap-2 border-t border-slate-200 pt-2 text-xs text-slate-500">
+                            <MapPin className="w-3.5 h-3.5" />
+                            <span className="truncate">{appointment.diligence_location}</span>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
                 </div>
               )}
 
+              {/* Descrição */}
               {selectedEvent.extendedProps.description && (
-                <div>
-                  <span className="font-semibold text-zinc-700 dark:text-zinc-300">Descrição:</span>{' '}
-                  <p className="text-zinc-600 dark:text-zinc-400 mt-1 whitespace-pre-wrap">{selectedEvent.extendedProps.description}</p>
+                <div className="pt-2">
+                  <p className="mb-1 text-xs font-medium uppercase tracking-wide text-slate-500">Descrição</p>
+                  <p className="whitespace-pre-wrap text-sm text-slate-700">{selectedEvent.extendedProps.description}</p>
                 </div>
               )}
 
+              {/* Detalhes extras */}
               {selectedEventDataDetails.length > 0 && (
-                <div className="space-y-1">
+                <div className="pt-2 space-y-1">
                   {selectedEventDataDetails.map((detail) => (
-                    <div key={`${detail.label}-${detail.value}`} className="flex items-center gap-2 text-xs text-zinc-600 dark:text-zinc-400">
-                      <span className="font-semibold text-zinc-700 dark:text-zinc-300">{detail.label}:</span>
-                      <span>{detail.value}</span>
+                    <div key={`${detail.label}-${detail.value}`} className="flex justify-between gap-3 text-xs">
+                      <span className="shrink-0 text-slate-500">{detail.label}</span>
+                      <span className="text-right">
+                        <span className="block font-medium text-slate-700">{detail.value}</span>
+                        {detail.secondaryValue && (
+                          <span className="mt-0.5 block text-[11px] text-slate-500">{detail.secondaryValue}</span>
+                        )}
+                      </span>
                     </div>
                   ))}
                 </div>
               )}
             </div>
 
-            <div className="border-t border-slate-200 dark:border-zinc-800 bg-slate-50 dark:bg-zinc-900 px-5 sm:px-8 py-4">
-              <div className="flex flex-wrap items-center justify-end gap-3">
+            {/* Footer */}
+            <div className="flex items-center justify-end gap-2 border-t border-slate-200 bg-white px-5 py-3">
+              <button
+                type="button"
+                onClick={() => setSelectedEvent(null)}
+                className="px-3 py-1.5 text-sm text-slate-600 transition hover:text-slate-900"
+              >
+                Fechar
+              </button>
+              {showEditButton && (
                 <button
                   type="button"
-                  onClick={() => setSelectedEvent(null)}
-                  className="px-4 py-2 text-sm text-slate-600 dark:text-zinc-400 hover:text-slate-900 dark:hover:text-white transition"
+                  onClick={handleEditSelectedEvent}
+                  className="px-3 py-1.5 rounded-lg bg-amber-500 hover:bg-amber-600 text-white text-sm font-medium transition"
                 >
-                  Fechar
+                  {editButtonLabel}
                 </button>
-                {showEditButton && (
-                  <button
-                    type="button"
-                    onClick={handleEditSelectedEvent}
-                    className="px-4 py-2 bg-amber-500 hover:bg-amber-600 text-white text-sm font-medium rounded-lg transition"
-                  >
-                    {editButtonLabel}
-                  </button>
-                )}
-                {canCreateLinkedEvent && (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      const startDate = selectedEvent.start ? new Date(selectedEvent.start) : new Date();
-                      const validDate = !Number.isNaN(startDate.getTime());
-                      openEventForm({
-                        title: selectedEvent.title,
-                        date: validDate ? formatDateInputValue(startDate) : '',
-                        time: !selectedEvent.allDay && validDate ? formatTimeInputValue(startDate) : '',
-                        type: (selectedEvent.extendedProps.type as EventType) || 'meeting',
-                        description: selectedEvent.extendedProps.description ?? '',
-                        client_id: selectedEvent.extendedProps.data?.client_id ?? '',
-                      });
-                      setSelectedEvent(null);
-                    }}
-                    className="px-4 py-2 bg-emerald-500 hover:bg-emerald-600 text-white text-sm font-medium rounded-lg transition"
-                  >
-                    Criar compromisso
-                  </button>
-                )}
-                {selectedEvent.extendedProps.moduleLink && (
-                  <button
-                    type="button"
-                    onClick={() => handleNavigateToModule(
-                      selectedEvent.extendedProps.moduleLink,
-                      selectedEvent.extendedProps.entityId
-                    )}
-                    className="px-4 py-2 bg-blue-500 hover:bg-blue-600 text-white text-sm font-medium rounded-lg transition"
-                  >
-                    Ir para Módulo
-                  </button>
-                )}
-              </div>
+              )}
+              {canCreateLinkedEvent && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    const startDate = selectedEvent.start ? new Date(selectedEvent.start) : new Date();
+                    const validDate = !Number.isNaN(startDate.getTime());
+                    openEventForm({
+                      title: selectedEvent.title,
+                      date: validDate ? formatDateInputValue(startDate) : '',
+                      time: !selectedEvent.allDay && validDate ? formatTimeInputValue(startDate) : '',
+                      type: (selectedEvent.extendedProps.type as EventType) || 'meeting',
+                      description: selectedEvent.extendedProps.description ?? '',
+                      client_id: selectedEvent.extendedProps.data?.client_id ?? '',
+                    });
+                    setSelectedEvent(null);
+                  }}
+                  className="px-3 py-1.5 rounded-lg bg-emerald-500 hover:bg-emerald-600 text-white text-sm font-medium transition"
+                >
+                  Criar
+                </button>
+              )}
+              {selectedEvent.extendedProps.moduleLink && (
+                <button
+                  type="button"
+                  onClick={() => handleNavigateToModule(
+                    selectedEvent.extendedProps.moduleLink,
+                    selectedEvent.extendedProps.entityId
+                  )}
+                  className="px-3 py-1.5 rounded-lg bg-blue-500 hover:bg-blue-600 text-white text-sm font-medium transition"
+                >
+                  Ir para Módulo
+                </button>
+              )}
             </div>
           </div>
         </div>
@@ -2713,7 +2793,7 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({
           document.body,
         )}
 
-      {/* Modal de Prepostos */}
+      {/* Modal de Correspondentes */}
       {isRepresentativesPanelOpen && createPortal(
         <div className="fixed inset-0 z-[70] flex items-center justify-center px-3 sm:px-6 py-4">
           <div
@@ -2722,7 +2802,10 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({
             aria-hidden="true"
           />
           <div className="relative w-full max-w-5xl max-h-[92vh] overflow-hidden rounded-2xl shadow-2xl">
-            <RepresentativesPanel onClose={() => setIsRepresentativesPanelOpen(false)} />
+            <RepresentativesPanel
+              onClose={() => setIsRepresentativesPanelOpen(false)}
+              onDataChanged={loadData}
+            />
           </div>
         </div>,
         document.body,

@@ -27,6 +27,7 @@ import {
   UserCheck,
   Banknote,
   Receipt,
+  MapPin,
 } from 'lucide-react';
 import { representativeService } from '../services/representative.service';
 import { calendarService } from '../services/calendar.service';
@@ -78,12 +79,14 @@ interface RepresentativesPanelProps {
   onClose?: () => void;
   initialTab?: TabType;
   preSelectedEventId?: string;
+  onDataChanged?: () => Promise<void> | void;
 }
 
 const RepresentativesPanel: React.FC<RepresentativesPanelProps> = ({
   onClose,
-  initialTab = 'cadastro',
+  initialTab = 'vinculos',
   preSelectedEventId,
+  onDataChanged,
 }) => {
   const { confirmDelete } = useDeleteConfirm();
   const toast = useToastContext();
@@ -129,6 +132,7 @@ const RepresentativesPanel: React.FC<RepresentativesPanelProps> = ({
     representative_id: '',
     calendar_event_id: preSelectedEventId || '',
     service_date: '',
+    diligence_location: '',
     service_description: '',
     service_status: 'agendado',
     service_value: 0,
@@ -154,26 +158,6 @@ const RepresentativesPanel: React.FC<RepresentativesPanelProps> = ({
     if (truncated.length <= 6) return `${truncated.slice(0, 3)}.${truncated.slice(3)}`;
     if (truncated.length <= 9) return `${truncated.slice(0, 3)}.${truncated.slice(3, 6)}.${truncated.slice(6)}`;
     return `${truncated.slice(0, 3)}.${truncated.slice(3, 6)}.${truncated.slice(6, 9)}-${truncated.slice(9)}`;
-  };
-
-  const handleArchiveRepresentative = async (rep: Representative) => {
-    try {
-      await representativeService.updateRepresentative(rep.id, { status: 'inativo' });
-      toast.success('Preposto arquivado');
-      await loadData();
-    } catch (err: any) {
-      toast.error('Erro ao arquivar', err.message);
-    }
-  };
-
-  const handleRestoreRepresentative = async (rep: Representative) => {
-    try {
-      await representativeService.updateRepresentative(rep.id, { status: 'ativo' });
-      toast.success('Preposto reativado');
-      await loadData();
-    } catch (err: any) {
-      toast.error('Erro ao reativar', err.message);
-    }
   };
 
   const applyPhoneMask = (value: string) => {
@@ -233,6 +217,19 @@ const RepresentativesPanel: React.FC<RepresentativesPanelProps> = ({
     });
   }, [representatives, searchTerm]);
 
+  const archivedAppointments = useMemo(() => {
+    return appointments.filter((apt) => {
+      if (!apt.is_archived) return false;
+      if (searchTerm) {
+        const term = searchTerm.toLowerCase();
+        const repName = apt.representative?.full_name?.toLowerCase() || '';
+        const eventTitle = apt.calendar_event?.title?.toLowerCase() || '';
+        return repName.includes(term) || eventTitle.includes(term);
+      }
+      return true;
+    });
+  }, [appointments, searchTerm]);
+
   const archivedRepresentatives = useMemo(() => {
     return representatives.filter((rep) => {
       if (rep.status !== 'inativo') return false;
@@ -252,6 +249,7 @@ const RepresentativesPanel: React.FC<RepresentativesPanelProps> = ({
   // Filtrar vínculos
   const filteredAppointments = useMemo(() => {
     return appointments.filter((apt) => {
+      if (apt.is_archived) return false;
       if (serviceStatusFilter !== 'all' && apt.service_status !== serviceStatusFilter) return false;
       if (paymentStatusFilter !== 'all' && apt.payment_status !== paymentStatusFilter) return false;
       if (searchTerm) {
@@ -286,17 +284,22 @@ const RepresentativesPanel: React.FC<RepresentativesPanelProps> = ({
 
   // Estatísticas
   const stats = useMemo(() => {
-    const totalValue = appointments.reduce((sum, apt) => sum + Number(apt.service_value || 0), 0);
+    const activeOnly = appointments.filter((apt) => !apt.is_archived);
+    const totalValue = activeOnly.reduce((sum, apt) => sum + Number(apt.service_value || 0), 0);
     const paidValue = appointments
+      .filter((apt) => !apt.is_archived)
       .filter((apt) => apt.payment_status === 'pago')
       .reduce((sum, apt) => sum + Number(apt.service_value || 0), 0);
     const pendingValue = appointments
+      .filter((apt) => !apt.is_archived)
       .filter((apt) => apt.payment_status === 'pendente')
       .reduce((sum, apt) => sum + Number(apt.service_value || 0), 0);
+    const activeAppointments = activeOnly.length;
 
     return {
       totalRepresentatives: representatives.filter((r) => r.status === 'ativo').length,
       totalAppointments: appointments.length,
+      activeAppointments,
       totalValue,
       paidValue,
       pendingValue,
@@ -347,10 +350,10 @@ const RepresentativesPanel: React.FC<RepresentativesPanelProps> = ({
       setSaving(true);
       if (editingRepresentative) {
         await representativeService.updateRepresentative(editingRepresentative.id, representativeForm);
-        toast.success('Preposto atualizado');
+        toast.success('Correspondente atualizado');
       } else {
         await representativeService.createRepresentative(representativeForm);
-        toast.success('Preposto cadastrado');
+        toast.success('Correspondente cadastrado');
       }
       await loadData();
       setIsRepresentativeModalOpen(false);
@@ -363,7 +366,7 @@ const RepresentativesPanel: React.FC<RepresentativesPanelProps> = ({
 
   const handleDeleteRepresentative = async (rep: Representative) => {
     const confirmed = await confirmDelete({
-      title: 'Excluir Preposto',
+      title: 'Excluir Correspondente',
       entityName: rep.full_name,
       message: 'Todos os vínculos com compromissos também serão removidos.',
     });
@@ -371,7 +374,7 @@ const RepresentativesPanel: React.FC<RepresentativesPanelProps> = ({
 
     try {
       await representativeService.deleteRepresentative(rep.id);
-      toast.success('Preposto excluído');
+      toast.success('Correspondente excluído');
       await loadData();
     } catch (err: any) {
       toast.error('Erro ao excluir', err.message);
@@ -387,6 +390,7 @@ const RepresentativesPanel: React.FC<RepresentativesPanelProps> = ({
         representative_id: apt.representative_id,
         calendar_event_id: apt.calendar_event_id,
         service_date: apt.service_date,
+        diligence_location: apt.diligence_location || '',
         service_description: apt.service_description || '',
         service_status: apt.service_status,
         service_value: apt.service_value,
@@ -400,6 +404,7 @@ const RepresentativesPanel: React.FC<RepresentativesPanelProps> = ({
         representative_id: '',
         calendar_event_id: preSelectedEventId || '',
         service_date: '',
+        diligence_location: '',
         service_description: '',
         service_status: 'agendado',
         service_value: 0,
@@ -412,7 +417,7 @@ const RepresentativesPanel: React.FC<RepresentativesPanelProps> = ({
 
   const handleSaveAppointment = async () => {
     if (!appointmentForm.representative_id || !appointmentForm.calendar_event_id || !appointmentForm.service_date) {
-      toast.error('Erro', 'Preposto, compromisso e data são obrigatórios');
+      toast.error('Erro', 'Correspondente, compromisso e data são obrigatórios');
       return;
     }
 
@@ -423,9 +428,10 @@ const RepresentativesPanel: React.FC<RepresentativesPanelProps> = ({
         toast.success('Vínculo atualizado');
       } else {
         await representativeService.createAppointment(appointmentForm);
-        toast.success('Preposto vinculado ao compromisso');
+        toast.success('Correspondente vinculado ao compromisso');
       }
       await loadData();
+      await onDataChanged?.();
       setIsAppointmentModalOpen(false);
     } catch (err: any) {
       toast.error('Erro ao salvar', err.message);
@@ -445,8 +451,31 @@ const RepresentativesPanel: React.FC<RepresentativesPanelProps> = ({
       await representativeService.deleteAppointment(apt.id);
       toast.success('Vínculo removido');
       await loadData();
+      await onDataChanged?.();
     } catch (err: any) {
       toast.error('Erro ao remover', err.message);
+    }
+  };
+
+  const handleArchiveAppointment = async (apt: RepresentativeAppointment) => {
+    try {
+      await representativeService.archiveAppointment(apt.id);
+      toast.success('Diligência arquivada');
+      await loadData();
+      await onDataChanged?.();
+    } catch (err: any) {
+      toast.error('Erro ao arquivar', err.message);
+    }
+  };
+
+  const handleRestoreAppointment = async (apt: RepresentativeAppointment) => {
+    try {
+      await representativeService.reactivateAppointment(apt.id);
+      toast.success('Diligência reativada');
+      await loadData();
+      await onDataChanged?.();
+    } catch (err: any) {
+      toast.error('Erro ao reativar', err.message);
     }
   };
 
@@ -470,6 +499,7 @@ const RepresentativesPanel: React.FC<RepresentativesPanelProps> = ({
       await representativeService.markAsPaid(payingAppointment.id, paymentForm);
       toast.success('Pagamento registrado');
       await loadData();
+      await onDataChanged?.();
       setIsPaymentModalOpen(false);
     } catch (err: any) {
       toast.error('Erro ao registrar pagamento', err.message);
@@ -483,6 +513,7 @@ const RepresentativesPanel: React.FC<RepresentativesPanelProps> = ({
       await representativeService.updateServiceStatus(apt.id, status);
       toast.success('Status atualizado');
       await loadData();
+      await onDataChanged?.();
     } catch (err: any) {
       toast.error('Erro ao atualizar', err.message);
     }
@@ -601,8 +632,8 @@ const RepresentativesPanel: React.FC<RepresentativesPanelProps> = ({
               <Users className="w-5 h-5 text-blue-600" />
             </div>
             <div>
-              <h2 className="text-lg font-bold text-slate-900">Prepostos</h2>
-              <p className="text-xs text-slate-500">Cadastro e controle de prepostos</p>
+              <h2 className="text-lg font-bold text-slate-900">Correspondentes</h2>
+              <p className="text-xs text-slate-500">Gestão de vínculos, diligências e cadastro de correspondentes</p>
             </div>
           </div>
           <div className="flex items-center gap-2">
@@ -627,12 +658,12 @@ const RepresentativesPanel: React.FC<RepresentativesPanelProps> = ({
         {/* Stats */}
         <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
           <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
-            <p className="text-xs text-slate-500">Prepostos Ativos</p>
-            <p className="text-lg font-bold text-slate-900">{stats.totalRepresentatives}</p>
+            <p className="text-xs text-slate-500">Diligências Ativas</p>
+            <p className="text-lg font-bold text-slate-900">{stats.activeAppointments}</p>
           </div>
           <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
-            <p className="text-xs text-slate-500">Serviços</p>
-            <p className="text-lg font-bold text-slate-900">{stats.totalAppointments}</p>
+            <p className="text-xs text-slate-500">Correspondentes Ativos</p>
+            <p className="text-lg font-bold text-slate-900">{stats.totalRepresentatives}</p>
           </div>
           <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
             <p className="text-xs text-slate-500">Valor Pago</p>
@@ -648,17 +679,6 @@ const RepresentativesPanel: React.FC<RepresentativesPanelProps> = ({
       {/* Tabs */}
       <div className="border-b border-slate-200">
         <div className="flex">
-          <button
-            onClick={() => setActiveTab('cadastro')}
-            className={`flex-1 px-4 py-3 text-sm font-medium transition ${
-              activeTab === 'cadastro'
-                ? 'border-b-2 border-blue-600 bg-blue-50/70 text-blue-700'
-                : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
-            }`}
-          >
-            <Users className="w-4 h-4 inline-block mr-2" />
-            Cadastro de Prepostos
-          </button>
           <button
             onClick={() => setActiveTab('vinculos')}
             className={`flex-1 px-4 py-3 text-sm font-medium transition ${
@@ -681,41 +701,48 @@ const RepresentativesPanel: React.FC<RepresentativesPanelProps> = ({
             <Archive className="w-4 h-4 inline-block mr-2" />
             Arquivados
           </button>
+          <button
+            onClick={() => setActiveTab('cadastro')}
+            className={`flex-1 px-4 py-3 text-sm font-medium transition ${
+              activeTab === 'cadastro'
+                ? 'border-b-2 border-blue-600 bg-blue-50/70 text-blue-700'
+                : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
+            }`}
+          >
+            <Users className="w-4 h-4 inline-block mr-2" />
+            Cadastro de Correspondentes
+          </button>
         </div>
       </div>
 
       {/* Content */}
       <div className="p-4 sm:p-6">
+        <div className="mb-4 rounded-2xl border border-slate-200 bg-gradient-to-r from-slate-50 to-white px-4 py-3">
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">
+                {activeTab === 'vinculos' ? 'Operação' : activeTab === 'arquivados' ? 'Histórico' : 'Cadastro'}
+              </p>
+              <h3 className="text-sm sm:text-base font-semibold text-slate-900">
+                {activeTab === 'vinculos'
+                  ? 'Diligências vinculadas aos compromissos'
+                  : activeTab === 'arquivados'
+                    ? 'Diligências arquivadas para consulta e reativação'
+                    : 'Base de correspondentes cadastrados'}
+              </h3>
+            </div>
+            <div className="text-xs text-slate-500">
+              {activeTab === 'vinculos'
+                ? `${filteredAppointments.length} item(ns) ativo(s)`
+                : activeTab === 'arquivados'
+                  ? `${archivedAppointments.length} item(ns) arquivado(s)`
+                  : `${filteredRepresentatives.length} correspondente(s)`}
+            </div>
+          </div>
+        </div>
+
         {/* Barra de ações */}
         <div className="flex flex-col sm:flex-row gap-3 mb-4">
-          {activeTab === 'cadastro' && (
-            <>
-              <div className="relative flex-1">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
-                <input
-                  type="text"
-                  placeholder="Buscar por nome..."
-                  value={searchTerm}
-                  onChange={(e) => setSearchTerm(e.target.value)}
-                  className="w-full rounded-lg border border-slate-200 py-2 pl-10 pr-4 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
-                />
-              </div>
-            </>
-          )}
-          {activeTab === 'arquivados' && (
-            <>
-              <div className="relative flex-1">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
-                <input
-                  type="text"
-                  placeholder="Buscar arquivados..."
-                  value={searchTerm}
-                  onChange={(e) => setSearchTerm(e.target.value)}
-                  className="w-full rounded-lg border border-slate-200 py-2 pl-10 pr-4 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
-                />
-              </div>
-            </>
-          )}
           {activeTab === 'vinculos' && (
             <>
               <div className="relative flex-1">
@@ -733,7 +760,7 @@ const RepresentativesPanel: React.FC<RepresentativesPanelProps> = ({
                 onChange={(e) => setServiceStatusFilter(e.target.value as any)}
                 className="rounded-lg border border-slate-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20"
               >
-                <option value="all">Status do Serviço</option>
+                <option value="all">Status da Diligência</option>
                 {Object.entries(SERVICE_STATUS_LABELS_MAP).map(([key, label]) => (
                   <option key={key} value={key}>{label}</option>
                 ))}
@@ -750,6 +777,34 @@ const RepresentativesPanel: React.FC<RepresentativesPanelProps> = ({
               </select>
             </>
           )}
+          {activeTab === 'arquivados' && (
+            <>
+              <div className="relative flex-1">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                <input
+                  type="text"
+                  placeholder="Buscar diligência arquivada..."
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  className="w-full rounded-lg border border-slate-200 py-2 pl-10 pr-4 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                />
+              </div>
+            </>
+          )}
+          {activeTab === 'cadastro' && (
+            <>
+              <div className="relative flex-1">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                <input
+                  type="text"
+                  placeholder="Buscar por nome..."
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  className="w-full rounded-lg border border-slate-200 py-2 pl-10 pr-4 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                />
+              </div>
+            </>
+          )}
 
           {activeTab !== 'arquivados' && (
             <button
@@ -757,23 +812,23 @@ const RepresentativesPanel: React.FC<RepresentativesPanelProps> = ({
               className="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white transition hover:bg-blue-700"
             >
               <Plus className="w-4 h-4" />
-              {activeTab === 'cadastro' ? 'Novo Preposto' : 'Vincular Preposto'}
+              {activeTab === 'cadastro' ? 'Novo Correspondente' : 'Vincular Correspondente'}
             </button>
           )}
         </div>
 
-        {/* Lista de Prepostos */}
+        {/* Lista de Correspondentes */}
         {activeTab === 'cadastro' && (
           <div className="space-y-3">
             {filteredRepresentatives.length === 0 ? (
               <div className="text-center py-12">
                 <Users className="w-12 h-12 text-slate-200 mx-auto mb-3" />
-                <p className="text-slate-500">Nenhum preposto cadastrado</p>
+                <p className="text-slate-500">Nenhum correspondente cadastrado</p>
                 <button
                   onClick={() => handleOpenRepresentativeModal()}
                   className="mt-3 text-sm font-medium text-blue-600 hover:text-blue-700"
                 >
-                  Cadastrar primeiro preposto
+                  Cadastrar primeiro correspondente
                 </button>
               </div>
             ) : (
@@ -828,13 +883,6 @@ const RepresentativesPanel: React.FC<RepresentativesPanelProps> = ({
                         <Edit2 className="w-4 h-4" />
                       </button>
                       <button
-                        onClick={() => handleArchiveRepresentative(rep)}
-                        className="p-2 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-lg transition"
-                        title="Arquivar"
-                      >
-                        <Archive className="w-4 h-4" />
-                      </button>
-                      <button
                         onClick={() => handleDeleteRepresentative(rep)}
                         className="p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition"
                         title="Excluir"
@@ -851,56 +899,65 @@ const RepresentativesPanel: React.FC<RepresentativesPanelProps> = ({
 
         {activeTab === 'arquivados' && (
           <div className="space-y-3">
-            {archivedRepresentatives.length === 0 ? (
+            {archivedAppointments.length === 0 ? (
               <div className="text-center py-12">
                 <Archive className="w-12 h-12 text-slate-200 mx-auto mb-3" />
-                <p className="text-slate-500">Nenhum preposto arquivado</p>
+                <p className="text-slate-500">Nenhuma diligência arquivada</p>
               </div>
             ) : (
-              archivedRepresentatives.map((rep) => (
+              archivedAppointments.map((apt) => (
                 <div
-                  key={rep.id}
-                  className="rounded-xl border border-slate-200 bg-slate-50/50 p-4 transition hover:border-slate-300"
+                  key={apt.id}
+                  className="rounded-2xl border border-slate-200 bg-slate-50/60 p-4 shadow-sm transition hover:border-slate-300"
                 >
                   <div className="flex items-start justify-between gap-4">
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2 mb-1">
-                        <h3 className="font-semibold text-slate-900 truncate">{rep.full_name}</h3>
+                        <h3 className="font-semibold text-slate-900 truncate">{apt.calendar_event?.title || 'Compromisso não encontrado'}</h3>
                         <span className="px-2 py-0.5 text-xs font-medium rounded-full bg-slate-200 text-slate-700">
                           Arquivado
                         </span>
                       </div>
                       <div className="flex flex-wrap gap-x-4 gap-y-1 text-sm text-slate-600">
-                        {rep.cpf && (
+                        <span className="flex items-center gap-1">
+                          <UserCheck className="w-3.5 h-3.5" />
+                          {apt.representative?.full_name || 'Correspondente não encontrado'}
+                        </span>
+                        {apt.diligence_location && (
                           <span className="flex items-center gap-1">
-                            <FileText className="w-3.5 h-3.5" />
-                            {rep.cpf}
+                            <MapPin className="w-3.5 h-3.5" />
+                            {apt.diligence_location}
                           </span>
                         )}
-                        {rep.phone && (
-                          <span className="flex items-center gap-1">
-                            <Phone className="w-3.5 h-3.5" />
-                            {rep.phone}
-                          </span>
-                        )}
-                        {rep.email && (
-                          <span className="flex items-center gap-1">
-                            <Mail className="w-3.5 h-3.5" />
-                            {rep.email}
-                          </span>
-                        )}
+                        <span className="flex items-center gap-1">
+                          <Calendar className="w-3.5 h-3.5" />
+                          {formatDate(apt.service_date)}
+                        </span>
+                        <span className={`px-2 py-0.5 text-xs font-medium rounded-full ${getServiceStatusColor(apt.service_status)}`}>
+                          {SERVICE_STATUS_LABELS_MAP[apt.service_status]}
+                        </span>
+                        <span className={`px-2 py-0.5 text-xs font-medium rounded-full ${getPaymentStatusColor(apt.payment_status)}`}>
+                          {PAYMENT_STATUS_LABELS_MAP[apt.payment_status]}
+                        </span>
                       </div>
                     </div>
                     <div className="flex items-center gap-1">
                       <button
-                        onClick={() => handleRestoreRepresentative(rep)}
+                        onClick={() => handleRestoreAppointment(apt)}
                         className="p-2 text-slate-400 hover:text-emerald-600 hover:bg-emerald-50 rounded-lg transition"
-                        title="Desarquivar"
+                        title="Reativar diligência"
                       >
                         <ArchiveRestore className="w-4 h-4" />
                       </button>
                       <button
-                        onClick={() => handleDeleteRepresentative(rep)}
+                        onClick={() => handleOpenAppointmentModal(apt)}
+                        className="p-2 text-slate-400 hover:text-amber-600 hover:bg-amber-50 rounded-lg transition"
+                        title="Abrir vínculo"
+                      >
+                        <Edit2 className="w-4 h-4" />
+                      </button>
+                      <button
+                        onClick={() => handleDeleteAppointment(apt)}
                         className="p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition"
                         title="Excluir"
                       >
@@ -925,21 +982,21 @@ const RepresentativesPanel: React.FC<RepresentativesPanelProps> = ({
                   onClick={() => handleOpenAppointmentModal()}
                   className="mt-3 text-amber-600 hover:text-amber-700 text-sm font-medium"
                 >
-                  Vincular preposto a compromisso
+                  Vincular correspondente a compromisso
                 </button>
               </div>
             ) : (
               filteredAppointments.map((apt) => (
                 <div
                   key={apt.id}
-                  className="border border-slate-200 rounded-xl p-4 hover:border-amber-200 transition"
+                  className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm hover:border-amber-200 hover:shadow-md transition"
                 >
-                  <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-3">
+                  <div className="flex flex-col gap-4">
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2 mb-2">
                         <UserCheck className="w-4 h-4 text-amber-500" />
                         <span className="font-semibold text-slate-900">
-                          {apt.representative?.full_name || 'Preposto não encontrado'}
+                          {apt.representative?.full_name || 'Correspondente não encontrado'}
                         </span>
                       </div>
                       <div className="flex items-center gap-2 text-sm text-slate-600 mb-2">
@@ -950,6 +1007,12 @@ const RepresentativesPanel: React.FC<RepresentativesPanelProps> = ({
                         <span className="text-xs text-slate-500">
                           Data: {formatDate(apt.service_date)}
                         </span>
+                        {apt.diligence_location && (
+                          <span className="inline-flex items-center gap-1 text-xs text-slate-500">
+                            <MapPin className="w-3 h-3" />
+                            {apt.diligence_location}
+                          </span>
+                        )}
                         <span className={`px-2 py-0.5 text-xs font-medium rounded-full ${getServiceStatusColor(apt.service_status)}`}>
                           {SERVICE_STATUS_LABELS_MAP[apt.service_status]}
                         </span>
@@ -959,14 +1022,33 @@ const RepresentativesPanel: React.FC<RepresentativesPanelProps> = ({
                       </div>
                     </div>
 
-                    <div className="flex items-center gap-3">
-                      <div className="text-right">
+                    <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+                      <div className="min-w-0 flex-1 rounded-xl border border-amber-100 bg-amber-50/70 px-3 py-3">
+                        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                          <div>
+                            <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-amber-700">Status da diligência</p>
+                            <p className="mt-1 text-xs text-slate-500">Altere rapidamente sem abrir a edição completa.</p>
+                          </div>
+                          <select
+                            value={apt.service_status}
+                            onChange={(e) => handleUpdateServiceStatus(apt, e.target.value as ServiceStatus)}
+                            className="w-full rounded-lg border border-amber-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 focus:border-amber-400 focus:outline-none focus:ring-2 focus:ring-amber-500/20 sm:w-56"
+                          >
+                            {Object.entries(SERVICE_STATUS_LABELS_MAP).map(([key, label]) => (
+                              <option key={key} value={key}>{label}</option>
+                            ))}
+                          </select>
+                        </div>
+                      </div>
+
+                      <div className="flex items-center justify-between gap-3 sm:justify-end">
+                        <div className="text-left sm:text-right">
                         <p className="text-lg font-bold text-slate-900">{formatCurrency(apt.service_value)}</p>
                         {apt.payment_date && (
                           <p className="text-xs text-slate-500">Pago em {formatDate(apt.payment_date)}</p>
                         )}
-                      </div>
-                      <div className="flex items-center gap-1">
+                        </div>
+                        <div className="flex items-center gap-1">
                         {apt.payment_status === 'pendente' && (
                           <button
                             onClick={() => handleOpenPaymentModal(apt)}
@@ -984,12 +1066,20 @@ const RepresentativesPanel: React.FC<RepresentativesPanelProps> = ({
                           <Edit2 className="w-4 h-4" />
                         </button>
                         <button
+                          onClick={() => handleArchiveAppointment(apt)}
+                          className="p-2 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-lg transition"
+                          title="Arquivar diligência"
+                        >
+                          <Archive className="w-4 h-4" />
+                        </button>
+                        <button
                           onClick={() => handleDeleteAppointment(apt)}
                           className="p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition"
                           title="Remover"
                         >
                           <Trash2 className="w-4 h-4" />
                         </button>
+                        </div>
                       </div>
                     </div>
                   </div>
@@ -1000,7 +1090,7 @@ const RepresentativesPanel: React.FC<RepresentativesPanelProps> = ({
         )}
       </div>
 
-      {/* Modal de Preposto */}
+      {/* Modal de Correspondente */}
       {isRepresentativeModalOpen && (
         <div className="fixed inset-0 z-[70] flex items-center justify-center px-3 sm:px-6 py-4">
           <div className="absolute inset-0 bg-slate-900/70 backdrop-blur-sm" onClick={() => setIsRepresentativeModalOpen(false)} />
@@ -1008,9 +1098,9 @@ const RepresentativesPanel: React.FC<RepresentativesPanelProps> = ({
             <div className="h-2 w-full bg-orange-500" />
             <div className="px-5 sm:px-8 py-5 border-b border-slate-200 bg-white flex items-start justify-between gap-4">
               <div>
-                <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">Preposto</p>
+                <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">Correspondente</p>
                 <h3 className="text-xl font-semibold text-slate-900">
-                  {editingRepresentative ? 'Editar Preposto' : 'Novo Preposto'}
+                  {editingRepresentative ? 'Editar Correspondente' : 'Novo Correspondente'}
                 </h3>
               </div>
               <button
@@ -1031,7 +1121,7 @@ const RepresentativesPanel: React.FC<RepresentativesPanelProps> = ({
                     value={representativeForm.full_name}
                     onChange={(e) => setRepresentativeForm({ ...representativeForm, full_name: e.target.value })}
                     className="w-full px-4 py-2.5 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500"
-                    placeholder="Nome do preposto"
+                    placeholder="Nome do correspondente"
                   />
                 </div>
 
@@ -1143,7 +1233,7 @@ const RepresentativesPanel: React.FC<RepresentativesPanelProps> = ({
                     onChange={(e) => setRepresentativeForm({ ...representativeForm, notes: e.target.value })}
                     rows={3}
                     className="w-full px-4 py-2.5 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 resize-none"
-                    placeholder="Observações sobre o preposto..."
+                    placeholder="Observações sobre o correspondente..."
                   />
                 </div>
               </div>
@@ -1181,7 +1271,7 @@ const RepresentativesPanel: React.FC<RepresentativesPanelProps> = ({
                 <div>
                   <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">Vínculo</p>
                   <h3 className="text-xl font-semibold text-slate-900">
-                    {editingAppointment ? 'Editar Vínculo' : 'Vincular Preposto'}
+                    {editingAppointment ? 'Editar Vínculo' : 'Vincular Correspondente'}
                   </h3>
                 </div>
                 <button
@@ -1196,7 +1286,7 @@ const RepresentativesPanel: React.FC<RepresentativesPanelProps> = ({
                 <div className="p-4 pb-24 sm:p-6 sm:pb-28 md:p-8 md:pb-32 space-y-4 sm:space-y-5">
                 <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                   <div className="sm:col-span-2">
-                    <label className="mb-1 block text-sm font-medium text-slate-700">Preposto *</label>
+                    <label className="mb-1 block text-sm font-medium text-slate-700">Correspondente *</label>
                     <div className="relative">
                       <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
                       <input
@@ -1209,7 +1299,7 @@ const RepresentativesPanel: React.FC<RepresentativesPanelProps> = ({
                           }
                         }}
                         className="w-full rounded-lg border border-slate-200 bg-white px-10 py-2.5 text-sm focus:border-orange-500 focus:bg-white focus:outline-none focus:ring-2 focus:ring-orange-500/20"
-                        placeholder="Digite para buscar preposto..."
+                        placeholder="Digite para buscar correspondente..."
                       />
                       {selectedAppointmentRepresentative && representativeModalSearchTerm.trim() === selectedAppointmentRepresentative.full_name && (
                         <button
@@ -1240,7 +1330,7 @@ const RepresentativesPanel: React.FC<RepresentativesPanelProps> = ({
                               </button>
                             ))
                           ) : (
-                            <div className="px-3 py-4 text-sm text-slate-500">Nenhum preposto encontrado para a busca digitada.</div>
+                            <div className="px-3 py-4 text-sm text-slate-500">Nenhum correspondente encontrado para a busca digitada.</div>
                           )}
                         </div>
                       )}
@@ -1286,6 +1376,18 @@ const RepresentativesPanel: React.FC<RepresentativesPanelProps> = ({
                       className="w-full rounded-lg border border-slate-200 bg-white px-4 py-2.5 focus:border-orange-500 focus:outline-none focus:ring-2 focus:ring-orange-500/20"
                     />
                     <p className="mt-1 text-xs text-slate-500">Puxada automaticamente do compromisso selecionado</p>
+                  </div>
+
+                  <div>
+                    <label className="mb-1 block text-sm font-medium text-slate-700">Local da Diligência</label>
+                    <input
+                      type="text"
+                      value={appointmentForm.diligence_location || ''}
+                      onChange={(e) => setAppointmentForm({ ...appointmentForm, diligence_location: e.target.value })}
+                      className="w-full rounded-lg border border-slate-200 bg-white px-4 py-2.5 focus:border-orange-500 focus:outline-none focus:ring-2 focus:ring-orange-500/20"
+                      placeholder="Ex: Fórum Trabalhista de Cuiabá - Sala 3"
+                    />
+                    <p className="mt-1 text-xs text-slate-500">Informe o endereço, fórum, sala ou ponto de atendimento da diligência.</p>
                   </div>
 
                   <div>
@@ -1393,7 +1495,7 @@ const RepresentativesPanel: React.FC<RepresentativesPanelProps> = ({
               <div className="space-y-4 bg-white p-4 sm:p-6 md:p-8">
                 <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-4">
                   <p className="text-sm text-emerald-800">
-                    <strong>Preposto:</strong> {payingAppointment.representative?.full_name}
+                    <strong>Correspondente:</strong> {payingAppointment.representative?.full_name}
                   </p>
                   <p className="text-sm text-emerald-800">
                     <strong>Valor:</strong> {formatCurrency(payingAppointment.service_value)}

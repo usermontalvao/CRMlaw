@@ -1,5 +1,92 @@
 # Changelog
 
+## 1.9.966
+- **Cloud**: O indicador de vínculo das pastas foi movido para o rodapé do card, ao lado da data/hora, deixando o topo mais limpo e a leitura mais objetiva.
+
+## 1.9.965
+- **Cloud**: A seta para expandir/recolher a lista de clientes foi movida para a própria linha da Caixa de entrada, deixando a navegação mais direta.
+
+## 1.9.964
+- **Cloud**: Refatoração completa do menu lateral interno com design moderno: header com logo, gradientes nos itens ativos (Caixa de entrada, Arquivado, Lixeira), badges estilizados, divisores elegantes e melhor espaçamento.
+
+## 1.9.963
+- **Cloud**: Refatoração completa da UI dos cards de pasta com layout vertical limpo, ícone grande no topo, badges organizadas e rodapé discreto com data/hora separadas.
+
+## 1.9.962
+- **Cloud**: Quando a pasta estiver sem status, a badge de status não é mais exibida na listagem nem no detalhe.
+
+## 1.9.961
+- **Cloud**: Corrigido o download de pasta para incluir todos os arquivos no `.zip`, mesmo quando existirem nomes repetidos dentro da estrutura.
+- **Cloud**: Ajustada a criação de novas pastas para nascerem sem status por padrão, evitando que apareçam indevidamente como resolvidas.
+
+## 1.9.960
+- **Agenda**: A formatação de data e hora no modal de detalhes do compromisso foi ajustada para o formato mais limpo "DD/MM/AAAA às HH:MM".
+
+## 1.9.959
+- **Agenda/Processos**: O modal de audiência passou a buscar a tramitação também na última intimação do processo (tabela djen_comunicacoes) quando o campo court estiver vazio.
+
+## 1.9.958
+- **Agenda/Processos**: O modal de audiência passou a buscar a tramitação também no processo carregado pelo sistema quando o dado do evento vier sem vara/órgão.
+
+## 1.9.957
+- **Agenda/Processos**: No modal do compromisso, o número do processo passou a exibir abaixo a vara/órgão de tramitação, deixando a identificação mais completa.
+
+## 1.9.956
+- **Agenda**: Corrigida a aparência escura do modal de detalhes do compromisso para manter o layout claro e legível.
+
+## 1.9.955
+- **Agenda**: O modal de detalhes do compromisso foi completamente refeito com design clean, moderno e mais compacto.
+
+## 1.9.954
+- **Agenda**: O modal de detalhes do compromisso passou a aproveitar ainda mais a altura da tela para exibir mais informações visíveis antes da rolagem.
+
+## 1.9.953
+- **Agenda**: O modal de detalhes do compromisso foi ajustado para ficar apenas um pouco mais alto, preservando o layout e o scroll interno.
+
+## 1.9.952
+- **Agenda**: O modal de compromisso foi simplificado com altura limitada, scroll interno e hierarquia visual mais limpa para leitura rápida.
+- **Agenda**: O card do correspondente vinculado foi reduzido para um layout mais direto, com menos blocos, menos redundância e botão de WhatsApp mais proporcional.
+
+## 1.9.951
+- **Agenda**: Corrigido o layout do card de apoio externo no modal do compromisso, evitando compressão excessiva do nome, CTA de WhatsApp e blocos informativos em telas menores.
+
+## 1.9.950
+- **Correspondentes**: A alteração do status da diligência ficou mais rápida no card de vínculos, com seletor direto no próprio item, sem precisar abrir a edição completa.
+
+## 1.9.949
+- **Correspondentes/Agenda**: O botão de WhatsApp no card do correspondente vinculado foi redesenhado para ficar mais claro, acionável e com fallback visual quando não houver número válido.
+- **Correspondentes/Agenda**: Adicionado o campo `Local da Diligência` no vínculo com compromisso, com suporte no formulário, nas listagens e no modal de detalhes do evento.
+
+## 1.9.948
+- **Agenda**: O card de correspondente vinculado ao compromisso ganhou visual mais refinado, com cabeçalho mais elegante, avatar inicial, selo de vínculo, blocos de informação e CTA de WhatsApp mais destacado.
+
+## 1.9.947
+- **Agenda**: O calendário agora recarrega automaticamente após criar, editar, remover, arquivar, reativar ou registrar pagamento em vínculos de correspondentes pelo painel integrado.
+
+## 1.9.946
+- **Correspondentes**: O arquivamento das diligências passou a usar um campo próprio `is_archived`, separado do status operacional do serviço. Arquivar não transforma mais o vínculo em `Cancelado`.
+- **Correspondentes**: Melhorada a hierarquia visual do submódulo com bloco de contexto por aba e cards mais organizados para vínculos e arquivados.
+
+## 1.9.945
+- **Correspondentes**: Diligências arquivadas/encerradas deixaram de aparecer na lista principal de vínculos do painel.
+- **Correspondentes**: A ação da aba `Arquivados` foi ajustada para `Reativar diligência`, refletindo melhor o retorno do vínculo para a lista ativa.
+
+## 1.9.944
+- **Correspondentes**: Corrigida a lógica de arquivamento do painel para que a ação `Arquivar` fique nos vínculos/diligências, e não no cadastro do correspondente.
+- **Correspondentes**: Adicionada a opção de `Restaurar diligência` na aba `Arquivados`, alinhando o fluxo com o histórico de compromissos encerrados.
+
+## 1.9.943
+- **Correspondentes**: Reorganizado o painel para abrir e priorizar `Vínculos com Compromissos` antes do cadastro.
+- **Correspondentes**: A aba `Arquivados` agora representa o histórico de diligências/compromissos encerrados, em vez de cadastro arquivado de correspondentes.
+- **Correspondentes**: Ajustados os rótulos de resumo para destacar `Diligências Ativas` e melhorar a organização visual do módulo.
+
+## 1.9.942
+- **Correspondentes**: Atualizada a nomenclatura visível nas telas relacionadas, trocando `Preposto`/`Prepostos` por `Correspondente`/`Correspondentes` no painel e no calendário.
+
+## 1.9.941
+- **Assinaturas**: Liberado o arraste e a movimentação de solicitações/documentos no explorador do módulo, sem bloquear itens criados por outros usuários.
+- **Assinaturas**: Ao mover itens entre pastas, o sistema agora preserva o `created_by` original do registro no explorador.
+
 ## 1.9.940
 - **Editor de Petições**: Removido o mini servidor local do Syncfusion e restaurado o uso direto do link público `https://document.syncfusion.com/web-services/docx-editor/api/documenteditor/` como fallback padrão do editor.
 - **Scripts**: Removidos os comandos auxiliares do proxy local (`syncfusion-proxy` e `dev:syncfusion`).

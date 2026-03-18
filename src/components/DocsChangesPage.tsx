@@ -727,6 +727,373 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
 
 const releases: ReleaseNote[] = [
   {
+    version: '1.9.966',
+    date: '18/03/2026',
+    summary: 'Cloud: o indicador de vínculo das pastas foi movido para o rodapé do card, ao lado da data/hora.',
+    modules: [
+      {
+        moduleId: 'cloud',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Indicador de vínculo reposicionado no card',
+            description: 'Os cards de pasta do Cloud agora exibem o indicador visual de vínculo/correção no rodapé, ao lado da data e hora, liberando o topo para uma leitura mais limpa do status principal.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.965',
+    date: '18/03/2026',
+    summary: 'Cloud: a seta para expandir ou recolher a lista de clientes foi movida para a linha da Caixa de entrada.',
+    modules: [
+      {
+        moduleId: 'cloud',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Expansão de clientes integrada à Caixa de entrada',
+            description: 'A navegação interna do Cloud passou a concentrar o controle de expansão da seção Clientes na própria linha da Caixa de entrada, mantendo a lista recolhida por padrão e deixando o menu mais direto.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.964',
+    date: '18/03/2026',
+    summary: 'Cloud: refatoração visual completa do menu lateral interno com blocos mais modernos e melhor hierarquia.',
+    modules: [
+      {
+        moduleId: 'cloud',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Menu lateral interno do Cloud redesenhado',
+            description: 'O sidebar interno do módulo Cloud recebeu header refinado, blocos visuais para Caixa de entrada, Arquivado, Lixeira, Acesso Rápido, Favoritos e Recentes, além de gradientes, badges estilizados, divisores elegantes e melhor espaçamento geral.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.958',
+    date: '18/03/2026',
+    summary: 'Agenda/Processos: o modal de audiência passou a usar fallback do processo carregado para exibir a tramitação.',
+    modules: [
+      {
+        moduleId: 'calendar',
+        changes: [
+          {
+            type: 'fix',
+            title: 'Fallback da tramitação no modal de audiência',
+            description: 'Quando o dado embutido no evento não trouxer a vara/órgão, o modal agora consulta o processo já carregado no calendário para exibir corretamente a tramitação abaixo do número do processo.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.957',
+    date: '18/03/2026',
+    summary: 'Agenda/Processos: o modal do compromisso passou a mostrar a tramitação logo abaixo do número do processo.',
+    modules: [
+      {
+        moduleId: 'calendar',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Tramitação abaixo do número do processo',
+            description: 'No bloco de detalhes do compromisso vinculado a processo, o número do processo agora exibe em seguida a vara/órgão de tramitação, sem duplicar a informação em uma linha separada.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.956',
+    date: '18/03/2026',
+    summary: 'Agenda: modal de compromisso voltou a usar aparência clara e legível.',
+    modules: [
+      {
+        moduleId: 'calendar',
+        changes: [
+          {
+            type: 'fix',
+            title: 'Correção do fundo escuro no modal',
+            description: 'O modal de detalhes do compromisso deixou de herdar o visual escuro e passou a manter fundo branco, textos escuros e cartões claros para leitura consistente.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.955',
+    date: '18/03/2026',
+    summary: 'Agenda: modal de compromisso refeito com design clean e moderno.',
+    modules: [
+      {
+        moduleId: 'calendar',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Modal de detalhes refeito',
+            description: 'O modal de detalhes do compromisso ganhou um design completamente novo: header compacto com título e badges, corpo com ícones coloridos para cada informação, card do correspondente simplificado, e footer com botões menores.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.954',
+    date: '18/03/2026',
+    summary: 'Agenda: modal de compromisso passou a usar ainda mais altura útil da tela.',
+    modules: [
+      {
+        moduleId: 'calendar',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Mais área visível no modal de compromisso',
+            description: 'O modal de detalhes do compromisso teve o limite vertical ampliado novamente e ganhou menos margem externa para exibir mais conteúdo antes da rolagem.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.953',
+    date: '18/03/2026',
+    summary: 'Agenda: modal de compromisso ficou ligeiramente mais alto, sem alterar a estrutura do layout.',
+    modules: [
+      {
+        moduleId: 'calendar',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Ajuste fino na altura do modal',
+            description: 'O modal de detalhes do compromisso ganhou um pouco mais de altura útil, mantendo scroll interno e o restante da organização visual já refinada.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.952',
+    date: '18/03/2026',
+    summary: 'Agenda: modal de compromisso ficou mais clean, com menos altura visual e card de correspondente simplificado.',
+    modules: [
+      {
+        moduleId: 'calendar',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Modal de compromisso mais clean',
+            description: 'O modal de detalhes do compromisso foi reorganizado para ter menos altura visual e um card de correspondente mais simples.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.951',
+    date: '18/03/2026',
+    summary: 'Agenda: layout do card de apoio externo foi corrigido para funcionar melhor em espaços estreitos.',
+    modules: [
+      {
+        moduleId: 'calendar',
+        changes: [
+          {
+            type: 'fix',
+            title: 'Card de apoio externo sem compressão visual',
+            description: 'O card do correspondente vinculado no modal do compromisso foi reorganizado para evitar textos esmagados, CTA espremido e blocos informativos ilegíveis em telas menores.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.950',
+    date: '18/03/2026',
+    summary: 'Correspondentes: alteração de status da diligência ficou direta no card de vínculos.',
+    modules: [
+      {
+        moduleId: 'calendar',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Troca rápida de status da diligência',
+            description: 'Os vínculos agora permitem alterar o status da diligência diretamente no card, com seletor visível e sem exigir abertura do modal de edição.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.949',
+    date: '18/03/2026',
+    summary: 'Correspondentes/Agenda: CTA de WhatsApp refinado e local da diligência adicionado ao vínculo com compromisso.',
+    modules: [
+      {
+        moduleId: 'calendar',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'CTA de WhatsApp com mais clareza visual',
+            description: 'O botão para contato no WhatsApp do correspondente vinculado passou a ter destaque maior, melhor hierarquia visual e fallback informativo quando não houver número válido.',
+          },
+          {
+            type: 'feature',
+            title: 'Local da diligência no vínculo do correspondente',
+            description: 'O vínculo com compromisso agora permite cadastrar e visualizar o local da diligência no painel de Correspondentes e no modal de detalhes do evento na agenda.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.948',
+    date: '18/03/2026',
+    summary: 'Agenda: card de correspondente vinculado ao compromisso recebeu refinamento visual no modal do evento.',
+    modules: [
+      {
+        moduleId: 'calendar',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Card de correspondente com visual mais premium',
+            description: 'O bloco de correspondente vinculado ao compromisso ganhou cabeçalho mais elegante, avatar com inicial, selo de vínculo, blocos informativos e botão de WhatsApp com mais destaque visual.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.947',
+    date: '18/03/2026',
+    summary: 'Agenda: calendário passou a recarregar automaticamente após mudanças em vínculos de correspondentes no painel integrado.',
+    modules: [
+      {
+        moduleId: 'calendar',
+        changes: [
+          {
+            type: 'fix',
+            title: 'Refresh automático após alterar vínculos de correspondentes',
+            description: 'Ao criar, editar, remover, arquivar, reativar ou registrar pagamento em diligências pelo painel de Correspondentes aberto dentro da agenda, o CalendarModule agora recarrega seus dados automaticamente.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.946',
+    date: '18/03/2026',
+    summary: 'Correspondentes: arquivamento foi separado do status cancelado e o submódulo ganhou hierarquia visual mais clara.',
+    modules: [
+      {
+        moduleId: 'calendar',
+        changes: [
+          {
+            type: 'fix',
+            title: 'Arquivado separado de cancelado',
+            description: 'As diligências passaram a usar um flag próprio de arquivamento, evitando que o status operacional do serviço seja alterado para Cancelado ao arquivar.',
+          },
+          {
+            type: 'improvement',
+            title: 'Hierarquia visual do submódulo refinada',
+            description: 'O painel ganhou bloco de contexto por aba e cards com hierarquia visual mais clara para vínculos ativos e histórico arquivado.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.945',
+    date: '18/03/2026',
+    summary: 'Correspondentes: diligências arquivadas saíram da lista principal e a aba Arquivados passou a usar a ação Reativar diligência.',
+    modules: [
+      {
+        moduleId: 'calendar',
+        changes: [
+          {
+            type: 'fix',
+            title: 'Lista principal limpa e reativação explícita',
+            description: 'Diligências canceladas, realizadas ou não comparecidas deixaram de aparecer na lista principal de vínculos. Na aba Arquivados, a ação foi renomeada para Reativar diligência para refletir melhor o fluxo.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.944',
+    date: '18/03/2026',
+    summary: 'Correspondentes: arquivamento foi corrigido para agir sobre diligências/vínculos, não sobre o cadastro do correspondente.',
+    modules: [
+      {
+        moduleId: 'calendar',
+        changes: [
+          {
+            type: 'fix',
+            title: 'Arquivamento movido para os vínculos',
+            description: 'O botão Arquivar saiu do cadastro do correspondente e passou a atuar diretamente nas diligências da aba de vínculos. A aba Arquivados também passou a permitir restaurar a diligência encerrada.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.943',
+    date: '18/03/2026',
+    summary: 'Correspondentes: painel reorganizado para priorizar vínculos, diligências ativas e histórico de compromissos arquivados.',
+    modules: [
+      {
+        moduleId: 'calendar',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Painel de correspondentes reorganizado',
+            description: 'A aba de vínculos com compromissos passou a ser a principal, o histórico de arquivados agora mostra diligências encerradas e os cards de resumo foram reorganizados para destacar diligências ativas.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.942',
+    date: '18/03/2026',
+    summary: 'Correspondentes: nomenclatura visível foi atualizada no painel e no calendário.',
+    modules: [
+      {
+        moduleId: 'calendar',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Rótulos de correspondente padronizados',
+            description: 'Os textos visíveis ao usuário foram ajustados para usar Correspondente/Correspondentes no lugar de Preposto/Prepostos no calendário e no painel relacionado.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.941',
+    date: '18/03/2026',
+    summary: 'Assinaturas: arraste e movimentação no explorador foram liberados para itens de qualquer criador.',
+    modules: [
+      {
+        moduleId: 'signature',
+        changes: [
+          {
+            type: 'fix',
+            title: 'Arraste liberado no explorador de assinaturas',
+            description: 'A trava que impedia mover solicitações e documentos criados por outros usuários foi removida. Ao mover entre pastas, o registro continua preservando o created_by original.',
+          },
+        ],
+      },
+    ],
+  },
+  {
     version: '1.9.940',
     date: '17/03/2026',
     summary: 'Editor de petições: removido o mini servidor local do Syncfusion e restaurado o uso direto do link público.',

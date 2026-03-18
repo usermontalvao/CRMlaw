@@ -48,8 +48,10 @@ export interface RepresentativeAppointment {
   representative_id: string;
   calendar_event_id: string;
   service_date: string;
+  diligence_location?: string | null;
   service_description?: string | null;
   service_status: ServiceStatus;
+  is_archived: boolean;
   service_value: number;
   payment_status: PaymentStatus;
   payment_date?: string | null;
@@ -76,8 +78,10 @@ export interface CreateRepresentativeAppointmentDTO {
   representative_id: string;
   calendar_event_id: string;
   service_date: string;
+  diligence_location?: string | null;
   service_description?: string | null;
   service_status?: ServiceStatus;
+  is_archived?: boolean;
   service_value: number;
   payment_status?: PaymentStatus;
   payment_date?: string | null;

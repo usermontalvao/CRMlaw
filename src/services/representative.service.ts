@@ -174,6 +174,7 @@ class RepresentativeService {
       .insert({
         ...dto,
         service_status: dto.service_status || 'agendado',
+        is_archived: false,
         payment_status: dto.payment_status || 'pendente',
         created_by: userId,
         updated_by: userId,
@@ -242,6 +243,18 @@ class RepresentativeService {
     });
   }
 
+  async archiveAppointment(id: string): Promise<RepresentativeAppointment> {
+    return this.updateAppointment(id, {
+      is_archived: true,
+    });
+  }
+
+  async reactivateAppointment(id: string): Promise<RepresentativeAppointment> {
+    return this.updateAppointment(id, {
+      is_archived: false,
+    });
+  }
+
   // Estatísticas
   async getStats(filters?: { date_from?: string; date_to?: string }): Promise<{
     total_appointments: number;
@@ -253,7 +266,7 @@ class RepresentativeService {
   }> {
     let query = supabase
       .from('representative_appointments')
-      .select('service_value, service_status, payment_status');
+      .select('service_value, service_status, payment_status, is_archived');
 
     if (filters?.date_from) {
       query = query.gte('service_date', filters.date_from);
@@ -277,6 +290,10 @@ class RepresentativeService {
     };
 
     appointments.forEach((apt) => {
+      if (apt.is_archived) {
+        return;
+      }
+
       const value = Number(apt.service_value) || 0;
       stats.total_value += value;
 

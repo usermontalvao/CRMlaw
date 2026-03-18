@@ -1248,11 +1248,12 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
     if (!user?.id) return;
     try {
       setMoveSaving(true);
+      const explorerItem = explorerItemIndex.get(`${params.itemType}:${params.itemId}`);
       await signatureExplorerService.moveItem({
         itemType: params.itemType,
         itemId: params.itemId,
         folderId: params.folderId,
-        createdBy: user.id,
+        createdBy: explorerItem?.created_by || user.id,
       });
       await reloadExplorer();
     } catch (err: any) {
@@ -1260,7 +1261,7 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
     } finally {
       setMoveSaving(false);
     }
-  }, [reloadExplorer, toast, user?.id]);
+  }, [explorerItemIndex, reloadExplorer, toast, user?.id]);
 
   const handleDeleteFolder = useCallback(async (params: { folder: SignatureExplorerFolder; mode: 'move_root' | 'delete_all' }) => {
     const folder = params.folder;
@@ -1387,37 +1388,21 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
           .map((id: string) => requests.find((r) => r.id === id))
           .filter(Boolean) as SignatureRequestWithSigners[];
 
-        const owned = selected.filter((r) => r.created_by === user.id);
-        const skipped = selected.length - owned.length;
-
-        if (owned.length === 0) {
-          toast.error('Você só pode mover itens que você criou');
-          return;
-        }
-
         try {
           await Promise.all(
-            owned.map((r) =>
+            selected.map((r) =>
               signatureExplorerService.moveItem({
                 itemType: 'signature_request',
                 itemId: r.id,
                 folderId: targetFolderId,
-                createdBy: user.id,
+                createdBy: r.created_by || user.id,
               })
             )
           );
           await reloadExplorer();
-          if (skipped > 0) {
-            toast.error(`Alguns itens não foram movidos (permissão): ${skipped}.`);
-          }
         } finally {
           // ignore
         }
-        return;
-      }
-
-      if (payload?.created_by && payload.created_by !== user.id) {
-        toast.error('Você só pode mover itens que você criou');
         return;
       }
 
@@ -5046,10 +5031,6 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
                     type="button"
                     onClick={async () => {
                       if (!user?.id) return;
-                      if (moveTarget.createdBy && moveTarget.createdBy !== user.id) {
-                        toast.error('Você só pode mover itens que você criou');
-                        return;
-                      }
                       setMoveSaving(true);
                       try {
                         await handleMoveItemToFolder({ itemType: moveTarget.itemType, itemId: moveTarget.itemId, folderId: moveSelectedFolderId });

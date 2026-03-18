@@ -10,16 +10,19 @@ import { CSS } from '@dnd-kit/utilities';
 import { PDFDocument, degrees } from 'pdf-lib';
 import { Document, Page, pdfjs } from 'react-pdf';
 import {
+  Calendar,
   ChevronDown,
   ChevronLeft,
   ChevronRight,
   Clipboard,
+  Clock,
   CloudCog,
   Cloud,
   Copy,
   Download,
   File,
   FileText,
+  FileHeart,
   Folder,
   FolderOpen,
   FolderPlus,
@@ -48,9 +51,11 @@ import {
   AlertCircle,
   BellRing,
   Share2,
+  Star,
   Tag,
   Trash2,
   Upload,
+  Users,
   X,
 } from 'lucide-react';
 import { supabase } from '../config/supabase';
@@ -176,14 +181,45 @@ const formatDateTime = (value?: string | null) => {
   });
 };
 
+const formatCompactDateTime = (value?: string | null) => {
+  if (!value) return '—';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  const day = String(date.getDate()).padStart(2, '0');
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const year = String(date.getFullYear()).slice(-2);
+  const hour = String(date.getHours()).padStart(2, '0');
+  const minute = String(date.getMinutes()).padStart(2, '0');
+  return `${day}/${month}/${year} ${hour}:${minute}`;
+};
+
+const formatCompactDate = (value?: string | null) => {
+  if (!value) return '—';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  const day = String(date.getDate()).padStart(2, '0');
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const year = String(date.getFullYear()).slice(-2);
+  return `${day}/${month}/${year}`;
+};
+
+const formatCompactTime = (value?: string | null) => {
+  if (!value) return '—';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  const hour = String(date.getHours()).padStart(2, '0');
+  const minute = String(date.getMinutes()).padStart(2, '0');
+  return `${hour}:${minute}`;
+};
+
 const getAutoUploadFolderName = () => {
   const now = new Date();
   const pad = (value: number) => String(value).padStart(2, '0');
   return `Upload ${pad(now.getDate())}-${pad(now.getMonth() + 1)}-${now.getFullYear()} ${pad(now.getHours())}-${pad(now.getMinutes())}`;
 };
 
-const formatArchiveDeletionLabel = (value?: string | null) => {
-  if (!value) return 'Sem exclusão automática';
+const formatRemainingDays = (value?: string | null) => {
+  if (!value) return '—';
   const targetDate = new Date(value);
   if (Number.isNaN(targetDate.getTime())) return value;
   const diffMs = targetDate.getTime() - Date.now();
@@ -192,16 +228,20 @@ const formatArchiveDeletionLabel = (value?: string | null) => {
 };
 
 const getFolderIssueBadgeClass = (folder: CloudFolder) => {
+  if (!folder.has_pending_issue && !folder.resolved_at) return 'border-slate-200 bg-slate-50 text-slate-600';
   if (!folder.has_pending_issue) return 'border-emerald-200 bg-emerald-50 text-emerald-700';
   if (folder.alert_level === 'alerta') return 'border-red-200 bg-red-50 text-red-700';
   return 'border-amber-200 bg-amber-50 text-amber-700';
 };
 
 const getFolderIssueLabel = (folder: CloudFolder) => {
+  if (!folder.has_pending_issue && !folder.resolved_at) return 'Sem status';
   if (!folder.has_pending_issue) return 'Resolvido';
   if (folder.alert_level === 'alerta') return 'Alerta';
   return 'Pendência';
 };
+
+const shouldShowFolderIssueBadge = (folder: CloudFolder) => folder.has_pending_issue || Boolean(folder.resolved_at);
 
 const renderFolderIssueBadgeContent = (folder: CloudFolder) => {
   if (folder.alert_level === 'alerta' && folder.has_pending_issue) {
@@ -496,6 +536,7 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
   const [clipboardSelection, setClipboardSelection] = useState<{ mode: 'copy' | 'cut'; itemKeys: string[] } | null>(null);
   const [pastingClipboard, setPastingClipboard] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [clientsSectionExpanded, setClientsSectionExpanded] = useState(false);
   const [detailsDrawerOpen, setDetailsDrawerOpen] = useState(false);
   const [inlineRenameTarget, setInlineRenameTarget] = useState<{ type: 'file' | 'folder'; id: string; currentName: string } | null>(null);
   const [inlineRenameValue, setInlineRenameValue] = useState('');
@@ -1371,18 +1412,25 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
         : folders;
     const term = searchTerm.trim().toLowerCase();
 
-    return sourceFolders.filter((item) => {
-      const matchesTerm = !term || item.name.toLowerCase().includes(term);
-      const matchesClient = !searchFilters.clientId || (item.client_id || '') === searchFilters.clientId;
-      const matchesLabel = !searchFilters.labelId || folderLabelAssignments[item.id] === searchFilters.labelId;
+    return sourceFolders
+      .filter((item) => {
+        const matchesTerm = !term || item.name.toLowerCase().includes(term);
+        const matchesClient = !searchFilters.clientId || (item.client_id || '') === searchFilters.clientId;
+        const matchesLabel = !searchFilters.labelId || folderLabelAssignments[item.id] === searchFilters.labelId;
 
-      const updatedAtTime = new Date(item.updated_at).getTime();
-      const fromTime = searchFilters.dateFrom ? new Date(`${searchFilters.dateFrom}T00:00:00`).getTime() : null;
-      const toTime = searchFilters.dateTo ? new Date(`${searchFilters.dateTo}T23:59:59`).getTime() : null;
-      const matchesDate = (!fromTime || updatedAtTime >= fromTime) && (!toTime || updatedAtTime <= toTime);
+        const updatedAtTime = new Date(item.updated_at).getTime();
+        const fromTime = searchFilters.dateFrom ? new Date(`${searchFilters.dateFrom}T00:00:00`).getTime() : null;
+        const toTime = searchFilters.dateTo ? new Date(`${searchFilters.dateTo}T23:59:59`).getTime() : null;
+        const matchesDate = (!fromTime || updatedAtTime >= fromTime) && (!toTime || updatedAtTime <= toTime);
 
-      return matchesTerm && matchesClient && matchesLabel && matchesDate;
-    });
+        return matchesTerm && matchesClient && matchesLabel && matchesDate;
+      })
+      .sort((a, b) => {
+        const aPriority = a.has_pending_issue && a.alert_level === 'alerta' ? 0 : 1;
+        const bPriority = b.has_pending_issue && b.alert_level === 'alerta' ? 0 : 1;
+        if (aPriority !== bPriority) return aPriority - bPriority;
+        return new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime();
+      });
   }, [allFolders, folderLabelAssignments, folders, hasGlobalSearch, isArchivedView, isTrashView, searchFilters, searchTerm]);
 
   const filteredFiles = useMemo(() => {
@@ -1592,7 +1640,7 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
         has_pending_issue: folderIssueEnabled,
         alert_level: folderIssueEnabled ? folderIssueLevel : null,
         pending_reason: folderIssueEnabled ? folderIssueReason.trim() || null : null,
-        resolved_at: folderIssueEnabled ? null : new Date().toISOString(),
+        resolved_at: null,
       });
       const refreshedFolders = await cloudService.listAllFolders();
       const createdFolder = refreshedFolders.find((item) => item.name === folderName.trim() && item.parent_id === currentFolderId) ?? null;
@@ -3737,6 +3785,32 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
       }
 
       const zip = new JSZip();
+      const usedPaths = new Set<string>();
+
+      const getUniqueZipPath = (inputPath: string) => {
+        if (!usedPaths.has(inputPath)) {
+          usedPaths.add(inputPath);
+          return inputPath;
+        }
+
+        const lastSlashIndex = inputPath.lastIndexOf('/');
+        const directory = lastSlashIndex >= 0 ? inputPath.slice(0, lastSlashIndex + 1) : '';
+        const fileName = lastSlashIndex >= 0 ? inputPath.slice(lastSlashIndex + 1) : inputPath;
+        const extensionIndex = fileName.lastIndexOf('.');
+        const baseName = extensionIndex > 0 ? fileName.slice(0, extensionIndex) : fileName;
+        const extension = extensionIndex > 0 ? fileName.slice(extensionIndex) : '';
+
+        let counter = 2;
+        let candidate = `${directory}${baseName} (${counter})${extension}`;
+        while (usedPaths.has(candidate)) {
+          counter += 1;
+          candidate = `${directory}${baseName} (${counter})${extension}`;
+        }
+
+        usedPaths.add(candidate);
+        return candidate;
+      };
+
       for (const entry of entries) {
         const signedUrl = await cloudService.getFileSignedUrl(entry.file.storage_path);
         const response = await fetch(signedUrl);
@@ -3744,7 +3818,7 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
           throw new Error(`Não foi possível baixar ${entry.file.original_name}.`);
         }
         const blob = await response.blob();
-        zip.file(entry.relativePath, blob);
+        zip.file(getUniqueZipPath(entry.relativePath), blob);
       }
 
       const zipBlob = await zip.generateAsync({ type: 'blob' });
@@ -4161,38 +4235,89 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
       </div>
 
       <div className="flex flex-col lg:flex-row lg:items-start">
-        <aside className={`${sidebarOpen ? 'flex' : 'hidden'} lg:sticky lg:top-20 lg:self-start lg:flex w-full lg:w-[340px] border-b lg:border-b-0 lg:border-r border-slate-100 bg-[linear-gradient(180deg,#f8fafc_0%,#f1f5f9_100%)] flex-col`}>
-          <div className="p-2 space-y-3">
-            <div className="space-y-1 rounded-2xl border border-slate-200 bg-white/80 p-2 shadow-sm">
-            <button
-              type="button"
-              onClick={() => {
-                setCurrentFolderId(null);
-                setSelectedItemKey('root');
-              }}
-              className={`w-full flex items-center gap-2 rounded-xl px-3 py-2.5 text-sm ${
-                dropTargetFolderId === '__root__'
-                  ? 'bg-orange-100 text-orange-900 border border-orange-300'
-                  : currentFolderId === null
-                    ? 'bg-orange-100 text-orange-900 border border-orange-200'
-                    : 'text-slate-700 hover:bg-slate-50 border border-transparent'
-              }`}
-              onDragOver={(e) => {
-                e.preventDefault();
-                if (draggingItemKey) {
-                  setDropTargetFolderId('__root__');
-                }
-              }}
-              onDragLeave={() => setDropTargetFolderId(null)}
-              onDrop={(e) => {
-                e.preventDefault();
-                void handleDropOnFolder(null);
-              }}
-            >
-              <HardDrive className="w-4 h-4 text-orange-600" />
-              <span className="min-w-0 truncate font-medium">Caixa de entrada</span>
-            </button>
-            {renderTree(rootFolders)}
+        <aside className={`${sidebarOpen ? 'flex' : 'hidden'} lg:sticky lg:top-20 lg:self-start lg:flex w-full lg:w-[292px] border-b lg:border-b-0 lg:border-r border-slate-200 bg-[radial-gradient(circle_at_top,#fff7ed_0%,#ffffff_32%,#f8fafc_100%)] flex-col`}>
+          <div className="p-3 space-y-3 flex-1 overflow-y-auto">
+            {/* Header do Sidebar */}
+            <div className="rounded-3xl border border-orange-100 bg-white/90 p-4 shadow-[0_16px_40px_-24px_rgba(249,115,22,0.35)] backdrop-blur-sm">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-2xl bg-gradient-to-br from-amber-500 via-orange-500 to-orange-600 flex items-center justify-center shadow-lg shadow-orange-200/70">
+                  <Cloud className="w-5 h-5 text-white" />
+                </div>
+                <div className="min-w-0">
+                  <h3 className="text-sm font-bold text-slate-900">Cloud</h3>
+                  <p className="text-[10px] uppercase tracking-[0.18em] text-slate-500">Arquivos & Pastas</p>
+                </div>
+              </div>
+            </div>
+
+            <div className="rounded-3xl border border-slate-200/80 bg-white/90 p-2 shadow-[0_18px_40px_-28px_rgba(15,23,42,0.22)] backdrop-blur-sm space-y-1.5">
+            {/* Caixa de Entrada */}
+            <div className="space-y-1">
+              <button
+                type="button"
+                onClick={() => {
+                  setCurrentFolderId(null);
+                  setSelectedItemKey('root');
+                }}
+                className={`w-full flex items-center gap-3 rounded-2xl px-3 py-3 text-sm font-semibold transition-all duration-200 ${
+                  dropTargetFolderId === '__root__'
+                    ? 'bg-orange-100 text-orange-900 border-2 border-orange-300 shadow-sm'
+                    : currentFolderId === null
+                      ? 'bg-gradient-to-r from-orange-500 to-amber-500 text-white shadow-md shadow-orange-200'
+                      : 'text-slate-700 hover:bg-slate-50 border-2 border-transparent'
+                }`}
+                onDragOver={(e) => {
+                  e.preventDefault();
+                  if (draggingItemKey) {
+                    setDropTargetFolderId('__root__');
+                  }
+                }}
+                onDragLeave={() => setDropTargetFolderId(null)}
+                onDrop={(e) => {
+                  e.preventDefault();
+                  void handleDropOnFolder(null);
+                }}
+              >
+                <button
+                  type="button"
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    setClientsSectionExpanded((prev) => !prev);
+                  }}
+                  className={`flex h-6 w-6 items-center justify-center rounded-md transition-colors ${
+                    currentFolderId === null ? 'hover:bg-white/20' : 'hover:bg-slate-200'
+                  }`}
+                >
+                  {clientsSectionExpanded ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
+                </button>
+                <HardDrive className="w-5 h-5" />
+                <span className="min-w-0 truncate flex-1">Caixa de entrada</span>
+                {currentFolderId === null && !dropTargetFolderId && (
+                  <span className="w-2 h-2 rounded-full bg-white animate-pulse" />
+                )}
+              </button>
+            </div>
+
+            {/* Lista de Clientes/Pastas */}
+            <div className="space-y-1">
+              {clientsSectionExpanded ? (
+                <>
+                  <div className="px-3 pt-1 pb-2 text-[10px] uppercase tracking-widest text-slate-400 font-bold flex items-center gap-2">
+                    <Users className="w-3 h-3" />
+                    Clientes
+                  </div>
+                  <div className="space-y-0.5 max-h-[300px] overflow-y-auto pr-1 scrollbar-thin scrollbar-thumb-slate-200 scrollbar-thumb-rounded-full hover:scrollbar-thumb-slate-300">
+                  {renderTree(rootFolders)}
+                  </div>
+                </>
+              ) : null}
+            </div>
+            </div>
+
+            {/* Divisor */}
+            <div className="rounded-3xl border border-slate-200/80 bg-white/90 p-2 shadow-[0_18px_40px_-28px_rgba(15,23,42,0.18)] backdrop-blur-sm space-y-1.5">
+
+            {/* Arquivado */}
             <button
               type="button"
               onClick={() => {
@@ -4200,12 +4325,12 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
                 setSelectedItemKey(`folder:${CLOUD_ARCHIVED_FOLDER_ID}`);
                 setSelectedItemKeys([`folder:${CLOUD_ARCHIVED_FOLDER_ID}`]);
               }}
-              className={`mt-2 w-full flex items-center gap-2 rounded-xl px-3 py-2.5 text-sm ${
+              className={`w-full flex items-center gap-3 rounded-2xl px-3 py-3 text-sm font-semibold transition-all duration-200 ${
                 dropTargetFolderId === CLOUD_ARCHIVED_FOLDER_ID
-                  ? 'bg-amber-100 text-amber-800 border border-amber-300'
+                  ? 'bg-amber-100 text-amber-800 border-2 border-amber-300 shadow-sm'
                   : isArchivedView
-                    ? 'bg-amber-100 text-amber-800 border border-amber-200'
-                    : 'text-slate-700 hover:bg-slate-50 border border-transparent'
+                    ? 'bg-gradient-to-r from-amber-500 to-yellow-500 text-white shadow-md shadow-amber-200'
+                    : 'text-slate-600 hover:bg-amber-50 border-2 border-transparent'
               }`}
               onDragOver={(e) => {
                 e.preventDefault();
@@ -4219,10 +4344,16 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
                 void handleDropOnSpecialView('archived');
               }}
             >
-              <FolderOpen className="w-4 h-4 text-amber-500" />
-              <span className="min-w-0 truncate font-medium">Arquivado</span>
-              <span className="ml-auto rounded-full border border-amber-200 bg-white px-2 py-0.5 text-[10px] text-amber-700">{archivedRootFolders.length + archivedRootFiles.length}</span>
+              <FolderOpen className="w-5 h-5" />
+              <span className="min-w-0 truncate flex-1">Arquivado</span>
+              <span className={`ml-auto rounded-full px-2.5 py-1 text-[10px] font-bold ${
+                isArchivedView ? 'bg-white/20 text-white' : 'bg-amber-100 text-amber-700'
+              }`}>
+                {archivedRootFolders.length + archivedRootFiles.length}
+              </span>
             </button>
+
+            {/* Lixeira */}
             <button
               type="button"
               onClick={() => {
@@ -4230,12 +4361,12 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
                 setSelectedItemKey(`folder:${CLOUD_TRASH_FOLDER_ID}`);
                 setSelectedItemKeys([`folder:${CLOUD_TRASH_FOLDER_ID}`]);
               }}
-              className={`mt-1 w-full flex items-center gap-2 rounded-xl px-3 py-2.5 text-sm ${
+              className={`w-full flex items-center gap-3 rounded-2xl px-3 py-3 text-sm font-semibold transition-all duration-200 ${
                 dropTargetFolderId === CLOUD_TRASH_FOLDER_ID
-                  ? 'bg-red-100 text-red-700 border border-red-300'
+                  ? 'bg-red-100 text-red-700 border-2 border-red-300 shadow-sm'
                   : isTrashView
-                    ? 'bg-red-100 text-red-700 border border-red-200'
-                    : 'text-slate-700 hover:bg-slate-50 border border-transparent'
+                    ? 'bg-gradient-to-r from-red-500 to-rose-500 text-white shadow-md shadow-red-200'
+                    : 'text-slate-600 hover:bg-red-50 border-2 border-transparent'
               }`}
               onDragOver={(e) => {
                 e.preventDefault();
@@ -4249,17 +4380,25 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
                 void handleDropOnSpecialView('trash');
               }}
             >
-              <Trash2 className="w-4 h-4 text-red-500" />
-              <span className="min-w-0 truncate font-medium">Lixeira</span>
-              <span className="ml-auto rounded-full border border-red-200 bg-white px-2 py-0.5 text-[10px] text-red-600">{trashedRootFiles.length + trashedRootFolders.length}</span>
+              <Trash2 className="w-5 h-5" />
+              <span className="min-w-0 truncate flex-1">Lixeira</span>
+              <span className={`ml-auto rounded-full px-2.5 py-1 text-[10px] font-bold ${
+                isTrashView ? 'bg-white/20 text-white' : 'bg-red-100 text-red-600'
+              }`}>
+                {trashedRootFiles.length + trashedRootFolders.length}
+              </span>
             </button>
             </div>
 
-            <div className="space-y-2 rounded-2xl border border-slate-200 bg-white/80 p-3 shadow-sm">
-              <p className="text-[11px] uppercase tracking-[0.16em] text-slate-400 font-semibold">Acesso rápido</p>
+            {/* Acesso Rápido */}
+            <div className="rounded-3xl border border-slate-200/80 bg-white/90 p-3 shadow-[0_18px_40px_-28px_rgba(15,23,42,0.18)] backdrop-blur-sm space-y-2">
+              <p className="px-1 text-[10px] uppercase tracking-widest text-slate-400 font-bold flex items-center gap-2">
+                <Star className="w-3 h-3" />
+                Acesso Rápido
+              </p>
               <div className="space-y-1">
                 {favoriteFolders.length === 0 ? (
-                  <p className="px-2 text-xs text-slate-500">Nenhuma pasta fixada.</p>
+                  <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50/80 px-3 py-3 text-xs text-slate-400 italic">Nenhuma pasta fixada</div>
                 ) : (
                   favoriteFolders.map((folder) => (
                     <button
@@ -4270,24 +4409,28 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
                         setSelectedItemKey(`folder:${folder.id}`);
                         setSelectedItemKeys([`folder:${folder.id}`]);
                       }}
-                      className="w-full min-w-0 flex items-center gap-2 rounded-xl px-3 py-2 text-sm text-slate-700 hover:bg-slate-50"
+                      className="w-full min-w-0 flex items-center gap-2 rounded-2xl px-3 py-2.5 text-sm text-slate-700 hover:bg-slate-100 transition-all border-2 border-transparent hover:border-slate-200"
                     >
                       <Pin className="w-4 h-4 text-orange-500" />
-                      <span className="min-w-0 flex-1 truncate">{folder.name}</span>
+                      <span className="min-w-0 flex-1 truncate font-medium">{folder.name}</span>
                     </button>
                   ))
                 )}
               </div>
             </div>
 
-            <div className="space-y-2 rounded-2xl border border-slate-200 bg-white/80 p-3 shadow-sm">
-              <p className="text-[11px] uppercase tracking-[0.16em] text-slate-400 font-semibold">Arquivos favoritos</p>
+            {/* Arquivos Favoritos */}
+            <div className="rounded-3xl border border-slate-200/80 bg-white/90 p-3 shadow-[0_18px_40px_-28px_rgba(15,23,42,0.18)] backdrop-blur-sm space-y-2">
+              <p className="px-1 text-[10px] uppercase tracking-widest text-slate-400 font-bold flex items-center gap-2">
+                <FileHeart className="w-3 h-3" />
+                Favoritos
+              </p>
               <div className="space-y-1">
                 {favoriteFiles.length === 0 ? (
-                  <p className="px-2 text-xs text-slate-500">Nenhum arquivo fixado.</p>
+                  <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50/80 px-3 py-3 text-xs text-slate-400 italic">Nenhum arquivo fixado</div>
                 ) : (
                   favoriteFiles.slice(0, 8).map((file) => (
-                    <button key={file.id} type="button" onClick={() => openSelectedItem(`file:${file.id}`)} className="w-full min-w-0 flex items-center gap-2 rounded-xl px-3 py-2 text-sm text-slate-700 hover:bg-slate-50">
+                    <button key={file.id} type="button" onClick={() => openSelectedItem(`file:${file.id}`)} className="w-full min-w-0 flex items-center gap-2 rounded-2xl px-3 py-2.5 text-sm text-slate-700 hover:bg-slate-50">
                       <Pin className="w-4 h-4 text-orange-500" />
                       <span className="min-w-0 flex-1 truncate">{file.original_name}</span>
                     </button>
@@ -4296,17 +4439,17 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
               </div>
             </div>
 
-            <div className="space-y-2 rounded-2xl border border-slate-200 bg-white/80 p-3 shadow-sm">
+            <div className="rounded-3xl border border-slate-200/80 bg-white/90 p-3 shadow-[0_18px_40px_-28px_rgba(15,23,42,0.18)] backdrop-blur-sm space-y-2">
               <div className="flex items-center justify-between gap-2">
-                <p className="text-[11px] uppercase tracking-[0.16em] text-slate-400 font-semibold">Recentes</p>
+                <p className="text-[10px] uppercase tracking-[0.16em] text-slate-400 font-semibold">Recentes</p>
                 <History className="w-4 h-4 text-slate-400" />
               </div>
               <div className="space-y-1">
                 {recentFiles.length === 0 ? (
-                  <p className="px-2 text-xs text-slate-500">Nenhum arquivo recente.</p>
+                  <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50/80 px-3 py-3 text-xs text-slate-400 italic">Nenhum arquivo recente.</div>
                 ) : (
                   recentFiles.slice(0, 8).map((file) => (
-                    <button key={file.id} type="button" onClick={() => openSelectedItem(`file:${file.id}`)} className="w-full min-w-0 flex items-center gap-2 rounded-xl px-3 py-2 text-sm text-slate-700 hover:bg-slate-50">
+                    <button key={file.id} type="button" onClick={() => openSelectedItem(`file:${file.id}`)} className="w-full min-w-0 flex items-center gap-2 rounded-2xl px-3 py-2.5 text-sm text-slate-700 hover:bg-slate-50">
                       <History className="w-4 h-4 text-slate-400" />
                       <span className="min-w-0 flex-1 truncate">{file.original_name}</span>
                     </button>
@@ -4508,6 +4651,7 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
                     const isSelected = selectedItemKeys.includes(itemKey);
                     const folderLabel = getFolderLabel(folder.id);
                     const folderIssueClass = getFolderIssueBadgeClass(folder);
+                    const showFolderIssueBadge = shouldShowFolderIssueBadge(folder);
                     const folderIssueReason = folder.pending_reason?.trim() || '';
                     const isDropTarget = dropTargetFolderId === folder.id;
                     const hasClientLink = Boolean(folder.client_id);
@@ -4593,16 +4737,18 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
                                   {hasClientLink ? 'Vinculada' : 'Sem vínculo'}
                                 </span>
                               ) : null}
-                              {showFolderStatusBadge ? (
+                              {folderLabel && folderLabel.name !== 'Sem status' ? (
                                 <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] font-medium ${folderLabel.bgClass} ${folderLabel.textClass} ${folderLabel.borderClass}`}>
                                   {folderLabel.name}
                                 </span>
                               ) : null}
-                              <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] font-medium ${folderIssueClass}`}>
-                                <span className="inline-flex items-center gap-1">
-                                  {renderFolderIssueBadgeContent(folder)}
+                              {showFolderIssueBadge ? (
+                                <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] font-medium ${folderIssueClass}`}>
+                                  <span className="inline-flex items-center gap-1">
+                                    {renderFolderIssueBadgeContent(folder)}
+                                  </span>
                                 </span>
-                              </span>
+                              ) : null}
                               {folder.archived_at ? (
                                 <span className="inline-flex items-center rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[11px] font-medium text-amber-700">
                                   Arquivada
@@ -4798,6 +4944,7 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
                       const isSelected = selectedItemKeys.includes(itemKey);
                       const folderLabel = getFolderLabel(folder.id);
                       const folderIssueClass = getFolderIssueBadgeClass(folder);
+                      const showFolderIssueBadge = shouldShowFolderIssueBadge(folder);
                       const folderIssueReason = folder.pending_reason?.trim() || '';
                       const isDropTarget = dropTargetFolderId === folder.id;
                       const hasClientLink = Boolean(folder.client_id);
@@ -4828,7 +4975,7 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
                             e.preventDefault();
                             void handleDropOnFolder(folder.id);
                           }}
-                          className={`rounded-xl border bg-white shadow-sm cursor-pointer transition ${folderCardSizeClasses.cardClass} ${isDropTarget ? 'border-orange-400 bg-orange-100' : isSelected ? 'border-orange-300 bg-orange-50/40' : 'border-slate-200 hover:border-orange-200 hover:shadow-md'}`}
+                          className={`group bg-white p-5 rounded-xl transition-all duration-300 hover:-translate-y-1 hover:shadow-[0_10px_30px_-5px_rgba(25,28,29,0.06)] border border-transparent hover:border-slate-200 flex flex-col h-full cursor-pointer ${isDropTarget ? 'border-orange-400 bg-orange-50 shadow-[0_0_0_1px_rgba(251,146,60,0.18)]' : isSelected ? 'border-orange-300 bg-orange-50/40 shadow-[0_14px_34px_-24px_rgba(249,115,22,0.45)]' : ''}`}
                           onClick={(event) => {
                             event.stopPropagation();
                             event.preventDefault();
@@ -4851,104 +4998,91 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
                           }}
                           style={{ height: 'fit-content' }}
                         >
-                          <div className="flex items-start justify-between gap-2">
-                            <div className={`flex items-start min-w-0 ${folderCardSizeClasses.contentGapClass}`}>
-                              <div className={`relative flex-shrink-0 ${folderCardSizeClasses.iconWrapperClass}`}>
-                                <div className={`absolute rounded-t-md bg-amber-300 border border-amber-400 border-b-0 ${folderCardSizeClasses.iconTopTabClass}`} />
-                                <div className={`absolute inset-x-0 rounded-md bg-gradient-to-b from-amber-300 to-amber-400 border border-amber-500 shadow-[inset_0_1px_0_rgba(255,255,255,0.35)] ${folderCardSizeClasses.iconBodyClass}`} />
-                                <div className={`absolute rounded-sm bg-white/80 border border-amber-200 ${folderCardSizeClasses.iconBadgeClass}`} />
-                                <Folder className={`absolute text-amber-700/80 ${folderCardSizeClasses.folderIconClass}`} />
-                              </div>
-                              <div className={`min-w-0 flex-1 ${folderCardSizeClasses.titlePaddingClass}`}>
-                                {inlineRenameTarget?.type === 'folder' && inlineRenameTarget.id === folder.id ? (
-                                  <input
-                                    value={inlineRenameValue}
-                                    onChange={(e) => setInlineRenameValue(e.target.value)}
-                                    onClick={(e) => e.stopPropagation()}
-                                    onKeyDown={(e) => {
-                                      if (e.key === 'Enter') {
-                                        e.preventDefault();
-                                        void commitInlineRename();
-                                      }
-                                      if (e.key === 'Escape') {
-                                        e.preventDefault();
-                                        cancelInlineRename();
-                                      }
-                                    }}
-                                    onBlur={() => { void commitInlineRename(); }}
-                                    className="w-full rounded-md border border-orange-300 bg-white px-2 py-1 text-sm font-medium text-slate-900 focus:outline-none focus:ring-2 focus:ring-orange-100"
-                                    autoFocus
-                                  />
-                                ) : (
-                                  <p className="truncate text-sm font-medium text-slate-900 leading-tight">{folder.name}</p>
-                                )}
-                                <div className="mt-1 flex flex-wrap items-center gap-1.5">
-                                  {isFavorite ? <Pin className="w-3.5 h-3.5 text-orange-500" /> : null}
-                                  {showClientLinkBadge ? (
-                                    <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] font-medium ${hasClientLink ? 'border-emerald-200 bg-emerald-50 text-emerald-700' : 'border-slate-200 bg-slate-100 text-slate-500'}`}>
-                                      {hasClientLink ? 'Vinculada' : 'Sem vínculo'}
-                                    </span>
-                                  ) : null}
+                          {/* Header: ícone + status/vínculo */}
+                          <div className="flex justify-between items-start mb-4">
+                            <div className="w-12 h-12 rounded-xl bg-amber-100 flex items-center justify-center">
+                              <Folder className="w-7 h-7 text-amber-600" />
+                            </div>
+                            <div className="flex items-center gap-2">
+                              {showFolderIssueBadge ? (
+                                <div className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-semibold ${folderIssueClass}`}>
+                                  {renderFolderIssueBadgeContent(folder)}
                                 </div>
-                              </div>
+                              ) : showFolderStatusBadge && folderLabel && folderLabel.name !== 'Sem status' ? (
+                                <div className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-semibold ${folderLabel.bgClass} ${folderLabel.textClass} ${folderLabel.borderClass}`}>
+                                  {folderLabel.name}
+                                </div>
+                              ) : null}
                             </div>
-                            <div className="flex items-start gap-1">
-                              <button
-                                type="button"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  handleToggleFavoriteFolder(folder.id);
-                                }}
-                                className={`p-1.5 rounded-lg hover:bg-slate-100 ${isFavorite ? 'text-orange-500' : 'text-slate-400 hover:text-slate-600'}`}
-                              >
-                                <Pin className="w-4 h-4" />
-                              </button>
-                              <button
-                                type="button"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  if (selectedItemKeys.includes(itemKey)) {
-                                    setSelectedItemKey(itemKey);
-                                  } else {
-                                    setSelectedItemKey(itemKey);
-                                    setSelectedItemKeys([itemKey]);
-                                    setSelectionAnchorKey(itemKey);
+                          </div>
+                          {/* Conteúdo principal */}
+                          <div className="flex-1">
+                            {inlineRenameTarget?.type === 'folder' && inlineRenameTarget.id === folder.id ? (
+                              <input
+                                value={inlineRenameValue}
+                                onChange={(e) => setInlineRenameValue(e.target.value)}
+                                onClick={(e) => e.stopPropagation()}
+                                onKeyDown={(e) => {
+                                  if (e.key === 'Enter') {
+                                    e.preventDefault();
+                                    void commitInlineRename();
                                   }
-                                  setContextMenu({ x: e.clientX, y: e.clientY, type: 'folder', folderId: folder.id });
+                                  if (e.key === 'Escape') {
+                                    e.preventDefault();
+                                    cancelInlineRename();
+                                  }
                                 }}
-                                className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-400 hover:text-slate-600"
-                              >
-                                <MoreHorizontal className="w-4 h-4" />
-                              </button>
-                            </div>
-                          </div>
-                          <div className="mt-2 flex flex-wrap gap-1.5">
-                            {showFolderStatusBadge ? (
-                              <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] font-medium ${folderLabel.bgClass} ${folderLabel.textClass} ${folderLabel.borderClass}`}>
-                                {folderLabel.name}
-                              </span>
-                            ) : null}
-                            <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] font-medium ${folderIssueClass}`}>
-                              <span className="inline-flex items-center gap-1">
-                                {renderFolderIssueBadgeContent(folder)}
-                              </span>
-                            </span>
+                                onBlur={() => { void commitInlineRename(); }}
+                                className="w-full rounded-md border border-orange-300 bg-white px-2 py-1 text-sm font-medium text-slate-900 focus:outline-none focus:ring-2 focus:ring-orange-100"
+                                autoFocus
+                              />
+                            ) : (
+                              <>
+                                <h3 className="text-lg font-bold text-slate-900 leading-tight mb-1 group-hover:text-amber-600 transition-colors truncate">
+                                  {folder.name}
+                                </h3>
+                                <p className="text-xs text-slate-500 mb-4 truncate">
+                                  {client?.full_name || 'Sem cliente vinculado'}
+                                </p>
+                              </>
+                            )}
+                            
                             {folder.archived_at ? (
-                              <span className="inline-flex items-center rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[11px] font-medium text-amber-700">
+                              <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-semibold mb-4 bg-amber-100 text-amber-700">
                                 Arquivada
-                              </span>
+                              </div>
                             ) : null}
+                            
                             {dragVisualState?.folderId === folder.id && dragVisualState.mode ? (
-                              <span className="inline-flex items-center rounded-full border border-orange-200 bg-orange-50 px-2 py-0.5 text-[11px] font-medium text-orange-700">
+                              <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-semibold mb-4 bg-orange-100 text-orange-700">
                                 {dragVisualState.mode === 'copy' ? 'Copiar para pasta' : dragVisualState.mode === 'cut' ? 'Recortar para pasta' : 'Mover para pasta'}
+                              </div>
+                            ) : null}
+                            
+                            {folderIssueReason ? (
+                              <p className="text-[11px] text-red-600 font-medium line-clamp-2 mb-4">
+                                {folderIssueReason}
+                              </p>
+                            ) : null}
+                          </div>
+                          {/* Rodapé com data/hora */}
+                          <div className="pt-4 border-t border-slate-100 flex items-center justify-between gap-3 text-[10px] text-slate-400 font-medium">
+                            <div className="flex items-center gap-3 min-w-0">
+                              <span className="flex items-center gap-1 whitespace-nowrap">
+                                <Calendar className="w-3 h-3" />
+                                {formatCompactDate(folder.updated_at)}
+                              </span>
+                              <span className="flex items-center gap-1 whitespace-nowrap">
+                                <Clock className="w-3 h-3" />
+                                {formatCompactTime(folder.updated_at)}
+                              </span>
+                            </div>
+                            {showClientLinkBadge ? (
+                              <span className={`inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full border ${hasClientLink ? 'border-emerald-200 bg-emerald-50 text-emerald-700' : 'border-red-200 bg-red-50 text-red-600'}`} title={hasClientLink ? 'Vinculada' : 'Sem vínculo'}>
+                                {hasClientLink ? <CheckCircle2 className="h-4 w-4" /> : <XCircle className="h-4 w-4" />}
                               </span>
                             ) : null}
                           </div>
-                          {folderIssueReason ? (
-                            <p className="mt-2 line-clamp-2 text-xs text-red-600">
-                              Motivo: {folderIssueReason}
-                            </p>
-                          ) : null}
                         </div>
                       );
                     }
@@ -5259,11 +5393,13 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
                       <div>
                         <p className="text-slate-400 text-xs">Status</p>
                         <div className="mt-1 flex flex-wrap gap-2">
-                          <span className={`inline-flex items-center rounded-full border px-2.5 py-1 text-xs font-medium ${getFolderIssueBadgeClass(selectedFolder)}`}>
-                            <span className="inline-flex items-center gap-1">
-                              {renderFolderIssueBadgeContent(selectedFolder)}
+                          {shouldShowFolderIssueBadge(selectedFolder) ? (
+                            <span className={`inline-flex items-center rounded-full border px-2.5 py-1 text-xs font-medium ${getFolderIssueBadgeClass(selectedFolder)}`}>
+                              <span className="inline-flex items-center gap-1">
+                                {renderFolderIssueBadgeContent(selectedFolder)}
+                              </span>
                             </span>
-                          </span>
+                          ) : null}
                           {selectedFolder.resolved_at && !selectedFolder.has_pending_issue ? (
                             <span className="inline-flex items-center rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-xs font-medium text-emerald-700">
                               Resolvido em {formatDateTime(selectedFolder.resolved_at)}
