@@ -70,6 +70,8 @@ import type { CloudActivityLog, CloudFile, CloudFolder, CloudFolderShare } from 
 
 pdfjs.GlobalWorkerOptions.workerSrc = `//unpkg.com/pdfjs-dist@${pdfjs.version}/build/pdf.worker.min.mjs`;
 
+const CARD_PDF_THUMBNAIL_WIDTH = 220;
+
 const isImageFile = (mime?: string | null) => Boolean(mime?.startsWith('image/'));
 const isPdfFile = (mime?: string | null, name?: string) => mime === 'application/pdf' || String(name || '').toLowerCase().endsWith('.pdf');
 const isVideoFile = (mime?: string | null, name?: string) => {
@@ -347,6 +349,40 @@ const arrayBufferToBase64 = (buffer: ArrayBuffer) => {
   return window.btoa(binary);
 };
 
+const generatePdfThumbnailDataUrl = async (fileUrl: string, width = CARD_PDF_THUMBNAIL_WIDTH) => {
+  const response = await fetch(fileUrl);
+  if (!response.ok) {
+    throw new Error('Não foi possível baixar o PDF para gerar o preview.');
+  }
+
+  const pdfBytes = await response.arrayBuffer();
+  const loadingTask = pdfjs.getDocument({ data: pdfBytes });
+  const pdf = await loadingTask.promise;
+
+  try {
+    const page = await pdf.getPage(1);
+    const initialViewport = page.getViewport({ scale: 1 });
+    const scale = width / initialViewport.width;
+    const viewport = page.getViewport({ scale });
+    const canvas = document.createElement('canvas');
+    const context = canvas.getContext('2d');
+
+    if (!context) {
+      throw new Error('Não foi possível gerar o canvas do preview do PDF.');
+    }
+
+    canvas.width = Math.ceil(viewport.width);
+    canvas.height = Math.ceil(viewport.height);
+
+    await page.render({ canvasContext: context, canvas, viewport }).promise;
+
+    return canvas.toDataURL('image/png');
+  } finally {
+    await pdf.destroy();
+    await loadingTask.destroy();
+  }
+};
+
 const getRandomImageFileName = (extension = 'png') => `print_${crypto.randomUUID().replace(/-/g, '').slice(0, 12)}.${extension}`;
 const getRandomPdfFileName = () => `print_${crypto.randomUUID().replace(/-/g, '').slice(0, 12)}.pdf`;
 
@@ -475,6 +511,7 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
   const [detailPreviewText, setDetailPreviewText] = useState<string | null>(null);
   const [detailPreviewLoading, setDetailPreviewLoading] = useState(false);
   const [cardPreviewUrls, setCardPreviewUrls] = useState<Record<string, string>>({});
+  const [cardPdfThumbnailUrls, setCardPdfThumbnailUrls] = useState<Record<string, string>>({});
   const [selectedItemKey, setSelectedItemKey] = useState<string | null>(null);
   const [selectedItemKeys, setSelectedItemKeys] = useState<string[]>([]);
   const [selectionAnchorKey, setSelectionAnchorKey] = useState<string | null>(null);
@@ -497,8 +534,9 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
   const [pdfToolsModalOpen, setPdfToolsModalOpen] = useState(false);
   const [selectedPdfToolFile, setSelectedPdfToolFile] = useState<CloudFile | null>(null);
   const [pdfToolPreviewUrl, setPdfToolPreviewUrl] = useState<string | null>(null);
+  const [pdfToolThumbsReady, setPdfToolThumbsReady] = useState(false);
+  const [pdfToolEditorReady, setPdfToolEditorReady] = useState(false);
   const [pdfToolPages, setPdfToolPages] = useState<Array<{ sourceIndex: number; rotation: number }>>([]);
-  const [pdfToolDocumentReady, setPdfToolDocumentReady] = useState(false);
   const [selectedPdfPageIndexes, setSelectedPdfPageIndexes] = useState<number[]>([]);
   const [pdfToolSaving, setPdfToolSaving] = useState(false);
   const [pdfToolSaveAsCopy, setPdfToolSaveAsCopy] = useState(false);
@@ -1407,6 +1445,7 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
       .filter((file) => isImageFile(file.mime_type) || isPdfFile(file.mime_type, file.original_name));
     if (previewFiles.length === 0) {
       setCardPreviewUrls({});
+      setCardPdfThumbnailUrls({});
       return;
     }
 
@@ -1414,21 +1453,41 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
     const previewFileIds = new Set(previewFiles.map((file) => file.id));
 
     setCardPreviewUrls((prev) => Object.fromEntries(Object.entries(prev).filter(([fileId]) => previewFileIds.has(fileId))));
+    setCardPdfThumbnailUrls((prev) => Object.fromEntries(Object.entries(prev).filter(([fileId]) => previewFileIds.has(fileId))));
 
     const loadCardPreviews = async () => {
       try {
-        const entries = await Promise.all(
-          previewFiles.map(async (file) => [file.id, await cloudService.getFileSignedUrl(file.storage_path)] as const),
-        );
+        const entries = await Promise.all(previewFiles.map(async (file) => {
+          const signedUrl = await cloudService.getFileSignedUrl(file.storage_path);
+          const pdfThumbnailUrl = isPdfFile(file.mime_type, file.original_name)
+            ? await generatePdfThumbnailDataUrl(signedUrl)
+            : null;
+
+          return [file.id, { signedUrl, pdfThumbnailUrl }] as const;
+        }));
 
         if (cancelled) return;
+
+        const imageEntries = entries
+          .filter(([, value]) => value.pdfThumbnailUrl === null)
+          .map(([fileId, value]) => [fileId, value.signedUrl] as const);
+
+        const pdfEntries = entries
+          .filter(([, value]) => Boolean(value.pdfThumbnailUrl))
+          .map(([fileId, value]) => [fileId, value.pdfThumbnailUrl as string] as const);
+
         setCardPreviewUrls((prev) => ({
           ...prev,
-          ...Object.fromEntries(entries),
+          ...Object.fromEntries(imageEntries),
+        }));
+        setCardPdfThumbnailUrls((prev) => ({
+          ...prev,
+          ...Object.fromEntries(pdfEntries),
         }));
       } catch {
         if (!cancelled) {
           setCardPreviewUrls((prev) => prev);
+          setCardPdfThumbnailUrls((prev) => prev);
         }
       }
     };
@@ -2531,7 +2590,8 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
     setPdfToolsModalOpen(false);
     setSelectedPdfToolFile(null);
     setPdfToolPreviewUrl(null);
-    setPdfToolDocumentReady(false);
+    setPdfToolThumbsReady(false);
+    setPdfToolEditorReady(false);
     setPdfToolPages([]);
     setSelectedPdfPageIndexes([]);
     setPdfToolSaveAsCopy(false);
@@ -2539,8 +2599,9 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
   };
 
   useEffect(() => {
-    setPdfToolDocumentReady(false);
-  }, [pdfToolPreviewUrl, selectedPdfToolFile?.id]);
+    setPdfToolThumbsReady(false);
+    setPdfToolEditorReady(false);
+  }, [pdfToolPreviewUrl, selectedPdfToolFile?.id, pdfToolMode]);
 
   const togglePdfPageSelection = (pageIndex: number) => {
     setSelectedPdfPageIndexes((prev) => (
@@ -5199,6 +5260,7 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
                     const itemKey = `file:${file.id}`;
                     const isSelected = selectedItemKeys.includes(itemKey);
                     const previewUrl = cardPreviewUrls[file.id] || null;
+                    const pdfThumbnailUrl = cardPdfThumbnailUrls[file.id] || null;
                     const canQuickRotate = isImageFile(file.mime_type) || isPdfFile(file.mime_type, file.original_name);
                     const isQuickActionLoading = quickActionFileId === file.id;
 
@@ -5296,24 +5358,16 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
                             <div className={`${cardPreviewHeightClass} flex items-center justify-center bg-slate-100 p-2`}>
                               <img src={previewUrl} alt={file.original_name} className="h-full w-full rounded-xl object-contain bg-white" />
                             </div>
-                          ) : isPdfFile(file.mime_type, file.original_name) && previewUrl ? (
-                            <div className={`${cardPreviewHeightClass} flex items-center justify-center bg-slate-100 overflow-hidden`}>
-                              <Document
-                                key={`${file.id}-${previewUrl}`}
-                                file={previewUrl}
-                                loading={<div className="flex flex-col items-center justify-center gap-2 text-slate-500"><Loader2 className="w-5 h-5 animate-spin" /><span className="text-[11px] font-medium">Carregando PDF</span></div>}
-                                error={<div className="flex flex-col items-center justify-center gap-2 text-slate-500"><FileText className="w-10 h-10 text-red-500" /><span className="text-[11px] font-medium">Preview indisponível</span></div>}
-                                className="flex h-full w-full items-center justify-center"
-                              >
-                                <Page
-                                  key={`${file.id}-${previewUrl}-page-1`}
-                                  pageNumber={1}
-                                  width={220}
-                                  renderAnnotationLayer={false}
-                                  renderTextLayer={false}
-                                  loading={<div className="flex flex-col items-center justify-center gap-2 text-slate-500"><Loader2 className="w-5 h-5 animate-spin" /><span className="text-[11px] font-medium">Gerando preview</span></div>}
-                                />
-                              </Document>
+                          ) : isPdfFile(file.mime_type, file.original_name) ? (
+                            <div className={`${cardPreviewHeightClass} flex items-center justify-center overflow-hidden bg-slate-100 p-2`}>
+                              {pdfThumbnailUrl ? (
+                                <img src={pdfThumbnailUrl} alt={file.original_name} className="h-full w-full rounded-xl object-contain bg-white" />
+                              ) : (
+                                <div className="flex h-full w-full flex-col items-center justify-center gap-2 rounded-xl bg-white text-slate-500">
+                                  <Loader2 className="h-5 w-5 animate-spin" />
+                                  <span className="text-[11px] font-medium">Gerando preview</span>
+                                </div>
+                              )}
                             </div>
                           ) : (
                             <div className={`${cardPreviewHeightClass} flex items-center justify-center bg-slate-50`}>
@@ -7324,11 +7378,11 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
                         file={pdfToolPreviewUrl}
                         loading={<div className="py-6 text-center text-sm text-slate-500">Carregando miniaturas do PDF...</div>}
                         error={<div className="py-6 text-center text-sm text-slate-500">Preview do PDF indisponível no momento.</div>}
-                        onLoadSuccess={() => setPdfToolDocumentReady(true)}
-                        onLoadError={() => setPdfToolDocumentReady(false)}
+                        onLoadSuccess={() => setPdfToolThumbsReady(true)}
+                        onLoadError={() => setPdfToolThumbsReady(false)}
                       >
                         <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-6 xl:grid-cols-7 gap-3">
-                          {(pdfToolDocumentReady ? pdfToolPages : []).map((page, idx) => {
+                          {(pdfToolThumbsReady ? pdfToolPages : []).map((page, idx) => {
                             const selected = selectedPdfPageIndexes.includes(idx);
                             return (
                               <button
@@ -7437,13 +7491,13 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
                       file={pdfToolPreviewUrl}
                       loading={<div className="h-full flex items-center justify-center text-slate-500">Carregando PDF...</div>}
                       error={<div className="h-full flex items-center justify-center text-slate-500">Preview do PDF indisponível no momento.</div>}
-                      onLoadSuccess={() => setPdfToolDocumentReady(true)}
-                      onLoadError={() => setPdfToolDocumentReady(false)}
+                      onLoadSuccess={() => setPdfToolEditorReady(true)}
+                      onLoadError={() => setPdfToolEditorReady(false)}
                     >
                       <DndContext sensors={pdfToolSensors} collisionDetection={closestCenter} onDragEnd={handlePdfToolDragEnd}>
                         <SortableContext items={pdfToolPageIds} strategy={rectSortingStrategy}>
                           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5">
-                            {(pdfToolDocumentReady ? pdfToolPages : []).map((page, index) => {
+                            {(pdfToolEditorReady ? pdfToolPages : []).map((page, index) => {
                               const selected = selectedPdfPageIndexes.includes(index);
                               const sortableId = `${page.sourceIndex}-${index}`;
                               return (

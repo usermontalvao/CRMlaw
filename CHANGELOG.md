@@ -1,5 +1,35 @@
 # Changelog
  
+## 1.9.984
+- **Cloud PDF**: Corrigida a condição que impedia a exibição do thumbnail nos cards.
+  - Cards de PDF deixaram de depender de `previewUrl` para mostrar a miniatura
+  - A renderização agora usa corretamente o estado `cardPdfThumbnailUrls`
+  - Corrigido o motivo que fazia o card exibir apenas o ícone vermelho mesmo com thumbnail disponível
+
+## 1.9.983
+- **Cloud PDF**: Corrigida a geração do thumbnail visual dos PDFs nos cards.
+  - Geração da primeira página passou a carregar o PDF por bytes antes da renderização
+  - Corrigida a falha que fazia os cards mostrarem apenas o ícone do PDF sem a miniatura
+  - Mantida a abordagem segura sem usar `Page` diretamente na listagem
+
+## 1.9.982
+- **Cloud PDF**: Restaurado o preview visual dos PDFs nos cards com geração segura de thumbnail.
+  - Cards de PDF voltaram a exibir a primeira página visualmente
+  - Thumbnail agora é gerado por `pdfjs` em `canvas`, sem usar `Page` direto na listagem
+  - Mantida a correção contra o crash `sendWithPromise` no preview resumido
+
+## 1.9.981
+- **Cloud PDF**: Removido o thumbnail instável baseado em `react-pdf` nos cards de arquivos.
+  - Eliminado o uso de `Page` no preview resumido dos cards
+  - Cards de PDF agora usam preview visual estável e leve
+  - Evitado o crash apontado na linha do card preview do `CloudModule`
+
+## 1.9.980
+- **Cloud PDF Hub**: Corrigido o crash intermitente do `react-pdf` ao trocar entre modos e previews.
+  - Separado o estado de carregamento do documento entre miniaturas e editor
+  - Evitada renderização prematura de `Page` após troca de modo
+  - Reduzida a chance do erro `Cannot read properties of null (reading 'sendWithPromise')`
+
 ## 1.9.979
 - **Cloud Mobile**: Header do preview de PDF/documentos compactado para priorizar o conteúdo.
   - Topo reduzido para uma única linha com nome do arquivo

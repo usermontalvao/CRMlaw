@@ -727,6 +727,116 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
 
 const releases: ReleaseNote[] = [
   {
+    version: '1.9.984',
+    date: '19/03/2026',
+    summary: 'Cloud PDF: corrigida a condição do card que impedia a miniatura do PDF de aparecer mesmo após a geração segura da primeira página.',
+    modules: [
+      {
+        moduleId: 'cloud',
+        changes: [
+          {
+            type: 'fix',
+            title: 'Cards de PDF passaram a ler o estado correto da miniatura',
+            description: 'A renderização do card deixou de depender do `previewUrl` das imagens e passou a considerar diretamente o estado `cardPdfThumbnailUrls` dos PDFs.',
+          },
+          {
+            type: 'fix',
+            title: 'Ícone vermelho deixou de bloquear a exibição da capa do PDF',
+            description: 'Foi corrigida a condição lógica que mantinha o card preso no visual de fallback mesmo quando a miniatura da primeira página já estava sendo gerada pelo fluxo seguro.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.983',
+    date: '19/03/2026',
+    summary: 'Cloud PDF: corrigido o fluxo final de geração das miniaturas dos cards para que a primeira página volte a aparecer corretamente.',
+    modules: [
+      {
+        moduleId: 'cloud',
+        changes: [
+          {
+            type: 'fix',
+            title: 'Thumbnail dos PDFs voltou a renderizar nos cards',
+            description: 'A geração da miniatura da primeira página foi ajustada para carregar o arquivo por bytes antes da renderização, restaurando a visualização real nos cards do Cloud.',
+          },
+          {
+            type: 'fix',
+            title: 'Fallback do ícone deixou de ser o estado permanente dos PDFs',
+            description: 'Os cards deixaram de ficar presos no visual simplificado do ícone vermelho quando o thumbnail podia ser gerado normalmente, mantendo a abordagem segura sem montar `Page` direto na grid.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.982',
+    date: '19/03/2026',
+    summary: 'Cloud PDF: os cards voltaram a mostrar a primeira página do PDF com thumbnail segura e sem reintroduzir o crash do preview.',
+    modules: [
+      {
+        moduleId: 'cloud',
+        changes: [
+          {
+            type: 'fix',
+            title: 'Preview visual dos PDFs restaurado nos cards',
+            description: 'Os cards do Cloud voltaram a exibir uma miniatura real da primeira página do PDF, preservando a leitura visual da listagem.',
+          },
+          {
+            type: 'fix',
+            title: 'Thumbnail segura gerada fora do componente `Page`',
+            description: 'A miniatura agora é renderizada com `pdfjs` em `canvas` e convertida para imagem, evitando a montagem direta de `Page` na grid e mantendo a proteção contra o erro `sendWithPromise`.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.981',
+    date: '19/03/2026',
+    summary: 'Cloud PDF: removido o preview resumido instável com react-pdf nos cards para eliminar um crash recorrente.',
+    modules: [
+      {
+        moduleId: 'cloud',
+        changes: [
+          {
+            type: 'fix',
+            title: 'Thumbnail de PDF dos cards trocado por preview estável',
+            description: 'Os cards de arquivos PDF deixaram de montar o componente `Page` do `react-pdf` para a miniatura rápida, passando a usar um bloco visual leve e previsível.',
+          },
+          {
+            type: 'fix',
+            title: 'Crash no preview resumido do Cloud eliminado',
+            description: 'A região do card apontada pelo stack trace deixou de depender do worker do PDF.js, evitando o erro `Cannot read properties of null (reading sendWithPromise)` durante a montagem do preview.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.980',
+    date: '19/03/2026',
+    summary: 'Cloud PDF Hub: corrigido o erro intermitente do react-pdf ao alternar entre visualizações e modos de edição.',
+    modules: [
+      {
+        moduleId: 'cloud',
+        changes: [
+          {
+            type: 'fix',
+            title: 'Estados de carregamento do PDF separados por contexto',
+            description: 'O Hub PDF deixou de compartilhar o mesmo estado de documento pronto entre as miniaturas e a grade de edição, evitando que páginas fossem renderizadas antes do `Document` correto terminar de carregar.',
+          },
+          {
+            type: 'fix',
+            title: 'Crash do `Page` reduzido ao trocar de modo',
+            description: 'A troca entre os modos do Hub PDF agora reinicia corretamente os estados de readiness do preview, reduzindo falhas como `Cannot read properties of null (reading sendWithPromise)` no `react-pdf`.',
+          },
+        ],
+      },
+    ],
+  },
+  {
     version: '1.9.979',
     date: '19/03/2026',
     summary: 'Cloud Mobile: topo do preview compactado para deixar o PDF e os documentos como protagonistas.',
