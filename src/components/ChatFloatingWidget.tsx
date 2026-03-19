@@ -1165,7 +1165,7 @@ const ChatFloatingWidget: React.FC = () => {
   const headerVerified = getVerifiedVariant(otherUser);
 
   return createPortal(
-    <div className="fixed bottom-4 right-3 sm:bottom-5 sm:right-5 z-[9999] flex flex-col items-end" style={{ isolation: 'isolate' }}>
+    <div className="fixed bottom-24 right-3 sm:bottom-5 sm:right-5 z-[9999] flex flex-col items-end" style={{ isolation: 'isolate' }}>
       {open && (
         <div className="mb-3 w-[360px] max-w-[calc(100vw-24px)] rounded-2xl bg-[#111827]/95 text-white shadow-[0_30px_80px_rgba(0,0,0,0.55)] ring-1 ring-white/10 overflow-hidden flex flex-col h-[460px] max-h-[calc(100vh-120px)]">
           <div className="px-4 py-3 border-b border-white/10 flex items-center justify-between shrink-0">

@@ -390,8 +390,8 @@ interface CloudModuleProps {
 type CloudViewMode = 'list' | 'cards';
 type PdfToolMode = 'home' | 'organize' | 'rotate' | 'remove';
 type CloudHeaderActionDetail = {
-  action: 'upload' | 'create-folder' | 'toggle-filters' | 'set-view-mode' | 'set-card-size';
-  value?: 'list' | 'cards' | 'small' | 'medium' | 'large';
+  action: 'upload' | 'create-folder' | 'toggle-filters' | 'set-view-mode' | 'set-card-size' | 'toggle-sidebar' | 'set-search-term';
+  value?: 'list' | 'cards' | 'small' | 'medium' | 'large' | string;
 };
 type CloudHeaderStateDetail = {
   viewMode: 'list' | 'cards';
@@ -470,6 +470,7 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
   const [previewFile, setPreviewFile] = useState<CloudFile | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [previewLoading, setPreviewLoading] = useState(false);
+  const [previewActionsMenuOpen, setPreviewActionsMenuOpen] = useState(false);
   const [detailPreviewUrl, setDetailPreviewUrl] = useState<string | null>(null);
   const [detailPreviewText, setDetailPreviewText] = useState<string | null>(null);
   const [detailPreviewLoading, setDetailPreviewLoading] = useState(false);
@@ -701,6 +702,37 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
     }
     return items;
   }, [allFolders, currentFolder, isArchivedView, isTrashView]);
+
+  const canGoBackMobile = useMemo(() => {
+    if (isArchivedView || isTrashView) return true;
+    return Boolean(currentFolder?.parent_id || currentFolderId);
+  }, [currentFolder?.parent_id, currentFolderId, isArchivedView, isTrashView]);
+
+  const handleMobileBackNavigation = useCallback(() => {
+    if (isArchivedView || isTrashView) {
+      setCurrentFolderId(null);
+      setSelectedItemKey('root');
+      setSelectedItemKeys([]);
+      setSelectionAnchorKey(null);
+      return;
+    }
+
+    if (currentFolder?.parent_id) {
+      const parentKey = `folder:${currentFolder.parent_id}`;
+      setCurrentFolderId(currentFolder.parent_id);
+      setSelectedItemKey(parentKey);
+      setSelectedItemKeys([parentKey]);
+      setSelectionAnchorKey(parentKey);
+      return;
+    }
+
+    if (currentFolderId) {
+      setCurrentFolderId(null);
+      setSelectedItemKey('root');
+      setSelectedItemKeys([]);
+      setSelectionAnchorKey(null);
+    }
+  }, [currentFolder?.parent_id, currentFolderId, isArchivedView, isTrashView]);
 
   const rootFolders = useMemo(() => inboxFolderChildrenMap.get(null) ?? [], [inboxFolderChildrenMap]);
 
@@ -1073,6 +1105,7 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
   useEffect(() => {
     if (!previewFile) {
       setPreviewUrl(null);
+      setPreviewActionsMenuOpen(false);
       return;
     }
 
@@ -1266,6 +1299,16 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
     const handleCloudHeaderAction = (event: Event) => {
       const detail = (event as CustomEvent<CloudHeaderActionDetail>).detail;
       if (!detail) return;
+
+      if (detail.action === 'toggle-sidebar') {
+        setSidebarOpen((prev) => !prev);
+        return;
+      }
+
+      if (detail.action === 'set-search-term') {
+        setSearchTerm(typeof detail.value === 'string' ? detail.value : '');
+        return;
+      }
 
       if (detail.action === 'upload') {
         fileInputRef.current?.click();
@@ -4112,22 +4155,12 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
   };
 
   return (
-    <div className="w-full border border-slate-200 bg-white shadow-sm flex flex-col overflow-visible">
+    <div className="w-full overflow-visible rounded-[28px] border border-slate-200 bg-white shadow-sm flex flex-col sm:rounded-[30px]">
+      <input ref={fileInputRef} type="file" multiple className="hidden" onChange={(e) => e.target.files && handleUploadFiles(e.target.files)} />
 
-      <div className="border-b border-slate-200 bg-white px-2 py-2 flex flex-wrap items-center gap-2">
-        <button
-          type="button"
-          onClick={() => setSidebarOpen((prev) => !prev)}
-          className="inline-flex lg:hidden items-center gap-2 px-3 py-1.5 rounded-lg bg-white hover:bg-slate-50 text-slate-700 text-sm border border-slate-200 shadow-sm"
-        >
-          <Cloud className="w-4 h-4 text-orange-600" />
-          {sidebarOpen ? 'Ocultar navegação' : 'Navegação'}
-        </button>
-        <input ref={fileInputRef} type="file" multiple className="hidden" onChange={(e) => e.target.files && handleUploadFiles(e.target.files)} />
-      </div>
-
+      {/* Filtros avançados - colapsados por padrão em mobile */}
       {showAdvancedFilters ? (
-        <div className="border-b border-slate-200 bg-slate-50 px-2 py-2.5">
+        <div className="border-b border-slate-200 bg-slate-50 px-3 py-3 lg:px-4 lg:py-4">
           <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-3">
             <select value={searchFilters.clientId} onChange={(e) => setSearchFilters((prev) => ({ ...prev, clientId: e.target.value }))} className="w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm bg-white text-slate-900 focus:outline-none focus:ring-2 focus:ring-orange-100 focus:border-orange-400">
               <option value="">Todos os clientes</option>
@@ -4154,13 +4187,23 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
         </div>
       ) : null}
 
-      <div className="border-b border-slate-200 bg-gradient-to-b from-slate-50 to-slate-100/80 px-3 py-1 flex flex-col gap-1.5 xl:flex-row xl:items-center xl:gap-3">
-        <div className="flex min-w-0 flex-1 items-center gap-1 text-sm text-slate-600 overflow-hidden">
-          <button onClick={() => setCurrentFolderId(null)} className="inline-flex items-center gap-1 rounded-md px-2 py-0.5 hover:bg-white/70 hover:text-slate-900"><Home className="w-4 h-4" /></button>
+      {sidebarOpen ? (
+        <button
+          type="button"
+          aria-label="Fechar navegação do Cloud"
+          onClick={() => setSidebarOpen(false)}
+          className="fixed inset-0 z-30 bg-slate-950/45 backdrop-blur-[2px] lg:hidden"
+        />
+      ) : null}
+
+      {/* Barra de breadcrumb/busca - apenas desktop */}
+      <div className="hidden lg:flex border-b border-slate-200 bg-gradient-to-b from-slate-50 via-slate-50 to-white px-3 py-3 flex-col gap-2 xl:flex-row xl:items-center xl:gap-3">
+        <div className="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto text-sm text-slate-600 rounded-full bg-white px-2 py-1.5 shadow-sm [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+          <button onClick={() => setCurrentFolderId(null)} className="inline-flex items-center gap-1 rounded-full px-2.5 py-1 hover:bg-slate-100 hover:text-slate-900"><Home className="w-4 h-4" /></button>
           {breadcrumb.map((item) => (
             <React.Fragment key={item.id}>
               <ChevronRight className="w-4 h-4 text-slate-400" />
-              <button onClick={() => setCurrentFolderId(item.id)} className="min-w-0 rounded-md px-2 py-0.5 hover:bg-white/70 hover:text-slate-900 truncate max-w-[320px]">{item.name}</button>
+              <button onClick={() => setCurrentFolderId(item.id)} className="min-w-0 max-w-[220px] rounded-full px-3 py-1 truncate hover:bg-slate-100 hover:text-slate-900 sm:max-w-[320px]">{item.name}</button>
             </React.Fragment>
           ))}
         </div>
@@ -4171,9 +4214,9 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
               placeholder={hasGlobalSearch ? 'Buscar em todo o Cloud' : 'Pesquisar nesta pasta'}
-              className="min-w-0 flex-1 rounded-xl border border-slate-200 bg-white text-sm text-slate-900 placeholder:text-slate-400 pl-9 pr-3 py-1.5 shadow-sm focus:outline-none focus:border-orange-400 focus:ring-2 focus:ring-orange-100"
+              className="min-w-0 flex-1 rounded-full border border-slate-200 bg-white text-sm text-slate-900 placeholder:text-slate-400 pl-9 pr-4 py-2.5 shadow-sm focus:outline-none focus:border-orange-400 focus:ring-2 focus:ring-orange-100"
             />
-            <div className="flex max-w-[170px] shrink-0 items-center gap-1">
+            <div className="hidden max-w-[170px] shrink-0 items-center gap-1 md:flex">
               <span className="max-w-[88px] truncate whitespace-nowrap rounded-full border border-slate-200 bg-white px-2 py-1 text-[10px] text-slate-500">{headerClient?.full_name || 'Sem cliente'}</span>
               {headerClientPhone ? (
                 <span className="inline-flex max-w-[108px] items-center gap-1 whitespace-nowrap rounded-full border border-emerald-200 bg-emerald-50 px-1.5 py-1 text-[10px] text-emerald-700">
@@ -4197,7 +4240,7 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
         <div className="flex items-center gap-2 text-xs text-slate-500 flex-wrap xl:justify-end xl:shrink-0">
           {uploading ? <Loader2 className="w-4 h-4 text-orange-600 animate-spin" /> : null}
           {uploadQueueSummary.totalItems > 0 ? (
-            <span className="rounded-full border border-orange-200 bg-orange-50 px-2 py-0.5 text-orange-700">
+            <span className="rounded-full border border-orange-200 bg-orange-50 px-3 py-1 text-orange-700 font-medium">
               Uploads {uploadQueueSummary.completedItems}/{uploadQueueSummary.totalItems}
             </span>
           ) : null}
@@ -4235,10 +4278,28 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
       </div>
 
       <div className="flex flex-col lg:flex-row lg:items-start">
-        <aside className={`${sidebarOpen ? 'flex' : 'hidden'} lg:sticky lg:top-20 lg:self-start lg:flex w-full lg:w-[292px] border-b lg:border-b-0 lg:border-r border-slate-200 bg-[radial-gradient(circle_at_top,#fff7ed_0%,#ffffff_32%,#f8fafc_100%)] flex-col`}>
-          <div className="p-3 space-y-3 flex-1 overflow-y-auto">
+        <aside className={`${sidebarOpen ? 'translate-x-0 opacity-100' : '-translate-x-full opacity-0 pointer-events-none'} fixed inset-y-0 left-0 z-40 flex w-[min(90vw,340px)] flex-col border-r border-slate-200 bg-[radial-gradient(circle_at_top,#fff7ed_0%,#ffffff_32%,#f8fafc_100%)] shadow-[0_24px_60px_-24px_rgba(15,23,42,0.35)] transition-all duration-300 lg:pointer-events-auto lg:sticky lg:top-20 lg:z-auto lg:w-[292px] lg:translate-x-0 lg:opacity-100 lg:shadow-none`}>
+          <div className="flex items-center justify-between border-b border-orange-100/80 px-4 py-3 lg:hidden">
+            <div className="flex items-center gap-3">
+              <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-gradient-to-br from-amber-500 via-orange-500 to-orange-600 shadow-lg shadow-orange-200/70">
+                <Cloud className="w-5 h-5 text-white" />
+              </div>
+              <div>
+                <p className="text-sm font-bold text-slate-900">Cloud</p>
+                <p className="text-[10px] uppercase tracking-[0.18em] text-slate-500">Arquivos & Pastas</p>
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={() => setSidebarOpen(false)}
+              className="inline-flex h-10 w-10 items-center justify-center rounded-2xl border border-slate-200 bg-white text-slate-600 shadow-sm"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+          <div className="p-3 space-y-3 flex-1 overflow-y-auto pb-24 lg:pb-3">
             {/* Header do Sidebar */}
-            <div className="rounded-3xl border border-orange-100 bg-white/90 p-4 shadow-[0_16px_40px_-24px_rgba(249,115,22,0.35)] backdrop-blur-sm">
+            <div className="hidden rounded-3xl border border-orange-100 bg-white/90 p-4 shadow-[0_16px_40px_-24px_rgba(249,115,22,0.35)] backdrop-blur-sm lg:block">
               <div className="flex items-center gap-3">
                 <div className="w-10 h-10 rounded-2xl bg-gradient-to-br from-amber-500 via-orange-500 to-orange-600 flex items-center justify-center shadow-lg shadow-orange-200/70">
                   <Cloud className="w-5 h-5 text-white" />
@@ -4253,18 +4314,13 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
             <div className="rounded-3xl border border-slate-200/80 bg-white/90 p-2 shadow-[0_18px_40px_-28px_rgba(15,23,42,0.22)] backdrop-blur-sm space-y-1.5">
             {/* Caixa de Entrada */}
             <div className="space-y-1">
-              <button
-                type="button"
-                onClick={() => {
-                  setCurrentFolderId(null);
-                  setSelectedItemKey('root');
-                }}
-                className={`w-full flex items-center gap-3 rounded-2xl px-3 py-3 text-sm font-semibold transition-all duration-200 ${
+              <div
+                className={`w-full rounded-2xl border-2 transition-all duration-200 ${
                   dropTargetFolderId === '__root__'
-                    ? 'bg-orange-100 text-orange-900 border-2 border-orange-300 shadow-sm'
+                    ? 'bg-orange-100 text-orange-900 border-orange-300 shadow-sm'
                     : currentFolderId === null
-                      ? 'bg-gradient-to-r from-orange-500 to-amber-500 text-white shadow-md shadow-orange-200'
-                      : 'text-slate-700 hover:bg-slate-50 border-2 border-transparent'
+                      ? 'border-transparent bg-gradient-to-r from-orange-500 to-amber-500 text-white shadow-md shadow-orange-200'
+                      : 'border-transparent text-slate-700 hover:bg-slate-50'
                 }`}
                 onDragOver={(e) => {
                   e.preventDefault();
@@ -4278,24 +4334,33 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
                   void handleDropOnFolder(null);
                 }}
               >
-                <button
-                  type="button"
-                  onClick={(event) => {
-                    event.stopPropagation();
-                    setClientsSectionExpanded((prev) => !prev);
-                  }}
-                  className={`flex h-6 w-6 items-center justify-center rounded-md transition-colors ${
-                    currentFolderId === null ? 'hover:bg-white/20' : 'hover:bg-slate-200'
-                  }`}
-                >
-                  {clientsSectionExpanded ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
-                </button>
-                <HardDrive className="w-5 h-5" />
-                <span className="min-w-0 truncate flex-1">Caixa de entrada</span>
-                {currentFolderId === null && !dropTargetFolderId && (
-                  <span className="w-2 h-2 rounded-full bg-white animate-pulse" />
-                )}
-              </button>
+                <div className="flex items-center gap-2 px-2 py-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setCurrentFolderId(null);
+                      setSelectedItemKey('root');
+                    }}
+                    className="flex min-w-0 flex-1 items-center gap-3 rounded-2xl px-3 py-3 text-left text-sm font-semibold transition-all duration-200"
+                  >
+                    <HardDrive className="w-5 h-5 shrink-0" />
+                    <span className="min-w-0 truncate flex-1">Caixa de entrada</span>
+                    {currentFolderId === null && !dropTargetFolderId ? (
+                      <span className="w-2 h-2 rounded-full bg-current opacity-80 animate-pulse" />
+                    ) : null}
+                  </button>
+                  <button
+                    type="button"
+                    aria-label={clientsSectionExpanded ? 'Recolher clientes' : 'Expandir clientes'}
+                    onClick={() => setClientsSectionExpanded((prev) => !prev)}
+                    className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl transition-colors ${
+                      currentFolderId === null ? 'hover:bg-white/20' : 'hover:bg-slate-200'
+                    }`}
+                  >
+                    {clientsSectionExpanded ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
+                  </button>
+                </div>
+              </div>
             </div>
 
             {/* Lista de Clientes/Pastas */}
@@ -4461,7 +4526,7 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
           </div>
         </aside>
 
-        <section ref={cloudCenterDropRef} className="flex-1 min-w-0 flex flex-col bg-white overflow-visible">
+        <section ref={cloudCenterDropRef} className="flex-1 min-w-0 flex flex-col bg-white overflow-visible pt-0 lg:pt-0 rounded-b-[28px]">
           <div
             onDragOver={(e) => {
               if (!hasFileDragPayload(e.dataTransfer)) return;
@@ -4495,8 +4560,12 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
                 <span>Cliente</span>
               </div>
             ) : (
-              <div className="px-4 py-2 border-b border-slate-100 text-[11px] uppercase tracking-[0.16em] text-slate-400 bg-slate-50/80">
-                Exibição em cards
+              <div className="border-b border-slate-100 bg-slate-50/80 px-4 py-3 text-[11px] uppercase tracking-[0.16em] text-slate-400">
+                <div className="flex items-center gap-2 overflow-x-auto [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+                  <span className="rounded-full bg-amber-100 px-3 py-1 text-[10px] font-semibold tracking-[0.14em] text-amber-800">Cards</span>
+                  <span className="rounded-full border border-slate-200 bg-white px-3 py-1 text-[10px] font-semibold tracking-[0.14em] text-slate-500">Cloud</span>
+                  <span className="rounded-full border border-slate-200 bg-white px-3 py-1 text-[10px] font-semibold tracking-[0.14em] text-slate-500">Explorador</span>
+                </div>
               </div>
             )}
 
@@ -4641,6 +4710,18 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
                     transition={{ duration: 0.18 }}
                     className="flex min-h-full flex-1 flex-col"
                   >
+                    {/* Botão de filtros colapsável em mobile */}
+                    <div className="lg:hidden px-3 py-2 flex items-center justify-between border-b border-slate-100 bg-slate-50/50">
+                      <span className="text-xs text-slate-500">{explorerRows.length} itens</span>
+                      <button
+                        type="button"
+                        onClick={() => setShowAdvancedFilters((prev) => !prev)}
+                        className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium transition ${showAdvancedFilters ? 'bg-orange-100 text-orange-700 border border-orange-200' : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-50'}`}
+                      >
+                        <Filter className="w-3.5 h-3.5" />
+                        Filtrar
+                      </button>
+                    </div>
                     {viewMode === 'list' ? (
                       <div className="flex min-h-full flex-1 flex-col">
                   {explorerRows.map((row) => {
@@ -4681,12 +4762,18 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
                           e.preventDefault();
                           void handleDropOnFolder(folder.id);
                         }}
-                        className={`flex flex-col gap-2 px-4 py-3 border-b border-slate-100 text-sm cursor-pointer md:grid md:grid-cols-[minmax(260px,2.6fr)_170px_170px_130px_220px] md:gap-3 md:py-2.5 ${
+                        className={`flex flex-col gap-2 px-4 py-3 border-b border-slate-100 text-sm cursor-pointer sm:grid sm:grid-cols-[minmax(260px,2.6fr)_170px_170px_130px_220px] sm:gap-3 sm:py-2.5 ${
                           isDropTarget ? 'bg-orange-100 border-orange-300' : isSelected ? 'bg-orange-50' : 'hover:bg-slate-50'
                         }`}
                         onClick={(event) => {
                           event.stopPropagation();
                           event.preventDefault();
+                          if (window.innerWidth < 1024 && !event.ctrlKey && !event.metaKey && !event.altKey && !event.shiftKey) {
+                            cancelDetailsDrawerAutoOpen();
+                            setDetailsDrawerOpen(false);
+                            setCurrentFolderId(folder.id);
+                            return;
+                          }
                           applySelection(itemKey, { additive: event.ctrlKey || event.metaKey || event.altKey });
                         }}
                         onDoubleClick={() => {
@@ -4768,11 +4855,11 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
                             ) : null}
                           </div>
                         </div>
-                        <span className="text-slate-500 text-xs md:text-sm">{formatDateTime(folder.updated_at)}</span>
-                        <span className="text-slate-500 text-xs md:text-sm">Pasta de arquivos</span>
-                        <span className="text-slate-500 text-xs md:text-sm">{formatFileSize(folderSizeMap.get(folder.id) ?? 0)}</span>
+                        <span className="text-slate-500 text-xs sm:text-sm">{formatDateTime(folder.updated_at)}</span>
+                        <span className="text-slate-500 text-xs sm:text-sm">Pasta de arquivos</span>
+                        <span className="text-slate-500 text-xs sm:text-sm">{formatFileSize(folderSizeMap.get(folder.id) ?? 0)}</span>
                         <div className="flex items-center justify-between gap-2 min-w-0">
-                          <span className="text-slate-500 truncate">{client?.full_name || '—'}</span>
+                          <span className="text-slate-500 truncate text-xs sm:text-sm">{client?.full_name || '—'}</span>
                           <div className="flex items-center gap-1">
                             <button
                               type="button"
@@ -4822,12 +4909,22 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
                       draggable
                       onDragStart={() => handleDragStart(itemKey)}
                       onDragEnd={handleDragEnd}
-                      className={`flex flex-col gap-2 px-4 py-3 border-b border-slate-100 text-sm cursor-pointer md:grid md:grid-cols-[minmax(260px,2.4fr)_170px_170px_130px_220px] md:gap-3 md:py-2.5 ${
+                      className={`flex flex-col gap-2 px-4 py-3 border-b border-slate-100 text-sm cursor-pointer sm:grid sm:grid-cols-[minmax(260px,2.4fr)_170px_170px_130px_220px] sm:gap-3 sm:py-2.5 ${
                         isSelected ? 'bg-orange-50' : 'hover:bg-slate-50'
                       }`}
                       onClick={(event) => {
                         event.stopPropagation();
                         event.preventDefault();
+                        if (window.innerWidth < 1024 && !event.ctrlKey && !event.metaKey && !event.altKey && !event.shiftKey) {
+                          cancelDetailsDrawerAutoOpen();
+                          setDetailsDrawerOpen(false);
+                          if (isWordFile(file.mime_type, file.original_name)) {
+                            handleOpenDocxEditor(file);
+                            return;
+                          }
+                          setPreviewFile(file);
+                          return;
+                        }
                         applySelection(itemKey, { additive: event.ctrlKey || event.metaKey || event.altKey });
                       }}
                       onContextMenu={(e) => {
@@ -4909,11 +5006,11 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
                           <span className="truncate text-slate-900">{file.original_name}</span>
                         )}
                       </div>
-                      <span className="text-slate-500 text-xs md:text-sm">{formatDateTime(file.updated_at)}</span>
-                      <span className="text-slate-500 text-xs md:text-sm">{getFileTypeLabel(file)}</span>
-                      <span className="text-slate-500 text-xs md:text-sm">{formatFileSize(file.file_size)}</span>
+                      <span className="text-slate-500 text-xs sm:text-sm">{formatDateTime(file.updated_at)}</span>
+                      <span className="text-slate-500 text-xs sm:text-sm">{getFileTypeLabel(file)}</span>
+                      <span className="text-slate-500 text-xs sm:text-sm">{formatFileSize(file.file_size)}</span>
                       <div className="flex items-center justify-between gap-2 min-w-0">
-                        <span className="text-slate-500 truncate text-xs md:text-sm">{hasGlobalSearch ? `${parentFolder?.name || '—'} • ${client?.full_name || '—'}` : client?.full_name || '—'}</span>
+                        <span className="text-slate-500 truncate text-xs sm:text-sm">{hasGlobalSearch ? `${parentFolder?.name || '—'} • ${client?.full_name || '—'}` : client?.full_name || '—'}</span>
                         <button
                           type="button"
                           onClick={(e) => {
@@ -4933,7 +5030,7 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
                       </div>
                     ) : (
                       <div
-                        className="grid min-h-full w-full flex-1 content-start items-start gap-3 p-4"
+                        className="grid min-h-full w-full flex-1 content-start items-start gap-3 p-3 sm:p-4"
                         style={{ gridTemplateColumns: `repeat(auto-fill, minmax(${cardGridMinWidth}px, 1fr))` }}
                       >
                         {explorerRows.map((row) => {
@@ -4975,10 +5072,16 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
                             e.preventDefault();
                             void handleDropOnFolder(folder.id);
                           }}
-                          className={`group bg-white p-5 rounded-xl transition-all duration-300 hover:-translate-y-1 hover:shadow-[0_10px_30px_-5px_rgba(25,28,29,0.06)] border border-transparent hover:border-slate-200 flex flex-col h-full cursor-pointer ${isDropTarget ? 'border-orange-400 bg-orange-50 shadow-[0_0_0_1px_rgba(251,146,60,0.18)]' : isSelected ? 'border-orange-300 bg-orange-50/40 shadow-[0_14px_34px_-24px_rgba(249,115,22,0.45)]' : ''}`}
+                          className={`group bg-white p-5 rounded-[24px] transition-all duration-300 hover:-translate-y-1 hover:shadow-[0_18px_38px_-18px_rgba(25,28,29,0.12)] border border-slate-200/70 hover:border-slate-200 flex flex-col h-full cursor-pointer ${isDropTarget ? 'border-orange-400 bg-orange-50 shadow-[0_0_0_1px_rgba(251,146,60,0.18)]' : isSelected ? 'border-orange-300 bg-orange-50/40 shadow-[0_14px_34px_-24px_rgba(249,115,22,0.45)]' : 'shadow-[0_12px_32px_rgba(44,47,48,0.06)]'}`}
                           onClick={(event) => {
                             event.stopPropagation();
                             event.preventDefault();
+                            if (window.innerWidth < 1024 && !event.ctrlKey && !event.metaKey && !event.altKey && !event.shiftKey) {
+                              cancelDetailsDrawerAutoOpen();
+                              setDetailsDrawerOpen(false);
+                              setCurrentFolderId(folder.id);
+                              return;
+                            }
                             applySelection(itemKey, { additive: event.ctrlKey || event.metaKey || event.altKey });
                           }}
                           onDoubleClick={() => {
@@ -5041,8 +5144,8 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
                                 <h3 className="text-lg font-bold text-slate-900 leading-tight mb-1 group-hover:text-amber-600 transition-colors truncate">
                                   {folder.name}
                                 </h3>
-                                <p className="text-xs text-slate-500 mb-4 truncate">
-                                  {client?.full_name || 'Sem cliente vinculado'}
+                                <p className="text-xs font-medium text-slate-500 mb-4 truncate">
+                                  {client?.full_name || 'Pasta compartilhada'}
                                 </p>
                               </>
                             )}
@@ -5068,6 +5171,11 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
                           {/* Rodapé com data/hora */}
                           <div className="pt-4 border-t border-slate-100 flex items-center justify-between gap-3 text-[10px] text-slate-400 font-medium">
                             <div className="flex items-center gap-3 min-w-0">
+                              {showFolderIssueBadge ? (
+                                <span className="rounded-full bg-red-100 px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.14em] text-red-700">
+                                  Alerta
+                                </span>
+                              ) : null}
                               <span className="flex items-center gap-1 whitespace-nowrap">
                                 <Calendar className="w-3 h-3" />
                                 {formatCompactDate(folder.updated_at)}
@@ -5102,10 +5210,20 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
                         draggable
                         onDragStart={() => handleDragStart(itemKey)}
                         onDragEnd={handleDragEnd}
-                        className={`rounded-2xl border p-4 bg-white shadow-sm cursor-pointer transition ${isSelected ? 'border-orange-300 bg-orange-50/40' : 'border-slate-200 hover:border-orange-200 hover:shadow-md'}`}
+                        className={`rounded-[24px] border p-4 bg-white cursor-pointer transition ${isSelected ? 'border-orange-300 bg-orange-50/40 shadow-[0_14px_34px_-24px_rgba(249,115,22,0.45)]' : 'border-slate-200/70 shadow-[0_12px_32px_rgba(44,47,48,0.05)] hover:border-orange-200 hover:shadow-[0_18px_38px_-18px_rgba(25,28,29,0.12)]'}`}
                         onClick={(event) => {
                           event.stopPropagation();
                           event.preventDefault();
+                          if (window.innerWidth < 1024 && !event.ctrlKey && !event.metaKey && !event.altKey && !event.shiftKey) {
+                            cancelDetailsDrawerAutoOpen();
+                            setDetailsDrawerOpen(false);
+                            if (isWordFile(file.mime_type, file.original_name)) {
+                              handleOpenDocxEditor(file);
+                              return;
+                            }
+                            setPreviewFile(file);
+                            return;
+                          }
                           applySelection(itemKey, { additive: event.ctrlKey || event.metaKey || event.altKey });
                         }}
                         onDoubleClick={() => {
@@ -5865,53 +5983,89 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
       {previewFile && (
         <div className={`fixed inset-0 z-[130] bg-slate-900/25 backdrop-blur-sm flex justify-center ${isPdfFile(previewFile.mime_type, previewFile.original_name) ? 'items-center p-3 sm:p-4' : 'items-center p-4'}`}>
           <div className={`w-full ${isDocxFile(previewFile.mime_type, previewFile.original_name) ? 'max-w-[98vw] h-[94vh]' : isPdfFile(previewFile.mime_type, previewFile.original_name) ? 'max-w-[96vw] h-[94vh]' : isVideoFile(previewFile.mime_type, previewFile.original_name) ? 'max-w-[96vw] h-[92vh]' : 'max-w-6xl h-[88vh]'} rounded-2xl bg-white shadow-[0_24px_70px_rgba(15,23,42,0.18)] border border-slate-200 overflow-hidden flex flex-col`}>
-            <div className="flex items-center justify-between px-4 py-3 border-b border-slate-200 bg-white">
-              <div>
-                <h3 className="font-semibold text-slate-900">{previewFile.original_name}</h3>
-                <p className="text-xs text-slate-500">{isDocxFile(previewFile.mime_type, previewFile.original_name) ? 'Editor de documento' : isPdfFile(previewFile.mime_type, previewFile.original_name) ? `Preview do PDF${previewPdfIndex !== -1 ? ` • ${previewPdfIndex + 1} de ${previewPdfFiles.length}` : ''}` : isImageFile(previewFile.mime_type) ? `Preview da Imagem${previewImageIndex !== -1 ? ` • ${previewImageIndex + 1} de ${previewImageFiles.length}` : ''}` : isVideoFile(previewFile.mime_type, previewFile.original_name) ? 'Player de vídeo Jurius' : 'Preview do arquivo'}</p>
-              </div>
-              <div className="flex items-center gap-2 flex-wrap justify-end">
+            <div className="border-b border-slate-200 bg-white px-3 py-2 sm:px-4">
+              <div className="flex items-center gap-1.5 sm:gap-2">
+                <div className="min-w-0 flex-1">
+                  <h3 className="truncate text-sm font-semibold text-slate-900 sm:text-base">{previewFile.original_name}</h3>
+                </div>
                 {isPdfFile(previewFile.mime_type, previewFile.original_name) ? (
                   <>
                     <button
-                      onClick={() => openRenameModal('file', previewFile.id, previewFile.original_name)}
-                      className="px-3 py-1.5 rounded-lg border border-slate-200 text-slate-600 text-sm hover:bg-slate-50 inline-flex items-center gap-2"
+                      type="button"
+                      onClick={() => void handleRotateFileQuick(previewFile, 90)}
+                      disabled={quickActionFileId === previewFile.id}
+                      className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-slate-500 transition hover:bg-slate-100 hover:text-slate-700 disabled:cursor-not-allowed disabled:opacity-70"
+                      title="Girar 90°"
                     >
-                      <Tag className="w-4 h-4" />
-                      Renomear
+                      {quickActionFileId === previewFile.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <RotateCw className="h-4 w-4" />}
                     </button>
                     <button
+                      type="button"
                       onClick={() => handleDownloadFile(previewFile)}
-                      className="px-3 py-1.5 rounded-lg border border-slate-200 text-slate-600 text-sm hover:bg-slate-50 inline-flex items-center gap-2"
+                      className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-slate-500 transition hover:bg-slate-100 hover:text-slate-700"
+                      title="Baixar"
                     >
-                      <Download className="w-4 h-4" />
-                      Baixar
+                      <Download className="h-4 w-4" />
                     </button>
                     <button
+                      type="button"
+                      onClick={() => openRenameModal('file', previewFile.id, previewFile.original_name)}
+                      className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-slate-500 transition hover:bg-slate-100 hover:text-slate-700"
+                      title="Renomear"
+                    >
+                      <Tag className="h-4 w-4" />
+                    </button>
+                    <button
+                      type="button"
                       onClick={() => {
                         void openPdfToolsModal(previewFile);
                         setPreviewFile(null);
                       }}
-                      className="px-3 py-1.5 rounded-lg bg-slate-900 text-white text-sm hover:bg-slate-800 inline-flex items-center gap-2"
+                      className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-slate-500 transition hover:bg-slate-100 hover:text-slate-700"
+                      title="Hub PDF"
                     >
-                      <Scissors className="w-4 h-4" />
-                      Hub PDF
+                      <Scissors className="h-4 w-4" />
                     </button>
-                    <button
-                      onClick={() => {
-                        void handleDeleteFile(previewFile);
-                        setPreviewFile(null);
-                      }}
-                      className="px-3 py-1.5 rounded-lg border border-red-200 bg-red-50 text-red-600 text-sm hover:bg-red-100 inline-flex items-center gap-2"
-                    >
-                      <Trash2 className="w-4 h-4" />
-                      Excluir
-                    </button>
+                    <div className="relative shrink-0">
+                      <button
+                        type="button"
+                        onClick={() => setPreviewActionsMenuOpen((prev) => !prev)}
+                        className="inline-flex h-9 w-9 items-center justify-center rounded-lg text-slate-500 transition hover:bg-slate-100 hover:text-slate-700"
+                        title="Mais ações"
+                      >
+                        <MoreHorizontal className="h-4 w-4" />
+                      </button>
+                      {previewActionsMenuOpen ? (
+                        <div className="absolute right-0 top-11 z-20 w-44 overflow-hidden rounded-xl border border-slate-200 bg-white py-1 shadow-[0_18px_40px_rgba(15,23,42,0.16)]">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setPreviewActionsMenuOpen(false);
+                              void handleDeleteFile(previewFile);
+                              setPreviewFile(null);
+                            }}
+                            className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-red-600 transition hover:bg-red-50"
+                          >
+                            <Trash2 className="h-4 w-4" />
+                            Excluir
+                          </button>
+                        </div>
+                      ) : null}
+                    </div>
                   </>
-                ) : null}
-                {isImageFile(previewFile.mime_type) ? (
+                ) : isImageFile(previewFile.mime_type) ? (
                   <>
                     <button
+                      type="button"
+                      onClick={() => void handleRotateFileQuick(previewFile, 90)}
+                      disabled={quickActionFileId === previewFile.id}
+                      className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-slate-500 transition hover:bg-slate-100 hover:text-slate-700 disabled:cursor-not-allowed disabled:opacity-70"
+                      title="Girar 90°"
+                    >
+                      {quickActionFileId === previewFile.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <RotateCw className="h-4 w-4" />}
+                    </button>
+                    <button
+                      type="button"
                       onClick={() => {
                         setSelectedImageFileIds([previewFile.id]);
                         setImagePdfName(`convertido-${previewFile.original_name.replace(/\.[^/.]+$/, '')}`);
@@ -5919,46 +6073,32 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
                         setImagePdfModalOpen(true);
                         setPreviewFile(null);
                       }}
-                      className="px-3 py-1.5 rounded-lg bg-orange-500 text-white text-sm hover:bg-orange-600 inline-flex items-center gap-2"
+                      className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-slate-500 transition hover:bg-slate-100 hover:text-slate-700"
+                      title="Converter para PDF"
                     >
-                      <FileText className="w-4 h-4" />
-                      Converter para PDF
-                    </button>
-                    <button
-                      onClick={() => void handleRotateFileQuick(previewFile, 90)}
-                      disabled={quickActionFileId === previewFile.id}
-                      className="px-3 py-1.5 rounded-lg border border-slate-200 text-slate-600 text-sm hover:bg-slate-50 inline-flex items-center gap-2 disabled:cursor-not-allowed disabled:opacity-70"
-                    >
-                      {quickActionFileId === previewFile.id ? <Loader2 className="w-4 h-4 animate-spin" /> : <RotateCw className="w-4 h-4" />}
-                      Girar 90°
+                      <FileText className="h-4 w-4" />
                     </button>
                   </>
-                ) : isPdfFile(previewFile.mime_type, previewFile.original_name) ? (
+                ) : isVideoFile(previewFile.mime_type, previewFile.original_name) ? (
                   <button
-                    onClick={() => void handleRotateFileQuick(previewFile, 90)}
-                    disabled={quickActionFileId === previewFile.id}
-                    className="px-3 py-1.5 rounded-lg border border-slate-200 text-slate-600 text-sm hover:bg-slate-50 inline-flex items-center gap-2 disabled:cursor-not-allowed disabled:opacity-70"
-                  >
-                    {quickActionFileId === previewFile.id ? <Loader2 className="w-4 h-4 animate-spin" /> : <RotateCw className="w-4 h-4" />}
-                    Girar 90°
-                  </button>
-                ) : null}
-                {isVideoFile(previewFile.mime_type, previewFile.original_name) ? (
-                  <button
+                    type="button"
                     onClick={() => handleDownloadFile(previewFile)}
-                    className="px-3 py-1.5 rounded-lg border border-slate-200 text-slate-600 text-sm hover:bg-slate-50 inline-flex items-center gap-2"
+                    className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-slate-500 transition hover:bg-slate-100 hover:text-slate-700"
+                    title="Baixar"
                   >
-                    <Download className="w-4 h-4" />
-                    Baixar
+                    <Download className="h-4 w-4" />
+                  </button>
+                ) : isDocxFile(previewFile.mime_type, previewFile.original_name) ? (
+                  <button
+                    type="button"
+                    onClick={() => setPreviewFile(null)}
+                    className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-slate-500 transition hover:bg-slate-100 hover:text-slate-700"
+                    title="Minimizar"
+                  >
+                    <Minimize2 className="h-4 w-4" />
                   </button>
                 ) : null}
-                {isDocxFile(previewFile.mime_type, previewFile.original_name) && (
-                  <button onClick={() => setPreviewFile(null)} className="px-3 py-1.5 rounded-lg border border-slate-200 text-slate-600 text-sm hover:bg-slate-50 inline-flex items-center gap-2">
-                    <Minimize2 className="w-4 h-4" />
-                    Minimizar
-                  </button>
-                )}
-                <button onClick={() => setPreviewFile(null)} className="p-2 rounded-lg hover:bg-slate-100"><X className="w-5 h-5 text-slate-400" /></button>
+                <button type="button" onClick={() => setPreviewFile(null)} className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-slate-500 transition hover:bg-slate-100 hover:text-slate-700" title="Fechar"><X className="h-4 w-4" /></button>
               </div>
             </div>
             <div className={`flex-1 relative ${isPdfFile(previewFile.mime_type, previewFile.original_name) ? 'bg-slate-200 overflow-auto' : 'bg-slate-100 overflow-auto'}`}>
@@ -7395,6 +7535,62 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
           </div>
         </div>
       )}
+
+      <div className="fixed inset-x-0 bottom-0 z-40 border-t border-slate-200/80 bg-white/95 px-3 pb-[calc(env(safe-area-inset-bottom)+16px)] pt-3 backdrop-blur-xl lg:hidden">
+        <div className="mx-auto grid max-w-md grid-cols-5 gap-2 rounded-[28px] border border-slate-200 bg-white px-3 py-2 shadow-[0_-12px_30px_rgba(15,23,42,0.08)] pr-16">
+          <button
+            type="button"
+            onClick={handleMobileBackNavigation}
+            disabled={!canGoBackMobile}
+            className={`flex min-w-0 flex-col items-center justify-center gap-1 rounded-2xl px-2 py-2 text-[11px] font-medium transition ${canGoBackMobile ? 'text-slate-700 hover:bg-slate-100' : 'text-slate-300'}`}
+            aria-label="Voltar"
+          >
+            <ChevronLeft className="h-5 w-5" />
+            <span>Voltar</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              setCurrentFolderId(null);
+              setSelectedItemKey('root');
+              setSelectedItemKeys([]);
+              setSelectionAnchorKey(null);
+            }}
+            className="flex min-w-0 flex-col items-center justify-center gap-1 rounded-2xl px-2 py-2 text-[11px] font-medium text-slate-700 transition hover:bg-slate-100"
+            aria-label="Início"
+          >
+            <Home className="h-5 w-5" />
+            <span>Início</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => setSidebarOpen((prev) => !prev)}
+            className="flex min-w-0 flex-col items-center justify-center gap-1 rounded-2xl px-2 py-2 text-[11px] font-medium text-slate-700 transition hover:bg-slate-100"
+            aria-label="Menu"
+          >
+            <Cloud className="h-5 w-5" />
+            <span>Menu</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => setShowAdvancedFilters((prev) => !prev)}
+            className={`flex min-w-0 flex-col items-center justify-center gap-1 rounded-2xl px-2 py-2 text-[11px] font-medium transition ${showAdvancedFilters ? 'bg-orange-50 text-orange-700' : 'text-slate-700 hover:bg-slate-100'}`}
+            aria-label="Filtrar"
+          >
+            <Filter className="h-5 w-5" />
+            <span>Filtrar</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => fileInputRef.current?.click()}
+            className="flex min-w-0 flex-col items-center justify-center gap-1 rounded-2xl bg-gradient-to-br from-orange-500 to-amber-500 px-2 py-2 text-[11px] font-semibold text-white shadow-sm transition hover:opacity-95"
+            aria-label="Enviar"
+          >
+            <Upload className="h-5 w-5" />
+            <span>Enviar</span>
+          </button>
+        </div>
+      </div>
     </div>
   );
 };

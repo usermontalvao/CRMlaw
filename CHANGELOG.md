@@ -1,4 +1,80 @@
 # Changelog
+ 
+## 1.9.979
+- **Cloud Mobile**: Header do preview de PDF/documentos compactado para priorizar o conteúdo.
+  - Topo reduzido para uma única linha com nome do arquivo
+  - Ações principais convertidas em ícones discretos
+  - Excluir movido para menu secundário
+  - Área útil do preview ampliada no celular
+ 
+## 1.9.978
+- **Cloud Mobile**: Refinado o visual do preview de documentos e PDF no celular.
+  - Cabeçalho do preview ficou mais compacto e legível
+  - Ações foram reorganizadas em layout mais limpo no mobile
+  - Fechamento do modal ficou isolado e previsível no topo
+ 
+## 1.9.977
+- **Cloud Mobile**: Restaurada a abertura com um toque para pastas, documentos e PDFs.
+  - Pastas continuam abrindo com um clique no mobile
+  - PDFs e demais documentos agora também abrem com um clique
+  - Desktop permanece com comportamento de seleção e duplo clique
+ 
+## 1.9.976
+- **Chat Mobile**: Reposicionado o botão flutuante para ficar acima da barra inferior.
+  - O launcher do chat foi elevado no mobile
+  - Melhorada a convivência visual entre chat flutuante e barra do Cloud
+
+## 1.9.975
+- **Cloud Mobile**: Corrigido o botão sanduíche do header para abrir o menu do sistema.
+  - O ícone de menu do topo voltou a controlar a navegação principal do app
+  - O menu interno do Cloud continua acessível pela barra inferior em `Menu`
+
+## 1.9.974
+- **Cloud Mobile**: Reorganizados os botões flutuantes para eliminar conflito visual com o chat.
+  - Removido o FAB redundante de `+`
+  - Mantido apenas um CTA principal de `Enviar` dentro da barra inferior
+  - Barra inferior ganhou espaço lateral para não competir com o botão flutuante do chat
+  - Layout mobile ficou mais limpo e previsível
+
+## 1.9.973
+- **Cloud Mobile**: Adicionada navegação fixa no rodapé para melhorar acesso rápido no celular.
+  - Nova barra fixa inferior com ações `Voltar`, `Início`, `Menu`, `Filtrar` e `Enviar`
+  - Ação `Voltar` navega para a pasta anterior ou retorna da lixeira/arquivado
+  - Botão de envio reposicionado para não conflitar com o chat flutuante
+  - Fluxo mobile mais próximo de apps nativos de arquivos
+
+## 1.9.972
+- **Cloud Mobile**: Corrigida a interação do topo compacto e da listagem mobile.
+  - Campo `Buscar no Cloud` voltou a aceitar digitação normalmente
+  - Botão de menu do header passou a abrir a navegação lateral do Cloud
+  - Pastas no mobile agora abrem com um toque, sem exigir dupla ação
+  - Mantida a simplificação visual sem perder usabilidade
+
+## 1.9.971
+- **Cloud Mobile**: Redesenho radical para eliminar poluição visual e priorizar conteúdo:
+  - Header ultra-compacto em linha única: menu + busca + avatar
+  - Removida seção "Navegação" destacada (integrada ao menu lateral)
+  - Eliminada busca duplicada (apenas uma no header)
+  - Tabs e filtros convertidos em botão "Filtrar" colapsável
+  - Conteúdo aparece imediatamente após o header
+  - Experiência mais rápida e direta, sem scroll visual desnecessário
+
+## 1.9.970
+- **Cloud Mobile**: Recriação fiel da UI mobile inspirada em apps de arquivos modernos:
+  - Header pill-shaped único com menu, busca e avatar em barra arredondada
+  - Título "Arquivos" em fonte grande e bold
+  - Chips horizontais scrolláveis para filtros, pastas e documentos
+  - FAB (Floating Action Button) fixo no canto inferior direito para upload rápido
+  - Visual limpo e intuitivo, otimizado para touch
+
+## 1.9.969
+- **Cloud**: O mobile ganhou shell visual inspirada em apps de arquivos, com header arredondado, chips de contexto, barra superior mais limpa e cards com acabamento mais leve e organizado.
+
+## 1.9.968
+- **Cloud**: O topo do módulo no mobile foi reorganizado para reduzir a poluição visual, compactando ações, escondendo controles secundários em telas pequenas e deixando a navegação mais limpa.
+
+## 1.9.967
+- **Cloud**: Corrigido o erro de DOM causado por `button` aninhado no menu lateral interno. No mobile, o Cloud agora usa navegação em drawer com overlay, header compacto e comportamento mais próximo de apps de arquivos como o Google Drive.
 
 ## 1.9.966
 - **Cloud**: O indicador de vínculo das pastas foi movido para o rodapé do card, ao lado da data/hora, deixando o topo mais limpo e a leitura mais objetiva.

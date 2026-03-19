@@ -727,6 +727,307 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
 
 const releases: ReleaseNote[] = [
   {
+    version: '1.9.979',
+    date: '19/03/2026',
+    summary: 'Cloud Mobile: topo do preview compactado para deixar o PDF e os documentos como protagonistas.',
+    modules: [
+      {
+        moduleId: 'cloud',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Header do preview reduzido para linha única',
+            description: 'O topo do preview mobile passou a usar apenas uma linha com o nome do arquivo truncado, reduzindo a altura ocupada antes do conteúdo.',
+          },
+          {
+            type: 'improvement',
+            title: 'Ações convertidas em ícones e exclusão movida para menu secundário',
+            description: 'As ações principais foram condensadas em ícones discretos e a ação de excluir deixou de competir visualmente com o conteúdo, passando a viver em um menu secundário.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.978',
+    date: '19/03/2026',
+    summary: 'Cloud Mobile: preview de documentos e PDFs reorganizado para um layout mais limpo no celular.',
+    modules: [
+      {
+        moduleId: 'cloud',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Cabeçalho do preview mobile reorganizado',
+            description: 'O topo do modal de preview passou a ter título com melhor quebra de linha, botão de fechar isolado e ações com hierarquia mais clara no mobile.',
+          },
+          {
+            type: 'improvement',
+            title: 'Ações do preview distribuídas em layout mais limpo',
+            description: 'Botões como `Renomear`, `Baixar`, `Hub PDF`, `Excluir` e `Girar 90°` foram redistribuídos para evitar empilhamento feio e poluição visual em telas pequenas.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.977',
+    date: '19/03/2026',
+    summary: 'Cloud Mobile: itens voltaram a abrir com um toque, incluindo documentos e PDFs.',
+    modules: [
+      {
+        moduleId: 'cloud',
+        changes: [
+          {
+            type: 'fix',
+            title: 'Abertura mobile com um toque restaurada para arquivos',
+            description: 'Arquivos, documentos Word e PDFs do Cloud passaram a abrir com um toque no mobile, alinhando o comportamento com as pastas e com a expectativa de uso em telas touch.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.976',
+    date: '19/03/2026',
+    summary: 'Chat Mobile: botão flutuante reposicionado para ficar acima da barra inferior.',
+    modules: [
+      {
+        moduleId: 'chat',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Launcher do chat elevado no mobile',
+            description: 'O botão flutuante do chat foi reposicionado para cima no mobile, evitando aparência baixa demais e melhorando a convivência com barras inferiores fixas como a do Cloud.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.975',
+    date: '19/03/2026',
+    summary: 'Cloud Mobile: botão sanduíche do header voltou a abrir o menu principal do sistema.',
+    modules: [
+      {
+        moduleId: 'cloud',
+        changes: [
+          {
+            type: 'fix',
+            title: 'Sanduíche do topo reconfigurado para o menu do sistema',
+            description: 'O botão de menu do header mobile do Cloud voltou a abrir a navegação principal do sistema, enquanto o menu interno do módulo permanece disponível pela barra inferior.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.974',
+    date: '19/03/2026',
+    summary: 'Cloud Mobile: organização final dos botões de ação para evitar conflito com o chat.',
+    modules: [
+      {
+        moduleId: 'cloud',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'FAB redundante removido do mobile',
+            description: 'O botão flutuante adicional com ícone `+` foi removido para evitar duplicidade de ação e poluição visual no canto inferior.',
+          },
+          {
+            type: 'improvement',
+            title: 'Upload centralizado na barra inferior',
+            description: 'A ação de envio foi mantida apenas na navegação fixa do rodapé, deixando o fluxo mais previsível e organizado no mobile.',
+          },
+          {
+            type: 'improvement',
+            title: 'Espaço reservado para o chat flutuante',
+            description: 'A barra inferior do Cloud foi ajustada para reservar área visual ao chat flutuante, reduzindo sobreposição e conflito entre controles.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.973',
+    date: '19/03/2026',
+    summary: 'Cloud Mobile: navegação fixa no rodapé com voltar, início, menu, filtro e envio.',
+    modules: [
+      {
+        moduleId: 'cloud',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Barra de navegação fixa no rodapé mobile',
+            description: 'O Cloud no celular passou a ter uma barra fixa inferior com ações rápidas para `Voltar`, `Início`, `Menu`, `Filtrar` e `Enviar`, reduzindo esforço de navegação.',
+          },
+          {
+            type: 'improvement',
+            title: 'Ação de voltar entre pastas no mobile',
+            description: 'Foi adicionada uma ação dedicada para retornar à pasta anterior e também sair rapidamente das views de Arquivado e Lixeira.',
+          },
+          {
+            type: 'improvement',
+            title: 'Botão de envio reposicionado acima do rodapé',
+            description: 'O botão flutuante de envio foi movido para evitar conflito visual e sobreposição com o chat flutuante no canto inferior direito.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.972',
+    date: '19/03/2026',
+    summary: 'Cloud Mobile: correção da interação do header compacto e abertura de pastas no mobile.',
+    modules: [
+      {
+        moduleId: 'cloud',
+        changes: [
+          {
+            type: 'fix',
+            title: 'Busca do header voltou a aceitar digitação',
+            description: 'O campo `Buscar no Cloud` no header mobile foi reconectado ao estado interno do Cloud, permitindo digitar e filtrar os arquivos normalmente.',
+          },
+          {
+            type: 'fix',
+            title: 'Menu do topo voltou a abrir a navegação lateral',
+            description: 'O botão de menu do header compacto agora controla corretamente a sidebar interna do Cloud no mobile.',
+          },
+          {
+            type: 'fix',
+            title: 'Pastas abrem com um toque no mobile',
+            description: 'A interação dos cards/lista foi ajustada para que as pastas sejam abertas com um toque em telas pequenas, sem depender de duplo clique.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.971',
+    date: '19/03/2026',
+    summary: 'Cloud Mobile: redesenho radical para eliminar poluição visual e priorizar conteúdo imediato.',
+    modules: [
+      {
+        moduleId: 'cloud',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Header ultra-compacto em linha única',
+            description: 'O header foi simplificado para apenas menu + busca + avatar em uma única linha, eliminando elementos redundantes e reduzindo drasticamente o espaço acima da dobra.',
+          },
+          {
+            type: 'improvement',
+            title: 'Seção "Navegação" removida',
+            description: 'A seção destacada de navegação foi removida e integrada ao menu lateral, acessível via botão de menu no header.',
+          },
+          {
+            type: 'improvement',
+            title: 'Busca duplicada eliminada',
+            description: 'Removida a segunda barra de busca dentro do Cloud, mantendo apenas o acesso centralizado no header pill-shaped.',
+          },
+          {
+            type: 'improvement',
+            title: 'Filtros colapsáveis em botão "Filtrar"',
+            description: 'Tabs e filtros horizontais foram convertidos em um único botão "Filtrar" discreto, liberando espaço para o conteúdo principal.',
+          },
+          {
+            type: 'improvement',
+            title: 'Conteúdo aparece imediatamente após header',
+            description: 'Com a remoção dos elementos visuais intermediários, os arquivos agora são exibidos logo após o header compacto, sem scroll visual desnecessário.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.970',
+    date: '19/03/2026',
+    summary: 'Cloud Mobile: recriação fiel da UI com header pill-shaped, título Arquivos, chips horizontais e FAB para upload rápido.',
+    modules: [
+      {
+        moduleId: 'cloud',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Header mobile pill-shaped com menu, busca e avatar',
+            description: 'O header do Cloud mobile foi recriado como uma barra arredondada única (pill-shaped) contendo menu à esquerda, texto de busca centralizado e avatar do usuário à direita, inspirado em apps de arquivos modernos como Google Drive.',
+          },
+          {
+            type: 'improvement',
+            title: 'Título "Arquivos" e chips horizontais scrolláveis',
+            description: 'A área principal agora exibe um título grande "Arquivos" seguido por chips horizontais para Filtros ativos, Pastas, Documentos e contador de itens, proporcionando navegação rápida e contextual.',
+          },
+          {
+            type: 'improvement',
+            title: 'FAB (Floating Action Button) para upload rápido',
+            description: 'Adicionado botão de ação flutuante fixo no canto inferior direito, com gradiente laranja/âmbar e ícone de +, permitindo upload de arquivos com um toque, otimizado para dispositivos móveis.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.969',
+    date: '19/03/2026',
+    summary: 'Cloud: mobile refinado com shell inspirada em apps de arquivos, header arredondado e cards mais limpos.',
+    modules: [
+      {
+        moduleId: 'cloud',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Cloud mobile com shell visual inspirada em Google Drive',
+            description: 'O topo do Cloud no celular passou a usar uma composição mais leve e separada, com header arredondado, chips de contexto, barra secundária mais organizada e melhor hierarquia visual entre navegação e ações.',
+          },
+          {
+            type: 'improvement',
+            title: 'Cards e área de exploração refinados no mobile',
+            description: 'A área principal do Cloud recebeu breadcrumb arredondado, busca mais suave e cards com espaçamento e acabamento visual mais próximos de um gerenciador de arquivos mobile moderno.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.968',
+    date: '19/03/2026',
+    summary: 'Cloud: topo mobile reorganizado para uma experiência mais limpa e menos poluída.',
+    modules: [
+      {
+        moduleId: 'cloud',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Header mobile do Cloud compactado',
+            description: 'As ações do topo do Cloud no celular foram reagrupadas para evitar excesso de blocos visuais, escondendo controles secundários em telas pequenas e mantendo foco nas ações principais.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.967',
+    date: '19/03/2026',
+    summary: 'Cloud: correção do erro de DOM no menu lateral e melhoria da experiência mobile com navegação em drawer.',
+    modules: [
+      {
+        moduleId: 'cloud',
+        changes: [
+          {
+            type: 'fix',
+            title: 'Estrutura inválida de botão corrigida no menu lateral',
+            description: 'A seção Caixa de entrada do sidebar interno do Cloud deixou de renderizar um botão dentro de outro, eliminando o aviso de DOM nesting e o risco de hydration error.',
+          },
+          {
+            type: 'improvement',
+            title: 'Cloud mobile com navegação mais próxima de app de arquivos',
+            description: 'No celular, o módulo passou a usar drawer lateral com overlay, header compacto, melhor hierarquia visual e leitura mais confortável para navegação parecida com apps como o Google Drive.',
+          },
+        ],
+      },
+    ],
+  },
+  {
     version: '1.9.966',
     date: '18/03/2026',
     summary: 'Cloud: o indicador de vínculo das pastas foi movido para o rodapé do card, ao lado da data/hora.',

@@ -93,8 +93,8 @@ import type { CreateClientDTO } from './types/client.types';
 
 type ClientSearchResult = Awaited<ReturnType<typeof clientService.searchClients>>[number];
 type CloudHeaderActionDetail = {
-  action: 'upload' | 'create-folder' | 'toggle-filters' | 'set-view-mode' | 'set-card-size';
-  value?: 'list' | 'cards' | 'small' | 'medium' | 'large';
+  action: 'upload' | 'create-folder' | 'toggle-filters' | 'set-view-mode' | 'set-card-size' | 'toggle-sidebar' | 'set-search-term';
+  value?: 'list' | 'cards' | 'small' | 'medium' | 'large' | string;
 };
 type CloudHeaderStateDetail = {
   viewMode: 'list' | 'cards';
@@ -111,6 +111,7 @@ const MainApp: React.FC = () => {
   const { currentModule: activeModule, moduleParams, navigateTo, setModuleParams, clearModuleParams } = useNavigation();
   const { theme, toggleTheme } = useTheme();
   const [isMobileNavOpen, setIsMobileNavOpen] = useState(false);
+  const [cloudMobileSearchTerm, setCloudMobileSearchTerm] = useState('');
   const [isOnline, setIsOnline] = useState(navigator.onLine);
   const [cloudHeaderState, setCloudHeaderState] = useState<CloudHeaderStateDetail>({ viewMode: 'list', cardSize: 'medium', showFilters: false });
   const { canView, canCreate, canEdit, canDelete, loading: permissionsLoading, isAdmin } = usePermissions();
@@ -144,6 +145,12 @@ const MainApp: React.FC = () => {
     window.addEventListener('cloud-header-state', handleCloudHeaderState as EventListener);
     return () => window.removeEventListener('cloud-header-state', handleCloudHeaderState as EventListener);
   }, []);
+
+  useEffect(() => {
+    if (activeModule !== 'cloud') {
+      setCloudMobileSearchTerm('');
+    }
+  }, [activeModule]);
 
   // Detectar status de conexão
   useEffect(() => {
@@ -1158,9 +1165,52 @@ useEffect(() => {
 
         {/* Main Content Area */}
       <div className="md:ml-20 ml-0 transition-all duration-300 min-h-screen flex flex-col">
-        <header className="bg-white border-b border-gray-200 sticky top-0 z-30 transition-colors duration-300 flex-shrink-0">
-          <div className="px-3 sm:px-4 lg:px-8 py-3 sm:py-4">
-            <div className="flex items-center justify-between gap-2 sm:gap-4">
+        {/* Cloud Mobile Header - Pill-shaped navigation shell */}
+        {activeModule === 'cloud' ? (
+          <header className="sticky top-0 z-30 px-3 py-3 md:hidden">
+            <div className="flex items-center justify-between gap-3 rounded-full border border-white/70 bg-white/95 backdrop-blur-xl px-3 py-2.5 shadow-[0px_12px_32px_rgba(44,47,48,0.08)]">
+              {/* Menu button */}
+              <button
+                onClick={() => setIsMobileNavOpen((prev) => !prev)}
+                className="inline-flex items-center justify-center w-9 h-9 rounded-full text-slate-600 hover:bg-slate-100 transition flex-shrink-0"
+                aria-label="Menu"
+              >
+                <Menu className="w-5 h-5" />
+              </button>
+
+              {/* Search input */}
+              <div className="flex-1 min-w-0">
+                <input
+                  type="text"
+                  value={cloudMobileSearchTerm}
+                  onChange={(e) => {
+                    const nextValue = e.target.value;
+                    setCloudMobileSearchTerm(nextValue);
+                    dispatchCloudHeaderAction({ action: 'set-search-term', value: nextValue });
+                  }}
+                  placeholder="Buscar no Cloud"
+                  className="w-full bg-transparent text-sm text-slate-700 placeholder:text-slate-400 focus:outline-none"
+                  aria-label="Buscar no Cloud"
+                />
+              </div>
+
+              {/* User avatar with border */}
+              <button
+                type="button"
+                onClick={() => setProfileMenuOpen((prev) => !prev)}
+                className="relative w-9 h-9 rounded-full overflow-hidden border-2 border-orange-400 shadow-sm flex-shrink-0"
+                aria-label="Perfil"
+              >
+                <img src={profile.avatarUrl || GENERIC_AVATAR} alt={profile.name} className="w-full h-full object-cover" />
+              </button>
+            </div>
+          </header>
+        ) : null}
+        
+        {/* Regular header for non-Cloud modules or desktop */}
+        <header className={`sticky top-0 z-30 ${activeModule === 'cloud' ? 'hidden md:block border-b border-slate-200/70 bg-slate-50/90 backdrop-blur-lg' : 'bg-white border-b border-gray-200'}`}>
+          <div className={`px-3 sm:px-4 lg:px-8 ${activeModule === 'cloud' ? 'py-3 sm:py-4' : 'py-3 sm:py-4'}`}>
+            <div className="flex items-start justify-between gap-3 sm:gap-4">
               <div className="flex items-center gap-2 sm:gap-3 min-w-0 flex-1">
                 <button
                   className="md:hidden inline-flex items-center justify-center p-2 rounded-lg text-slate-600 hover:text-white hover:bg-slate-800 transition flex-shrink-0"
@@ -1211,53 +1261,59 @@ useEffect(() => {
               
               {/* Botões do Cloud - aparecem apenas quando o módulo Cloud está ativo */}
               {activeModule === 'cloud' && (
-                <div className="flex items-center gap-2 flex-wrap">
-                  <button
-                    type="button"
-                    onClick={() => dispatchCloudHeaderAction({ action: 'upload' })}
-                    className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg bg-orange-500 hover:bg-orange-600 text-white text-sm shadow-sm shadow-orange-500/20"
-                  >
-                    <Upload className="w-4 h-4" />
-                    Enviar
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => dispatchCloudHeaderAction({ action: 'create-folder' })}
-                    className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg bg-white hover:bg-slate-50 text-slate-700 text-sm border border-slate-200 shadow-sm"
-                  >
-                    <FolderPlus className="w-4 h-4" />
-                    Nova pasta
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => dispatchCloudHeaderAction({ action: 'toggle-filters' })}
-                    className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm border shadow-sm ${cloudHeaderState.showFilters ? 'bg-orange-50 text-orange-700 border-orange-200' : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50'}`}
-                  >
-                    <Filter className="w-4 h-4" />
-                    Filtros
-                  </button>
-                  <div className="inline-flex items-center rounded-xl border border-slate-200 bg-white p-1 shadow-sm">
+                <div className="hidden lg:flex lg:w-auto lg:flex-row lg:flex-wrap lg:items-center lg:gap-2">
+                  <div className="flex items-center gap-2">
                     <button
                       type="button"
-                      onClick={() => dispatchCloudHeaderAction({ action: 'set-view-mode', value: 'list' })}
-                      className={`inline-flex items-center gap-1 rounded-md px-2.5 py-1.5 text-sm transition ${cloudHeaderState.viewMode === 'list' ? 'bg-orange-50 text-orange-700' : 'text-slate-600 hover:bg-slate-50'}`}
+                      onClick={() => dispatchCloudHeaderAction({ action: 'upload' })}
+                      className="inline-flex flex-1 items-center justify-center gap-2 rounded-xl bg-orange-500 px-3 py-2 text-sm text-white shadow-sm shadow-orange-500/20 hover:bg-orange-600 sm:flex-none"
                     >
-                      <List className="w-4 h-4" />
-                      Lista
+                      <Upload className="h-4 w-4" />
+                      Enviar
                     </button>
                     <button
                       type="button"
-                      onClick={() => dispatchCloudHeaderAction({ action: 'set-view-mode', value: 'cards' })}
-                      className={`inline-flex items-center gap-1 rounded-md px-2.5 py-1.5 text-sm transition ${cloudHeaderState.viewMode === 'cards' ? 'bg-orange-50 text-orange-700' : 'text-slate-600 hover:bg-slate-50'}`}
+                      onClick={() => dispatchCloudHeaderAction({ action: 'create-folder' })}
+                      className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-700 shadow-sm hover:bg-slate-50 sm:h-auto sm:w-auto sm:gap-2 sm:px-3 sm:py-2"
+                      title="Nova pasta"
                     >
-                      <LayoutGrid className="w-4 h-4" />
-                      Cards
+                      <FolderPlus className="h-4 w-4" />
+                      <span className="hidden sm:inline">Nova pasta</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => dispatchCloudHeaderAction({ action: 'toggle-filters' })}
+                      className={`inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border shadow-sm sm:h-auto sm:w-auto sm:gap-2 sm:px-3 sm:py-2 ${cloudHeaderState.showFilters ? 'border-orange-200 bg-orange-50 text-orange-700' : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50'}`}
+                      title="Filtros"
+                    >
+                      <Filter className="h-4 w-4" />
+                      <span className="hidden sm:inline">Filtros</span>
                     </button>
                   </div>
-                  <div className="inline-flex items-center rounded-xl border border-slate-200 bg-white p-1 shadow-sm">
-                    <button type="button" onClick={() => dispatchCloudHeaderAction({ action: 'set-card-size', value: 'small' })} className={`rounded-md px-2.5 py-1.5 text-sm transition ${cloudHeaderState.cardSize === 'small' ? 'bg-orange-50 text-orange-700' : 'text-slate-600 hover:bg-slate-50'}`}>P</button>
-                    <button type="button" onClick={() => dispatchCloudHeaderAction({ action: 'set-card-size', value: 'medium' })} className={`rounded-md px-2.5 py-1.5 text-sm transition ${cloudHeaderState.cardSize === 'medium' ? 'bg-orange-50 text-orange-700' : 'text-slate-600 hover:bg-slate-50'}`}>M</button>
-                    <button type="button" onClick={() => dispatchCloudHeaderAction({ action: 'set-card-size', value: 'large' })} className={`rounded-md px-2.5 py-1.5 text-sm transition ${cloudHeaderState.cardSize === 'large' ? 'bg-orange-50 text-orange-700' : 'text-slate-600 hover:bg-slate-50'}`}>G</button>
+                  <div className="flex items-center justify-between gap-2 sm:justify-start">
+                    <div className="inline-flex items-center rounded-xl border border-slate-200 bg-white p-1 shadow-sm">
+                      <button
+                        type="button"
+                        onClick={() => dispatchCloudHeaderAction({ action: 'set-view-mode', value: 'list' })}
+                        className={`inline-flex items-center gap-1 rounded-md px-2.5 py-1.5 text-sm transition ${cloudHeaderState.viewMode === 'list' ? 'bg-orange-50 text-orange-700' : 'text-slate-600 hover:bg-slate-50'}`}
+                      >
+                        <List className="w-4 h-4" />
+                        <span className="hidden sm:inline">Lista</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => dispatchCloudHeaderAction({ action: 'set-view-mode', value: 'cards' })}
+                        className={`inline-flex items-center gap-1 rounded-md px-2.5 py-1.5 text-sm transition ${cloudHeaderState.viewMode === 'cards' ? 'bg-orange-50 text-orange-700' : 'text-slate-600 hover:bg-slate-50'}`}
+                      >
+                        <LayoutGrid className="w-4 h-4" />
+                        <span className="hidden sm:inline">Cards</span>
+                      </button>
+                    </div>
+                    <div className="hidden items-center rounded-xl border border-slate-200 bg-white p-1 shadow-sm lg:inline-flex">
+                      <button type="button" onClick={() => dispatchCloudHeaderAction({ action: 'set-card-size', value: 'small' })} className={`rounded-md px-2.5 py-1.5 text-sm transition ${cloudHeaderState.cardSize === 'small' ? 'bg-orange-50 text-orange-700' : 'text-slate-600 hover:bg-slate-50'}`}>P</button>
+                      <button type="button" onClick={() => dispatchCloudHeaderAction({ action: 'set-card-size', value: 'medium' })} className={`rounded-md px-2.5 py-1.5 text-sm transition ${cloudHeaderState.cardSize === 'medium' ? 'bg-orange-50 text-orange-700' : 'text-slate-600 hover:bg-slate-50'}`}>M</button>
+                      <button type="button" onClick={() => dispatchCloudHeaderAction({ action: 'set-card-size', value: 'large' })} className={`rounded-md px-2.5 py-1.5 text-sm transition ${cloudHeaderState.cardSize === 'large' ? 'bg-orange-50 text-orange-700' : 'text-slate-600 hover:bg-slate-50'}`}>G</button>
+                    </div>
                   </div>
                 </div>
               )}
@@ -1467,7 +1523,7 @@ useEffect(() => {
         </header>
 
         {/* Main Content */}
-        <main className={`${activeModule === 'chat' ? 'px-0 py-0 space-y-0 overflow-hidden' : activeModule === 'cloud' ? 'px-0 sm:px-1 lg:px-2 xl:px-3 space-y-2 sm:space-y-3' : 'px-3 sm:px-4 lg:px-6 xl:px-8 space-y-4 sm:space-y-6'} flex-1 min-h-0 ${activeModule === 'agenda' ? 'py-0' : activeModule === 'chat' ? 'py-0' : activeModule === 'cloud' ? 'py-1 sm:py-2' : 'py-4 sm:py-6'}`}>
+        <main className={`${activeModule === 'chat' ? 'px-0 py-0 space-y-0 overflow-hidden' : activeModule === 'cloud' ? 'px-3 sm:px-1 lg:px-2 xl:px-3 space-y-2 sm:space-y-3' : 'px-3 sm:px-4 lg:px-6 xl:px-8 space-y-4 sm:space-y-6'} flex-1 min-h-0 ${activeModule === 'agenda' ? 'py-0' : activeModule === 'chat' ? 'py-0' : activeModule === 'cloud' ? 'py-2 sm:py-2' : 'py-4 sm:py-6'}`}>
           {profileBanner && (
             <div className="bg-emerald-50 border border-emerald-200 text-emerald-700 px-4 py-3 rounded-lg text-sm flex justify-between items-center">
               <span>{profileBanner}</span>
