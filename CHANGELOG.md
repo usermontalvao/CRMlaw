@@ -1,5 +1,17 @@
 # Changelog
  
+## 1.9.986
+- **Cloud**: Corrigido o badge vermelho fixo no rodapé dos cards de pasta.
+  - O selo inferior deixou de mostrar `Alerta` quando a pasta está `Resolvido`
+  - O rodapé agora só exibe badge de ocorrência quando ainda existe pendência ativa
+  - Quando houver ocorrência ativa, o texto inferior respeita `Alerta` ou `Pendência`
+
+## 1.9.985
+- **Cloud**: Corrigida a exibição de pasta resolvida e removido bloqueio indevido de acesso para auxiliar.
+  - Pastas marcadas como resolvidas deixam de continuar exibindo o visual de alerta
+  - Badge do Cloud agora prioriza corretamente o estado `Resolvido` quando não há pendência ativa
+  - O acesso ao módulo Cloud passa a aceitar a permissão específica `cloud`, evitando limitação indevida para auxiliares
+
 ## 1.9.984
 - **Cloud PDF**: Corrigida a condição que impedia a exibição do thumbnail nos cards.
   - Cards de PDF deixaram de depender de `previewUrl` para mostrar a miniatura

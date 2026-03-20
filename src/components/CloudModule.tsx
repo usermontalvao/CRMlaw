@@ -246,7 +246,11 @@ const getFolderIssueLabel = (folder: CloudFolder) => {
 const shouldShowFolderIssueBadge = (folder: CloudFolder) => folder.has_pending_issue || Boolean(folder.resolved_at);
 
 const renderFolderIssueBadgeContent = (folder: CloudFolder) => {
-  if (folder.alert_level === 'alerta' && folder.has_pending_issue) {
+  if (!folder.has_pending_issue) {
+    return <span>{getFolderIssueLabel(folder)}</span>;
+  }
+
+  if (folder.alert_level === 'alerta') {
     return (
       <>
         <BellRing className="h-3.5 w-3.5 animate-pulse" />
@@ -5232,9 +5236,9 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
                           {/* Rodapé com data/hora */}
                           <div className="pt-4 border-t border-slate-100 flex items-center justify-between gap-3 text-[10px] text-slate-400 font-medium">
                             <div className="flex items-center gap-3 min-w-0">
-                              {showFolderIssueBadge ? (
+                              {folder.has_pending_issue ? (
                                 <span className="rounded-full bg-red-100 px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.14em] text-red-700">
-                                  Alerta
+                                  {folder.alert_level === 'alerta' ? 'Alerta' : 'Pendência'}
                                 </span>
                               ) : null}
                               <span className="flex items-center gap-1 whitespace-nowrap">

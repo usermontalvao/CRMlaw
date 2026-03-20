@@ -727,6 +727,50 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
 
 const releases: ReleaseNote[] = [
   {
+    version: '1.9.986',
+    date: '19/03/2026',
+    summary: 'Cloud: corrigido o badge inferior dos cards de pasta para não manter o texto de alerta após a resolução.',
+    modules: [
+      {
+        moduleId: 'cloud',
+        changes: [
+          {
+            type: 'fix',
+            title: 'Rodapé do card não mostra mais alerta em pasta resolvida',
+            description: 'O selo vermelho inferior deixou de ser exibido quando a pasta já está resolvida e sem pendência ativa, eliminando a inconsistência visual do card.',
+          },
+          {
+            type: 'fix',
+            title: 'Texto do badge inferior passou a respeitar o tipo real da ocorrência',
+            description: 'Quando ainda existe ocorrência ativa, o rodapé do card passa a mostrar corretamente `Alerta` ou `Pendência`, em vez de manter `Alerta` como texto fixo.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.985',
+    date: '19/03/2026',
+    summary: 'Cloud: corrigida a hierarquia visual do status resolvido e removido o bloqueio indevido de acesso para auxiliares no módulo.',
+    modules: [
+      {
+        moduleId: 'cloud',
+        changes: [
+          {
+            type: 'fix',
+            title: 'Pasta resolvida não permanece mais com aparência de alerta',
+            description: 'O badge visual do Cloud passou a priorizar o estado `Resolvido` quando a pasta já não possui pendência ativa, evitando que o visual de alerta continue aparecendo após a resolução.',
+          },
+          {
+            type: 'fix',
+            title: 'Auxiliar deixou de sofrer bloqueio indevido no acesso ao Cloud',
+            description: 'A checagem de acesso ao módulo Cloud passou a aceitar também a permissão específica `cloud`, em vez de depender apenas da permissão de `documentos`, removendo a limitação reportada para usuários auxiliares.',
+          },
+        ],
+      },
+    ],
+  },
+  {
     version: '1.9.984',
     date: '19/03/2026',
     summary: 'Cloud PDF: corrigida a condição do card que impedia a miniatura do PDF de aparecer mesmo após a geração segura da primeira página.',

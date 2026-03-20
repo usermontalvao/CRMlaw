@@ -283,7 +283,7 @@ const MainApp: React.FC = () => {
   const canAccessModule = useCallback((moduleKey: ModuleName) => {
     if (isAdmin) return true;
     if (moduleKey === 'configuracoes') return canAccessConfig;
-    if (moduleKey === 'cloud') return canView('documentos');
+    if (moduleKey === 'cloud') return canView('cloud') || canView('documentos');
     return canView(moduleKey);
   }, [isAdmin, canAccessConfig, canView]);
 
