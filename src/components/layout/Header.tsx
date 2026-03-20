@@ -54,6 +54,7 @@ export const Header: React.FC<HeaderProps> = ({
   children,
 }) => {
   const moduleInfo = moduleLabels[activeModule] || { title: '', description: '' };
+  const safePendingTasksCount = Number.isFinite(pendingTasksCount) ? pendingTasksCount : 0;
 
   return (
     <header className="bg-white border-b border-gray-200 sticky top-0 z-30">
@@ -97,9 +98,9 @@ export const Header: React.FC<HeaderProps> = ({
               title="Tarefas"
             >
               <CheckSquare className="w-4 h-4 sm:w-5 sm:h-5" />
-              {pendingTasksCount > 0 && (
+              {safePendingTasksCount > 0 && (
                 <span className="absolute -top-0.5 -right-0.5 min-w-[1.1rem] sm:min-w-[1.25rem] rounded-full bg-emerald-500 px-1 sm:px-1.5 py-0.5 text-[10px] sm:text-xs font-semibold text-white text-center leading-none">
-                  {pendingTasksCount > 99 ? '99+' : pendingTasksCount}
+                  {safePendingTasksCount > 99 ? '99+' : safePendingTasksCount}
                 </span>
               )}
             </button>

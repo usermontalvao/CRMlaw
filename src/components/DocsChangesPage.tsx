@@ -727,6 +727,72 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
 
 const releases: ReleaseNote[] = [
   {
+    version: '1.9.989',
+    date: '20/03/2026',
+    summary: 'Cloud: o arraste passou a respeitar a seleção múltipla, permitindo mover vários itens juntos em uma única operação.',
+    modules: [
+      {
+        moduleId: 'cloud',
+        changes: [
+          {
+            type: 'fix',
+            title: 'Drag-and-drop agora leva toda a seleção atual',
+            description: 'Quando o arraste começa em um item já selecionado, o Cloud agora inclui todos os documentos e pastas da seleção na mesma operação de mover.',
+          },
+          {
+            type: 'fix',
+            title: 'Drop em pasta, lixeira e arquivados deixou de processar apenas um item',
+            description: 'Os destinos de drag-and-drop passaram a iterar sobre toda a seleção ativa, corrigindo o problema em que somente o item de origem era movimentado.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.988',
+    date: '20/03/2026',
+    summary: 'App/Auth: contadores inválidos e falhas transitórias de sessão/rede passaram a ser tratados com mais robustez para evitar ruído visual e no console.',
+    modules: [
+      {
+        moduleId: 'dashboard',
+        changes: [
+          {
+            type: 'fix',
+            title: 'Badge de tarefas deixou de aceitar valores inválidos no render',
+            description: 'Os contadores exibidos no header e em layouts compartilhados agora sanitizam valores não numéricos antes de renderizar, evitando avisos como `Received NaN for the children attribute`.',
+          },
+          {
+            type: 'fix',
+            title: 'Carregamentos dependentes da sessão ficaram mais tolerantes a oscilações do Supabase',
+            description: 'As leituras de perfil e tarefas passaram a tratar como transitórias as falhas de autenticação/rede durante troca ou renovação de sessão, reduzindo erros ruidosos no console sem quebrar a interface.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.987',
+    date: '20/03/2026',
+    summary: 'Cloud: o carregamento inicial do módulo passou a abrir com um skeleton completo e animado, substituindo a área branca temporária.',
+    modules: [
+      {
+        moduleId: 'cloud',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Abertura do Cloud ganhou skeleton completo no carregamento lazy',
+            description: 'Enquanto o bundle do módulo ainda está sendo carregado pelo React, o app agora mostra uma estrutura visual do Cloud com navegação, painel e cards animados, evitando a sensação de tela vazia.',
+          },
+          {
+            type: 'improvement',
+            title: 'Entrada visual do módulo ficou mais fluida desde o primeiro frame',
+            description: 'O fallback do `Suspense` foi personalizado para o Cloud, mantendo continuidade visual entre o shell do app e o conteúdo do explorador antes da montagem final do componente.',
+          },
+        ],
+      },
+    ],
+  },
+  {
     version: '1.9.986',
     date: '19/03/2026',
     summary: 'Cloud: corrigido o badge inferior dos cards de pasta para não manter o texto de alerta após a resolução.',

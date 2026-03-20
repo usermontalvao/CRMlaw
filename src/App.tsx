@@ -107,6 +107,73 @@ const dispatchCloudHeaderAction = (detail: CloudHeaderActionDetail) => {
   window.dispatchEvent(new CustomEvent('cloud-header-action', { detail }));
 };
 
+const CloudModuleFallback = () => (
+  <div className="overflow-hidden rounded-[30px] border border-slate-200/80 bg-[radial-gradient(circle_at_top,#fff7ed_0%,#ffffff_38%,#fffaf5_100%)] shadow-[0_18px_44px_rgba(15,23,42,0.08)]">
+    <div className="border-b border-slate-200/70 bg-white/90 px-4 py-3 sm:px-5">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="flex items-center gap-2">
+          <div className="h-10 w-24 animate-pulse rounded-xl bg-orange-100" />
+          <div className="h-10 w-28 animate-pulse rounded-xl bg-slate-100" />
+          <div className="h-10 w-24 animate-pulse rounded-xl bg-slate-100" />
+        </div>
+        <div className="flex items-center gap-2">
+          <div className="h-10 w-28 animate-pulse rounded-xl bg-slate-100" />
+          <div className="h-10 w-24 animate-pulse rounded-xl bg-slate-100" />
+        </div>
+      </div>
+    </div>
+    <div className="px-4 py-5 sm:px-5 sm:py-6">
+      <div className="grid gap-4 lg:grid-cols-[260px_minmax(0,1fr)]">
+        <div className="hidden rounded-[26px] border border-slate-200/80 bg-white/85 p-4 lg:block">
+          <div className="h-11 animate-pulse rounded-2xl bg-slate-100" />
+          <div className="mt-4 space-y-3">
+            <div className="h-16 animate-pulse rounded-2xl bg-gradient-to-r from-orange-100 via-amber-50 to-orange-50" />
+            <div className="h-12 animate-pulse rounded-2xl bg-slate-100" />
+            <div className="h-12 animate-pulse rounded-2xl bg-slate-100" />
+            <div className="h-12 animate-pulse rounded-2xl bg-slate-100" />
+          </div>
+        </div>
+        <div className="rounded-[26px] border border-slate-200/80 bg-white/88 p-4 sm:p-5">
+          <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 pb-4">
+            <div>
+              <div className="h-6 w-40 animate-pulse rounded-lg bg-slate-200" />
+              <div className="mt-2 h-4 w-64 max-w-full animate-pulse rounded-lg bg-slate-100" />
+            </div>
+            <div className="flex items-center gap-2">
+              <div className="h-9 w-24 animate-pulse rounded-xl bg-orange-100" />
+              <div className="h-9 w-20 animate-pulse rounded-xl bg-slate-100" />
+            </div>
+          </div>
+          <div className="grid gap-3 pt-5 sm:grid-cols-2 xl:grid-cols-3">
+            {Array.from({ length: 6 }).map((_, index) => (
+              <div key={index} className="rounded-[24px] border border-slate-200/80 bg-[linear-gradient(180deg,#ffffff_0%,#fffaf5_100%)] p-5 shadow-[0_12px_30px_rgba(15,23,42,0.05)]">
+                <div className="flex items-start justify-between">
+                  <div className="h-12 w-12 animate-pulse rounded-2xl bg-orange-100" />
+                  <div className="h-7 w-24 animate-pulse rounded-full bg-emerald-100" />
+                </div>
+                <div className="mt-5 h-5 w-3/4 animate-pulse rounded-lg bg-slate-200" />
+                <div className="mt-2 h-4 w-1/2 animate-pulse rounded-lg bg-slate-100" />
+                <div className="mt-5 h-px w-full bg-slate-100" />
+                <div className="mt-4 flex items-center gap-2">
+                  <div className="h-6 w-20 animate-pulse rounded-full bg-orange-100" />
+                  <div className="h-6 flex-1 animate-pulse rounded-full bg-slate-100" />
+                </div>
+              </div>
+            ))}
+          </div>
+          <div className="mt-6 flex items-center justify-center gap-3 text-[11px] font-semibold uppercase tracking-[0.24em] text-orange-500/80">
+            <span className="animate-pulse">Carregando</span>
+            <span className="inline-flex h-1.5 w-1.5 animate-pulse rounded-full bg-orange-300" />
+            <span className="animate-pulse">Cloud</span>
+            <span className="inline-flex h-1.5 w-1.5 animate-pulse rounded-full bg-amber-300" />
+            <span className="animate-pulse">Explorador</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+);
+
 const MainApp: React.FC = () => {
   const { currentModule: activeModule, moduleParams, navigateTo, setModuleParams, clearModuleParams } = useNavigation();
   const { theme, toggleTheme } = useTheme();
@@ -353,6 +420,7 @@ const MainApp: React.FC = () => {
   const [collaboratorSearchResults, setCollaboratorSearchResults] = useState<any[]>([]);
   const [searchLoading, setSearchLoading] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
+  const safePendingTasksCount = Number.isFinite(pendingTasksCount) ? pendingTasksCount : 0;
   // const [isClientFormModalOpen, setIsClientFormModalOpen] = useState(false);
   // const [clientFormPrefill, setClientFormPrefill] = useState<Partial<CreateClientDTO> | null>(null);
 
@@ -538,7 +606,13 @@ const MainApp: React.FC = () => {
             }
           }
         } catch (error: any) {
-          setProfileError(error.message || 'Não foi possível carregar o perfil.');
+          const message = String(error?.message || error || '');
+          const isTransientNetworkError = message.includes('Failed to fetch') || message.includes('Load failed') || message.includes('ERR_CONNECTION_CLOSED');
+          const isAuthRace = message.includes('Usuário não autenticado');
+
+          if (!isTransientNetworkError && !isAuthRace) {
+            setProfileError(message || 'Não foi possível carregar o perfil.');
+          }
         } finally {
           setProfileLoading(false);
         }
@@ -633,9 +707,17 @@ useEffect(() => {
   const loadPendingTasks = async () => {
     try {
       const items = await taskService.listTasks();
-      setPendingTasksCount(items.filter((task) => task.status === 'pending').length);
-    } catch (error) {
-      console.error('Erro ao carregar tarefas pendentes:', error);
+      const pendingCount = Array.isArray(items)
+        ? items.filter((task) => task.status === 'pending').length
+        : 0;
+      setPendingTasksCount(Number.isFinite(pendingCount) ? pendingCount : 0);
+    } catch (error: any) {
+      const message = String(error?.message || error || '');
+      const isExpectedAuthOrNetworkIssue = message.includes('Usuário não autenticado') || message.includes('Failed to fetch') || message.includes('Load failed');
+      setPendingTasksCount(0);
+      if (!isExpectedAuthOrNetworkIssue) {
+        console.error('Erro ao carregar tarefas pendentes:', error);
+      }
     }
   };
 
@@ -1435,9 +1517,9 @@ useEffect(() => {
                   title="Tarefas"
                 >
                   <CheckSquare className="w-4 h-4 sm:w-5 sm:h-5" />
-                  {pendingTasksCount > 0 && (
+                  {safePendingTasksCount > 0 && (
                     <span className="absolute -top-0.5 -right-0.5 min-w-[1.1rem] sm:min-w-[1.25rem] rounded-full bg-emerald-500 px-1 sm:px-1.5 py-0.5 text-[10px] sm:text-xs font-semibold text-white text-center leading-none">
-                      {pendingTasksCount > 99 ? '99+' : pendingTasksCount}
+                      {safePendingTasksCount > 99 ? '99+' : safePendingTasksCount}
                     </span>
                   )}
                 </button>
@@ -1540,7 +1622,7 @@ useEffect(() => {
           )}
 
           {/* Renderização condicional baseada no módulo ativo com Lazy Loading */}
-          <Suspense fallback={<div className="min-h-[200px]" />}>
+          <Suspense fallback={activeModule === 'cloud' ? <CloudModuleFallback /> : <div className="min-h-[200px]" />}>
             {activeModule === 'dashboard' && <Dashboard onNavigateToModule={handleNavigateToModule} params={moduleParams['dashboard'] ? JSON.parse(moduleParams['dashboard']) : undefined} />}
             {activeModule === 'feed' && <Feed onNavigateToModule={handleNavigateToModule} params={moduleParams['feed'] ? JSON.parse(moduleParams['feed']) : undefined} />}
             {activeModule === 'leads' && <LeadsModule onConvertLead={handleConvertLead} />}
@@ -1627,7 +1709,7 @@ useEffect(() => {
               <TasksModule 
                 focusNewTask={moduleParams['tasks'] ? JSON.parse(moduleParams['tasks']).mode === 'create' : false}
                 onParamConsumed={() => clearModuleParams('tasks')}
-                onPendingTasksChange={setPendingTasksCount}
+                onPendingTasksChange={(count) => setPendingTasksCount(Number.isFinite(count) ? count : 0)}
               />
             )}
             {activeModule === 'chat' && <ChatModule />}

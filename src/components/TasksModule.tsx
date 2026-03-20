@@ -55,10 +55,18 @@ const TasksModule = ({ focusNewTask = false, onParamConsumed, onPendingTasksChan
     try {
       setLoading(true);
       const data = await taskService.listTasks();
-      setTasks(data);
-      onPendingTasksChange?.(data.filter((task) => task.status === 'pending').length);
-    } catch (error) {
-      console.error('Erro ao carregar tarefas:', error);
+      const safeTasks = Array.isArray(data) ? data : [];
+      const pendingCount = safeTasks.filter((task) => task.status === 'pending').length;
+      setTasks(safeTasks);
+      onPendingTasksChange?.(Number.isFinite(pendingCount) ? pendingCount : 0);
+    } catch (error: any) {
+      const message = String(error?.message || error || '');
+      const isExpectedAuthOrNetworkIssue = message.includes('Usuário não autenticado') || message.includes('Failed to fetch') || message.includes('Load failed');
+      setTasks([]);
+      onPendingTasksChange?.(0);
+      if (!isExpectedAuthOrNetworkIssue) {
+        console.error('Erro ao carregar tarefas:', error);
+      }
     } finally {
       setLoading(false);
     }

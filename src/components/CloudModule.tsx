@@ -555,6 +555,7 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
     | null
   >(null);
   const [draggingItemKey, setDraggingItemKey] = useState<string | null>(null);
+  const [draggingSelectionKeys, setDraggingSelectionKeys] = useState<string[]>([]);
   const [dropTargetFolderId, setDropTargetFolderId] = useState<string | null>(null);
   const [renameModalOpen, setRenameModalOpen] = useState(false);
   const [renameTarget, setRenameTarget] = useState<{ type: 'file' | 'folder'; id: string; currentName: string } | null>(null);
@@ -3186,12 +3187,24 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
   };
 
   const handleDragStart = (itemKey: string) => {
+    const nextDraggingSelection = selectedItemKeys.includes(itemKey)
+      ? selectedItemKeys
+      : [itemKey];
+
+    if (!selectedItemKeys.includes(itemKey)) {
+      setSelectedItemKeys([itemKey]);
+      setSelectedItemKey(itemKey);
+      setSelectionAnchorKey(itemKey);
+    }
+
     setDraggingItemKey(itemKey);
+    setDraggingSelectionKeys(nextDraggingSelection);
     setDragVisualState({ folderId: null, mode: clipboardSelection?.mode || 'move' });
   };
 
   const handleDragEnd = () => {
     setDraggingItemKey(null);
+    setDraggingSelectionKeys([]);
     setDropTargetFolderId(null);
     setDragVisualState(null);
   };
@@ -3200,40 +3213,56 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
     if (!draggingItemKey) return;
 
     try {
-      if (draggingItemKey.startsWith('file:')) {
-        const fileId = draggingItemKey.replace('file:', '');
+      const activeKeys = draggingSelectionKeys.length > 0 ? draggingSelectionKeys : [draggingItemKey];
+      const fileKeys = activeKeys.filter((key) => key.startsWith('file:'));
+      const folderKeys = activeKeys.filter((key) => key.startsWith('folder:'));
+
+      for (const fileKey of fileKeys) {
+        const fileId = fileKey.replace('file:', '');
         const file = files.find((item) => item.id === fileId)
           ?? archivedFiles.find((item) => item.id === fileId)
           ?? trashedFiles.find((item) => item.id === fileId)
           ?? allFiles.find((item) => item.id === fileId);
-        if (!file) return;
+        if (!file) continue;
 
         if (target === 'archived') {
-          if (file.archived_at && !file.delete_scheduled_for) return;
+          if (file.archived_at && !file.delete_scheduled_for) continue;
           await cloudService.archiveFile(file.id);
-          toast.success('Cloud', 'Arquivo arquivado com sucesso.');
         } else {
-          if (file.delete_scheduled_for) return;
+          if (file.delete_scheduled_for) continue;
           await cloudService.trashFile(file.id);
-          toast.success('Cloud', 'Arquivo enviado para a lixeira.');
         }
-      } else if (draggingItemKey.startsWith('folder:')) {
-        const folderId = draggingItemKey.replace('folder:', '');
+      }
+
+      for (const folderKey of folderKeys) {
+        const folderId = folderKey.replace('folder:', '');
         const folder = folders.find((item) => item.id === folderId)
           ?? archivedFolders.find((item) => item.id === folderId)
           ?? trashedFolders.find((item) => item.id === folderId)
           ?? allFolders.find((item) => item.id === folderId);
-        if (!folder) return;
+        if (!folder) continue;
 
         if (target === 'archived') {
-          if (folder.archived_at && !folder.delete_scheduled_for) return;
+          if (folder.archived_at && !folder.delete_scheduled_for) continue;
           await cloudService.archiveFolder(folder.id);
-          toast.success('Cloud', 'Pasta arquivada com sucesso.');
         } else {
-          if (folder.delete_scheduled_for) return;
+          if (folder.delete_scheduled_for) continue;
           await cloudService.trashFolder(folder.id);
-          toast.success('Cloud', 'Pasta enviada para a lixeira.');
         }
+      }
+
+      const totalMovedItems = fileKeys.length + folderKeys.length;
+      if (totalMovedItems > 0) {
+        toast.success(
+          'Cloud',
+          target === 'archived'
+            ? totalMovedItems === 1
+              ? 'Item arquivado com sucesso.'
+              : `${totalMovedItems} itens arquivados com sucesso.`
+            : totalMovedItems === 1
+              ? 'Item enviado para a lixeira.'
+              : `${totalMovedItems} itens enviados para a lixeira.`,
+        );
       }
 
       await loadData();
@@ -3241,6 +3270,7 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
       toast.error('Cloud', error.message || `Erro ao mover item para ${target === 'archived' ? 'Arquivado' : 'Lixeira'}.`);
     } finally {
       setDraggingItemKey(null);
+      setDraggingSelectionKeys([]);
       setDropTargetFolderId(null);
       setDragVisualState(null);
     }
@@ -3250,63 +3280,70 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
     if (!draggingItemKey) return;
 
     try {
-      if (draggingItemKey.startsWith('file:')) {
-        const fileId = draggingItemKey.replace('file:', '');
+      const activeKeys = draggingSelectionKeys.length > 0 ? draggingSelectionKeys : [draggingItemKey];
+      const fileKeys = activeKeys.filter((key) => key.startsWith('file:'));
+      const folderKeys = activeKeys.filter((key) => key.startsWith('folder:'));
+      const targetFolder = allFolders.find((item) => item.id === targetFolderId) ?? null;
+      let movedCount = 0;
+      let restoredCount = 0;
+
+      for (const fileKey of fileKeys) {
+        const fileId = fileKey.replace('file:', '');
         const file = files.find((item) => item.id === fileId)
           ?? archivedFiles.find((item) => item.id === fileId)
           ?? trashedFiles.find((item) => item.id === fileId)
           ?? allFiles.find((item) => item.id === fileId);
-        if (!file) return;
+        if (!file) continue;
 
         const isSpecialStateFile = Boolean(file.delete_scheduled_for || file.archived_at);
-        if (!isSpecialStateFile && file.folder_id === targetFolderId) return;
+        if (!isSpecialStateFile && file.folder_id === targetFolderId) continue;
 
-        const targetFolder = allFolders.find((item) => item.id === targetFolderId) ?? null;
         if (!targetFolderId) {
           if (isSpecialStateFile) {
             await cloudService.restoreFile(fileId);
-            toast.success('Cloud', file.delete_scheduled_for ? 'Arquivo restaurado da lixeira.' : 'Arquivo desarquivado com sucesso.');
-            return;
+            restoredCount += 1;
           }
-          toast.info('Cloud', 'Arquivos não podem ser movidos para a raiz diretamente. Envie-os ou mantenha-os em uma pasta.');
-          return;
+          continue;
         }
 
         if (file.delete_scheduled_for || file.archived_at) {
           await cloudService.restoreFile(fileId);
+          restoredCount += 1;
         }
 
         await cloudService.moveFile(fileId, targetFolderId, targetFolder?.client_id || null);
-        toast.success('Cloud', file.delete_scheduled_for ? 'Arquivo restaurado e movido com sucesso.' : file.archived_at ? 'Arquivo desarquivado e movido com sucesso.' : 'Arquivo movido com sucesso.');
-      } else if (draggingItemKey.startsWith('folder:')) {
-        const folderId = draggingItemKey.replace('folder:', '');
-        if (folderId === targetFolderId) return;
+        movedCount += 1;
+      }
+
+      const isDescendant = (parentId: string, childId: string): boolean => {
+        const children = folderChildrenMap.get(parentId) ?? [];
+        for (const child of children) {
+          if (child.id === childId) return true;
+          if (isDescendant(child.id, childId)) return true;
+        }
+        return false;
+      };
+
+      for (const folderKey of folderKeys) {
+        const folderId = folderKey.replace('folder:', '');
+        if (folderId === targetFolderId) continue;
 
         const folder = folders.find((item) => item.id === folderId)
           ?? archivedFolders.find((item) => item.id === folderId)
           ?? trashedFolders.find((item) => item.id === folderId)
           ?? allFolders.find((item) => item.id === folderId);
-        if (!folder) return;
+        if (!folder) continue;
 
         const isSpecialStateFolder = Boolean(folder.delete_scheduled_for || folder.archived_at);
-        if (!isSpecialStateFolder && folder.parent_id === targetFolderId) return;
-
-        const isDescendant = (parentId: string, childId: string): boolean => {
-          const children = folderChildrenMap.get(parentId) ?? [];
-          for (const child of children) {
-            if (child.id === childId) return true;
-            if (isDescendant(child.id, childId)) return true;
-          }
-          return false;
-        };
+        if (!isSpecialStateFolder && folder.parent_id === targetFolderId) continue;
 
         if (targetFolderId && isDescendant(folderId, targetFolderId)) {
-          toast.error('Cloud', 'Não é possível mover uma pasta para dentro de si mesma.');
-          return;
+          continue;
         }
 
         if (folder.delete_scheduled_for) {
           await cloudService.restoreFolder(folderId);
+          restoredCount += 1;
         }
 
         await cloudService.updateFolder(folderId, {
@@ -3314,14 +3351,24 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
           archived_at: null,
           delete_scheduled_for: null,
         });
-        toast.success(
-          'Cloud',
-          folder.delete_scheduled_for
-            ? (targetFolderId ? 'Pasta restaurada e movida com sucesso.' : 'Pasta restaurada para a Caixa de entrada com sucesso.')
-            : folder.archived_at
-              ? (targetFolderId ? 'Pasta desarquivada e movida com sucesso.' : 'Pasta desarquivada para a Caixa de entrada com sucesso.')
-              : (targetFolderId ? 'Pasta movida com sucesso.' : 'Pasta movida para a raiz com sucesso.'),
-        );
+        movedCount += 1;
+      }
+
+      if (!targetFolderId && fileKeys.length > restoredCount && movedCount === 0) {
+        toast.info('Cloud', 'Arquivos não podem ser movidos para a raiz diretamente. Envie-os ou mantenha-os em uma pasta.');
+      } else {
+        const totalProcessed = movedCount + restoredCount;
+        if (totalProcessed > 0) {
+          if (!targetFolderId && movedCount > 0) {
+            toast.success('Cloud', movedCount === 1 ? 'Pasta movida para a raiz com sucesso.' : `${movedCount} itens movidos para a raiz com sucesso.`);
+          } else if (!targetFolderId && restoredCount > 0 && movedCount === 0) {
+            toast.success('Cloud', restoredCount === 1 ? 'Item restaurado para a Caixa de entrada com sucesso.' : `${restoredCount} itens restaurados para a Caixa de entrada com sucesso.`);
+          } else if (restoredCount > 0) {
+            toast.success('Cloud', totalProcessed === 1 ? 'Item restaurado e movido com sucesso.' : `${totalProcessed} itens restaurados e movidos com sucesso.`);
+          } else {
+            toast.success('Cloud', movedCount === 1 ? 'Item movido com sucesso.' : `${movedCount} itens movidos com sucesso.`);
+          }
+        }
       }
 
       await loadData();
@@ -3329,6 +3376,7 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
       toast.error('Cloud', error.message || 'Erro ao mover item.');
     } finally {
       setDraggingItemKey(null);
+      setDraggingSelectionKeys([]);
       setDropTargetFolderId(null);
     }
   };

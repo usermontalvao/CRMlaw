@@ -1,5 +1,23 @@
 # Changelog
  
+## 1.9.989
+- **Cloud**: Corrigido o arraste de múltiplos itens para respeitar a seleção atual.
+  - Ao iniciar o drag sobre um item já selecionado, o módulo agora leva todos os documentos e pastas selecionados juntos
+  - O drop em pastas, arquivados e lixeira passou a processar a seleção inteira, em vez de apenas o item que iniciou o arraste
+  - O estado visual do drag também é limpo corretamente ao final da operação múltipla
+
+## 1.9.988
+- **App/Auth**: Blindados contadores e carregamentos dependentes de sessão para reduzir erros ruidosos no console.
+  - O badge de tarefas agora sanitiza valores inválidos antes de renderizar, evitando `NaN` no JSX
+  - O carregamento de tarefas trata oscilações de autenticação/rede sem poluir o console com erro esperado
+  - O carregamento do perfil passou a ignorar falhas transitórias de rede/autenticação antes de exibir erro persistente
+
+## 1.9.987
+- **Cloud**: Melhorado o carregamento inicial do módulo para eliminar a área branca enquanto o bundle lazy é carregado.
+  - O `Suspense` do app agora mostra um skeleton completo do Cloud desde o primeiro frame
+  - O carregamento inicial ganhou blocos animados para navegação, painel lateral e cards
+  - A entrada do módulo fica visualmente mais fluida e consistente antes do `CloudModule` montar
+
 ## 1.9.986
 - **Cloud**: Corrigido o badge vermelho fixo no rodapé dos cards de pasta.
   - O selo inferior deixou de mostrar `Alerta` quando a pasta está `Resolvido`
