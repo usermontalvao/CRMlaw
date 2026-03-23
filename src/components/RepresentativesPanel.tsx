@@ -77,6 +77,11 @@ const PAYMENT_METHOD_LABELS_MAP: Record<PaymentMethod, string> = {
 
 type TabType = 'cadastro' | 'vinculos' | 'arquivados';
 
+type AvailableEventOption = CalendarEvent & {
+  __source?: 'process-hearing';
+  __clientName?: string | null;
+};
+
 interface RepresentativesPanelProps {
   onClose?: () => void;
   initialTab?: TabType;
@@ -617,10 +622,10 @@ const RepresentativesPanel: React.FC<RepresentativesPanelProps> = ({
     return { parsed, dateTime };
   };
 
-  const availableFutureEvents = useMemo(() => {
+  const availableFutureEvents = useMemo<AvailableEventOption[]>(() => {
     const now = new Date();
 
-    const realEvents = calendarEvents
+    const realEvents: AvailableEventOption[] = calendarEvents
       .filter((event) => event.event_type === 'hearing' || event.event_type === 'meeting')
       .filter((event) => {
         if (!event.start_at) return false;
@@ -666,7 +671,7 @@ const RepresentativesPanel: React.FC<RepresentativesPanelProps> = ({
           __clientName: clientName || null,
         };
       })
-      .filter((event): event is CalendarEvent & { __source: 'process-hearing'; __clientName: string | null } => Boolean(event));
+      .filter((event): event is NonNullable<typeof event> => event !== null);
 
     return [...realEvents, ...processHearings]
       .sort((a, b) => new Date(a.start_at).getTime() - new Date(b.start_at).getTime());

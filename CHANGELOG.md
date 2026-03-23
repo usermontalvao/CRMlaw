@@ -1,5 +1,10 @@
 # Changelog
  
+## 1.9.993
+- **Correspondentes/Processos**: Ajustado o fluxo de vínculo para reconhecer audiências futuras cadastradas no módulo de Processos durante a seleção de compromissos.
+  - O seletor considera audiências de processo ainda não materializadas como evento da agenda
+  - Quando necessário, o vínculo cria automaticamente o compromisso em `calendar_events` antes de salvar o correspondente
+
 ## 1.9.992
 - **Correspondentes/Processos**: Corrigida a listagem de compromissos para incluir audiências cadastradas diretamente no módulo de Processos.
   - O seletor de vínculo agora considera também audiências salvas em `hearing_date` e `hearing_time`, mesmo quando ainda não existe registro correspondente em `calendar_events`

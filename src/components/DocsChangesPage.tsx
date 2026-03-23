@@ -727,6 +727,28 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
 
 const releases: ReleaseNote[] = [
   {
+    version: '1.9.993',
+    date: '23/03/2026',
+    summary: 'Correspondentes/Processos: o vínculo passou a reconhecer audiências futuras do processo mesmo antes de existirem como evento da agenda.',
+    modules: [
+      {
+        moduleId: 'agenda',
+        changes: [
+          {
+            type: 'fix',
+            title: 'Audiências do processo disponíveis no seletor de vínculo',
+            description: 'O painel de Correspondentes passou a considerar audiências futuras registradas em `hearing_date` e `hearing_time`, ainda que não exista evento persistido em `calendar_events`.',
+          },
+          {
+            type: 'fix',
+            title: 'Criação automática do compromisso da agenda ao vincular',
+            description: 'Ao selecionar uma audiência vinda diretamente do processo, o sistema cria o evento correspondente na agenda antes de concluir o vínculo do correspondente.',
+          },
+        ],
+      },
+    ],
+  },
+  {
     version: '1.9.992',
     date: '23/03/2026',
     summary: 'Correspondentes/Processos: audiências cadastradas no processo passaram a aparecer no seletor de compromissos para vínculo.',
