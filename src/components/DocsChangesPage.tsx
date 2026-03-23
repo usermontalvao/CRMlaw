@@ -727,6 +727,179 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
 
 const releases: ReleaseNote[] = [
   {
+    version: '1.10.002',
+    date: '23/03/2026',
+    summary: 'Agenda/Correspondentes: editar compromisso vinculado não faz mais a audiência do processo reaparecer duplicada na agenda.',
+    modules: [
+      {
+        moduleId: 'agenda',
+        changes: [
+          {
+            type: 'fix',
+            title: 'Fim da duplicação visual após edição de compromisso',
+            description: 'A identificação da audiência persistida passou a priorizar `process_id`, evitando que a audiência base do processo reapareça em paralelo após alterações no evento da agenda.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.10.001',
+    date: '23/03/2026',
+    summary: 'Agenda/Correspondentes: o detalhe da audiência passou a mostrar corretamente a OAB cadastrada do correspondente.',
+    modules: [
+      {
+        moduleId: 'agenda',
+        changes: [
+          {
+            type: 'fix',
+            title: 'OAB correta no card de correspondente da agenda',
+            description: 'O modal de detalhes da agenda foi ajustado para ler `oab_number` do correspondente vinculado, em vez de uma chave inexistente.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.10.000',
+    date: '23/03/2026',
+    summary: 'Correspondentes: migration do campo OAB número foi aplicada no banco, eliminando a falha de schema cache.',
+    modules: [
+      {
+        moduleId: 'cadastros',
+        changes: [
+          {
+            type: 'fix',
+            title: 'Campo OAB número disponível no banco de dados',
+            description: 'A coluna `oab_number` foi criada em `representatives`, resolvendo o erro de ausência da coluna no schema cache do Supabase.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.999',
+    date: '23/03/2026',
+    summary: 'Correspondentes/Pagamentos: confirmação de pagamento passou a mostrar os dados bancários do correspondente antes do registro.',
+    modules: [
+      {
+        moduleId: 'cadastros',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Modal de confirmação de pagamento com dados bancários',
+            description: 'Ao registrar pagamento de correspondente, o modal agora mostra resumo da diligência e os dados bancários/PIX cadastrados antes da confirmação final.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.998',
+    date: '23/03/2026',
+    summary: 'Correspondentes/Agenda: o vínculo passou a reaproveitar a audiência original do processo sem recriar evento duplicado.',
+    modules: [
+      {
+        moduleId: 'agenda',
+        changes: [
+          {
+            type: 'fix',
+            title: 'Vínculo de correspondente não recria audiência já existente',
+            description: 'Ao vincular correspondente em audiência de processo, o sistema passou a reutilizar a audiência original identificada por `process_id` e mesmo minuto da audiência, evitando um novo `calendar_event` duplicado.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.997',
+    date: '23/03/2026',
+    summary: 'Agenda/Processos: limpeza via banco removeu eventos duplicados de audiência preservando os originais do processo.',
+    modules: [
+      {
+        moduleId: 'agenda',
+        changes: [
+          {
+            type: 'fix',
+            title: 'Remoção via banco de eventos duplicados de audiência',
+            description: 'Foram excluídos de `calendar_events` os itens duplicados do dia 05/05/2026, mantendo os originais vinculados ao processo e exibidos com o nome do cliente.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.996',
+    date: '23/03/2026',
+    summary: 'Agenda/Processos: audiências persistidas equivalentes deixaram de aparecer duplicadas no calendário.',
+    modules: [
+      {
+        moduleId: 'agenda',
+        changes: [
+          {
+            type: 'fix',
+            title: 'Deduplicação de audiências persistidas equivalentes',
+            description: 'A renderização do calendário passou a colapsar audiências duplicadas já existentes em `calendar_events`, priorizando o item que possui vínculo com correspondente.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.995',
+    date: '23/03/2026',
+    summary: 'Correspondentes/Agenda: cadastro com OAB número, painel com scroll melhorado e remoção da duplicidade visual de audiências no calendário.',
+    modules: [
+      {
+        moduleId: 'agenda',
+        changes: [
+          {
+            type: 'fix',
+            title: 'Audiências do processo não são mais exibidas em duplicidade no calendário',
+            description: 'A agenda passou a ocultar a audiência sistêmica do processo quando já existe um evento persistido equivalente em `calendar_events` para a mesma data e contexto.',
+          },
+        ],
+      },
+      {
+        moduleId: 'cadastros',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Cadastro de Correspondentes com campo OAB número',
+            description: 'O formulário e a listagem agora suportam o registro do número da OAB do correspondente.',
+          },
+          {
+            type: 'improvement',
+            title: 'Scroll no painel principal de Correspondentes',
+            description: 'O modal principal passou a rolar internamente em telas menores, evitando corte de conteúdo e ações.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.994',
+    date: '23/03/2026',
+    summary: 'Correspondentes/Processos: o vínculo passou a reutilizar a audiência já existente na agenda para evitar eventos duplicados.',
+    modules: [
+      {
+        moduleId: 'agenda',
+        changes: [
+          {
+            type: 'fix',
+            title: 'Reaproveitamento de audiência existente ao vincular correspondente',
+            description: 'Ao vincular uma audiência vinda do processo, o sistema primeiro procura um evento equivalente já cadastrado na agenda antes de criar um novo registro.',
+          },
+          {
+            type: 'fix',
+            title: 'Prevenção de duplicidade no calendário',
+            description: 'A lógica passou a cruzar data, cliente e identificação do processo para evitar que o mesmo compromisso apareça duplicado após o vínculo do correspondente.',
+          },
+        ],
+      },
+    ],
+  },
+  {
     version: '1.9.993',
     date: '23/03/2026',
     summary: 'Correspondentes/Processos: o vínculo passou a reconhecer audiências futuras do processo mesmo antes de existirem como evento da agenda.',

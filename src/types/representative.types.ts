@@ -13,6 +13,7 @@ export interface Representative {
   id: string;
   full_name: string;
   cpf?: string | null;
+  oab_number?: string | null;
   phone?: string | null;
   email?: string | null;
   pix_key?: string | null;
@@ -30,6 +31,7 @@ export interface Representative {
 export interface CreateRepresentativeDTO {
   full_name: string;
   cpf?: string | null;
+  oab_number?: string | null;
   phone?: string | null;
   email?: string | null;
   pix_key?: string | null;

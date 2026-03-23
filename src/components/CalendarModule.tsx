@@ -57,6 +57,39 @@ type DeletionLogEntry = {
 
 const CALENDAR_DELETION_LOG_KEY = 'crm-calendar-deletion-log';
 
+const getProcessHearingStartDateTime = (process: Process) => {
+  if (!process.hearing_date) return null;
+  return process.hearing_time ? `${process.hearing_date}T${process.hearing_time}` : process.hearing_date;
+};
+
+const normalizeHearingTitle = (title?: string | null) => (title || '').trim().toUpperCase();
+
+const toMinuteKey = (value?: string | null) => {
+  if (!value) return null;
+
+  const parsed = new Date(value);
+  if (!Number.isNaN(parsed.getTime())) {
+    const year = parsed.getFullYear();
+    const month = `${parsed.getMonth() + 1}`.padStart(2, '0');
+    const day = `${parsed.getDate()}`.padStart(2, '0');
+    const hours = `${parsed.getHours()}`.padStart(2, '0');
+    const minutes = `${parsed.getMinutes()}`.padStart(2, '0');
+    return `${year}-${month}-${day}T${hours}:${minutes}`;
+  }
+
+  return value.trim().replace(' ', 'T').slice(0, 16);
+};
+
+const getPersistedHearingDedupKey = (event: CalendarEvent) => {
+  if (event.event_type !== 'hearing' || !event.start_at) return null;
+
+  const processKey = event.process_id ? `process:${event.process_id}` : 'process:none';
+  const clientKey = event.client_id ? `client:${event.client_id}` : 'client:none';
+  const titleKey = normalizeHearingTitle(event.title);
+
+  return `${event.start_at}::${processKey}::${clientKey}::${titleKey}`;
+};
+
 type NewEventForm = {
   title: string;
   date: string;
@@ -638,6 +671,27 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({
 
   const systemEvents: EventInput[] = useMemo(() => {
     const calendarEvents: EventInput[] = [];
+    const hasPersistedHearingEvent = (process: Process, startDateTime: string) => {
+      const processClient = process.client_id ? clientMap.get(process.client_id) : null;
+      const modeLabel = process.hearing_mode ? process.hearing_mode.toUpperCase() : 'SEM MODO';
+      const clientLabel = (processClient?.full_name || 'Sem cliente').toUpperCase();
+      const processCodeTitle = `AUDIÊNCIA ${process.hearing_mode === 'online' ? 'POR VÍDEO' : 'PRESENCIAL'} - ${process.process_code || 'PROCESSO'}`.toUpperCase();
+      const legacyTitle = `AUDIÊNCIA - ${modeLabel} - ${clientLabel}`.toUpperCase();
+      const processMinuteKey = toMinuteKey(startDateTime);
+
+      return calendarEventsData.some((event) => {
+        if (event.event_type !== 'hearing' || !event.start_at) return false;
+
+        if (event.process_id && event.process_id === process.id) return true;
+
+        if (toMinuteKey(event.start_at) !== processMinuteKey) return false;
+
+        const normalizedTitle = (event.title || '').trim().toUpperCase();
+        const sameClient = process.client_id ? event.client_id === process.client_id : true;
+
+        return sameClient && (normalizedTitle === processCodeTitle || normalizedTitle === legacyTitle);
+      });
+    };
 
     // Prazos
     deadlines
@@ -678,13 +732,14 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({
     processes
       .filter((p) => p.hearing_scheduled && p.hearing_date)
       .forEach((process) => {
+        const startDateTime = getProcessHearingStartDateTime(process);
+        if (!startDateTime) return;
+        if (hasPersistedHearingEvent(process, startDateTime)) return;
+
         const relatedClient = process.client_id ? clientMap.get(process.client_id) : null;
         const clientLabel = (relatedClient?.full_name || 'Sem cliente').toUpperCase();
         const modeLabel = process.hearing_mode ? process.hearing_mode.toUpperCase() : 'SEM MODO';
         const formattedTitle = `AUDIÊNCIA - ${modeLabel} - ${clientLabel}`;
-        const startDateTime = process.hearing_time
-          ? `${process.hearing_date}T${process.hearing_time}`
-          : process.hearing_date;
 
         calendarEvents.push({
           id: `hearing-${process.id}`,
@@ -734,11 +789,40 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({
       });
 
     return calendarEvents;
-  }, [deadlines, processes, requirements, clientMap]);
+  }, [deadlines, processes, requirements, clientMap, calendarEventsData]);
 
   // Eventos personalizados vindos da tabela calendar_events
   const customEvents = useMemo(() => {
-    return calendarEventsData.map((item) => {
+    const dedupedEvents = calendarEventsData.reduce<CalendarEvent[]>((acc, item) => {
+      const dedupKey = getPersistedHearingDedupKey(item);
+
+      if (!dedupKey) {
+        acc.push(item);
+        return acc;
+      }
+
+      const existingIndex = acc.findIndex((candidate) => getPersistedHearingDedupKey(candidate) === dedupKey);
+      if (existingIndex === -1) {
+        acc.push(item);
+        return acc;
+      }
+
+      const existingItem = acc[existingIndex];
+      const existingLinkedAppointments = representativeAppointmentsMap.get(existingItem.id) || [];
+      const nextLinkedAppointments = representativeAppointmentsMap.get(item.id) || [];
+
+      const shouldReplace = nextLinkedAppointments.length > existingLinkedAppointments.length
+        || (nextLinkedAppointments.length === existingLinkedAppointments.length
+          && new Date(item.updated_at).getTime() > new Date(existingItem.updated_at).getTime());
+
+      if (shouldReplace) {
+        acc[existingIndex] = item;
+      }
+
+      return acc;
+    }, []);
+
+    return dedupedEvents.map((item) => {
       const relatedClient = item.client_id ? clientMap.get(item.client_id) : null;
       const classNames = ['calendar-event', `calendar-chip--${item.event_type}`];
       const hasTime = item.start_at.includes('T') && !item.start_at.endsWith('T00:00:00.000Z') && !item.start_at.endsWith('T00:00:00+00:00');
@@ -1953,7 +2037,7 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({
                             </div>
                             <div className="min-w-0">
                               <p className="truncate text-sm font-medium text-slate-900">{representativeName}</p>
-                              <p className="text-xs text-slate-500">{(representative as any)?.oab || 'OAB não informada'}</p>
+                              <p className="text-xs text-slate-500">{representative?.oab_number || 'OAB não informada'}</p>
                             </div>
                           </div>
                           {whatsappUrl ? (

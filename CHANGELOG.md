@@ -1,5 +1,56 @@
 # Changelog
  
+## 1.10.002
+- **Agenda/Correspondentes**: Corrigida a duplicação visual de audiências após editar compromisso vinculado.
+  - A detecção de audiência já existente passou a priorizar o `process_id`, mesmo se o horário ou título do evento tiver sido editado
+  - Isso impede que a audiência original do processo reapareça em paralelo ao compromisso já persistido
+  - Conferido no banco: para os processos exibidos em `05/05/2026`, não havia evento duplicado persistido extra para excluir
+
+## 1.10.001
+- **Agenda/Correspondentes**: Corrigida a exibição da OAB no card de correspondente vinculado dentro do modal da agenda.
+  - O detalhe da agenda passou a ler o campo `oab_number` correto do correspondente
+  - O texto `OAB não informada` deixa de aparecer quando a OAB já está cadastrada
+
+## 1.10.000
+- **Correspondentes**: Aplicada no banco a migration do campo `OAB número` na tabela `representatives`.
+  - A coluna `oab_number` foi criada no Supabase
+  - O cadastro de correspondentes deixa de falhar por ausência da coluna no schema cache
+
+## 1.9.999
+- **Correspondentes/Pagamentos**: O registro de pagamento agora abre um modal de confirmação com os dados bancários do correspondente.
+  - O modal exibe resumo da diligência, valor e compromisso
+  - Antes de confirmar, ficam visíveis chave PIX, banco, agência e conta do correspondente
+  - A confirmação registra o pagamento com data, método, comprovante e observações
+
+## 1.9.998
+- **Correspondentes/Agenda**: Corrigido o vínculo de correspondente que recriava uma audiência já existente do processo.
+  - O vínculo agora reaproveita a audiência original pelo `process_id` e pelo mesmo minuto da audiência
+  - Foi removida do banco a duplicata gerada novamente ao vincular correspondente em `05/05/2026`
+
+## 1.9.997
+- **Agenda/Processos**: Removidos via banco os eventos duplicados de audiência que coexistiam com os originais do processo em `05/05/2026`.
+  - Foram excluídos apenas os registros duplicados em `calendar_events`
+  - As audiências originais com o nome do cliente `RONE DE SÁ OLIVEIRA` foram preservadas
+
+## 1.9.996
+- **Agenda/Processos**: Corrigida a duplicidade final de audiências equivalentes já persistidas em `calendar_events`.
+  - O calendário agora colapsa eventos de audiência repetidos com mesma data e contexto
+  - Em caso de duplicidade, a renderização prioriza o evento que já possui vínculo de correspondente
+
+## 1.9.995
+- **Correspondentes**: Adicionado o campo `OAB número` no cadastro e na visualização dos correspondentes.
+  - O cadastro agora persiste a informação da OAB do correspondente
+  - A listagem exibe a OAB junto aos demais dados principais
+- **Correspondentes**: Ajustado o scroll do painel/modal principal para melhor uso em telas menores.
+  - O conteúdo interno agora pode rolar sem cortar ações e seções do painel
+- **Agenda/Processos**: Corrigida a duplicidade visual de audiências quando já existe evento persistido para a mesma audiência.
+  - O calendário deixa de renderizar a audiência sistêmica do processo quando já existe item equivalente em `calendar_events`
+
+## 1.9.994
+- **Correspondentes/Processos**: Corrigida a duplicidade de eventos ao vincular audiências vindas do módulo de Processos.
+  - O vínculo agora reutiliza eventos de audiência já existentes na agenda quando a data e o processo correspondem
+  - A criação automática só ocorre quando realmente não existe compromisso equivalente em `calendar_events`
+
 ## 1.9.993
 - **Correspondentes/Processos**: Ajustado o fluxo de vínculo para reconhecer audiências futuras cadastradas no módulo de Processos durante a seleção de compromissos.
   - O seletor considera audiências de processo ainda não materializadas como evento da agenda

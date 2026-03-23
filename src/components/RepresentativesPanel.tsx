@@ -28,6 +28,7 @@ import {
   Banknote,
   Receipt,
   MapPin,
+  Scale,
 } from 'lucide-react';
 import { representativeService } from '../services/representative.service';
 import { calendarService } from '../services/calendar.service';
@@ -126,6 +127,7 @@ const RepresentativesPanel: React.FC<RepresentativesPanelProps> = ({
   const [representativeForm, setRepresentativeForm] = useState<CreateRepresentativeDTO>({
     full_name: '',
     cpf: '',
+    oab_number: '',
     phone: '',
     email: '',
     pix_key: '',
@@ -323,6 +325,7 @@ const RepresentativesPanel: React.FC<RepresentativesPanelProps> = ({
       setRepresentativeForm({
         full_name: rep.full_name,
         cpf: rep.cpf || '',
+        oab_number: rep.oab_number || '',
         phone: rep.phone || '',
         email: rep.email || '',
         pix_key: rep.pix_key || '',
@@ -337,6 +340,7 @@ const RepresentativesPanel: React.FC<RepresentativesPanelProps> = ({
       setRepresentativeForm({
         full_name: '',
         cpf: '',
+        oab_number: '',
         phone: '',
         email: '',
         pix_key: '',
@@ -444,20 +448,26 @@ const RepresentativesPanel: React.FC<RepresentativesPanelProps> = ({
           throw new Error('Não foi possível localizar a audiência do processo selecionado.');
         }
 
-        const hearingModeLabel = process.hearing_mode === 'online' ? 'por vídeo' : 'presencial';
-        const createdEvent = await calendarService.createEvent({
-          title: `AUDIÊNCIA ${process.hearing_mode === 'online' ? 'POR VÍDEO' : 'PRESENCIAL'} - ${process.process_code || 'PROCESSO'}`,
-          description: process.court
-            ? `Audiência ${hearingModeLabel} do processo ${process.process_code || ''} • ${process.court}`
-            : `Audiência ${hearingModeLabel} do processo ${process.process_code || ''}`,
-          event_type: 'hearing',
-          status: 'pendente',
-          start_at: hearingInfo.dateTime,
-          process_id: process.id,
-          client_id: process.client_id || null,
-        });
+        const existingEvent = findExistingHearingEventForProcess(process, hearingInfo.parsed);
 
-        calendarEventId = createdEvent.id;
+        if (existingEvent) {
+          calendarEventId = existingEvent.id;
+        } else {
+          const hearingModeLabel = process.hearing_mode === 'online' ? 'por vídeo' : 'presencial';
+          const createdEvent = await calendarService.createEvent({
+            title: `AUDIÊNCIA ${process.hearing_mode === 'online' ? 'POR VÍDEO' : 'PRESENCIAL'} - ${process.process_code || 'PROCESSO'}`,
+            description: process.court
+              ? `Audiência ${hearingModeLabel} do processo ${process.process_code || ''} • ${process.court}`
+              : `Audiência ${hearingModeLabel} do processo ${process.process_code || ''}`,
+            event_type: 'hearing',
+            status: 'pendente',
+            start_at: hearingInfo.dateTime,
+            process_id: process.id,
+            client_id: process.client_id || null,
+          });
+
+          calendarEventId = createdEvent.id;
+        }
       }
 
       const payload = {
@@ -613,13 +623,45 @@ const RepresentativesPanel: React.FC<RepresentativesPanelProps> = ({
   };
 
   const getProcessHearingDateTime = (process: Process) => {
-    if (!process.hearing_scheduled || !process.hearing_date) return null;
-    const time = process.hearing_time && process.hearing_time.trim() ? process.hearing_time.trim() : '09:00';
-    const normalizedTime = time.length === 5 ? `${time}:00` : time;
-    const dateTime = `${process.hearing_date}T${normalizedTime}`;
+    if (!process.hearing_date) return null;
+    const time = process.hearing_time && process.hearing_time.trim() ? process.hearing_time.trim() : '00:00';
+    const dateTime = `${process.hearing_date}T${time}`;
     const parsed = new Date(dateTime);
     if (Number.isNaN(parsed.getTime())) return null;
     return { parsed, dateTime };
+  };
+
+  const toMinuteKey = (value: string) => {
+    const parsed = new Date(value);
+    if (!Number.isNaN(parsed.getTime())) {
+      const year = parsed.getFullYear();
+      const month = `${parsed.getMonth() + 1}`.padStart(2, '0');
+      const day = `${parsed.getDate()}`.padStart(2, '0');
+      const hours = `${parsed.getHours()}`.padStart(2, '0');
+      const minutes = `${parsed.getMinutes()}`.padStart(2, '0');
+      return `${year}-${month}-${day}T${hours}:${minutes}`;
+    }
+
+    return value.trim().replace(' ', 'T').slice(0, 16);
+  };
+
+  const findExistingHearingEventForProcess = (process: Process, hearingDate: Date) => {
+    const expectedTitle = `AUDIÊNCIA ${process.hearing_mode === 'online' ? 'POR VÍDEO' : 'PRESENCIAL'} - ${process.process_code || 'PROCESSO'}`;
+    const alternateTitle = `AUDIÊNCIA - ${(process.hearing_mode || 'SEM MODO').toUpperCase()} - ${((process.client_id ? clients.find((client) => client.id === process.client_id)?.full_name : null) || 'Sem cliente').toUpperCase()}`;
+    const hearingMinuteKey = toMinuteKey(hearingDate.toISOString());
+
+    return calendarEvents.find((event) => {
+      if (event.event_type !== 'hearing' || !event.start_at) return false;
+
+      if (event.process_id && event.process_id === process.id) return true;
+
+      if (toMinuteKey(event.start_at) !== hearingMinuteKey) return false;
+
+      const sameClient = process.client_id ? event.client_id === process.client_id : true;
+      const normalizedEventTitle = (event.title || '').trim().toUpperCase();
+
+      return sameClient && (normalizedEventTitle === expectedTitle || normalizedEventTitle === alternateTitle);
+    });
   };
 
   const availableFutureEvents = useMemo<AvailableEventOption[]>(() => {
@@ -640,11 +682,7 @@ const RepresentativesPanel: React.FC<RepresentativesPanelProps> = ({
         const hearingInfo = getProcessHearingDateTime(process);
         if (!hearingInfo || hearingInfo.parsed < now) return null;
 
-        const existingEvent = realEvents.find((event) => {
-          if (event.process_id !== process.id || event.event_type !== 'hearing') return false;
-          const existingDate = new Date(event.start_at);
-          return !Number.isNaN(existingDate.getTime()) && existingDate.getTime() === hearingInfo.parsed.getTime();
-        });
+        const existingEvent = findExistingHearingEventForProcess(process, hearingInfo.parsed);
 
         if (existingEvent) return null;
 
@@ -716,7 +754,7 @@ const RepresentativesPanel: React.FC<RepresentativesPanelProps> = ({
   }
 
   return (
-    <div className="rounded-2xl border border-slate-200 bg-white text-slate-900 shadow-sm overflow-hidden">
+    <div className="flex max-h-[92vh] flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white text-slate-900 shadow-sm">
       <div className="h-2 w-full bg-orange-500" />
       {/* Header */}
       <div className="border-b border-slate-200 bg-white px-4 py-4 sm:px-6">
@@ -810,7 +848,7 @@ const RepresentativesPanel: React.FC<RepresentativesPanelProps> = ({
       </div>
 
       {/* Content */}
-      <div className="p-4 sm:p-6">
+      <div className="min-h-0 flex-1 overflow-y-auto p-4 sm:p-6">
         <div className="mb-4 rounded-2xl border border-slate-200 bg-gradient-to-r from-slate-50 to-white px-4 py-3">
           <div className="flex items-center justify-between gap-3">
             <div>
@@ -946,6 +984,12 @@ const RepresentativesPanel: React.FC<RepresentativesPanelProps> = ({
                           <span className="flex items-center gap-1">
                             <FileText className="w-3.5 h-3.5" />
                             {rep.cpf}
+                          </span>
+                        )}
+                        {rep.oab_number && (
+                          <span className="flex items-center gap-1">
+                            <Scale className="w-3.5 h-3.5" />
+                            OAB: {rep.oab_number}
                           </span>
                         )}
                         {rep.phone && (
@@ -1240,6 +1284,17 @@ const RepresentativesPanel: React.FC<RepresentativesPanelProps> = ({
                     className="w-full px-4 py-2.5 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500"
                     placeholder="(00) 0 0000-0000"
                     maxLength={16}
+                  />
+                </div>
+
+                <div className="sm:col-span-2">
+                  <label className="block text-sm font-medium text-slate-700 mb-1">OAB Número</label>
+                  <input
+                    type="text"
+                    value={representativeForm.oab_number || ''}
+                    onChange={(e) => setRepresentativeForm({ ...representativeForm, oab_number: e.target.value })}
+                    className="w-full px-4 py-2.5 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500"
+                    placeholder="Ex.: MT 12345"
                   />
                 </div>
 
@@ -1571,12 +1626,12 @@ const RepresentativesPanel: React.FC<RepresentativesPanelProps> = ({
         {isPaymentModalOpen && payingAppointment && (
           <div className="fixed inset-0 z-[70] flex items-center justify-center px-3 sm:px-6 py-4">
             <div className="absolute inset-0 bg-slate-900/70 backdrop-blur-sm" onClick={() => setIsPaymentModalOpen(false)} />
-            <div className="relative flex w-full max-w-md flex-col overflow-hidden rounded-2xl bg-white text-slate-900 shadow-2xl ring-1 ring-black/5">
+            <div className="relative flex w-full max-w-2xl max-h-[92vh] flex-col overflow-hidden rounded-2xl bg-white text-slate-900 shadow-2xl ring-1 ring-black/5">
               <div className="h-2 w-full bg-orange-500" />
               <div className="flex items-start justify-between gap-4 border-b border-slate-200 bg-white px-5 sm:px-8 py-5">
                 <div>
                   <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">Pagamento</p>
-                  <h3 className="text-xl font-semibold text-slate-900">Registrar Pagamento</h3>
+                  <h3 className="text-xl font-semibold text-slate-900">Confirmar Pagamento do Correspondente</h3>
                 </div>
                 <button
                   onClick={() => setIsPaymentModalOpen(false)}
@@ -1586,64 +1641,98 @@ const RepresentativesPanel: React.FC<RepresentativesPanelProps> = ({
                 </button>
               </div>
 
-              <div className="space-y-4 bg-white p-4 sm:p-6 md:p-8">
-                <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-4">
-                  <p className="text-sm text-emerald-800">
-                    <strong>Correspondente:</strong> {payingAppointment.representative?.full_name}
-                  </p>
-                  <p className="text-sm text-emerald-800">
-                    <strong>Valor:</strong> {formatCurrency(payingAppointment.service_value)}
-                  </p>
-                  {payingAppointment.representative?.pix_key && (
-                    <p className="mt-2 text-sm text-emerald-800">
-                      <strong>PIX:</strong> {payingAppointment.representative.pix_key}
-                    </p>
-                  )}
-                </div>
+              <div className="min-h-0 flex-1 overflow-y-auto bg-white p-4 sm:p-6 md:p-8">
+                <div className="space-y-5">
+                  <div className="grid gap-4 lg:grid-cols-[1.15fr_0.85fr]">
+                    <div className="space-y-4">
+                      <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-4">
+                        <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-emerald-700">Resumo do pagamento</p>
+                        <div className="mt-3 space-y-2 text-sm text-emerald-900">
+                          <p><strong>Correspondente:</strong> {payingAppointment.representative?.full_name || '-'}</p>
+                          <p><strong>Compromisso:</strong> {payingAppointment.calendar_event?.title || 'Compromisso não encontrado'}</p>
+                          <p><strong>Data da diligência:</strong> {formatDate(payingAppointment.service_date)}</p>
+                          <p><strong>Valor:</strong> {formatCurrency(payingAppointment.service_value)}</p>
+                        </div>
+                      </div>
 
-                <div>
-                  <label className="mb-1 block text-sm font-medium text-slate-700">Data do Pagamento *</label>
-                  <input
-                    type="date"
-                    value={paymentForm.payment_date}
-                    onChange={(e) => setPaymentForm({ ...paymentForm, payment_date: e.target.value })}
-                    className="w-full rounded-lg border border-slate-200 bg-white px-4 py-2.5 focus:border-orange-500 focus:outline-none focus:ring-2 focus:ring-orange-500/20"
-                  />
-                </div>
+                      <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+                        <div className="flex items-center gap-2">
+                          <CreditCard className="h-4 w-4 text-orange-500" />
+                          <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">Dados bancários do correspondente</p>
+                        </div>
+                        <div className="mt-3 grid gap-3 sm:grid-cols-2 text-sm text-slate-700">
+                          <div className="rounded-lg border border-slate-200 bg-white p-3 sm:col-span-2">
+                            <span className="block text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-400">Chave PIX</span>
+                            <span className="mt-1 block break-all text-slate-900">{payingAppointment.representative?.pix_key || 'Não informado'}</span>
+                          </div>
+                          <div className="rounded-lg border border-slate-200 bg-white p-3">
+                            <span className="block text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-400">Banco</span>
+                            <span className="mt-1 block text-slate-900">{payingAppointment.representative?.bank_name || 'Não informado'}</span>
+                          </div>
+                          <div className="rounded-lg border border-slate-200 bg-white p-3">
+                            <span className="block text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-400">Agência</span>
+                            <span className="mt-1 block text-slate-900">{payingAppointment.representative?.bank_agency || 'Não informado'}</span>
+                          </div>
+                          <div className="rounded-lg border border-slate-200 bg-white p-3 sm:col-span-2">
+                            <span className="block text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-400">Conta</span>
+                            <span className="mt-1 block text-slate-900">{payingAppointment.representative?.bank_account || 'Não informado'}</span>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
 
-                <div>
-                  <label className="mb-1 block text-sm font-medium text-slate-700">Método de Pagamento *</label>
-                  <select
-                    value={paymentForm.payment_method}
-                    onChange={(e) => setPaymentForm({ ...paymentForm, payment_method: e.target.value as PaymentMethod })}
-                    className="w-full rounded-lg border border-slate-200 bg-white px-4 py-2.5 focus:border-orange-500 focus:outline-none focus:ring-2 focus:ring-orange-500/20"
-                  >
-                    {Object.entries(PAYMENT_METHOD_LABELS_MAP).map(([key, label]) => (
-                      <option key={key} value={key}>{label}</option>
-                    ))}
-                  </select>
-                </div>
+                    <div className="space-y-4">
+                      <div className="rounded-xl border border-orange-200 bg-orange-50 p-4">
+                        <p className="text-sm font-medium text-orange-900">Confirme os dados bancários antes de registrar o pagamento.</p>
+                        <p className="mt-2 text-xs text-orange-700">Após confirmar, a diligência será marcada como paga com a data, método e comprovante informados abaixo.</p>
+                      </div>
 
-                <div>
-                  <label className="mb-1 block text-sm font-medium text-slate-700">Comprovante</label>
-                  <input
-                    type="text"
-                    value={paymentForm.payment_receipt}
-                    onChange={(e) => setPaymentForm({ ...paymentForm, payment_receipt: e.target.value })}
-                    className="w-full rounded-lg border border-slate-200 bg-white px-4 py-2.5 focus:border-orange-500 focus:outline-none focus:ring-2 focus:ring-orange-500/20"
-                    placeholder="Número do comprovante ou referência"
-                  />
-                </div>
+                      <div>
+                        <label className="mb-1 block text-sm font-medium text-slate-700">Data do Pagamento *</label>
+                        <input
+                          type="date"
+                          value={paymentForm.payment_date}
+                          onChange={(e) => setPaymentForm({ ...paymentForm, payment_date: e.target.value })}
+                          className="w-full rounded-lg border border-slate-200 bg-white px-4 py-2.5 focus:border-orange-500 focus:outline-none focus:ring-2 focus:ring-orange-500/20"
+                        />
+                      </div>
 
-                <div>
-                  <label className="mb-1 block text-sm font-medium text-slate-700">Observações</label>
-                  <textarea
-                    value={paymentForm.payment_notes}
-                    onChange={(e) => setPaymentForm({ ...paymentForm, payment_notes: e.target.value })}
-                    rows={3}
-                    className="w-full resize-none rounded-lg border border-slate-200 bg-white px-4 py-2.5 focus:border-orange-500 focus:outline-none focus:ring-2 focus:ring-orange-500/20"
-                    placeholder="Observações sobre o pagamento..."
-                  />
+                      <div>
+                        <label className="mb-1 block text-sm font-medium text-slate-700">Método de Pagamento *</label>
+                        <select
+                          value={paymentForm.payment_method}
+                          onChange={(e) => setPaymentForm({ ...paymentForm, payment_method: e.target.value as PaymentMethod })}
+                          className="w-full rounded-lg border border-slate-200 bg-white px-4 py-2.5 focus:border-orange-500 focus:outline-none focus:ring-2 focus:ring-orange-500/20"
+                        >
+                          {Object.entries(PAYMENT_METHOD_LABELS_MAP).map(([key, label]) => (
+                            <option key={key} value={key}>{label}</option>
+                          ))}
+                        </select>
+                      </div>
+
+                      <div>
+                        <label className="mb-1 block text-sm font-medium text-slate-700">Comprovante</label>
+                        <input
+                          type="text"
+                          value={paymentForm.payment_receipt}
+                          onChange={(e) => setPaymentForm({ ...paymentForm, payment_receipt: e.target.value })}
+                          className="w-full rounded-lg border border-slate-200 bg-white px-4 py-2.5 focus:border-orange-500 focus:outline-none focus:ring-2 focus:ring-orange-500/20"
+                          placeholder="Número do comprovante ou referência"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="mb-1 block text-sm font-medium text-slate-700">Observações</label>
+                        <textarea
+                          value={paymentForm.payment_notes}
+                          onChange={(e) => setPaymentForm({ ...paymentForm, payment_notes: e.target.value })}
+                          rows={4}
+                          className="w-full resize-none rounded-lg border border-slate-200 bg-white px-4 py-2.5 focus:border-orange-500 focus:outline-none focus:ring-2 focus:ring-orange-500/20"
+                          placeholder="Observações sobre o pagamento..."
+                        />
+                      </div>
+                    </div>
+                  </div>
                 </div>
               </div>
 
@@ -1660,7 +1749,7 @@ const RepresentativesPanel: React.FC<RepresentativesPanelProps> = ({
                   className="flex items-center gap-2 rounded-lg bg-orange-500 px-4 py-2 text-sm font-medium text-white transition hover:bg-orange-600 disabled:opacity-50"
                 >
                   {saving && <Loader2 className="w-4 h-4 animate-spin" />}
-                  Confirmar Pagamento
+                  Confirmar e Registrar Pagamento
                 </button>
               </div>
             </div>
