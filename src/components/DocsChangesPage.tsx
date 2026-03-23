@@ -727,6 +727,45 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
 
 const releases: ReleaseNote[] = [
   {
+    version: '1.9.992',
+    date: '23/03/2026',
+    summary: 'Correspondentes/Processos: audiências cadastradas no processo passaram a aparecer no seletor de compromissos para vínculo.',
+    modules: [
+      {
+        moduleId: 'agenda',
+        changes: [
+          {
+            type: 'fix',
+            title: 'Seletor de compromissos agora inclui audiências do módulo de Processos',
+            description: 'O painel de Correspondentes passou a exibir também audiências vindas de `hearing_date` e `hearing_time`, mesmo antes de existir um evento persistido na agenda.',
+          },
+          {
+            type: 'fix',
+            title: 'Vínculo cria automaticamente o evento da agenda quando necessário',
+            description: 'Ao escolher uma audiência originada do processo, o sistema cria o evento correspondente em `calendar_events` antes de salvar o vínculo do correspondente.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.9.991',
+    date: '23/03/2026',
+    summary: 'Correspondentes: o modal de novo cadastro passou a rolar corretamente, mantendo o botão de ação visível em telas menores.',
+    modules: [
+      {
+        moduleId: 'agenda',
+        changes: [
+          {
+            type: 'fix',
+            title: 'Modal de Novo Correspondente com scroll funcional',
+            description: 'O formulário de cadastro agora permite rolagem vertical completa e mantém o rodapé de ação acessível, evitando que o botão final fique escondido.',
+          },
+        ],
+      },
+    ],
+  },
+  {
     version: '1.9.990',
     date: '20/03/2026',
     summary: 'Cloud: o arraste deixou de conflitar com o drag nativo do preview, evitando arquivos indevidos como download.png e preservando a movimentação múltipla.',

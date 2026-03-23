@@ -32,6 +32,7 @@ import {
 import { representativeService } from '../services/representative.service';
 import { calendarService } from '../services/calendar.service';
 import { clientService } from '../services/client.service';
+import { processService } from '../services/process.service';
 import { useDeleteConfirm } from '../contexts/DeleteConfirmContext';
 import { useToastContext } from '../contexts/ToastContext';
 import type {
@@ -49,6 +50,7 @@ import type {
 } from '../types/representative.types';
 import type { CalendarEvent } from '../types/calendar.types';
 import type { Client } from '../types/client.types';
+import type { Process } from '../types/process.types';
 
 // Labels inline para evitar problemas de importação
 const SERVICE_STATUS_LABELS_MAP: Record<ServiceStatus, string> = {
@@ -98,6 +100,7 @@ const RepresentativesPanel: React.FC<RepresentativesPanelProps> = ({
   const [appointments, setAppointments] = useState<RepresentativeAppointment[]>([]);
   const [calendarEvents, setCalendarEvents] = useState<CalendarEvent[]>([]);
   const [clients, setClients] = useState<Client[]>([]);
+  const [processes, setProcesses] = useState<Process[]>([]);
 
   // Filtros
   const [searchTerm, setSearchTerm] = useState('');
@@ -179,16 +182,18 @@ const RepresentativesPanel: React.FC<RepresentativesPanelProps> = ({
   const loadData = useCallback(async () => {
     try {
       setLoading(true);
-      const [reps, apts, events, clientsData] = await Promise.all([
+      const [reps, apts, events, clientsData, processesData] = await Promise.all([
         representativeService.listRepresentatives(),
         representativeService.listAppointments(),
         calendarService.listEvents(),
         clientService.listClients(),
+        processService.listProcesses(),
       ]);
       setRepresentatives(reps);
       setAppointments(apts);
       setCalendarEvents(events);
       setClients(clientsData);
+      setProcesses(processesData);
     } catch (err: any) {
       toast.error('Erro ao carregar dados', err.message);
     } finally {
@@ -423,11 +428,43 @@ const RepresentativesPanel: React.FC<RepresentativesPanelProps> = ({
 
     try {
       setSaving(true);
+      let calendarEventId = appointmentForm.calendar_event_id;
+
+      if (calendarEventId.startsWith('process-hearing:')) {
+        const processId = calendarEventId.replace('process-hearing:', '');
+        const process = processes.find((item) => item.id === processId);
+        const hearingInfo = process ? getProcessHearingDateTime(process) : null;
+
+        if (!process || !hearingInfo) {
+          throw new Error('Não foi possível localizar a audiência do processo selecionado.');
+        }
+
+        const hearingModeLabel = process.hearing_mode === 'online' ? 'por vídeo' : 'presencial';
+        const createdEvent = await calendarService.createEvent({
+          title: `AUDIÊNCIA ${process.hearing_mode === 'online' ? 'POR VÍDEO' : 'PRESENCIAL'} - ${process.process_code || 'PROCESSO'}`,
+          description: process.court
+            ? `Audiência ${hearingModeLabel} do processo ${process.process_code || ''} • ${process.court}`
+            : `Audiência ${hearingModeLabel} do processo ${process.process_code || ''}`,
+          event_type: 'hearing',
+          status: 'pendente',
+          start_at: hearingInfo.dateTime,
+          process_id: process.id,
+          client_id: process.client_id || null,
+        });
+
+        calendarEventId = createdEvent.id;
+      }
+
+      const payload = {
+        ...appointmentForm,
+        calendar_event_id: calendarEventId,
+      };
+
       if (editingAppointment) {
-        await representativeService.updateAppointment(editingAppointment.id, appointmentForm);
+        await representativeService.updateAppointment(editingAppointment.id, payload);
         toast.success('Vínculo atualizado');
       } else {
-        await representativeService.createAppointment(appointmentForm);
+        await representativeService.createAppointment(payload);
         toast.success('Correspondente vinculado ao compromisso');
       }
       await loadData();
@@ -570,10 +607,20 @@ const RepresentativesPanel: React.FC<RepresentativesPanelProps> = ({
     return `${getEventTypeLabel(event.event_type)} | ${formatDate(event.start_at)} | ${formatTime(event.start_at)} | ${title}${clientLabel}${shortDescription}`;
   };
 
+  const getProcessHearingDateTime = (process: Process) => {
+    if (!process.hearing_scheduled || !process.hearing_date) return null;
+    const time = process.hearing_time && process.hearing_time.trim() ? process.hearing_time.trim() : '09:00';
+    const normalizedTime = time.length === 5 ? `${time}:00` : time;
+    const dateTime = `${process.hearing_date}T${normalizedTime}`;
+    const parsed = new Date(dateTime);
+    if (Number.isNaN(parsed.getTime())) return null;
+    return { parsed, dateTime };
+  };
+
   const availableFutureEvents = useMemo(() => {
     const now = new Date();
 
-    return calendarEvents
+    const realEvents = calendarEvents
       .filter((event) => event.event_type === 'hearing' || event.event_type === 'meeting')
       .filter((event) => {
         if (!event.start_at) return false;
@@ -581,7 +628,49 @@ const RepresentativesPanel: React.FC<RepresentativesPanelProps> = ({
         return !Number.isNaN(eventDate.getTime()) && eventDate >= now;
       })
       .sort((a, b) => new Date(a.start_at).getTime() - new Date(b.start_at).getTime());
-  }, [calendarEvents]);
+
+    const processHearings = processes
+      .filter((process) => process.hearing_scheduled && process.hearing_date)
+      .map((process) => {
+        const hearingInfo = getProcessHearingDateTime(process);
+        if (!hearingInfo || hearingInfo.parsed < now) return null;
+
+        const existingEvent = realEvents.find((event) => {
+          if (event.process_id !== process.id || event.event_type !== 'hearing') return false;
+          const existingDate = new Date(event.start_at);
+          return !Number.isNaN(existingDate.getTime()) && existingDate.getTime() === hearingInfo.parsed.getTime();
+        });
+
+        if (existingEvent) return null;
+
+        const clientName = clients.find((client) => client.id === process.client_id)?.full_name;
+        const hearingModeLabel = process.hearing_mode === 'online' ? 'POR VÍDEO' : 'PRESENCIAL';
+        const title = `AUDIÊNCIA ${hearingModeLabel} - ${process.process_code || 'PROCESSO'}`;
+
+        return {
+          id: `process-hearing:${process.id}`,
+          title,
+          description: process.court || null,
+          event_type: 'hearing' as const,
+          status: 'pendente' as const,
+          start_at: hearingInfo.dateTime,
+          end_at: null,
+          notify_minutes_before: null,
+          deadline_id: null,
+          requirement_id: null,
+          process_id: process.id,
+          client_id: process.client_id,
+          created_at: process.created_at,
+          updated_at: process.updated_at,
+          __source: 'process-hearing' as const,
+          __clientName: clientName || null,
+        };
+      })
+      .filter((event): event is CalendarEvent & { __source: 'process-hearing'; __clientName: string | null } => Boolean(event));
+
+    return [...realEvents, ...processHearings]
+      .sort((a, b) => new Date(a.start_at).getTime() - new Date(b.start_at).getTime());
+  }, [calendarEvents, processes, clients]);
 
   const getServiceStatusColor = (status: ServiceStatus) => {
     switch (status) {
@@ -1111,8 +1200,8 @@ const RepresentativesPanel: React.FC<RepresentativesPanelProps> = ({
               </button>
             </div>
 
-            <div className="flex-1 bg-white">
-              <div className="p-4 sm:p-6 md:p-8 space-y-4 sm:space-y-5 overflow-y-auto h-full">
+            <div className="min-h-0 flex-1 overflow-y-auto bg-white">
+              <div className="p-4 pb-24 sm:p-6 sm:pb-28 md:p-8 md:pb-32 space-y-4 sm:space-y-5">
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div className="sm:col-span-2">
                   <label className="block text-sm font-medium text-slate-700 mb-1">Nome Completo *</label>
@@ -1240,7 +1329,7 @@ const RepresentativesPanel: React.FC<RepresentativesPanelProps> = ({
               </div>
             </div>
 
-            <div className="border-t border-slate-200 bg-white px-5 sm:px-8 py-5 flex justify-end gap-3">
+            <div className="sticky bottom-0 z-10 border-t border-slate-200 bg-white/95 px-5 sm:px-8 py-5 flex justify-end gap-3 backdrop-blur-sm">
               <button
                 onClick={() => setIsRepresentativeModalOpen(false)}
                 className="px-4 py-2 text-sm text-slate-600 hover:text-slate-900 transition"

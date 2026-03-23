@@ -1,5 +1,15 @@
 # Changelog
  
+## 1.9.992
+- **Correspondentes/Processos**: Corrigida a listagem de compromissos para incluir audiências cadastradas diretamente no módulo de Processos.
+  - O seletor de vínculo agora considera também audiências salvas em `hearing_date` e `hearing_time`, mesmo quando ainda não existe registro correspondente em `calendar_events`
+  - Ao vincular um correspondente a uma audiência vinda do processo, o evento da agenda é criado automaticamente para manter o vínculo consistente
+
+## 1.9.991
+- **Correspondentes**: Corrigido o modal de `Novo Correspondente` para permitir rolagem completa em telas menores.
+  - O corpo do modal agora usa scroll vertical corretamente sem esconder os últimos campos
+  - O rodapé com a ação de cadastro foi mantido visível e acessível durante a navegação pelo formulário
+
 ## 1.9.990
 - **Cloud**: Corrigido o conflito entre o drag interno do módulo e o drag nativo do preview do navegador.
   - Os cards do Cloud agora usam um handler de drag interno padronizado para preservar a seleção múltipla durante a movimentação
