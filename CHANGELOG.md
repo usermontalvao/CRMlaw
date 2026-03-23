@@ -1,5 +1,11 @@
 # Changelog
  
+## 1.9.990
+- **Cloud**: Corrigido o conflito entre o drag interno do módulo e o drag nativo do preview do navegador.
+  - Os cards do Cloud agora usam um handler de drag interno padronizado para preservar a seleção múltipla durante a movimentação
+  - Os previews de imagem e PDF deixaram de iniciar o arraste nativo do navegador, evitando a criação indevida de arquivos como `download.png`
+  - O `dataTransfer` do drag passou a ser preenchido explicitamente pelo Cloud para manter o drop consistente nas pastas
+
 ## 1.9.989
 - **Cloud**: Corrigido o arraste de múltiplos itens para respeitar a seleção atual.
   - Ao iniciar o drag sobre um item já selecionado, o módulo agora leva todos os documentos e pastas selecionados juntos

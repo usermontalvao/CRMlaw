@@ -3202,6 +3202,14 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
     setDragVisualState({ folderId: null, mode: clipboardSelection?.mode || 'move' });
   };
 
+  const handleItemDragStart = (event: React.DragEvent<HTMLDivElement>, itemKey: string) => {
+    event.stopPropagation();
+    event.dataTransfer.effectAllowed = clipboardSelection?.mode === 'copy' ? 'copy' : 'move';
+    event.dataTransfer.setData('text/plain', itemKey);
+    event.dataTransfer.setData('application/x-cloud-item', itemKey);
+    handleDragStart(itemKey);
+  };
+
   const handleDragEnd = () => {
     setDraggingItemKey(null);
     setDraggingSelectionKeys([]);
@@ -4858,7 +4866,7 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
                         data-cloud-item="true"
                         ref={(node) => { itemElementMapRef.current[itemKey] = node; }}
                         draggable
-                        onDragStart={() => handleDragStart(itemKey)}
+                        onDragStart={(event) => handleItemDragStart(event, itemKey)}
                         onDragEnd={handleDragEnd}
                         onDragOver={(e) => {
                           e.preventDefault();
@@ -5020,7 +5028,7 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
                       data-cloud-item="true"
                       ref={(node) => { itemElementMapRef.current[itemKey] = node; }}
                       draggable
-                      onDragStart={() => handleDragStart(itemKey)}
+                      onDragStart={(event) => handleItemDragStart(event, itemKey)}
                       onDragEnd={handleDragEnd}
                       className={`flex flex-col gap-2 px-4 py-3 border-b border-slate-100 text-sm cursor-pointer sm:grid sm:grid-cols-[minmax(260px,2.4fr)_170px_170px_130px_220px] sm:gap-3 sm:py-2.5 ${
                         isSelected ? 'bg-orange-50' : 'hover:bg-slate-50'
@@ -5168,7 +5176,7 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
                           data-cloud-item="true"
                           ref={(node) => { itemElementMapRef.current[itemKey] = node; }}
                           draggable
-                          onDragStart={() => handleDragStart(itemKey)}
+                          onDragStart={(event) => handleItemDragStart(event, itemKey)}
                           onDragEnd={handleDragEnd}
                           onDragOver={(e) => {
                             e.preventDefault();
@@ -5322,7 +5330,7 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
                         data-cloud-item="true"
                         ref={(node) => { itemElementMapRef.current[itemKey] = node; }}
                         draggable
-                        onDragStart={() => handleDragStart(itemKey)}
+                        onDragStart={(event) => handleItemDragStart(event, itemKey)}
                         onDragEnd={handleDragEnd}
                         className={`rounded-[24px] border p-4 bg-white cursor-pointer transition ${isSelected ? 'border-orange-300 bg-orange-50/40 shadow-[0_14px_34px_-24px_rgba(249,115,22,0.45)]' : 'border-slate-200/70 shadow-[0_12px_32px_rgba(44,47,48,0.05)] hover:border-orange-200 hover:shadow-[0_18px_38px_-18px_rgba(25,28,29,0.12)]'}`}
                         onClick={(event) => {
@@ -5408,12 +5416,12 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
                           </div>
                           {isImageFile(file.mime_type) && previewUrl ? (
                             <div className={`${cardPreviewHeightClass} flex items-center justify-center bg-slate-100 p-2`}>
-                              <img src={previewUrl} alt={file.original_name} className="h-full w-full rounded-xl object-contain bg-white" />
+                              <img src={previewUrl} alt={file.original_name} draggable={false} onDragStart={(event) => event.preventDefault()} className="h-full w-full rounded-xl object-contain bg-white" />
                             </div>
                           ) : isPdfFile(file.mime_type, file.original_name) ? (
                             <div className={`${cardPreviewHeightClass} flex items-center justify-center overflow-hidden bg-slate-100 p-2`}>
                               {pdfThumbnailUrl ? (
-                                <img src={pdfThumbnailUrl} alt={file.original_name} className="h-full w-full rounded-xl object-contain bg-white" />
+                                <img src={pdfThumbnailUrl} alt={file.original_name} draggable={false} onDragStart={(event) => event.preventDefault()} className="h-full w-full rounded-xl object-contain bg-white" />
                               ) : (
                                 <div className="flex h-full w-full flex-col items-center justify-center gap-2 rounded-xl bg-white text-slate-500">
                                   <Loader2 className="h-5 w-5 animate-spin" />

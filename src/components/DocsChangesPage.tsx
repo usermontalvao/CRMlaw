@@ -727,6 +727,28 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
 
 const releases: ReleaseNote[] = [
   {
+    version: '1.9.990',
+    date: '20/03/2026',
+    summary: 'Cloud: o arraste deixou de conflitar com o drag nativo do preview, evitando arquivos indevidos como download.png e preservando a movimentação múltipla.',
+    modules: [
+      {
+        moduleId: 'cloud',
+        changes: [
+          {
+            type: 'fix',
+            title: 'Drag interno padronizado nos cards do Cloud',
+            description: 'Os cards passaram a iniciar o arraste usando um handler interno único, com preenchimento explícito do dataTransfer para manter o drop consistente.',
+          },
+          {
+            type: 'fix',
+            title: 'Preview deixou de disparar drag nativo do navegador',
+            description: 'As imagens de preview de arquivos e PDFs passaram a bloquear o arraste nativo do browser, evitando a geração indevida de arquivos como download.png durante a movimentação.',
+          },
+        ],
+      },
+    ],
+  },
+  {
     version: '1.9.989',
     date: '20/03/2026',
     summary: 'Cloud: o arraste passou a respeitar a seleção múltipla, permitindo mover vários itens juntos em uma única operação.',
