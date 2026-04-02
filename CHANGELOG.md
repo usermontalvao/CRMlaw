@@ -1,5 +1,46 @@
 # Changelog
  
+## 1.10.007
+- **Prazos**: Ajustada a regra do scheduler de lembretes.
+  - O lembrete agora respeita apenas o valor de `notify_days_before` salvo na criação/edição do prazo
+  - Se o prazo não tiver `notify_days_before` válido, nenhum lembrete é enviado
+  - Prazos com status diferente de `pendente` não entram no scheduler, então prazo cumprido não envia lembrete
+
+## 1.10.006
+- **Prazos**: Template de email redesenhado no estilo Jurius (laranja, logo J, responsivo).
+  - Header com gradiente laranja e logo "J" branco, idêntico ao email de assinatura/OTP
+  - Card do prazo com fundo `#fff7ed` e borda `#fdba74` (estilo laranja do sistema)
+  - Botão "Acessar Sistema" laranja com gradiente
+  - Footer com marca Jurius • Gestão Jurídica
+  - Suporte a dois modos: `assigned` (novo prazo) e `reminder` (lembrete)
+- **Prazos**: Notificação lembrete por email 3 dias antes do vencimento.
+  - `notification-scheduler` agora envia email lembrete via `notify-deadline-assigned` com `mode: 'reminder'`
+  - Default `notify_days_before` alterado de 2 para 3 dias
+  - Deduplicação: máximo 1 email por prazo por dia (via `deadline_email_reminder` na tabela `user_notifications`)
+  - Email enviado apenas ao responsável do prazo (não a todos os usuários)
+
+## 1.10.005
+- **Prazos**: Notificação por email ao atribuir prazo a um responsável.
+  - Edge function `notify-deadline-assigned` envia email via SMTP (Hostinger) com template HTML premium
+  - Template inclui: título, descrição, data de vencimento com contagem de dias, prioridade com cor, tipo, cliente e processo
+  - Email disparado automaticamente ao criar prazo com responsável ou ao alterar o responsável na edição
+  - Envio não-bloqueante: não impede o salvamento do prazo em caso de falha no email
+  - SMTP usa credenciais da assinatura (`assinatura@advcuiaba.com` via Hostinger)
+  - Email do responsável obtido via função SQL `get_email_by_profile_id` (join profiles + auth.users)
+  - Corrigida comparação de IDs: agora usa profile ID ao invés de auth ID para evitar notificação a si mesmo
+
+## 1.10.004
+- **Prazos**: Filtro padrão agora mostra apenas prazos atribuídos ao usuário logado.
+  - Usuários não-admin veem somente seus próprios prazos ao abrir o módulo
+  - Administradores continuam vendo todos os prazos por padrão
+  - O filtro de responsável pode ser alterado manualmente a qualquer momento
+
+## 1.10.003
+- **Assinatura**: Implementado webhook de conclusão para avisar outro sistema quando o documento for totalmente assinado.
+  - O disparo acontece na edge function pública de assinatura após todos os signatários concluírem o fluxo
+  - O envio é não bloqueante para não impedir a finalização da assinatura em caso de falha externa
+  - O endpoint é configurável por ambiente via `WEBHOOK_SIGNATURE_SIGNED_URL`, com header opcional `X-Webhook-Secret` via `WEBHOOK_SIGNATURE_SIGNED_SECRET`
+
 ## 1.10.002
 - **Agenda/Correspondentes**: Corrigida a duplicação visual de audiências após editar compromisso vinculado.
   - A detecção de audiência já existente passou a priorizar o `process_id`, mesmo se o horário ou título do evento tiver sido editado

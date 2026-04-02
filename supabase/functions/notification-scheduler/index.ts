@@ -80,7 +80,7 @@ async function checkDeadlineReminders() {
 
   const { data: deadlines, error } = await supabase
     .from("deadlines")
-    .select("id, title, due_date, status, priority, notify_days_before, process_id, requirement_id, clients(full_name)")
+    .select("id, title, due_date, status, priority, notify_days_before, process_id, requirement_id, responsible_id, clients(full_name)")
     .eq("status", "pendente")
     .gte("due_date", now.toISOString())
     .lte("due_date", windowEnd.toISOString());
@@ -109,9 +109,10 @@ async function checkDeadlineReminders() {
         ? notifyDaysBeforeRaw
         : Number.isFinite(Number(notifyDaysBeforeRaw))
           ? Number(notifyDaysBeforeRaw)
-          : 2;
+          : null;
 
     if (daysUntilDue < 0) continue;
+    if (notifyDaysBefore === null || notifyDaysBefore < 0) continue;
     if (daysUntilDue > notifyDaysBefore) continue;
 
     const title =
@@ -141,6 +142,55 @@ async function checkDeadlineReminders() {
           dedupe_key: dedupeKey,
         },
       });
+    }
+
+    // 📧 Enviar email lembrete ao responsável (1 email por prazo por dia, deduplicado)
+    if (deadline.responsible_id) {
+      const emailDedupeKey = `email_deadline_reminder_${deadline.id}_${daysUntilDue}`;
+      const { data: alreadySent } = await supabase
+        .from("user_notifications")
+        .select("id")
+        .eq("type", "deadline_email_reminder")
+        .eq("deadline_id", deadline.id)
+        .filter("metadata->>dedupe_key", "eq", emailDedupeKey)
+        .limit(1);
+
+      if (!alreadySent || alreadySent.length === 0) {
+        try {
+          const fnUrl = `${supabaseUrl}/functions/v1/notify-deadline-assigned`;
+          const resp = await fetch(fnUrl, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              "Authorization": `Bearer ${supabaseServiceKey}`,
+            },
+            body: JSON.stringify({
+              deadline_id: deadline.id,
+              assigned_by_id: null,
+              mode: "reminder",
+            }),
+          });
+          const result = await resp.json();
+          if (result.success) {
+            console.log(`📧 Email lembrete enviado: ${deadline.title}`);
+            // Registrar envio para deduplicação
+            await supabase.from("user_notifications").insert({
+              user_id: users[0].user_id,
+              title: `📧 Email lembrete enviado`,
+              message: `${deadline.title} - ${daysUntilDue} dia(s)`,
+              type: "deadline_email_reminder",
+              deadline_id: deadline.id,
+              read: true,
+              metadata: { dedupe_key: emailDedupeKey, days_until_due: daysUntilDue },
+              created_at: new Date().toISOString(),
+            });
+          } else {
+            console.error(`❌ Falha email lembrete: ${result.error}`);
+          }
+        } catch (emailErr: any) {
+          console.error(`❌ Erro ao enviar email lembrete: ${emailErr?.message}`);
+        }
+      }
     }
   }
 }

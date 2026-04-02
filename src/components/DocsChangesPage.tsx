@@ -727,6 +727,88 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
 
 const releases: ReleaseNote[] = [
   {
+    version: '1.10.007',
+    date: '02/04/2026',
+    summary: 'Prazos: ajustada regra do scheduler para respeitar apenas o notify_days_before definido no prazo.',
+    modules: [
+      {
+        name: 'Prazos',
+        icon: ListTodo,
+        changes: [
+          {
+            type: 'fix',
+            description: 'O lembrete agora respeita apenas o valor de `notify_days_before` salvo na criação/edição do prazo',
+          },
+          {
+            type: 'fix',
+            description: 'Se o prazo não tiver `notify_days_before` válido, nenhum lembrete é enviado',
+          },
+          {
+            type: 'fix',
+            description: 'Prazos com status diferente de `pendente` não entram no scheduler, então prazo cumprido não envia lembrete',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.10.006',
+    date: '02/04/2026',
+    summary: 'Prazos: template de email redesenhado no estilo Jurius e implementado lembrete por email.',
+    modules: [
+      {
+        name: 'Prazos',
+        icon: ListTodo,
+        changes: [
+          {
+            type: 'feature',
+            description: 'Template de email redesenhado no estilo Jurius (laranja, logo J, responsivo)',
+          },
+          {
+            type: 'feature',
+            description: 'Header com gradiente laranja e logo "J" branco, idêntico ao email de assinatura/OTP',
+          },
+          {
+            type: 'feature',
+            description: 'Card do prazo com fundo `#fff7ed` e borda `#fdba74` (estilo laranja do sistema)',
+          },
+          {
+            type: 'feature',
+            description: 'Botão "Acessar Sistema" laranja com gradiente',
+          },
+          {
+            type: 'feature',
+            description: 'Footer com marca Jurius • Gestão Jurídica',
+          },
+          {
+            type: 'feature',
+            description: 'Suporte a dois modos: `assigned` (novo prazo) e `reminder` (lembrete)',
+          },
+          {
+            type: 'feature',
+            description: 'Notificação lembrete por email 3 dias antes do vencimento',
+          },
+          {
+            type: 'feature',
+            description: '`notification-scheduler` agora envia email lembrete via `notify-deadline-assigned` com `mode: \'reminder\'`',
+          },
+          {
+            type: 'feature',
+            description: 'Default `notify_days_before` alterado de 2 para 3 dias',
+          },
+          {
+            type: 'feature',
+            description: 'Deduplicação: máximo 1 email por prazo por dia (via `deadline_email_reminder` na tabela `user_notifications`)',
+          },
+          {
+            type: 'feature',
+            description: 'Email enviado apenas ao responsável do prazo (não a todos os usuários)',
+          },
+        ],
+      },
+    ],
+  },
+  {
     version: '1.10.002',
     date: '23/03/2026',
     summary: 'Agenda/Correspondentes: editar compromisso vinculado não faz mais a audiência do processo reaparecer duplicada na agenda.',

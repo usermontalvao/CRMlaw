@@ -21,6 +21,128 @@ function generateVerificationHash(): string {
   return Array.from(array, (b) => b.toString(16).padStart(2, '0')).join('').toUpperCase();
 }
 
+async function dispatchSignatureCompletedWebhook(input: {
+  request: Record<string, unknown>;
+  signer: Record<string, unknown>;
+  totalSigners: number;
+}): Promise<void> {
+  const webhookUrl = (Deno.env.get('WEBHOOK_SIGNATURE_SIGNED_URL') ?? '').trim();
+  if (!webhookUrl) return;
+
+  const webhookSecret = (Deno.env.get('WEBHOOK_SIGNATURE_SIGNED_SECRET') ?? '').trim();
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 10000);
+
+  try {
+    const response = await fetch(webhookUrl, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Webhook-Event': 'signature.completed',
+        ...(webhookSecret ? { 'X-Webhook-Secret': webhookSecret } : {}),
+      },
+      body: JSON.stringify({
+        event: 'signature.completed',
+        sent_at: new Date().toISOString(),
+        document: {
+          id: input.request.id,
+          name: input.request.document_name,
+          client_name: input.request.client_name,
+          process_number: input.request.process_number,
+          signed_at: input.request.signed_at,
+        },
+        signers: await getAllSignersWithLinks(input.request.id as string),
+      }),
+      signal: controller.signal,
+    });
+
+    if (!response.ok) {
+      const responseText = await response.text().catch(() => '');
+      throw new Error(`Webhook respondeu ${response.status}: ${responseText || response.statusText}`);
+    }
+
+    console.log('✅ Signature completion webhook enviado com sucesso');
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+async function getAllSignersWithLinks(requestId: string): Promise<Array<{
+  name: string;
+  email: string;
+  cpf: string | null;
+  phone: string | null;
+  client_name: string | null;
+  client_id: string | null;
+  signed_at: string;
+  document_link?: string;
+}>> {
+  const supabaseUrl = Deno.env.get('SUPABASE_URL') ?? '';
+  const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '';
+  const supabase = createClient(supabaseUrl, serviceRoleKey);
+
+  // Buscar signatários com dados do request para ter client_id/client_name
+  const { data: signers } = await supabase
+    .from('signature_signers')
+    .select(`
+      name,
+      email,
+      cpf,
+      phone,
+      signed_at,
+      signed_document_path,
+      signature_request_id
+    `)
+    .eq('signature_request_id', requestId)
+    .eq('status', 'signed')
+    .order('signed_at', { ascending: true });
+
+  if (!signers || signers.length === 0) return [];
+
+  // Buscar dados do request para obter client_id/client_name
+  const { data: request } = await supabase
+    .from('signature_requests')
+    .select('client_id, client_name')
+    .eq('id', requestId)
+    .single();
+
+  return await Promise.all(signers.map(async (signer: any) => {
+    let documentLink: string | undefined;
+
+    if (signer.signed_document_path) {
+      try {
+        const buckets = ['assinados', 'generated-documents', 'document-templates'];
+        for (const bucket of buckets) {
+          try {
+            const { data } = await supabase.storage
+              .from(bucket)
+              .createSignedUrl(signer.signed_document_path, 3600);
+            if (data?.signedUrl) {
+              documentLink = data.signedUrl;
+              break;
+            }
+          } catch {
+            // Tentar próximo bucket
+          }
+        }
+      } catch {
+        // Ignorar erro de link
+      }
+    }
+
+    return {
+      name: signer.name,
+      email: signer.email,
+      cpf: signer.cpf,
+      phone: signer.phone,
+      client_name: request?.client_name || null,
+      client_id: request?.client_id || null,
+      signed_at: signer.signed_at,
+      document_link: documentLink,
+    };
+  }));
+}
+
 async function uploadBase64Image(
   supabase: ReturnType<typeof createClient>,
   base64: string,
@@ -74,9 +196,20 @@ Deno.serve(async (req: Request) => {
 
     const supabase = createClient(supabaseUrl, serviceRoleKey);
 
-    const payload = await req.json().catch(() => null);
-    if (!payload) {
-      return jsonResponse({ success: false, error: 'Invalid payload' }, 400);
+    let payload: any = null;
+    try {
+      const text = await req.text();
+      if (!text.trim()) {
+        return jsonResponse({ success: false, error: 'Empty request body' }, 400);
+      }
+      payload = JSON.parse(text);
+    } catch (err) {
+      console.error('Failed to parse JSON:', err);
+      return jsonResponse({ success: false, error: 'Invalid JSON format' }, 400);
+    }
+
+    if (!payload || typeof payload !== 'object') {
+      return jsonResponse({ success: false, error: 'Invalid payload: expected JSON object' }, 400);
     }
 
     const {
@@ -94,6 +227,8 @@ Deno.serve(async (req: Request) => {
       ip_address,
       user_agent,
     } = payload;
+
+    console.log('📦 Payload recebido:', Object.keys(payload));
 
     if (!token) {
       return jsonResponse({ success: false, error: 'Token is required' }, 400);
@@ -220,7 +355,7 @@ Deno.serve(async (req: Request) => {
           // Create notification for document creator
           const { data: request } = await supabase
             .from('signature_requests')
-            .select('created_by, document_name')
+            .select('id, created_by, document_name, client_id, client_name, process_id, process_number, requirement_id, requirement_number, status, signed_at, created_at, updated_at')
             .eq('id', signer.signature_request_id)
             .single();
 
@@ -243,6 +378,25 @@ Deno.serve(async (req: Request) => {
               },
             });
             console.log('✅ Notification created for document creator');
+          }
+
+          if (request) {
+            await dispatchSignatureCompletedWebhook({
+              request,
+              signer: {
+                id: updatedSigner.id,
+                signature_request_id: updatedSigner.signature_request_id,
+                name: updatedSigner.name,
+                email: updatedSigner.email,
+                cpf: updatedSigner.cpf,
+                phone: updatedSigner.phone,
+                status: updatedSigner.status,
+                signed_at: updatedSigner.signed_at,
+                verification_hash: updatedSigner.verification_hash,
+                auth_provider: updatedSigner.auth_provider,
+              },
+              totalSigners: allSigners.length,
+            });
           }
         }
       }

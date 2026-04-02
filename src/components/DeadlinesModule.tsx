@@ -37,6 +37,7 @@ import * as XLSX from 'xlsx';
 import { saveAs } from 'file-saver';
 import { PDFDocument, StandardFonts, rgb } from 'pdf-lib';
 import { matchesNormalizedSearch } from '../utils/search';
+import { supabase } from '../config/supabase';
 import { deadlineService } from '../services/deadline.service';
 import { processService } from '../services/process.service';
 import { requirementService } from '../services/requirement.service';
@@ -47,6 +48,7 @@ import { ClientSearchSelect } from './ClientSearchSelect';
 import { useDeleteConfirm } from '../contexts/DeleteConfirmContext';
 import { userNotificationService } from '../services/userNotification.service';
 import { useAuth } from '../contexts/AuthContext';
+import { usePermissions } from '../hooks/usePermissions';
 import type { Deadline, DeadlineStatus, DeadlinePriority, DeadlineType } from '../types/deadline.types';
 import type { Process } from '../types/process.types';
 import type { Requirement } from '../types/requirement.types';
@@ -342,6 +344,7 @@ interface DeadlinesModuleProps {
 const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId, onParamConsumed, prefillData, calendarMonth: propCalendarMonth, calendarYear: propCalendarYear, onCalendarChange }) => {
   const { confirmDelete } = useDeleteConfirm();
   const { user } = useAuth();
+  const { isAdmin, loading: permissionsLoading } = usePermissions();
 
   const [deadlines, setDeadlines] = useState<Deadline[]>([]);
   const [loading, setLoading] = useState(true);
@@ -935,6 +938,14 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
     };
   }, []);
 
+  // Filtro padrão: usuário logado vê apenas seus prazos, admin vê tudo
+  useEffect(() => {
+    if (permissionsLoading || !currentUser) return;
+    if (!isAdmin && currentUser.id) {
+      setFilterResponsible(currentUser.id);
+    }
+  }, [permissionsLoading, isAdmin, currentUser]);
+
   useEffect(() => {
     let active = true;
     setClientsLoading(true);
@@ -1138,6 +1149,7 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
       let updatedDeadline: Deadline | null = null;
 
       if (editingDeadline) {
+        const responsibleChanged = payloadBase.responsible_id && payloadBase.responsible_id !== editingDeadline.responsible_id;
         await deadlineService.updateDeadline(editingDeadline.id, payloadBase);
         updatedDeadline = await deadlineService.getDeadlineById(editingDeadline.id);
         if (updatedDeadline) {
@@ -1146,6 +1158,13 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
           if (selectedDeadlineForView?.id === updatedDeadline.id) {
             setSelectedDeadlineForView(updatedDeadline);
           }
+
+          // 📧 Enviar email se o responsável mudou (não-bloqueante)
+          if (responsibleChanged && user?.id) {
+            supabase.functions.invoke('notify-deadline-assigned', {
+              body: { deadline_id: editingDeadline.id, assigned_by_id: user.id },
+            }).catch((err) => console.error('Erro ao enviar email de prazo:', err));
+          }
         } else {
           await handleReload();
         }
@@ -1153,7 +1172,7 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
         const newDeadline = await deadlineService.createDeadline(payloadBase as any);
         
         // 🔔 Criar notificação para novo prazo
-        if (user?.id && newDeadline && payloadBase.responsible_id && payloadBase.responsible_id !== user.id) {
+        if (user?.id && newDeadline && payloadBase.responsible_id && payloadBase.responsible_id !== currentUser?.id) {
           try {
             const daysUntilDue = Math.ceil((new Date(payloadBase.due_date).getTime() - Date.now()) / (1000 * 60 * 60 * 24));
             const isUrgent = daysUntilDue <= 3 || payloadBase.priority === 'urgente' || payloadBase.priority === 'alta';
@@ -1171,6 +1190,11 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
               },
             });
           } catch {}
+
+          // 📧 Enviar email de notificação (não-bloqueante)
+          supabase.functions.invoke('notify-deadline-assigned', {
+            body: { deadline_id: newDeadline.id, assigned_by_id: user.id },
+          }).catch((err) => console.error('Erro ao enviar email de prazo:', err));
         }
         
         await handleReload();
@@ -2928,7 +2952,7 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
               onChange={(event) => setFilterResponsible(event.target.value)}
               className="h-9 px-3 bg-white border border-slate-200 rounded-lg text-sm text-slate-600 focus:outline-none focus:ring-1 focus:ring-blue-500/30 cursor-pointer hover:bg-slate-50 transition-colors"
             >
-              <option value="">Responsável</option>
+              <option value="">Todos</option>
               <option value={UNASSIGNED_FILTER_VALUE}>Sem responsável</option>
               {members.map((member) => (
                 <option key={member.id} value={member.id}>{member.name}</option>
