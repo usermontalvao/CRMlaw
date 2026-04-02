@@ -1,5 +1,10 @@
 # Changelog
  
+## 1.10.008
+- **Prazos**: Corrigido link do botão "Acessar Sistema" no template de email.
+  - Link atualizado de `app.advcuiaba.com` para `jurius.com.br`
+  - Deployado versão 8 da edge function `notify-deadline-assigned`
+
 ## 1.10.007
 - **Prazos**: Ajustada a regra do scheduler de lembretes.
   - O lembrete agora respeita apenas o valor de `notify_days_before` salvo na criação/edição do prazo

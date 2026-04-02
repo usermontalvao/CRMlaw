@@ -47,6 +47,9 @@ import { matchesNormalizedSearch } from '../utils/search';
    ============================================================================ */
 
 const VERSION_CODENAMES: Record<string, { name: string; emoji: string }> = {
+  '1.10.008': { name: 'Café Link Corrigido', emoji: '🔗' },
+  '1.10.007': { name: 'Café Regra Cumprida', emoji: '✅' },
+  '1.10.006': { name: 'Café Lembrete Laranja', emoji: '🍊' },
   '1.9.915': { name: 'Café Área Ativa', emoji: '🪄' },
   '1.9.914': { name: 'Café Menu Completo', emoji: '📜' },
   '1.9.913': { name: 'Café Clique Liberado', emoji: '🧷' },
@@ -726,6 +729,27 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
 };
 
 const releases: ReleaseNote[] = [
+  {
+    version: '1.10.008',
+    date: '02/04/2026',
+    summary: 'Prazos: corrigido link do botão "Acessar Sistema" no template de email.',
+    modules: [
+      {
+        name: 'Prazos',
+        icon: ListTodo,
+        changes: [
+          {
+            type: 'fix',
+            description: 'Link atualizado de `app.advcuiaba.com` para `jurius.com.br`',
+          },
+          {
+            type: 'fix',
+            description: 'Deployado versão 8 da edge function `notify-deadline-assigned`',
+          },
+        ],
+      },
+    ],
+  },
   {
     version: '1.10.007',
     date: '02/04/2026',
