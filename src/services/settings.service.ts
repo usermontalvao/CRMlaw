@@ -652,6 +652,9 @@ class SettingsService {
 
   /** Bucket público para avatares */
   private avatarBucket = 'profile-avatars';
+  
+  /** Bucket público para perfil */
+  private profileBucket = 'perfil';
 
   private async ensureAvatarBucket() {
     try {
@@ -665,6 +668,24 @@ class SettingsService {
       });
     } catch (error) {
       console.warn('Não foi possível validar bucket de avatares:', error);
+    }
+  }
+
+  private async ensureProfileBucket() {
+    try {
+      const { data } = await supabase.storage.getBucket(this.profileBucket);
+      if (data) return;
+
+      console.log('Criando bucket de perfil:', this.profileBucket);
+      await supabase.storage.createBucket(this.profileBucket, {
+        public: true,
+        fileSizeLimit: 10 * 1024 * 1024, // 10MB
+        allowedMimeTypes: ['image/png', 'image/jpeg', 'image/webp', 'image/svg+xml', 'application/pdf', 'text/plain'],
+      });
+      console.log('Bucket de perfil criado com sucesso');
+    } catch (error) {
+      console.error('Erro ao criar bucket de perfil:', error);
+      throw new Error(`Não foi possível criar o bucket de perfil: ${error}`);
     }
   }
 
@@ -691,6 +712,44 @@ class SettingsService {
     }
 
     const { data } = supabase.storage.from(this.avatarBucket).getPublicUrl(path);
+    return data.publicUrl;
+  }
+
+  /**
+   * Garante que o bucket 'perfil' exista
+   */
+  async ensureProfileBucketExists(): Promise<void> {
+    await this.ensureProfileBucket();
+  }
+
+  /**
+   * Upload de arquivo para o bucket 'perfil'
+   */
+  async uploadToProfileBucket(filePath: string, file: File): Promise<string> {
+    await this.ensureProfileBucket();
+
+    const { error } = await supabase.storage
+      .from(this.profileBucket)
+      .upload(filePath, file, {
+        upsert: true,
+        cacheControl: '3600',
+        contentType: file.type,
+      });
+
+    if (error) {
+      console.error('Erro ao enviar arquivo para bucket perfil:', error);
+      throw new Error('Falha ao enviar arquivo. Tente novamente.');
+    }
+
+    const { data } = supabase.storage.from(this.profileBucket).getPublicUrl(filePath);
+    return data.publicUrl;
+  }
+
+  /**
+   * Obtém URL pública de arquivo no bucket 'perfil'
+   */
+  getProfileBucketPublicUrl(filePath: string): string {
+    const { data } = supabase.storage.from(this.profileBucket).getPublicUrl(filePath);
     return data.publicUrl;
   }
 }

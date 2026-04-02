@@ -47,6 +47,7 @@ import { matchesNormalizedSearch } from '../utils/search';
    ============================================================================ */
 
 const VERSION_CODENAMES: Record<string, { name: string; emoji: string }> = {
+  '1.10.011': { name: 'Café Perfil no Bucket', emoji: '📸' },
   '1.10.010': { name: 'Café Tipagem Corrigida', emoji: '🧩' },
   '1.10.009': { name: 'Café Build Estável', emoji: '🛠️' },
   '1.10.008': { name: 'Café Link Corrigido', emoji: '🔗' },
@@ -731,6 +732,43 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
 };
 
 const releases: ReleaseNote[] = [
+  {
+    version: '1.10.011',
+    date: '02/04/2026',
+    summary: 'Perfil: implementado upload de avatares para bucket dedicado com políticas RLS.',
+    modules: [
+      {
+        moduleId: 'profile',
+        changes: [
+          {
+            type: 'feature',
+            title: 'Bucket "perfil" criado',
+            description: 'Novo bucket público no Supabase Storage para armazenar avatares e capas de perfil',
+          },
+          {
+            type: 'feature',
+            title: 'Políticas RLS implementadas',
+            description: 'Políticas de segurança para permitir uploads controlados e acesso público aos arquivos',
+          },
+          {
+            type: 'feature',
+            title: 'SettingsService atualizado',
+            description: 'Novos métodos para gerenciar bucket "perfil": ensureProfileBucketExists, uploadToProfileBucket, getProfileBucketPublicUrl',
+          },
+          {
+            type: 'fix',
+            title: 'Upload de avatar corrigido',
+            description: 'Avatar agora faz upload para bucket "perfil" em vez de "anexos_chat" inexistente',
+          },
+          {
+            type: 'fix',
+            title: 'Debug detalhado adicionado',
+            description: 'Logs completos para identificar problemas durante upload de arquivos',
+          },
+        ],
+      },
+    ],
+  },
   {
     version: '1.10.010',
     date: '02/04/2026',

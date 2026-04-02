@@ -51,6 +51,7 @@ import {
 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { profileService, type Profile } from '../services/profile.service';
+import { settingsService } from '../services/settings.service';
 import { feedPostsService, type EntityReference, type FeedPost, type PreviewData, type TagRecord } from '../services/feedPosts.service';
 import { matchesNormalizedSearch } from '../utils/search';
 import { feedPollsService, type FeedPoll } from '../services/feedPolls.service';
@@ -1163,18 +1164,21 @@ export const UserProfilePage: React.FC<UserProfilePageProps> = ({ userId, onClos
     if (!user?.id || !isOwnProfile) return;
     setUploadingCover(true);
     try {
+      // Garantir que o bucket 'perfil' exista antes do upload
+      await settingsService.ensureProfileBucketExists();
+
       const fileExt = file.name.split('.').pop();
       const fileName = `cover_${user.id}_${Date.now()}.${fileExt}`;
       const filePath = `covers/${fileName}`;
 
       const { error: uploadError } = await supabase.storage
-        .from('anexos_chat')
+        .from('perfil')
         .upload(filePath, file, { upsert: true });
 
       if (uploadError) throw uploadError;
 
       const { data: urlData } = supabase.storage
-        .from('anexos_chat')
+        .from('perfil')
         .getPublicUrl(filePath);
 
       await supabase
@@ -1209,30 +1213,60 @@ export const UserProfilePage: React.FC<UserProfilePageProps> = ({ userId, onClos
     if (!user?.id || !isOwnProfile) return;
     setUploadingAvatar(true);
     try {
+      console.log('🚀 Iniciando upload do avatar...');
+      console.log('📁 Arquivo:', file.name, 'Tamanho:', file.size, 'Tipo:', file.type);
+      
+      // Garantir que o bucket 'perfil' exista antes do upload
+      console.log('🔍 Verificando bucket perfil...');
+      await settingsService.ensureProfileBucketExists();
+      console.log('✅ Bucket verificado');
+
       const fileExt = file.name.split('.').pop();
       const fileName = `avatar_${user.id}_${Date.now()}.${fileExt}`;
       const filePath = `avatars/${fileName}`;
+      
+      console.log('📂 Caminho do arquivo:', filePath);
 
-      const { error: uploadError } = await supabase.storage
-        .from('anexos_chat')
+      console.log('⬆️ Fazendo upload...');
+      const { data: uploadData, error: uploadError } = await supabase.storage
+        .from('perfil')
         .upload(filePath, file, { upsert: true });
 
-      if (uploadError) throw uploadError;
+      console.log('📤 Upload result:', { uploadData, uploadError });
 
+      if (uploadError) {
+        console.error('❌ Erro no upload:', uploadError);
+        throw uploadError;
+      }
+
+      console.log('🔗 Gerando URL pública...');
       const { data: urlData } = supabase.storage
-        .from('anexos_chat')
+        .from('perfil')
         .getPublicUrl(filePath);
 
-      await supabase
+      console.log('🌐 URL gerada:', urlData.publicUrl);
+
+      console.log('💾 Atualizando perfil...');
+      const { data: updateData, error: updateError } = await supabase
         .from('profiles')
         .update({ avatar_url: urlData.publicUrl })
         .eq('user_id', user.id);
 
+      console.log('📝 Update result:', { updateData, updateError });
+
+      if (updateError) {
+        console.error('❌ Erro ao atualizar perfil:', updateError);
+        throw updateError;
+      }
+
+      console.log('✅ Avatar atualizado com sucesso!');
       setProfile(prev => prev ? { ...prev, avatar_url: urlData.publicUrl } : null);
     } catch (error) {
-      console.error('Erro ao fazer upload do avatar:', error);
+      console.error('💥 Erro completo ao fazer upload do avatar:', error);
+      alert('Erro ao fazer upload do avatar: ' + error.message);
     } finally {
       setUploadingAvatar(false);
+      console.log('🏁 Upload finalizado');
     }
   };
 
