@@ -47,6 +47,7 @@ import { matchesNormalizedSearch } from '../utils/search';
    ============================================================================ */
 
 const VERSION_CODENAMES: Record<string, { name: string; emoji: string }> = {
+  '1.10.010': { name: 'Café Tipagem Corrigida', emoji: '🧩' },
   '1.10.009': { name: 'Café Build Estável', emoji: '🛠️' },
   '1.10.008': { name: 'Café Link Corrigido', emoji: '🔗' },
   '1.10.007': { name: 'Café Regra Cumprida', emoji: '✅' },
@@ -731,13 +732,34 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
 
 const releases: ReleaseNote[] = [
   {
+    version: '1.10.010',
+    date: '02/04/2026',
+    summary: 'Docs/Build: corrigida a tipagem das releases recentes no DocsChangesPage.',
+    modules: [
+      {
+        moduleId: 'docs',
+        changes: [
+          {
+            type: 'fix',
+            title: 'Módulos usam `moduleId`',
+            description: 'Os blocos de módulos agora usam `moduleId` no formato esperado por `ModuleChanges`',
+          },
+          {
+            type: 'fix',
+            title: 'Propriedades inválidas removidas',
+            description: 'Removido o erro de build do TypeScript causado por propriedades inválidas como `name` e `icon`',
+          },
+        ],
+      },
+    ],
+  },
+  {
     version: '1.10.009',
     date: '02/04/2026',
     summary: 'Docs/Build: corrigido erro de build no DocsChangesPage.',
     modules: [
       {
-        name: 'Docs',
-        icon: FileText,
+        moduleId: 'docs',
         changes: [
           {
             type: 'fix',
@@ -759,8 +781,7 @@ const releases: ReleaseNote[] = [
     summary: 'Prazos: corrigido link do botão "Acessar Sistema" no template de email.',
     modules: [
       {
-        name: 'Prazos',
-        icon: ListTodo,
+        moduleId: 'prazos',
         changes: [
           {
             type: 'fix',
@@ -782,8 +803,7 @@ const releases: ReleaseNote[] = [
     summary: 'Prazos: ajustada regra do scheduler para respeitar apenas o notify_days_before definido no prazo.',
     modules: [
       {
-        name: 'Prazos',
-        icon: ListTodo,
+        moduleId: 'prazos',
         changes: [
           {
             type: 'fix',
@@ -810,8 +830,7 @@ const releases: ReleaseNote[] = [
     summary: 'Prazos: template de email redesenhado no estilo Jurius e implementado lembrete por email.',
     modules: [
       {
-        name: 'Prazos',
-        icon: ListTodo,
+        moduleId: 'prazos',
         changes: [
           {
             type: 'feature',

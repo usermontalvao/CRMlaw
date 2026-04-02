@@ -1,5 +1,10 @@
 # Changelog
  
+## 1.10.010
+- **Docs/Build**: Corrigida a tipagem das releases recentes no `DocsChangesPage`.
+  - Os blocos de módulos agora usam `moduleId` no formato esperado por `ModuleChanges`
+  - Removido o erro de build do TypeScript causado por propriedades inválidas como `name` e `icon`
+
 ## 1.10.009
 - **Docs/Build**: Corrigido erro de build no `DocsChangesPage`.
   - As entradas novas do histórico agora incluem o campo obrigatório `title` em cada `ChangeItem`
