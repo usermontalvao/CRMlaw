@@ -1,5 +1,10 @@
 # Changelog
  
+## 1.10.009
+- **Docs/Build**: Corrigido erro de build no `DocsChangesPage`.
+  - As entradas novas do histórico agora incluem o campo obrigatório `title` em cada `ChangeItem`
+  - Corrigido o motivo da falha do TypeScript no deploy/render
+
 ## 1.10.008
 - **Prazos**: Corrigido link do botão "Acessar Sistema" no template de email.
   - Link atualizado de `app.advcuiaba.com` para `jurius.com.br`

@@ -47,6 +47,7 @@ import { matchesNormalizedSearch } from '../utils/search';
    ============================================================================ */
 
 const VERSION_CODENAMES: Record<string, { name: string; emoji: string }> = {
+  '1.10.009': { name: 'Café Build Estável', emoji: '🛠️' },
   '1.10.008': { name: 'Café Link Corrigido', emoji: '🔗' },
   '1.10.007': { name: 'Café Regra Cumprida', emoji: '✅' },
   '1.10.006': { name: 'Café Lembrete Laranja', emoji: '🍊' },
@@ -730,6 +731,29 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
 
 const releases: ReleaseNote[] = [
   {
+    version: '1.10.009',
+    date: '02/04/2026',
+    summary: 'Docs/Build: corrigido erro de build no DocsChangesPage.',
+    modules: [
+      {
+        name: 'Docs',
+        icon: FileText,
+        changes: [
+          {
+            type: 'fix',
+            title: 'ChangeItem completo nas releases novas',
+            description: 'As entradas novas do histórico agora incluem o campo obrigatório `title` em cada `ChangeItem`',
+          },
+          {
+            type: 'fix',
+            title: 'Falha do TypeScript removida',
+            description: 'Corrigido o motivo da falha do TypeScript no deploy/render do `DocsChangesPage`',
+          },
+        ],
+      },
+    ],
+  },
+  {
     version: '1.10.008',
     date: '02/04/2026',
     summary: 'Prazos: corrigido link do botão "Acessar Sistema" no template de email.',
@@ -740,10 +764,12 @@ const releases: ReleaseNote[] = [
         changes: [
           {
             type: 'fix',
+            title: 'Link do botão corrigido',
             description: 'Link atualizado de `app.advcuiaba.com` para `jurius.com.br`',
           },
           {
             type: 'fix',
+            title: 'Deploy da função atualizado',
             description: 'Deployado versão 8 da edge function `notify-deadline-assigned`',
           },
         ],
@@ -761,14 +787,17 @@ const releases: ReleaseNote[] = [
         changes: [
           {
             type: 'fix',
+            title: 'Lembrete respeita configuração do prazo',
             description: 'O lembrete agora respeita apenas o valor de `notify_days_before` salvo na criação/edição do prazo',
           },
           {
             type: 'fix',
+            title: 'Sem configuração, sem lembrete',
             description: 'Se o prazo não tiver `notify_days_before` válido, nenhum lembrete é enviado',
           },
           {
             type: 'fix',
+            title: 'Prazo cumprido não dispara lembrete',
             description: 'Prazos com status diferente de `pendente` não entram no scheduler, então prazo cumprido não envia lembrete',
           },
         ],
@@ -786,46 +815,57 @@ const releases: ReleaseNote[] = [
         changes: [
           {
             type: 'feature',
+            title: 'Template Jurius responsivo',
             description: 'Template de email redesenhado no estilo Jurius (laranja, logo J, responsivo)',
           },
           {
             type: 'feature',
+            title: 'Header visual da assinatura',
             description: 'Header com gradiente laranja e logo "J" branco, idêntico ao email de assinatura/OTP',
           },
           {
             type: 'feature',
+            title: 'Card visual do prazo',
             description: 'Card do prazo com fundo `#fff7ed` e borda `#fdba74` (estilo laranja do sistema)',
           },
           {
             type: 'feature',
+            title: 'CTA do sistema em laranja',
             description: 'Botão "Acessar Sistema" laranja com gradiente',
           },
           {
             type: 'feature',
+            title: 'Rodapé com marca Jurius',
             description: 'Footer com marca Jurius • Gestão Jurídica',
           },
           {
             type: 'feature',
+            title: 'Dois modos de envio',
             description: 'Suporte a dois modos: `assigned` (novo prazo) e `reminder` (lembrete)',
           },
           {
             type: 'feature',
+            title: 'Lembrete por email',
             description: 'Notificação lembrete por email 3 dias antes do vencimento',
           },
           {
             type: 'feature',
+            title: 'Scheduler integrado ao email',
             description: '`notification-scheduler` agora envia email lembrete via `notify-deadline-assigned` com `mode: \'reminder\'`',
           },
           {
             type: 'feature',
+            title: 'Janela padrão de 3 dias',
             description: 'Default `notify_days_before` alterado de 2 para 3 dias',
           },
           {
             type: 'feature',
+            title: 'Deduplicação diária de emails',
             description: 'Deduplicação: máximo 1 email por prazo por dia (via `deadline_email_reminder` na tabela `user_notifications`)',
           },
           {
             type: 'feature',
+            title: 'Email só para o responsável',
             description: 'Email enviado apenas ao responsável do prazo (não a todos os usuários)',
           },
         ],
