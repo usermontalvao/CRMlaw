@@ -63,4 +63,7 @@ export const SYSTEM_EVENTS = {
   PETITION_EDITOR_CLOSE: 'petition_editor_close',
   PETITION_EDITOR_MINIMIZE: 'petition_editor_minimize',
   PETITION_EDITOR_MAXIMIZE: 'petition_editor_maximize',
+  // Petition Editor block modal
+  BLOCK_MODAL_OPEN: 'block_modal_open',
+  BLOCK_MODAL_CLOSE: 'block_modal_close',
 };

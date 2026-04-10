@@ -1,5 +1,48 @@
 # Changelog
  
+## 1.10.016
+- **Petições/Blocos**: Modal de edição de blocos com layout compacto e maior área de edição.
+  - Layout redesenhado para maximizar espaço do editor de conteúdo
+  - Campos compactados em barra superior (título, categoria, área, modelo)
+  - Editor ocupa toda altura disponível (height: 100%)
+  - Footer compacto com variáveis e ações
+  - z-index aumentado para evitar sobreposição com botão de mensagens
+  - Modal em tela cheia (fixed inset-0) para melhor usabilidade
+
+## 1.10.015
+- **Petições/Blocos**: Preview formatado Word inline nos blocos expandidos.
+  - Ao expandir um bloco, o conteúdo é renderizado com formatação exata (fontes, negrito, parágrafos) via Syncfusion + docx-preview
+  - Botão "Ver conteúdo formatado (Word)" em cada bloco
+  - Loading spinner durante conversão SFDT -> DOCX
+  - Fallback para texto puro se falhar
+  - Container com scroll interno e altura máxima (500px)
+  - Debug logs para diagnóstico
+
+## 1.10.014
+- **Petições/Blocos**: Redesign completo da tela dedicada de gerenciamento de blocos.
+  - Preview do conteúdo já aberto por padrão em cada bloco, com botão para expandir/recolher
+  - Cards de estatísticas visuais no topo: blocos visíveis, categorias, padrões e tags únicas
+  - Alternância entre visualização em **Lista** e **Grade** (grid)
+  - Ordenação por categoria, título A-Z ou mais recentes
+  - Botões de expandir/recolher todos os previews de uma vez
+  - Categorias colapsáveis com ícone e contagem
+  - Barra de filtros ativos com breadcrumbs visuais e botão de limpar
+  - Botão de copiar texto puro do bloco para a área de transferência
+  - Design moderno com hover, sombras, transições e ícones contextuais
+  - Ações rápidas: editar, visualizar formatado, copiar e excluir em cada bloco
+
+## 1.10.013
+- **Petições**: Criada uma interface dedicada para gerenciamento dos blocos existentes dentro do módulo de petições.
+  - Novo alternador no topo entre `Editor` e `Blocos`
+  - Tela dedicada com busca ampla, escopo por área/petição/global, tipo de documento e resumo lateral
+  - Listagem expandida por categoria com ações rápidas para visualizar, editar, criar e excluir blocos
+
+## 1.10.012
+- **Petições**: Normalizada a formatação dos blocos diretamente no banco para corrigir blocos com visual inconsistente.
+  - Aplicada padronização de fonte para `Arial` e tamanho `14` nos registros atuais de `petition_blocks`
+  - Criado backup de segurança no banco antes da alteração em `petition_blocks_backup_20260410_1152`
+  - Mantida a estrutura SFDT existente, sem alterar alinhamento e recuos dos blocos
+
 ## 1.10.010
 - **Docs/Build**: Corrigida a tipagem das releases recentes no `DocsChangesPage`.
   - Os blocos de módulos agora usam `moduleId` no formato esperado por `ModuleChanges`

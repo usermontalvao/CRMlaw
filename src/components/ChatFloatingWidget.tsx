@@ -295,7 +295,11 @@ const Avatar: React.FC<{ src?: string | null; name: string; online?: boolean }> 
   );
 };
 
-const ChatFloatingWidget: React.FC = () => {
+interface ChatFloatingWidgetProps {
+  hidden?: boolean;
+}
+
+const ChatFloatingWidget: React.FC<ChatFloatingWidgetProps> = ({ hidden = false }) => {
   const { user } = useAuth();
   const { currentModule, navigateTo } = useNavigation();
 
@@ -1163,6 +1167,8 @@ const ChatFloatingWidget: React.FC = () => {
   const badgeCount = Math.max(totalUnreadFromRooms, notifyCount);
   const showToast = !!toast && (!open || !selectedRoomId || toast.roomId !== selectedRoomId);
   const headerVerified = getVerifiedVariant(otherUser);
+
+  if (hidden) return null;
 
   return createPortal(
     <div className="fixed bottom-24 right-3 sm:bottom-5 sm:right-5 z-[9999] flex flex-col items-end" style={{ isolation: 'isolate' }}>

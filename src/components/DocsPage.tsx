@@ -35,7 +35,7 @@ import {
 } from 'lucide-react';
 import { matchesNormalizedSearch } from '../utils/search';
 
-const CURRENT_VERSION = '1.9.626';
+const CURRENT_VERSION = '1.10.016';
 const VERSION_CODENAME = 'Café Padrão';
 
 type DocSection = 'inicio' | 'guia' | 'changelog' | 'faq';

@@ -47,6 +47,8 @@ import { matchesNormalizedSearch } from '../utils/search';
    ============================================================================ */
 
 const VERSION_CODENAMES: Record<string, { name: string; emoji: string }> = {
+  '1.10.016': { name: 'Café Editor em Tela Cheia', emoji: '📝' },
+  '1.10.015': { name: 'Café Preview Formatado', emoji: '📄' },
   '1.10.011': { name: 'Café Perfil no Bucket', emoji: '📸' },
   '1.10.010': { name: 'Café Tipagem Corrigida', emoji: '🧩' },
   '1.10.009': { name: 'Café Build Estável', emoji: '🛠️' },
@@ -732,6 +734,90 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
 };
 
 const releases: ReleaseNote[] = [
+  {
+    version: '1.10.016',
+    date: '10/04/2026',
+    summary: 'Petições/Blocos: modal de edição redesenhado com layout compacto e maior área de edição.',
+    modules: [
+      {
+        moduleId: 'petition',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Modal de edição de blocos em tela cheia',
+            description: 'Layout redesenhado para maximizar espaço do editor de conteúdo com modal ocupando tela inteira (fixed inset-0)',
+          },
+          {
+            type: 'improvement',
+            title: 'Campos compactados em barra superior',
+            description: 'Título, categoria, área jurídica e modelo agora ficam em uma barra compacta no topo do modal',
+          },
+          {
+            type: 'improvement',
+            title: 'Editor ocupa toda altura disponível',
+            description: 'SyncfusionEditor com height: 100% para aproveitar todo o espaço vertical do modal',
+          },
+          {
+            type: 'improvement',
+            title: 'Footer compacto',
+            description: 'Footer reduzido com variáveis disponíveis e ações de salvar/cancelar em linha',
+          },
+          {
+            type: 'fix',
+            title: 'z-index aumentado',
+            description: 'Modal com z-[999999] para evitar sobreposição com botão de mensagens do chat',
+          },
+        ],
+      },
+      {
+        moduleId: 'profile',
+        changes: [
+          {
+            type: 'fix',
+            title: 'TypeScript error corrigido',
+            description: 'Verificação de tipo adicionada ao acessar error.message em catch block',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.10.015',
+    date: '10/04/2026',
+    summary: 'Petições/Blocos: preview formatado Word inline nos blocos expandidos.',
+    modules: [
+      {
+        moduleId: 'petition',
+        changes: [
+          {
+            type: 'feature',
+            title: 'Preview formatado Word inline',
+            description: 'Ao expandir um bloco, o conteúdo é renderizado com formatação exata (fontes, negrito, parágrafos) via Syncfusion + docx-preview',
+          },
+          {
+            type: 'feature',
+            title: 'Botão de preview formatado',
+            description: 'Botão "Ver conteúdo formatado (Word)" em cada bloco para acionar o preview',
+          },
+          {
+            type: 'feature',
+            title: 'Loading spinner',
+            description: 'Indicador visual durante conversão SFDT -> DOCX',
+          },
+          {
+            type: 'feature',
+            title: 'Fallback para texto puro',
+            description: 'Se a renderização formatada falhar, mostra texto puro como alternativa',
+          },
+          {
+            type: 'feature',
+            title: 'Container com scroll',
+            description: 'Container com scroll interno e altura máxima (500px) para preview',
+          },
+        ],
+      },
+    ],
+  },
   {
     version: '1.10.011',
     date: '02/04/2026',

@@ -1263,7 +1263,7 @@ export const UserProfilePage: React.FC<UserProfilePageProps> = ({ userId, onClos
       setProfile(prev => prev ? { ...prev, avatar_url: urlData.publicUrl } : null);
     } catch (error) {
       console.error('💥 Erro completo ao fazer upload do avatar:', error);
-      alert('Erro ao fazer upload do avatar: ' + error.message);
+      alert('Erro ao fazer upload do avatar: ' + (error instanceof Error ? error.message : String(error)));
     } finally {
       setUploadingAvatar(false);
       console.log('🏁 Upload finalizado');
