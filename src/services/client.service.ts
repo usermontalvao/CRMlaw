@@ -416,8 +416,10 @@ export class ClientService {
       const { data, error } = await supabase
         .from(this.tableName)
         .select('id, full_name, email, phone, mobile, status, client_type')
-        .order('full_name', { ascending: true })
-        .limit(200);
+        .or(
+          `full_name.ilike.%${term}%,email.ilike.%${term}%,phone.ilike.%${term}%,mobile.ilike.%${term}%`
+        )
+        .order('full_name', { ascending: true });
 
       if (error) {
         console.error('Erro ao buscar clientes:', error);
@@ -426,9 +428,38 @@ export class ClientService {
 
       const rows = (data as Array<Pick<Client, 'id' | 'full_name' | 'email' | 'phone' | 'mobile' | 'status' | 'client_type'>>) || [];
       const normalizedSearch = normalizeSearchText(term);
-      return rows
-        .filter((client) => matchesNormalizedSearch(normalizedSearch, [client.full_name, client.email, client.phone, client.mobile]))
-        .slice(0, limit);
+
+      const filtered = rows.filter((client) =>
+        matchesNormalizedSearch(normalizedSearch, [client.full_name, client.email, client.phone, client.mobile])
+      );
+
+      // Deduplica por nome normalizado, priorizando o registro com mais dados
+      const seen = new Map<string, typeof filtered[number]>();
+      for (const client of filtered) {
+        const key = normalizeSearchText(client.full_name);
+        const existing = seen.get(key);
+        if (!existing) {
+          seen.set(key, client);
+        } else {
+          const existingScore = [existing.email, existing.phone, existing.mobile].filter(Boolean).length;
+          const newScore = [client.email, client.phone, client.mobile].filter(Boolean).length;
+          if (newScore > existingScore) seen.set(key, client);
+        }
+      }
+
+      const deduped = Array.from(seen.values());
+
+      // Ordena: nomes que começam com o termo pesquisado primeiro
+      const normalizedName = (c: typeof deduped[number]) => normalizeSearchText(c.full_name);
+      deduped.sort((a, b) => {
+        const aStarts = normalizedName(a).startsWith(normalizedSearch);
+        const bStarts = normalizedName(b).startsWith(normalizedSearch);
+        if (aStarts && !bStarts) return -1;
+        if (!aStarts && bStarts) return 1;
+        return normalizedName(a).localeCompare(normalizedName(b));
+      });
+
+      return deduped.slice(0, limit);
     } catch (error) {
       console.error('Erro ao buscar clientes:', error);
       throw error;

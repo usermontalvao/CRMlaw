@@ -47,6 +47,7 @@ import { matchesNormalizedSearch } from '../utils/search';
    ============================================================================ */
 
 const VERSION_CODENAMES: Record<string, { name: string; emoji: string }> = {
+  '1.10.017': { name: 'Café Ficha 360 Completa', emoji: '🔄' },
   '1.10.016': { name: 'Café Editor em Tela Cheia', emoji: '📝' },
   '1.10.015': { name: 'Café Preview Formatado', emoji: '📄' },
   '1.10.011': { name: 'Café Perfil no Bucket', emoji: '📸' },
@@ -734,6 +735,38 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
 };
 
 const releases: ReleaseNote[] = [
+  {
+    version: '1.10.017',
+    date: '10/05/2026',
+    summary: 'Ficha 360° do cliente: dar baixa de parcela, KPI Casos Ativos, exportar com parcelas discriminadas e filtro de compromissos.',
+    modules: [
+      {
+        moduleId: 'clients',
+        changes: [
+          {
+            type: 'feature',
+            title: 'Dar baixa de parcela direto da ficha do cliente',
+            description: 'Aba Financeiro exibe cada parcela individualmente. Parcelas pendentes e vencidas têm botão "Dar baixa" que abre formulário inline com data de pagamento, forma de pagamento e valor recebido.',
+          },
+          {
+            type: 'improvement',
+            title: 'KPI "Casos ativos" unifica processos e requerimentos',
+            description: 'O KPI antes chamado "Processos ativos" agora exibe o total de processos ativos + requerimentos ativos (não deferidos/indeferidos), com sub-label discriminando cada um.',
+          },
+          {
+            type: 'fix',
+            title: 'Exportar com parcelas discriminadas por acordo',
+            description: 'A exportação PDF/impressão agora carrega as parcelas sob demanda e exibe, por acordo, o total pago, pendente e em atraso — não apenas o valor total contratado.',
+          },
+          {
+            type: 'fix',
+            title: 'Próximos Compromissos não exibe mais eventos de pagamento',
+            description: 'Eventos do tipo "Pagamento" (parcelas do financeiro) eram exibidos como compromissos na aba Dados. Agora são filtrados e não aparecem mais nessa seção.',
+          },
+        ],
+      },
+    ],
+  },
   {
     version: '1.10.016',
     date: '10/04/2026',
