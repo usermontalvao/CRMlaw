@@ -181,6 +181,7 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({
   const [representativeAppointments, setRepresentativeAppointments] = useState<RepresentativeAppointment[]>([]);
   const [selectedEvent, setSelectedEvent] = useState<SelectedEvent | null>(null);
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
+  const [createFormInitialClientName, setCreateFormInitialClientName] = useState('');
   const [legendExpanded, setLegendExpanded] = useState(false);
   const [viewFilters, setViewFilters] = useState<Record<EventType, boolean>>({
     deadline: true,
@@ -620,13 +621,14 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({
         if (prefillData.title) initialValues.title = prefillData.title;
         if (prefillData.description) initialValues.description = prefillData.description;
         if (prefillData.client_id) initialValues.client_id = prefillData.client_id;
-        
+        if (prefillData.client_name) setCreateFormInitialClientName(prefillData.client_name);
+
         // Define data/hora para hoje
         const now = new Date();
         initialValues.date = formatDateInputValue(now);
         initialValues.time = formatTimeInputValue(now);
       }
-      
+
       openEventForm(initialValues);
       
       if (onParamConsumed) {
@@ -906,6 +908,7 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({
     setIsCreateModalOpen(false);
     setEditingEventId(null);
     setSelectedEvent(null);
+    setCreateFormInitialClientName('');
   }, []);
 
   const handleSubmitEvent = async () => {
@@ -2232,7 +2235,11 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({
                 <label className="text-xs sm:text-sm font-medium text-slate-700 dark:text-slate-300">Cliente (Opcional)</label>
                 <ClientSearchSelect
                   value={newEventForm.client_id}
-                  onChange={(clientId) => setNewEventForm((prev) => ({ ...prev, client_id: clientId }))}
+                  initialClientName={createFormInitialClientName}
+                  onChange={(clientId, clientName) => {
+                    setNewEventForm((prev) => ({ ...prev, client_id: clientId }));
+                    setCreateFormInitialClientName(clientName);
+                  }}
                   label=""
                   placeholder="Buscar cliente..."
                   required={false}

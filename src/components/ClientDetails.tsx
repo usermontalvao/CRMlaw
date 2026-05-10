@@ -895,7 +895,7 @@ const ClientDetails: React.FC<ClientDetailsProps> = ({
             <PenTool className="w-3.5 h-3.5" /> Nova Petição
           </button>
           <button
-            onClick={() => navigateTo('agenda', { mode: 'create', prefill: JSON.stringify({ client_id: client.id, client_name: client.full_name }) } as any)}
+            onClick={() => navigateTo('agenda', { mode: 'create', prefill: { client_id: client.id, client_name: client.full_name } } as any)}
             className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl border border-violet-200 bg-violet-50 text-sm font-semibold text-violet-700 hover:bg-violet-100 transition"
           >
             <CalendarPlus className="w-3.5 h-3.5" /> Novo Compromisso

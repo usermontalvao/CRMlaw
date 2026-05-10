@@ -47,6 +47,7 @@ import { matchesNormalizedSearch } from '../utils/search';
    ============================================================================ */
 
 const VERSION_CODENAMES: Record<string, { name: string; emoji: string }> = {
+  '1.10.018': { name: 'Café Cliente na Agenda', emoji: '📅' },
   '1.10.017': { name: 'Café Ficha 360 Completa', emoji: '🔄' },
   '1.10.016': { name: 'Café Editor em Tela Cheia', emoji: '📝' },
   '1.10.015': { name: 'Café Preview Formatado', emoji: '📄' },
@@ -735,6 +736,33 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
 };
 
 const releases: ReleaseNote[] = [
+  {
+    version: '1.10.018',
+    date: '10/05/2026',
+    summary: 'Agenda: nome do cliente pré-preenchido ao abrir "Novo Compromisso" pela ficha do cliente.',
+    modules: [
+      {
+        moduleId: 'clients',
+        changes: [
+          {
+            type: 'fix',
+            title: 'Novo Compromisso pré-preenche o cliente corretamente',
+            description: 'Ao clicar em "Novo Compromisso" na ficha do cliente, o formulário da agenda agora abre com o nome do cliente já selecionado. O bug era causado por dupla serialização JSON dos parâmetros de navegação.',
+          },
+        ],
+      },
+      {
+        moduleId: 'calendar',
+        changes: [
+          {
+            type: 'fix',
+            title: 'Campo de cliente exibe o nome imediatamente ao pré-preencher',
+            description: 'ClientSearchSelect recebe o nome inicial via prop e não precisa mais buscar o nome via API ao abrir o formulário pré-preenchido.',
+          },
+        ],
+      },
+    ],
+  },
   {
     version: '1.10.017',
     date: '10/05/2026',

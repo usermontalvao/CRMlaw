@@ -7,6 +7,7 @@ import type { CreateClientDTO } from '../types/client.types';
 
 interface ClientSearchSelectProps {
   value?: string;
+  initialClientName?: string;
   onChange: (clientId: string, clientName: string) => void;
   placeholder?: string;
   label?: string;
@@ -19,6 +20,7 @@ type ClientSearchResult = Awaited<ReturnType<typeof clientService.searchClients>
 
 export const ClientSearchSelect: React.FC<ClientSearchSelectProps> = ({
   value,
+  initialClientName,
   onChange,
   placeholder = 'Buscar cliente...',
   label,
@@ -31,7 +33,7 @@ export const ClientSearchSelect: React.FC<ClientSearchSelectProps> = ({
   const [searchResults, setSearchResults] = useState<ClientSearchResult[]>([]);
   const [searchLoading, setSearchLoading] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
-  const [selectedClientName, setSelectedClientName] = useState('');
+  const [selectedClientName, setSelectedClientName] = useState(initialClientName ?? '');
   const [isClientFormModalOpen, setIsClientFormModalOpen] = useState(false);
   const [clientFormPrefill, setClientFormPrefill] = useState<Partial<CreateClientDTO> | null>(null);
   const [dropdownStyle, setDropdownStyle] = useState<CSSProperties | null>(null);
