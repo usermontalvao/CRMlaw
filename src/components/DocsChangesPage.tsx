@@ -47,6 +47,7 @@ import { matchesNormalizedSearch } from '../utils/search';
    ============================================================================ */
 
 const VERSION_CODENAMES: Record<string, { name: string; emoji: string }> = {
+  '1.10.019': { name: 'Café Arquivos Visíveis', emoji: '📂' },
   '1.10.018': { name: 'Café Cliente na Agenda', emoji: '📅' },
   '1.10.017': { name: 'Café Ficha 360 Completa', emoji: '🔄' },
   '1.10.016': { name: 'Café Editor em Tela Cheia', emoji: '📝' },
@@ -736,6 +737,23 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
 };
 
 const releases: ReleaseNote[] = [
+  {
+    version: '1.10.019',
+    date: '10/05/2026',
+    summary: 'Cloud: arquivos de pastas arquivadas voltam a aparecer ao navegar para dentro da pasta.',
+    modules: [
+      {
+        moduleId: 'cloud',
+        changes: [
+          {
+            type: 'fix',
+            title: 'Arquivos sumiam ao entrar em pasta arquivada',
+            description: 'Ao navegar para dentro de uma pasta arquivada, listFiles era chamado sem includeArchived=true. Como todos os arquivos de uma pasta arquivada têm archived_at definido, a query retornava zero resultados. Os arquivos não estavam deletados — apenas filtrados incorretamente. Corrigido passando viewingArchivedFolder para listFiles, da mesma forma que já era feito para listFolders.',
+          },
+        ],
+      },
+    ],
+  },
   {
     version: '1.10.018',
     date: '10/05/2026',

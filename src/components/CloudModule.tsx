@@ -997,7 +997,7 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
       const archivedAllFiles = await cloudService.listAllFiles(true);
       const [foldersData, filesData, allFoldersData, allFilesData, clientsData, archivedFilesData, trashedFoldersData, trashedFilesData] = await Promise.all([
         isTrashView || isArchivedView ? Promise.resolve([]) : cloudService.listFolders(currentFolderId, viewingArchivedFolder),
-        isTrashView || isArchivedView ? Promise.resolve([]) : currentFolderId ? cloudService.listFiles(currentFolderId) : Promise.resolve([]),
+        isTrashView || isArchivedView ? Promise.resolve([]) : currentFolderId ? cloudService.listFiles(currentFolderId, viewingArchivedFolder) : Promise.resolve([]),
         cloudService.listAllFolders(true),
         Promise.resolve(archivedAllFiles),
         clientService.listClients(),
