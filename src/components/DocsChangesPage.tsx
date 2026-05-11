@@ -47,6 +47,7 @@ import { matchesNormalizedSearch } from '../utils/search';
    ============================================================================ */
 
 const VERSION_CODENAMES: Record<string, { name: string; emoji: string }> = {
+  '1.10.021': { name: 'Café Cloud na Fila', emoji: '☁️' },
   '1.10.020': { name: 'Café Assinatura no Lugar', emoji: '✍️' },
   '1.10.019': { name: 'Café Arquivos Visíveis', emoji: '📂' },
   '1.10.018': { name: 'Café Cliente na Agenda', emoji: '📅' },
@@ -738,6 +739,23 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
 };
 
 const releases: ReleaseNote[] = [
+  {
+    version: '1.10.021',
+    date: '11/05/2026',
+    summary: 'Assinaturas: documentos enviados do módulo Cloud agora carregam corretamente no preview.',
+    modules: [
+      {
+        moduleId: 'signatures',
+        changes: [
+          {
+            type: 'fix',
+            title: 'Preview não carregava ao enviar documento do Cloud para assinatura',
+            description: 'Ao usar "Enviar para assinatura" no Cloud, o módulo de assinaturas não conseguia gerar a URL de preview porque só procurava nos buckets "document-templates" e "generated-documents". Arquivos do Cloud ficam no bucket "cloud-files". Adicionado esse bucket como terceiro fallback em getDocumentPreviewUrl.',
+          },
+        ],
+      },
+    ],
+  },
   {
     version: '1.10.020',
     date: '10/05/2026',

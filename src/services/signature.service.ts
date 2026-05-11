@@ -1006,7 +1006,16 @@ class SignatureService {
       return data2.signedUrl;
     }
 
-    console.warn('Não foi possível gerar URL do documento:', error?.message || error2?.message);
+    // Fallback: tentar do bucket cloud-files (documentos enviados do módulo Cloud)
+    const { data: data3, error: error3 } = await supabase.storage
+      .from('cloud-files')
+      .createSignedUrl(documentPath, 3600);
+
+    if (!error3 && data3?.signedUrl) {
+      return data3.signedUrl;
+    }
+
+    console.warn('Não foi possível gerar URL do documento:', error?.message || error2?.message || error3?.message);
     return null;
   }
 
