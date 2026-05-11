@@ -45,6 +45,74 @@ const formatCpf = (value: string): string => {
   return formatted;
 };
 
+// Componente auxiliar para renderizar a lista de documentos anexos
+interface AttachmentsListProps {
+  attachments: { name: string; url: string; rendered?: boolean; prefetched?: boolean; isDocx?: boolean }[];
+  attachmentRefs: React.MutableRefObject<(HTMLDivElement | null)[]>;
+}
+
+const AttachmentsList: React.FC<AttachmentsListProps> = ({ attachments, attachmentRefs }) => {
+  if (attachments.length === 0) return null;
+  return (
+    <div className="border-t-4 border-slate-300 mt-0">
+      <div className="bg-slate-100 px-4 py-2 text-center border-b border-slate-200">
+        <span className="text-sm font-medium text-slate-600">
+          Documentos Anexos ({attachments.length})
+        </span>
+      </div>
+      {attachments.map((attach, idx) => {
+        const nameLower = attach.name.toLowerCase().split('?')[0];
+        const isPdf = nameLower.endsWith('.pdf');
+        const isImg = nameLower.endsWith('.jpg') || nameLower.endsWith('.jpeg') || nameLower.endsWith('.png') || nameLower.endsWith('.gif') || nameLower.endsWith('.webp') || nameLower.endsWith('.bmp');
+        return (
+          <div key={`attach-${idx}`} className="border-b border-slate-200">
+            <div className="bg-slate-50 px-4 py-2 border-b border-slate-100 flex items-center gap-2">
+              <FileText className="w-3.5 h-3.5 text-slate-400 flex-shrink-0" />
+              <span className="text-xs font-medium text-slate-600 truncate">{attach.name}</span>
+            </div>
+            {attach.isDocx ? (
+              // DOCX: div preenchida pelo renderAsync
+              <div
+                ref={el => { attachmentRefs.current[idx] = el; }}
+                className="bg-white docx-responsive"
+                style={{ width: '100%', overflow: 'auto' }}
+              />
+            ) : isPdf ? (
+              // PDF: iframe com altura fixa
+              <iframe
+                src={`${attach.url}#toolbar=0&navpanes=0&statusbar=0`}
+                style={{ width: '100%', height: '88vh', border: 'none', display: 'block' }}
+                title={attach.name}
+              />
+            ) : isImg ? (
+              // Imagem: tag <img>
+              <img
+                src={attach.url}
+                alt={attach.name}
+                className="w-full h-auto block bg-slate-50"
+                style={{ maxWidth: '100%' }}
+              />
+            ) : (
+              // Outro tipo: link para download
+              <div className="p-4 text-center">
+                <a
+                  href={attach.url}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="inline-flex items-center gap-2 px-4 py-2 bg-slate-900 text-white rounded-lg text-sm font-medium hover:bg-slate-800"
+                >
+                  <Download className="w-4 h-4" />
+                  Baixar {attach.name}
+                </a>
+              </div>
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+};
+
 const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
   const toast = useToastContext();
 
@@ -2172,57 +2240,49 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
                   </div>
                 </div>
               )}
-              {/* Documento Principal */}
-              <div 
-                ref={docxContainerRef} 
+              {/* Documento Principal DOCX */}
+              <div
+                ref={docxContainerRef}
                 className="bg-slate-100 docx-responsive flex flex-col items-center"
-                style={{ 
-                  width: '100%',
-                  overflow: 'auto',
-                  minHeight: '400px',
-                  padding: '20px',
-                }}
+                style={{ width: '100%', overflow: 'auto', minHeight: '400px', padding: '20px' }}
               />
-              
-              {/* Documentos Anexos - Renderizados inline */}
+
+              {/* Documentos Anexos */}
               {attachments.length > 0 && (
-                <div className="border-t-4 border-slate-300 mt-4">
-                  <div className="bg-slate-100 px-4 py-2 text-center border-b border-slate-200">
-                    <span className="text-sm font-medium text-slate-600">
-                      Documentos Anexos ({attachments.length})
-                    </span>
-                  </div>
-                  {attachments.map((attach, idx) => (
-                    <div key={`attach-${idx}`} className="border-b border-slate-200">
-                      <div className="bg-slate-50 px-4 py-2 border-b border-slate-100">
-                        <span className="text-xs font-medium text-slate-500">
-                          Anexo {idx + 1}
-                        </span>
-                      </div>
-                      <div 
-                        ref={el => { attachmentRefs.current[idx] = el; }}
-                        className="bg-white docx-responsive"
-                        style={{ 
-                          width: '100%',
-                          overflow: 'auto',
-                        }}
-                      />
-                    </div>
-                  ))}
-                </div>
+                <AttachmentsList
+                  attachments={attachments}
+                  attachmentRefs={attachmentRefs}
+                />
               )}
             </div>
           ) : (
             // Renderizar PDF com iframe
-            <>
-              <iframe
-                src={`${pdfUrl}#toolbar=0&navpanes=0&statusbar=0`}
-                className="w-full h-full border-0 bg-white"
-                title="Documento PDF"
-                onLoad={() => setPdfFrameLoaded(true)}
-              />
-              <div className="pointer-events-none absolute right-0 top-0 bottom-0 w-4 bg-white" />
-            </>
+            attachments.length > 0 ? (
+              // Com anexos: layout scrollável
+              <div className="w-full h-full overflow-auto bg-white pb-24">
+                <iframe
+                  src={`${pdfUrl}#toolbar=0&navpanes=0&statusbar=0`}
+                  style={{ width: '100%', height: '88vh', border: 'none', display: 'block' }}
+                  title="Documento PDF"
+                  onLoad={() => setPdfFrameLoaded(true)}
+                />
+                <AttachmentsList
+                  attachments={attachments}
+                  attachmentRefs={attachmentRefs}
+                />
+              </div>
+            ) : (
+              // Sem anexos: full-screen
+              <>
+                <iframe
+                  src={`${pdfUrl}#toolbar=0&navpanes=0&statusbar=0`}
+                  className="w-full h-full border-0 bg-white"
+                  title="Documento PDF"
+                  onLoad={() => setPdfFrameLoaded(true)}
+                />
+                <div className="pointer-events-none absolute right-0 top-0 bottom-0 w-4 bg-white" />
+              </>
+            )
           )
         ) : (
           <div className="w-full h-full bg-white" />

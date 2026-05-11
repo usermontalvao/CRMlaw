@@ -47,6 +47,7 @@ import { matchesNormalizedSearch } from '../utils/search';
    ============================================================================ */
 
 const VERSION_CODENAMES: Record<string, { name: string; emoji: string }> = {
+  '1.10.025': { name: 'Café Envelope Completo', emoji: '📎' },
   '1.10.024': { name: 'Café Imagem na Fila', emoji: '🖼️' },
   '1.10.023': { name: 'Café Seleção Completa', emoji: '✅' },
   '1.10.022': { name: 'Café Envelope Múltiplo', emoji: '📋' },
@@ -742,6 +743,23 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
 };
 
 const releases: ReleaseNote[] = [
+  {
+    version: '1.10.025',
+    date: '11/05/2026',
+    summary: 'Assinaturas: página pública agora exibe todos os documentos anexos, independente do tipo do documento principal.',
+    modules: [
+      {
+        moduleId: 'signatures',
+        changes: [
+          {
+            type: 'fix',
+            title: 'Anexos não apareciam na página de assinatura quando o documento principal era PDF',
+            description: 'A seção de "Documentos Anexos" estava dentro do branch DOCX da renderização. Quando o documento principal era PDF, o branch renderizava apenas um <iframe> sem mostrar os anexos. Criado componente AttachmentsList reutilizável que renderiza cada tipo: DOCX via docx-preview, PDF via <iframe>, imagens via <img>, outros com link de download. O branch PDF agora usa layout scrollável quando há anexos.',
+          },
+        ],
+      },
+    ],
+  },
   {
     version: '1.10.024',
     date: '11/05/2026',
