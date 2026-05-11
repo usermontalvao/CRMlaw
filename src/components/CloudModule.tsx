@@ -3936,11 +3936,29 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
 
   const handleSendForSignature = (file: CloudFile) => {
     setContextMenu(null);
+
+    // Se o arquivo clicado faz parte de uma multi-seleção, enviar todos os PDF/DOCX selecionados
+    const isMultiSelection = selectedItemKeys.includes(`file:${file.id}`) && selectedFileKeys.length > 1;
+
+    let attachmentPaths: string[] | null = null;
+    if (isMultiSelection) {
+      const signableSelected = files.filter(
+        (f) =>
+          selectedFileKeys.includes(`file:${f.id}`) &&
+          f.id !== file.id &&
+          (isDocxFile(f.mime_type, f.original_name) || isPdfFile(f.mime_type, f.original_name)),
+      );
+      if (signableSelected.length > 0) {
+        attachmentPaths = signableSelected.map((f) => f.storage_path);
+      }
+    }
+
     const folder = allFolders.find((f) => f.id === file.folder_id);
     const client = folder?.client_id ? clients.find((c) => c.id === folder.client_id) : null;
     const prefill = {
       documentPath: file.storage_path,
       documentName: file.original_name,
+      attachmentPaths,
       clientId: client?.id ?? '',
       clientName: client?.full_name ?? '',
       clientEmail: client?.email ?? '',

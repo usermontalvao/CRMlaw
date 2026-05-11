@@ -47,6 +47,7 @@ import { matchesNormalizedSearch } from '../utils/search';
    ============================================================================ */
 
 const VERSION_CODENAMES: Record<string, { name: string; emoji: string }> = {
+  '1.10.023': { name: 'Café Seleção Completa', emoji: '✅' },
   '1.10.022': { name: 'Café Envelope Múltiplo', emoji: '📋' },
   '1.10.021': { name: 'Café Cloud na Fila', emoji: '☁️' },
   '1.10.020': { name: 'Café Assinatura no Lugar', emoji: '✍️' },
@@ -740,6 +741,23 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
 };
 
 const releases: ReleaseNote[] = [
+  {
+    version: '1.10.023',
+    date: '11/05/2026',
+    summary: 'Cloud: "Enviar para assinatura" agora inclui todos os arquivos PDF/DOCX selecionados, não apenas o clicado.',
+    modules: [
+      {
+        moduleId: 'cloud',
+        changes: [
+          {
+            type: 'fix',
+            title: 'Multi-seleção enviava apenas o primeiro arquivo para assinatura',
+            description: 'Ao selecionar vários arquivos e clicar com botão direito em "Enviar para assinatura", apenas o arquivo clicado era enviado. Agora todos os arquivos PDF/DOCX da seleção são incluídos no envelope: o arquivo clicado vira o documento principal e os demais viram attachmentPaths.',
+          },
+        ],
+      },
+    ],
+  },
   {
     version: '1.10.022',
     date: '11/05/2026',
