@@ -47,6 +47,7 @@ import { matchesNormalizedSearch } from '../utils/search';
    ============================================================================ */
 
 const VERSION_CODENAMES: Record<string, { name: string; emoji: string }> = {
+  '1.10.029': { name: 'Café Menu Inteligente', emoji: '🎯' },
   '1.10.028': { name: 'Café Drive Nativo', emoji: '☁️' },
   '1.10.027': { name: 'Café Página Contínua', emoji: '📄' },
   '1.10.026': { name: 'Café Sem Fronteiras', emoji: '🌊' },
@@ -746,6 +747,22 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
 };
 
 const releases: ReleaseNote[] = [
+  {
+    version: '1.10.029',
+    date: '11/05/2026',
+    summary: 'Cloud: menu de contexto inteligente (nunca sai da tela), toolbar de seleção expandida, botões dos cards só aparecem no hover, status bar mais minimalista.',
+    modules: [
+      {
+        moduleId: 'cloud',
+        changes: [
+          { type: 'fix', title: 'Menu de contexto nunca sai da viewport', description: 'useLayoutEffect mede o menu após renderizar e reposiciona para que nunca fique cortado pela borda da tela, independente de onde o usuário clicar com o botão direito.' },
+          { type: 'improvement', title: 'Toolbar de seleção muito mais rica', description: 'Para 1 item: Abrir, Baixar, Renomear, Mover, Fixar. Para múltiplos: ZIP, Mover, Renomear em lote. Para todos: Copiar, Recortar, Assinar (PDF/DOCX), Converter em PDF (imagens), Excluir. Labels aparecem em md+, só ícones em mobile.' },
+          { type: 'improvement', title: 'Botões dos cards aparecem só no hover', description: 'Os botões de girar, baixar e fixar nos cards de arquivo ficam ocultos por padrão e surgem suavemente ao passar o mouse — layout muito mais limpo.' },
+          { type: 'improvement', title: 'Barra de status minimalista', description: 'Removidos os botões de Upload e Filtrar da barra de status (que já existem no header). Ficou apenas a contagem de itens e chips discretos para ordenação/filtros ativos.' },
+        ],
+      },
+    ],
+  },
   {
     version: '1.10.028',
     date: '11/05/2026',

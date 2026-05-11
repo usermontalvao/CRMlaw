@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import JSZip from 'jszip';
 import { renderAsync } from 'docx-preview';
@@ -323,7 +323,7 @@ const CLOUD_FAVORITE_FILE_IDS_STORAGE_KEY = 'cloud-favorite-file-ids-v1';
 const CLOUD_RECENT_FILE_IDS_STORAGE_KEY = 'cloud-recent-file-ids-v1';
 const CLOUD_CARD_SIZE_STORAGE_KEY = 'cloud-card-size-v1';
 const CLOUD_FOLDER_COLORS_STORAGE_KEY = 'cloud-folder-colors-v1';
-const CLOUD_SORT_STORAGE_KEY = 'cloud-sort-v1';
+const CLOUD_SORT_STORAGE_KEY = 'cloud-sort-v2';
 const CLOUD_ARCHIVED_FOLDER_ID = '__cloud_archived__';
 const CLOUD_TRASH_FOLDER_ID = '__cloud_trash__';
 
@@ -515,6 +515,7 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
   const explorerViewportRef = useRef<HTMLDivElement | null>(null);
   const itemElementMapRef = useRef<Record<string, HTMLDivElement | null>>({});
   const contextMenuRef = useRef<HTMLDivElement | null>(null);
+  const [contextMenuPos, setContextMenuPos] = useState<{ x: number; y: number } | null>(null);
   const [clients, setClients] = useState<Client[]>([]);
   const [allFolders, setAllFolders] = useState<CloudFolder[]>([]);
   const [allFiles, setAllFiles] = useState<CloudFile[]>([]);
@@ -657,6 +658,26 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
   useEffect(() => {
     try { localStorage.setItem(CLOUD_SORT_STORAGE_KEY, JSON.stringify({ col: sortCol, dir: sortDir })); } catch { /* ignore */ }
   }, [sortCol, sortDir]);
+
+  // Reposiciona o menu de contexto para nunca sair da viewport
+  useLayoutEffect(() => {
+    if (!contextMenu) { setContextMenuPos(null); return; }
+    setContextMenuPos(null); // reset (menu fica invisível)
+    requestAnimationFrame(() => {
+      const el = contextMenuRef.current;
+      if (!el) return;
+      const rect = el.getBoundingClientRect();
+      const vw = window.innerWidth;
+      const vh = window.innerHeight;
+      let x = contextMenu.x;
+      let y = contextMenu.y;
+      if (x + rect.width > vw - 8) x = Math.max(8, vw - rect.width - 8);
+      if (y + rect.height > vh - 8) y = Math.max(8, vh - rect.height - 8);
+      if (x < 8) x = 8;
+      if (y < 8) y = 8;
+      setContextMenuPos({ x, y });
+    });
+  }, [contextMenu]);
 
   useEffect(() => {
     try { localStorage.setItem(CLOUD_FOLDER_COLORS_STORAGE_KEY, JSON.stringify(folderColors)); } catch { /* ignore */ }
@@ -5042,48 +5063,27 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
                     transition={{ duration: 0.18 }}
                     className="flex min-h-full flex-1 flex-col"
                   >
-                    {/* Barra de status / ações rápidas */}
-                    <div className="px-3 py-2 flex items-center justify-between gap-2 border-b border-slate-100 bg-slate-50/50">
-                      <div className="flex items-center gap-2">
-                        <span className="text-xs text-slate-500">
-                          {explorerRows.filter(r => r.kind === 'folder').length > 0 && (
-                            <>{explorerRows.filter(r => r.kind === 'folder').length} pasta{explorerRows.filter(r => r.kind === 'folder').length !== 1 ? 's' : ''}{explorerRows.filter(r => r.kind === 'file').length > 0 ? ', ' : ''}</>
-                          )}
-                          {explorerRows.filter(r => r.kind === 'file').length > 0 && (
-                            <>{explorerRows.filter(r => r.kind === 'file').length} arquivo{explorerRows.filter(r => r.kind === 'file').length !== 1 ? 's' : ''}</>
-                          )}
-                        </span>
-                        {sortCol !== 'name' || sortDir !== 'asc' ? (
-                          <button
-                            type="button"
-                            onClick={() => { setSortCol('name'); setSortDirState('asc'); }}
-                            className="inline-flex items-center gap-1 rounded-full border border-orange-200 bg-orange-50 px-2 py-0.5 text-[10px] font-medium text-orange-700 hover:bg-orange-100 transition"
-                          >
-                            <ArrowUpDown className="w-3 h-3" />
-                            Ordenado por {sortCol} {sortDir === 'asc' ? '↑' : '↓'} · Limpar
-                          </button>
-                        ) : null}
-                      </div>
-                      <div className="flex items-center gap-1.5">
-                        {/* Upload rápido */}
-                        {!isTrashView && !isArchivedView && (
-                          <button
-                            type="button"
-                            onClick={() => fileInputRef.current?.click()}
-                            className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-full text-xs font-medium bg-orange-500 hover:bg-orange-600 text-white transition shadow-sm"
-                          >
-                            <Upload className="w-3 h-3" />
-                            <span className="hidden sm:inline">Enviar</span>
+                    {/* Barra de status minimalista */}
+                    <div className="px-4 py-1.5 flex items-center justify-between gap-2 border-b border-slate-100/80">
+                      <span className="text-[11px] text-slate-400 tabular-nums">
+                        {[
+                          explorerRows.filter(r => r.kind === 'folder').length > 0 && `${explorerRows.filter(r => r.kind === 'folder').length} pasta${explorerRows.filter(r => r.kind === 'folder').length !== 1 ? 's' : ''}`,
+                          explorerRows.filter(r => r.kind === 'file').length > 0 && `${explorerRows.filter(r => r.kind === 'file').length} arquivo${explorerRows.filter(r => r.kind === 'file').length !== 1 ? 's' : ''}`,
+                        ].filter(Boolean).join(', ')}
+                      </span>
+                      <div className="flex items-center gap-1">
+                        {(sortCol !== 'name' || sortDir !== 'asc') && (
+                          <button type="button" onClick={() => { setSortCol('name'); setSortDirState('asc'); }}
+                            className="inline-flex items-center gap-1 rounded-full border border-orange-200 bg-orange-50 px-2 py-0.5 text-[10px] text-orange-600 hover:bg-orange-100 transition">
+                            <ArrowUpDown className="w-2.5 h-2.5" />{sortCol} {sortDir === 'asc' ? '↑' : '↓'} ×
                           </button>
                         )}
-                        <button
-                          type="button"
-                          onClick={() => setShowAdvancedFilters((prev) => !prev)}
-                          className={`inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-full text-xs font-medium transition ${showAdvancedFilters || hasActiveAdvancedFilters ? 'bg-orange-100 text-orange-700 border border-orange-200' : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-50'}`}
-                        >
-                          <Filter className="w-3 h-3" />
-                          <span className="hidden sm:inline">{hasActiveAdvancedFilters ? 'Filtros ativos' : 'Filtrar'}</span>
-                        </button>
+                        {hasActiveAdvancedFilters && (
+                          <button type="button" onClick={resetAdvancedFilters}
+                            className="inline-flex items-center gap-1 rounded-full border border-sky-200 bg-sky-50 px-2 py-0.5 text-[10px] text-sky-600 hover:bg-sky-100 transition">
+                            <Filter className="w-2.5 h-2.5" /> filtros ×
+                          </button>
+                        )}
                       </div>
                     </div>
                     {viewMode === 'list' ? (
@@ -5623,7 +5623,7 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
                         }}
                       >
                         <div className="mb-3 relative rounded-2xl border border-slate-200 bg-slate-50 overflow-hidden">
-                          <div className="absolute right-2 top-2 z-10 flex items-center gap-1.5">
+                          <div className="absolute right-2 top-2 z-10 flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity duration-150">
                             {canQuickRotate ? (
                               <button
                                 type="button"
@@ -5633,10 +5633,10 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
                                   event.preventDefault();
                                   void handleRotateFileQuick(file, 90);
                                 }}
-                                className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-slate-200 bg-white/95 text-slate-700 shadow-sm hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-70"
-                                title="Girar documento 90°"
+                                className="inline-flex h-7 w-7 items-center justify-center rounded-full border border-slate-200 bg-white/95 text-slate-600 shadow-sm hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-70"
+                                title="Girar 90°"
                               >
-                                {isQuickActionLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <RotateCw className="w-4 h-4" />}
+                                {isQuickActionLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RotateCw className="w-3.5 h-3.5" />}
                               </button>
                             ) : null}
                             <button
@@ -5647,10 +5647,10 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
                                 event.preventDefault();
                                 void handleDownloadFile(file);
                               }}
-                              className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-slate-200 bg-white/95 text-slate-700 shadow-sm hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-70"
-                              title="Baixar arquivo"
+                              className="inline-flex h-7 w-7 items-center justify-center rounded-full border border-slate-200 bg-white/95 text-slate-600 shadow-sm hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-70"
+                              title="Baixar"
                             >
-                              <Download className="w-4 h-4" />
+                              <Download className="w-3.5 h-3.5" />
                             </button>
                             <button
                               type="button"
@@ -5659,10 +5659,10 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
                                 event.preventDefault();
                                 handleToggleFavoriteFile(file.id);
                               }}
-                              className={`inline-flex h-8 w-8 items-center justify-center rounded-full border border-slate-200 bg-white/95 shadow-sm hover:bg-slate-50 ${favoriteFileIds.includes(file.id) ? 'text-orange-500' : 'text-slate-700'}`}
-                              title={favoriteFileIds.includes(file.id) ? 'Desafixar arquivo' : 'Fixar arquivo'}
+                              className={`inline-flex h-7 w-7 items-center justify-center rounded-full border border-slate-200 bg-white/95 shadow-sm hover:bg-slate-50 ${favoriteFileIds.includes(file.id) ? 'text-orange-500' : 'text-slate-600'}`}
+                              title={favoriteFileIds.includes(file.id) ? 'Desafixar' : 'Fixar'}
                             >
-                              <Pin className="w-4 h-4" />
+                              <Pin className="w-3.5 h-3.5" />
                             </button>
                           </div>
                           {isImageFile(file.mime_type) && previewUrl ? (
@@ -6576,8 +6576,8 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
       {contextMenu && selectedContextFolder && (
         <div
           ref={contextMenuRef}
-          className="fixed z-[140]"
-          style={{ left: contextMenu.x, top: contextMenu.y }}
+          className="fixed z-[140] transition-opacity duration-75"
+          style={{ left: contextMenuPos?.x ?? contextMenu.x, top: contextMenuPos?.y ?? contextMenu.y, opacity: contextMenuPos ? 1 : 0 }}
           onClick={(e) => e.stopPropagation()}
           onContextMenu={(e) => e.preventDefault()}
         >
@@ -6904,8 +6904,8 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
       {contextMenu && contextMenu.type === 'blank' && (
         <div
           ref={contextMenuRef}
-          className="fixed z-[140]"
-          style={{ left: contextMenu.x, top: contextMenu.y }}
+          className="fixed z-[140] transition-opacity duration-75"
+          style={{ left: contextMenuPos?.x ?? contextMenu.x, top: contextMenuPos?.y ?? contextMenu.y, opacity: contextMenuPos ? 1 : 0 }}
           onClick={(e) => e.stopPropagation()}
           onContextMenu={(e) => e.preventDefault()}
         >
@@ -7014,8 +7014,8 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
       {contextMenu && selectedContextFile && (
         <div
           ref={contextMenuRef}
-          className="fixed z-[140]"
-          style={{ left: contextMenu.x, top: contextMenu.y }}
+          className="fixed z-[140] transition-opacity duration-75"
+          style={{ left: contextMenuPos?.x ?? contextMenu.x, top: contextMenuPos?.y ?? contextMenu.y, opacity: contextMenuPos ? 1 : 0 }}
           onClick={(e) => e.stopPropagation()}
           onContextMenu={(e) => e.preventDefault()}
         >
@@ -7245,111 +7245,128 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
 
       {/* ── Floating selection toolbar ──────────────────────────────────── */}
       <AnimatePresence>
-        {selectedItemKeys.length > 0 && (
-          <motion.div
-            initial={{ y: 80, opacity: 0 }}
-            animate={{ y: 0, opacity: 1 }}
-            exit={{ y: 80, opacity: 0 }}
-            transition={{ type: 'spring', stiffness: 420, damping: 34 }}
-            className="fixed bottom-6 left-1/2 -translate-x-1/2 z-[120] flex items-center gap-1.5 px-3 py-2 rounded-2xl bg-slate-900 text-white shadow-[0_8px_32px_rgba(15,23,42,0.35)] border border-slate-700 select-none"
-          >
-            <span className="text-xs font-semibold text-slate-300 px-1.5 mr-1 whitespace-nowrap">
-              {selectedItemKeys.length} selecionado{selectedItemKeys.length !== 1 ? 's' : ''}
-            </span>
-            <div className="w-px h-5 bg-slate-600 mx-0.5" />
-
-            {/* Download ZIP */}
-            {selectedFileKeys.length > 1 && (
-              <button
-                type="button"
-                title={`Baixar ${selectedFileKeys.length} arquivos como ZIP`}
-                onClick={() => void handleDownloadSelectionAsZip()}
-                disabled={downloadingSelectionZip}
-                className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl text-xs font-medium bg-slate-800 hover:bg-sky-700 transition disabled:opacity-60"
-              >
-                {downloadingSelectionZip ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <FileArchive className="w-3.5 h-3.5 text-sky-400" />}
-                ZIP
-              </button>
-            )}
-
-            {/* Mover */}
-            {selectedItemKeys.length > 1 && (
-              <button
-                type="button"
-                title="Mover seleção"
-                onClick={() => setBulkMoveModalOpen(true)}
-                className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl text-xs font-medium bg-slate-800 hover:bg-slate-700 transition"
-              >
-                <MoveRight className="w-3.5 h-3.5 text-amber-400" />
-                Mover
-              </button>
-            )}
-
-            {/* Copiar */}
-            <button
-              type="button"
-              title="Copiar seleção"
-              onClick={() => handleStoreSelectionInClipboard('copy')}
-              className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl text-xs font-medium bg-slate-800 hover:bg-slate-700 transition"
+        {selectedItemKeys.length > 0 && (() => {
+          const isSingleFile = selectedItemKeys.length === 1 && selectedFileKeys.length === 1;
+          const isSingleFolder = selectedItemKeys.length === 1 && selectedFolderKeys.length === 1;
+          const singleFile = isSingleFile ? files.find(f => `file:${f.id}` === selectedItemKeys[0]) : null;
+          const singleFolder = isSingleFolder ? allFolders.find(f => `folder:${f.id}` === selectedItemKeys[0]) : null;
+          const hasSignable = files.some(f => selectedFileKeys.includes(`file:${f.id}`) && (isDocxFile(f.mime_type, f.original_name) || isPdfFile(f.mime_type, f.original_name)));
+          const Sep = () => <div className="w-px h-5 bg-slate-700 mx-0.5 shrink-0" />;
+          const Btn = ({ onClick, icon, label, color = 'bg-slate-800 hover:bg-slate-700', disabled = false }: { onClick: () => void; icon: React.ReactNode; label: string; color?: string; disabled?: boolean }) => (
+            <button type="button" onClick={onClick} disabled={disabled}
+              className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl text-xs font-medium transition whitespace-nowrap disabled:opacity-50 ${color}`}
             >
-              <Copy className="w-3.5 h-3.5 text-slate-300" />
-              <span className="hidden sm:inline">Copiar</span>
+              {icon}
+              <span className="hidden md:inline">{label}</span>
             </button>
-
-            {/* Renomear em lote */}
-            {selectedItemKeys.length > 1 && (
-              <button
-                type="button"
-                title="Renomear seleção"
-                onClick={() => setBulkRenameModalOpen(true)}
-                className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl text-xs font-medium bg-slate-800 hover:bg-slate-700 transition"
-              >
-                <Tag className="w-3.5 h-3.5 text-slate-300" />
-                <span className="hidden sm:inline">Renomear</span>
-              </button>
-            )}
-
-            {/* Enviar para assinatura (apenas se 1 arquivo PDF/DOCX) */}
-            {selectedFileKeys.length >= 1 && selectedItemKeys.length === selectedFileKeys.length &&
-              files.some(f => selectedFileKeys.includes(`file:${f.id}`) && (isDocxFile(f.mime_type, f.original_name) || isPdfFile(f.mime_type, f.original_name))) && (
-              <button
-                type="button"
-                title="Enviar para assinatura"
-                onClick={() => {
-                  const mainFile = files.find(f => selectedFileKeys.includes(`file:${f.id}`) && (isDocxFile(f.mime_type, f.original_name) || isPdfFile(f.mime_type, f.original_name)));
-                  if (mainFile) handleSendForSignature(mainFile);
-                }}
-                className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl text-xs font-medium bg-orange-700 hover:bg-orange-600 transition"
-              >
-                <SquarePen className="w-3.5 h-3.5 text-orange-200" />
-                <span className="hidden sm:inline">Assinar</span>
-              </button>
-            )}
-
-            <div className="w-px h-5 bg-slate-600 mx-0.5" />
-
-            {/* Excluir */}
-            <button
-              type="button"
-              title="Excluir seleção"
-              onClick={() => void handleDeleteSelectedItems()}
-              className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl text-xs font-medium bg-slate-800 hover:bg-red-700 transition"
+          );
+          return (
+            <motion.div
+              initial={{ y: 80, opacity: 0 }}
+              animate={{ y: 0, opacity: 1 }}
+              exit={{ y: 80, opacity: 0 }}
+              transition={{ type: 'spring', stiffness: 420, damping: 34 }}
+              className="fixed bottom-5 left-1/2 -translate-x-1/2 z-[120] flex items-center gap-1 px-2.5 py-2 rounded-2xl bg-[#18181b] text-white shadow-[0_12px_40px_rgba(0,0,0,0.45)] border border-white/10 select-none max-w-[calc(100vw-24px)] overflow-x-auto"
             >
-              <Trash2 className="w-3.5 h-3.5 text-red-400" />
-              <span className="hidden sm:inline">Excluir</span>
-            </button>
+              {/* Badge de contagem */}
+              <span className="text-[11px] font-semibold text-slate-400 px-1.5 mr-0.5 whitespace-nowrap shrink-0">
+                {selectedItemKeys.length} {selectedItemKeys.length === 1 ? 'item' : 'itens'}
+              </span>
+              <Sep />
 
-            {/* Limpar seleção */}
-            <button
-              type="button"
-              title="Limpar seleção"
-              onClick={clearExplorerSelection}
-              className="flex items-center justify-center w-7 h-7 rounded-xl text-xs font-medium bg-slate-800 hover:bg-slate-700 transition ml-1"
-            >
-              <X className="w-3.5 h-3.5 text-slate-400" />
-            </button>
-          </motion.div>
-        )}
+              {/* ── Ações para item único ── */}
+              {isSingleFile && singleFile && (
+                <Btn onClick={() => { setPreviewFile(singleFile); clearExplorerSelection(); }} icon={<File className="w-3.5 h-3.5 text-slate-300" />} label="Abrir" />
+              )}
+              {isSingleFolder && singleFolder && (
+                <Btn onClick={() => { setCurrentFolderId(singleFolder.id); clearExplorerSelection(); }} icon={<FolderOpen className="w-3.5 h-3.5 text-amber-400" />} label="Abrir" />
+              )}
+              {isSingleFile && singleFile && (
+                <Btn onClick={() => handleDownloadFile(singleFile)} icon={<Download className="w-3.5 h-3.5 text-sky-400" />} label="Baixar" />
+              )}
+              {isSingleFolder && singleFolder && (
+                <Btn onClick={() => handleDownloadFolder(singleFolder)} icon={<Download className="w-3.5 h-3.5 text-sky-400" />} label="Baixar" />
+              )}
+              {(isSingleFile || isSingleFolder) && (
+                <Btn
+                  onClick={() => {
+                    const name = singleFile?.original_name ?? singleFolder?.name ?? '';
+                    const type = singleFile ? 'file' : 'folder';
+                    const id = singleFile?.id ?? singleFolder?.id ?? '';
+                    startInlineRename({ type, id, currentName: name });
+                    clearExplorerSelection();
+                  }}
+                  icon={<Tag className="w-3.5 h-3.5 text-slate-300" />}
+                  label="Renomear"
+                />
+              )}
+              {isSingleFile && singleFile && (
+                <Btn onClick={() => { setSelectedFileToMove(singleFile); setTargetFolderId(''); setMoveModalOpen(true); }} icon={<MoveRight className="w-3.5 h-3.5 text-amber-300" />} label="Mover" />
+              )}
+
+              {/* ── Ações para seleção múltipla ── */}
+              {selectedItemKeys.length > 1 && (
+                <>
+                  {selectedFileKeys.length > 1 && (
+                    <Btn onClick={() => void handleDownloadSelectionAsZip()} disabled={downloadingSelectionZip}
+                      icon={downloadingSelectionZip ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <FileArchive className="w-3.5 h-3.5 text-sky-400" />}
+                      label={`ZIP (${selectedFileKeys.length})`} color="bg-slate-800 hover:bg-sky-800" />
+                  )}
+                  <Btn onClick={() => setBulkMoveModalOpen(true)} icon={<MoveRight className="w-3.5 h-3.5 text-amber-300" />} label="Mover" />
+                  <Btn onClick={() => setBulkRenameModalOpen(true)} icon={<Tag className="w-3.5 h-3.5 text-slate-300" />} label="Renomear" />
+                </>
+              )}
+
+              {/* ── Sempre disponíveis ── */}
+              <Sep />
+              <Btn onClick={() => handleStoreSelectionInClipboard('copy')} icon={<Copy className="w-3.5 h-3.5 text-slate-300" />} label="Copiar" />
+              <Btn onClick={() => handleStoreSelectionInClipboard('cut')} icon={<Scissors className="w-3.5 h-3.5 text-slate-400" />} label="Recortar" />
+
+              {/* ── Assinatura ── */}
+              {hasSignable && (
+                <>
+                  <Sep />
+                  <Btn
+                    onClick={() => {
+                      const mainFile = files.find(f => selectedFileKeys.includes(`file:${f.id}`) && (isDocxFile(f.mime_type, f.original_name) || isPdfFile(f.mime_type, f.original_name)));
+                      if (mainFile) handleSendForSignature(mainFile);
+                    }}
+                    icon={<SquarePen className="w-3.5 h-3.5 text-orange-300" />}
+                    label="Assinar"
+                    color="bg-orange-800/80 hover:bg-orange-700"
+                  />
+                </>
+              )}
+
+              {/* ── Favorito (apenas 1 arquivo) ── */}
+              {isSingleFile && singleFile && (
+                <Btn
+                  onClick={() => handleToggleFavoriteFile(singleFile.id)}
+                  icon={<Pin className={`w-3.5 h-3.5 ${favoriteFileIds.includes(singleFile.id) ? 'text-orange-400' : 'text-slate-400'}`} />}
+                  label={favoriteFileIds.includes(singleFile.id) ? 'Desfixar' : 'Fixar'}
+                />
+              )}
+
+              {/* ── Converter ── */}
+              {selectedImageFiles.length > 0 && (
+                <Btn onClick={() => openConvertImagesModal()} icon={<FileText className="w-3.5 h-3.5 text-red-400" />} label="→ PDF" />
+              )}
+
+              <Sep />
+
+              {/* ── Excluir ── */}
+              <Btn onClick={() => void handleDeleteSelectedItems()} icon={<Trash2 className="w-3.5 h-3.5 text-red-400" />} label="Excluir" color="bg-slate-800 hover:bg-red-800" />
+
+              {/* ── Limpar ── */}
+              <button type="button" onClick={clearExplorerSelection}
+                className="flex items-center justify-center w-7 h-7 rounded-xl bg-slate-800 hover:bg-slate-700 transition shrink-0 ml-0.5"
+                title="Limpar seleção"
+              >
+                <X className="w-3.5 h-3.5 text-slate-500" />
+              </button>
+            </motion.div>
+          );
+        })()}
       </AnimatePresence>
 
       {renameModalOpen && renameTarget && (
