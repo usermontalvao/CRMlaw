@@ -10,7 +10,11 @@ import { CSS } from '@dnd-kit/utilities';
 import { PDFDocument, degrees } from 'pdf-lib';
 import { Document, Page, pdfjs } from 'react-pdf';
 import {
+  ArrowDown,
+  ArrowUp,
+  ArrowUpDown,
   Calendar,
+  CheckSquare,
   ChevronDown,
   ChevronLeft,
   ChevronRight,
@@ -21,6 +25,7 @@ import {
   Copy,
   Download,
   File,
+  FileArchive,
   FileText,
   FileHeart,
   Folder,
@@ -39,6 +44,7 @@ import {
   Minimize2,
   MoveRight,
   MoreHorizontal,
+  Paintbrush,
   Pin,
   GripVertical,
   CheckCircle2,
@@ -51,6 +57,7 @@ import {
   AlertCircle,
   BellRing,
   Share2,
+  Square,
   Star,
   Tag,
   Trash2,
@@ -58,6 +65,7 @@ import {
   Users,
   X,
   SquarePen,
+  Zap,
 } from 'lucide-react';
 import { supabase } from '../config/supabase';
 import { cloudService } from '../services/cloud.service';
@@ -314,8 +322,36 @@ const CLOUD_FAVORITE_FOLDER_IDS_STORAGE_KEY = 'cloud-favorite-folder-ids-v1';
 const CLOUD_FAVORITE_FILE_IDS_STORAGE_KEY = 'cloud-favorite-file-ids-v1';
 const CLOUD_RECENT_FILE_IDS_STORAGE_KEY = 'cloud-recent-file-ids-v1';
 const CLOUD_CARD_SIZE_STORAGE_KEY = 'cloud-card-size-v1';
+const CLOUD_FOLDER_COLORS_STORAGE_KEY = 'cloud-folder-colors-v1';
+const CLOUD_SORT_STORAGE_KEY = 'cloud-sort-v1';
 const CLOUD_ARCHIVED_FOLDER_ID = '__cloud_archived__';
 const CLOUD_TRASH_FOLDER_ID = '__cloud_trash__';
+
+const FOLDER_COLOR_PRESETS = [
+  { name: 'Âmbar',   value: '#f59e0b' },
+  { name: 'Laranja', value: '#f97316' },
+  { name: 'Vermelho',value: '#ef4444' },
+  { name: 'Rosa',    value: '#ec4899' },
+  { name: 'Violeta', value: '#8b5cf6' },
+  { name: 'Azul',    value: '#3b82f6' },
+  { name: 'Ciano',   value: '#06b6d4' },
+  { name: 'Verde',   value: '#22c55e' },
+  { name: 'Esmeralda',value: '#10b981'},
+  { name: 'Cinza',   value: '#64748b' },
+  { name: 'Ardósia', value: '#334155' },
+  { name: 'Padrão',  value: '' },
+];
+
+type CloudSortColumn = 'name' | 'date' | 'size' | 'type' | 'client';
+type CloudSortDir = 'asc' | 'desc';
+
+const getInitialSort = (): { col: CloudSortColumn; dir: CloudSortDir } => {
+  try {
+    const raw = localStorage.getItem(CLOUD_SORT_STORAGE_KEY);
+    if (raw) return JSON.parse(raw);
+  } catch { /* ignore */ }
+  return { col: 'name', dir: 'asc' };
+};
 
 type CloudSearchFilters = {
   extension: string;
@@ -582,6 +618,16 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
   const [pastingClipboard, setPastingClipboard] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [clientsSectionExpanded, setClientsSectionExpanded] = useState(false);
+  // Sort
+  const [sortCol, setSortCol] = useState<CloudSortColumn>(() => getInitialSort().col);
+  const [sortDir, setSortDirState] = useState<CloudSortDir>(() => getInitialSort().dir);
+  // Folder colors
+  const [folderColors, setFolderColors] = useState<Record<string, string>>(() => {
+    try { const s = localStorage.getItem(CLOUD_FOLDER_COLORS_STORAGE_KEY); return s ? JSON.parse(s) : {}; } catch { return {}; }
+  });
+  const [folderColorPickerTarget, setFolderColorPickerTarget] = useState<string | null>(null);
+  // Bulk ZIP download for selection
+  const [downloadingSelectionZip, setDownloadingSelectionZip] = useState(false);
   const [detailsDrawerOpen, setDetailsDrawerOpen] = useState(false);
   const [inlineRenameTarget, setInlineRenameTarget] = useState<{ type: 'file' | 'folder'; id: string; currentName: string } | null>(null);
   const [inlineRenameValue, setInlineRenameValue] = useState('');
@@ -607,6 +653,14 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
   useEffect(() => {
     uploadQueueItemsRef.current = uploadQueueItems;
   }, [uploadQueueItems]);
+
+  useEffect(() => {
+    try { localStorage.setItem(CLOUD_SORT_STORAGE_KEY, JSON.stringify({ col: sortCol, dir: sortDir })); } catch { /* ignore */ }
+  }, [sortCol, sortDir]);
+
+  useEffect(() => {
+    try { localStorage.setItem(CLOUD_FOLDER_COLORS_STORAGE_KEY, JSON.stringify(folderColors)); } catch { /* ignore */ }
+  }, [folderColors]);
 
   useEffect(() => {
     return () => {
@@ -751,6 +805,68 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
     if (isArchivedView || isTrashView) return true;
     return Boolean(currentFolder?.parent_id || currentFolderId);
   }, [currentFolder?.parent_id, currentFolderId, isArchivedView, isTrashView]);
+
+  // ── Sort ───────────────────────────────────────────────────────────────
+  const handleSortBy = (col: CloudSortColumn) => {
+    if (sortCol === col) setSortDirState(d => d === 'asc' ? 'desc' : 'asc');
+    else { setSortCol(col); setSortDirState('asc'); }
+  };
+
+  // ── Folder colors ──────────────────────────────────────────────────────
+  const setFolderColor = (folderId: string, color: string) => {
+    setFolderColors(prev => {
+      const next = { ...prev };
+      if (color) next[folderId] = color; else delete next[folderId];
+      return next;
+    });
+    setFolderColorPickerTarget(null);
+  };
+
+  // ── Select all ────────────────────────────────────────────────────────
+  const handleSelectAll = () => {
+    if (selectedItemKeys.length === explorerItemKeys.length && explorerItemKeys.length > 0) {
+      clearExplorerSelection();
+    } else {
+      setSelectedItemKeys(explorerItemKeys);
+      setSelectionAnchorKey(explorerItemKeys[0] ?? null);
+    }
+  };
+
+  // ── Bulk ZIP download for selection ───────────────────────────────────
+  const handleDownloadSelectionAsZip = async () => {
+    const selectedFiles = files.filter(f => selectedFileKeys.includes(`file:${f.id}`));
+    if (selectedFiles.length === 0) { toast.info('Cloud', 'Nenhum arquivo selecionado.'); return; }
+    if (selectedFiles.length === 1) { await handleDownloadFile(selectedFiles[0]); return; }
+    setDownloadingSelectionZip(true);
+    try {
+      const zip = new JSZip();
+      const usedNames = new Set<string>();
+      const uniqueName = (name: string) => {
+        if (!usedNames.has(name)) { usedNames.add(name); return name; }
+        const dot = name.lastIndexOf('.');
+        const base = dot > 0 ? name.slice(0, dot) : name;
+        const ext = dot > 0 ? name.slice(dot) : '';
+        let i = 2;
+        while (usedNames.has(`${base} (${i})${ext}`)) i++;
+        const result = `${base} (${i})${ext}`;
+        usedNames.add(result);
+        return result;
+      };
+      for (const file of selectedFiles) {
+        const url = await cloudService.getFileSignedUrl(file.storage_path);
+        const resp = await fetch(url);
+        if (!resp.ok) throw new Error(`Falha ao baixar ${file.original_name}`);
+        zip.file(uniqueName(file.original_name), await resp.blob());
+      }
+      const blob = await zip.generateAsync({ type: 'blob' });
+      triggerBrowserDownload(blob, `seleção-${selectedFiles.length}-arquivos.zip`);
+      toast.success('Cloud', `ZIP com ${selectedFiles.length} arquivos iniciado.`);
+    } catch (err: any) {
+      toast.error('Cloud', err.message || 'Erro ao criar ZIP.');
+    } finally {
+      setDownloadingSelectionZip(false);
+    }
+  };
 
   const handleMobileBackNavigation = useCallback(() => {
     if (isArchivedView || isTrashView) {
@@ -1581,13 +1697,35 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
     });
   }, [allFiles, allFolders, files, folderLabelAssignments, hasGlobalSearch, searchFilters, searchTerm]);
 
-  const explorerRows = useMemo(
-    () => [
-      ...filteredFolders.map((folder) => ({ kind: 'folder' as const, folder })),
-      ...filteredFiles.map((file) => ({ kind: 'file' as const, file })),
-    ],
-    [filteredFolders, filteredFiles],
-  );
+  const explorerRows = useMemo(() => {
+    const folderRows = [...filteredFolders].sort((a, b) => {
+      let cmp = 0;
+      if (sortCol === 'name') cmp = a.name.localeCompare(b.name, 'pt-BR', { sensitivity: 'base' });
+      else if (sortCol === 'date') cmp = new Date(a.created_at || 0).getTime() - new Date(b.created_at || 0).getTime();
+      else if (sortCol === 'client') {
+        const ca = clients.find(c => c.id === a.client_id)?.full_name ?? '';
+        const cb = clients.find(c => c.id === b.client_id)?.full_name ?? '';
+        cmp = ca.localeCompare(cb, 'pt-BR');
+      }
+      return sortDir === 'asc' ? cmp : -cmp;
+    }).map(folder => ({ kind: 'folder' as const, folder }));
+
+    const fileRows = [...filteredFiles].sort((a, b) => {
+      let cmp = 0;
+      if (sortCol === 'name') cmp = a.original_name.localeCompare(b.original_name, 'pt-BR', { sensitivity: 'base' });
+      else if (sortCol === 'date') cmp = new Date(a.created_at || 0).getTime() - new Date(b.created_at || 0).getTime();
+      else if (sortCol === 'size') cmp = (a.file_size ?? 0) - (b.file_size ?? 0);
+      else if (sortCol === 'type') cmp = getFileTypeLabel(a).localeCompare(getFileTypeLabel(b), 'pt-BR');
+      else if (sortCol === 'client') {
+        const ca = clients.find(c => c.id === a.client_id)?.full_name ?? '';
+        const cb = clients.find(c => c.id === b.client_id)?.full_name ?? '';
+        cmp = ca.localeCompare(cb, 'pt-BR');
+      }
+      return sortDir === 'asc' ? cmp : -cmp;
+    }).map(file => ({ kind: 'file' as const, file }));
+
+    return [...folderRows, ...fileRows];
+  }, [filteredFolders, filteredFiles, sortCol, sortDir, clients]);
 
   const explorerItemKeys = useMemo(
     () => explorerRows.map((row) => (row.kind === 'folder' ? `folder:${row.folder.id}` : `file:${row.file.id}`)),
@@ -4452,15 +4590,40 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
           <div className="p-3 space-y-3 flex-1 overflow-y-auto pb-24 lg:pb-3">
             {/* Header do Sidebar */}
             <div className="hidden rounded-3xl border border-orange-100 bg-white/90 p-4 shadow-[0_16px_40px_-24px_rgba(249,115,22,0.35)] backdrop-blur-sm lg:block">
-              <div className="flex items-center gap-3">
+              <div className="flex items-center gap-3 mb-3">
                 <div className="w-10 h-10 rounded-2xl bg-gradient-to-br from-amber-500 via-orange-500 to-orange-600 flex items-center justify-center shadow-lg shadow-orange-200/70">
                   <Cloud className="w-5 h-5 text-white" />
                 </div>
-                <div className="min-w-0">
+                <div className="min-w-0 flex-1">
                   <h3 className="text-sm font-bold text-slate-900">Cloud</h3>
                   <p className="text-[10px] uppercase tracking-[0.18em] text-slate-500">Arquivos & Pastas</p>
                 </div>
+                <div className="text-right shrink-0">
+                  <p className="text-[10px] text-slate-400">{allFiles.length} arquivo{allFiles.length !== 1 ? 's' : ''}</p>
+                  <p className="text-[10px] text-slate-400">{allFolders.length} pasta{allFolders.length !== 1 ? 's' : ''}</p>
+                </div>
               </div>
+              {/* Storage indicator */}
+              {(() => {
+                const totalBytes = allFiles.reduce((s, f) => s + (f.file_size ?? 0), 0);
+                const quotaBytes = 5 * 1024 * 1024 * 1024; // 5 GB display quota
+                const pct = Math.min(100, (totalBytes / quotaBytes) * 100);
+                const usedLabel = totalBytes < 1024 * 1024 ? `${Math.round(totalBytes / 1024)} KB` : totalBytes < 1024 * 1024 * 1024 ? `${(totalBytes / (1024 * 1024)).toFixed(1)} MB` : `${(totalBytes / (1024 * 1024 * 1024)).toFixed(2)} GB`;
+                return (
+                  <div>
+                    <div className="flex items-center justify-between mb-1">
+                      <span className="text-[10px] text-slate-500 font-medium flex items-center gap-1"><HardDrive className="w-3 h-3" /> Armazenamento</span>
+                      <span className="text-[10px] text-slate-500">{usedLabel} de 5 GB</span>
+                    </div>
+                    <div className="h-1.5 w-full rounded-full bg-slate-100 overflow-hidden">
+                      <div
+                        className={`h-full rounded-full transition-all duration-700 ${pct > 80 ? 'bg-red-500' : pct > 60 ? 'bg-amber-500' : 'bg-gradient-to-r from-orange-500 to-amber-400'}`}
+                        style={{ width: `${pct}%` }}
+                      />
+                    </div>
+                  </div>
+                );
+              })()}
             </div>
 
             <div className="rounded-3xl border border-slate-200/80 bg-white/90 p-2 shadow-[0_18px_40px_-28px_rgba(15,23,42,0.22)] backdrop-blur-sm space-y-1.5">
@@ -4704,12 +4867,37 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
             className={`relative flex min-h-full flex-1 flex-col overflow-visible ${dragActive ? 'bg-sky-50' : ''}`}
           >
             {viewMode === 'list' ? (
-              <div className="hidden md:grid md:grid-cols-[minmax(260px,2.6fr)_170px_170px_130px_220px] gap-3 px-4 py-2 border-b border-slate-100 bg-white text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-400 select-none">
-                <span>Nome</span>
-                <span>Modificado</span>
-                <span>Tipo</span>
-                <span>Tamanho</span>
-                <span>Cliente</span>
+              <div className="hidden md:grid md:grid-cols-[36px_minmax(260px,2.6fr)_170px_170px_130px_220px] gap-3 px-4 py-2 border-b border-slate-100 bg-white text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-400 select-none">
+                {/* Select all checkbox */}
+                <button
+                  type="button"
+                  onClick={handleSelectAll}
+                  className="flex items-center justify-center rounded hover:text-slate-600 transition"
+                  title={selectedItemKeys.length === explorerItemKeys.length && explorerItemKeys.length > 0 ? 'Desmarcar todos' : 'Selecionar todos'}
+                >
+                  {selectedItemKeys.length === explorerItemKeys.length && explorerItemKeys.length > 0
+                    ? <CheckSquare className="w-4 h-4 text-orange-500" />
+                    : <Square className="w-4 h-4" />}
+                </button>
+                {([
+                  ['name', 'Nome'],
+                  ['date', 'Modificado'],
+                  ['type', 'Tipo'],
+                  ['size', 'Tamanho'],
+                  ['client', 'Cliente'],
+                ] as [CloudSortColumn, string][]).map(([col, label]) => (
+                  <button
+                    key={col}
+                    type="button"
+                    onClick={() => handleSortBy(col)}
+                    className={`flex items-center gap-1 hover:text-slate-700 transition ${sortCol === col ? 'text-orange-600' : ''}`}
+                  >
+                    <span>{label}</span>
+                    {sortCol === col
+                      ? (sortDir === 'asc' ? <ArrowUp className="w-3 h-3" /> : <ArrowDown className="w-3 h-3" />)
+                      : <ArrowUpDown className="w-3 h-3 opacity-40" />}
+                  </button>
+                ))}
               </div>
             ) : null}
 
@@ -4854,17 +5042,49 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
                     transition={{ duration: 0.18 }}
                     className="flex min-h-full flex-1 flex-col"
                   >
-                    {/* Botão de filtros colapsável em mobile */}
-                    <div className="lg:hidden px-3 py-2 flex items-center justify-between border-b border-slate-100 bg-slate-50/50">
-                      <span className="text-xs text-slate-500">{explorerRows.length} itens</span>
-                      <button
-                        type="button"
-                        onClick={() => setShowAdvancedFilters((prev) => !prev)}
-                        className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium transition ${showAdvancedFilters ? 'bg-orange-100 text-orange-700 border border-orange-200' : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-50'}`}
-                      >
-                        <Filter className="w-3.5 h-3.5" />
-                        Filtrar
-                      </button>
+                    {/* Barra de status / ações rápidas */}
+                    <div className="px-3 py-2 flex items-center justify-between gap-2 border-b border-slate-100 bg-slate-50/50">
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs text-slate-500">
+                          {explorerRows.filter(r => r.kind === 'folder').length > 0 && (
+                            <>{explorerRows.filter(r => r.kind === 'folder').length} pasta{explorerRows.filter(r => r.kind === 'folder').length !== 1 ? 's' : ''}{explorerRows.filter(r => r.kind === 'file').length > 0 ? ', ' : ''}</>
+                          )}
+                          {explorerRows.filter(r => r.kind === 'file').length > 0 && (
+                            <>{explorerRows.filter(r => r.kind === 'file').length} arquivo{explorerRows.filter(r => r.kind === 'file').length !== 1 ? 's' : ''}</>
+                          )}
+                        </span>
+                        {sortCol !== 'name' || sortDir !== 'asc' ? (
+                          <button
+                            type="button"
+                            onClick={() => { setSortCol('name'); setSortDirState('asc'); }}
+                            className="inline-flex items-center gap-1 rounded-full border border-orange-200 bg-orange-50 px-2 py-0.5 text-[10px] font-medium text-orange-700 hover:bg-orange-100 transition"
+                          >
+                            <ArrowUpDown className="w-3 h-3" />
+                            Ordenado por {sortCol} {sortDir === 'asc' ? '↑' : '↓'} · Limpar
+                          </button>
+                        ) : null}
+                      </div>
+                      <div className="flex items-center gap-1.5">
+                        {/* Upload rápido */}
+                        {!isTrashView && !isArchivedView && (
+                          <button
+                            type="button"
+                            onClick={() => fileInputRef.current?.click()}
+                            className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-full text-xs font-medium bg-orange-500 hover:bg-orange-600 text-white transition shadow-sm"
+                          >
+                            <Upload className="w-3 h-3" />
+                            <span className="hidden sm:inline">Enviar</span>
+                          </button>
+                        )}
+                        <button
+                          type="button"
+                          onClick={() => setShowAdvancedFilters((prev) => !prev)}
+                          className={`inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-full text-xs font-medium transition ${showAdvancedFilters || hasActiveAdvancedFilters ? 'bg-orange-100 text-orange-700 border border-orange-200' : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-50'}`}
+                        >
+                          <Filter className="w-3 h-3" />
+                          <span className="hidden sm:inline">{hasActiveAdvancedFilters ? 'Filtros ativos' : 'Filtrar'}</span>
+                        </button>
+                      </div>
                     </div>
                     {viewMode === 'list' ? (
                       <div className="flex min-h-full flex-1 flex-col">
@@ -4906,7 +5126,7 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
                           e.preventDefault();
                           void handleDropOnFolder(folder.id);
                         }}
-                        className={`flex flex-col gap-2 px-4 py-3 border-b border-slate-100 text-sm cursor-pointer sm:grid sm:grid-cols-[minmax(260px,2.6fr)_170px_170px_130px_220px] sm:gap-3 sm:py-2.5 ${
+                        className={`group flex flex-col gap-2 px-4 py-3 border-b border-slate-100 text-sm cursor-pointer sm:grid sm:grid-cols-[36px_minmax(260px,2.6fr)_170px_170px_130px_220px] sm:items-center sm:gap-3 sm:py-2.5 ${
                           isDropTarget ? 'bg-orange-100 border-orange-300' : isSelected ? 'bg-orange-50' : 'hover:bg-slate-50'
                         }`}
                         onClick={(event) => {
@@ -4937,9 +5157,16 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
                           setContextMenu({ x: e.clientX, y: e.clientY, type: 'folder', folderId: folder.id });
                         }}
                       >
+                        {/* Checkbox */}
+                        <div className="hidden sm:flex items-center justify-center" onClick={e => { e.stopPropagation(); applySelection(itemKey, { additive: true }); }}>
+                          <div className={`w-4 h-4 rounded border flex items-center justify-center transition ${isSelected ? 'bg-orange-500 border-orange-500' : 'border-slate-300 group-hover:border-orange-400'}`}>
+                            {isSelected && <svg viewBox="0 0 10 8" className="w-2.5 h-2.5 fill-white"><path d="M1 4l2.5 2.5L9 1"/></svg>}
+                          </div>
+                        </div>
                         <div className="flex items-center gap-3 min-w-0">
-                          <div className="w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0 bg-amber-50">
-                            <Folder className="w-4 h-4 text-amber-500" />
+                          {/* Folder icon with color support */}
+                          <div className="w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0" style={{ backgroundColor: folderColors[folder.id] ? `${folderColors[folder.id]}22` : '#fef3c7' }}>
+                            <Folder className="w-4 h-4" style={{ color: folderColors[folder.id] || '#f59e0b' }} />
                           </div>
                           <div className="min-w-0 flex-1">
                             {inlineRenameTarget?.type === 'folder' && inlineRenameTarget.id === folder.id ? (
@@ -5055,7 +5282,7 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
                       draggable
                       onDragStart={(event) => handleItemDragStart(event, itemKey)}
                       onDragEnd={handleDragEnd}
-                      className={`flex flex-col gap-2 px-4 py-3 border-b border-slate-100 text-sm cursor-pointer sm:grid sm:grid-cols-[minmax(260px,2.4fr)_170px_170px_130px_220px] sm:gap-3 sm:py-2.5 ${
+                      className={`group flex flex-col gap-2 px-4 py-3 border-b border-slate-100 text-sm cursor-pointer sm:grid sm:grid-cols-[36px_minmax(260px,2.4fr)_170px_170px_130px_220px] sm:items-center sm:gap-3 sm:py-2.5 ${
                         isSelected ? 'bg-orange-50' : 'hover:bg-slate-50'
                       }`}
                       onClick={(event) => {
@@ -5094,18 +5321,15 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
                         setPreviewFile(file);
                       }}
                     >
+                      {/* Checkbox */}
+                      <div className="hidden sm:flex items-center justify-center" onClick={e => { e.stopPropagation(); applySelection(itemKey, { additive: true }); }}>
+                        <div className={`w-4 h-4 rounded border flex items-center justify-center transition ${isSelected ? 'bg-orange-500 border-orange-500' : 'border-slate-300 group-hover:border-orange-400'}`}>
+                          {isSelected && <svg viewBox="0 0 10 8" className="w-2.5 h-2.5 fill-white"><path d="M1 4l2.5 2.5L9 1"/></svg>}
+                        </div>
+                      </div>
                       <div className="flex items-center gap-3 min-w-0">
-                        {isImageFile(file.mime_type) ? (
-                          <input
-                            type="checkbox"
-                            checked={selectedItemKeys.includes(itemKey)}
-                            onChange={() => toggleImageSelection(file.id)}
-                            onClick={(e) => e.stopPropagation()}
-                            className="w-4 h-4 rounded border-slate-300 text-orange-600 focus:ring-orange-500"
-                          />
-                        ) : null}
-                        <div className="w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0 bg-slate-50">
-                          {isPdfFile(file.mime_type, file.original_name) ? <FileText className="w-4 h-4 text-red-500" /> : isImageFile(file.mime_type) ? <ImageIcon className="w-4 h-4 text-emerald-500" /> : isWordFile(file.mime_type, file.original_name) ? <FileText className="w-4 h-4 text-blue-500" /> : <File className="w-4 h-4 text-slate-400" />}
+                        <div className={`w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0 ${isPdfFile(file.mime_type, file.original_name) ? 'bg-red-50' : isImageFile(file.mime_type) ? 'bg-emerald-50' : isWordFile(file.mime_type, file.original_name) ? 'bg-blue-50' : isVideoFile(file.mime_type, file.original_name) ? 'bg-purple-50' : 'bg-slate-50'}`}>
+                          {isPdfFile(file.mime_type, file.original_name) ? <FileText className="w-4 h-4 text-red-500" /> : isImageFile(file.mime_type) ? <ImageIcon className="w-4 h-4 text-emerald-500" /> : isWordFile(file.mime_type, file.original_name) ? <FileText className="w-4 h-4 text-blue-500" /> : isVideoFile(file.mime_type, file.original_name) ? <FileText className="w-4 h-4 text-purple-500" /> : <File className="w-4 h-4 text-slate-400" />}
                         </div>
                         {inlineRenameTarget?.type === 'file' && inlineRenameTarget.id === file.id ? (
                           splitFileNameAndExtension(file.original_name).extension ? (
@@ -5251,8 +5475,8 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
                         >
                           {/* Header: ícone + status/vínculo */}
                           <div className="flex justify-between items-start mb-4">
-                            <div className="w-12 h-12 rounded-xl bg-amber-100 flex items-center justify-center">
-                              <Folder className="w-7 h-7 text-amber-600" />
+                            <div className="w-12 h-12 rounded-xl flex items-center justify-center" style={{ backgroundColor: folderColors[folder.id] ? `${folderColors[folder.id]}22` : '#fef3c7' }}>
+                              <Folder className="w-7 h-7" style={{ color: folderColors[folder.id] || '#d97706' }} />
                             </div>
                             <div className="flex items-center gap-2">
                               {showFolderIssueBadge ? (
@@ -6361,8 +6585,9 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
             <button
               type="button"
               onClick={() => openFolderFromContextMenu(selectedContextFolder)}
-              className="w-full px-3 py-2.5 text-left text-sm font-medium text-slate-700 hover:bg-slate-50 transition"
+              className="w-full px-3 py-2.5 text-left text-sm font-medium text-slate-700 hover:bg-slate-50 transition flex items-center gap-2"
             >
+              <FolderOpen className="w-4 h-4 text-amber-500" />
               Abrir pasta
             </button>
             <button
@@ -6371,10 +6596,37 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
                 handleToggleFavoriteFolder(selectedContextFolder.id);
                 setContextMenu(null);
               }}
-              className="w-full px-3 py-2.5 text-left text-sm text-slate-700 hover:bg-slate-50 transition"
+              className="w-full px-3 py-2.5 text-left text-sm text-slate-700 hover:bg-slate-50 transition flex items-center gap-2"
             >
+              <Pin className="w-4 h-4 text-orange-400" />
               {favoriteFolderIds.includes(selectedContextFolder.id) ? 'Desafixar pasta' : 'Fixar em favoritos'}
             </button>
+
+            {/* Cor da pasta */}
+            <button
+              type="button"
+              onClick={() => setFolderColorPickerTarget(prev => prev === selectedContextFolder.id ? null : selectedContextFolder.id)}
+              className="w-full px-3 py-2.5 text-left text-sm text-slate-700 hover:bg-slate-50 transition flex items-center gap-2"
+            >
+              <Paintbrush className="w-4 h-4" style={{ color: folderColors[selectedContextFolder.id] || '#94a3b8' }} />
+              Cor da pasta
+            </button>
+            {folderColorPickerTarget === selectedContextFolder.id && (
+              <div className="px-3 pb-3">
+                <div className="grid grid-cols-6 gap-1.5 p-2 bg-slate-50 rounded-xl border border-slate-200">
+                  {FOLDER_COLOR_PRESETS.map(preset => (
+                    <button
+                      key={preset.value || 'default'}
+                      type="button"
+                      title={preset.name}
+                      onClick={() => { setFolderColor(selectedContextFolder.id, preset.value); setContextMenu(null); }}
+                      className={`w-7 h-7 rounded-lg border-2 transition hover:scale-110 ${folderColors[selectedContextFolder.id] === preset.value || (!preset.value && !folderColors[selectedContextFolder.id]) ? 'border-slate-600 scale-110' : 'border-transparent'}`}
+                      style={{ backgroundColor: preset.value || '#fef3c7' }}
+                    />
+                  ))}
+                </div>
+              </div>
+            )}
             <div className="border-t border-slate-100" />
             {folderLabels.map((label) => (
               <button
@@ -6932,6 +7184,18 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
             {selectedItemKeys.length > 1 && (
               <>
                 <div className="my-1 border-t border-slate-100" />
+                {selectedFileKeys.length > 1 && (
+                  <button
+                    type="button"
+                    onClick={() => { setContextMenu(null); void handleDownloadSelectionAsZip(); }}
+                    className="w-full px-3 py-2 text-left text-sm text-slate-700 hover:bg-slate-50 transition flex items-center gap-3"
+                  >
+                    <div className="w-7 h-7 rounded-lg bg-sky-50 flex items-center justify-center flex-shrink-0">
+                      <FileArchive className="w-3.5 h-3.5 text-sky-500" />
+                    </div>
+                    Baixar {selectedFileKeys.length} arquivos como ZIP
+                  </button>
+                )}
                 <button
                   type="button"
                   onClick={() => { setContextMenu(null); setBulkRenameModalOpen(true); }}
@@ -6978,6 +7242,115 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
           </div>
         </div>
       )}
+
+      {/* ── Floating selection toolbar ──────────────────────────────────── */}
+      <AnimatePresence>
+        {selectedItemKeys.length > 0 && (
+          <motion.div
+            initial={{ y: 80, opacity: 0 }}
+            animate={{ y: 0, opacity: 1 }}
+            exit={{ y: 80, opacity: 0 }}
+            transition={{ type: 'spring', stiffness: 420, damping: 34 }}
+            className="fixed bottom-6 left-1/2 -translate-x-1/2 z-[120] flex items-center gap-1.5 px-3 py-2 rounded-2xl bg-slate-900 text-white shadow-[0_8px_32px_rgba(15,23,42,0.35)] border border-slate-700 select-none"
+          >
+            <span className="text-xs font-semibold text-slate-300 px-1.5 mr-1 whitespace-nowrap">
+              {selectedItemKeys.length} selecionado{selectedItemKeys.length !== 1 ? 's' : ''}
+            </span>
+            <div className="w-px h-5 bg-slate-600 mx-0.5" />
+
+            {/* Download ZIP */}
+            {selectedFileKeys.length > 1 && (
+              <button
+                type="button"
+                title={`Baixar ${selectedFileKeys.length} arquivos como ZIP`}
+                onClick={() => void handleDownloadSelectionAsZip()}
+                disabled={downloadingSelectionZip}
+                className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl text-xs font-medium bg-slate-800 hover:bg-sky-700 transition disabled:opacity-60"
+              >
+                {downloadingSelectionZip ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <FileArchive className="w-3.5 h-3.5 text-sky-400" />}
+                ZIP
+              </button>
+            )}
+
+            {/* Mover */}
+            {selectedItemKeys.length > 1 && (
+              <button
+                type="button"
+                title="Mover seleção"
+                onClick={() => setBulkMoveModalOpen(true)}
+                className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl text-xs font-medium bg-slate-800 hover:bg-slate-700 transition"
+              >
+                <MoveRight className="w-3.5 h-3.5 text-amber-400" />
+                Mover
+              </button>
+            )}
+
+            {/* Copiar */}
+            <button
+              type="button"
+              title="Copiar seleção"
+              onClick={() => handleStoreSelectionInClipboard('copy')}
+              className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl text-xs font-medium bg-slate-800 hover:bg-slate-700 transition"
+            >
+              <Copy className="w-3.5 h-3.5 text-slate-300" />
+              <span className="hidden sm:inline">Copiar</span>
+            </button>
+
+            {/* Renomear em lote */}
+            {selectedItemKeys.length > 1 && (
+              <button
+                type="button"
+                title="Renomear seleção"
+                onClick={() => setBulkRenameModalOpen(true)}
+                className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl text-xs font-medium bg-slate-800 hover:bg-slate-700 transition"
+              >
+                <Tag className="w-3.5 h-3.5 text-slate-300" />
+                <span className="hidden sm:inline">Renomear</span>
+              </button>
+            )}
+
+            {/* Enviar para assinatura (apenas se 1 arquivo PDF/DOCX) */}
+            {selectedFileKeys.length >= 1 && selectedItemKeys.length === selectedFileKeys.length &&
+              files.some(f => selectedFileKeys.includes(`file:${f.id}`) && (isDocxFile(f.mime_type, f.original_name) || isPdfFile(f.mime_type, f.original_name))) && (
+              <button
+                type="button"
+                title="Enviar para assinatura"
+                onClick={() => {
+                  const mainFile = files.find(f => selectedFileKeys.includes(`file:${f.id}`) && (isDocxFile(f.mime_type, f.original_name) || isPdfFile(f.mime_type, f.original_name)));
+                  if (mainFile) handleSendForSignature(mainFile);
+                }}
+                className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl text-xs font-medium bg-orange-700 hover:bg-orange-600 transition"
+              >
+                <SquarePen className="w-3.5 h-3.5 text-orange-200" />
+                <span className="hidden sm:inline">Assinar</span>
+              </button>
+            )}
+
+            <div className="w-px h-5 bg-slate-600 mx-0.5" />
+
+            {/* Excluir */}
+            <button
+              type="button"
+              title="Excluir seleção"
+              onClick={() => void handleDeleteSelectedItems()}
+              className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl text-xs font-medium bg-slate-800 hover:bg-red-700 transition"
+            >
+              <Trash2 className="w-3.5 h-3.5 text-red-400" />
+              <span className="hidden sm:inline">Excluir</span>
+            </button>
+
+            {/* Limpar seleção */}
+            <button
+              type="button"
+              title="Limpar seleção"
+              onClick={clearExplorerSelection}
+              className="flex items-center justify-center w-7 h-7 rounded-xl text-xs font-medium bg-slate-800 hover:bg-slate-700 transition ml-1"
+            >
+              <X className="w-3.5 h-3.5 text-slate-400" />
+            </button>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {renameModalOpen && renameTarget && (
         <div className="fixed inset-0 z-[135] bg-slate-900/25 backdrop-blur-sm flex items-center justify-center p-4">

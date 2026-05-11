@@ -47,6 +47,7 @@ import { matchesNormalizedSearch } from '../utils/search';
    ============================================================================ */
 
 const VERSION_CODENAMES: Record<string, { name: string; emoji: string }> = {
+  '1.10.028': { name: 'Café Drive Nativo', emoji: '☁️' },
   '1.10.027': { name: 'Café Página Contínua', emoji: '📄' },
   '1.10.026': { name: 'Café Sem Fronteiras', emoji: '🌊' },
   '1.10.025': { name: 'Café Envelope Completo', emoji: '📎' },
@@ -745,6 +746,27 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
 };
 
 const releases: ReleaseNote[] = [
+  {
+    version: '1.10.028',
+    date: '11/05/2026',
+    summary: 'Cloud: expansão completa de funcionalidades — colunas ordenáveis, cores nas pastas, toolbar de seleção flutuante, ZIP de seleção, indicador de armazenamento e checkbox de selecionar todos.',
+    modules: [
+      {
+        moduleId: 'cloud',
+        changes: [
+          { type: 'feature', title: 'Colunas ordenáveis', description: 'Clique no cabeçalho de qualquer coluna (Nome, Modificado, Tipo, Tamanho, Cliente) para ordenar ascendente/descendente. Ordenação salva no localStorage.' },
+          { type: 'feature', title: 'Cores nas pastas', description: 'Botão direito na pasta → "Cor da pasta" → grade com 12 cores preset. O ícone da pasta reflete a cor escolhida tanto na lista quanto nos cards.' },
+          { type: 'feature', title: 'Toolbar flutuante de seleção', description: 'Ao selecionar um ou mais itens, aparece uma barra fixa na parte inferior com ações contextuais: ZIP, Mover, Copiar, Renomear, Assinar, Excluir e Limpar seleção.' },
+          { type: 'feature', title: 'Baixar seleção como ZIP', description: 'Com múltiplos arquivos selecionados: botão "Baixar N arquivos como ZIP" disponível na toolbar flutuante e no menu de contexto.' },
+          { type: 'feature', title: 'Checkbox de selecionar todos', description: 'Cabeçalho da lista agora tem checkbox que seleciona/desmarca todos os itens visíveis de uma vez.' },
+          { type: 'feature', title: 'Checkboxes por linha', description: 'Cada linha de arquivo/pasta tem checkbox visível ao hover, tornando a seleção múltipla mais intuitiva.' },
+          { type: 'improvement', title: 'Indicador de armazenamento no sidebar', description: 'Barra de progresso no cabeçalho do sidebar mostra o espaço utilizado sobre 5 GB, com cores adaptativas (laranja → âmbar → vermelho).' },
+          { type: 'improvement', title: 'Barra de status acima da lista', description: 'Mostra contagem de pastas e arquivos, botão de upload rápido, ordenação ativa com opção de limpar, e botão de filtros com indicação visual quando há filtros ativos.' },
+          { type: 'improvement', title: 'Ícones de arquivo coloridos', description: 'PDFs em vermelho, imagens em verde, Word em azul, vídeos em roxo — identificação visual instantânea do tipo de arquivo.' },
+        ],
+      },
+    ],
+  },
   {
     version: '1.10.027',
     date: '11/05/2026',
