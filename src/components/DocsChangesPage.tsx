@@ -47,6 +47,7 @@ import { matchesNormalizedSearch } from '../utils/search';
    ============================================================================ */
 
 const VERSION_CODENAMES: Record<string, { name: string; emoji: string }> = {
+  '1.10.034': { name: 'Café Loading Profissional', emoji: '⏳' },
   '1.10.030': { name: 'Café Seleção Premium', emoji: '✨' },
   '1.10.029': { name: 'Café Menu Inteligente', emoji: '🎯' },
   '1.10.028': { name: 'Café Drive Nativo', emoji: '☁️' },
@@ -748,6 +749,53 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
 };
 
 const releases: ReleaseNote[] = [
+  {
+    version: '1.10.034',
+    date: '11/05/2026',
+    summary: 'Página pública de assinatura: loading screen enterprise com tempo mínimo de 10s, steps animados, nome do documento e nova tela de envio de assinatura.',
+    modules: [
+      {
+        moduleId: 'assinaturas',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Loading screen enterprise com tempo mínimo de 10 segundos',
+            description: 'O overlay de carregamento permanece visível por no mínimo 10 segundos desde o mount, independente da velocidade de conexão. Barra de progresso determinista (0→96% em 10s), controlada por estado JS. Após 10s e documento carregado, fade suave de 600ms.',
+          },
+          {
+            type: 'improvement',
+            title: 'Steps animados com checkmarks no loading',
+            description: 'Três etapas visuais: "Validando token de acesso", "Carregando documento" e "Preparando interface segura". Cada step marca-se com checkmark verde conforme o tempo avança. O step ativo exibe um ponto pulsante laranja.',
+          },
+          {
+            type: 'improvement',
+            title: 'Nome do documento exibido no loading',
+            description: 'Quando a requisição carrega (request.document_name), um chip laranja com ícone de arquivo aparece no centro da tela com o nome do documento sendo preparado.',
+          },
+          {
+            type: 'fix',
+            title: 'Flickering definitivamente eliminado',
+            description: 'LoadingScreen extraído para nível de módulo + createPortal garante que é a mesma instância React em todos os branches de renderização (loading, error, already_signed, success). Os timers e elapsed interno nunca são reiniciados.',
+          },
+          {
+            type: 'improvement',
+            title: 'Nova tela de envio de assinatura',
+            description: 'Ao clicar em "Assinar", a tela de envio agora usa o mesmo estilo enterprise do loading: full-screen branco, barra de progresso, ícone de upload (seta ↑), e steps específicos do fluxo: "Enviando foto, assinatura e geolocalização" → "Conferindo identidade" → "Registrando assinatura" → "Finalizando…".',
+          },
+        ],
+      },
+      {
+        moduleId: 'chat',
+        changes: [
+          {
+            type: 'fix',
+            title: 'Badge de mensagens não lidas não persiste após reload',
+            description: 'O contador de notificações não lidas agora usa exclusivamente o banco de dados como fonte de verdade. O notifyCount não é mais salvo nem restaurado do localStorage, eliminando o badge fantasma que aparecia ao recarregar a página após ler as mensagens.',
+          },
+        ],
+      },
+    ],
+  },
   {
     version: '1.10.033',
     date: '11/05/2026',

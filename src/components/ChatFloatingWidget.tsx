@@ -565,18 +565,16 @@ const ChatFloatingWidget: React.FC<ChatFloatingWidgetProps> = ({ hidden = false 
 
   useEffect(() => {
     try {
-      const rawNotify = localStorage.getItem(WIDGET_NOTIFY_COUNT_KEY);
+      // Nota: notifyCount NÃO é restaurado do localStorage. Ele representa
+      // notificações da sessão atual e o banco já é consultado logo em seguida,
+      // tornando o valor persistido obsoleto e fonte de badge fantasma.
+
       const rawRoom = localStorage.getItem(WIDGET_ROOM_UNREAD_KEY);
       const rawLastImage = localStorage.getItem(WIDGET_LAST_IMAGE_SENDER_KEY);
 
-      if (rawNotify) {
-        const parsed = Number(rawNotify);
-        if (!Number.isNaN(parsed) && parsed > 0) {
-          setNotifyCount(parsed);
-        }
-      }
-
       if (rawRoom) {
+        // Pré-carrega do localStorage só como placeholder visual enquanto o banco
+        // não responde. loadRoomUnreadCounts() sobrescreverá com os valores reais.
         const obj = JSON.parse(rawRoom) as Record<string, number>;
         const next = new Map<string, number>();
         Object.entries(obj || {}).forEach(([roomId, count]) => {
@@ -610,13 +608,15 @@ const ChatFloatingWidget: React.FC<ChatFloatingWidgetProps> = ({ hidden = false 
     }
   }, [open]);
 
+  // notifyCount é exclusivo da sessão atual (incrementado por eventos realtime).
+  // Não persiste no localStorage para evitar badge fantasma após recarregar.
   useEffect(() => {
     try {
-      localStorage.setItem(WIDGET_NOTIFY_COUNT_KEY, String(notifyCount || 0));
+      localStorage.removeItem(WIDGET_NOTIFY_COUNT_KEY);
     } catch {
       // ignore
     }
-  }, [notifyCount]);
+  }, []);
 
   useEffect(() => {
     try {
@@ -782,22 +782,20 @@ const ChatFloatingWidget: React.FC<ChatFloatingWidgetProps> = ({ hidden = false 
       .select('room_id, unread_count')
       .eq('user_id', user.id);
 
-    if (error) {
-      return;
-    }
+    if (error) return;
 
+    // O banco é a fonte de verdade — substituir completamente o mapa local.
+    // Nunca usar Math.max: se o banco diz 0 (mensagem lida), o valor local
+    // stale (vindo do localStorage) não deve sobrescrever.
     const dbMap = new Map<string, number>();
     (data ?? []).forEach((row: any) => {
       dbMap.set(String(row.room_id), Number(row.unread_count ?? 0));
     });
+    setRoomUnreadCounts(dbMap);
 
-    setRoomUnreadCounts((prev) => {
-      const next = new Map(prev);
-      dbMap.forEach((count, roomId) => {
-        next.set(roomId, Math.max(next.get(roomId) ?? 0, count));
-      });
-      return next;
-    });
+    // Após carregar do banco, zerar notifyCount para evitar que o valor
+    // persistido no localStorage (de sessão anterior) continue inflando o badge.
+    setNotifyCount(0);
   }, [user]);
 
   const loadMembers = useCallback(async () => {

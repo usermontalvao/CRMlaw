@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { AlertCircle, Camera, CheckCircle, ChevronLeft, Clock, Copy, Download, ExternalLink, FileText, Loader2, Lock, MapPin, PenTool, RotateCcw, Scale, Share2, User, X, Shield, AlertTriangle, Mail } from 'lucide-react';
 import { signatureService } from '../services/signature.service';
 import { pdfSignatureService } from '@/services/pdfSignature.service';
@@ -146,6 +147,386 @@ const AttachmentsList: React.FC<AttachmentsListProps> = ({ attachments, attachme
   );
 };
 
+// ─── Inject loading animation keyframes once at module load (never remounts) ───
+(() => {
+  const styleId = 'public-signing-loading-animations';
+  if (typeof document === 'undefined' || document.getElementById(styleId)) return;
+  const style = document.createElement('style');
+  style.id = styleId;
+  style.textContent = `
+    @keyframes iconBreath {
+      0%, 100% { transform: scale(1);    box-shadow: 0 0 0 0   rgba(249,115,22,0.18), 0 16px 40px -8px rgba(249,115,22,0.35); }
+      50%       { transform: scale(1.05); box-shadow: 0 0 0 12px rgba(249,115,22,0),   0 20px 48px -8px rgba(249,115,22,0.45); }
+    }
+    @keyframes ringPulse {
+      0%   { transform: scale(1);   opacity: 0.5; }
+      100% { transform: scale(1.7); opacity: 0; }
+    }
+    @keyframes fadeUp {
+      from { opacity: 0; transform: translateY(10px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
+    @keyframes arcSpin {
+      from { transform: rotate(0deg); }
+      to   { transform: rotate(360deg); }
+    }
+    @keyframes docPass {
+      0%   { transform: translateX(0) translateY(0) rotate(var(--doc-rot)); opacity: 0; }
+      8%   { opacity: 1; }
+      88%  { opacity: 0.9; }
+      100% { transform: translateX(var(--doc-tx)) translateY(var(--doc-ty)) rotate(var(--doc-rot-end)); opacity: 0; }
+    }
+  `;
+  document.head.appendChild(style);
+})();
+
+// ─── LoadingScreen — defined at MODULE level so React never remounts it ────────
+const LOADING_STEPS = [
+  { label: 'Validando token de acesso',   doneAt: 1.8 },
+  { label: 'Carregando documento',        doneAt: 4.2 },
+  { label: 'Preparando interface segura', doneAt: 9.0 },
+];
+
+const FLOATING_DOCS = [
+  { delay: '0s',    dur: '3.2s', tx: '160px', ty: '-18px', rot: '-6deg',  rotEnd: '2deg',  left: '-20px', top: '22px',  w: '64px' },
+  { delay: '1.1s',  dur: '3.4s', tx: '170px', ty: '10px',  rot: '4deg',   rotEnd: '-3deg', left: '-10px', top: '6px',   w: '58px' },
+  { delay: '2.0s',  dur: '3.0s', tx: '165px', ty: '-8px',  rot: '-2deg',  rotEnd: '5deg',  left: '-16px', top: '34px',  w: '60px' },
+  { delay: '0.55s', dur: '3.6s', tx: '155px', ty: '14px',  rot: '6deg',   rotEnd: '-4deg', left: '-24px', top: '14px',  w: '62px' },
+  { delay: '1.7s',  dur: '3.1s', tx: '158px', ty: '-12px', rot: '-4deg',  rotEnd: '3deg',  left: '-18px', top: '28px',  w: '56px' },
+];
+
+const LoadingScreen: React.FC<{ docName?: string }> = ({ docName }) => {
+  const [elapsed, setElapsed] = useState(0);
+  const mountRef = useRef(Date.now());
+
+  useEffect(() => {
+    const id = window.setInterval(() => {
+      setElapsed((Date.now() - mountRef.current) / 1000);
+    }, 50);
+    return () => window.clearInterval(id);
+  }, []);
+
+  const pct = Math.min(96, (elapsed / 10) * 96);
+
+  return (
+    <div className="min-h-[100dvh] bg-white flex flex-col select-none overflow-hidden">
+
+      {/* ── Deterministic progress bar (fills in ~10 s) ── */}
+      <div className="h-[3px] w-full bg-slate-100 flex-shrink-0 relative overflow-hidden">
+        <div
+          className="absolute left-0 top-0 h-full bg-gradient-to-r from-orange-500 via-amber-400 to-orange-500"
+          style={{ width: `${pct}%`, transition: 'width 180ms ease-out' }}
+        />
+        {/* Moving shimmer on the bar */}
+        <div
+          className="absolute top-0 h-full w-[60px] bg-gradient-to-r from-transparent via-white/50 to-transparent pointer-events-none"
+          style={{ left: `${Math.max(0, pct - 10)}%`, transition: 'left 180ms ease-out' }}
+        />
+      </div>
+
+      {/* ── Center content ── */}
+      <div className="flex-1 flex flex-col items-center justify-center px-6 py-10">
+
+        {/* Shield icon with ripple rings */}
+        <div className="relative flex items-center justify-center mb-8" style={{ animation: 'fadeUp 0.5s ease-out both' }}>
+          <div className="absolute w-[90px] h-[90px] rounded-full border border-orange-200/55" style={{ animation: 'ringPulse 2.4s ease-out infinite' }} />
+          <div className="absolute w-[90px] h-[90px] rounded-full border border-orange-100/40" style={{ animation: 'ringPulse 2.4s ease-out infinite 0.8s' }} />
+          <div
+            className="relative w-[66px] h-[66px] rounded-full bg-gradient-to-br from-orange-500 to-amber-400 flex items-center justify-center"
+            style={{ animation: 'iconBreath 3s ease-in-out infinite', boxShadow: '0 12px 32px -8px rgba(249,115,22,0.40)' }}
+          >
+            <svg viewBox="0 0 24 24" className="w-7 h-7" fill="none" stroke="white" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
+              <path d="M9 12l2 2 4-4" />
+            </svg>
+          </div>
+        </div>
+
+        {/* Eyebrow */}
+        <p
+          className="text-[10px] font-bold tracking-[0.22em] uppercase text-orange-500 mb-2"
+          style={{ animation: 'fadeUp 0.5s ease-out 0.1s both' }}
+        >
+          Assinatura Digital
+        </p>
+
+        {/* Title */}
+        <h1
+          className="text-slate-900 text-xl font-bold tracking-tight text-center mb-1"
+          style={{ animation: 'fadeUp 0.5s ease-out 0.18s both' }}
+        >
+          Carregando documento
+        </h1>
+
+        {/* Document name chip — appears when request loads */}
+        {docName ? (
+          <div
+            className="flex items-center gap-2 mt-2 mb-5 px-3.5 py-1.5 bg-orange-50 border border-orange-100 rounded-full max-w-[280px]"
+            style={{ animation: 'fadeUp 0.35s ease-out both' }}
+          >
+            <svg viewBox="0 0 24 24" className="w-3.5 h-3.5 flex-shrink-0 text-orange-500" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+              <polyline points="14 2 14 8 20 8" />
+            </svg>
+            <span className="text-[11.5px] font-medium text-orange-700 truncate leading-tight">{docName}</span>
+          </div>
+        ) : (
+          <p
+            className="text-slate-400 text-sm text-center max-w-[240px] mt-1 mb-5"
+            style={{ animation: 'fadeUp 0.5s ease-out 0.26s both' }}
+          >
+            Verificando autenticidade e preparando o ambiente seguro.
+          </p>
+        )}
+
+        {/* ── Floating documents strip ── */}
+        <div
+          className="relative w-[220px] h-[60px] mb-7"
+          style={{ animation: 'fadeUp 0.5s ease-out 0.3s both' }}
+        >
+          {FLOATING_DOCS.map((d, i) => (
+            <div
+              key={i}
+              className="absolute rounded-[5px] bg-white border border-slate-200/80 shadow-[0_2px_6px_rgba(15,23,42,0.09)] overflow-hidden"
+              style={{
+                left: d.left, top: d.top, width: d.w, height: '40px',
+                '--doc-rot': d.rot, '--doc-rot-end': d.rotEnd, '--doc-tx': d.tx, '--doc-ty': d.ty,
+                animation: `docPass ${d.dur} ease-in-out ${d.delay} infinite`,
+              } as React.CSSProperties}
+            >
+              <div className="px-[6px] pt-[6px] space-y-[3.5px]">
+                <div className="h-[2.5px] w-[65%] rounded-full bg-slate-200" />
+                <div className="h-[2.5px] w-full rounded-full bg-slate-100" />
+                <div className="h-[2.5px] w-[80%] rounded-full bg-slate-100" />
+                <div className="h-[2.5px] w-[55%] rounded-full bg-orange-200/70" />
+              </div>
+            </div>
+          ))}
+          <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+            <svg width="32" height="10" viewBox="0 0 36 12" fill="none" className="opacity-15">
+              <path d="M0 6h28M24 2l6 4-6 4" stroke="#f97316" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
+          </div>
+        </div>
+
+        {/* ── Loading steps ── */}
+        <div
+          className="w-full max-w-[258px] space-y-2.5 mb-7"
+          style={{ animation: 'fadeUp 0.5s ease-out 0.38s both' }}
+        >
+          {LOADING_STEPS.map((s, i) => {
+            const done   = elapsed >= s.doneAt;
+            const active = !done && (i === 0 ? true : elapsed >= LOADING_STEPS[i - 1].doneAt);
+            return (
+              <div key={i} className="flex items-center gap-3">
+                {/* Circle indicator */}
+                <div className={`flex-shrink-0 w-[18px] h-[18px] rounded-full flex items-center justify-center transition-all duration-300 ${
+                  done   ? 'bg-emerald-500' :
+                  active ? 'border-2 border-orange-400 bg-white' :
+                           'border-2 border-slate-200 bg-transparent'
+                }`}>
+                  {done && (
+                    <svg viewBox="0 0 10 10" className="w-2.5 h-2.5" fill="none" stroke="white" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M1.5 5l2.5 2.5 4.5-4.5" />
+                    </svg>
+                  )}
+                  {active && (
+                    <div className="w-[6px] h-[6px] rounded-full bg-orange-500" style={{ animation: 'iconBreath 0.8s ease-in-out infinite' }} />
+                  )}
+                </div>
+                {/* Label */}
+                <span className={`text-[12.5px] transition-colors duration-300 ${
+                  done   ? 'text-slate-400 line-through decoration-slate-300' :
+                  active ? 'text-slate-800 font-medium' :
+                           'text-slate-300'
+                }`}>
+                  {s.label}
+                </span>
+              </div>
+            );
+          })}
+        </div>
+
+        {/* Spinner + percentage */}
+        <div className="flex items-center gap-2.5" style={{ animation: 'fadeUp 0.5s ease-out 0.46s both' }}>
+          <svg width="20" height="20" viewBox="0 0 32 32" style={{ animation: 'arcSpin 0.9s linear infinite' }}>
+            <circle cx="16" cy="16" r="13" fill="none" stroke="#f1f5f9" strokeWidth="3" />
+            <circle cx="16" cy="16" r="13" fill="none" stroke="#f97316" strokeWidth="3" strokeLinecap="round" strokeDasharray="26 56" />
+          </svg>
+          <span className="text-[11px] tabular-nums font-medium text-slate-400">{Math.round(pct)}%</span>
+        </div>
+      </div>
+
+      {/* ── Bottom trust strip ── */}
+      <div
+        className="flex-shrink-0 pb-8 pt-2 flex items-center justify-center gap-3"
+        style={{ animation: 'fadeUp 0.5s ease-out 0.54s both' }}
+      >
+        <div className="flex items-center gap-1.5 text-slate-400">
+          <Lock className="w-3 h-3" />
+          <span className="text-[11px]">Conexão segura</span>
+        </div>
+        <span className="w-[3px] h-[3px] rounded-full bg-slate-200 flex-shrink-0" />
+        <span className="text-[11px] text-slate-400">SSL / TLS</span>
+      </div>
+    </div>
+  );
+};
+
+// ─── SigningScreen — tela de envio da assinatura (módulo-nível) ───────────────
+const SIGNING_STEPS = [
+  { label: 'Enviando foto, assinatura e geolocalização', doneAt: 2.2 },
+  { label: 'Conferindo identidade',                      doneAt: 4.0 },
+  { label: 'Registrando assinatura',                     doneAt: 5.8 },
+  { label: 'Finalizando…',                               doneAt: 7.2 },
+];
+
+const SigningScreen: React.FC<{ docName?: string }> = ({ docName }) => {
+  const [elapsed, setElapsed] = useState(0);
+  const mountRef = useRef(Date.now());
+
+  useEffect(() => {
+    const id = window.setInterval(() => {
+      setElapsed((Date.now() - mountRef.current) / 1000);
+    }, 50);
+    return () => window.clearInterval(id);
+  }, []);
+
+  const pct = Math.min(96, (elapsed / 8) * 96);
+
+  return (
+    <div className="min-h-[100dvh] bg-white flex flex-col select-none overflow-hidden">
+
+      {/* Barra de progresso determinista */}
+      <div className="h-[3px] w-full bg-slate-100 flex-shrink-0 relative overflow-hidden">
+        <div
+          className="absolute left-0 top-0 h-full bg-gradient-to-r from-orange-500 via-amber-400 to-orange-500"
+          style={{ width: `${pct}%`, transition: 'width 180ms ease-out' }}
+        />
+        <div
+          className="absolute top-0 h-full w-[60px] bg-gradient-to-r from-transparent via-white/50 to-transparent pointer-events-none"
+          style={{ left: `${Math.max(0, pct - 10)}%`, transition: 'left 180ms ease-out' }}
+        />
+      </div>
+
+      <div className="flex-1 flex flex-col items-center justify-center px-6 py-10">
+
+        {/* Ícone de envio */}
+        <div className="relative flex items-center justify-center mb-8" style={{ animation: 'fadeUp 0.5s ease-out both' }}>
+          <div className="absolute w-[90px] h-[90px] rounded-full border border-orange-200/55" style={{ animation: 'ringPulse 2.4s ease-out infinite' }} />
+          <div className="absolute w-[90px] h-[90px] rounded-full border border-orange-100/40" style={{ animation: 'ringPulse 2.4s ease-out infinite 0.8s' }} />
+          <div
+            className="relative w-[66px] h-[66px] rounded-full bg-gradient-to-br from-orange-500 to-amber-400 flex items-center justify-center"
+            style={{ animation: 'iconBreath 3s ease-in-out infinite', boxShadow: '0 12px 32px -8px rgba(249,115,22,0.40)' }}
+          >
+            {/* Ícone de upload / envio */}
+            <svg viewBox="0 0 24 24" className="w-7 h-7" fill="none" stroke="white" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M12 19V5" />
+              <polyline points="5 12 12 5 19 12" />
+              <path d="M5 19h14" strokeWidth="1.8" opacity="0.6" />
+            </svg>
+          </div>
+        </div>
+
+        {/* Eyebrow */}
+        <p
+          className="text-[10px] font-bold tracking-[0.22em] uppercase text-orange-500 mb-2"
+          style={{ animation: 'fadeUp 0.5s ease-out 0.1s both' }}
+        >
+          Assinatura Digital
+        </p>
+
+        {/* Título */}
+        <h1
+          className="text-slate-900 text-xl font-bold tracking-tight text-center mb-1"
+          style={{ animation: 'fadeUp 0.5s ease-out 0.18s both' }}
+        >
+          Enviando assinatura
+        </h1>
+
+        {/* Nome do documento */}
+        {docName ? (
+          <div
+            className="flex items-center gap-2 mt-2 mb-6 px-3.5 py-1.5 bg-orange-50 border border-orange-100 rounded-full max-w-[280px]"
+            style={{ animation: 'fadeUp 0.35s ease-out both' }}
+          >
+            <svg viewBox="0 0 24 24" className="w-3.5 h-3.5 flex-shrink-0 text-orange-500" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+              <polyline points="14 2 14 8 20 8" />
+            </svg>
+            <span className="text-[11.5px] font-medium text-orange-700 truncate leading-tight">{docName}</span>
+          </div>
+        ) : (
+          <p
+            className="text-slate-400 text-sm text-center max-w-[240px] mt-1 mb-6"
+            style={{ animation: 'fadeUp 0.5s ease-out 0.26s both' }}
+          >
+            Não feche esta janela. Processando com segurança.
+          </p>
+        )}
+
+        {/* Steps */}
+        <div
+          className="w-full max-w-[290px] space-y-3 mb-7"
+          style={{ animation: 'fadeUp 0.5s ease-out 0.34s both' }}
+        >
+          {SIGNING_STEPS.map((s, i) => {
+            const done   = elapsed >= s.doneAt;
+            const active = !done && (i === 0 ? true : elapsed >= SIGNING_STEPS[i - 1].doneAt);
+            return (
+              <div key={i} className="flex items-center gap-3">
+                <div className={`flex-shrink-0 w-[18px] h-[18px] rounded-full flex items-center justify-center transition-all duration-300 ${
+                  done   ? 'bg-emerald-500' :
+                  active ? 'border-2 border-orange-400 bg-white' :
+                           'border-2 border-slate-200 bg-transparent'
+                }`}>
+                  {done && (
+                    <svg viewBox="0 0 10 10" className="w-2.5 h-2.5" fill="none" stroke="white" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M1.5 5l2.5 2.5 4.5-4.5" />
+                    </svg>
+                  )}
+                  {active && (
+                    <div className="w-[6px] h-[6px] rounded-full bg-orange-500" style={{ animation: 'iconBreath 0.8s ease-in-out infinite' }} />
+                  )}
+                </div>
+                <span className={`text-[12.5px] transition-colors duration-300 ${
+                  done   ? 'text-slate-400 line-through decoration-slate-300' :
+                  active ? 'text-slate-800 font-medium' :
+                           'text-slate-300'
+                }`}>
+                  {s.label}
+                </span>
+              </div>
+            );
+          })}
+        </div>
+
+        {/* Spinner + percentagem */}
+        <div className="flex items-center gap-2.5" style={{ animation: 'fadeUp 0.5s ease-out 0.42s both' }}>
+          <svg width="20" height="20" viewBox="0 0 32 32" style={{ animation: 'arcSpin 0.9s linear infinite' }}>
+            <circle cx="16" cy="16" r="13" fill="none" stroke="#f1f5f9" strokeWidth="3" />
+            <circle cx="16" cy="16" r="13" fill="none" stroke="#f97316" strokeWidth="3" strokeLinecap="round" strokeDasharray="26 56" />
+          </svg>
+          <span className="text-[11px] tabular-nums font-medium text-slate-400">{Math.round(pct)}%</span>
+        </div>
+      </div>
+
+      {/* Trust strip */}
+      <div
+        className="flex-shrink-0 pb-8 pt-2 flex items-center justify-center gap-3"
+        style={{ animation: 'fadeUp 0.5s ease-out 0.5s both' }}
+      >
+        <div className="flex items-center gap-1.5 text-slate-400">
+          <Lock className="w-3 h-3" />
+          <span className="text-[11px]">Conexão segura</span>
+        </div>
+        <span className="w-[3px] h-[3px] rounded-full bg-slate-200 flex-shrink-0" />
+        <span className="text-[11px] text-slate-400">SSL / TLS</span>
+      </div>
+    </div>
+  );
+};
+
 const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
   const toast = useToastContext();
 
@@ -157,48 +538,6 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
   };
 
   const [allowSkipSignerDataStep, setAllowSkipSignerDataStep] = useState(false);
-
-  useEffect(() => {
-    const styleId = 'public-signing-loading-animations';
-    if (document.getElementById(styleId)) return;
-    const style = document.createElement('style');
-    style.id = styleId;
-    style.textContent = `
-      @keyframes pen {
-        0%, 100% { transform: translateY(0) rotate(-2deg); }
-        50% { transform: translateY(-3px) rotate(2deg); }
-      }
-      @keyframes shimmer {
-        0% { transform: translateX(-120%); opacity: 0.65; }
-        50% { transform: translateX(0%); opacity: 1; }
-        100% { transform: translateX(120%); opacity: 0.65; }
-      }
-      @keyframes write {
-        0% { stroke-dashoffset: 220; opacity: 0.55; }
-        45% { stroke-dashoffset: 0; opacity: 1; }
-        75% { stroke-dashoffset: 0; opacity: 1; }
-        100% { stroke-dashoffset: -220; opacity: 0.55; }
-      }
-      @keyframes bar {
-        0% { transform: translateX(-55%); opacity: 0.6; }
-        50% { transform: translateX(0%); opacity: 1; }
-        100% { transform: translateX(55%); opacity: 0.6; }
-      }
-      @keyframes drift1 {
-        0%, 100% { transform: translate3d(0, 0, 0); }
-        50% { transform: translate3d(18px, 10px, 0); }
-      }
-      @keyframes drift2 {
-        0%, 100% { transform: translate3d(0, 0, 0); }
-        50% { transform: translate3d(-16px, -12px, 0); }
-      }
-      @keyframes drift3 {
-        0%, 100% { transform: translate3d(0, 0, 0); }
-        50% { transform: translate3d(-10px, 16px, 0); }
-      }
-    `;
-    document.head.appendChild(style);
-  }, []);
 
   useEffect(() => {
     const styleId = 'public-signing-docx-responsive-styles';
@@ -271,66 +610,6 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
     document.head.appendChild(style);
   }, []);
 
-  const LoadingScreen = (props: { title: string; subtitle?: string }) => (
-    <div className="min-h-[100dvh] bg-gradient-to-b from-slate-50 to-white flex items-center justify-center p-5">
-      <div className="w-full max-w-sm relative">
-        <div className="relative rounded-3xl bg-white/80 backdrop-blur shadow-xl ring-1 ring-slate-200/60 px-6 pt-7 pb-6">
-          <div className="flex items-center justify-center">
-            <div className="w-14 h-14 rounded-2xl bg-white shadow ring-1 ring-slate-200 flex items-center justify-center">
-              <div className="text-3xl animate-[pen_3.2s_cubic-bezier(0.4,0,0.2,1)_infinite]">✍️</div>
-            </div>
-          </div>
-
-          <div className="mt-6 text-center">
-            <h1 className="text-slate-800 text-lg font-semibold tracking-tight">{props.title}</h1>
-            <p className="mt-2 text-slate-500 text-sm leading-relaxed">
-              {props.subtitle ?? 'Estamos carregando os seus documentos…'}
-            </p>
-          </div>
-
-          <div className="mt-6 rounded-2xl bg-white ring-1 ring-slate-200/70 p-4">
-            <div className="space-y-3">
-              <div className="h-3 w-40 rounded-full bg-slate-100 relative overflow-hidden">
-                <div className="absolute inset-0 -translate-x-full bg-gradient-to-r from-transparent via-white/80 to-transparent animate-[shimmer_1.7s_ease-in-out_infinite]" />
-              </div>
-              <div className="h-2.5 w-full rounded-full bg-slate-100 relative overflow-hidden">
-                <div className="absolute inset-0 -translate-x-full bg-gradient-to-r from-transparent via-white/80 to-transparent animate-[shimmer_1.7s_ease-in-out_infinite]" />
-              </div>
-              <div className="h-2.5 w-11/12 rounded-full bg-slate-100 relative overflow-hidden">
-                <div className="absolute inset-0 -translate-x-full bg-gradient-to-r from-transparent via-white/80 to-transparent animate-[shimmer_1.7s_ease-in-out_infinite]" />
-              </div>
-              <div className="h-2.5 w-9/12 rounded-full bg-slate-100 relative overflow-hidden">
-                <div className="absolute inset-0 -translate-x-full bg-gradient-to-r from-transparent via-white/80 to-transparent animate-[shimmer_1.7s_ease-in-out_infinite]" />
-              </div>
-            </div>
-
-            <div className="mt-5 flex items-center justify-center">
-              <svg width="240" height="34" viewBox="0 0 240 34" fill="none" xmlns="http://www.w3.org/2000/svg" className="opacity-90">
-                <path
-                  d="M8 24 C 28 10, 44 30, 66 16 C 82 6, 92 34, 114 18 C 132 6, 148 30, 168 14 C 184 6, 200 30, 232 10"
-                  stroke="#f97316"
-                  strokeWidth="3"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeDasharray="220"
-                  strokeDashoffset="220"
-                  style={{ animation: 'write 2.6s ease-in-out infinite' }}
-                />
-              </svg>
-            </div>
-          </div>
-
-          <div className="mt-6">
-            <div className="h-1.5 rounded-full bg-slate-100 overflow-hidden">
-              <div className="h-full w-full rounded-full bg-gradient-to-r from-orange-400 via-orange-500 to-amber-500 animate-[bar_1.9s_ease-in-out_infinite]" />
-            </div>
-            <p className="mt-3 text-xs text-slate-400 text-center">Aguarde enquanto preparamos tudo para você.</p>
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-
   const [step, setStep] = useState<SigningStep>('loading');
   const [signer, setSigner] = useState<Signer | null>(null);
   const [request, setRequest] = useState<SignatureRequest | null>(null);
@@ -384,6 +663,42 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
   const isFullyLoaded = step === 'success' && !!signer && !!request && mainDocLoaded && allAttachmentsRendered;
 
   const canOpenSignModal = isFullyLoaded;
+
+  // ── Overlay de carregamento: visível desde o início, tempo mínimo de 10 s ──
+  const [overlayVisible, setOverlayVisible] = useState(true);   // começa visível
+  const [overlayFading, setOverlayFading] = useState(false);
+  const overlayTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const pageLoadTimeRef  = useRef<number>(Date.now());           // marca o momento do mount
+
+  // Dispensa o overlay imediatamente quando ocorre erro ou já assinado
+  useEffect(() => {
+    if (step === 'error' || step === 'already_signed') {
+      if (overlayTimerRef.current) clearTimeout(overlayTimerRef.current);
+      setOverlayFading(true);
+      overlayTimerRef.current = setTimeout(() => {
+        setOverlayVisible(false);
+        setOverlayFading(false);
+      }, 420);
+    }
+  }, [step]);
+
+  // Dispensa o overlay depois que a página carregou completamente E o tempo mínimo passou
+  useEffect(() => {
+    if (isFullyLoaded && overlayVisible && !overlayFading) {
+      const elapsed   = Date.now() - pageLoadTimeRef.current;
+      const remaining = Math.max(0, 10_000 - elapsed);
+      overlayTimerRef.current = setTimeout(() => {
+        setOverlayFading(true);
+        overlayTimerRef.current = setTimeout(() => {
+          setOverlayVisible(false);
+          setOverlayFading(false);
+        }, 600);
+      }, remaining);
+    }
+    return () => {
+      if (overlayTimerRef.current) clearTimeout(overlayTimerRef.current);
+    };
+  }, [isFullyLoaded, overlayVisible, overlayFading]);
 
   useEffect(() => {
     if (!loading) return;
@@ -1705,14 +2020,38 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
     setIsSignModalOpen(true);
   };
 
+  // ── Portal de carregamento (posição fixa na árvore → nunca desmonta o LoadingScreen) ──
+  const loadingPortal = overlayVisible
+    ? createPortal(
+        <div
+          className="fixed inset-0 z-[9999]"
+          style={{
+            opacity: overlayFading ? 0 : 1,
+            transition: 'opacity 600ms cubic-bezier(0.4,0,0.2,1)',
+            pointerEvents: overlayFading ? 'none' : 'auto',
+          }}
+        >
+          <LoadingScreen docName={request?.document_name} />
+        </div>,
+        document.body
+      )
+    : null;
+
   if (step === 'loading') {
-    return <LoadingScreen title="Carregando documento" subtitle="Estamos carregando os seus documentos…" />;
+    return (
+      <>
+        {loadingPortal}
+        <div className="min-h-[100dvh] bg-white" />
+      </>
+    );
   }
 
   // Error
   if (step === 'error') {
     return (
-      <div className="min-h-[100dvh] bg-gradient-to-b from-orange-50 via-white to-amber-50 flex items-center justify-center p-5">
+      <>
+        {loadingPortal}
+        <div className="min-h-[100dvh] bg-gradient-to-b from-orange-50 via-white to-amber-50 flex items-center justify-center p-5">
         <div className="w-full max-w-lg relative">
           <div className="absolute -top-20 -left-20 h-64 w-64 rounded-full bg-orange-400/10 blur-3xl" />
           <div className="absolute -bottom-24 -right-24 h-72 w-72 rounded-full bg-amber-400/10 blur-3xl" />
@@ -1796,13 +2135,19 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
           </div>
         </div>
       </div>
+      </>
     );
   }
 
   // Already signed
   if (step === 'already_signed') {
     if (!request || !signer) {
-      return <LoadingScreen title="Carregando documento" subtitle="Estamos carregando os seus documentos…" />;
+      return (
+        <>
+          {loadingPortal}
+          <div className="min-h-[100dvh] bg-white" />
+        </>
+      );
     }
 
     if (showReport && request && signer) {
@@ -1883,7 +2228,9 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
     const verificationUrl = signer?.verification_hash ? `${window.location.origin}/#/verificar/${signer.verification_hash}` : null;
 
     return (
-      <div className="min-h-[100dvh] bg-slate-50">
+      <>
+        {loadingPortal}
+        <div className="min-h-[100dvh] bg-slate-50">
         <header className="bg-white border-b border-slate-200">
           <div className="max-w-3xl mx-auto px-5 py-5 flex items-center justify-between gap-4">
             <div className="flex items-center gap-3 min-w-0">
@@ -2034,6 +2381,7 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
           </div>
         </main>
       </div>
+      </>
     );
   }
 
@@ -2138,7 +2486,9 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
     };
 
     return (
-      <div className="min-h-[100dvh] bg-gradient-to-b from-orange-50 via-white to-amber-50 flex items-center justify-center p-4">
+      <>
+        {loadingPortal}
+        <div className="min-h-[100dvh] bg-gradient-to-b from-orange-50 via-white to-amber-50 flex items-center justify-center p-4">
         <div className="w-full max-w-lg">
           <div className="bg-white rounded-2xl border border-orange-100 shadow-[0_10px_30px_rgba(15,23,42,0.08)] overflow-hidden">
             {/* Animação de sucesso */}
@@ -2226,12 +2576,15 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
             </div>
           </div>
         </div>
-      </div>
+        </div>
+      </>
     );
   }
 
   return (
-    <div className="min-h-[100dvh] h-[100dvh] bg-slate-900 flex flex-col overflow-hidden overscroll-none">
+    <>
+      {loadingPortal}
+      <div className="min-h-[100dvh] h-[100dvh] bg-slate-900 flex flex-col overflow-hidden overscroll-none">
       {/* Header compacto */}
       <header className="bg-gradient-to-r from-orange-700 via-orange-800 to-orange-900 px-3 py-2 flex items-center justify-between border-b border-orange-900/40 safe-area-top">
         <div className="flex items-center gap-2">
@@ -2308,67 +2661,11 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
         )}
       </main>
 
-      {step === 'success' && !isFullyLoaded && (
-        <div className="fixed inset-0 z-40">
-          <LoadingScreen title="Carregando documento" subtitle="Estamos preparando tudo…" />
-        </div>
-      )}
-
-      {loading && (
-        <div className="fixed inset-0 z-[70] flex items-center justify-center p-5 bg-slate-50/80 backdrop-blur-md">
-          <div className="absolute inset-0 pointer-events-none" aria-hidden>
-            <div className="absolute -top-24 -left-24 h-72 w-72 rounded-full bg-orange-600/4 blur-3xl" />
-            <div className="absolute -bottom-28 -right-28 h-80 w-80 rounded-full bg-amber-600/4 blur-3xl" />
-          </div>
-
-          <div className="relative w-full max-w-sm">
-            <div className="rounded-2xl bg-white border border-orange-100 shadow-[0_18px_45px_rgba(15,23,42,0.08)] p-6">
-              <div className="flex items-start gap-3">
-                <div className="relative shrink-0">
-                  <div className="h-10 w-10 rounded-2xl bg-gradient-to-br from-orange-600 to-amber-600 shadow-[0_10px_20px_rgba(234,88,12,0.25)]" />
-                  <div className="absolute inset-0 flex items-center justify-center">
-                    <Shield className="h-5 w-5 text-white" />
-                  </div>
-                </div>
-
-                <div className="min-w-0 flex-1">
-                  <div className="text-slate-900 text-base font-semibold tracking-tight">Enviando assinatura</div>
-                  <div className="mt-0.5 text-sm text-slate-600">{signingStatusMessages[signingStatusIndex]}</div>
-                </div>
-
-                <div className="pt-0.5 text-slate-400">
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                </div>
-              </div>
-
-              <div className="mt-4 rounded-xl bg-orange-50/50 ring-1 ring-orange-200/60 px-3.5 py-2.5">
-                <div className="text-[10px] uppercase tracking-wide text-slate-500">Documento</div>
-                <div className="mt-0.5 text-sm text-slate-800 font-medium truncate">{(request?.document_name || 'Documento').trim()}</div>
-              </div>
-
-              <div className="mt-5">
-                <div className="h-2 rounded-full bg-slate-100 overflow-hidden relative">
-                  <div className="absolute inset-0 -translate-x-full bg-gradient-to-r from-transparent via-orange-500/35 to-transparent animate-[shimmer_1.4s_ease-in-out_infinite]" />
-                </div>
-
-                <div className="mt-3 flex items-center justify-between text-xs text-slate-500">
-                  <div className="flex items-center gap-2">
-                    <Lock className="h-4 w-4" />
-                    <span>Criptografado</span>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <CheckCircle className="h-4 w-4" />
-                    <span>Verificado</span>
-                  </div>
-                </div>
-              </div>
-
-              <div className="mt-4 text-center text-[11px] text-slate-500">
-                Não feche esta janela. Você será redirecionado automaticamente.
-              </div>
-            </div>
-          </div>
-        </div>
+      {loading && createPortal(
+        <div className="fixed inset-0 z-[9998]">
+          <SigningScreen docName={request?.document_name} />
+        </div>,
+        document.body
       )}
 
       {/* Botão Assinar - Flutuante estilizado */}
@@ -3230,7 +3527,8 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
           </div>
         </div>
       )}
-    </div>
+      </div>
+    </>
   );
 };
 
