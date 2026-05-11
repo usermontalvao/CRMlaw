@@ -47,6 +47,7 @@ import { matchesNormalizedSearch } from '../utils/search';
    ============================================================================ */
 
 const VERSION_CODENAMES: Record<string, { name: string; emoji: string }> = {
+  '1.10.026': { name: 'Café Sem Fronteiras', emoji: '🌊' },
   '1.10.025': { name: 'Café Envelope Completo', emoji: '📎' },
   '1.10.024': { name: 'Café Imagem na Fila', emoji: '🖼️' },
   '1.10.023': { name: 'Café Seleção Completa', emoji: '✅' },
@@ -743,6 +744,23 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
 };
 
 const releases: ReleaseNote[] = [
+  {
+    version: '1.10.026',
+    date: '11/05/2026',
+    summary: 'Assinaturas: anexos na página pública agora aparecem como continuação natural do documento, sem cabeçalhos ou separadores visuais.',
+    modules: [
+      {
+        moduleId: 'signatures',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Anexos exibidos como continuação do documento principal',
+            description: 'Removidos o cabeçalho "Documentos Anexos (N)", o separador border-t-4 e os labels por arquivo que tornavam a exibição visualmente pesada. Cada anexo agora flui diretamente abaixo do conteúdo anterior sem nenhuma decoração extra.',
+          },
+        ],
+      },
+    ],
+  },
   {
     version: '1.10.025',
     date: '11/05/2026',

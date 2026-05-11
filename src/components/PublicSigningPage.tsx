@@ -54,22 +54,13 @@ interface AttachmentsListProps {
 const AttachmentsList: React.FC<AttachmentsListProps> = ({ attachments, attachmentRefs }) => {
   if (attachments.length === 0) return null;
   return (
-    <div className="border-t-4 border-slate-300 mt-0">
-      <div className="bg-slate-100 px-4 py-2 text-center border-b border-slate-200">
-        <span className="text-sm font-medium text-slate-600">
-          Documentos Anexos ({attachments.length})
-        </span>
-      </div>
+    <div>
       {attachments.map((attach, idx) => {
         const nameLower = attach.name.toLowerCase().split('?')[0];
         const isPdf = nameLower.endsWith('.pdf');
         const isImg = nameLower.endsWith('.jpg') || nameLower.endsWith('.jpeg') || nameLower.endsWith('.png') || nameLower.endsWith('.gif') || nameLower.endsWith('.webp') || nameLower.endsWith('.bmp');
         return (
-          <div key={`attach-${idx}`} className="border-b border-slate-200">
-            <div className="bg-slate-50 px-4 py-2 border-b border-slate-100 flex items-center gap-2">
-              <FileText className="w-3.5 h-3.5 text-slate-400 flex-shrink-0" />
-              <span className="text-xs font-medium text-slate-600 truncate">{attach.name}</span>
-            </div>
+          <div key={`attach-${idx}`}>
             {attach.isDocx ? (
               // DOCX: div preenchida pelo renderAsync
               <div
@@ -78,18 +69,18 @@ const AttachmentsList: React.FC<AttachmentsListProps> = ({ attachments, attachme
                 style={{ width: '100%', overflow: 'auto' }}
               />
             ) : isPdf ? (
-              // PDF: iframe com altura fixa
+              // PDF: iframe sem bordas, continuação visual
               <iframe
                 src={`${attach.url}#toolbar=0&navpanes=0&statusbar=0`}
                 style={{ width: '100%', height: '88vh', border: 'none', display: 'block' }}
                 title={attach.name}
               />
             ) : isImg ? (
-              // Imagem: tag <img>
+              // Imagem: tag <img> sem decoração
               <img
                 src={attach.url}
                 alt={attach.name}
-                className="w-full h-auto block bg-slate-50"
+                className="w-full h-auto block"
                 style={{ maxWidth: '100%' }}
               />
             ) : (
