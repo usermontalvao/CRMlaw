@@ -465,7 +465,7 @@ interface CloudModuleProps {
 }
 
 type CloudViewMode = 'list' | 'cards';
-type PdfToolMode = 'home' | 'organize' | 'rotate' | 'remove';
+type PdfToolMode = 'home' | 'organize' | 'rotate' | 'remove' | 'watermark' | 'pagenumber' | 'split';
 type CloudHeaderActionDetail = {
   action: 'upload' | 'create-folder' | 'toggle-filters' | 'set-view-mode' | 'set-card-size' | 'toggle-sidebar' | 'set-search-term';
   value?: 'list' | 'cards' | 'small' | 'medium' | 'large' | string;
@@ -629,6 +629,17 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
   const [folderColorPickerTarget, setFolderColorPickerTarget] = useState<string | null>(null);
   // Bulk ZIP download for selection
   const [downloadingSelectionZip, setDownloadingSelectionZip] = useState(false);
+  // Quick type filter for file list
+  const [quickTypeFilter, setQuickTypeFilter] = useState<'all' | 'folder' | 'pdf' | 'image' | 'doc' | 'video' | 'other'>('all');
+  // Merging PDFs
+  const [mergingPdfs, setMergingPdfs] = useState(false);
+  // PDF watermark / page number tools
+  const [pdfWatermarkText, setPdfWatermarkText] = useState('CONFIDENCIAL');
+  const [pdfWatermarkOpacity, setPdfWatermarkOpacity] = useState(0.15);
+  const [pdfWatermarkDiagonal, setPdfWatermarkDiagonal] = useState(true);
+  const [pdfPageNumPosition, setPdfPageNumPosition] = useState<'bottom-center' | 'bottom-right' | 'top-center'>('bottom-center');
+  const [pdfSplitAtPage, setPdfSplitAtPage] = useState(1);
+  const [applyingPdfTool, setApplyingPdfTool] = useState(false);
   const [detailsDrawerOpen, setDetailsDrawerOpen] = useState(false);
   const [inlineRenameTarget, setInlineRenameTarget] = useState<{ type: 'file' | 'folder'; id: string; currentName: string } | null>(null);
   const [inlineRenameValue, setInlineRenameValue] = useState('');
@@ -889,6 +900,163 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
     }
   };
 
+  // ── PDF Watermark ───────────────────────────────────────────────────────
+  const handleAddPdfWatermark = async () => {
+    if (!selectedPdfToolFile || !pdfWatermarkText.trim()) return;
+    setApplyingPdfTool(true);
+    try {
+      const { PDFDocument: PDFDoc, StandardFonts, rgb, degrees: pdfDegrees } = await import('pdf-lib');
+      const url = await cloudService.getFileSignedUrl(selectedPdfToolFile.storage_path);
+      const resp = await fetch(url);
+      const bytes = await resp.arrayBuffer();
+      const pdfDoc = await PDFDoc.load(bytes);
+      const font = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
+      const pages = pdfDoc.getPages();
+      const text = pdfWatermarkText.trim().toUpperCase();
+      for (const page of pages) {
+        const { width, height } = page.getSize();
+        const fontSize = Math.min(width, height) * 0.1;
+        const textWidth = font.widthOfTextAtSize(text, fontSize);
+        if (pdfWatermarkDiagonal) {
+          page.drawText(text, {
+            x: (width - textWidth) / 2,
+            y: height / 2 - fontSize / 2,
+            size: fontSize,
+            font,
+            color: rgb(0.5, 0.5, 0.5),
+            opacity: pdfWatermarkOpacity,
+            rotate: pdfDegrees(45),
+          });
+        } else {
+          page.drawText(text, {
+            x: (width - textWidth) / 2,
+            y: height / 2 - fontSize / 2,
+            size: fontSize,
+            font,
+            color: rgb(0.5, 0.5, 0.5),
+            opacity: pdfWatermarkOpacity,
+          });
+        }
+      }
+      const saved = await pdfDoc.save();
+      const blob = new Blob([new Uint8Array(saved)], { type: 'application/pdf' });
+      const dotIdx = selectedPdfToolFile.original_name.lastIndexOf('.');
+      const base = dotIdx > 0 ? selectedPdfToolFile.original_name.slice(0, dotIdx) : selectedPdfToolFile.original_name;
+      const newName = `${base} (marca d'água).pdf`;
+      triggerBrowserDownload(blob, newName);
+      toast.success('Cloud', 'PDF com marca d\'água gerado com sucesso.');
+      setPdfToolMode('home');
+    } catch (err: any) {
+      toast.error('Cloud', err.message || 'Erro ao adicionar marca d\'água.');
+    } finally {
+      setApplyingPdfTool(false);
+    }
+  };
+
+  // ── PDF Page Numbers ─────────────────────────────────────────────────────
+  const handleAddPdfPageNumbers = async () => {
+    if (!selectedPdfToolFile) return;
+    setApplyingPdfTool(true);
+    try {
+      const { PDFDocument: PDFDoc, StandardFonts, rgb } = await import('pdf-lib');
+      const url = await cloudService.getFileSignedUrl(selectedPdfToolFile.storage_path);
+      const resp = await fetch(url);
+      const bytes = await resp.arrayBuffer();
+      const pdfDoc = await PDFDoc.load(bytes);
+      const font = await pdfDoc.embedFont(StandardFonts.Helvetica);
+      const pages = pdfDoc.getPages();
+      const total = pages.length;
+      const fontSize = 9;
+      pages.forEach((page, idx) => {
+        const { width, height } = page.getSize();
+        const text = `${idx + 1} / ${total}`;
+        const textWidth = font.widthOfTextAtSize(text, fontSize);
+        let x = (width - textWidth) / 2;
+        let y = 18;
+        if (pdfPageNumPosition === 'bottom-right') { x = width - textWidth - 20; y = 18; }
+        if (pdfPageNumPosition === 'top-center') { x = (width - textWidth) / 2; y = height - 24; }
+        page.drawText(text, { x, y, size: fontSize, font, color: rgb(0.35, 0.35, 0.35), opacity: 0.8 });
+      });
+      const saved = await pdfDoc.save();
+      const blob = new Blob([new Uint8Array(saved)], { type: 'application/pdf' });
+      const dotIdx = selectedPdfToolFile.original_name.lastIndexOf('.');
+      const base = dotIdx > 0 ? selectedPdfToolFile.original_name.slice(0, dotIdx) : selectedPdfToolFile.original_name;
+      triggerBrowserDownload(blob, `${base} (numerado).pdf`);
+      toast.success('Cloud', 'PDF com numeração gerado com sucesso.');
+      setPdfToolMode('home');
+    } catch (err: any) {
+      toast.error('Cloud', err.message || 'Erro ao numerar páginas.');
+    } finally {
+      setApplyingPdfTool(false);
+    }
+  };
+
+  // ── PDF Split ────────────────────────────────────────────────────────────
+  const handleSplitPdf = async () => {
+    if (!selectedPdfToolFile || pdfSplitAtPage < 1) return;
+    setApplyingPdfTool(true);
+    try {
+      const { PDFDocument: PDFDoc } = await import('pdf-lib');
+      const url = await cloudService.getFileSignedUrl(selectedPdfToolFile.storage_path);
+      const resp = await fetch(url);
+      const bytes = await resp.arrayBuffer();
+      const srcDoc = await PDFDoc.load(bytes);
+      const total = srcDoc.getPageCount();
+      const splitAt = Math.min(Math.max(1, pdfSplitAtPage), total - 1);
+
+      const part1 = await PDFDoc.create();
+      const pages1 = await part1.copyPages(srcDoc, Array.from({ length: splitAt }, (_, i) => i));
+      pages1.forEach(p => part1.addPage(p));
+
+      const part2 = await PDFDoc.create();
+      const pages2 = await part2.copyPages(srcDoc, Array.from({ length: total - splitAt }, (_, i) => i + splitAt));
+      pages2.forEach(p => part2.addPage(p));
+
+      const dotIdx = selectedPdfToolFile.original_name.lastIndexOf('.');
+      const base = dotIdx > 0 ? selectedPdfToolFile.original_name.slice(0, dotIdx) : selectedPdfToolFile.original_name;
+
+      const saved1 = await part1.save();
+      triggerBrowserDownload(new Blob([new Uint8Array(saved1)], { type: 'application/pdf' }), `${base} (parte 1).pdf`);
+      const saved2 = await part2.save();
+      triggerBrowserDownload(new Blob([new Uint8Array(saved2)], { type: 'application/pdf' }), `${base} (parte 2).pdf`);
+
+      toast.success('Cloud', `PDF dividido em 2 partes: páginas 1-${splitAt} e ${splitAt + 1}-${total}.`);
+      setPdfToolMode('home');
+    } catch (err: any) {
+      toast.error('Cloud', err.message || 'Erro ao dividir PDF.');
+    } finally {
+      setApplyingPdfTool(false);
+    }
+  };
+
+  // ── Merge PDFs ──────────────────────────────────────────────────────────
+  const handleMergePdfs = async () => {
+    const pdfFiles = files.filter(f => selectedFileKeys.includes(`file:${f.id}`) && isPdfFile(f.mime_type, f.original_name));
+    if (pdfFiles.length < 2) { toast.info('Cloud', 'Selecione pelo menos 2 PDFs para mesclar.'); return; }
+    setMergingPdfs(true);
+    try {
+      const { PDFDocument: PDFDoc } = await import('pdf-lib');
+      const merged = await PDFDoc.create();
+      for (const file of pdfFiles) {
+        const url = await cloudService.getFileSignedUrl(file.storage_path);
+        const resp = await fetch(url);
+        if (!resp.ok) throw new Error(`Falha ao baixar ${file.original_name}`);
+        const bytes = await resp.arrayBuffer();
+        const src = await PDFDoc.load(bytes);
+        const pages = await merged.copyPages(src, src.getPageIndices());
+        pages.forEach(p => merged.addPage(p));
+      }
+      const mergedBytes = await merged.save();
+      const blob = new Blob([new Uint8Array(mergedBytes)], { type: 'application/pdf' });
+      triggerBrowserDownload(blob, `mesclado-${pdfFiles.length}-arquivos.pdf`);
+      toast.success('Cloud', `${pdfFiles.length} PDFs mesclados com sucesso.`);
+    } catch (err: any) {
+      toast.error('Cloud', err.message || 'Erro ao mesclar PDFs.');
+    } finally {
+      setMergingPdfs(false);
+    }
+  };
+
   const handleMobileBackNavigation = useCallback(() => {
     if (isArchivedView || isTrashView) {
       setCurrentFolderId(null);
@@ -984,6 +1152,7 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
   }, [allFolders, folders, selectedItemKey]);
 
   const clearExplorerSelection = useCallback(() => {
+    setQuickTypeFilter('all');
     if (detailsDrawerAutoOpenRef.current) {
       window.clearTimeout(detailsDrawerAutoOpenRef.current);
       detailsDrawerAutoOpenRef.current = null;
@@ -1745,8 +1914,22 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
       return sortDir === 'asc' ? cmp : -cmp;
     }).map(file => ({ kind: 'file' as const, file }));
 
-    return [...folderRows, ...fileRows];
-  }, [filteredFolders, filteredFiles, sortCol, sortDir, clients]);
+    // Apply quick type filter
+    const filteredFolderRows = quickTypeFilter === 'all' || quickTypeFilter === 'folder' ? folderRows : [];
+    const filteredFileRows = quickTypeFilter === 'all' || quickTypeFilter === 'folder' ? fileRows.filter(r => {
+      if (quickTypeFilter === 'folder') return false;
+      return true;
+    }) : fileRows.filter(r => {
+      const f = r.file;
+      if (quickTypeFilter === 'pdf') return isPdfFile(f.mime_type, f.original_name);
+      if (quickTypeFilter === 'image') return isImageFile(f.mime_type);
+      if (quickTypeFilter === 'doc') return isWordFile(f.mime_type, f.original_name);
+      if (quickTypeFilter === 'video') return isVideoFile(f.mime_type, f.original_name);
+      if (quickTypeFilter === 'other') return !isPdfFile(f.mime_type, f.original_name) && !isImageFile(f.mime_type) && !isWordFile(f.mime_type, f.original_name) && !isVideoFile(f.mime_type, f.original_name);
+      return true;
+    });
+    return [...(quickTypeFilter === 'folder' || quickTypeFilter === 'all' ? filteredFolderRows : []), ...filteredFileRows];
+  }, [filteredFolders, filteredFiles, sortCol, sortDir, clients, quickTypeFilter]);
 
   const explorerItemKeys = useMemo(
     () => explorerRows.map((row) => (row.kind === 'folder' ? `folder:${row.folder.id}` : `file:${row.file.id}`)),
@@ -4093,34 +4276,59 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
     }
   };
 
-  const handleSendForSignature = (file: CloudFile) => {
+  const handleSendForSignature = async (file: CloudFile) => {
     setContextMenu(null);
 
     // Se o arquivo clicado faz parte de uma multi-seleção, enviar todos os PDF/DOCX selecionados
     const isMultiSelection = selectedItemKeys.includes(`file:${file.id}`) && selectedFileKeys.length > 1;
+    const signableSelected = isMultiSelection
+      ? files.filter((f) => selectedFileKeys.includes(`file:${f.id}`) && f.id !== file.id)
+      : [];
 
-    let attachmentPaths: string[] | null = null;
-    if (isMultiSelection) {
-      const signableSelected = files.filter(
-        (f) => selectedFileKeys.includes(`file:${f.id}`) && f.id !== file.id,
-      );
-      if (signableSelected.length > 0) {
-        attachmentPaths = signableSelected.map((f) => f.storage_path);
-      }
-    }
-
-    const folder = allFolders.find((f) => f.id === file.folder_id);
-    const client = folder?.client_id ? clients.find((c) => c.id === folder.client_id) : null;
-    const prefill = {
-      documentPath: file.storage_path,
-      documentName: file.original_name,
-      attachmentPaths,
-      clientId: client?.id ?? '',
-      clientName: client?.full_name ?? '',
-      clientEmail: client?.email ?? '',
-      clientPhone: client?.phone ?? client?.mobile ?? '',
+    // Copia um arquivo do bucket cloud-files para generated-documents (bucket acessível
+    // sem autenticação via URL assinada), necessário para que a página pública de
+    // assinatura consiga exibir o documento.
+    const copyToSignatureBucket = async (cloudFile: CloudFile): Promise<string> => {
+      const url = await cloudService.getFileSignedUrl(cloudFile.storage_path, 3600);
+      const response = await fetch(url);
+      if (!response.ok) throw new Error(`Falha ao ler arquivo: ${cloudFile.original_name}`);
+      const arrayBuffer = await response.arrayBuffer();
+      const safeName = cloudFile.original_name.replace(/[^a-zA-Z0-9._-]/g, '_');
+      const docId = crypto.randomUUID();
+      const filePath = `signature-requests/${docId}/${Date.now()}_${safeName}`;
+      const contentType = response.headers.get('content-type') || 'application/octet-stream';
+      const { error } = await supabase.storage
+        .from('generated-documents')
+        .upload(filePath, new Blob([arrayBuffer], { type: contentType }), { upsert: false });
+      if (error) throw new Error(error.message);
+      return filePath;
     };
-    onNavigateToModule?.('assinaturas', { prefill } as any);
+
+    try {
+      // Copiar documento principal para bucket de assinatura
+      const docPath = await copyToSignatureBucket(file);
+
+      // Copiar anexos (seleção múltipla)
+      let attachmentPaths: string[] | null = null;
+      if (signableSelected.length > 0) {
+        attachmentPaths = await Promise.all(signableSelected.map((f) => copyToSignatureBucket(f)));
+      }
+
+      const folder = allFolders.find((f) => f.id === file.folder_id);
+      const client = folder?.client_id ? clients.find((c) => c.id === folder.client_id) : null;
+      const prefill = {
+        documentPath: docPath,
+        documentName: file.original_name,
+        attachmentPaths,
+        clientId: client?.id ?? '',
+        clientName: client?.full_name ?? '',
+        clientEmail: client?.email ?? '',
+        clientPhone: client?.phone ?? client?.mobile ?? '',
+      };
+      onNavigateToModule?.('assinaturas', { prefill } as any);
+    } catch (err: any) {
+      toast.error('Cloud', err.message || 'Erro ao preparar arquivo para assinatura.');
+    }
   };
 
   const handleDownloadFolder = async (folder: CloudFolder) => {
@@ -4508,15 +4716,28 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
       ) : null}
 
       {/* Barra de breadcrumb/busca - apenas desktop */}
-      <div className="hidden lg:flex border-b border-slate-200 bg-gradient-to-b from-slate-50 via-slate-50 to-white px-3 py-3 flex-col gap-2 xl:flex-row xl:items-center xl:gap-3">
-        <div className="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto text-sm text-slate-600 rounded-full bg-white px-2 py-1.5 shadow-sm [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-          <button onClick={() => setCurrentFolderId(null)} className="inline-flex items-center gap-1 rounded-full px-2.5 py-1 hover:bg-slate-100 hover:text-slate-900"><Home className="w-4 h-4" /></button>
-          {breadcrumb.map((item) => (
+      <div className="hidden lg:flex border-b border-slate-200/80 bg-white px-4 py-2.5 flex-col gap-2 xl:flex-row xl:items-center xl:gap-3">
+        <div className="flex min-w-0 flex-1 items-center gap-0.5 overflow-x-auto text-sm text-slate-500 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+          <button onClick={() => setCurrentFolderId(null)} className="inline-flex items-center justify-center w-7 h-7 rounded-lg text-slate-400 hover:bg-slate-100 hover:text-slate-700 transition-colors flex-shrink-0">
+            <Home className="w-3.5 h-3.5" />
+          </button>
+          {breadcrumb.map((item, idx) => (
             <React.Fragment key={item.id}>
-              <ChevronRight className="w-4 h-4 text-slate-400" />
-              <button onClick={() => setCurrentFolderId(item.id)} className="min-w-0 max-w-[220px] rounded-full px-3 py-1 truncate hover:bg-slate-100 hover:text-slate-900 sm:max-w-[320px]">{item.name}</button>
+              <ChevronRight className="w-3.5 h-3.5 text-slate-300 flex-shrink-0" />
+              <button
+                onClick={() => setCurrentFolderId(item.id)}
+                className={`min-w-0 max-w-[200px] rounded-lg px-2.5 py-1 truncate text-sm transition-colors sm:max-w-[280px] ${idx === breadcrumb.length - 1 ? 'text-slate-900 font-semibold hover:bg-slate-100' : 'text-slate-500 hover:bg-slate-100 hover:text-slate-700'}`}
+              >
+                {item.name}
+              </button>
             </React.Fragment>
           ))}
+          {(isArchivedView || isTrashView) && (
+            <>
+              <ChevronRight className="w-3.5 h-3.5 text-slate-300 flex-shrink-0" />
+              <span className="px-2.5 py-1 text-sm font-semibold text-slate-900">{isArchivedView ? 'Arquivado' : 'Lixeira'}</span>
+            </>
+          )}
         </div>
         <div className="w-full xl:w-[420px] xl:shrink-0 xl:px-1">
           <div className="relative flex w-full min-w-0 items-center gap-1.5">
@@ -4589,7 +4810,7 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
       </div>
 
       <div className="flex flex-col lg:flex-row lg:items-start">
-        <aside className={`${sidebarOpen ? 'translate-x-0 opacity-100' : '-translate-x-full opacity-0 pointer-events-none'} fixed inset-y-0 left-0 z-40 flex w-[min(90vw,340px)] flex-col border-r border-slate-200 bg-[radial-gradient(circle_at_top,#fff7ed_0%,#ffffff_32%,#f8fafc_100%)] shadow-[0_24px_60px_-24px_rgba(15,23,42,0.35)] transition-all duration-300 lg:pointer-events-auto lg:sticky lg:top-20 lg:z-auto lg:w-[292px] lg:translate-x-0 lg:opacity-100 lg:shadow-none`}>
+        <aside className={`${sidebarOpen ? 'translate-x-0 opacity-100' : '-translate-x-full opacity-0 pointer-events-none'} fixed inset-y-0 left-0 z-40 flex w-[min(90vw,280px)] flex-col border-r border-slate-100 bg-white shadow-[0_24px_60px_-24px_rgba(15,23,42,0.35)] transition-all duration-300 lg:pointer-events-auto lg:sticky lg:top-20 lg:z-auto lg:w-[256px] lg:translate-x-0 lg:opacity-100 lg:shadow-none`}>
           <div className="flex items-center justify-between border-b border-orange-100/80 px-4 py-3 lg:hidden">
             <div className="flex items-center gap-3">
               <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-gradient-to-br from-amber-500 via-orange-500 to-orange-600 shadow-lg shadow-orange-200/70">
@@ -4608,250 +4829,232 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
               <X className="w-4 h-4" />
             </button>
           </div>
-          <div className="p-3 space-y-3 flex-1 overflow-y-auto pb-24 lg:pb-3">
-            {/* Header do Sidebar */}
-            <div className="hidden rounded-3xl border border-orange-100 bg-white/90 p-4 shadow-[0_16px_40px_-24px_rgba(249,115,22,0.35)] backdrop-blur-sm lg:block">
-              <div className="flex items-center gap-3 mb-3">
-                <div className="w-10 h-10 rounded-2xl bg-gradient-to-br from-amber-500 via-orange-500 to-orange-600 flex items-center justify-center shadow-lg shadow-orange-200/70">
-                  <Cloud className="w-5 h-5 text-white" />
-                </div>
-                <div className="min-w-0 flex-1">
-                  <h3 className="text-sm font-bold text-slate-900">Cloud</h3>
-                  <p className="text-[10px] uppercase tracking-[0.18em] text-slate-500">Arquivos & Pastas</p>
-                </div>
-                <div className="text-right shrink-0">
-                  <p className="text-[10px] text-slate-400">{allFiles.length} arquivo{allFiles.length !== 1 ? 's' : ''}</p>
-                  <p className="text-[10px] text-slate-400">{allFolders.length} pasta{allFolders.length !== 1 ? 's' : ''}</p>
-                </div>
-              </div>
-              {/* Storage indicator */}
+          <div className="flex flex-col flex-1 overflow-y-auto pb-24 lg:pb-4">
+            {/* ── Header do Sidebar ── */}
+            <div className="hidden lg:block px-4 py-4 border-b border-slate-100">
               {(() => {
                 const totalBytes = allFiles.reduce((s, f) => s + (f.file_size ?? 0), 0);
-                const quotaBytes = 5 * 1024 * 1024 * 1024; // 5 GB display quota
+                const quotaBytes = 5 * 1024 * 1024 * 1024;
                 const pct = Math.min(100, (totalBytes / quotaBytes) * 100);
                 const usedLabel = totalBytes < 1024 * 1024 ? `${Math.round(totalBytes / 1024)} KB` : totalBytes < 1024 * 1024 * 1024 ? `${(totalBytes / (1024 * 1024)).toFixed(1)} MB` : `${(totalBytes / (1024 * 1024 * 1024)).toFixed(2)} GB`;
                 return (
-                  <div>
-                    <div className="flex items-center justify-between mb-1">
-                      <span className="text-[10px] text-slate-500 font-medium flex items-center gap-1"><HardDrive className="w-3 h-3" /> Armazenamento</span>
-                      <span className="text-[10px] text-slate-500">{usedLabel} de 5 GB</span>
+                  <div className="space-y-3">
+                    <div className="flex items-center gap-3">
+                      <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-orange-500 to-amber-500 flex items-center justify-center shadow-md shadow-orange-200/60 flex-shrink-0">
+                        <Cloud className="w-4.5 h-4.5 text-white" style={{ width: 18, height: 18 }} />
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <p className="text-[13px] font-bold text-slate-900 leading-tight">Cloud</p>
+                        <p className="text-[10px] text-slate-400 tabular-nums">{allFiles.length} arquivos · {allFolders.length} pastas</p>
+                      </div>
                     </div>
-                    <div className="h-1.5 w-full rounded-full bg-slate-100 overflow-hidden">
-                      <div
-                        className={`h-full rounded-full transition-all duration-700 ${pct > 80 ? 'bg-red-500' : pct > 60 ? 'bg-amber-500' : 'bg-gradient-to-r from-orange-500 to-amber-400'}`}
-                        style={{ width: `${pct}%` }}
-                      />
+                    <div className="space-y-1.5">
+                      <div className="flex items-center justify-between">
+                        <span className="text-[10px] text-slate-400 font-medium">Armazenamento</span>
+                        <span className="text-[10px] text-slate-400 tabular-nums">{usedLabel} / 5 GB</span>
+                      </div>
+                      <div className="h-1 w-full rounded-full bg-slate-100 overflow-hidden">
+                        <motion.div
+                          className={`h-full rounded-full ${pct > 80 ? 'bg-red-500' : pct > 60 ? 'bg-amber-500' : 'bg-gradient-to-r from-orange-500 to-amber-400'}`}
+                          initial={{ width: 0 }}
+                          animate={{ width: `${pct}%` }}
+                          transition={{ duration: 0.8, ease: 'easeOut', delay: 0.3 }}
+                        />
+                      </div>
                     </div>
                   </div>
                 );
               })()}
             </div>
 
-            <div className="rounded-3xl border border-slate-200/80 bg-white/90 p-2 shadow-[0_18px_40px_-28px_rgba(15,23,42,0.22)] backdrop-blur-sm space-y-1.5">
-            {/* Caixa de Entrada */}
-            <div className="space-y-1">
+            {/* ── Navegação principal ── */}
+            <div className="px-2 py-2 space-y-0.5">
+              {/* Caixa de Entrada */}
               <div
-                className={`w-full rounded-2xl border-2 transition-all duration-200 ${
-                  dropTargetFolderId === '__root__'
-                    ? 'bg-orange-100 text-orange-900 border-orange-300 shadow-sm'
-                    : currentFolderId === null
-                      ? 'border-transparent bg-gradient-to-r from-orange-500 to-amber-500 text-white shadow-md shadow-orange-200'
-                      : 'border-transparent text-slate-700 hover:bg-slate-50'
+                className={`rounded-xl transition-all duration-150 ${
+                  dropTargetFolderId === '__root__' ? 'ring-2 ring-orange-400 ring-offset-1' : ''
                 }`}
-                onDragOver={(e) => {
-                  e.preventDefault();
-                  if (draggingItemKey) {
-                    setDropTargetFolderId('__root__');
-                  }
-                }}
+                onDragOver={(e) => { e.preventDefault(); if (draggingItemKey) setDropTargetFolderId('__root__'); }}
                 onDragLeave={() => setDropTargetFolderId(null)}
-                onDrop={(e) => {
-                  e.preventDefault();
-                  void handleDropOnFolder(null);
-                }}
+                onDrop={(e) => { e.preventDefault(); void handleDropOnFolder(null); }}
               >
-                <div className="flex items-center gap-2 px-2 py-2">
+                <div className={`flex items-center rounded-xl transition-all duration-150 ${
+                  currentFolderId === null
+                    ? 'bg-orange-500 text-white shadow-sm shadow-orange-300/40'
+                    : 'text-slate-600 hover:bg-slate-100'
+                }`}>
                   <button
                     type="button"
-                    onClick={() => {
-                      setCurrentFolderId(null);
-                      setSelectedItemKey('root');
-                    }}
-                    className="flex min-w-0 flex-1 items-center gap-3 rounded-2xl px-3 py-3 text-left text-sm font-semibold transition-all duration-200"
+                    onClick={() => { setCurrentFolderId(null); setSelectedItemKey('root'); }}
+                    className="flex min-w-0 flex-1 items-center gap-2.5 px-3 py-2.5 text-left"
                   >
-                    <HardDrive className="w-5 h-5 shrink-0" />
-                    <span className="min-w-0 truncate flex-1">Caixa de entrada</span>
-                    {currentFolderId === null && !dropTargetFolderId ? (
-                      <span className="w-2 h-2 rounded-full bg-current opacity-80 animate-pulse" />
-                    ) : null}
+                    <HardDrive className="w-4 h-4 shrink-0" />
+                    <span className="min-w-0 truncate flex-1 text-sm font-medium">Caixa de entrada</span>
+                    {currentFolderId === null && (
+                      <span className="w-1.5 h-1.5 rounded-full bg-white/70 animate-pulse" />
+                    )}
                   </button>
                   <button
                     type="button"
-                    aria-label={clientsSectionExpanded ? 'Recolher clientes' : 'Expandir clientes'}
                     onClick={() => setClientsSectionExpanded((prev) => !prev)}
-                    className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl transition-colors ${
+                    className={`h-9 w-9 shrink-0 flex items-center justify-center rounded-xl transition-colors ${
                       currentFolderId === null ? 'hover:bg-white/20' : 'hover:bg-slate-200'
                     }`}
                   >
-                    {clientsSectionExpanded ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
+                    <motion.div animate={{ rotate: clientsSectionExpanded ? 90 : 0 }} transition={{ duration: 0.18 }}>
+                      <ChevronRight className="w-3.5 h-3.5" />
+                    </motion.div>
                   </button>
                 </div>
               </div>
+
+              {/* Pastas de clientes */}
+              <AnimatePresence initial={false}>
+                {clientsSectionExpanded && (
+                  <motion.div
+                    initial={{ height: 0, opacity: 0 }}
+                    animate={{ height: 'auto', opacity: 1 }}
+                    exit={{ height: 0, opacity: 0 }}
+                    transition={{ duration: 0.2, ease: 'easeInOut' }}
+                    className="overflow-hidden"
+                  >
+                    <div className="pl-3 pt-1 pb-1 space-y-0.5">
+                      <div className="flex items-center gap-1.5 px-2 py-1.5 text-[10px] font-bold uppercase tracking-[0.14em] text-slate-400">
+                        <Users className="w-3 h-3" />
+                        Clientes
+                      </div>
+                      <div className="max-h-[280px] overflow-y-auto space-y-0.5 pr-0.5">
+                        {renderTree(rootFolders)}
+                      </div>
+                    </div>
+                  </motion.div>
+                )}
+              </AnimatePresence>
             </div>
 
-            {/* Lista de Clientes/Pastas */}
-            <div className="space-y-1">
-              {clientsSectionExpanded ? (
-                <>
-                  <div className="px-3 pt-1 pb-2 text-[10px] uppercase tracking-widest text-slate-400 font-bold flex items-center gap-2">
-                    <Users className="w-3 h-3" />
-                    Clientes
-                  </div>
-                  <div className="space-y-0.5 max-h-[300px] overflow-y-auto pr-1 scrollbar-thin scrollbar-thumb-slate-200 scrollbar-thumb-rounded-full hover:scrollbar-thumb-slate-300">
-                  {renderTree(rootFolders)}
-                  </div>
-                </>
-              ) : null}
-            </div>
-            </div>
+            {/* ── Divisor ── */}
+            <div className="mx-3 border-t border-slate-100" />
 
-            {/* Divisor */}
-            <div className="rounded-3xl border border-slate-200/80 bg-white/90 p-2 shadow-[0_18px_40px_-28px_rgba(15,23,42,0.18)] backdrop-blur-sm space-y-1.5">
+            {/* ── Arquivado & Lixeira ── */}
+            <div className="px-2 py-2 space-y-0.5">
+              {/* Arquivado */}
+              <button
+                type="button"
+                onClick={() => { setCurrentFolderId(CLOUD_ARCHIVED_FOLDER_ID); setSelectedItemKey(`folder:${CLOUD_ARCHIVED_FOLDER_ID}`); setSelectedItemKeys([`folder:${CLOUD_ARCHIVED_FOLDER_ID}`]); }}
+                className={`w-full flex items-center gap-2.5 rounded-xl px-3 py-2.5 text-sm font-medium transition-all duration-150 ${
+                  dropTargetFolderId === CLOUD_ARCHIVED_FOLDER_ID
+                    ? 'ring-2 ring-amber-400 bg-amber-50 text-amber-800'
+                    : isArchivedView
+                      ? 'bg-amber-50 text-amber-700 shadow-[inset_3px_0_0_#f59e0b]'
+                      : 'text-slate-500 hover:bg-slate-100 hover:text-slate-700'
+                }`}
+                onDragOver={(e) => { e.preventDefault(); if (draggingItemKey) setDropTargetFolderId(CLOUD_ARCHIVED_FOLDER_ID); }}
+                onDragLeave={() => setDropTargetFolderId(null)}
+                onDrop={(e) => { e.preventDefault(); void handleDropOnSpecialView('archived'); }}
+              >
+                <FolderOpen className="w-4 h-4 shrink-0" />
+                <span className="min-w-0 truncate flex-1">Arquivado</span>
+                {archivedRootFolders.length + archivedRootFiles.length > 0 && (
+                  <span className={`text-[10px] font-bold tabular-nums px-1.5 py-0.5 rounded-full ${isArchivedView ? 'bg-amber-200/60 text-amber-800' : 'bg-slate-100 text-slate-500'}`}>
+                    {archivedRootFolders.length + archivedRootFiles.length}
+                  </span>
+                )}
+              </button>
 
-            {/* Arquivado */}
-            <button
-              type="button"
-              onClick={() => {
-                setCurrentFolderId(CLOUD_ARCHIVED_FOLDER_ID);
-                setSelectedItemKey(`folder:${CLOUD_ARCHIVED_FOLDER_ID}`);
-                setSelectedItemKeys([`folder:${CLOUD_ARCHIVED_FOLDER_ID}`]);
-              }}
-              className={`w-full flex items-center gap-3 rounded-2xl px-3 py-3 text-sm font-semibold transition-all duration-200 ${
-                dropTargetFolderId === CLOUD_ARCHIVED_FOLDER_ID
-                  ? 'bg-amber-100 text-amber-800 border-2 border-amber-300 shadow-sm'
-                  : isArchivedView
-                    ? 'bg-gradient-to-r from-amber-500 to-yellow-500 text-white shadow-md shadow-amber-200'
-                    : 'text-slate-600 hover:bg-amber-50 border-2 border-transparent'
-              }`}
-              onDragOver={(e) => {
-                e.preventDefault();
-                if (draggingItemKey) {
-                  setDropTargetFolderId(CLOUD_ARCHIVED_FOLDER_ID);
-                }
-              }}
-              onDragLeave={() => setDropTargetFolderId(null)}
-              onDrop={(e) => {
-                e.preventDefault();
-                void handleDropOnSpecialView('archived');
-              }}
-            >
-              <FolderOpen className="w-5 h-5" />
-              <span className="min-w-0 truncate flex-1">Arquivado</span>
-              <span className={`ml-auto rounded-full px-2.5 py-1 text-[10px] font-bold ${
-                isArchivedView ? 'bg-white/20 text-white' : 'bg-amber-100 text-amber-700'
-              }`}>
-                {archivedRootFolders.length + archivedRootFiles.length}
-              </span>
-            </button>
-
-            {/* Lixeira */}
-            <button
-              type="button"
-              onClick={() => {
-                setCurrentFolderId(CLOUD_TRASH_FOLDER_ID);
-                setSelectedItemKey(`folder:${CLOUD_TRASH_FOLDER_ID}`);
-                setSelectedItemKeys([`folder:${CLOUD_TRASH_FOLDER_ID}`]);
-              }}
-              className={`w-full flex items-center gap-3 rounded-2xl px-3 py-3 text-sm font-semibold transition-all duration-200 ${
-                dropTargetFolderId === CLOUD_TRASH_FOLDER_ID
-                  ? 'bg-red-100 text-red-700 border-2 border-red-300 shadow-sm'
-                  : isTrashView
-                    ? 'bg-gradient-to-r from-red-500 to-rose-500 text-white shadow-md shadow-red-200'
-                    : 'text-slate-600 hover:bg-red-50 border-2 border-transparent'
-              }`}
-              onDragOver={(e) => {
-                e.preventDefault();
-                if (draggingItemKey) {
-                  setDropTargetFolderId(CLOUD_TRASH_FOLDER_ID);
-                }
-              }}
-              onDragLeave={() => setDropTargetFolderId(null)}
-              onDrop={(e) => {
-                e.preventDefault();
-                void handleDropOnSpecialView('trash');
-              }}
-            >
-              <Trash2 className="w-5 h-5" />
-              <span className="min-w-0 truncate flex-1">Lixeira</span>
-              <span className={`ml-auto rounded-full px-2.5 py-1 text-[10px] font-bold ${
-                isTrashView ? 'bg-white/20 text-white' : 'bg-red-100 text-red-600'
-              }`}>
-                {trashedRootFiles.length + trashedRootFolders.length}
-              </span>
-            </button>
+              {/* Lixeira */}
+              <button
+                type="button"
+                onClick={() => { setCurrentFolderId(CLOUD_TRASH_FOLDER_ID); setSelectedItemKey(`folder:${CLOUD_TRASH_FOLDER_ID}`); setSelectedItemKeys([`folder:${CLOUD_TRASH_FOLDER_ID}`]); }}
+                className={`w-full flex items-center gap-2.5 rounded-xl px-3 py-2.5 text-sm font-medium transition-all duration-150 ${
+                  dropTargetFolderId === CLOUD_TRASH_FOLDER_ID
+                    ? 'ring-2 ring-red-400 bg-red-50 text-red-700'
+                    : isTrashView
+                      ? 'bg-red-50 text-red-600 shadow-[inset_3px_0_0_#ef4444]'
+                      : 'text-slate-500 hover:bg-slate-100 hover:text-slate-700'
+                }`}
+                onDragOver={(e) => { e.preventDefault(); if (draggingItemKey) setDropTargetFolderId(CLOUD_TRASH_FOLDER_ID); }}
+                onDragLeave={() => setDropTargetFolderId(null)}
+                onDrop={(e) => { e.preventDefault(); void handleDropOnSpecialView('trash'); }}
+              >
+                <Trash2 className="w-4 h-4 shrink-0" />
+                <span className="min-w-0 truncate flex-1">Lixeira</span>
+                {trashedRootFiles.length + trashedRootFolders.length > 0 && (
+                  <span className={`text-[10px] font-bold tabular-nums px-1.5 py-0.5 rounded-full ${isTrashView ? 'bg-red-200/60 text-red-700' : 'bg-slate-100 text-slate-500'}`}>
+                    {trashedRootFiles.length + trashedRootFolders.length}
+                  </span>
+                )}
+              </button>
             </div>
 
-            {/* Acesso Rápido */}
-            <div className="rounded-3xl border border-slate-200/80 bg-white/90 p-3 shadow-[0_18px_40px_-28px_rgba(15,23,42,0.18)] backdrop-blur-sm space-y-2">
-              <p className="px-1 text-[10px] uppercase tracking-widest text-slate-400 font-bold flex items-center gap-2">
+            {/* ── Divisor ── */}
+            <div className="mx-3 border-t border-slate-100" />
+
+            {/* ── Acesso Rápido ── */}
+            <div className="px-2 py-2 space-y-1">
+              <div className="flex items-center gap-1.5 px-3 py-1.5 text-[10px] font-bold uppercase tracking-[0.14em] text-slate-400">
                 <Star className="w-3 h-3" />
                 Acesso Rápido
-              </p>
-              <div className="space-y-1">
-                {favoriteFolders.length === 0 ? (
-                  <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50/80 px-3 py-3 text-xs text-slate-400 italic">Nenhuma pasta fixada</div>
-                ) : (
-                  favoriteFolders.map((folder) => (
+              </div>
+              {favoriteFolders.length === 0 ? (
+                <p className="px-3 text-xs text-slate-400 italic">Nenhuma pasta fixada</p>
+              ) : (
+                <div className="space-y-0.5">
+                  {favoriteFolders.map((folder) => (
                     <button
                       key={folder.id}
                       type="button"
-                      onClick={() => {
-                        setCurrentFolderId(folder.id);
-                        setSelectedItemKey(`folder:${folder.id}`);
-                        setSelectedItemKeys([`folder:${folder.id}`]);
-                      }}
-                      className="w-full min-w-0 flex items-center gap-2 rounded-2xl px-3 py-2.5 text-sm text-slate-700 hover:bg-slate-100 transition-all border-2 border-transparent hover:border-slate-200"
+                      onClick={() => { setCurrentFolderId(folder.id); setSelectedItemKey(`folder:${folder.id}`); setSelectedItemKeys([`folder:${folder.id}`]); }}
+                      className="w-full min-w-0 flex items-center gap-2.5 rounded-xl px-3 py-2 text-sm text-slate-600 hover:bg-slate-100 hover:text-slate-900 transition-colors"
                     >
-                      <Pin className="w-4 h-4 text-orange-500" />
+                      <Pin className="w-3.5 h-3.5 text-orange-500 shrink-0" />
                       <span className="min-w-0 flex-1 truncate font-medium">{folder.name}</span>
                     </button>
-                  ))
-                )}
-              </div>
+                  ))}
+                </div>
+              )}
             </div>
 
-            {/* Arquivos Favoritos */}
-            <div className="rounded-3xl border border-slate-200/80 bg-white/90 p-3 shadow-[0_18px_40px_-28px_rgba(15,23,42,0.18)] backdrop-blur-sm space-y-2">
-              <p className="px-1 text-[10px] uppercase tracking-widest text-slate-400 font-bold flex items-center gap-2">
+            {/* ── Divisor ── */}
+            <div className="mx-3 border-t border-slate-100" />
+
+            {/* ── Favoritos (arquivos) ── */}
+            <div className="px-2 py-2 space-y-1">
+              <div className="flex items-center gap-1.5 px-3 py-1.5 text-[10px] font-bold uppercase tracking-[0.14em] text-slate-400">
                 <FileHeart className="w-3 h-3" />
                 Favoritos
-              </p>
-              <div className="space-y-1">
-                {favoriteFiles.length === 0 ? (
-                  <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50/80 px-3 py-3 text-xs text-slate-400 italic">Nenhum arquivo fixado</div>
-                ) : (
-                  favoriteFiles.slice(0, 8).map((file) => (
-                    <button key={file.id} type="button" onClick={() => openSelectedItem(`file:${file.id}`)} className="w-full min-w-0 flex items-center gap-2 rounded-2xl px-3 py-2.5 text-sm text-slate-700 hover:bg-slate-50">
-                      <Pin className="w-4 h-4 text-orange-500" />
+              </div>
+              {favoriteFiles.length === 0 ? (
+                <p className="px-3 text-xs text-slate-400 italic">Nenhum arquivo fixado</p>
+              ) : (
+                <div className="space-y-0.5">
+                  {favoriteFiles.slice(0, 8).map((file) => (
+                    <button key={file.id} type="button" onClick={() => openSelectedItem(`file:${file.id}`)}
+                      className="w-full min-w-0 flex items-center gap-2.5 rounded-xl px-3 py-2 text-sm text-slate-600 hover:bg-slate-100 hover:text-slate-900 transition-colors">
+                      <Pin className="w-3.5 h-3.5 text-orange-500 shrink-0" />
                       <span className="min-w-0 flex-1 truncate">{file.original_name}</span>
                     </button>
-                  ))
-                )}
-              </div>
+                  ))}
+                </div>
+              )}
             </div>
 
-            <div className="rounded-3xl border border-slate-200/80 bg-white/90 p-3 shadow-[0_18px_40px_-28px_rgba(15,23,42,0.18)] backdrop-blur-sm space-y-2">
-              <div className="flex items-center justify-between gap-2">
-                <p className="text-[10px] uppercase tracking-[0.16em] text-slate-400 font-semibold">Recentes</p>
-                <History className="w-4 h-4 text-slate-400" />
+            {/* ── Divisor ── */}
+            <div className="mx-3 border-t border-slate-100" />
+
+            {/* ── Recentes ── */}
+            <div className="px-2 py-2 space-y-1">
+              <div className="flex items-center gap-1.5 px-3 py-1.5 text-[10px] font-bold uppercase tracking-[0.14em] text-slate-400">
+                <History className="w-3 h-3" />
+                Recentes
               </div>
-              <div className="space-y-1">
+              <div className="space-y-0.5">
                 {recentFiles.length === 0 ? (
-                  <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50/80 px-3 py-3 text-xs text-slate-400 italic">Nenhum arquivo recente.</div>
+                  <p className="px-3 text-xs text-slate-400 italic">Nenhum arquivo recente.</p>
                 ) : (
                   recentFiles.slice(0, 8).map((file) => (
-                    <button key={file.id} type="button" onClick={() => openSelectedItem(`file:${file.id}`)} className="w-full min-w-0 flex items-center gap-2 rounded-2xl px-3 py-2.5 text-sm text-slate-700 hover:bg-slate-50">
-                      <History className="w-4 h-4 text-slate-400" />
+                    <button key={file.id} type="button" onClick={() => openSelectedItem(`file:${file.id}`)}
+                      className="w-full min-w-0 flex items-center gap-2.5 rounded-xl px-3 py-2 text-sm text-slate-600 hover:bg-slate-100 hover:text-slate-900 transition-colors">
+                      <History className="w-3.5 h-3.5 text-slate-400 shrink-0" />
                       <span className="min-w-0 flex-1 truncate">{file.original_name}</span>
                     </button>
                   ))
@@ -4888,17 +5091,19 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
             className={`relative flex min-h-full flex-1 flex-col overflow-visible ${dragActive ? 'bg-sky-50' : ''}`}
           >
             {viewMode === 'list' ? (
-              <div className="hidden md:grid md:grid-cols-[36px_minmax(260px,2.6fr)_170px_170px_130px_220px] gap-3 px-4 py-2 border-b border-slate-100 bg-white text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-400 select-none">
+              <div className="hidden md:grid md:grid-cols-[36px_minmax(260px,2.6fr)_170px_170px_130px_220px] gap-3 px-4 py-2.5 border-b border-slate-200/80 bg-slate-50/80 text-[10px] font-bold uppercase tracking-[0.14em] text-slate-400 select-none">
                 {/* Select all checkbox */}
                 <button
                   type="button"
                   onClick={handleSelectAll}
-                  className="flex items-center justify-center rounded hover:text-slate-600 transition"
+                  className="flex items-center justify-center"
                   title={selectedItemKeys.length === explorerItemKeys.length && explorerItemKeys.length > 0 ? 'Desmarcar todos' : 'Selecionar todos'}
                 >
-                  {selectedItemKeys.length === explorerItemKeys.length && explorerItemKeys.length > 0
-                    ? <CheckSquare className="w-4 h-4 text-orange-500" />
-                    : <Square className="w-4 h-4" />}
+                  <div className={`w-[15px] h-[15px] rounded-[4px] border-[1.5px] flex items-center justify-center transition-all ${selectedItemKeys.length === explorerItemKeys.length && explorerItemKeys.length > 0 ? 'bg-orange-500 border-orange-500' : 'border-slate-300 hover:border-orange-400'}`}>
+                    {selectedItemKeys.length === explorerItemKeys.length && explorerItemKeys.length > 0
+                      ? <svg viewBox="0 0 10 8" className="w-2.5 h-2.5 fill-white"><path d="M1 4l2.5 2.5L9 1" strokeWidth="1.5" stroke="white" fill="none"/></svg>
+                      : selectedItemKeys.length > 0 ? <div className="w-2 h-0.5 bg-slate-400 rounded" /> : null}
+                  </div>
                 </button>
                 {([
                   ['name', 'Nome'],
@@ -4911,12 +5116,12 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
                     key={col}
                     type="button"
                     onClick={() => handleSortBy(col)}
-                    className={`flex items-center gap-1 hover:text-slate-700 transition ${sortCol === col ? 'text-orange-600' : ''}`}
+                    className={`flex items-center gap-1 transition-colors ${sortCol === col ? 'text-orange-600' : 'hover:text-slate-600'}`}
                   >
                     <span>{label}</span>
                     {sortCol === col
                       ? (sortDir === 'asc' ? <ArrowUp className="w-3 h-3" /> : <ArrowDown className="w-3 h-3" />)
-                      : <ArrowUpDown className="w-3 h-3 opacity-40" />}
+                      : <ArrowUpDown className="w-3 h-3 opacity-30" />}
                   </button>
                 ))}
               </div>
@@ -4958,73 +5163,42 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
                 />
               ) : null}
               {loading ? (
-                <div className="flex items-center justify-center px-4 py-14">
+                <div className="relative flex flex-col w-full overflow-hidden">
+                  {/* Shimmer sweep */}
                   <motion.div
-                    initial={{ opacity: 0, y: 10, scale: 0.98 }}
-                    animate={{ opacity: 1, y: 0, scale: 1 }}
-                    transition={{ duration: 0.24 }}
-                    className="relative w-full max-w-md overflow-hidden rounded-[28px] bg-[radial-gradient(circle_at_top,#fff7ed_0%,#ffffff_34%,#fffaf5_100%)] px-8 py-10 text-center shadow-[0_24px_70px_rgba(15,23,42,0.12)]"
-                  >
-                    <motion.div
-                      animate={{ x: ['-100%', '100%'] }}
-                      transition={{ repeat: Infinity, duration: 2.4, ease: 'linear' }}
-                      className="pointer-events-none absolute inset-y-0 left-0 w-32 bg-gradient-to-r from-transparent via-orange-100/50 to-transparent"
-                    />
-                    <motion.div
-                      animate={{ scale: [1, 1.015, 1], y: [0, -1, 0] }}
-                      transition={{ repeat: Infinity, duration: 2.8, ease: 'easeInOut' }}
-                      className="relative mx-auto flex h-20 w-20 items-center justify-center rounded-[24px] bg-gradient-to-br from-orange-50 via-white to-amber-50 shadow-[0_12px_35px_rgba(249,115,22,0.18)]"
+                    className="pointer-events-none absolute inset-0 z-10"
+                    style={{ background: 'linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.7) 50%, transparent 100%)', width: '40%' }}
+                    animate={{ x: ['-40%', '280%'] }}
+                    transition={{ repeat: Infinity, duration: 1.4, ease: 'easeInOut', repeatDelay: 0.3 }}
+                  />
+                  {/* Header row */}
+                  <div className="hidden md:grid md:grid-cols-[36px_minmax(260px,2.6fr)_170px_170px_130px_220px] gap-3 px-4 py-3 border-b border-slate-100">
+                    <div className="h-2.5 w-3 rounded bg-slate-100/90" />
+                    <div className="h-2.5 w-20 rounded-full bg-slate-100/90" />
+                    <div className="h-2.5 w-16 rounded-full bg-slate-100/90" />
+                    <div className="h-2.5 w-10 rounded-full bg-slate-100/90" />
+                    <div className="h-2.5 w-14 rounded-full bg-slate-100/90" />
+                    <div className="h-2.5 w-18 rounded-full bg-slate-100/90" />
+                  </div>
+                  {/* Rows */}
+                  {Array.from({ length: 9 }).map((_, i) => (
+                    <div
+                      key={i}
+                      className="flex items-center gap-3 px-4 py-3 border-b border-slate-100/60"
+                      style={{ opacity: Math.max(0.25, 1 - i * 0.09) }}
                     >
-                      <motion.div
-                        animate={{ scale: [1, 1.18, 1], opacity: [0.32, 0.08, 0.32] }}
-                        transition={{ repeat: Infinity, duration: 2.1, ease: 'easeInOut' }}
-                        className="absolute inset-0 rounded-[24px] shadow-[inset_0_0_0_1px_rgba(253,186,116,0.28)]"
-                      />
-                      <motion.div
-                        animate={{ scale: [0.88, 1.28], opacity: [0.18, 0] }}
-                        transition={{ repeat: Infinity, duration: 1.8, ease: 'easeOut' }}
-                        className="absolute inset-[-8px] rounded-[30px] shadow-[inset_0_0_0_1px_rgba(254,215,170,0.45)]"
-                      />
-                      <motion.div
-                        animate={{ rotate: 360 }}
-                        transition={{ repeat: Infinity, duration: 3.4, ease: 'linear' }}
-                        className="absolute inset-[8px] rounded-[20px] shadow-[inset_0_0_0_1px_rgba(253,186,116,0.32)]"
-                      >
-                        <div className="absolute -top-1 left-1/2 h-2.5 w-2.5 -translate-x-1/2 rounded-full bg-gradient-to-r from-orange-400 to-amber-300 shadow-[0_0_14px_rgba(251,146,60,0.55)]" />
-                      </motion.div>
-                      <motion.div
-                        animate={{ y: [0, -2, 0], scale: [1, 1.04, 1] }}
-                        transition={{ repeat: Infinity, duration: 1.7, ease: 'easeInOut' }}
-                        className="relative"
-                      >
-                        <Cloud className="h-8 w-8 text-orange-500 drop-shadow-[0_4px_10px_rgba(249,115,22,0.35)]" />
-                      </motion.div>
-                    </motion.div>
-                    <h3 className="mt-6 text-xl font-semibold text-slate-900">Carregando seu Cloud</h3>
-                    <p className="mt-2 text-sm text-slate-500">Organizando pastas, arquivos e atalhos para exibir tudo com fluidez.</p>
-                    <div className="mt-6 overflow-hidden rounded-full bg-orange-100/80 shadow-inner shadow-orange-200/40">
-                      <motion.div
-                        className="relative h-2.5 rounded-full bg-gradient-to-r from-orange-400 via-orange-500 to-amber-300"
-                        animate={{ x: ['-20%', '108%'], width: ['24%', '46%', '30%'] }}
-                        transition={{ repeat: Infinity, duration: 1.8, ease: 'easeInOut' }}
-                      >
-                        <motion.div
-                          animate={{ x: ['-100%', '180%'] }}
-                          transition={{ repeat: Infinity, duration: 1.1, ease: 'linear' }}
-                          className="absolute inset-y-0 left-0 w-16 bg-gradient-to-r from-transparent via-white/60 to-transparent"
-                        />
-                      </motion.div>
+                      <div className="w-[15px] h-[15px] rounded-[4px] bg-slate-100 flex-shrink-0" />
+                      <div className={`w-8 h-8 rounded-[10px] flex-shrink-0 ${i % 3 === 0 ? 'bg-amber-100/80' : 'bg-slate-100'}`} />
+                      <div className="flex-1 min-w-0 space-y-2">
+                        <div className="h-2.5 rounded-full bg-slate-100" style={{ width: `${44 + (i * 11) % 36}%` }} />
+                        <div className="h-2 rounded-full bg-slate-100/60" style={{ width: `${24 + (i * 9) % 22}%` }} />
+                      </div>
+                      <div className="hidden md:block h-2 w-20 rounded-full bg-slate-100 flex-shrink-0" />
+                      <div className="hidden md:block h-2 w-14 rounded-full bg-slate-100 flex-shrink-0" />
+                      <div className="hidden md:block h-2 w-10 rounded-full bg-slate-100 flex-shrink-0" />
+                      <div className="hidden md:block h-2 w-24 rounded-full bg-slate-100 flex-shrink-0" />
                     </div>
-                    <div className="mt-4 flex items-center justify-center gap-2 text-[11px] font-medium uppercase tracking-[0.24em] text-orange-500/85">
-                      <motion.span animate={{ opacity: [0.4, 1, 0.4], y: [0, -1, 0] }} transition={{ repeat: Infinity, duration: 1.4, delay: 0 }}>Sincronizando</motion.span>
-                      <motion.span animate={{ opacity: [0.3, 1, 0.3], scale: [0.95, 1, 0.95] }} transition={{ repeat: Infinity, duration: 1.4, delay: 0.18 }} className="inline-flex h-1.5 w-1.5 rounded-full bg-orange-300" />
-                      <motion.span animate={{ opacity: [0.4, 1, 0.4], y: [0, -1, 0] }} transition={{ repeat: Infinity, duration: 1.4, delay: 0.24 }}>Pastas</motion.span>
-                      <motion.span animate={{ opacity: [0.3, 1, 0.3], scale: [0.95, 1, 0.95] }} transition={{ repeat: Infinity, duration: 1.4, delay: 0.42 }} className="inline-flex h-1.5 w-1.5 rounded-full bg-amber-300" />
-                      <motion.span animate={{ opacity: [0.4, 1, 0.4], y: [0, -1, 0] }} transition={{ repeat: Infinity, duration: 1.4, delay: 0.48 }}>Arquivos</motion.span>
-                      <motion.span animate={{ opacity: [0.3, 1, 0.3], scale: [0.95, 1, 0.95] }} transition={{ repeat: Infinity, duration: 1.4, delay: 0.66 }} className="inline-flex h-1.5 w-1.5 rounded-full bg-orange-400" />
-                      <motion.span animate={{ opacity: [0.4, 1, 0.4], y: [0, -1, 0] }} transition={{ repeat: Infinity, duration: 1.4, delay: 0.72 }}>Atalhos</motion.span>
-                    </div>
-                  </motion.div>
+                  ))}
                 </div>
               ) : explorerRows.length === 0 ? (
                 <div className="flex flex-col items-center justify-center text-slate-500 gap-4 px-4 py-14">
@@ -5063,29 +5237,60 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
                     transition={{ duration: 0.18 }}
                     className="flex min-h-full flex-1 flex-col"
                   >
-                    {/* Barra de status minimalista */}
-                    <div className="px-4 py-1.5 flex items-center justify-between gap-2 border-b border-slate-100/80">
-                      <span className="text-[11px] text-slate-400 tabular-nums">
-                        {[
-                          explorerRows.filter(r => r.kind === 'folder').length > 0 && `${explorerRows.filter(r => r.kind === 'folder').length} pasta${explorerRows.filter(r => r.kind === 'folder').length !== 1 ? 's' : ''}`,
-                          explorerRows.filter(r => r.kind === 'file').length > 0 && `${explorerRows.filter(r => r.kind === 'file').length} arquivo${explorerRows.filter(r => r.kind === 'file').length !== 1 ? 's' : ''}`,
-                        ].filter(Boolean).join(', ')}
-                      </span>
-                      <div className="flex items-center gap-1">
-                        {(sortCol !== 'name' || sortDir !== 'asc') && (
-                          <button type="button" onClick={() => { setSortCol('name'); setSortDirState('asc'); }}
-                            className="inline-flex items-center gap-1 rounded-full border border-orange-200 bg-orange-50 px-2 py-0.5 text-[10px] text-orange-600 hover:bg-orange-100 transition">
-                            <ArrowUpDown className="w-2.5 h-2.5" />{sortCol} {sortDir === 'asc' ? '↑' : '↓'} ×
-                          </button>
-                        )}
-                        {hasActiveAdvancedFilters && (
-                          <button type="button" onClick={resetAdvancedFilters}
-                            className="inline-flex items-center gap-1 rounded-full border border-sky-200 bg-sky-50 px-2 py-0.5 text-[10px] text-sky-600 hover:bg-sky-100 transition">
-                            <Filter className="w-2.5 h-2.5" /> filtros ×
-                          </button>
-                        )}
-                      </div>
-                    </div>
+                    {/* Quick filter chips + status */}
+                    {(() => {
+                      const totalFolders = filteredFolders.length;
+                      const totalPdf = filteredFiles.filter(f => isPdfFile(f.mime_type, f.original_name)).length;
+                      const totalImg = filteredFiles.filter(f => isImageFile(f.mime_type)).length;
+                      const totalDoc = filteredFiles.filter(f => isWordFile(f.mime_type, f.original_name)).length;
+                      const totalVid = filteredFiles.filter(f => isVideoFile(f.mime_type, f.original_name)).length;
+                      const totalOther = filteredFiles.filter(f => !isPdfFile(f.mime_type, f.original_name) && !isImageFile(f.mime_type) && !isWordFile(f.mime_type, f.original_name) && !isVideoFile(f.mime_type, f.original_name)).length;
+                      const chips: { key: typeof quickTypeFilter; label: string; count: number; color: string; activeColor: string }[] = [
+                        { key: 'all', label: 'Todos', count: totalFolders + filteredFiles.length, color: 'text-slate-500 hover:bg-slate-100', activeColor: 'bg-slate-900 text-white' },
+                        ...(totalFolders > 0 ? [{ key: 'folder' as const, label: 'Pastas', count: totalFolders, color: 'text-amber-600 hover:bg-amber-50', activeColor: 'bg-amber-500 text-white' }] : []),
+                        ...(totalPdf > 0 ? [{ key: 'pdf' as const, label: 'PDF', count: totalPdf, color: 'text-red-500 hover:bg-red-50', activeColor: 'bg-red-500 text-white' }] : []),
+                        ...(totalImg > 0 ? [{ key: 'image' as const, label: 'Imagens', count: totalImg, color: 'text-emerald-600 hover:bg-emerald-50', activeColor: 'bg-emerald-500 text-white' }] : []),
+                        ...(totalDoc > 0 ? [{ key: 'doc' as const, label: 'Docs', count: totalDoc, color: 'text-blue-600 hover:bg-blue-50', activeColor: 'bg-blue-500 text-white' }] : []),
+                        ...(totalVid > 0 ? [{ key: 'video' as const, label: 'Vídeos', count: totalVid, color: 'text-purple-600 hover:bg-purple-50', activeColor: 'bg-purple-500 text-white' }] : []),
+                        ...(totalOther > 0 ? [{ key: 'other' as const, label: 'Outros', count: totalOther, color: 'text-slate-500 hover:bg-slate-100', activeColor: 'bg-slate-600 text-white' }] : []),
+                      ];
+                      return (
+                        <div className="flex items-center justify-between gap-2 px-3 py-2 border-b border-slate-100/80 bg-white overflow-x-auto [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+                          <div className="flex items-center gap-1 flex-shrink-0">
+                            {chips.map(chip => (
+                              <button
+                                key={chip.key}
+                                type="button"
+                                onClick={() => setQuickTypeFilter(chip.key)}
+                                className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-semibold transition-all whitespace-nowrap ${quickTypeFilter === chip.key ? chip.activeColor : chip.color}`}
+                              >
+                                {chip.label}
+                                <span className={`tabular-nums text-[10px] font-bold ${quickTypeFilter === chip.key ? 'opacity-80' : 'opacity-60'}`}>{chip.count}</span>
+                              </button>
+                            ))}
+                          </div>
+                          <div className="flex items-center gap-1.5 flex-shrink-0">
+                            {selectedItemKeys.length > 0 && (
+                              <span className="inline-flex items-center gap-1 rounded-full bg-orange-500/10 text-orange-600 px-2 py-0.5 text-[10px] font-semibold whitespace-nowrap">
+                                {selectedItemKeys.length} sel.
+                              </span>
+                            )}
+                            {(sortCol !== 'name' || sortDir !== 'asc') && (
+                              <button type="button" onClick={() => { setSortCol('name'); setSortDirState('asc'); }}
+                                className="inline-flex items-center gap-1 rounded-full border border-orange-200 bg-orange-50 px-2 py-0.5 text-[10px] text-orange-600 hover:bg-orange-100 transition font-medium whitespace-nowrap">
+                                <ArrowUpDown className="w-2.5 h-2.5" />{sortCol} {sortDir === 'asc' ? '↑' : '↓'} ×
+                              </button>
+                            )}
+                            {hasActiveAdvancedFilters && (
+                              <button type="button" onClick={resetAdvancedFilters}
+                                className="inline-flex items-center gap-1 rounded-full border border-sky-200 bg-sky-50 px-2 py-0.5 text-[10px] text-sky-600 hover:bg-sky-100 transition font-medium whitespace-nowrap">
+                                <Filter className="w-2.5 h-2.5" /> filtros ×
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })()}
                     {viewMode === 'list' ? (
                       <div className="flex min-h-full flex-1 flex-col">
                   {explorerRows.map((row) => {
@@ -5126,8 +5331,12 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
                           e.preventDefault();
                           void handleDropOnFolder(folder.id);
                         }}
-                        className={`group flex flex-col gap-2 px-4 py-3 border-b border-slate-100 text-sm cursor-pointer sm:grid sm:grid-cols-[36px_minmax(260px,2.6fr)_170px_170px_130px_220px] sm:items-center sm:gap-3 sm:py-2.5 ${
-                          isDropTarget ? 'bg-orange-100 border-orange-300' : isSelected ? 'bg-orange-50' : 'hover:bg-slate-50'
+                        className={`group relative flex flex-col gap-2 px-4 py-3 border-b text-sm cursor-pointer sm:grid sm:grid-cols-[36px_minmax(260px,2.6fr)_170px_170px_130px_220px] sm:items-center sm:gap-3 sm:py-2.5 transition-colors ${
+                          isDropTarget
+                            ? 'bg-orange-100/80 border-b-orange-300 shadow-[inset_3px_0_0_#f97316]'
+                            : isSelected
+                            ? 'bg-orange-50/90 border-b-orange-100 shadow-[inset_3px_0_0_#f97316]'
+                            : 'border-b-slate-100 hover:bg-slate-50/70'
                         }`}
                         onClick={(event) => {
                           event.stopPropagation();
@@ -5159,14 +5368,14 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
                       >
                         {/* Checkbox */}
                         <div className="hidden sm:flex items-center justify-center" onClick={e => { e.stopPropagation(); applySelection(itemKey, { additive: true }); }}>
-                          <div className={`w-4 h-4 rounded border flex items-center justify-center transition ${isSelected ? 'bg-orange-500 border-orange-500' : 'border-slate-300 group-hover:border-orange-400'}`}>
-                            {isSelected && <svg viewBox="0 0 10 8" className="w-2.5 h-2.5 fill-white"><path d="M1 4l2.5 2.5L9 1"/></svg>}
+                          <div className={`w-[15px] h-[15px] rounded-[4px] border-[1.5px] flex items-center justify-center transition-all duration-150 ${isSelected ? 'bg-orange-500 border-orange-500 scale-110 shadow-[0_0_0_3px_rgba(249,115,22,0.15)]' : 'border-slate-300 opacity-0 group-hover:opacity-100 group-hover:border-orange-400'}`}>
+                            {isSelected && <svg viewBox="0 0 10 8" className="w-2.5 h-2.5" fill="none" stroke="white" strokeWidth="1.8"><path d="M1 4l2.5 2.5L9 1"/></svg>}
                           </div>
                         </div>
                         <div className="flex items-center gap-3 min-w-0">
                           {/* Folder icon with color support */}
-                          <div className="w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0" style={{ backgroundColor: folderColors[folder.id] ? `${folderColors[folder.id]}22` : '#fef3c7' }}>
-                            <Folder className="w-4 h-4" style={{ color: folderColors[folder.id] || '#f59e0b' }} />
+                          <div className="w-8 h-8 rounded-[10px] flex items-center justify-center flex-shrink-0 shadow-[inset_0_0_0_1px_rgba(0,0,0,0.04)]" style={{ backgroundColor: folderColors[folder.id] ? `${folderColors[folder.id]}22` : '#fef3c7' }}>
+                            <Folder className="w-4 h-4" style={{ color: folderColors[folder.id] || '#d97706' }} />
                           </div>
                           <div className="min-w-0 flex-1">
                             {inlineRenameTarget?.type === 'folder' && inlineRenameTarget.id === folder.id ? (
@@ -5189,7 +5398,7 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
                                 autoFocus
                               />
                             ) : (
-                              <span className="truncate text-slate-900">{folder.name}</span>
+                              <span className="truncate font-semibold text-slate-800 text-[13px]">{folder.name}</span>
                             )}
                             <div className="mt-1 flex flex-wrap items-center gap-2">
                               {showClientLinkBadge ? (
@@ -5228,22 +5437,22 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
                             ) : null}
                           </div>
                         </div>
-                        <span className="text-slate-500 text-xs sm:text-sm">{formatDateTime(folder.updated_at)}</span>
-                        <span className="text-slate-500 text-xs sm:text-sm">Pasta de arquivos</span>
-                        <span className="text-slate-500 text-xs sm:text-sm">{formatFileSize(folderSizeMap.get(folder.id) ?? 0)}</span>
+                        <span className="text-slate-400 text-xs tabular-nums">{formatDateTime(folder.updated_at)}</span>
+                        <span className="text-slate-400 text-xs">Pasta</span>
+                        <span className="text-slate-400 text-xs tabular-nums">{formatFileSize(folderSizeMap.get(folder.id) ?? 0)}</span>
                         <div className="flex items-center justify-between gap-2 min-w-0">
-                          <span className="text-slate-500 truncate text-xs sm:text-sm">{client?.full_name || '—'}</span>
-                          <div className="flex items-center gap-1">
+                          <span className="text-slate-400 truncate text-xs">{client?.full_name || '—'}</span>
+                          <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
                             <button
                               type="button"
                               onClick={(e) => {
                                 e.stopPropagation();
                                 handleToggleFavoriteFolder(folder.id);
                               }}
-                              className={`p-1 rounded-md hover:bg-slate-100 ${isFavorite ? 'text-orange-500' : 'text-slate-400 hover:text-slate-600'}`}
+                              className={`p-1.5 rounded-md hover:bg-slate-100 transition-colors ${isFavorite ? 'text-orange-500' : 'text-slate-400 hover:text-slate-600'}`}
                               title={isFavorite ? 'Desafixar pasta' : 'Fixar pasta'}
                             >
-                              <Pin className="w-4 h-4" />
+                              <Pin className="w-3.5 h-3.5" />
                             </button>
                             <button
                               type="button"
@@ -5258,9 +5467,9 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
                                 }
                                 setContextMenu({ x: e.clientX, y: e.clientY, type: 'folder', folderId: folder.id });
                               }}
-                              className="p-1 rounded-md hover:bg-slate-100 text-slate-400 hover:text-slate-600"
+                              className="p-1.5 rounded-md hover:bg-slate-100 transition-colors text-slate-400 hover:text-slate-600"
                             >
-                              <MoreHorizontal className="w-4 h-4" />
+                              <MoreHorizontal className="w-3.5 h-3.5" />
                             </button>
                           </div>
                         </div>
@@ -5282,8 +5491,10 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
                       draggable
                       onDragStart={(event) => handleItemDragStart(event, itemKey)}
                       onDragEnd={handleDragEnd}
-                      className={`group flex flex-col gap-2 px-4 py-3 border-b border-slate-100 text-sm cursor-pointer sm:grid sm:grid-cols-[36px_minmax(260px,2.4fr)_170px_170px_130px_220px] sm:items-center sm:gap-3 sm:py-2.5 ${
-                        isSelected ? 'bg-orange-50' : 'hover:bg-slate-50'
+                      className={`group relative flex flex-col gap-2 px-4 py-3 border-b text-sm cursor-pointer sm:grid sm:grid-cols-[36px_minmax(260px,2.4fr)_170px_170px_130px_220px] sm:items-center sm:gap-3 sm:py-2.5 transition-colors ${
+                        isSelected
+                          ? 'bg-orange-50/90 border-b-orange-100 shadow-[inset_3px_0_0_#f97316]'
+                          : 'border-b-slate-100 hover:bg-slate-50/70'
                       }`}
                       onClick={(event) => {
                         event.stopPropagation();
@@ -5323,8 +5534,8 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
                     >
                       {/* Checkbox */}
                       <div className="hidden sm:flex items-center justify-center" onClick={e => { e.stopPropagation(); applySelection(itemKey, { additive: true }); }}>
-                        <div className={`w-4 h-4 rounded border flex items-center justify-center transition ${isSelected ? 'bg-orange-500 border-orange-500' : 'border-slate-300 group-hover:border-orange-400'}`}>
-                          {isSelected && <svg viewBox="0 0 10 8" className="w-2.5 h-2.5 fill-white"><path d="M1 4l2.5 2.5L9 1"/></svg>}
+                        <div className={`w-[15px] h-[15px] rounded-[4px] border-[1.5px] flex items-center justify-center transition-all duration-150 ${isSelected ? 'bg-orange-500 border-orange-500 scale-110 shadow-[0_0_0_3px_rgba(249,115,22,0.15)]' : 'border-slate-300 opacity-0 group-hover:opacity-100 group-hover:border-orange-400'}`}>
+                          {isSelected && <svg viewBox="0 0 10 8" className="w-2.5 h-2.5" fill="none" stroke="white" strokeWidth="1.8"><path d="M1 4l2.5 2.5L9 1"/></svg>}
                         </div>
                       </div>
                       <div className="flex items-center gap-3 min-w-0">
@@ -5375,24 +5586,24 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
                             />
                           )
                         ) : (
-                          <span className="truncate text-slate-900">{file.original_name}</span>
+                          <span className="truncate font-medium text-slate-800 text-[13px]">{file.original_name}</span>
                         )}
                       </div>
-                      <span className="text-slate-500 text-xs sm:text-sm">{formatDateTime(file.updated_at)}</span>
-                      <span className="text-slate-500 text-xs sm:text-sm">{getFileTypeLabel(file)}</span>
-                      <span className="text-slate-500 text-xs sm:text-sm">{formatFileSize(file.file_size)}</span>
+                      <span className="text-slate-400 text-xs tabular-nums">{formatDateTime(file.updated_at)}</span>
+                      <span className="text-slate-400 text-xs">{getFileTypeLabel(file)}</span>
+                      <span className="text-slate-400 text-xs tabular-nums">{formatFileSize(file.file_size)}</span>
                       <div className="flex items-center justify-between gap-2 min-w-0">
-                        <span className="text-slate-500 truncate text-xs sm:text-sm">{hasGlobalSearch ? `${parentFolder?.name || '—'} • ${client?.full_name || '—'}` : client?.full_name || '—'}</span>
+                        <span className="text-slate-400 truncate text-xs">{hasGlobalSearch ? `${parentFolder?.name || '—'} · ${client?.full_name || '—'}` : client?.full_name || '—'}</span>
                         <button
                           type="button"
                           onClick={(e) => {
                             e.stopPropagation();
                             handleToggleFavoriteFile(file.id);
                           }}
-                          className={`p-1 rounded-md hover:bg-slate-100 ${isFavorite ? 'text-orange-500' : 'text-slate-400 hover:text-slate-600'}`}
+                          className={`p-1.5 rounded-md hover:bg-slate-100 transition-colors opacity-0 group-hover:opacity-100 ${isFavorite ? 'text-orange-500 !opacity-100' : 'text-slate-400 hover:text-slate-600'}`}
                           title={isFavorite ? 'Desafixar arquivo' : 'Fixar arquivo'}
                         >
-                          <Pin className="w-4 h-4" />
+                          <Pin className="w-3.5 h-3.5" />
                         </button>
                       </div>
                     </div>
@@ -5402,7 +5613,7 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
                       </div>
                     ) : (
                       <div
-                        className="grid min-h-full w-full flex-1 content-start items-start gap-3 p-3 sm:p-4"
+                        className="grid min-h-full w-full flex-1 content-start items-start gap-3 p-4"
                         style={{ gridTemplateColumns: `repeat(auto-fill, minmax(${cardGridMinWidth}px, 1fr))` }}
                       >
                         {explorerRows.map((row) => {
@@ -5444,7 +5655,7 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
                             e.preventDefault();
                             void handleDropOnFolder(folder.id);
                           }}
-                          className={`group bg-white p-5 rounded-[24px] transition-all duration-300 hover:-translate-y-1 hover:shadow-[0_18px_38px_-18px_rgba(25,28,29,0.12)] border border-slate-200/70 hover:border-slate-200 flex flex-col h-full cursor-pointer ${isDropTarget ? 'border-orange-400 bg-orange-50 shadow-[0_0_0_1px_rgba(251,146,60,0.18)]' : isSelected ? 'border-orange-300 bg-orange-50/40 shadow-[0_14px_34px_-24px_rgba(249,115,22,0.45)]' : 'shadow-[0_12px_32px_rgba(44,47,48,0.06)]'}`}
+                          className={`group bg-white p-5 rounded-[24px] transition-all duration-200 border flex flex-col h-full cursor-pointer ${isDropTarget ? 'border-orange-400 bg-orange-50 shadow-[0_0_0_3px_rgba(251,146,60,0.25)]' : isSelected ? 'border-orange-400 bg-gradient-to-br from-orange-50/80 to-amber-50/40 shadow-[0_0_0_3px_rgba(249,115,22,0.18),0_8px_24px_-8px_rgba(249,115,22,0.3)] -translate-y-0.5' : 'border-slate-200/70 shadow-[0_4px_16px_rgba(44,47,48,0.06)] hover:-translate-y-1 hover:border-slate-200 hover:shadow-[0_12px_32px_-8px_rgba(25,28,29,0.1)]'}`}
                           onClick={(event) => {
                             event.stopPropagation();
                             event.preventDefault();
@@ -5475,8 +5686,17 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
                         >
                           {/* Header: ícone + status/vínculo */}
                           <div className="flex justify-between items-start mb-4">
-                            <div className="w-12 h-12 rounded-xl flex items-center justify-center" style={{ backgroundColor: folderColors[folder.id] ? `${folderColors[folder.id]}22` : '#fef3c7' }}>
-                              <Folder className="w-7 h-7" style={{ color: folderColors[folder.id] || '#d97706' }} />
+                            <div className="relative">
+                              <div className="w-12 h-12 rounded-xl flex items-center justify-center" style={{ backgroundColor: folderColors[folder.id] ? `${folderColors[folder.id]}22` : '#fef3c7' }}>
+                                <Folder className="w-7 h-7" style={{ color: folderColors[folder.id] || '#d97706' }} />
+                              </div>
+                              {/* Selection indicator on icon */}
+                              <div
+                                onClick={e => { e.stopPropagation(); applySelection(itemKey, { additive: true }); }}
+                                className={`absolute -top-1.5 -left-1.5 w-5 h-5 rounded-full border-2 border-white flex items-center justify-center transition-all duration-150 ${isSelected ? 'bg-orange-500 opacity-100 scale-100 shadow-[0_2px_6px_rgba(249,115,22,0.4)]' : 'bg-white/90 border-slate-300 opacity-0 group-hover:opacity-100 hover:border-orange-400'}`}
+                              >
+                                {isSelected && <svg viewBox="0 0 10 8" className="w-2.5 h-2.5" fill="none" stroke="white" strokeWidth="2"><path d="M1 4l2.5 2.5L9 1"/></svg>}
+                              </div>
                             </div>
                             <div className="flex items-center gap-2">
                               {showFolderIssueBadge ? (
@@ -5583,7 +5803,7 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
                         draggable
                         onDragStart={(event) => handleItemDragStart(event, itemKey)}
                         onDragEnd={handleDragEnd}
-                        className={`rounded-[24px] border p-4 bg-white cursor-pointer transition ${isSelected ? 'border-orange-300 bg-orange-50/40 shadow-[0_14px_34px_-24px_rgba(249,115,22,0.45)]' : 'border-slate-200/70 shadow-[0_12px_32px_rgba(44,47,48,0.05)] hover:border-orange-200 hover:shadow-[0_18px_38px_-18px_rgba(25,28,29,0.12)]'}`}
+                        className={`group rounded-[24px] border p-4 bg-white cursor-pointer transition-all duration-200 ${isSelected ? 'border-orange-400 bg-gradient-to-br from-orange-50/80 to-amber-50/30 shadow-[0_0_0_3px_rgba(249,115,22,0.18),0_8px_24px_-8px_rgba(249,115,22,0.25)] -translate-y-0.5' : 'border-slate-200/70 shadow-[0_4px_16px_rgba(44,47,48,0.05)] hover:border-orange-200 hover:shadow-[0_12px_32px_-8px_rgba(25,28,29,0.1)] hover:-translate-y-0.5'}`}
                         onClick={(event) => {
                           event.stopPropagation();
                           event.preventDefault();
@@ -5623,6 +5843,13 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
                         }}
                       >
                         <div className="mb-3 relative rounded-2xl border border-slate-200 bg-slate-50 overflow-hidden">
+                          {/* Selection checkmark overlay */}
+                          <div
+                            onClick={e => { e.stopPropagation(); applySelection(itemKey, { additive: true }); }}
+                            className={`absolute top-2 left-2 z-20 w-5 h-5 rounded-full border-2 border-white flex items-center justify-center transition-all duration-150 cursor-pointer ${isSelected ? 'bg-orange-500 opacity-100 scale-100 shadow-[0_2px_6px_rgba(249,115,22,0.4)]' : 'bg-white/90 border-slate-300 opacity-0 group-hover:opacity-100 hover:border-orange-400'}`}
+                          >
+                            {isSelected && <svg viewBox="0 0 10 8" className="w-2.5 h-2.5" fill="none" stroke="white" strokeWidth="2"><path d="M1 4l2.5 2.5L9 1"/></svg>}
+                          </div>
                           <div className="absolute right-2 top-2 z-10 flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity duration-150">
                             {canQuickRotate ? (
                               <button
@@ -6581,7 +6808,7 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
           onClick={(e) => e.stopPropagation()}
           onContextMenu={(e) => e.preventDefault()}
         >
-          <div className="max-h-[70vh] w-64 overflow-y-auto rounded-xl border border-slate-200 bg-white shadow-xl">
+          <div className="max-h-[70vh] w-64 overflow-y-auto rounded-2xl border border-slate-200/80 bg-white shadow-[0_20px_60px_-12px_rgba(15,23,42,0.25),0_0_0_1px_rgba(15,23,42,0.04)] py-1">
             <button
               type="button"
               onClick={() => openFolderFromContextMenu(selectedContextFolder)}
@@ -6909,7 +7136,7 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
           onClick={(e) => e.stopPropagation()}
           onContextMenu={(e) => e.preventDefault()}
         >
-          <div className="w-56 rounded-xl border border-slate-200 bg-white shadow-xl overflow-hidden">
+          <div className="w-56 rounded-2xl border border-slate-200/80 bg-white shadow-[0_20px_60px_-12px_rgba(15,23,42,0.25),0_0_0_1px_rgba(15,23,42,0.04)] py-1 overflow-hidden">
             <button
               type="button"
               onClick={() => {
@@ -7112,6 +7339,39 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
               Baixar
             </button>
 
+            {/* Duplicar */}
+            <button
+              type="button"
+              onClick={() => { setContextMenu(null); void handleDuplicateFile(selectedContextFile); }}
+              className="w-full px-3 py-2 text-left text-sm text-slate-700 hover:bg-slate-50 transition flex items-center gap-3"
+            >
+              <div className="w-7 h-7 rounded-lg bg-slate-50 flex items-center justify-center flex-shrink-0">
+                <Copy className="w-3.5 h-3.5 text-slate-500" />
+              </div>
+              Duplicar
+            </button>
+
+            {/* Copiar link */}
+            <button
+              type="button"
+              onClick={async () => {
+                setContextMenu(null);
+                try {
+                  const url = await cloudService.getFileSignedUrl(selectedContextFile.storage_path);
+                  await navigator.clipboard.writeText(url);
+                  toast.success('Cloud', 'Link copiado para a área de transferência.');
+                } catch {
+                  toast.error('Cloud', 'Não foi possível copiar o link.');
+                }
+              }}
+              className="w-full px-3 py-2 text-left text-sm text-slate-700 hover:bg-slate-50 transition flex items-center gap-3"
+            >
+              <div className="w-7 h-7 rounded-lg bg-slate-50 flex items-center justify-center flex-shrink-0">
+                <Link2 className="w-3.5 h-3.5 text-slate-500" />
+              </div>
+              Copiar link
+            </button>
+
             {/* Mover */}
             <button
               type="button"
@@ -7251,32 +7511,33 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
           const singleFile = isSingleFile ? files.find(f => `file:${f.id}` === selectedItemKeys[0]) : null;
           const singleFolder = isSingleFolder ? allFolders.find(f => `folder:${f.id}` === selectedItemKeys[0]) : null;
           const hasSignable = files.some(f => selectedFileKeys.includes(`file:${f.id}`) && (isDocxFile(f.mime_type, f.original_name) || isPdfFile(f.mime_type, f.original_name)));
-          const Sep = () => <div className="w-px h-5 bg-slate-700 mx-0.5 shrink-0" />;
-          const Btn = ({ onClick, icon, label, color = 'bg-slate-800 hover:bg-slate-700', disabled = false }: { onClick: () => void; icon: React.ReactNode; label: string; color?: string; disabled?: boolean }) => (
+          const Sep = () => <div className="w-px h-4 bg-white/10 mx-1 shrink-0" />;
+          const Btn = ({ onClick, icon, label, color = 'text-slate-200 hover:bg-white/10 hover:text-white', disabled = false }: { onClick: () => void; icon: React.ReactNode; label: string; color?: string; disabled?: boolean }) => (
             <button type="button" onClick={onClick} disabled={disabled}
-              className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl text-xs font-medium transition whitespace-nowrap disabled:opacity-50 ${color}`}
+              className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium transition-all whitespace-nowrap disabled:opacity-40 ${color}`}
             >
               {icon}
-              <span className="hidden md:inline">{label}</span>
+              <span className="hidden sm:inline">{label}</span>
             </button>
           );
           return (
             <motion.div
-              initial={{ y: 80, opacity: 0 }}
-              animate={{ y: 0, opacity: 1 }}
-              exit={{ y: 80, opacity: 0 }}
-              transition={{ type: 'spring', stiffness: 420, damping: 34 }}
-              className="fixed bottom-5 left-1/2 -translate-x-1/2 z-[120] flex items-center gap-1 px-2.5 py-2 rounded-2xl bg-[#18181b] text-white shadow-[0_12px_40px_rgba(0,0,0,0.45)] border border-white/10 select-none max-w-[calc(100vw-24px)] overflow-x-auto"
+              initial={{ y: 72, opacity: 0, scale: 0.96 }}
+              animate={{ y: 0, opacity: 1, scale: 1 }}
+              exit={{ y: 72, opacity: 0, scale: 0.96 }}
+              transition={{ type: 'spring', stiffness: 500, damping: 38 }}
+              className="fixed bottom-5 left-1/2 -translate-x-1/2 z-[120] flex items-center gap-0.5 px-1.5 py-1.5 rounded-2xl bg-[#111113]/95 backdrop-blur-xl text-white shadow-[0_20px_60px_rgba(0,0,0,0.55),0_0_0_1px_rgba(255,255,255,0.07)] select-none max-w-[calc(100vw-24px)] overflow-x-auto"
             >
               {/* Badge de contagem */}
-              <span className="text-[11px] font-semibold text-slate-400 px-1.5 mr-0.5 whitespace-nowrap shrink-0">
-                {selectedItemKeys.length} {selectedItemKeys.length === 1 ? 'item' : 'itens'}
+              <span className="flex items-center gap-1.5 bg-orange-500/20 text-orange-300 px-2.5 py-1.5 rounded-lg text-[11px] font-bold whitespace-nowrap shrink-0 mr-0.5">
+                <span className="inline-flex items-center justify-center w-4 h-4 bg-orange-500 text-white rounded-full text-[10px] font-black leading-none">{selectedItemKeys.length}</span>
+                <span className="hidden sm:inline">{selectedItemKeys.length === 1 ? 'item' : 'itens'}</span>
               </span>
               <Sep />
 
               {/* ── Ações para item único ── */}
               {isSingleFile && singleFile && (
-                <Btn onClick={() => { setPreviewFile(singleFile); clearExplorerSelection(); }} icon={<File className="w-3.5 h-3.5 text-slate-300" />} label="Abrir" />
+                <Btn onClick={() => { setPreviewFile(singleFile); clearExplorerSelection(); }} icon={<File className="w-3.5 h-3.5" />} label="Abrir" />
               )}
               {isSingleFolder && singleFolder && (
                 <Btn onClick={() => { setCurrentFolderId(singleFolder.id); clearExplorerSelection(); }} icon={<FolderOpen className="w-3.5 h-3.5 text-amber-400" />} label="Abrir" />
@@ -7296,12 +7557,18 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
                     startInlineRename({ type, id, currentName: name });
                     clearExplorerSelection();
                   }}
-                  icon={<Tag className="w-3.5 h-3.5 text-slate-300" />}
+                  icon={<Tag className="w-3.5 h-3.5 text-violet-400" />}
                   label="Renomear"
                 />
               )}
               {isSingleFile && singleFile && (
                 <Btn onClick={() => { setSelectedFileToMove(singleFile); setTargetFolderId(''); setMoveModalOpen(true); }} icon={<MoveRight className="w-3.5 h-3.5 text-amber-300" />} label="Mover" />
+              )}
+              {isSingleFile && singleFile && (
+                <Btn onClick={() => handleToggleFavoriteFile(singleFile.id)}
+                  icon={<Pin className={`w-3.5 h-3.5 ${favoriteFileIds.includes(singleFile.id) ? 'text-orange-400' : ''}`} />}
+                  label={favoriteFileIds.includes(singleFile.id) ? 'Desfixar' : 'Fixar'}
+                />
               )}
 
               {/* ── Ações para seleção múltipla ── */}
@@ -7310,16 +7577,16 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
                   {selectedFileKeys.length > 1 && (
                     <Btn onClick={() => void handleDownloadSelectionAsZip()} disabled={downloadingSelectionZip}
                       icon={downloadingSelectionZip ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <FileArchive className="w-3.5 h-3.5 text-sky-400" />}
-                      label={`ZIP (${selectedFileKeys.length})`} color="bg-slate-800 hover:bg-sky-800" />
+                      label={`ZIP (${selectedFileKeys.length})`} />
                   )}
                   <Btn onClick={() => setBulkMoveModalOpen(true)} icon={<MoveRight className="w-3.5 h-3.5 text-amber-300" />} label="Mover" />
-                  <Btn onClick={() => setBulkRenameModalOpen(true)} icon={<Tag className="w-3.5 h-3.5 text-slate-300" />} label="Renomear" />
+                  <Btn onClick={() => setBulkRenameModalOpen(true)} icon={<Tag className="w-3.5 h-3.5 text-violet-400" />} label="Renomear" />
                 </>
               )}
 
               {/* ── Sempre disponíveis ── */}
               <Sep />
-              <Btn onClick={() => handleStoreSelectionInClipboard('copy')} icon={<Copy className="w-3.5 h-3.5 text-slate-300" />} label="Copiar" />
+              <Btn onClick={() => handleStoreSelectionInClipboard('copy')} icon={<Copy className="w-3.5 h-3.5 text-emerald-400" />} label="Copiar" />
               <Btn onClick={() => handleStoreSelectionInClipboard('cut')} icon={<Scissors className="w-3.5 h-3.5 text-slate-400" />} label="Recortar" />
 
               {/* ── Assinatura ── */}
@@ -7333,36 +7600,43 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
                     }}
                     icon={<SquarePen className="w-3.5 h-3.5 text-orange-300" />}
                     label="Assinar"
-                    color="bg-orange-800/80 hover:bg-orange-700"
+                    color="text-orange-200 hover:bg-orange-500/20 hover:text-orange-100"
                   />
                 </>
               )}
 
-              {/* ── Favorito (apenas 1 arquivo) ── */}
-              {isSingleFile && singleFile && (
-                <Btn
-                  onClick={() => handleToggleFavoriteFile(singleFile.id)}
-                  icon={<Pin className={`w-3.5 h-3.5 ${favoriteFileIds.includes(singleFile.id) ? 'text-orange-400' : 'text-slate-400'}`} />}
-                  label={favoriteFileIds.includes(singleFile.id) ? 'Desfixar' : 'Fixar'}
-                />
+              {/* ── Mesclar PDFs ── */}
+              {selectedFileKeys.filter(k => { const f = files.find(x => `file:${x.id}` === k); return f ? isPdfFile(f.mime_type, f.original_name) : false; }).length >= 2 && (
+                <>
+                  <Sep />
+                  <Btn onClick={() => void handleMergePdfs()} disabled={mergingPdfs}
+                    icon={mergingPdfs ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <FileText className="w-3.5 h-3.5 text-red-400" />}
+                    label="Mesclar PDF" color="text-red-300 hover:bg-red-500/20 hover:text-red-200" />
+                </>
               )}
 
-              {/* ── Converter ── */}
+              {/* ── Converter imagens ── */}
               {selectedImageFiles.length > 0 && (
                 <Btn onClick={() => openConvertImagesModal()} icon={<FileText className="w-3.5 h-3.5 text-red-400" />} label="→ PDF" />
+              )}
+
+              {/* ── Duplicar (arquivo único) ── */}
+              {isSingleFile && singleFile && (
+                <Btn onClick={() => void handleDuplicateFile(singleFile)} icon={<Copy className="w-3.5 h-3.5 text-slate-400" />} label="Duplicar" />
               )}
 
               <Sep />
 
               {/* ── Excluir ── */}
-              <Btn onClick={() => void handleDeleteSelectedItems()} icon={<Trash2 className="w-3.5 h-3.5 text-red-400" />} label="Excluir" color="bg-slate-800 hover:bg-red-800" />
+              <Btn onClick={() => void handleDeleteSelectedItems()} icon={<Trash2 className="w-3.5 h-3.5 text-red-400" />} label="Excluir"
+                color="text-red-300 hover:bg-red-500/20 hover:text-red-200" />
 
               {/* ── Limpar ── */}
               <button type="button" onClick={clearExplorerSelection}
-                className="flex items-center justify-center w-7 h-7 rounded-xl bg-slate-800 hover:bg-slate-700 transition shrink-0 ml-0.5"
-                title="Limpar seleção"
+                className="flex items-center justify-center w-7 h-7 rounded-lg hover:bg-white/10 transition-colors shrink-0 ml-0.5 text-slate-500 hover:text-white"
+                title="Limpar seleção (Esc)"
               >
-                <X className="w-3.5 h-3.5 text-slate-500" />
+                <X className="w-3.5 h-3.5" />
               </button>
             </motion.div>
           );
@@ -7802,145 +8076,184 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
         </div>
       )}
 
-      {pdfToolsModalOpen && selectedPdfToolFile && (
-        <div className="fixed inset-0 z-[135] bg-slate-900/30 backdrop-blur-sm flex items-center justify-center p-2 sm:p-4">
-          <div className="w-full max-w-full sm:max-w-6xl h-[95vh] sm:h-[90vh] rounded-3xl bg-white border border-slate-200 shadow-[0_24px_70px_rgba(15,23,42,0.18)] overflow-hidden flex flex-col">
-            <div className="h-2 w-full bg-gradient-to-r from-orange-500 to-orange-600" />
-            <div className="px-3 sm:px-5 py-3 border-b border-slate-200 bg-white flex items-center justify-between gap-4">
-              <div className="min-w-0">
-                <p className="text-[11px] uppercase tracking-[0.18em] text-slate-400 font-semibold">Cloud</p>
-                <h3 className="text-base sm:text-lg font-semibold text-slate-900 truncate">Hub PDF - {selectedPdfToolFile.original_name}</h3>
-                <p className="text-xs text-slate-500 mt-0.5">
-                  {selectedPdfFiles.length > 1
-                    ? `${selectedPdfFiles.length} PDFs selecionados para juntar • editando agora: ${selectedPdfToolFile.original_name}`
-                    : 'Editando o PDF atual'}
-                </p>
+      {pdfToolsModalOpen && selectedPdfToolFile && (() => {
+        const toolDefs: { mode: PdfToolMode; icon: React.ReactNode; label: string; desc: string; color: string; iconBg: string; disabled?: boolean; badge?: string }[] = [
+          { mode: 'organize', icon: <GripVertical className="w-5 h-5" />, label: 'Organizar', desc: 'Reordenar páginas arrastando', color: 'text-sky-600', iconBg: 'bg-sky-50 border-sky-200' },
+          { mode: 'rotate',   icon: <RotateCw className="w-5 h-5" />,   label: 'Girar',     desc: 'Rotacionar páginas',          color: 'text-indigo-600', iconBg: 'bg-indigo-50 border-indigo-200' },
+          { mode: 'remove',   icon: <Trash2 className="w-5 h-5" />,     label: 'Remover',   desc: 'Excluir páginas selecionadas', color: 'text-red-600',  iconBg: 'bg-red-50 border-red-200' },
+          { mode: 'split',    icon: <Scissors className="w-5 h-5" />,   label: 'Dividir',   desc: 'Separar em duas partes',       color: 'text-amber-600', iconBg: 'bg-amber-50 border-amber-200', disabled: pdfToolPages.length < 2 },
+          { mode: 'watermark',icon: <Minimize2 className="w-5 h-5" />,  label: 'Marca d\'água', desc: 'Estampar texto no PDF', color: 'text-purple-600', iconBg: 'bg-purple-50 border-purple-200' },
+          { mode: 'pagenumber',icon: <Tag className="w-5 h-5" />,       label: 'Numeração', desc: 'Adicionar nº de páginas',     color: 'text-teal-600', iconBg: 'bg-teal-50 border-teal-200' },
+          { mode: 'home' as PdfToolMode, icon: <Copy className="w-5 h-5" />, label: 'Extrair', desc: selectedPdfPageIndexes.length > 0 ? `${selectedPdfPageIndexes.length} pág. sel.` : 'Selecione páginas', color: 'text-emerald-600', iconBg: 'bg-emerald-50 border-emerald-200', disabled: selectedPdfPageIndexes.length === 0 || pdfToolSaving, badge: selectedPdfPageIndexes.length > 0 ? String(selectedPdfPageIndexes.length) : undefined },
+          { mode: 'home' as PdfToolMode, icon: <FileText className="w-5 h-5" />, label: 'Juntar PDFs', desc: selectedPdfFiles.length >= 2 ? `${selectedPdfFiles.length} PDFs` : 'Selecione 2+ PDFs', color: 'text-orange-600', iconBg: 'bg-orange-50 border-orange-200', disabled: selectedPdfFiles.length < 2 || pdfToolSaving, badge: selectedPdfFiles.length >= 2 ? String(selectedPdfFiles.length) : undefined },
+        ];
+
+        return (
+        <div className="fixed inset-0 z-[135] bg-black/50 backdrop-blur-sm flex items-end sm:items-center justify-center p-0 sm:p-4">
+          <motion.div
+            initial={{ opacity: 0, y: 32, scale: 0.98 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: 16, scale: 0.99 }}
+            transition={{ duration: 0.22, ease: [0.16, 1, 0.3, 1] }}
+            className="w-full sm:max-w-6xl h-[96vh] sm:h-[90vh] rounded-t-[28px] sm:rounded-[28px] bg-white shadow-[0_32px_80px_rgba(0,0,0,0.35)] overflow-hidden flex flex-col"
+          >
+            {/* ── Header ── */}
+            <div className="bg-gradient-to-r from-red-600 to-rose-500 px-5 py-4 flex items-center gap-4 flex-shrink-0">
+              <div className="w-10 h-10 rounded-xl bg-white/20 flex items-center justify-center flex-shrink-0">
+                <FileText className="w-5 h-5 text-white" />
               </div>
-              <div className="flex items-center gap-2">
-                {pdfToolMode !== 'home' ? (
-                  <button onClick={() => setPdfToolMode('home')} className="px-3 py-2 rounded-xl border border-slate-200 text-sm text-slate-700 hover:bg-slate-50">
+              <div className="min-w-0 flex-1">
+                <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-red-200">Hub PDF</p>
+                <p className="text-white font-semibold text-sm truncate leading-tight">{selectedPdfToolFile.original_name}</p>
+                <div className="flex items-center gap-3 mt-0.5">
+                  <span className="text-red-200 text-[11px]">{pdfToolPages.length} página{pdfToolPages.length !== 1 ? 's' : ''}</span>
+                  <span className="text-red-300 text-[11px]">·</span>
+                  <span className="text-red-200 text-[11px]">{formatFileSize(selectedPdfToolFile.file_size)}</span>
+                  {selectedPdfPageIndexes.length > 0 && (
+                    <>
+                      <span className="text-red-300 text-[11px]">·</span>
+                      <span className="text-white text-[11px] font-semibold">{selectedPdfPageIndexes.length} selecionada{selectedPdfPageIndexes.length !== 1 ? 's' : ''}</span>
+                    </>
+                  )}
+                </div>
+              </div>
+              <div className="flex items-center gap-2 flex-shrink-0">
+                {pdfToolMode !== 'home' && (
+                  <button
+                    onClick={() => setPdfToolMode('home')}
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white/15 hover:bg-white/25 text-white text-xs font-medium transition"
+                  >
+                    <ChevronLeft className="w-3.5 h-3.5" />
                     Voltar
                   </button>
-                ) : null}
-                <button onClick={closePdfToolsModal} className="rounded-xl p-2 hover:bg-slate-100 transition"><X className="w-5 h-5 text-slate-400" /></button>
+                )}
+                <button
+                  onClick={closePdfToolsModal}
+                  className="w-9 h-9 rounded-xl bg-white/15 hover:bg-white/25 flex items-center justify-center text-white transition"
+                >
+                  <X className="w-4 h-4" />
+                </button>
               </div>
             </div>
 
+            {/* ── Body ── */}
             {pdfToolMode === 'home' ? (
-              <div className="flex-1 overflow-auto bg-slate-50 p-4 sm:p-6">
-                <div className="max-w-5xl mx-auto space-y-6">
-                  <div>
-                    <h4 className="text-lg font-semibold text-slate-900">Ferramentas PDF</h4>
-                    <p className="text-sm text-slate-500">Somente as funções essenciais para editar e organizar seus PDFs.</p>
+              <div className="flex flex-1 min-h-0">
+                {/* Left: tools grid */}
+                <div className="w-full lg:w-[340px] lg:flex-shrink-0 border-r border-slate-100 flex flex-col overflow-y-auto">
+                  {/* Tool grid */}
+                  <div className="p-4 grid grid-cols-2 sm:grid-cols-2 gap-2.5">
+                    {toolDefs.map((tool, i) => {
+                      const isExtract = tool.label === 'Extrair';
+                      const isJuntar = tool.label === 'Juntar PDFs';
+                      return (
+                        <button
+                          key={i}
+                          type="button"
+                          disabled={tool.disabled}
+                          onClick={() => {
+                            if (isExtract) { void extractSelectedPdfPages(); return; }
+                            if (isJuntar) { void mergeSelectedPdfFiles(); return; }
+                            setPdfToolMode(tool.mode);
+                          }}
+                          className={`relative text-left rounded-2xl border p-3.5 transition-all hover:-translate-y-0.5 disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:translate-y-0 ${tool.iconBg} hover:shadow-md`}
+                        >
+                          {tool.badge && (
+                            <span className="absolute top-2 right-2 w-5 h-5 rounded-full bg-orange-500 text-white text-[10px] font-bold flex items-center justify-center">{tool.badge}</span>
+                          )}
+                          <div className={`mb-2 ${tool.color}`}>{tool.icon}</div>
+                          <p className="font-semibold text-slate-900 text-[13px] leading-tight">{tool.label}</p>
+                          <p className="text-[11px] text-slate-500 mt-0.5 leading-tight">{tool.desc}</p>
+                        </button>
+                      );
+                    })}
                   </div>
 
-                  <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3">
-                    <button onClick={() => setPdfToolMode('organize')} className="rounded-2xl border border-sky-200 bg-white hover:bg-sky-50 text-left p-4 transition shadow-sm">
-                      <div className="flex items-center gap-3">
-                        <GripVertical className="w-5 h-5 text-sky-600" />
-                        <div>
-                          <p className="font-medium text-slate-900">Organizar páginas</p>
-                          <p className="text-xs text-slate-500">Reordenar arrastando</p>
-                        </div>
-                      </div>
-                    </button>
-
-                    <button onClick={() => setPdfToolMode('rotate')} className="rounded-2xl border border-sky-200 bg-white hover:bg-sky-50 text-left p-4 transition shadow-sm">
-                      <div className="flex items-center gap-3">
-                        <RotateCw className="w-5 h-5 text-sky-600" />
-                        <div>
-                          <p className="font-medium text-slate-900">Girar páginas</p>
-                          <p className="text-xs text-slate-500">Rotacionar selecionadas</p>
-                        </div>
-                      </div>
-                    </button>
-
-                    <button onClick={() => setPdfToolMode('remove')} className="rounded-2xl border border-sky-200 bg-white hover:bg-sky-50 text-left p-4 transition shadow-sm">
-                      <div className="flex items-center gap-3">
-                        <Scissors className="w-5 h-5 text-sky-600" />
-                        <div>
-                          <p className="font-medium text-slate-900">Remover páginas</p>
-                          <p className="text-xs text-slate-500">Excluir selecionadas</p>
-                        </div>
-                      </div>
-                    </button>
-
-                    <button onClick={() => void extractSelectedPdfPages()} disabled={selectedPdfPageIndexes.length === 0 || pdfToolSaving} className="rounded-2xl border border-emerald-200 bg-white hover:bg-emerald-50 text-left p-4 transition shadow-sm disabled:opacity-50 disabled:hover:bg-white">
-                      <div className="flex items-center gap-3">
-                        <Copy className="w-5 h-5 text-emerald-600" />
-                        <div>
-                          <p className="font-medium text-slate-900">Extrair páginas</p>
-                          <p className="text-xs text-slate-500">{selectedPdfPageIndexes.length > 0 ? `${selectedPdfPageIndexes.length} selecionada(s)` : 'Selecione páginas abaixo'}</p>
-                        </div>
-                      </div>
-                    </button>
-
-                    <button onClick={() => void mergeSelectedPdfFiles()} disabled={selectedPdfFiles.length < 2 || pdfToolSaving} className="rounded-2xl border border-amber-200 bg-white hover:bg-amber-50 text-left p-4 transition shadow-sm disabled:opacity-50 disabled:hover:bg-white">
-                      <div className="flex items-center gap-3">
-                        <FileText className="w-5 h-5 text-amber-600" />
-                        <div>
-                          <p className="font-medium text-slate-900">Juntar PDFs</p>
-                          <p className="text-xs text-slate-500">{selectedPdfFiles.length >= 2 ? `${selectedPdfFiles.length} PDFs selecionados` : 'Selecione 2+ PDFs na pasta'}</p>
-                        </div>
-                      </div>
-                    </button>
-
-                    <button onClick={() => handleDownloadFile(selectedPdfToolFile)} className="rounded-2xl border border-slate-200 bg-white hover:bg-slate-50 text-left p-4 transition shadow-sm">
-                      <div className="flex items-center gap-3">
-                        <Download className="w-5 h-5 text-slate-600" />
-                        <div>
-                          <p className="font-medium text-slate-900">Baixar PDF</p>
-                          <p className="text-xs text-slate-500">Download do arquivo</p>
-                        </div>
-                      </div>
-                    </button>
-                  </div>
-
-                  <div className="rounded-2xl border border-slate-200 bg-white p-4">
-                    <div className="flex items-center justify-between gap-4 mb-3">
-                      <p className="text-sm font-medium text-slate-900">Páginas do PDF ({pdfToolPages.length})</p>
-                      <div className="flex items-center gap-2">
-                        <button onClick={selectAllPdfPages} className="px-2 py-1 text-xs rounded-md bg-slate-100 hover:bg-slate-200 text-slate-700">Selecionar todas</button>
-                        <button onClick={invertPdfPageSelection} className="px-2 py-1 text-xs rounded-md bg-slate-100 hover:bg-slate-200 text-slate-700">Inverter seleção</button>
-                        <button onClick={() => setSelectedPdfPageIndexes([])} className="px-2 py-1 text-xs rounded-md bg-slate-100 hover:bg-slate-200 text-slate-700">Limpar</button>
+                  {/* Quick actions */}
+                  <div className="px-4 pb-4 space-y-2">
+                    <div className="border-t border-slate-100 pt-3">
+                      <p className="text-[10px] font-bold uppercase tracking-[0.12em] text-slate-400 mb-2">Ações rápidas</p>
+                      <div className="space-y-1">
+                        <button onClick={() => handleDownloadFile(selectedPdfToolFile)} className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl hover:bg-slate-100 transition text-sm text-slate-700">
+                          <Download className="w-4 h-4 text-slate-400" /> Baixar PDF original
+                        </button>
+                        <button onClick={() => handleSendForSignature(selectedPdfToolFile)} className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl hover:bg-orange-50 transition text-sm text-orange-600">
+                          <SquarePen className="w-4 h-4" /> Enviar para assinatura
+                        </button>
+                        <button onClick={async () => {
+                          try {
+                            const url = await cloudService.getFileSignedUrl(selectedPdfToolFile.storage_path);
+                            await navigator.clipboard.writeText(url);
+                            toast.success('Cloud', 'Link copiado.');
+                          } catch { toast.error('Cloud', 'Não foi possível copiar o link.'); }
+                        }} className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl hover:bg-slate-100 transition text-sm text-slate-700">
+                          <Link2 className="w-4 h-4 text-slate-400" /> Copiar link de acesso
+                        </button>
                       </div>
                     </div>
-                    {pdfToolPreviewUrl && selectedPdfToolFile ? (
+
+                    {/* File info strip */}
+                    <div className="rounded-xl bg-slate-50 border border-slate-100 px-3 py-2.5 space-y-1">
+                      {[
+                        ['Arquivo', selectedPdfToolFile.original_name],
+                        ['Páginas', String(pdfToolPages.length)],
+                        ['Tamanho', formatFileSize(selectedPdfToolFile.file_size)],
+                        ['Selecionadas', `${selectedPdfPageIndexes.length} de ${pdfToolPages.length}`],
+                        ...(selectedPdfFiles.length > 1 ? [['PDFs p/ juntar', String(selectedPdfFiles.length)]] : []),
+                      ].map(([k, v]) => (
+                        <div key={k} className="flex items-center justify-between gap-2">
+                          <span className="text-[11px] text-slate-400">{k}</span>
+                          <span className="text-[11px] text-slate-700 font-medium truncate max-w-[160px] text-right">{v}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Right: page thumbnails */}
+                <div className="hidden lg:flex flex-1 min-h-0 flex-col overflow-hidden bg-slate-50">
+                  <div className="px-4 py-3 bg-white border-b border-slate-100 flex items-center justify-between gap-3">
+                    <p className="text-sm font-semibold text-slate-800">Páginas</p>
+                    <div className="flex items-center gap-1.5">
+                      <button onClick={selectAllPdfPages} className="px-2.5 py-1 text-[11px] font-medium rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 transition">Todas</button>
+                      <button onClick={invertPdfPageSelection} className="px-2.5 py-1 text-[11px] font-medium rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 transition">Inverter</button>
+                      <button onClick={() => setSelectedPdfPageIndexes([])} className="px-2.5 py-1 text-[11px] font-medium rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 transition">Limpar</button>
+                    </div>
+                  </div>
+                  <div className="flex-1 overflow-y-auto p-4">
+                    {pdfToolPreviewUrl ? (
                       <Document
                         key={`thumbs-${selectedPdfToolFile.id}-${pdfToolPreviewUrl}`}
                         file={pdfToolPreviewUrl}
-                        loading={<div className="py-6 text-center text-sm text-slate-500">Carregando miniaturas do PDF...</div>}
-                        error={<div className="py-6 text-center text-sm text-slate-500">Preview do PDF indisponível no momento.</div>}
+                        loading={<div className="py-8 text-center text-sm text-slate-400">Carregando páginas…</div>}
+                        error={<div className="py-8 text-center text-sm text-slate-400">Preview indisponível.</div>}
                         onLoadSuccess={() => setPdfToolThumbsReady(true)}
                         onLoadError={() => setPdfToolThumbsReady(false)}
                       >
-                        <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-6 xl:grid-cols-7 gap-3">
+                        <div className="grid grid-cols-3 xl:grid-cols-5 gap-3">
                           {(pdfToolThumbsReady ? pdfToolPages : []).map((page, idx) => {
-                            const selected = selectedPdfPageIndexes.includes(idx);
+                            const sel = selectedPdfPageIndexes.includes(idx);
                             return (
                               <button
                                 key={`${page.sourceIndex}-${idx}`}
                                 onClick={() => togglePdfPageSelection(idx)}
-                                className={`overflow-hidden rounded-xl border-2 text-left transition bg-white ${selected ? 'border-orange-500 ring-2 ring-orange-200' : 'border-slate-200 hover:border-slate-300'}`}
+                                className={`group overflow-hidden rounded-xl border-2 transition-all text-left bg-white hover:-translate-y-0.5 ${sel ? 'border-red-500 shadow-[0_0_0_3px_rgba(239,68,68,0.15)]' : 'border-slate-200 hover:border-slate-300 hover:shadow-sm'}`}
                               >
-                                <div className="bg-slate-50 p-2 min-h-[170px] flex items-center justify-center">
+                                <div className="bg-slate-50 p-1.5 flex items-center justify-center" style={{ minHeight: 120 }}>
                                   <Page
                                     key={`thumb-${selectedPdfToolFile.id}-${page.sourceIndex}-${idx}-${page.rotation}`}
                                     pageNumber={page.sourceIndex + 1}
-                                    width={110}
+                                    width={90}
                                     rotate={page.rotation}
                                     renderTextLayer={false}
                                     renderAnnotationLayer={false}
                                   />
                                 </div>
-                                <div className={`flex items-center justify-between gap-2 px-2.5 py-2 text-xs ${selected ? 'bg-orange-50 text-orange-700' : 'text-slate-600'}`}>
-                                  <span className="font-medium">Página {idx + 1}</span>
-                                  <input
-                                    type="checkbox"
-                                    readOnly
-                                    checked={selected}
-                                    className="w-3.5 h-3.5 rounded border-slate-300 text-orange-600 focus:ring-orange-500"
-                                  />
+                                <div className={`flex items-center justify-between px-2 py-1.5 ${sel ? 'bg-red-50' : 'bg-white'}`}>
+                                  <span className={`text-[10px] font-semibold ${sel ? 'text-red-700' : 'text-slate-500'}`}>{idx + 1}</span>
+                                  <div className={`w-3.5 h-3.5 rounded-full border-2 flex items-center justify-center ${sel ? 'bg-red-500 border-red-500' : 'border-slate-300'}`}>
+                                    {sel && <svg viewBox="0 0 8 6" className="w-2 h-2" fill="none" stroke="white" strokeWidth="1.8"><path d="M1 3l2 2 4-4"/></svg>}
+                                  </div>
                                 </div>
                               </button>
                             );
@@ -7948,72 +8261,192 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
                         </div>
                       </Document>
                     ) : (
-                      <div className="py-6 text-center text-sm text-slate-500">Preview do PDF indisponível no momento.</div>
+                      <div className="h-full flex items-center justify-center text-slate-400 text-sm">Carregando…</div>
                     )}
-                  </div>
-
-                  {selectedPdfFiles.length > 1 ? (
-                    <div className="rounded-2xl border border-slate-200 bg-white p-4">
-                      <div className="flex items-center justify-between gap-4 mb-3">
-                        <div>
-                          <p className="text-sm font-medium text-slate-900">PDFs selecionados para juntar</p>
-                          <p className="text-xs text-slate-500">Estes são os arquivos que entrarão na união dos PDFs.</p>
-                        </div>
-                        <span className="inline-flex items-center rounded-full border border-amber-200 bg-amber-50 px-2.5 py-1 text-[11px] font-medium text-amber-700">
-                          {selectedPdfFiles.length} selecionados
-                        </span>
-                      </div>
-                      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3">
-                        {selectedPdfFiles.map((file) => {
-                          const isCurrent = file.id === selectedPdfToolFile.id;
-                          return (
-                            <div
-                              key={file.id}
-                              className={`rounded-xl border p-3 ${isCurrent ? 'border-orange-300 bg-orange-50' : 'border-slate-200 bg-slate-50/70'}`}
-                            >
-                              <div className="flex items-start justify-between gap-3">
-                                <div className="min-w-0 flex items-start gap-2">
-                                  <FileText className={`w-4 h-4 mt-0.5 flex-shrink-0 ${isCurrent ? 'text-orange-600' : 'text-slate-500'}`} />
-                                  <div className="min-w-0">
-                                    <p className={`text-sm font-medium truncate ${isCurrent ? 'text-orange-900' : 'text-slate-900'}`}>{file.original_name}</p>
-                                    <p className="text-xs text-slate-500 truncate">{formatFileSize(file.file_size)}</p>
-                                  </div>
-                                </div>
-                                {isCurrent ? (
-                                  <span className="inline-flex items-center rounded-full border border-orange-200 bg-white px-2 py-0.5 text-[10px] font-semibold text-orange-700">
-                                    Atual
-                                  </span>
-                                ) : null}
-                              </div>
-                            </div>
-                          );
-                        })}
-                      </div>
-                    </div>
-                  ) : null}
-
-                  <div className="rounded-2xl border border-slate-200 bg-white p-4 text-sm text-slate-600">
-                    <p><span className="font-medium text-slate-900">PDF atual:</span> {selectedPdfToolFile.original_name}</p>
-                    <p><span className="font-medium text-slate-900">Total de páginas:</span> {pdfToolPages.length}</p>
-                    <p><span className="font-medium text-slate-900">Páginas selecionadas:</span> {selectedPdfPageIndexes.length}</p>
-                    <p><span className="font-medium text-slate-900">PDFs selecionados para juntar:</span> {selectedPdfFiles.length}{selectedPdfFiles.length > 1 ? ' (incluindo o PDF atual)' : ''}</p>
                   </div>
                 </div>
               </div>
-            ) : (
-              <div className="flex-1 min-h-0 flex flex-col bg-slate-100">
-                <div className="px-4 py-3 border-b border-slate-200 bg-white flex items-center justify-between gap-4">
+
+            ) : pdfToolMode === 'watermark' ? (
+              /* ── Watermark tool ── */
+              <div className="flex-1 overflow-auto p-6 bg-slate-50">
+                <div className="max-w-md mx-auto space-y-5">
                   <div>
-                    <p className="text-sm font-semibold text-slate-900">
-                      {pdfToolMode === 'organize' ? 'Organizar PDF arrastando' : pdfToolMode === 'rotate' ? 'Rodar páginas no preview' : 'Selecionar páginas para remover'}
+                    <h4 className="text-base font-bold text-slate-900">Marca d'água</h4>
+                    <p className="text-sm text-slate-500 mt-1">O texto será aplicado em todas as {pdfToolPages.length} páginas e um novo PDF será gerado para download.</p>
+                  </div>
+                  <div className="space-y-4 bg-white rounded-2xl border border-slate-200 p-5">
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-600 mb-1.5">Texto da marca d'água</label>
+                      <input
+                        value={pdfWatermarkText}
+                        onChange={e => setPdfWatermarkText(e.target.value)}
+                        placeholder="Ex: CONFIDENCIAL"
+                        className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm font-bold text-slate-900 uppercase focus:outline-none focus:border-red-400 focus:ring-2 focus:ring-red-100"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-600 mb-1.5">Opacidade: {Math.round(pdfWatermarkOpacity * 100)}%</label>
+                      <input type="range" min={5} max={60} value={Math.round(pdfWatermarkOpacity * 100)} onChange={e => setPdfWatermarkOpacity(Number(e.target.value) / 100)}
+                        className="w-full accent-red-500" />
+                    </div>
+                    <div className="flex items-center gap-3">
+                      <button
+                        type="button"
+                        onClick={() => setPdfWatermarkDiagonal(true)}
+                        className={`flex-1 py-2 rounded-xl border text-sm font-medium transition ${pdfWatermarkDiagonal ? 'border-red-400 bg-red-50 text-red-700' : 'border-slate-200 text-slate-600 hover:bg-slate-50'}`}
+                      >
+                        Diagonal (45°)
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setPdfWatermarkDiagonal(false)}
+                        className={`flex-1 py-2 rounded-xl border text-sm font-medium transition ${!pdfWatermarkDiagonal ? 'border-red-400 bg-red-50 text-red-700' : 'border-slate-200 text-slate-600 hover:bg-slate-50'}`}
+                      >
+                        Horizontal
+                      </button>
+                    </div>
+                    {/* Preview */}
+                    <div className="rounded-xl bg-slate-100 h-32 flex items-center justify-center overflow-hidden relative border border-slate-200">
+                      <span className="text-slate-200 text-4xl font-black pointer-events-none select-none"
+                        style={{ opacity: pdfWatermarkOpacity * 3, transform: pdfWatermarkDiagonal ? 'rotate(45deg)' : 'none', fontSize: 28, whiteSpace: 'nowrap' }}>
+                        {pdfWatermarkText || 'TEXTO'}
+                      </span>
+                      <div className="absolute inset-0 flex items-start justify-start p-3">
+                        <div className="w-8 h-10 bg-white border border-slate-200 rounded opacity-60" />
+                      </div>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <button onClick={() => setPdfToolMode('home')} className="flex-1 py-2.5 rounded-xl border border-slate-200 text-sm font-medium text-slate-700 hover:bg-slate-50 transition">Cancelar</button>
+                    <button
+                      onClick={() => void handleAddPdfWatermark()}
+                      disabled={applyingPdfTool || !pdfWatermarkText.trim()}
+                      className="flex-1 py-2.5 rounded-xl bg-red-500 text-white text-sm font-semibold hover:bg-red-600 disabled:opacity-60 transition flex items-center justify-center gap-2"
+                    >
+                      {applyingPdfTool ? <Loader2 className="w-4 h-4 animate-spin" /> : <Minimize2 className="w-4 h-4" />}
+                      {applyingPdfTool ? 'Gerando…' : 'Aplicar e Baixar'}
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+            ) : pdfToolMode === 'pagenumber' ? (
+              /* ── Page numbers tool ── */
+              <div className="flex-1 overflow-auto p-6 bg-slate-50">
+                <div className="max-w-md mx-auto space-y-5">
+                  <div>
+                    <h4 className="text-base font-bold text-slate-900">Numeração de páginas</h4>
+                    <p className="text-sm text-slate-500 mt-1">Adiciona "N / Total" em todas as {pdfToolPages.length} páginas. Um novo PDF é gerado para download.</p>
+                  </div>
+                  <div className="space-y-4 bg-white rounded-2xl border border-slate-200 p-5">
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-600 mb-2">Posição do número</label>
+                      <div className="grid grid-cols-3 gap-2">
+                        {([
+                          { value: 'bottom-center', label: 'Rodapé centro' },
+                          { value: 'bottom-right',  label: 'Rodapé direita' },
+                          { value: 'top-center',    label: 'Cabeçalho centro' },
+                        ] as { value: typeof pdfPageNumPosition; label: string }[]).map(opt => (
+                          <button
+                            key={opt.value}
+                            type="button"
+                            onClick={() => setPdfPageNumPosition(opt.value)}
+                            className={`py-2 px-2 rounded-xl border text-[11px] font-semibold transition text-center ${pdfPageNumPosition === opt.value ? 'border-teal-400 bg-teal-50 text-teal-700' : 'border-slate-200 text-slate-600 hover:bg-slate-50'}`}
+                          >
+                            {opt.label}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                    {/* Preview */}
+                    <div className={`relative rounded-xl bg-slate-100 h-28 border border-slate-200 flex items-center justify-center`}>
+                      <div className="w-16 h-20 bg-white border border-slate-300 rounded shadow-sm flex flex-col">
+                        <div className="flex-1 bg-slate-50 rounded-t" />
+                        {pdfPageNumPosition === 'top-center' && <div className="absolute top-2 left-1/2 -translate-x-1/2 text-[10px] font-bold text-teal-600 bg-teal-50 px-2 py-0.5 rounded-full">1 / {pdfToolPages.length || '?'}</div>}
+                        {pdfPageNumPosition !== 'top-center' && <div className={`absolute bottom-2 text-[10px] font-bold text-teal-600 bg-teal-50 px-2 py-0.5 rounded-full ${pdfPageNumPosition === 'bottom-right' ? 'right-4' : 'left-1/2 -translate-x-1/2'}`}>1 / {pdfToolPages.length || '?'}</div>}
+                      </div>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <button onClick={() => setPdfToolMode('home')} className="flex-1 py-2.5 rounded-xl border border-slate-200 text-sm font-medium text-slate-700 hover:bg-slate-50 transition">Cancelar</button>
+                    <button
+                      onClick={() => void handleAddPdfPageNumbers()}
+                      disabled={applyingPdfTool}
+                      className="flex-1 py-2.5 rounded-xl bg-teal-500 text-white text-sm font-semibold hover:bg-teal-600 disabled:opacity-60 transition flex items-center justify-center gap-2"
+                    >
+                      {applyingPdfTool ? <Loader2 className="w-4 h-4 animate-spin" /> : <Tag className="w-4 h-4" />}
+                      {applyingPdfTool ? 'Gerando…' : 'Aplicar e Baixar'}
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+            ) : pdfToolMode === 'split' ? (
+              /* ── Split tool ── */
+              <div className="flex-1 overflow-auto p-6 bg-slate-50">
+                <div className="max-w-md mx-auto space-y-5">
+                  <div>
+                    <h4 className="text-base font-bold text-slate-900">Dividir PDF</h4>
+                    <p className="text-sm text-slate-500 mt-1">Separa o PDF em duas partes. Escolha em qual página cortar.</p>
+                  </div>
+                  <div className="space-y-5 bg-white rounded-2xl border border-slate-200 p-5">
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-600 mb-1.5">
+                        Dividir após a página: <span className="text-amber-600 font-bold">{pdfSplitAtPage}</span>
+                      </label>
+                      <input
+                        type="range"
+                        min={1} max={Math.max(1, pdfToolPages.length - 1)}
+                        value={pdfSplitAtPage}
+                        onChange={e => setPdfSplitAtPage(Number(e.target.value))}
+                        className="w-full accent-amber-500"
+                      />
+                      <div className="flex justify-between text-[10px] text-slate-400 mt-1">
+                        <span>Pág. 1</span>
+                        <span>Pág. {pdfToolPages.length}</span>
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-2 gap-3">
+                      <div className="rounded-xl bg-amber-50 border border-amber-200 p-3 text-center">
+                        <p className="text-lg font-black text-amber-700">{pdfSplitAtPage}</p>
+                        <p className="text-[11px] text-amber-600 font-medium">páginas — parte 1</p>
+                      </div>
+                      <div className="rounded-xl bg-amber-50 border border-amber-200 p-3 text-center">
+                        <p className="text-lg font-black text-amber-700">{pdfToolPages.length - pdfSplitAtPage}</p>
+                        <p className="text-[11px] text-amber-600 font-medium">páginas — parte 2</p>
+                      </div>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <button onClick={() => setPdfToolMode('home')} className="flex-1 py-2.5 rounded-xl border border-slate-200 text-sm font-medium text-slate-700 hover:bg-slate-50 transition">Cancelar</button>
+                    <button
+                      onClick={() => void handleSplitPdf()}
+                      disabled={applyingPdfTool || pdfToolPages.length < 2}
+                      className="flex-1 py-2.5 rounded-xl bg-amber-500 text-white text-sm font-semibold hover:bg-amber-600 disabled:opacity-60 transition flex items-center justify-center gap-2"
+                    >
+                      {applyingPdfTool ? <Loader2 className="w-4 h-4 animate-spin" /> : <Scissors className="w-4 h-4" />}
+                      {applyingPdfTool ? 'Dividindo…' : 'Dividir e Baixar'}
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+            ) : (
+              /* ── Editor modes: organize / rotate / remove ── */
+              <div className="flex-1 min-h-0 flex flex-col bg-slate-50">
+                <div className="px-5 py-3 border-b border-slate-100 bg-white flex items-center justify-between gap-4 flex-shrink-0">
+                  <div>
+                    <p className="text-sm font-bold text-slate-900">
+                      {pdfToolMode === 'organize' ? 'Organizar páginas' : pdfToolMode === 'rotate' ? 'Girar páginas' : 'Remover páginas'}
                     </p>
                     <p className="text-xs text-slate-500">
-                      {pdfToolMode === 'organize' ? 'Arraste as miniaturas para reorganizar a ordem.' : pdfToolMode === 'rotate' ? 'Use a manivela de rotação em cada página.' : 'Marque no próprio preview as páginas que deseja remover.'}
+                      {pdfToolMode === 'organize' ? 'Arraste as miniaturas para reorganizar a ordem.' : pdfToolMode === 'rotate' ? 'Use as setas de rotação em cada página.' : 'Marque as páginas que deseja excluir e confirme.'}
                     </p>
                   </div>
-                  <label className="flex items-center gap-2 text-sm text-slate-700">
-                    <input type="checkbox" checked={pdfToolSaveAsCopy} onChange={(e) => setPdfToolSaveAsCopy(e.target.checked)} className="w-4 h-4 rounded border-slate-300 text-orange-600 focus:ring-orange-500" />
-                    Salvar como cópia editada
+                  <label className="hidden sm:flex items-center gap-2 text-xs text-slate-600 cursor-pointer">
+                    <input type="checkbox" checked={pdfToolSaveAsCopy} onChange={e => setPdfToolSaveAsCopy(e.target.checked)} className="w-3.5 h-3.5 rounded border-slate-300 text-red-500 focus:ring-red-400" />
+                    Salvar como cópia
                   </label>
                 </div>
 
@@ -8022,70 +8455,54 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
                     <Document
                       key={`editor-${selectedPdfToolFile.id}-${pdfToolPreviewUrl}`}
                       file={pdfToolPreviewUrl}
-                      loading={<div className="h-full flex items-center justify-center text-slate-500">Carregando PDF...</div>}
-                      error={<div className="h-full flex items-center justify-center text-slate-500">Preview do PDF indisponível no momento.</div>}
+                      loading={<div className="py-12 text-center text-sm text-slate-400">Carregando PDF…</div>}
+                      error={<div className="py-12 text-center text-sm text-slate-400">Preview indisponível.</div>}
                       onLoadSuccess={() => setPdfToolEditorReady(true)}
                       onLoadError={() => setPdfToolEditorReady(false)}
                     >
                       <DndContext sensors={pdfToolSensors} collisionDetection={closestCenter} onDragEnd={handlePdfToolDragEnd}>
                         <SortableContext items={pdfToolPageIds} strategy={rectSortingStrategy}>
-                          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5">
+                          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
                             {(pdfToolEditorReady ? pdfToolPages : []).map((page, index) => {
                               const selected = selectedPdfPageIndexes.includes(index);
                               const sortableId = `${page.sourceIndex}-${index}`;
                               return (
                                 <SortablePdfPageCard key={sortableId} id={sortableId}>
-                                  <div className={`rounded-2xl border bg-white p-3 shadow-sm transition ${selected ? 'border-orange-300 ring-2 ring-orange-200' : 'border-slate-200 hover:border-orange-200 hover:shadow-md'}`}>
-                                    <div className="flex items-center justify-between gap-2 mb-3">
+                                  <div className={`rounded-2xl border bg-white transition-all cursor-pointer hover:-translate-y-0.5 ${selected ? 'border-red-400 shadow-[0_0_0_3px_rgba(239,68,68,0.12)]' : 'border-slate-200 hover:border-slate-300 hover:shadow-md'}`}>
+                                    {/* Page header */}
+                                    <div className="flex items-center justify-between px-3 pt-3 pb-2">
                                       <button
                                         type="button"
                                         onClick={() => togglePdfPageSelection(index)}
-                                        className={`inline-flex items-center gap-2 rounded-full px-2.5 py-1 text-xs font-medium border ${selected ? 'bg-orange-50 text-orange-700 border-orange-200' : 'bg-white text-slate-600 border-slate-200'}`}
+                                        className={`w-5 h-5 rounded-full border-2 flex items-center justify-center transition-all ${selected ? 'bg-red-500 border-red-500' : 'border-slate-300 hover:border-red-400'}`}
                                       >
-                                        <input type="checkbox" readOnly checked={selected} className="w-3.5 h-3.5 rounded border-slate-300 text-orange-600 focus:ring-orange-500" />
-                                        Página {index + 1}
+                                        {selected && <svg viewBox="0 0 8 6" className="w-2 h-2" fill="none" stroke="white" strokeWidth="2"><path d="M1 3l2 2 4-4"/></svg>}
                                       </button>
-                                      {pdfToolMode === 'organize' ? (
-                                        <span className="inline-flex items-center gap-1 text-xs text-slate-400"><GripVertical className="w-4 h-4" />Arraste</span>
-                                      ) : null}
+                                      <span className={`text-[10px] font-bold ${selected ? 'text-red-600' : 'text-slate-400'}`}>Pág. {index + 1}</span>
+                                      {pdfToolMode === 'organize' && <GripVertical className="w-4 h-4 text-slate-300" />}
                                     </div>
 
-                                    <div className="flex justify-center bg-slate-50 rounded-xl p-2 min-h-[240px]">
-                                      <Page key={`editor-page-${selectedPdfToolFile.id}-${page.sourceIndex}-${index}-${page.rotation}`} pageNumber={page.sourceIndex + 1} width={170} rotate={page.rotation} renderTextLayer={false} renderAnnotationLayer={false} />
+                                    {/* Page preview */}
+                                    <div className="mx-3 mb-3 rounded-xl overflow-hidden bg-slate-50 flex items-center justify-center" style={{ minHeight: 160 }}>
+                                      <Page
+                                        key={`editor-page-${selectedPdfToolFile.id}-${page.sourceIndex}-${index}-${page.rotation}`}
+                                        pageNumber={page.sourceIndex + 1}
+                                        width={140}
+                                        rotate={page.rotation}
+                                        renderTextLayer={false}
+                                        renderAnnotationLayer={false}
+                                      />
                                     </div>
 
-                                    <div className="mt-3 flex items-center justify-between gap-2">
-                                      <span className="text-[11px] text-slate-500">Rotação: {page.rotation}°</span>
-                                      <div className="flex items-center gap-2">
-                                        <button
-                                          type="button"
-                                          onClick={() => rotateSinglePdfPage(index, -90)}
-                                          className="inline-flex items-center justify-center w-9 h-9 rounded-xl border border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
-                                          title="Rodar -90°"
-                                        >
-                                          <RotateCcw className="w-4 h-4" />
-                                        </button>
-                                        <button
-                                          type="button"
-                                          onClick={() => rotateSinglePdfPage(index, 90)}
-                                          className="inline-flex items-center justify-center w-9 h-9 rounded-xl border border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
-                                          title="Rodar +90°"
-                                        >
-                                          <RotateCw className="w-4 h-4" />
-                                        </button>
-                                        {pdfToolMode === 'remove' ? (
-                                          <button
-                                            type="button"
-                                            onClick={() => {
-                                              setSelectedPdfPageIndexes([index]);
-                                              setTimeout(() => removeSelectedPdfPages(), 0);
-                                            }}
-                                            className="inline-flex items-center justify-center w-9 h-9 rounded-xl border border-red-200 bg-red-50 text-red-700 hover:bg-red-100"
-                                            title="Remover página"
-                                          >
-                                            <Scissors className="w-4 h-4" />
-                                          </button>
-                                        ) : null}
+                                    {/* Page footer */}
+                                    <div className="px-3 pb-3 flex items-center justify-between gap-1">
+                                      <span className="text-[10px] text-slate-400">{page.rotation}°</span>
+                                      <div className="flex items-center gap-1">
+                                        <button type="button" onClick={() => rotateSinglePdfPage(index, -90)} className="w-7 h-7 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 flex items-center justify-center transition"><RotateCcw className="w-3.5 h-3.5 text-slate-500" /></button>
+                                        <button type="button" onClick={() => rotateSinglePdfPage(index, 90)} className="w-7 h-7 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 flex items-center justify-center transition"><RotateCw className="w-3.5 h-3.5 text-slate-500" /></button>
+                                        {pdfToolMode === 'remove' && (
+                                          <button type="button" onClick={() => { setSelectedPdfPageIndexes([index]); setTimeout(() => removeSelectedPdfPages(), 0); }} className="w-7 h-7 rounded-lg border border-red-200 bg-red-50 hover:bg-red-100 flex items-center justify-center transition"><Trash2 className="w-3.5 h-3.5 text-red-500" /></button>
+                                        )}
                                       </div>
                                     </div>
                                   </div>
@@ -8097,31 +8514,38 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
                       </DndContext>
                     </Document>
                   ) : (
-                    <div className="h-full flex items-center justify-center text-slate-500">Carregando preview do PDF...</div>
+                    <div className="h-full flex items-center justify-center text-slate-400">Carregando…</div>
                   )}
                 </div>
 
-                <div className="border-t border-slate-200 bg-white px-4 sm:px-5 py-3 flex items-center justify-between gap-3 sticky bottom-0">
-                  <div className="text-sm text-slate-500">
-                    {selectedPdfPageIndexes.length} página(s) selecionada(s)
+                {/* Footer */}
+                <div className="border-t border-slate-200 bg-white px-5 py-3 flex items-center justify-between gap-3 flex-shrink-0">
+                  <div className="flex items-center gap-3">
+                    <span className="text-sm text-slate-500 tabular-nums">{selectedPdfPageIndexes.length} selecionada{selectedPdfPageIndexes.length !== 1 ? 's' : ''} de {pdfToolPages.length}</span>
+                    {pdfToolMode === 'remove' && selectedPdfPageIndexes.length > 0 && (
+                      <button onClick={removeSelectedPdfPages} className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-red-200 bg-red-50 text-xs font-medium text-red-700 hover:bg-red-100 transition">
+                        <Trash2 className="w-3.5 h-3.5" /> Remover {selectedPdfPageIndexes.length}
+                      </button>
+                    )}
                   </div>
                   <div className="flex items-center gap-2">
-                    {pdfToolMode === 'remove' ? (
-                      <button onClick={removeSelectedPdfPages} className="px-4 py-2.5 rounded-xl border border-red-200 bg-red-50 text-sm font-medium text-red-700 hover:bg-red-100">
-                        Remover selecionadas
-                      </button>
-                    ) : null}
-                    <button onClick={closePdfToolsModal} className="px-4 py-2.5 rounded-xl border border-slate-200 bg-white text-sm font-medium text-slate-700 hover:bg-slate-50">Fechar</button>
-                    <button onClick={savePdfToolChanges} disabled={pdfToolSaving} className="px-5 py-2.5 rounded-xl bg-orange-500 text-white text-sm font-medium hover:bg-orange-600 disabled:opacity-70">
-                      {pdfToolSaving ? 'Salvando...' : 'Salvar PDF'}
+                    <button onClick={closePdfToolsModal} className="px-4 py-2 rounded-xl border border-slate-200 bg-white text-sm font-medium text-slate-700 hover:bg-slate-50 transition">Fechar</button>
+                    <button
+                      onClick={savePdfToolChanges}
+                      disabled={pdfToolSaving}
+                      className="px-5 py-2 rounded-xl bg-red-500 text-white text-sm font-semibold hover:bg-red-600 disabled:opacity-60 transition flex items-center gap-2"
+                    >
+                      {pdfToolSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
+                      {pdfToolSaving ? 'Salvando…' : 'Salvar PDF'}
                     </button>
                   </div>
                 </div>
               </div>
             )}
-          </div>
+          </motion.div>
         </div>
-      )}
+        );
+      })()}
 
       <div className="fixed inset-x-0 bottom-0 z-40 border-t border-slate-200/80 bg-white/95 px-3 pb-[calc(env(safe-area-inset-bottom)+16px)] pt-3 backdrop-blur-xl lg:hidden">
         <div className="mx-auto grid max-w-md grid-cols-5 gap-2 rounded-[28px] border border-slate-200 bg-white px-3 py-2 shadow-[0_-12px_30px_rgba(15,23,42,0.08)] pr-16">

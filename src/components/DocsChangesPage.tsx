@@ -47,6 +47,7 @@ import { matchesNormalizedSearch } from '../utils/search';
    ============================================================================ */
 
 const VERSION_CODENAMES: Record<string, { name: string; emoji: string }> = {
+  '1.10.030': { name: 'Café Seleção Premium', emoji: '✨' },
   '1.10.029': { name: 'Café Menu Inteligente', emoji: '🎯' },
   '1.10.028': { name: 'Café Drive Nativo', emoji: '☁️' },
   '1.10.027': { name: 'Café Página Contínua', emoji: '📄' },
@@ -747,6 +748,79 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
 };
 
 const releases: ReleaseNote[] = [
+  {
+    version: '1.10.033',
+    date: '11/05/2026',
+    summary: 'Cloud + Assinaturas: fix crítico — documentos enviados do Cloud para assinatura agora carregam corretamente na página pública de assinatura.',
+    modules: [
+      {
+        moduleId: 'cloud',
+        changes: [
+          {
+            type: 'fix',
+            title: 'Documento não aparecia na página de assinatura pública',
+            description: 'Ao usar "Enviar para assinatura" no Cloud, o arquivo ficava no bucket "cloud-files" (privado), que não permite URLs assinadas sem autenticação. A página pública de assinatura não tem sessão ativa, portanto o preview sempre falhava com 500. Corrigido: o arquivo é agora copiado para o bucket "generated-documents" antes de navegar para o módulo de assinaturas. Anexos de seleção múltipla também são copiados.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.10.032',
+    date: '11/05/2026',
+    summary: 'Cloud: Hub PDF completamente redesenhado — novo modal profissional com 8 ferramentas, marca d\'água, numeração de páginas, divisão de PDF e layout organizado.',
+    modules: [
+      {
+        moduleId: 'cloud',
+        changes: [
+          { type: 'improvement', title: 'Modal Hub PDF totalmente redesenhado', description: 'Header com gradiente vermelho-rubi, layout split com painel lateral de ferramentas e painel de thumbnails. Visual dark/premium para todas as sub-telas.' },
+          { type: 'feature', title: 'Marca d\'água no PDF', description: 'Texto customizável, opacidade ajustável via slider, opção diagonal ou horizontal. Gerado via pdf-lib e baixado direto no navegador.' },
+          { type: 'feature', title: 'Numeração de páginas', description: 'Três posições disponíveis (centro inferior, canto inferior direito, centro superior) com preview visual. Formato "pág / total" adicionado via pdf-lib.' },
+          { type: 'feature', title: 'Dividir PDF', description: 'Slider interativo para escolher a página de divisão. Gera dois arquivos PDF (parte 1 e parte 2) e inicia os downloads automaticamente.' },
+          { type: 'improvement', title: 'Cards de ferramentas com cores distintas', description: 'Cada ferramenta (Organizar, Girar, Remover, Dividir, Marca d\'água, Numeração, Extrair, Juntar PDFs) tem ícone e cor próprios, facilitando a identificação rápida.' },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.10.031',
+    date: '11/05/2026',
+    summary: 'Cloud: skeleton de carregamento animado, toolbar unificada Lista/Cards/P·M·G e sidebar flat redesenhada.',
+    modules: [
+      {
+        moduleId: 'cloud',
+        changes: [
+          { type: 'improvement', title: 'Skeleton de carregamento com shimmer', description: 'Substituído o indicador de carregamento pesado por esqueleto de linhas com varredura de luz (framer-motion). Pastas têm fundo âmbar, arquivos slate — distinção visual durante o carregamento.' },
+          { type: 'improvement', title: 'Toolbar Lista/Cards/P·M·G unificada', description: 'Botões List, Cards e tamanhos P/M/G agora ficam em um único grupo com borda compartilhada. Tamanho ativo usa bg-orange-100 text-orange-700 para não colidir com a cor do botão Cards.' },
+          { type: 'improvement', title: 'Sidebar flat estilo Finder', description: 'Removidos os cards com sombra pesada. Sidebar agora usa divisores sutis, ícones menores, seções colapsáveis com framer-motion e barra de armazenamento animada.' },
+          { type: 'improvement', title: 'Filtros rápidos por tipo', description: 'Chips de filtro (Todos, Pastas, PDF, Imagem, Word, Vídeo, Outros) acima da lista permitem filtrar instantaneamente sem abrir o painel de filtros.' },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.10.030',
+    date: '11/05/2026',
+    summary: 'Cloud: redesign visual profissional — seleção ultra-visível com borda lateral laranja, checkboxes com glow, cards com ring de seleção, toolbar flutuante renovada, breadcrumb limpo, tipografia refinada.',
+    modules: [
+      {
+        moduleId: 'cloud',
+        changes: [
+          { type: 'improvement', title: 'Seleção na lista', description: 'Borda lateral laranja (shadow inset 3px) + fundo suave — selecionados são instantaneamente visíveis.' },
+          { type: 'improvement', title: 'Checkboxes redesenhados', description: 'Sempre visíveis quando selecionados (escala 110% + glow laranja), aparecem no hover quando não selecionados.' },
+          { type: 'improvement', title: 'Header da lista', description: 'Fundo slate-50, peso bold, checkbox de seleção-tudo com estado indeterminado (traço) quando parte da lista está selecionada.' },
+          { type: 'improvement', title: 'Cards com seleção forte', description: 'Ring-2 ring-orange-500 + gradiente suave + elevação — visualmente inequívoco ao selecionar card de pasta ou arquivo.' },
+          { type: 'improvement', title: 'Ícone de seleção no card', description: 'Bolinha com checkmark aparece no canto superior-esquerdo do ícone da pasta e da área de preview do arquivo.' },
+          { type: 'improvement', title: 'Toolbar flutuante premium', description: 'Dark glass blur, badge de contagem laranja com número circulado, botões com cores semânticas por ação.' },
+          { type: 'improvement', title: 'Breadcrumb limpo', description: 'Sem fundo gradiente, ícones menores, último item em negrito, separadores mais sutis.' },
+          { type: 'improvement', title: 'Barra de status', description: 'Exibe contador de itens selecionados com badge laranja quando há seleção ativa.' },
+          { type: 'improvement', title: 'Context menus unificados', description: 'Pasta e área vazia agora têm o mesmo visual premium do menu de arquivo — shadow + rounded-2xl.' },
+          { type: 'improvement', title: 'Botões de ação na linha', description: 'Pin e More ficam ocultos por padrão e aparecem no hover — interface mais limpa.' },
+          { type: 'improvement', title: 'Tipografia refinada', description: 'Nomes em font-semibold/medium (13px), metadados em slate-400 tabular-nums — hierarquia visual clara.' },
+        ],
+      },
+    ],
+  },
   {
     version: '1.10.029',
     date: '11/05/2026',
