@@ -73,6 +73,11 @@ const normalizeCloudCompareText = (value?: string | null) =>
     .trim()
     .toLowerCase();
 
+const isImagePath = (path: string) => {
+  const lower = path.toLowerCase().split('?')[0];
+  return lower.endsWith('.jpg') || lower.endsWith('.jpeg') || lower.endsWith('.png') || lower.endsWith('.gif') || lower.endsWith('.webp') || lower.endsWith('.bmp');
+};
+
 const getProcessFolderName = (processNumber?: string | null) => {
   const normalized = String(processNumber || '').trim();
   return normalized ? `PROCESSO ${normalized}` : null;
@@ -330,6 +335,7 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
 
   const [pdfPreviewUrl, setPdfPreviewUrl] = useState<string | null>(null);
   const [isDocxFile, setIsDocxFile] = useState(false);
+  const [isImageFile, setIsImageFile] = useState(false);
   const [docxBlob, setDocxBlob] = useState<Blob | null>(null);
   const [fields, setFields] = useState<DraftField[]>([]);
   const [draggingField, setDraggingField] = useState<{
@@ -656,7 +662,9 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
       
       // Verificar tipo de arquivo
       const isDocx = doc.path.toLowerCase().endsWith('.docx');
+      const isImg = isImagePath(doc.path);
       setIsDocxFile(isDocx);
+      setIsImageFile(isImg);
 
       if (isDocx && doc.docxHtml && docxContainerRef.current) {
         docxRenderedRef.current = true;
@@ -672,7 +680,7 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
       if (doc.previewUrl) {
         setPdfPreviewUrl(doc.previewUrl);
       }
-      
+
       // Obter URL assinada
       const url = doc.previewUrl || (await signatureService.getDocumentPreviewUrl(doc.path));
       if (url) {
@@ -681,8 +689,7 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
         if (!doc.previewUrl) {
           setViewerDocuments((prev) => prev.map((d) => (d.id === doc.id ? { ...d, previewUrl: url } : d)));
         }
-        
-        // Se for DOCX, baixar o blob para renderizar
+
         if (isDocx) {
           // Resetar estados de renderização do DOCX apenas quando for renderizar de fato
           docxRenderedRef.current = false;
@@ -698,14 +705,19 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
             const response = await fetch(url);
             const blob = await response.blob();
             setDocxBlob(blob);
-            
+
             // Salvar blob em cache para evitar download repetido
-            setViewerDocuments(prev => prev.map(d => 
+            setViewerDocuments(prev => prev.map(d =>
               d.id === doc.id ? { ...d, blob } : d
             ));
           }
         } else {
           setDocxBlob(null);
+          // Para imagens, 1 "página"
+          if (isImg) {
+            setPdfNumPages(1);
+            setPdfCurrentPage(1);
+          }
         }
       }
     } catch (err) {
@@ -761,10 +773,11 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
       
       console.log('📎 Anexos salvos no estado:', prefillData.attachmentPaths);
       
-      // Detectar se é DOCX (baseado no documento atual)
+      // Detectar tipo do documento atual
       const currentDocPath = docs[0].path;
       const isDocx = currentDocPath.toLowerCase().endsWith('.docx');
       setIsDocxFile(isDocx);
+      setIsImageFile(isImagePath(currentDocPath));
       
       // Configurar signatário com dados do cliente
       setSigners([{
@@ -1814,7 +1827,7 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
     setSigners([{ id: crypto.randomUUID(), name: '', email: '', cpf: '', role: 'Assinar', order: 1, deliveryMethod: 'email' }]);
     setFields([]); setPdfPreviewUrl(null); setCreatedRequest(null);
     setPdfPreviewUrls([]); setPdfNumPagesByDoc({});
-    setIsDocxFile(false); setDocxBlob(null);
+    setIsDocxFile(false); setIsImageFile(false); setDocxBlob(null);
     setViewerDocuments([]); // Limpar documentos do viewer
     setCurrentViewerDocIndex(0); // Resetar índice
     docxRenderedRef.current = false; // Resetar flag de renderização do DOCX
@@ -3898,7 +3911,7 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
 
               {/* Container do PDF/DOCX */}
               <div ref={viewerScrollRef} className="flex-1 overflow-auto pt-16 pb-6 px-6 flex justify-center items-start bg-gray-200/50 min-h-0">
-                {(pdfPreviewUrl || isDocxFile) ? (
+                {(pdfPreviewUrl || isDocxFile || isImageFile) ? (
                   <div className="w-full flex justify-center items-start min-w-0">
                     {isDocxFile && (
                       <div className="relative" style={{ width: `${794 * pdfScale}px`, minHeight: `${1123 * pdfScale}px` }}>
@@ -4015,7 +4028,68 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
                       </div>
                     )}
 
-                    {!isDocxFile && pdfPreviewUrl && (
+                    {/* Viewer de imagem */}
+                    {isImageFile && pdfPreviewUrl && (
+                      <div className="relative self-start flex-none inline-block" style={{ width: `${595 * pdfScale}px` }}>
+                        <div
+                          ref={pdfContainerRef}
+                          className={`relative bg-white shadow-lg rounded-lg overflow-hidden ${isPlacingField ? 'cursor-crosshair' : 'cursor-default'}`}
+                          style={{ width: '595px', transform: `scale(${pdfScale})`, transformOrigin: 'top left' }}
+                          onClick={handlePdfClick}
+                        >
+                          {pdfLoading && (
+                            <div className="absolute inset-0 z-20 flex items-center justify-center bg-white/80 rounded-lg">
+                              <Loader2 className="w-8 h-8 animate-spin text-orange-500" />
+                            </div>
+                          )}
+                          <img
+                            src={pdfPreviewUrl}
+                            alt="Documento"
+                            className="w-full h-auto block select-none"
+                            draggable={false}
+                          />
+                          {/* Campos de assinatura sobrepostos */}
+                          <div className="absolute inset-0 pointer-events-none" style={{ width: '100%', height: '100%' }}>
+                            {fields.filter(f =>
+                              f.fieldType === 'signature' &&
+                              f.pageNumber === 1 &&
+                              (f.documentId === (viewerDocuments[currentViewerDocIndex]?.id || 'main'))
+                            ).map((field) => {
+                              const signer = signers.find(s => s.id === field.signerId);
+                              const signerIndex = signers.findIndex(s => s.id === field.signerId);
+                              const signerColor = ['#3B82F6', '#EF4444', '#10B981', '#8B5CF6', '#F59E0B'][signerIndex % 5];
+                              return (
+                                <div
+                                  key={field.localId}
+                                  className="absolute cursor-move border-2 rounded-md flex items-center justify-center pointer-events-auto"
+                                  style={{
+                                    left: `${field.xPercent}%`,
+                                    top: `${field.yPercent}%`,
+                                    width: `${field.wPercent}%`,
+                                    height: `${field.hPercent}%`,
+                                    borderColor: signerColor,
+                                    borderStyle: 'dashed',
+                                    backgroundColor: `${signerColor}10`,
+                                  }}
+                                >
+                                  <span className="text-[9px] font-semibold" style={{ color: signerColor }}>{signer?.name || 'Assinar'}</span>
+                                  <button
+                                    type="button"
+                                    onClick={(e) => { e.stopPropagation(); removeField(field.localId); }}
+                                    className="absolute -top-2 -right-2 w-4 h-4 bg-red-500 text-white rounded-full flex items-center justify-center hover:bg-red-600"
+                                  >
+                                    <X className="w-2.5 h-2.5" />
+                                  </button>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Viewer de PDF */}
+                    {!isDocxFile && !isImageFile && pdfPreviewUrl && (
                       <div className="relative self-start flex-none inline-block" style={{ width: `${595 * pdfScale}px` }}>
                         <div
                           ref={pdfContainerRef}

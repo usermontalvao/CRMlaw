@@ -3943,10 +3943,7 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
     let attachmentPaths: string[] | null = null;
     if (isMultiSelection) {
       const signableSelected = files.filter(
-        (f) =>
-          selectedFileKeys.includes(`file:${f.id}`) &&
-          f.id !== file.id &&
-          (isDocxFile(f.mime_type, f.original_name) || isPdfFile(f.mime_type, f.original_name)),
+        (f) => selectedFileKeys.includes(`file:${f.id}`) && f.id !== file.id,
       );
       if (signableSelected.length > 0) {
         attachmentPaths = signableSelected.map((f) => f.storage_path);

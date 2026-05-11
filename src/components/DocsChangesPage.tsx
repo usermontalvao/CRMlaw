@@ -47,6 +47,7 @@ import { matchesNormalizedSearch } from '../utils/search';
    ============================================================================ */
 
 const VERSION_CODENAMES: Record<string, { name: string; emoji: string }> = {
+  '1.10.024': { name: 'Café Imagem na Fila', emoji: '🖼️' },
   '1.10.023': { name: 'Café Seleção Completa', emoji: '✅' },
   '1.10.022': { name: 'Café Envelope Múltiplo', emoji: '📋' },
   '1.10.021': { name: 'Café Cloud na Fila', emoji: '☁️' },
@@ -741,6 +742,23 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
 };
 
 const releases: ReleaseNote[] = [
+  {
+    version: '1.10.024',
+    date: '11/05/2026',
+    summary: 'Assinaturas: imagens (JPG/PNG) agora aparecem corretamente no viewer ao enviar múltiplos arquivos para assinatura.',
+    modules: [
+      {
+        moduleId: 'signatures',
+        changes: [
+          {
+            type: 'fix',
+            title: 'Apenas 1 arquivo aparecia ao enviar múltiplas imagens do Cloud',
+            description: 'O filtro em handleSendForSignature excluía imagens (JPG/PNG) dos anexos, enviando apenas o arquivo clicado. Removido o filtro — todos os arquivos selecionados (independente do tipo) são incluídos. O viewer do passo de posicionamento agora renderiza imagens com <img> em vez de tentar abrir com o leitor de PDF.',
+          },
+        ],
+      },
+    ],
+  },
   {
     version: '1.10.023',
     date: '11/05/2026',
