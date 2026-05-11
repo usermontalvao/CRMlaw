@@ -291,6 +291,8 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
   const [selectedClientPhone, setSelectedClientPhone] = useState<string | null>(null);
   const [uploadedFile, setUploadedFile] = useState<File | null>(null);
   const [uploadedFiles, setUploadedFiles] = useState<File[]>([]); // Múltiplos arquivos (envelope)
+  const [selectedGenDocIds, setSelectedGenDocIds] = useState<string[]>([]); // Multi-seleção de documentos gerados
+  const [genDocsSearchTerm, setGenDocsSearchTerm] = useState('');
   const [dragOver, setDragOver] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -1806,6 +1808,8 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
     setSelectedClientId(null); setSelectedClientName(null);
     setUploadedFile(null);
     setUploadedFiles([]);
+    setSelectedGenDocIds([]);
+    setGenDocsSearchTerm('');
     clearSelectedUploadFileIndexes();
     setSigners([{ id: crypto.randomUUID(), name: '', email: '', cpf: '', role: 'Assinar', order: 1, deliveryMethod: 'email' }]);
     setFields([]); setPdfPreviewUrl(null); setCreatedRequest(null);
@@ -1844,6 +1848,7 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
     setSelectedDocumentPath('');
     setSelectedClientId(null);
     setSelectedClientName(null);
+    setSelectedGenDocIds([]);
 
     const docs = buildViewerDocumentsFromUploads(files);
     setViewerDocuments(docs);
@@ -1860,6 +1865,7 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
     setSelectedDocumentName('');
     setSelectedDocumentId('');
     setSelectedDocumentPath('');
+    setSelectedGenDocIds([]);
     setViewerDocuments([]);
     setCurrentViewerDocIndex(0);
     setPdfPreviewUrl(null);
@@ -1958,6 +1964,9 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
     setSelectedClientId(doc.client_id || null);
     setSelectedClientName(doc.client_name || null);
     setUploadedFile(null);
+    setUploadedFiles([]);
+    setSelectedGenDocIds([doc.id]);
+    setSelectedAttachmentPaths(null);
     if (doc.file_path) {
       try { const url = await documentTemplateService.getGeneratedDocumentSignedUrl(doc); setPdfPreviewUrl(url); } catch {}
     }
@@ -1994,6 +2003,103 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
         console.warn('Erro ao carregar campos do template:', e);
       }
     }
+  };
+
+  // Multi-seleção de documentos gerados (para o step de upload)
+  const toggleGenDocInSelection = async (doc: GeneratedDocument) => {
+    // Limpar arquivos enviados localmente
+    if (uploadedFiles.length > 0 || uploadedFile) {
+      cleanupLocalViewerUrls(viewerDocuments, pdfPreviewUrls);
+      setUploadedFiles([]);
+      setUploadedFile(null);
+      setPdfPreviewUrls([]);
+      setPdfNumPagesByDoc({});
+      clearSelectedUploadFileIndexes();
+    }
+
+    setSelectedGenDocIds((prev) => {
+      const alreadyIn = prev.includes(doc.id);
+      const next = alreadyIn ? prev.filter((id) => id !== doc.id) : [...prev, doc.id];
+
+      if (next.length === 0) {
+        // Nenhum selecionado — limpar tudo
+        setSelectedDocumentId('');
+        setSelectedDocumentName('');
+        setSelectedDocumentPath('');
+        setSelectedAttachmentPaths(null);
+        setSelectedClientId(null);
+        setSelectedClientName(null);
+        setViewerDocuments([]);
+        setCurrentViewerDocIndex(0);
+        setPdfPreviewUrl(null);
+        setFields([]);
+        return next;
+      }
+
+      // Primeiro = documento principal
+      const mainId = next[0];
+      const mainDoc = generatedDocuments.find((d) => d.id === mainId);
+      if (mainDoc) {
+        setSelectedDocumentId(mainDoc.id);
+        setSelectedDocumentName(mainDoc.file_name || mainDoc.template_name);
+        setSelectedDocumentPath(mainDoc.file_path || '');
+        setSelectedClientId(mainDoc.client_id || null);
+        setSelectedClientName(mainDoc.client_name || null);
+      }
+
+      // Restantes = anexos
+      const attachmentDocs = next
+        .slice(1)
+        .map((id) => generatedDocuments.find((d) => d.id === id))
+        .filter(Boolean) as GeneratedDocument[];
+      const attachPaths = attachmentDocs
+        .map((d) => d.file_path || '')
+        .filter(Boolean);
+      setSelectedAttachmentPaths(attachPaths.length > 0 ? attachPaths : null);
+
+      // Montar viewerDocuments
+      const docs: ViewerDocument[] = [];
+      if (mainDoc?.file_path) {
+        docs.push({ id: 'main', name: mainDoc.file_name || mainDoc.template_name, path: mainDoc.file_path, type: 'main' });
+      }
+      attachmentDocs.forEach((d, i) => {
+        if (d.file_path) {
+          docs.push({ id: `attachment-${i}`, name: d.file_name || d.template_name, path: d.file_path, type: 'attachment' });
+        }
+      });
+      setViewerDocuments(docs);
+      setCurrentViewerDocIndex(0);
+      setPdfPreviewUrl(null);
+
+      // Carregar campos do template apenas se o doc principal mudou
+      const mainChanged = !alreadyIn || mainId !== prev[0];
+      if (mainChanged && mainDoc?.template_id) {
+        documentTemplateService.getTemplate(mainDoc.template_id).then((template) => {
+          if (!template?.signature_field_config) return;
+          const config = template.signature_field_config;
+          const configArray = Array.isArray(config) ? config : [config];
+          const loadedFields: DraftField[] = configArray
+            .filter((c) => c !== null)
+            .map((c) => ({
+              localId: crypto.randomUUID(),
+              signerId: signers[0]?.id || '',
+              fieldType: 'signature' as SignatureFieldType,
+              pageNumber: c.page || 1,
+              xPercent: c.x_percent || 0,
+              yPercent: c.y_percent || 0,
+              wPercent: c.width_percent || FIELD_PRESETS.signature.w,
+              hPercent: c.height_percent || FIELD_PRESETS.signature.h,
+              documentId: 'main',
+            }));
+          if (loadedFields.length > 0) {
+            setFields(loadedFields);
+            toast.success(`${loadedFields.length} campo(s) de assinatura carregado(s) do template`);
+          }
+        }).catch((e) => console.warn('Erro ao carregar campos do template:', e));
+      }
+
+      return next;
+    });
   };
 
   const addSigner = () => {
@@ -3184,7 +3290,7 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
 
   // WIZARD
   if (wizardStep !== 'list') {
-    const canProceedUpload = selectedDocumentName || uploadedFile;
+    const canProceedUpload = selectedDocumentName || uploadedFile || selectedGenDocIds.length > 0;
     const canProceedSigners = signers.every((s) => s.name.trim());
     const steps = [
       { key: 'upload', label: 'Documento', icon: FileText },
@@ -3285,14 +3391,14 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
                 <h2 className="text-sm font-medium text-slate-700 mb-4">Documento</h2>
                 <div 
                   className={`border-2 border-dashed rounded-lg p-8 text-center transition-all ${
-                    dragOver ? 'border-slate-400 bg-slate-50' : selectedDocumentName ? 'border-emerald-300 bg-emerald-50' : 'border-slate-200 hover:border-slate-300'
-                  }`} 
-                  onDragOver={(e) => { e.preventDefault(); setDragOver(true); }} 
-                  onDragLeave={() => setDragOver(false)} 
+                    dragOver ? 'border-slate-400 bg-slate-50' : uploadedFiles.length > 0 ? 'border-emerald-300 bg-emerald-50' : 'border-slate-200 hover:border-slate-300'
+                  }`}
+                  onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
+                  onDragLeave={() => setDragOver(false)}
                   onDrop={(e) => { e.preventDefault(); setDragOver(false); if (e.dataTransfer.files?.length) handleFilesSelect(e.dataTransfer.files); }}
                 >
                   <input ref={fileInputRef} type="file" accept=".pdf" multiple onChange={(e) => e.target.files?.length && handleFilesSelect(e.target.files)} className="hidden" />
-                  {selectedDocumentName ? (
+                  {uploadedFiles.length > 0 ? (
                     <div className="flex flex-col items-center gap-3">
                       <CheckCircle className="w-10 h-10 text-emerald-500" />
                       <div>
@@ -3365,25 +3471,109 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
                 
                 {generatedDocuments.length > 0 && (
                   <div className="mt-4 pt-4 border-t border-slate-100">
-                    <p className="text-xs font-medium text-slate-500 uppercase tracking-wide mb-3">Documentos gerados</p>
-                    <div className="space-y-2 max-h-40 overflow-y-auto">
-                      {generatedDocuments.slice(0, 5).map((doc) => (
-                        <button 
-                          type="button"
-                          key={doc.id} 
-                          onClick={() => handleSelectGeneratedDoc(doc)} 
-                          className={`w-full flex items-center gap-3 p-3 rounded border text-left text-sm transition ${
-                            selectedDocumentId === doc.id ? 'border-slate-900 bg-slate-50' : 'border-slate-200 hover:border-slate-300'
-                          }`}
-                        >
-                          <FileText className="w-4 h-4 text-slate-400" />
-                          <div className="flex-1 min-w-0">
-                            <p className="font-medium truncate text-slate-700">{doc.file_name || doc.template_name}</p>
-                            <p className="text-xs text-slate-400">{doc.client_name}</p>
-                          </div>
-                          {selectedDocumentId === doc.id && <Check className="w-4 h-4 text-slate-900" />}
-                        </button>
-                      ))}
+                    {/* Header com contador */}
+                    <div className="flex items-center justify-between mb-2">
+                      <p className="text-xs font-medium text-slate-500 uppercase tracking-wide">Documentos gerados</p>
+                      <div className="flex items-center gap-2">
+                        {selectedGenDocIds.length > 0 && (
+                          <>
+                            <span className="inline-flex items-center rounded-full bg-slate-900 px-2 py-0.5 text-[11px] font-semibold text-white">
+                              {selectedGenDocIds.length} selecionado{selectedGenDocIds.length !== 1 ? 's' : ''}
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setSelectedGenDocIds([]);
+                                setSelectedDocumentId('');
+                                setSelectedDocumentName('');
+                                setSelectedDocumentPath('');
+                                setSelectedAttachmentPaths(null);
+                                setSelectedClientId(null);
+                                setSelectedClientName(null);
+                                setViewerDocuments([]);
+                                setCurrentViewerDocIndex(0);
+                                setPdfPreviewUrl(null);
+                                setFields([]);
+                              }}
+                              className="text-[11px] text-red-500 hover:text-red-600 font-medium"
+                            >
+                              Limpar
+                            </button>
+                          </>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Busca */}
+                    <div className="relative mb-2">
+                      <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400 pointer-events-none" />
+                      <input
+                        type="text"
+                        value={genDocsSearchTerm}
+                        onChange={(e) => setGenDocsSearchTerm(e.target.value)}
+                        placeholder="Buscar documento..."
+                        className="w-full pl-8 pr-3 py-1.5 text-xs border border-slate-200 rounded focus:outline-none focus:ring-1 focus:ring-slate-400 placeholder:text-slate-400"
+                      />
+                    </div>
+
+                    {/* Lista com multi-seleção */}
+                    <div className="space-y-1 max-h-56 overflow-y-auto pr-0.5">
+                      {generatedDocuments
+                        .filter((doc) => {
+                          const q = genDocsSearchTerm.trim().toLowerCase();
+                          if (!q) return true;
+                          return (
+                            (doc.file_name || '').toLowerCase().includes(q) ||
+                            (doc.template_name || '').toLowerCase().includes(q) ||
+                            (doc.client_name || '').toLowerCase().includes(q)
+                          );
+                        })
+                        .map((doc) => {
+                          const selIdx = selectedGenDocIds.indexOf(doc.id);
+                          const isSelected = selIdx !== -1;
+                          const isMain = selIdx === 0;
+                          return (
+                            <button
+                              type="button"
+                              key={doc.id}
+                              onClick={() => void toggleGenDocInSelection(doc)}
+                              className={`w-full flex items-center gap-2.5 p-2.5 rounded border text-left transition ${
+                                isSelected
+                                  ? 'border-slate-900 bg-slate-50'
+                                  : 'border-slate-200 hover:border-slate-300 hover:bg-slate-50'
+                              }`}
+                            >
+                              {/* Checkbox / número de ordem */}
+                              {isSelected ? (
+                                <span className="w-5 h-5 rounded bg-slate-900 text-white text-[10px] font-bold flex items-center justify-center flex-shrink-0">
+                                  {selIdx + 1}
+                                </span>
+                              ) : (
+                                <span className="w-5 h-5 rounded border border-slate-300 flex-shrink-0" />
+                              )}
+                              <FileText className="w-3.5 h-3.5 text-slate-400 flex-shrink-0" />
+                              <div className="flex-1 min-w-0">
+                                <p className="text-xs font-medium truncate text-slate-700">{doc.file_name || doc.template_name}</p>
+                                <p className="text-[11px] text-slate-400 truncate">
+                                  {doc.client_name || '—'}
+                                  {isMain && <span className="ml-1 text-slate-500 font-medium">· Principal</span>}
+                                  {isSelected && !isMain && <span className="ml-1 text-slate-400">· Anexo</span>}
+                                </p>
+                              </div>
+                            </button>
+                          );
+                        })}
+                      {generatedDocuments.filter((doc) => {
+                        const q = genDocsSearchTerm.trim().toLowerCase();
+                        if (!q) return true;
+                        return (
+                          (doc.file_name || '').toLowerCase().includes(q) ||
+                          (doc.template_name || '').toLowerCase().includes(q) ||
+                          (doc.client_name || '').toLowerCase().includes(q)
+                        );
+                      }).length === 0 && (
+                        <p className="text-xs text-slate-400 text-center py-3">Nenhum documento encontrado</p>
+                      )}
                     </div>
                   </div>
                 )}

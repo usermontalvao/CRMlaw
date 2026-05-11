@@ -47,6 +47,7 @@ import { matchesNormalizedSearch } from '../utils/search';
    ============================================================================ */
 
 const VERSION_CODENAMES: Record<string, { name: string; emoji: string }> = {
+  '1.10.022': { name: 'Café Envelope Múltiplo', emoji: '📋' },
   '1.10.021': { name: 'Café Cloud na Fila', emoji: '☁️' },
   '1.10.020': { name: 'Café Assinatura no Lugar', emoji: '✍️' },
   '1.10.019': { name: 'Café Arquivos Visíveis', emoji: '📂' },
@@ -739,6 +740,23 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
 };
 
 const releases: ReleaseNote[] = [
+  {
+    version: '1.10.022',
+    date: '11/05/2026',
+    summary: 'Assinaturas: multi-seleção de documentos gerados no wizard. Primeiro documento = principal, demais = anexos.',
+    modules: [
+      {
+        moduleId: 'signatures',
+        changes: [
+          {
+            type: 'feature',
+            title: 'Selecionar múltiplos documentos para assinatura',
+            description: 'Na etapa de upload do wizard, a seção "Documentos gerados" agora permite selecionar múltiplos documentos com checkboxes. O primeiro selecionado vira o documento principal; os demais são adicionados como anexos ao envelope. A ordem é indicada pelo número no checkbox. Inclui busca por nome ou cliente para filtrar a lista.',
+          },
+        ],
+      },
+    ],
+  },
   {
     version: '1.10.021',
     date: '11/05/2026',
