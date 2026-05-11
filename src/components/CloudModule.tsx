@@ -57,6 +57,7 @@ import {
   Upload,
   Users,
   X,
+  SquarePen,
 } from 'lucide-react';
 import { supabase } from '../config/supabase';
 import { cloudService } from '../services/cloud.service';
@@ -3933,6 +3934,21 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
     }
   };
 
+  const handleSendForSignature = (file: CloudFile) => {
+    setContextMenu(null);
+    const folder = allFolders.find((f) => f.id === file.folder_id);
+    const client = folder?.client_id ? clients.find((c) => c.id === folder.client_id) : null;
+    const prefill = {
+      documentPath: file.storage_path,
+      documentName: file.original_name,
+      clientId: client?.id ?? '',
+      clientName: client?.full_name ?? '',
+      clientEmail: client?.email ?? '',
+      clientPhone: client?.phone ?? client?.mobile ?? '',
+    };
+    onNavigateToModule?.('assinaturas', { prefill } as any);
+  };
+
   const handleDownloadFolder = async (folder: CloudFolder) => {
     setDownloadingFolderId(folder.id);
     try {
@@ -4673,22 +4689,14 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
             className={`relative flex min-h-full flex-1 flex-col overflow-visible ${dragActive ? 'bg-sky-50' : ''}`}
           >
             {viewMode === 'list' ? (
-              <div className="hidden md:grid md:grid-cols-[minmax(260px,2.6fr)_170px_170px_130px_220px] gap-3 px-4 py-2 border-b border-slate-100 text-[11px] uppercase tracking-[0.16em] text-slate-400 bg-slate-50/80">
+              <div className="hidden md:grid md:grid-cols-[minmax(260px,2.6fr)_170px_170px_130px_220px] gap-3 px-4 py-2 border-b border-slate-100 bg-white text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-400 select-none">
                 <span>Nome</span>
-                <span>Data de modificação</span>
+                <span>Modificado</span>
                 <span>Tipo</span>
                 <span>Tamanho</span>
                 <span>Cliente</span>
               </div>
-            ) : (
-              <div className="border-b border-slate-100 bg-slate-50/80 px-4 py-3 text-[11px] uppercase tracking-[0.16em] text-slate-400">
-                <div className="flex items-center gap-2 overflow-x-auto [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-                  <span className="rounded-full bg-amber-100 px-3 py-1 text-[10px] font-semibold tracking-[0.14em] text-amber-800">Cards</span>
-                  <span className="rounded-full border border-slate-200 bg-white px-3 py-1 text-[10px] font-semibold tracking-[0.14em] text-slate-500">Cloud</span>
-                  <span className="rounded-full border border-slate-200 bg-white px-3 py-1 text-[10px] font-semibold tracking-[0.14em] text-slate-500">Explorador</span>
-                </div>
-              </div>
-            )}
+            ) : null}
 
             <div
               ref={explorerViewportRef}
@@ -4915,7 +4923,9 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
                         }}
                       >
                         <div className="flex items-center gap-3 min-w-0">
-                          <Folder className="w-4 h-4 text-amber-500 flex-shrink-0" />
+                          <div className="w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0 bg-amber-50">
+                            <Folder className="w-4 h-4 text-amber-500" />
+                          </div>
                           <div className="min-w-0 flex-1">
                             {inlineRenameTarget?.type === 'folder' && inlineRenameTarget.id === folder.id ? (
                               <input
@@ -5079,7 +5089,9 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
                             className="w-4 h-4 rounded border-slate-300 text-orange-600 focus:ring-orange-500"
                           />
                         ) : null}
-                        {isPdfFile(file.mime_type, file.original_name) ? <FileText className="w-4 h-4 text-red-500 flex-shrink-0" /> : isImageFile(file.mime_type) ? <ImageIcon className="w-4 h-4 text-emerald-500 flex-shrink-0" /> : <File className="w-4 h-4 text-sky-500 flex-shrink-0" />}
+                        <div className="w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0 bg-slate-50">
+                          {isPdfFile(file.mime_type, file.original_name) ? <FileText className="w-4 h-4 text-red-500" /> : isImageFile(file.mime_type) ? <ImageIcon className="w-4 h-4 text-emerald-500" /> : isWordFile(file.mime_type, file.original_name) ? <FileText className="w-4 h-4 text-blue-500" /> : <File className="w-4 h-4 text-slate-400" />}
+                        </div>
                         {inlineRenameTarget?.type === 'file' && inlineRenameTarget.id === file.id ? (
                           splitFileNameAndExtension(file.original_name).extension ? (
                             <div className="flex min-w-[220px] overflow-hidden rounded-md border border-orange-300 bg-white">
@@ -6740,144 +6752,197 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
           onClick={(e) => e.stopPropagation()}
           onContextMenu={(e) => e.preventDefault()}
         >
-          <div className="max-h-[70vh] w-64 overflow-y-auto rounded-xl border border-slate-200 bg-white shadow-xl">
+          <div className="max-h-[80vh] w-60 overflow-y-auto rounded-2xl border border-slate-200/80 bg-white shadow-[0_20px_60px_-12px_rgba(15,23,42,0.25),0_0_0_1px_rgba(15,23,42,0.04)] py-1">
+            {/* Cabeçalho com nome do arquivo */}
+            <div className="px-3 py-2 border-b border-slate-100">
+              <p className="text-[11px] font-semibold text-slate-400 uppercase tracking-wide truncate">{selectedContextFile.original_name}</p>
+            </div>
+
+            {/* Assinatura — apenas para DOCX/PDF */}
+            {(isDocxFile(selectedContextFile.mime_type, selectedContextFile.original_name) || isPdfFile(selectedContextFile.mime_type, selectedContextFile.original_name)) && (
+              <>
+                <button
+                  type="button"
+                  onClick={() => handleSendForSignature(selectedContextFile)}
+                  className="w-full px-3 py-2 text-left text-sm font-semibold text-orange-600 hover:bg-orange-50 transition flex items-center gap-3"
+                >
+                  <div className="w-7 h-7 rounded-lg bg-orange-50 flex items-center justify-center flex-shrink-0">
+                    <SquarePen className="w-3.5 h-3.5 text-orange-500" />
+                  </div>
+                  Enviar para assinatura
+                </button>
+                <div className="my-1 border-t border-slate-100" />
+              </>
+            )}
+
+            {/* Abrir */}
             <button
               type="button"
               onClick={() => openFileFromContextMenu(selectedContextFile)}
-              className="w-full px-3 py-2.5 text-left text-sm font-medium text-slate-700 hover:bg-slate-50 transition"
+              className="w-full px-3 py-2 text-left text-sm text-slate-700 hover:bg-slate-50 transition flex items-center gap-3"
             >
-              {isWordFile(selectedContextFile.mime_type, selectedContextFile.original_name) ? 'Abrir editor' : 'Abrir preview'}
+              <div className="w-7 h-7 rounded-lg bg-slate-50 flex items-center justify-center flex-shrink-0">
+                {isWordFile(selectedContextFile.mime_type, selectedContextFile.original_name)
+                  ? <FileText className="w-3.5 h-3.5 text-blue-500" />
+                  : <File className="w-3.5 h-3.5 text-slate-500" />}
+              </div>
+              {isWordFile(selectedContextFile.mime_type, selectedContextFile.original_name) ? 'Abrir no editor' : 'Abrir preview'}
             </button>
+
+            {/* Converter imagem para PDF */}
+            {isImageFile(selectedContextFile.mime_type) && (
+              <button
+                type="button"
+                onClick={() => { setContextMenu(null); openConvertImagesModal(selectedImageFiles.some((item) => item.id === selectedContextFile.id) ? undefined : [selectedContextFile]); }}
+                className="w-full px-3 py-2 text-left text-sm text-slate-700 hover:bg-slate-50 transition flex items-center gap-3"
+              >
+                <div className="w-7 h-7 rounded-lg bg-slate-50 flex items-center justify-center flex-shrink-0">
+                  <FileText className="w-3.5 h-3.5 text-red-500" />
+                </div>
+                Converter em PDF
+              </button>
+            )}
+
+            {/* Converter Word para PDF */}
+            {isWordFile(selectedContextFile.mime_type, selectedContextFile.original_name) && (
+              <button
+                type="button"
+                onClick={() => { setContextMenu(null); void handleConvertWordToPdf(selectedContextFile); }}
+                className="w-full px-3 py-2 text-left text-sm text-slate-700 hover:bg-slate-50 transition flex items-center gap-3"
+              >
+                <div className="w-7 h-7 rounded-lg bg-slate-50 flex items-center justify-center flex-shrink-0">
+                  <FileText className="w-3.5 h-3.5 text-red-500" />
+                </div>
+                Converter Word em PDF
+              </button>
+            )}
+
+            {/* Hub PDF */}
+            {isPdfFile(selectedContextFile.mime_type, selectedContextFile.original_name) && (
+              <button
+                type="button"
+                onClick={() => { setContextMenu(null); void openPdfToolsModal(selectedContextFile); }}
+                className="w-full px-3 py-2 text-left text-sm text-slate-700 hover:bg-slate-50 transition flex items-center gap-3"
+              >
+                <div className="w-7 h-7 rounded-lg bg-slate-50 flex items-center justify-center flex-shrink-0">
+                  <FileText className="w-3.5 h-3.5 text-red-500" />
+                </div>
+                Hub PDF
+              </button>
+            )}
+
+            <div className="my-1 border-t border-slate-100" />
+
+            {/* Download */}
             <button
               type="button"
-              onClick={() => {
-                setContextMenu(null);
-                openConvertImagesModal(selectedImageFiles.some((item) => item.id === selectedContextFile.id) ? undefined : [selectedContextFile]);
-              }}
-              className={`w-full px-3 py-2.5 text-left text-sm text-slate-700 hover:bg-slate-50 transition ${isImageFile(selectedContextFile.mime_type) ? '' : 'hidden'}`}
+              onClick={() => { setContextMenu(null); handleDownloadFile(selectedContextFile); }}
+              className="w-full px-3 py-2 text-left text-sm text-slate-700 hover:bg-slate-50 transition flex items-center gap-3"
             >
-              Converter em PDF
+              <div className="w-7 h-7 rounded-lg bg-slate-50 flex items-center justify-center flex-shrink-0">
+                <Download className="w-3.5 h-3.5 text-slate-500" />
+              </div>
+              Baixar
             </button>
+
+            {/* Mover */}
             <button
               type="button"
-              onClick={() => {
-                setContextMenu(null);
-                void handleConvertWordToPdf(selectedContextFile);
-              }}
-              className={`w-full px-3 py-2.5 text-left text-sm text-slate-700 hover:bg-slate-50 transition ${isWordFile(selectedContextFile.mime_type, selectedContextFile.original_name) ? '' : 'hidden'}`}
+              onClick={() => { setSelectedFileToMove(selectedContextFile); setTargetFolderId(''); setMoveModalOpen(true); setContextMenu(null); }}
+              className="w-full px-3 py-2 text-left text-sm text-slate-700 hover:bg-slate-50 transition flex items-center gap-3"
             >
-              Converter Word em PDF
+              <div className="w-7 h-7 rounded-lg bg-slate-50 flex items-center justify-center flex-shrink-0">
+                <MoveRight className="w-3.5 h-3.5 text-slate-500" />
+              </div>
+              Mover para pasta
             </button>
+
+            {/* Renomear */}
             <button
               type="button"
-              onClick={() => {
-                setContextMenu(null);
-                void openPdfToolsModal(selectedContextFile);
-              }}
-              className={`w-full px-3 py-2.5 text-left text-sm text-slate-700 hover:bg-slate-50 transition ${isPdfFile(selectedContextFile.mime_type, selectedContextFile.original_name) ? '' : 'hidden'}`}
+              onClick={() => { setContextMenu(null); openRenameModal('file', selectedContextFile.id, selectedContextFile.original_name); }}
+              className="w-full px-3 py-2 text-left text-sm text-slate-700 hover:bg-slate-50 transition flex items-center gap-3"
             >
-              Hub PDF
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                setContextMenu(null);
-                handleDownloadFile(selectedContextFile);
-              }}
-              className="w-full px-3 py-2.5 text-left text-sm text-slate-700 hover:bg-slate-50 transition"
-            >
-              Baixar arquivo
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                setSelectedFileToMove(selectedContextFile);
-                setTargetFolderId('');
-                setMoveModalOpen(true);
-                setContextMenu(null);
-              }}
-              className="w-full px-3 py-2.5 text-left text-sm text-slate-700 hover:bg-slate-50 transition"
-            >
-              Mover arquivo
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                setContextMenu(null);
-                openRenameModal('file', selectedContextFile.id, selectedContextFile.original_name);
-              }}
-              className="w-full px-3 py-2.5 text-left text-sm text-slate-700 hover:bg-slate-50 transition"
-            >
+              <div className="w-7 h-7 rounded-lg bg-slate-50 flex items-center justify-center flex-shrink-0">
+                <Tag className="w-3.5 h-3.5 text-slate-500" />
+              </div>
               Renomear
             </button>
+
+            <div className="my-1 border-t border-slate-100" />
+
+            {/* Copiar / Recortar / Duplicar / Link */}
             <button
               type="button"
-              onClick={() => {
-                setContextMenu(null);
-                handleStoreSelectionInClipboard('copy', [`file:${selectedContextFile.id}`]);
-              }}
-              className="w-full px-3 py-2.5 text-left text-sm text-slate-700 hover:bg-slate-50 transition flex items-center gap-2"
+              onClick={() => { setContextMenu(null); handleStoreSelectionInClipboard('copy', [`file:${selectedContextFile.id}`]); }}
+              className="w-full px-3 py-2 text-left text-sm text-slate-700 hover:bg-slate-50 transition flex items-center gap-3"
             >
-              <Copy className="w-4 h-4 text-slate-500" />
+              <div className="w-7 h-7 rounded-lg bg-slate-50 flex items-center justify-center flex-shrink-0">
+                <Copy className="w-3.5 h-3.5 text-slate-500" />
+              </div>
               Copiar
             </button>
             <button
               type="button"
-              onClick={() => {
-                setContextMenu(null);
-                handleStoreSelectionInClipboard('cut', [`file:${selectedContextFile.id}`]);
-              }}
-              className="w-full px-3 py-2.5 text-left text-sm text-slate-700 hover:bg-slate-50 transition flex items-center gap-2"
+              onClick={() => { setContextMenu(null); handleStoreSelectionInClipboard('cut', [`file:${selectedContextFile.id}`]); }}
+              className="w-full px-3 py-2 text-left text-sm text-slate-700 hover:bg-slate-50 transition flex items-center gap-3"
             >
-              <Scissors className="w-4 h-4 text-slate-500" />
+              <div className="w-7 h-7 rounded-lg bg-slate-50 flex items-center justify-center flex-shrink-0">
+                <Scissors className="w-3.5 h-3.5 text-slate-500" />
+              </div>
               Recortar
             </button>
             <button
               type="button"
-              onClick={() => {
-                setContextMenu(null);
-                void handleDuplicateFile(selectedContextFile);
-              }}
-              className="w-full px-3 py-2.5 text-left text-sm text-slate-700 hover:bg-slate-50 transition flex items-center gap-2"
+              onClick={() => { setContextMenu(null); void handleDuplicateFile(selectedContextFile); }}
+              className="w-full px-3 py-2 text-left text-sm text-slate-700 hover:bg-slate-50 transition flex items-center gap-3"
             >
-              <Copy className="w-4 h-4 text-slate-500" />
+              <div className="w-7 h-7 rounded-lg bg-slate-50 flex items-center justify-center flex-shrink-0">
+                <Copy className="w-3.5 h-3.5 text-slate-400" />
+              </div>
               Criar cópia
             </button>
             <button
               type="button"
-              onClick={() => {
-                setContextMenu(null);
-                void handleCopyFileToClipboard(selectedContextFile);
-              }}
-              className="w-full px-3 py-2.5 text-left text-sm text-slate-700 hover:bg-slate-50 transition"
+              onClick={() => { setContextMenu(null); void handleCopyFileToClipboard(selectedContextFile); }}
+              className="w-full px-3 py-2 text-left text-sm text-slate-700 hover:bg-slate-50 transition flex items-center gap-3"
             >
+              <div className="w-7 h-7 rounded-lg bg-slate-50 flex items-center justify-center flex-shrink-0">
+                <Link2 className="w-3.5 h-3.5 text-slate-500" />
+              </div>
               Copiar link
             </button>
-            {selectedItemKeys.length > 1 ? (
+
+            {/* Seleção múltipla */}
+            {selectedItemKeys.length > 1 && (
               <>
+                <div className="my-1 border-t border-slate-100" />
                 <button
                   type="button"
-                  onClick={() => {
-                    setContextMenu(null);
-                    setBulkRenameModalOpen(true);
-                  }}
-                  className="w-full px-3 py-2.5 text-left text-sm text-slate-700 hover:bg-slate-50 transition"
+                  onClick={() => { setContextMenu(null); setBulkRenameModalOpen(true); }}
+                  className="w-full px-3 py-2 text-left text-sm text-slate-700 hover:bg-slate-50 transition flex items-center gap-3"
                 >
+                  <div className="w-7 h-7 rounded-lg bg-slate-50 flex items-center justify-center flex-shrink-0">
+                    <Tag className="w-3.5 h-3.5 text-slate-500" />
+                  </div>
                   Renomear seleção
                 </button>
                 <button
                   type="button"
-                  onClick={() => {
-                    setContextMenu(null);
-                    setBulkMoveModalOpen(true);
-                  }}
-                  className="w-full px-3 py-2.5 text-left text-sm text-slate-700 hover:bg-slate-50 transition"
+                  onClick={() => { setContextMenu(null); setBulkMoveModalOpen(true); }}
+                  className="w-full px-3 py-2 text-left text-sm text-slate-700 hover:bg-slate-50 transition flex items-center gap-3"
                 >
+                  <div className="w-7 h-7 rounded-lg bg-slate-50 flex items-center justify-center flex-shrink-0">
+                    <MoveRight className="w-3.5 h-3.5 text-slate-500" />
+                  </div>
                   Mover seleção
                 </button>
               </>
-            ) : null}
-            <div className="border-t border-slate-100" />
+            )}
+
+            <div className="my-1 border-t border-slate-100" />
+
+            {/* Excluir */}
             <button
               type="button"
               onClick={() => {
@@ -6888,8 +6953,11 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
                 }
                 handleDeleteFile(selectedContextFile);
               }}
-              className="w-full px-3 py-2.5 text-left text-sm font-medium text-red-600 hover:bg-red-50 transition"
+              className="w-full px-3 py-2 text-left text-sm font-medium text-red-600 hover:bg-red-50 transition flex items-center gap-3"
             >
+              <div className="w-7 h-7 rounded-lg bg-red-50 flex items-center justify-center flex-shrink-0">
+                <Trash2 className="w-3.5 h-3.5 text-red-500" />
+              </div>
               {selectedContextFile.archived_at && !selectedContextFile.delete_scheduled_for ? 'Desarquivar arquivo' : 'Excluir arquivo'}
             </button>
           </div>

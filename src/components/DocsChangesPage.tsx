@@ -47,6 +47,7 @@ import { matchesNormalizedSearch } from '../utils/search';
    ============================================================================ */
 
 const VERSION_CODENAMES: Record<string, { name: string; emoji: string }> = {
+  '1.10.020': { name: 'Café Assinatura no Lugar', emoji: '✍️' },
   '1.10.019': { name: 'Café Arquivos Visíveis', emoji: '📂' },
   '1.10.018': { name: 'Café Cliente na Agenda', emoji: '📅' },
   '1.10.017': { name: 'Café Ficha 360 Completa', emoji: '🔄' },
@@ -737,6 +738,43 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
 };
 
 const releases: ReleaseNote[] = [
+  {
+    version: '1.10.020',
+    date: '10/05/2026',
+    summary: 'Assinaturas: posicionamento corrigido no PDF. Cloud: menu de contexto renovado com ícones e opção "Enviar para assinatura" para DOCX/PDF.',
+    modules: [
+      {
+        moduleId: 'signatures',
+        changes: [
+          {
+            type: 'fix',
+            title: 'Assinatura não caia no local posicionado',
+            description: 'Documentos DOCX com seções A4 (~1122px) excediam a área útil do PDF (714pt vs 750pt escalado), causando fatiamento. Para documentos multi-seção o código passava sliceStartPt=undefined, fazendo o campo ser posicionado relativo à altura do slice em vez da seção completa — erro sistemático crescente rumo ao rodapé. Corrigido passando sliceStartPt e scaledHeightPt sempre, independente de isSingleSection.',
+          },
+        ],
+      },
+      {
+        moduleId: 'cloud',
+        changes: [
+          {
+            type: 'feature',
+            title: 'Enviar para assinatura via clique direito',
+            description: 'Arquivos DOCX e PDF ganham a opção "Enviar para assinatura" no menu de contexto. Ao clicar, o módulo de assinaturas abre com o arquivo e o cliente da pasta já pré-preenchidos.',
+          },
+          {
+            type: 'improvement',
+            title: 'Menu de contexto redesenhado',
+            description: 'O menu de clique direito em arquivos foi redesenhado com ícones em todos os itens, divisores entre grupos lógicos (assinatura, abrir, ferramentas, organização, exclusão) e aparência mais próxima de Google Drive/OneDrive.',
+          },
+          {
+            type: 'improvement',
+            title: 'Ícones de arquivo com cores por tipo',
+            description: 'Na visualização em lista, cada tipo de arquivo tem ícone com fundo e cor distintos: PDF em vermelho, Word em azul, imagens em verde, outros em cinza. Pastas ficaram com fundo âmbar.',
+          },
+        ],
+      },
+    ],
+  },
   {
     version: '1.10.019',
     date: '10/05/2026',

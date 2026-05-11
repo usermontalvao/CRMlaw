@@ -1520,7 +1520,7 @@ class PdfSignatureService {
 
             const pageNumberForFields = isSingleSection ? (sliceIdx + 1) : (sectionIdx + 1);
             const sliceStartPt = sliceIdx * contentHeightPt;
-            await drawOnePage(sliceCanvas, pageNumberForFields, isSingleSection ? sliceStartPt : undefined, isSingleSection ? scaledHeightPt : undefined);
+            await drawOnePage(sliceCanvas, pageNumberForFields, sliceStartPt, scaledHeightPt);
           }
         } finally {
           section.style.boxShadow = originalStyles.boxShadow;
