@@ -7,7 +7,10 @@ import { useToastContext } from '../contexts/ToastContext';
 import type { SignDocumentDTO, SignatureAuditLog, SignatureField, Signer, SignatureRequest } from '../types/signature.types';
 import SignatureReport from './SignatureReport';
 import { renderAsync } from 'docx-preview';
+import { Document, Page, pdfjs } from 'react-pdf';
 import { supabase } from '../config/supabase';
+
+pdfjs.GlobalWorkerOptions.workerSrc = `//unpkg.com/pdfjs-dist@${pdfjs.version}/build/pdf.worker.min.mjs`;
 
 interface PublicSigningPageProps {
   token: string;
@@ -45,6 +48,49 @@ const formatCpf = (value: string): string => {
   return formatted;
 };
 
+// Componente que renderiza todas as páginas de um PDF como canvas (sem iframe, sem scroll duplo)
+interface PdfRendererProps {
+  url: string;
+  onLoad?: () => void;
+}
+const PdfRenderer: React.FC<PdfRendererProps> = ({ url, onLoad }) => {
+  const [numPages, setNumPages] = useState(0);
+  const containerRef = useRef<HTMLDivElement>(null);
+  const [containerWidth, setContainerWidth] = useState(0);
+
+  useEffect(() => {
+    if (!containerRef.current) return;
+    const ro = new ResizeObserver(entries => {
+      setContainerWidth(Math.floor(entries[0].contentRect.width));
+    });
+    ro.observe(containerRef.current);
+    setContainerWidth(Math.floor(containerRef.current.offsetWidth));
+    return () => ro.disconnect();
+  }, []);
+
+  return (
+    <div ref={containerRef} className="w-full bg-white">
+      <Document
+        file={url}
+        onLoadSuccess={({ numPages: n }) => { setNumPages(n); onLoad?.(); }}
+        loading={null}
+        error={null}
+      >
+        {containerWidth > 0 && Array.from({ length: numPages }, (_, i) => (
+          <Page
+            key={i}
+            pageNumber={i + 1}
+            width={containerWidth}
+            renderTextLayer={false}
+            renderAnnotationLayer={false}
+            className="block"
+          />
+        ))}
+      </Document>
+    </div>
+  );
+};
+
 // Componente auxiliar para renderizar a lista de documentos anexos
 interface AttachmentsListProps {
   attachments: { name: string; url: string; rendered?: boolean; prefetched?: boolean; isDocx?: boolean }[];
@@ -69,12 +115,8 @@ const AttachmentsList: React.FC<AttachmentsListProps> = ({ attachments, attachme
                 style={{ width: '100%', overflow: 'auto' }}
               />
             ) : isPdf ? (
-              // PDF: iframe sem bordas, continuação visual
-              <iframe
-                src={`${attach.url}#toolbar=0&navpanes=0&statusbar=0`}
-                style={{ width: '100%', height: '88vh', border: 'none', display: 'block' }}
-                title={attach.name}
-              />
+              // PDF: canvas via react-pdf, sem iframe, sem scroll interno
+              <PdfRenderer url={attach.url} />
             ) : isImg ? (
               // Imagem: tag <img> sem decoração
               <img
@@ -2218,11 +2260,11 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
       </header>
 
       {/* Document Viewer - Ocupa toda a tela */}
-      <main className="flex-1 min-h-0 relative overflow-hidden bg-white">
+      <main className="flex-1 min-h-0 relative overflow-y-auto bg-white">
         {pdfUrl ? (
           isDocx ? (
             // Renderizar DOCX com docx-preview
-            <div className="w-full h-full overflow-auto bg-white pb-24">
+            <div className="w-full bg-white pb-24">
               {docxLoading && (
                 <div className="absolute inset-0 flex items-center justify-center bg-white/80 z-10">
                   <div className="flex flex-col items-center gap-3">
@@ -2235,7 +2277,7 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
               <div
                 ref={docxContainerRef}
                 className="bg-slate-100 docx-responsive flex flex-col items-center"
-                style={{ width: '100%', overflow: 'auto', minHeight: '400px', padding: '20px' }}
+                style={{ width: '100%', minHeight: '400px', padding: '20px' }}
               />
 
               {/* Documentos Anexos */}
@@ -2247,33 +2289,19 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
               )}
             </div>
           ) : (
-            // Renderizar PDF com iframe
-            attachments.length > 0 ? (
-              // Com anexos: layout scrollável
-              <div className="w-full h-full overflow-auto bg-white pb-24">
-                <iframe
-                  src={`${pdfUrl}#toolbar=0&navpanes=0&statusbar=0`}
-                  style={{ width: '100%', height: '88vh', border: 'none', display: 'block' }}
-                  title="Documento PDF"
-                  onLoad={() => setPdfFrameLoaded(true)}
-                />
+            // PDF: canvas via react-pdf, sem iframe, scroll único no <main>
+            <div className="w-full bg-white pb-24">
+              <PdfRenderer
+                url={pdfUrl!}
+                onLoad={() => setPdfFrameLoaded(true)}
+              />
+              {attachments.length > 0 && (
                 <AttachmentsList
                   attachments={attachments}
                   attachmentRefs={attachmentRefs}
                 />
-              </div>
-            ) : (
-              // Sem anexos: full-screen
-              <>
-                <iframe
-                  src={`${pdfUrl}#toolbar=0&navpanes=0&statusbar=0`}
-                  className="w-full h-full border-0 bg-white"
-                  title="Documento PDF"
-                  onLoad={() => setPdfFrameLoaded(true)}
-                />
-                <div className="pointer-events-none absolute right-0 top-0 bottom-0 w-4 bg-white" />
-              </>
-            )
+              )}
+            </div>
           )
         ) : (
           <div className="w-full h-full bg-white" />

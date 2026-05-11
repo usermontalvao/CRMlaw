@@ -47,6 +47,7 @@ import { matchesNormalizedSearch } from '../utils/search';
    ============================================================================ */
 
 const VERSION_CODENAMES: Record<string, { name: string; emoji: string }> = {
+  '1.10.027': { name: 'Café Página Contínua', emoji: '📄' },
   '1.10.026': { name: 'Café Sem Fronteiras', emoji: '🌊' },
   '1.10.025': { name: 'Café Envelope Completo', emoji: '📎' },
   '1.10.024': { name: 'Café Imagem na Fila', emoji: '🖼️' },
@@ -744,6 +745,23 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
 };
 
 const releases: ReleaseNote[] = [
+  {
+    version: '1.10.027',
+    date: '11/05/2026',
+    summary: 'Assinaturas: página pública usa react-pdf para renderizar PDFs como canvas — elimina scroll duplo e garante responsividade.',
+    modules: [
+      {
+        moduleId: 'signatures',
+        changes: [
+          {
+            type: 'fix',
+            title: 'Scroll duplo e falta de responsividade na página de assinatura',
+            description: 'Substituídas as iframes por PdfRenderer (react-pdf): cada página do PDF é renderizada como canvas ajustado à largura do container. O <main> passou de overflow-hidden para overflow-y-auto, tornando toda a navegação (documento principal + anexos) um único scroll responsivo sem scroll interno.',
+          },
+        ],
+      },
+    ],
+  },
   {
     version: '1.10.026',
     date: '11/05/2026',
