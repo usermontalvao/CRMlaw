@@ -8088,172 +8088,296 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
           { mode: 'home' as PdfToolMode, icon: <FileText className="w-5 h-5" />, label: 'Juntar PDFs', desc: selectedPdfFiles.length >= 2 ? `${selectedPdfFiles.length} PDFs` : 'Selecione 2+ PDFs', color: 'text-orange-600', iconBg: 'bg-orange-50 border-orange-200', disabled: selectedPdfFiles.length < 2 || pdfToolSaving, badge: selectedPdfFiles.length >= 2 ? String(selectedPdfFiles.length) : undefined },
         ];
 
-        return (
-        <div className="fixed inset-0 z-[135] bg-black/50 backdrop-blur-sm flex items-end sm:items-center justify-center p-0 sm:p-4">
-          <motion.div
-            initial={{ opacity: 0, y: 32, scale: 0.98 }}
-            animate={{ opacity: 1, y: 0, scale: 1 }}
-            exit={{ opacity: 0, y: 16, scale: 0.99 }}
-            transition={{ duration: 0.22, ease: [0.16, 1, 0.3, 1] }}
-            className="w-full sm:max-w-6xl h-[96vh] sm:h-[90vh] rounded-t-[28px] sm:rounded-[28px] bg-white shadow-[0_32px_80px_rgba(0,0,0,0.35)] overflow-hidden flex flex-col"
-          >
-            {/* ── Header ── */}
-            <div className="bg-gradient-to-r from-red-600 to-rose-500 px-5 py-4 flex items-center gap-4 flex-shrink-0">
-              <div className="w-10 h-10 rounded-xl bg-white/20 flex items-center justify-center flex-shrink-0">
-                <FileText className="w-5 h-5 text-white" />
+        /* ── shared sub-tool panel wrapper ── */
+        const SubToolPanel = ({ title, desc, accentColor, children, onApply, applyLabel, applyIcon, applyDisabled }: {
+          title: string; desc: string; accentColor: string; children: React.ReactNode;
+          onApply: () => void; applyLabel: string; applyIcon: React.ReactNode; applyDisabled?: boolean;
+        }) => (
+          <div className="flex-1 min-h-0 flex">
+            {/* Left: form */}
+            <div className="w-full lg:w-[400px] lg:flex-shrink-0 flex flex-col border-r border-slate-100">
+              <div className="px-6 pt-6 pb-4 border-b border-slate-100">
+                <h4 className="text-base font-bold text-slate-900">{title}</h4>
+                <p className="text-[13px] text-slate-500 mt-0.5 leading-relaxed">{desc}</p>
               </div>
+              <div className="flex-1 overflow-y-auto px-6 py-5">{children}</div>
+              <div className="px-6 pb-6 pt-2 flex gap-3 border-t border-slate-100">
+                <button
+                  onClick={() => setPdfToolMode('home')}
+                  className="flex-1 py-2.5 rounded-xl border border-slate-200 text-sm font-medium text-slate-700 hover:bg-slate-50 transition"
+                >
+                  Cancelar
+                </button>
+                <button
+                  onClick={onApply}
+                  disabled={applyingPdfTool || applyDisabled}
+                  className={`flex-1 py-2.5 rounded-xl text-white text-sm font-semibold disabled:opacity-50 transition flex items-center justify-center gap-2 ${accentColor}`}
+                >
+                  {applyingPdfTool ? <Loader2 className="w-4 h-4 animate-spin" /> : applyIcon}
+                  {applyingPdfTool ? 'Processando…' : applyLabel}
+                </button>
+              </div>
+            </div>
+            {/* Right: preview hint */}
+            <div className="hidden lg:flex flex-1 items-center justify-center bg-[#f8f9fb] p-10">
+              <div className="text-center max-w-[200px]">
+                <div className="w-16 h-20 mx-auto bg-white border border-slate-200 rounded-xl shadow-md flex items-center justify-center mb-4">
+                  <FileText className="w-7 h-7 text-slate-300" />
+                </div>
+                <p className="text-sm text-slate-400 leading-relaxed">O resultado será gerado e baixado automaticamente.</p>
+              </div>
+            </div>
+          </div>
+        );
+
+        return (
+        <div className="fixed inset-0 z-[135] bg-black/60 backdrop-blur-sm flex items-end sm:items-center justify-center p-0 sm:p-4">
+          <motion.div
+            initial={{ opacity: 0, y: 40, scale: 0.97 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: 20, scale: 0.98 }}
+            transition={{ duration: 0.24, ease: [0.16, 1, 0.3, 1] }}
+            className="w-full sm:max-w-5xl h-[96vh] sm:h-[88vh] rounded-t-[24px] sm:rounded-2xl bg-white shadow-[0_40px_100px_rgba(0,0,0,0.35)] overflow-hidden flex flex-col"
+          >
+            {/* ══ HEADER ══ */}
+            <div className="flex-shrink-0 bg-slate-900 px-5 py-4 flex items-center gap-4">
+              {/* Icon */}
+              <div className="w-11 h-11 rounded-xl bg-red-500/15 border border-red-500/25 flex items-center justify-center flex-shrink-0">
+                <FileText className="w-5 h-5 text-red-400" />
+              </div>
+              {/* Info */}
               <div className="min-w-0 flex-1">
-                <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-red-200">Hub PDF</p>
-                <p className="text-white font-semibold text-sm truncate leading-tight">{selectedPdfToolFile.original_name}</p>
-                <div className="flex items-center gap-3 mt-0.5">
-                  <span className="text-red-200 text-[11px]">{pdfToolPages.length} página{pdfToolPages.length !== 1 ? 's' : ''}</span>
-                  <span className="text-red-300 text-[11px]">·</span>
-                  <span className="text-red-200 text-[11px]">{formatFileSize(selectedPdfToolFile.file_size)}</span>
+                <p className="text-[10px] font-bold uppercase tracking-[0.22em] text-slate-500 mb-0.5">Hub PDF</p>
+                <p className="text-white font-semibold text-[14px] truncate leading-tight">{selectedPdfToolFile.original_name}</p>
+                <div className="flex items-center gap-2 mt-0.5 flex-wrap">
+                  <span className="inline-flex items-center gap-1 text-[11px] text-slate-400">
+                    <svg viewBox="0 0 16 16" className="w-3 h-3 fill-slate-500"><path d="M2 2h7l3 3v9H2V2z"/></svg>
+                    {pdfToolPages.length} página{pdfToolPages.length !== 1 ? 's' : ''}
+                  </span>
+                  <span className="text-slate-700 text-[10px]">·</span>
+                  <span className="text-[11px] text-slate-400">{formatFileSize(selectedPdfToolFile.file_size)}</span>
                   {selectedPdfPageIndexes.length > 0 && (
                     <>
-                      <span className="text-red-300 text-[11px]">·</span>
-                      <span className="text-white text-[11px] font-semibold">{selectedPdfPageIndexes.length} selecionada{selectedPdfPageIndexes.length !== 1 ? 's' : ''}</span>
+                      <span className="text-slate-700 text-[10px]">·</span>
+                      <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-red-400">
+                        <svg viewBox="0 0 16 16" className="w-3 h-3 fill-red-400"><circle cx="8" cy="8" r="6"/></svg>
+                        {selectedPdfPageIndexes.length} selecionada{selectedPdfPageIndexes.length !== 1 ? 's' : ''}
+                      </span>
                     </>
                   )}
                 </div>
               </div>
+              {/* Actions */}
               <div className="flex items-center gap-2 flex-shrink-0">
                 {pdfToolMode !== 'home' && (
                   <button
                     onClick={() => setPdfToolMode('home')}
-                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white/15 hover:bg-white/25 text-white text-xs font-medium transition"
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white/10 hover:bg-white/18 text-slate-300 hover:text-white text-xs font-medium transition"
                   >
                     <ChevronLeft className="w-3.5 h-3.5" />
-                    Voltar
+                    Ferramentas
                   </button>
                 )}
                 <button
                   onClick={closePdfToolsModal}
-                  className="w-9 h-9 rounded-xl bg-white/15 hover:bg-white/25 flex items-center justify-center text-white transition"
+                  className="w-8 h-8 rounded-lg bg-white/10 hover:bg-white/20 flex items-center justify-center text-slate-400 hover:text-white transition"
                 >
                   <X className="w-4 h-4" />
                 </button>
               </div>
             </div>
 
-            {/* ── Body ── */}
+            {/* ══ BODY ══ */}
             {pdfToolMode === 'home' ? (
               <div className="flex flex-1 min-h-0">
-                {/* Left: tools grid */}
-                <div className="w-full lg:w-[340px] lg:flex-shrink-0 border-r border-slate-100 flex flex-col overflow-y-auto">
-                  {/* Tool grid */}
-                  <div className="p-4 grid grid-cols-2 sm:grid-cols-2 gap-2.5">
-                    {toolDefs.map((tool, i) => {
-                      const isExtract = tool.label === 'Extrair';
-                      const isJuntar = tool.label === 'Juntar PDFs';
-                      return (
-                        <button
-                          key={i}
-                          type="button"
-                          disabled={tool.disabled}
-                          onClick={() => {
-                            if (isExtract) { void extractSelectedPdfPages(); return; }
-                            if (isJuntar) { void mergeSelectedPdfFiles(); return; }
-                            setPdfToolMode(tool.mode);
-                          }}
-                          className={`relative text-left rounded-2xl border p-3.5 transition-all hover:-translate-y-0.5 disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:translate-y-0 ${tool.iconBg} hover:shadow-md`}
-                        >
-                          {tool.badge && (
-                            <span className="absolute top-2 right-2 w-5 h-5 rounded-full bg-orange-500 text-white text-[10px] font-bold flex items-center justify-center">{tool.badge}</span>
-                          )}
-                          <div className={`mb-2 ${tool.color}`}>{tool.icon}</div>
-                          <p className="font-semibold text-slate-900 text-[13px] leading-tight">{tool.label}</p>
-                          <p className="text-[11px] text-slate-500 mt-0.5 leading-tight">{tool.desc}</p>
-                        </button>
-                      );
-                    })}
+
+                {/* ── Left sidebar: tools ── */}
+                <div className="w-full lg:w-[272px] lg:flex-shrink-0 border-r border-slate-100 flex flex-col bg-white overflow-y-auto">
+
+                  {/* Section: Editar */}
+                  <div className="pt-4 pb-1 px-4">
+                    <p className="text-[10px] font-bold uppercase tracking-[0.16em] text-slate-400 px-1 mb-1">Editar</p>
                   </div>
-
-                  {/* Quick actions */}
-                  <div className="px-4 pb-4 space-y-2">
-                    <div className="border-t border-slate-100 pt-3">
-                      <p className="text-[10px] font-bold uppercase tracking-[0.12em] text-slate-400 mb-2">Ações rápidas</p>
-                      <div className="space-y-1">
-                        <button onClick={() => handleDownloadFile(selectedPdfToolFile)} className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl hover:bg-slate-100 transition text-sm text-slate-700">
-                          <Download className="w-4 h-4 text-slate-400" /> Baixar PDF original
-                        </button>
-                        <button onClick={() => handleSendForSignature(selectedPdfToolFile)} className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl hover:bg-orange-50 transition text-sm text-orange-600">
-                          <SquarePen className="w-4 h-4" /> Enviar para assinatura
-                        </button>
-                        <button onClick={async () => {
-                          try {
-                            const url = await cloudService.getFileSignedUrl(selectedPdfToolFile.storage_path);
-                            await navigator.clipboard.writeText(url);
-                            toast.success('Cloud', 'Link copiado.');
-                          } catch { toast.error('Cloud', 'Não foi possível copiar o link.'); }
-                        }} className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl hover:bg-slate-100 transition text-sm text-slate-700">
-                          <Link2 className="w-4 h-4 text-slate-400" /> Copiar link de acesso
-                        </button>
-                      </div>
-                    </div>
-
-                    {/* File info strip */}
-                    <div className="rounded-xl bg-slate-50 border border-slate-100 px-3 py-2.5 space-y-1">
-                      {[
-                        ['Arquivo', selectedPdfToolFile.original_name],
-                        ['Páginas', String(pdfToolPages.length)],
-                        ['Tamanho', formatFileSize(selectedPdfToolFile.file_size)],
-                        ['Selecionadas', `${selectedPdfPageIndexes.length} de ${pdfToolPages.length}`],
-                        ...(selectedPdfFiles.length > 1 ? [['PDFs p/ juntar', String(selectedPdfFiles.length)]] : []),
-                      ].map(([k, v]) => (
-                        <div key={k} className="flex items-center justify-between gap-2">
-                          <span className="text-[11px] text-slate-400">{k}</span>
-                          <span className="text-[11px] text-slate-700 font-medium truncate max-w-[160px] text-right">{v}</span>
+                  {toolDefs.slice(0, 4).map((tool, i) => {
+                    const isExtract = tool.label === 'Extrair';
+                    const isJuntar  = tool.label === 'Juntar PDFs';
+                    return (
+                      <button
+                        key={i}
+                        type="button"
+                        disabled={tool.disabled}
+                        onClick={() => {
+                          if (isExtract) { void extractSelectedPdfPages(); return; }
+                          if (isJuntar)  { void mergeSelectedPdfFiles();  return; }
+                          setPdfToolMode(tool.mode);
+                        }}
+                        className="group relative mx-3 mb-0.5 flex items-center gap-3.5 px-3 py-2.5 rounded-xl hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed transition"
+                      >
+                        <div className={`w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0 border ${tool.iconBg}`}>
+                          <span className={tool.color}>{tool.icon}</span>
                         </div>
-                      ))}
-                    </div>
+                        <div className="flex-1 min-w-0 text-left">
+                          <p className="text-[13px] font-semibold text-slate-800 leading-tight flex items-center gap-1.5">
+                            {tool.label}
+                            {tool.badge && <span className="w-4 h-4 rounded-full bg-red-500 text-white text-[9px] font-bold flex items-center justify-center">{tool.badge}</span>}
+                          </p>
+                          <p className="text-[11px] text-slate-400 leading-tight mt-0.5 truncate">{tool.desc}</p>
+                        </div>
+                        <ChevronRight className="w-3.5 h-3.5 text-slate-300 group-hover:text-slate-400 flex-shrink-0 transition" />
+                      </button>
+                    );
+                  })}
+
+                  {/* Section: Gerar */}
+                  <div className="pt-4 pb-1 px-4 mt-1">
+                    <p className="text-[10px] font-bold uppercase tracking-[0.16em] text-slate-400 px-1 mb-1">Gerar</p>
+                  </div>
+                  {toolDefs.slice(4, 6).map((tool, i) => (
+                    <button
+                      key={i}
+                      type="button"
+                      disabled={tool.disabled}
+                      onClick={() => setPdfToolMode(tool.mode)}
+                      className="group relative mx-3 mb-0.5 flex items-center gap-3.5 px-3 py-2.5 rounded-xl hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed transition"
+                    >
+                      <div className={`w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0 border ${tool.iconBg}`}>
+                        <span className={tool.color}>{tool.icon}</span>
+                      </div>
+                      <div className="flex-1 min-w-0 text-left">
+                        <p className="text-[13px] font-semibold text-slate-800 leading-tight">{tool.label}</p>
+                        <p className="text-[11px] text-slate-400 leading-tight mt-0.5 truncate">{tool.desc}</p>
+                      </div>
+                      <ChevronRight className="w-3.5 h-3.5 text-slate-300 group-hover:text-slate-400 flex-shrink-0 transition" />
+                    </button>
+                  ))}
+
+                  {/* Section: Páginas */}
+                  <div className="pt-4 pb-1 px-4 mt-1">
+                    <p className="text-[10px] font-bold uppercase tracking-[0.16em] text-slate-400 px-1 mb-1">Páginas</p>
+                  </div>
+                  {toolDefs.slice(6).map((tool, i) => {
+                    const isExtract = tool.label === 'Extrair';
+                    const isJuntar  = tool.label === 'Juntar PDFs';
+                    return (
+                      <button
+                        key={i}
+                        type="button"
+                        disabled={tool.disabled}
+                        onClick={() => {
+                          if (isExtract) { void extractSelectedPdfPages(); return; }
+                          if (isJuntar)  { void mergeSelectedPdfFiles();  return; }
+                          setPdfToolMode(tool.mode);
+                        }}
+                        className="group relative mx-3 mb-0.5 flex items-center gap-3.5 px-3 py-2.5 rounded-xl hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed transition"
+                      >
+                        <div className={`w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0 border ${tool.iconBg}`}>
+                          <span className={tool.color}>{tool.icon}</span>
+                        </div>
+                        <div className="flex-1 min-w-0 text-left">
+                          <p className="text-[13px] font-semibold text-slate-800 leading-tight flex items-center gap-1.5">
+                            {tool.label}
+                            {tool.badge && <span className="w-4 h-4 rounded-full bg-red-500 text-white text-[9px] font-bold flex items-center justify-center">{tool.badge}</span>}
+                          </p>
+                          <p className="text-[11px] text-slate-400 leading-tight mt-0.5 truncate">{tool.desc}</p>
+                        </div>
+                        <ChevronRight className="w-3.5 h-3.5 text-slate-300 group-hover:text-slate-400 flex-shrink-0 transition" />
+                      </button>
+                    );
+                  })}
+
+                  {/* Divider + Quick actions */}
+                  <div className="mt-auto pt-3 pb-4 px-4 border-t border-slate-100 space-y-0.5">
+                    <button
+                      onClick={() => handleDownloadFile(selectedPdfToolFile)}
+                      className="w-full flex items-center gap-3 px-3 py-2 rounded-xl hover:bg-slate-50 transition text-sm text-slate-600"
+                    >
+                      <Download className="w-4 h-4 text-slate-400 flex-shrink-0" />
+                      <span className="text-[13px]">Baixar PDF original</span>
+                    </button>
+                    <button
+                      onClick={() => handleSendForSignature(selectedPdfToolFile)}
+                      className="w-full flex items-center gap-3 px-3 py-2 rounded-xl hover:bg-orange-50 transition text-orange-600"
+                    >
+                      <SquarePen className="w-4 h-4 flex-shrink-0" />
+                      <span className="text-[13px] font-medium">Enviar para assinatura</span>
+                    </button>
+                    <button
+                      onClick={async () => {
+                        try {
+                          const url = await cloudService.getFileSignedUrl(selectedPdfToolFile.storage_path);
+                          await navigator.clipboard.writeText(url);
+                          toast.success('Cloud', 'Link copiado.');
+                        } catch { toast.error('Cloud', 'Não foi possível copiar o link.'); }
+                      }}
+                      className="w-full flex items-center gap-3 px-3 py-2 rounded-xl hover:bg-slate-50 transition text-slate-600"
+                    >
+                      <Link2 className="w-4 h-4 text-slate-400 flex-shrink-0" />
+                      <span className="text-[13px]">Copiar link de acesso</span>
+                    </button>
                   </div>
                 </div>
 
-                {/* Right: page thumbnails */}
-                <div className="hidden lg:flex flex-1 min-h-0 flex-col overflow-hidden bg-slate-50">
-                  <div className="px-4 py-3 bg-white border-b border-slate-100 flex items-center justify-between gap-3">
-                    <p className="text-sm font-semibold text-slate-800">Páginas</p>
-                    <div className="flex items-center gap-1.5">
+                {/* ── Right: page thumbnails ── */}
+                <div className="hidden lg:flex flex-1 min-h-0 flex-col overflow-hidden bg-[#f8f9fb]">
+                  {/* Thumbnail toolbar */}
+                  <div className="px-5 py-3 bg-white border-b border-slate-100 flex items-center justify-between gap-3">
+                    <div className="flex items-center gap-2">
+                      <p className="text-sm font-semibold text-slate-800">Páginas</p>
+                      {selectedPdfPageIndexes.length > 0 && (
+                        <span className="px-2 py-0.5 rounded-full bg-red-100 text-red-700 text-[11px] font-semibold">
+                          {selectedPdfPageIndexes.length} selecionada{selectedPdfPageIndexes.length !== 1 ? 's' : ''}
+                        </span>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-1">
                       <button onClick={selectAllPdfPages} className="px-2.5 py-1 text-[11px] font-medium rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 transition">Todas</button>
                       <button onClick={invertPdfPageSelection} className="px-2.5 py-1 text-[11px] font-medium rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 transition">Inverter</button>
                       <button onClick={() => setSelectedPdfPageIndexes([])} className="px-2.5 py-1 text-[11px] font-medium rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 transition">Limpar</button>
                     </div>
                   </div>
-                  <div className="flex-1 overflow-y-auto p-4">
+                  {/* Thumbnails grid */}
+                  <div className="flex-1 overflow-y-auto p-5">
                     {pdfToolPreviewUrl ? (
                       <Document
                         key={`thumbs-${selectedPdfToolFile.id}-${pdfToolPreviewUrl}`}
                         file={pdfToolPreviewUrl}
-                        loading={<div className="py-8 text-center text-sm text-slate-400">Carregando páginas…</div>}
-                        error={<div className="py-8 text-center text-sm text-slate-400">Preview indisponível.</div>}
+                        loading={<div className="py-12 text-center text-sm text-slate-400"><Loader2 className="w-5 h-5 animate-spin mx-auto mb-2 text-slate-300" />Carregando páginas…</div>}
+                        error={<div className="py-12 text-center text-sm text-slate-400">Preview indisponível.</div>}
                         onLoadSuccess={() => setPdfToolThumbsReady(true)}
                         onLoadError={() => setPdfToolThumbsReady(false)}
                       >
-                        <div className="grid grid-cols-3 xl:grid-cols-5 gap-3">
+                        <div className="grid grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-4">
                           {(pdfToolThumbsReady ? pdfToolPages : []).map((page, idx) => {
                             const sel = selectedPdfPageIndexes.includes(idx);
                             return (
                               <button
                                 key={`${page.sourceIndex}-${idx}`}
                                 onClick={() => togglePdfPageSelection(idx)}
-                                className={`group overflow-hidden rounded-xl border-2 transition-all text-left bg-white hover:-translate-y-0.5 ${sel ? 'border-red-500 shadow-[0_0_0_3px_rgba(239,68,68,0.15)]' : 'border-slate-200 hover:border-slate-300 hover:shadow-sm'}`}
+                                className={`group relative overflow-hidden rounded-xl border-2 transition-all text-left bg-white flex flex-col hover:shadow-md ${sel ? 'border-red-500 shadow-[0_0_0_3px_rgba(239,68,68,0.12)]' : 'border-slate-200 hover:border-slate-300'}`}
                               >
-                                <div className="bg-slate-50 p-1.5 flex items-center justify-center" style={{ minHeight: 120 }}>
+                                {/* Selection badge */}
+                                <div className={`absolute top-2 right-2 w-5 h-5 rounded-full border-2 flex items-center justify-center transition-all z-10 ${sel ? 'bg-red-500 border-red-500' : 'bg-white/80 border-slate-300 group-hover:border-slate-400'}`}>
+                                  {sel && <svg viewBox="0 0 8 6" className="w-2 h-2" fill="none" stroke="white" strokeWidth="2"><path d="M1 3l2 2 4-4"/></svg>}
+                                </div>
+                                {/* Thumbnail */}
+                                <div className="bg-slate-50 flex items-center justify-center p-2 flex-1" style={{ minHeight: 130 }}>
                                   <Page
                                     key={`thumb-${selectedPdfToolFile.id}-${page.sourceIndex}-${idx}-${page.rotation}`}
                                     pageNumber={page.sourceIndex + 1}
-                                    width={90}
+                                    width={100}
                                     rotate={page.rotation}
                                     renderTextLayer={false}
                                     renderAnnotationLayer={false}
                                   />
                                 </div>
-                                <div className={`flex items-center justify-between px-2 py-1.5 ${sel ? 'bg-red-50' : 'bg-white'}`}>
-                                  <span className={`text-[10px] font-semibold ${sel ? 'text-red-700' : 'text-slate-500'}`}>{idx + 1}</span>
-                                  <div className={`w-3.5 h-3.5 rounded-full border-2 flex items-center justify-center ${sel ? 'bg-red-500 border-red-500' : 'border-slate-300'}`}>
-                                    {sel && <svg viewBox="0 0 8 6" className="w-2 h-2" fill="none" stroke="white" strokeWidth="1.8"><path d="M1 3l2 2 4-4"/></svg>}
-                                  </div>
+                                {/* Footer */}
+                                <div className={`px-2.5 py-2 flex items-center justify-between transition-colors ${sel ? 'bg-red-50' : 'bg-white'}`}>
+                                  <span className={`text-[11px] font-semibold ${sel ? 'text-red-700' : 'text-slate-500'}`}>
+                                    {idx + 1}
+                                  </span>
+                                  {page.rotation !== 0 && (
+                                    <span className="text-[10px] text-slate-400">{page.rotation}°</span>
+                                  )}
                                 </div>
                               </button>
                             );
@@ -8261,202 +8385,159 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
                         </div>
                       </Document>
                     ) : (
-                      <div className="h-full flex items-center justify-center text-slate-400 text-sm">Carregando…</div>
+                      <div className="h-full flex flex-col items-center justify-center gap-3 text-slate-400">
+                        <Loader2 className="w-6 h-6 animate-spin text-slate-300" />
+                        <span className="text-sm">Carregando…</span>
+                      </div>
                     )}
                   </div>
                 </div>
               </div>
 
             ) : pdfToolMode === 'watermark' ? (
-              /* ── Watermark tool ── */
-              <div className="flex-1 overflow-auto p-6 bg-slate-50">
-                <div className="max-w-md mx-auto space-y-5">
+              <SubToolPanel
+                title="Marca d'água"
+                desc={`Texto aplicado em todas as ${pdfToolPages.length} páginas. Um novo PDF é gerado para download.`}
+                accentColor="bg-purple-600 hover:bg-purple-700"
+                onApply={() => void handleAddPdfWatermark()}
+                applyLabel="Aplicar e Baixar"
+                applyIcon={<Minimize2 className="w-4 h-4" />}
+                applyDisabled={!pdfWatermarkText.trim()}
+              >
+                <div className="space-y-5">
                   <div>
-                    <h4 className="text-base font-bold text-slate-900">Marca d'água</h4>
-                    <p className="text-sm text-slate-500 mt-1">O texto será aplicado em todas as {pdfToolPages.length} páginas e um novo PDF será gerado para download.</p>
+                    <label className="block text-xs font-semibold text-slate-600 mb-1.5">Texto da marca d'água</label>
+                    <input
+                      value={pdfWatermarkText}
+                      onChange={e => setPdfWatermarkText(e.target.value)}
+                      placeholder="Ex: CONFIDENCIAL"
+                      className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3.5 py-2.5 text-sm font-bold text-slate-900 uppercase focus:outline-none focus:border-purple-400 focus:ring-2 focus:ring-purple-100 transition"
+                    />
                   </div>
-                  <div className="space-y-4 bg-white rounded-2xl border border-slate-200 p-5">
-                    <div>
-                      <label className="block text-xs font-semibold text-slate-600 mb-1.5">Texto da marca d'água</label>
-                      <input
-                        value={pdfWatermarkText}
-                        onChange={e => setPdfWatermarkText(e.target.value)}
-                        placeholder="Ex: CONFIDENCIAL"
-                        className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm font-bold text-slate-900 uppercase focus:outline-none focus:border-red-400 focus:ring-2 focus:ring-red-100"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-xs font-semibold text-slate-600 mb-1.5">Opacidade: {Math.round(pdfWatermarkOpacity * 100)}%</label>
-                      <input type="range" min={5} max={60} value={Math.round(pdfWatermarkOpacity * 100)} onChange={e => setPdfWatermarkOpacity(Number(e.target.value) / 100)}
-                        className="w-full accent-red-500" />
-                    </div>
-                    <div className="flex items-center gap-3">
-                      <button
-                        type="button"
-                        onClick={() => setPdfWatermarkDiagonal(true)}
-                        className={`flex-1 py-2 rounded-xl border text-sm font-medium transition ${pdfWatermarkDiagonal ? 'border-red-400 bg-red-50 text-red-700' : 'border-slate-200 text-slate-600 hover:bg-slate-50'}`}
-                      >
-                        Diagonal (45°)
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setPdfWatermarkDiagonal(false)}
-                        className={`flex-1 py-2 rounded-xl border text-sm font-medium transition ${!pdfWatermarkDiagonal ? 'border-red-400 bg-red-50 text-red-700' : 'border-slate-200 text-slate-600 hover:bg-slate-50'}`}
-                      >
-                        Horizontal
-                      </button>
-                    </div>
-                    {/* Preview */}
-                    <div className="rounded-xl bg-slate-100 h-32 flex items-center justify-center overflow-hidden relative border border-slate-200">
-                      <span className="text-slate-200 text-4xl font-black pointer-events-none select-none"
-                        style={{ opacity: pdfWatermarkOpacity * 3, transform: pdfWatermarkDiagonal ? 'rotate(45deg)' : 'none', fontSize: 28, whiteSpace: 'nowrap' }}>
-                        {pdfWatermarkText || 'TEXTO'}
-                      </span>
-                      <div className="absolute inset-0 flex items-start justify-start p-3">
-                        <div className="w-8 h-10 bg-white border border-slate-200 rounded opacity-60" />
-                      </div>
-                    </div>
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-600 mb-1.5">
+                      Opacidade — <span className="text-purple-600">{Math.round(pdfWatermarkOpacity * 100)}%</span>
+                    </label>
+                    <input type="range" min={5} max={60} value={Math.round(pdfWatermarkOpacity * 100)} onChange={e => setPdfWatermarkOpacity(Number(e.target.value) / 100)} className="w-full accent-purple-500" />
                   </div>
-                  <div className="flex items-center gap-3">
-                    <button onClick={() => setPdfToolMode('home')} className="flex-1 py-2.5 rounded-xl border border-slate-200 text-sm font-medium text-slate-700 hover:bg-slate-50 transition">Cancelar</button>
-                    <button
-                      onClick={() => void handleAddPdfWatermark()}
-                      disabled={applyingPdfTool || !pdfWatermarkText.trim()}
-                      className="flex-1 py-2.5 rounded-xl bg-red-500 text-white text-sm font-semibold hover:bg-red-600 disabled:opacity-60 transition flex items-center justify-center gap-2"
-                    >
-                      {applyingPdfTool ? <Loader2 className="w-4 h-4 animate-spin" /> : <Minimize2 className="w-4 h-4" />}
-                      {applyingPdfTool ? 'Gerando…' : 'Aplicar e Baixar'}
-                    </button>
+                  <div className="grid grid-cols-2 gap-2">
+                    {[{ v: true, l: '↗ Diagonal (45°)' }, { v: false, l: '— Horizontal' }].map(opt => (
+                      <button key={String(opt.v)} type="button" onClick={() => setPdfWatermarkDiagonal(opt.v)}
+                        className={`py-2.5 rounded-xl border text-sm font-medium transition ${pdfWatermarkDiagonal === opt.v ? 'border-purple-400 bg-purple-50 text-purple-700' : 'border-slate-200 text-slate-600 hover:bg-slate-50'}`}>
+                        {opt.l}
+                      </button>
+                    ))}
+                  </div>
+                  {/* Live preview */}
+                  <div className="rounded-xl bg-slate-100 h-36 flex items-center justify-center overflow-hidden relative border border-slate-200">
+                    <div className="absolute inset-3 border border-slate-200 rounded-lg bg-white shadow-sm" />
+                    <span className="relative font-black pointer-events-none select-none text-slate-400"
+                      style={{ opacity: pdfWatermarkOpacity * 3, transform: pdfWatermarkDiagonal ? 'rotate(-35deg)' : 'none', fontSize: 22, whiteSpace: 'nowrap', letterSpacing: '0.08em' }}>
+                      {pdfWatermarkText || 'CONFIDENCIAL'}
+                    </span>
                   </div>
                 </div>
-              </div>
+              </SubToolPanel>
 
             ) : pdfToolMode === 'pagenumber' ? (
-              /* ── Page numbers tool ── */
-              <div className="flex-1 overflow-auto p-6 bg-slate-50">
-                <div className="max-w-md mx-auto space-y-5">
+              <SubToolPanel
+                title="Numeração de páginas"
+                desc={`Adiciona "N / ${pdfToolPages.length}" em todas as páginas do documento.`}
+                accentColor="bg-teal-600 hover:bg-teal-700"
+                onApply={() => void handleAddPdfPageNumbers()}
+                applyLabel="Aplicar e Baixar"
+                applyIcon={<Tag className="w-4 h-4" />}
+              >
+                <div className="space-y-5">
                   <div>
-                    <h4 className="text-base font-bold text-slate-900">Numeração de páginas</h4>
-                    <p className="text-sm text-slate-500 mt-1">Adiciona "N / Total" em todas as {pdfToolPages.length} páginas. Um novo PDF é gerado para download.</p>
-                  </div>
-                  <div className="space-y-4 bg-white rounded-2xl border border-slate-200 p-5">
-                    <div>
-                      <label className="block text-xs font-semibold text-slate-600 mb-2">Posição do número</label>
-                      <div className="grid grid-cols-3 gap-2">
-                        {([
-                          { value: 'bottom-center', label: 'Rodapé centro' },
-                          { value: 'bottom-right',  label: 'Rodapé direita' },
-                          { value: 'top-center',    label: 'Cabeçalho centro' },
-                        ] as { value: typeof pdfPageNumPosition; label: string }[]).map(opt => (
-                          <button
-                            key={opt.value}
-                            type="button"
-                            onClick={() => setPdfPageNumPosition(opt.value)}
-                            className={`py-2 px-2 rounded-xl border text-[11px] font-semibold transition text-center ${pdfPageNumPosition === opt.value ? 'border-teal-400 bg-teal-50 text-teal-700' : 'border-slate-200 text-slate-600 hover:bg-slate-50'}`}
-                          >
-                            {opt.label}
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-                    {/* Preview */}
-                    <div className={`relative rounded-xl bg-slate-100 h-28 border border-slate-200 flex items-center justify-center`}>
-                      <div className="w-16 h-20 bg-white border border-slate-300 rounded shadow-sm flex flex-col">
-                        <div className="flex-1 bg-slate-50 rounded-t" />
-                        {pdfPageNumPosition === 'top-center' && <div className="absolute top-2 left-1/2 -translate-x-1/2 text-[10px] font-bold text-teal-600 bg-teal-50 px-2 py-0.5 rounded-full">1 / {pdfToolPages.length || '?'}</div>}
-                        {pdfPageNumPosition !== 'top-center' && <div className={`absolute bottom-2 text-[10px] font-bold text-teal-600 bg-teal-50 px-2 py-0.5 rounded-full ${pdfPageNumPosition === 'bottom-right' ? 'right-4' : 'left-1/2 -translate-x-1/2'}`}>1 / {pdfToolPages.length || '?'}</div>}
-                      </div>
+                    <label className="block text-xs font-semibold text-slate-600 mb-2">Posição do número</label>
+                    <div className="grid grid-cols-1 gap-2">
+                      {([
+                        { value: 'bottom-center', label: 'Rodapé — Centro',   icon: '▼ —' },
+                        { value: 'bottom-right',  label: 'Rodapé — Direita',  icon: '▼ →' },
+                        { value: 'top-center',    label: 'Cabeçalho — Centro',icon: '▲ —' },
+                      ] as { value: typeof pdfPageNumPosition; label: string; icon: string }[]).map(opt => (
+                        <button key={opt.value} type="button" onClick={() => setPdfPageNumPosition(opt.value)}
+                          className={`flex items-center gap-3 px-4 py-3 rounded-xl border text-sm font-medium transition text-left ${pdfPageNumPosition === opt.value ? 'border-teal-400 bg-teal-50 text-teal-700' : 'border-slate-200 text-slate-600 hover:bg-slate-50'}`}>
+                          <span className="text-base w-8 text-center">{opt.icon}</span>
+                          {opt.label}
+                          {pdfPageNumPosition === opt.value && <svg className="ml-auto w-4 h-4 text-teal-500" viewBox="0 0 16 16" fill="currentColor"><circle cx="8" cy="8" r="5"/></svg>}
+                        </button>
+                      ))}
                     </div>
                   </div>
-                  <div className="flex items-center gap-3">
-                    <button onClick={() => setPdfToolMode('home')} className="flex-1 py-2.5 rounded-xl border border-slate-200 text-sm font-medium text-slate-700 hover:bg-slate-50 transition">Cancelar</button>
-                    <button
-                      onClick={() => void handleAddPdfPageNumbers()}
-                      disabled={applyingPdfTool}
-                      className="flex-1 py-2.5 rounded-xl bg-teal-500 text-white text-sm font-semibold hover:bg-teal-600 disabled:opacity-60 transition flex items-center justify-center gap-2"
-                    >
-                      {applyingPdfTool ? <Loader2 className="w-4 h-4 animate-spin" /> : <Tag className="w-4 h-4" />}
-                      {applyingPdfTool ? 'Gerando…' : 'Aplicar e Baixar'}
-                    </button>
+                  {/* Preview */}
+                  <div className="relative rounded-xl bg-slate-100 h-32 border border-slate-200 flex items-center justify-center overflow-hidden">
+                    <div className="w-16 h-20 bg-white border border-slate-300 rounded shadow-sm" />
+                    {pdfPageNumPosition === 'top-center' && <div className="absolute top-3 left-1/2 -translate-x-1/2 text-[10px] font-bold text-teal-700 bg-teal-100 px-2 py-0.5 rounded-full shadow-sm">1 / {pdfToolPages.length}</div>}
+                    {pdfPageNumPosition !== 'top-center' && <div className={`absolute bottom-3 text-[10px] font-bold text-teal-700 bg-teal-100 px-2 py-0.5 rounded-full shadow-sm ${pdfPageNumPosition === 'bottom-right' ? 'right-6' : 'left-1/2 -translate-x-1/2'}`}>1 / {pdfToolPages.length}</div>}
                   </div>
                 </div>
-              </div>
+              </SubToolPanel>
 
             ) : pdfToolMode === 'split' ? (
-              /* ── Split tool ── */
-              <div className="flex-1 overflow-auto p-6 bg-slate-50">
-                <div className="max-w-md mx-auto space-y-5">
+              <SubToolPanel
+                title="Dividir PDF"
+                desc="Separa o PDF em dois arquivos distintos. Escolha o ponto de corte."
+                accentColor="bg-amber-600 hover:bg-amber-700"
+                onApply={() => void handleSplitPdf()}
+                applyLabel="Dividir e Baixar"
+                applyIcon={<Scissors className="w-4 h-4" />}
+                applyDisabled={pdfToolPages.length < 2}
+              >
+                <div className="space-y-5">
                   <div>
-                    <h4 className="text-base font-bold text-slate-900">Dividir PDF</h4>
-                    <p className="text-sm text-slate-500 mt-1">Separa o PDF em duas partes. Escolha em qual página cortar.</p>
-                  </div>
-                  <div className="space-y-5 bg-white rounded-2xl border border-slate-200 p-5">
-                    <div>
-                      <label className="block text-xs font-semibold text-slate-600 mb-1.5">
-                        Dividir após a página: <span className="text-amber-600 font-bold">{pdfSplitAtPage}</span>
-                      </label>
-                      <input
-                        type="range"
-                        min={1} max={Math.max(1, pdfToolPages.length - 1)}
-                        value={pdfSplitAtPage}
-                        onChange={e => setPdfSplitAtPage(Number(e.target.value))}
-                        className="w-full accent-amber-500"
-                      />
-                      <div className="flex justify-between text-[10px] text-slate-400 mt-1">
-                        <span>Pág. 1</span>
-                        <span>Pág. {pdfToolPages.length}</span>
-                      </div>
-                    </div>
-                    <div className="grid grid-cols-2 gap-3">
-                      <div className="rounded-xl bg-amber-50 border border-amber-200 p-3 text-center">
-                        <p className="text-lg font-black text-amber-700">{pdfSplitAtPage}</p>
-                        <p className="text-[11px] text-amber-600 font-medium">páginas — parte 1</p>
-                      </div>
-                      <div className="rounded-xl bg-amber-50 border border-amber-200 p-3 text-center">
-                        <p className="text-lg font-black text-amber-700">{pdfToolPages.length - pdfSplitAtPage}</p>
-                        <p className="text-[11px] text-amber-600 font-medium">páginas — parte 2</p>
-                      </div>
+                    <label className="block text-xs font-semibold text-slate-600 mb-1.5">
+                      Dividir após a página <span className="text-amber-600 font-bold text-sm">{pdfSplitAtPage}</span>
+                    </label>
+                    <input type="range" min={1} max={Math.max(1, pdfToolPages.length - 1)} value={pdfSplitAtPage}
+                      onChange={e => setPdfSplitAtPage(Number(e.target.value))} className="w-full accent-amber-500" />
+                    <div className="flex justify-between text-[11px] text-slate-400 mt-1">
+                      <span>Pág. 1</span><span>Pág. {pdfToolPages.length}</span>
                     </div>
                   </div>
-                  <div className="flex items-center gap-3">
-                    <button onClick={() => setPdfToolMode('home')} className="flex-1 py-2.5 rounded-xl border border-slate-200 text-sm font-medium text-slate-700 hover:bg-slate-50 transition">Cancelar</button>
-                    <button
-                      onClick={() => void handleSplitPdf()}
-                      disabled={applyingPdfTool || pdfToolPages.length < 2}
-                      className="flex-1 py-2.5 rounded-xl bg-amber-500 text-white text-sm font-semibold hover:bg-amber-600 disabled:opacity-60 transition flex items-center justify-center gap-2"
-                    >
-                      {applyingPdfTool ? <Loader2 className="w-4 h-4 animate-spin" /> : <Scissors className="w-4 h-4" />}
-                      {applyingPdfTool ? 'Dividindo…' : 'Dividir e Baixar'}
-                    </button>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="rounded-xl bg-amber-50 border border-amber-200 p-4 text-center">
+                      <p className="text-2xl font-black text-amber-700 tabular-nums">{pdfSplitAtPage}</p>
+                      <p className="text-[12px] text-amber-600 font-medium mt-0.5">página{pdfSplitAtPage !== 1 ? 's' : ''}</p>
+                      <p className="text-[11px] text-amber-500 mt-0.5">Parte 1</p>
+                    </div>
+                    <div className="rounded-xl bg-amber-50 border border-amber-200 p-4 text-center">
+                      <p className="text-2xl font-black text-amber-700 tabular-nums">{pdfToolPages.length - pdfSplitAtPage}</p>
+                      <p className="text-[12px] text-amber-600 font-medium mt-0.5">página{(pdfToolPages.length - pdfSplitAtPage) !== 1 ? 's' : ''}</p>
+                      <p className="text-[11px] text-amber-500 mt-0.5">Parte 2</p>
+                    </div>
                   </div>
                 </div>
-              </div>
+              </SubToolPanel>
 
             ) : (
               /* ── Editor modes: organize / rotate / remove ── */
-              <div className="flex-1 min-h-0 flex flex-col bg-slate-50">
+              <div className="flex-1 min-h-0 flex flex-col bg-[#f8f9fb]">
+                {/* Sub-header */}
                 <div className="px-5 py-3 border-b border-slate-100 bg-white flex items-center justify-between gap-4 flex-shrink-0">
                   <div>
                     <p className="text-sm font-bold text-slate-900">
                       {pdfToolMode === 'organize' ? 'Organizar páginas' : pdfToolMode === 'rotate' ? 'Girar páginas' : 'Remover páginas'}
                     </p>
-                    <p className="text-xs text-slate-500">
-                      {pdfToolMode === 'organize' ? 'Arraste as miniaturas para reorganizar a ordem.' : pdfToolMode === 'rotate' ? 'Use as setas de rotação em cada página.' : 'Marque as páginas que deseja excluir e confirme.'}
+                    <p className="text-xs text-slate-400 mt-0.5">
+                      {pdfToolMode === 'organize' ? 'Arraste as miniaturas para reordenar.' : pdfToolMode === 'rotate' ? 'Use as setas em cada página para girar.' : 'Selecione as páginas que deseja remover.'}
                     </p>
                   </div>
-                  <label className="hidden sm:flex items-center gap-2 text-xs text-slate-600 cursor-pointer">
+                  <label className="hidden sm:flex items-center gap-2 text-xs text-slate-600 cursor-pointer select-none">
                     <input type="checkbox" checked={pdfToolSaveAsCopy} onChange={e => setPdfToolSaveAsCopy(e.target.checked)} className="w-3.5 h-3.5 rounded border-slate-300 text-red-500 focus:ring-red-400" />
                     Salvar como cópia
                   </label>
                 </div>
 
-                <div className="flex-1 min-h-0 overflow-auto p-4 sm:p-5">
+                {/* Page grid */}
+                <div className="flex-1 min-h-0 overflow-auto p-5">
                   {pdfToolPreviewUrl && selectedPdfToolFile ? (
                     <Document
                       key={`editor-${selectedPdfToolFile.id}-${pdfToolPreviewUrl}`}
                       file={pdfToolPreviewUrl}
-                      loading={<div className="py-12 text-center text-sm text-slate-400">Carregando PDF…</div>}
-                      error={<div className="py-12 text-center text-sm text-slate-400">Preview indisponível.</div>}
+                      loading={<div className="py-12 text-center text-sm text-slate-400"><Loader2 className="w-5 h-5 animate-spin mx-auto mb-2 text-slate-300" />Carregando PDF…</div>}
+                      error={<div className="py-12 text-center text-sm text-red-400">Erro ao carregar o PDF.</div>}
                       onLoadSuccess={() => setPdfToolEditorReady(true)}
                       onLoadError={() => setPdfToolEditorReady(false)}
                     >
@@ -8468,40 +8549,47 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
                               const sortableId = `${page.sourceIndex}-${index}`;
                               return (
                                 <SortablePdfPageCard key={sortableId} id={sortableId}>
-                                  <div className={`rounded-2xl border bg-white transition-all cursor-pointer hover:-translate-y-0.5 ${selected ? 'border-red-400 shadow-[0_0_0_3px_rgba(239,68,68,0.12)]' : 'border-slate-200 hover:border-slate-300 hover:shadow-md'}`}>
-                                    {/* Page header */}
+                                  <div
+                                    onClick={() => togglePdfPageSelection(index)}
+                                    className={`rounded-2xl border bg-white transition-all cursor-pointer group hover:shadow-md ${selected ? 'border-red-400 shadow-[0_0_0_3px_rgba(239,68,68,0.10)]' : 'border-slate-200 hover:border-slate-300'}`}
+                                  >
+                                    {/* Card header */}
                                     <div className="flex items-center justify-between px-3 pt-3 pb-2">
-                                      <button
-                                        type="button"
-                                        onClick={() => togglePdfPageSelection(index)}
-                                        className={`w-5 h-5 rounded-full border-2 flex items-center justify-center transition-all ${selected ? 'bg-red-500 border-red-500' : 'border-slate-300 hover:border-red-400'}`}
-                                      >
+                                      <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center transition-all flex-shrink-0 ${selected ? 'bg-red-500 border-red-500' : 'border-slate-300 group-hover:border-red-300'}`}>
                                         {selected && <svg viewBox="0 0 8 6" className="w-2 h-2" fill="none" stroke="white" strokeWidth="2"><path d="M1 3l2 2 4-4"/></svg>}
-                                      </button>
+                                      </div>
                                       <span className={`text-[10px] font-bold ${selected ? 'text-red-600' : 'text-slate-400'}`}>Pág. {index + 1}</span>
                                       {pdfToolMode === 'organize' && <GripVertical className="w-4 h-4 text-slate-300" />}
                                     </div>
-
-                                    {/* Page preview */}
-                                    <div className="mx-3 mb-3 rounded-xl overflow-hidden bg-slate-50 flex items-center justify-center" style={{ minHeight: 160 }}>
+                                    {/* Page thumbnail */}
+                                    <div className="mx-3 mb-3 rounded-xl overflow-hidden bg-slate-50 flex items-center justify-center" style={{ minHeight: 150 }}>
                                       <Page
                                         key={`editor-page-${selectedPdfToolFile.id}-${page.sourceIndex}-${index}-${page.rotation}`}
                                         pageNumber={page.sourceIndex + 1}
-                                        width={140}
+                                        width={130}
                                         rotate={page.rotation}
                                         renderTextLayer={false}
                                         renderAnnotationLayer={false}
                                       />
                                     </div>
-
-                                    {/* Page footer */}
-                                    <div className="px-3 pb-3 flex items-center justify-between gap-1">
-                                      <span className="text-[10px] text-slate-400">{page.rotation}°</span>
+                                    {/* Card footer */}
+                                    <div className="px-3 pb-3 flex items-center justify-between gap-1" onClick={e => e.stopPropagation()}>
+                                      <span className="text-[10px] text-slate-400 tabular-nums">{page.rotation !== 0 ? `${page.rotation}°` : ''}</span>
                                       <div className="flex items-center gap-1">
-                                        <button type="button" onClick={() => rotateSinglePdfPage(index, -90)} className="w-7 h-7 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 flex items-center justify-center transition"><RotateCcw className="w-3.5 h-3.5 text-slate-500" /></button>
-                                        <button type="button" onClick={() => rotateSinglePdfPage(index, 90)} className="w-7 h-7 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 flex items-center justify-center transition"><RotateCw className="w-3.5 h-3.5 text-slate-500" /></button>
+                                        <button type="button" onClick={() => rotateSinglePdfPage(index, -90)} title="Girar esquerda"
+                                          className="w-7 h-7 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 flex items-center justify-center transition">
+                                          <RotateCcw className="w-3.5 h-3.5 text-slate-500" />
+                                        </button>
+                                        <button type="button" onClick={() => rotateSinglePdfPage(index, 90)} title="Girar direita"
+                                          className="w-7 h-7 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 flex items-center justify-center transition">
+                                          <RotateCw className="w-3.5 h-3.5 text-slate-500" />
+                                        </button>
                                         {pdfToolMode === 'remove' && (
-                                          <button type="button" onClick={() => { setSelectedPdfPageIndexes([index]); setTimeout(() => removeSelectedPdfPages(), 0); }} className="w-7 h-7 rounded-lg border border-red-200 bg-red-50 hover:bg-red-100 flex items-center justify-center transition"><Trash2 className="w-3.5 h-3.5 text-red-500" /></button>
+                                          <button type="button" title="Remover esta página"
+                                            onClick={() => { setSelectedPdfPageIndexes([index]); setTimeout(() => removeSelectedPdfPages(), 0); }}
+                                            className="w-7 h-7 rounded-lg border border-red-200 bg-red-50 hover:bg-red-100 flex items-center justify-center transition">
+                                            <Trash2 className="w-3.5 h-3.5 text-red-500" />
+                                          </button>
                                         )}
                                       </div>
                                     </div>
@@ -8514,28 +8602,38 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
                       </DndContext>
                     </Document>
                   ) : (
-                    <div className="h-full flex items-center justify-center text-slate-400">Carregando…</div>
+                    <div className="h-full flex flex-col items-center justify-center gap-3 text-slate-400">
+                      <Loader2 className="w-6 h-6 animate-spin text-slate-300" />
+                      <span className="text-sm">Carregando…</span>
+                    </div>
                   )}
                 </div>
 
-                {/* Footer */}
+                {/* Footer bar */}
                 <div className="border-t border-slate-200 bg-white px-5 py-3 flex items-center justify-between gap-3 flex-shrink-0">
                   <div className="flex items-center gap-3">
-                    <span className="text-sm text-slate-500 tabular-nums">{selectedPdfPageIndexes.length} selecionada{selectedPdfPageIndexes.length !== 1 ? 's' : ''} de {pdfToolPages.length}</span>
+                    <span className="text-sm text-slate-400 tabular-nums">
+                      {selectedPdfPageIndexes.length > 0
+                        ? <><span className="font-semibold text-slate-700">{selectedPdfPageIndexes.length}</span> de {pdfToolPages.length} selecionada{selectedPdfPageIndexes.length !== 1 ? 's' : ''}</>
+                        : <>{pdfToolPages.length} página{pdfToolPages.length !== 1 ? 's' : ''}</>
+                      }
+                    </span>
                     {pdfToolMode === 'remove' && selectedPdfPageIndexes.length > 0 && (
-                      <button onClick={removeSelectedPdfPages} className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-red-200 bg-red-50 text-xs font-medium text-red-700 hover:bg-red-100 transition">
+                      <button onClick={removeSelectedPdfPages} className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-red-200 bg-red-50 text-xs font-semibold text-red-700 hover:bg-red-100 transition">
                         <Trash2 className="w-3.5 h-3.5" /> Remover {selectedPdfPageIndexes.length}
                       </button>
                     )}
                   </div>
                   <div className="flex items-center gap-2">
-                    <button onClick={closePdfToolsModal} className="px-4 py-2 rounded-xl border border-slate-200 bg-white text-sm font-medium text-slate-700 hover:bg-slate-50 transition">Fechar</button>
+                    <button onClick={closePdfToolsModal} className="px-4 py-2 rounded-xl border border-slate-200 bg-white text-sm font-medium text-slate-700 hover:bg-slate-50 transition">
+                      Fechar
+                    </button>
                     <button
                       onClick={savePdfToolChanges}
                       disabled={pdfToolSaving}
-                      className="px-5 py-2 rounded-xl bg-red-500 text-white text-sm font-semibold hover:bg-red-600 disabled:opacity-60 transition flex items-center gap-2"
+                      className="px-5 py-2 rounded-xl bg-red-500 text-white text-sm font-semibold hover:bg-red-600 disabled:opacity-60 transition flex items-center gap-2 shadow-sm shadow-red-200"
                     >
-                      {pdfToolSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
+                      {pdfToolSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <svg viewBox="0 0 16 16" className="w-4 h-4 fill-white"><path d="M2 2h8l4 4v8H2V2zm6 10a2 2 0 100-4 2 2 0 000 4zm1-8H4v3h5V4z"/></svg>}
                       {pdfToolSaving ? 'Salvando…' : 'Salvar PDF'}
                     </button>
                   </div>

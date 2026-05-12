@@ -47,6 +47,7 @@ import { matchesNormalizedSearch } from '../utils/search';
    ============================================================================ */
 
 const VERSION_CODENAMES: Record<string, { name: string; emoji: string }> = {
+  '1.10.035': { name: 'Café Hub Premium', emoji: '📄' },
   '1.10.034': { name: 'Café Loading Profissional', emoji: '⏳' },
   '1.10.030': { name: 'Café Seleção Premium', emoji: '✨' },
   '1.10.029': { name: 'Café Menu Inteligente', emoji: '🎯' },
@@ -749,6 +750,38 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
 };
 
 const releases: ReleaseNote[] = [
+  {
+    version: '1.10.035',
+    date: '12/05/2026',
+    summary: 'Cloud: Hub PDF completamente redesenhado — interface premium com sidebar de ferramentas organizada, header escuro, SubToolPanel consistente e seleção visual melhorada.',
+    modules: [
+      {
+        moduleId: 'cloud',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Hub PDF: redesign completo da interface',
+            description: 'Modal do Hub PDF inteiramente reconstruído. Header dark (slate-900) com ícone PDF vermelho, nome do arquivo e chips de metadados (páginas, tamanho, selecionados). Sidebar esquerda organizada em 3 seções (Editar / Gerar / Páginas) com linhas de ferramentas mostrando ícone colorido, nome e descrição breve. Substituição da grade de cards pelo layout de lista vertical.',
+          },
+          {
+            type: 'improvement',
+            title: 'Hub PDF: SubToolPanel com layout consistente',
+            description: 'Todas as ferramentas (Marca d\'água, Numeração de páginas, Dividir PDF) agora usam um painel padronizado com área de formulário à esquerda e hint de pré-visualização à direita. Botão de aplicar fixo no rodapé com estado desabilitado/habilitado.',
+          },
+          {
+            type: 'improvement',
+            title: 'Hub PDF: seleção de páginas com badge visual',
+            description: 'Cada thumbnail de página agora exibe um indicador circular no canto superior direito. Quando selecionada, o círculo fica vermelho com checkmark branco. Quando não selecionada, exibe contorno neutro. Fundo do painel de thumbnails em #f8f9fb para melhor contraste.',
+          },
+          {
+            type: 'improvement',
+            title: 'Hub PDF: ações rápidas no rodapé da sidebar',
+            description: 'Rodapé da sidebar agrupa as ações de Download, Enviar para assinatura e Copiar link em botões compactos com ícones, separados por um divisor do conteúdo principal.',
+          },
+        ],
+      },
+    ],
+  },
   {
     version: '1.10.034',
     date: '11/05/2026',
