@@ -47,6 +47,7 @@ import { matchesNormalizedSearch } from '../utils/search';
    ============================================================================ */
 
 const VERSION_CODENAMES: Record<string, { name: string; emoji: string }> = {
+  '1.10.042': { name: 'Café Cor Persistente', emoji: '🎨' },
   '1.10.041': { name: 'Café Duplicata Inteligente', emoji: '🔍' },
   '1.10.040': { name: 'Café IA Sênior', emoji: '🧠' },
   '1.10.039': { name: 'Café Industrial', emoji: '⚙️' },
@@ -756,6 +757,28 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
 };
 
 const releases: ReleaseNote[] = [
+  {
+    version: '1.10.042',
+    date: '12/05/2026',
+    summary: 'Cloud: cor da pasta agora é salva no banco de dados (Supabase) em vez de localStorage. Persiste entre navegadores, dispositivos e sessões.',
+    modules: [
+      {
+        moduleId: 'cloud',
+        changes: [
+          {
+            type: 'fix',
+            title: 'Cor da pasta persistente no banco de dados',
+            description: 'A cor personalizada das pastas era salva apenas no localStorage do navegador, o que fazia a configuração ser perdida ao trocar de navegador, limpar cache ou acessar de outro dispositivo. Agora a cor é salva diretamente na coluna "color" da tabela cloud_folders no Supabase.',
+          },
+          {
+            type: 'improvement',
+            title: 'Campo color adicionado ao tipo CloudFolder',
+            description: 'Novo campo opcional color?: string | null nos tipos CloudFolder, CreateCloudFolderDTO e UpdateCloudFolderDTO para suportar persistência da cor no banco.',
+          },
+        ],
+      },
+    ],
+  },
   {
     version: '1.10.041',
     date: '12/05/2026',

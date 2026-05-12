@@ -322,7 +322,6 @@ const CLOUD_FAVORITE_FOLDER_IDS_STORAGE_KEY = 'cloud-favorite-folder-ids-v1';
 const CLOUD_FAVORITE_FILE_IDS_STORAGE_KEY = 'cloud-favorite-file-ids-v1';
 const CLOUD_RECENT_FILE_IDS_STORAGE_KEY = 'cloud-recent-file-ids-v1';
 const CLOUD_CARD_SIZE_STORAGE_KEY = 'cloud-card-size-v1';
-const CLOUD_FOLDER_COLORS_STORAGE_KEY = 'cloud-folder-colors-v1';
 const CLOUD_SORT_STORAGE_KEY = 'cloud-sort-v2';
 const CLOUD_ARCHIVED_FOLDER_ID = '__cloud_archived__';
 const CLOUD_TRASH_FOLDER_ID = '__cloud_trash__';
@@ -622,10 +621,7 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
   // Sort
   const [sortCol, setSortCol] = useState<CloudSortColumn>(() => getInitialSort().col);
   const [sortDir, setSortDirState] = useState<CloudSortDir>(() => getInitialSort().dir);
-  // Folder colors
-  const [folderColors, setFolderColors] = useState<Record<string, string>>(() => {
-    try { const s = localStorage.getItem(CLOUD_FOLDER_COLORS_STORAGE_KEY); return s ? JSON.parse(s) : {}; } catch { return {}; }
-  });
+  // Folder colors (persisted in DB via folder.color)
   const [folderColorPickerTarget, setFolderColorPickerTarget] = useState<string | null>(null);
   // Bulk ZIP download for selection
   const [downloadingSelectionZip, setDownloadingSelectionZip] = useState(false);
@@ -690,9 +686,7 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
     });
   }, [contextMenu]);
 
-  useEffect(() => {
-    try { localStorage.setItem(CLOUD_FOLDER_COLORS_STORAGE_KEY, JSON.stringify(folderColors)); } catch { /* ignore */ }
-  }, [folderColors]);
+  // (folder colors are now persisted in DB — no localStorage sync needed)
 
   useEffect(() => {
     return () => {
@@ -844,13 +838,15 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
     else { setSortCol(col); setSortDirState('asc'); }
   };
 
-  // ── Folder colors ──────────────────────────────────────────────────────
-  const setFolderColor = (folderId: string, color: string) => {
-    setFolderColors(prev => {
-      const next = { ...prev };
-      if (color) next[folderId] = color; else delete next[folderId];
-      return next;
-    });
+  // ── Folder colors (persisted in Supabase) ──────────────────────────────
+  const setFolderColor = async (folderId: string, color: string) => {
+    try {
+      await cloudService.updateFolder(folderId, { color: color || null });
+      // Update local state so UI reflects immediately
+      setAllFolders(prev => prev.map(f => f.id === folderId ? { ...f, color: color || null } : f));
+    } catch (err: any) {
+      toast.error('Cloud', err.message || 'Erro ao salvar cor da pasta.');
+    }
     setFolderColorPickerTarget(null);
   };
 
@@ -5374,8 +5370,8 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
                         </div>
                         <div className="flex items-center gap-3 min-w-0">
                           {/* Folder icon with color support */}
-                          <div className="w-8 h-8 rounded-[10px] flex items-center justify-center flex-shrink-0 shadow-[inset_0_0_0_1px_rgba(0,0,0,0.04)]" style={{ backgroundColor: folderColors[folder.id] ? `${folderColors[folder.id]}22` : '#fef3c7' }}>
-                            <Folder className="w-4 h-4" style={{ color: folderColors[folder.id] || '#d97706' }} />
+                          <div className="w-8 h-8 rounded-[10px] flex items-center justify-center flex-shrink-0 shadow-[inset_0_0_0_1px_rgba(0,0,0,0.04)]" style={{ backgroundColor: folder.color ? `${folder.color}22` : '#fef3c7' }}>
+                            <Folder className="w-4 h-4" style={{ color: folder.color || '#d97706' }} />
                           </div>
                           <div className="min-w-0 flex-1">
                             {inlineRenameTarget?.type === 'folder' && inlineRenameTarget.id === folder.id ? (
@@ -5633,9 +5629,9 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
                       const isFavorite = favoriteFolderIds.includes(folder.id);
 
                       // folder accent colors
-                      const folderAccent = folderColors[folder.id] || '#d97706';
-                      const folderBg = folderColors[folder.id] ? `${folderColors[folder.id]}18` : '#fef9ee';
-                      const folderBorder = folderColors[folder.id] ? `${folderColors[folder.id]}30` : 'rgba(251,191,36,0.25)';
+                      const folderAccent = folder.color || '#d97706';
+                      const folderBg = folder.color ? `${folder.color}18` : '#fef9ee';
+                      const folderBorder = folder.color ? `${folder.color}30` : 'rgba(251,191,36,0.25)';
 
                       return (
                         <div
@@ -6857,7 +6853,7 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
               onClick={() => setFolderColorPickerTarget(prev => prev === selectedContextFolder.id ? null : selectedContextFolder.id)}
               className="w-full px-3 py-2.5 text-left text-sm text-slate-700 hover:bg-slate-50 transition flex items-center gap-2"
             >
-              <Paintbrush className="w-4 h-4" style={{ color: folderColors[selectedContextFolder.id] || '#94a3b8' }} />
+              <Paintbrush className="w-4 h-4" style={{ color: selectedContextFolder.color || '#94a3b8' }} />
               Cor da pasta
             </button>
             {folderColorPickerTarget === selectedContextFolder.id && (
@@ -6869,7 +6865,7 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
                       type="button"
                       title={preset.name}
                       onClick={() => { setFolderColor(selectedContextFolder.id, preset.value); setContextMenu(null); }}
-                      className={`w-7 h-7 rounded-lg border-2 transition hover:scale-110 ${folderColors[selectedContextFolder.id] === preset.value || (!preset.value && !folderColors[selectedContextFolder.id]) ? 'border-slate-600 scale-110' : 'border-transparent'}`}
+                      className={`w-7 h-7 rounded-lg border-2 transition hover:scale-110 ${selectedContextFolder.color === preset.value || (!preset.value && !selectedContextFolder.color) ? 'border-slate-600 scale-110' : 'border-transparent'}`}
                       style={{ backgroundColor: preset.value || '#fef3c7' }}
                     />
                   ))}
