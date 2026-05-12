@@ -1,5 +1,5 @@
-import React, { useState, useEffect, useMemo } from 'react';
-import { Plus, Users, User, Building2, ShieldAlert, Search, Filter, Download, Upload, Loader2, Edit, Trash2, AlertTriangle, CheckCircle2, X, Phone, Mail, FileText, Copy, FilePlus, UserPlus, Calendar, ChevronRight, Pencil, Clock } from 'lucide-react';
+import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
+import { Plus, Users, User, Building2, ShieldAlert, Search, Filter, Download, Upload, Loader2, Edit, Trash2, AlertTriangle, CheckCircle2, X, Phone, Mail, FileText, Copy, FilePlus, UserPlus, Calendar, ChevronRight, Pencil, Clock, Merge } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { clientService } from '../services/client.service';
 import type { Client, ClientFilters, CreateClientDTO } from '../types/client.types';
@@ -70,6 +70,16 @@ const ClientsModule: React.FC<ClientsModuleProps> = ({
   const [showFilters, setShowFilters] = useState<boolean>(false);
   const [bulkDeleteLoading, setBulkDeleteLoading] = useState(false);
   const [mergeLoading, setMergeLoading] = useState(false);
+
+  // Manual merge modal state
+  const [showManualMerge, setShowManualMerge] = useState(false);
+  const [manualMergeSearch, setManualMergeSearch] = useState('');
+  const [manualMergeResults, setManualMergeResults] = useState<Client[]>([]);
+  const [manualMergeSearching, setManualMergeSearching] = useState(false);
+  const [manualMergeSelected, setManualMergeSelected] = useState<Client[]>([]);
+  const [manualMergePrimaryId, setManualMergePrimaryId] = useState<string>('');
+  const [manualMergeLoading, setManualMergeLoading] = useState(false);
+  const manualMergeSearchRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const {
     selectionMode,
@@ -290,6 +300,64 @@ const ClientsModule: React.FC<ClientsModuleProps> = ({
 
   const handleMergeSelectedDuplicates = async () => {
     await executeMergeGroups(selectedDuplicateGroups, 'mesclar os selecionados de');
+  };
+
+  // Manual merge helpers
+  const openManualMerge = () => {
+    setManualMergeSearch('');
+    setManualMergeResults([]);
+    setManualMergeSelected([]);
+    setManualMergePrimaryId('');
+    setShowManualMerge(true);
+  };
+
+  const handleManualMergeSearchChange = useCallback((term: string) => {
+    setManualMergeSearch(term);
+    if (manualMergeSearchRef.current) clearTimeout(manualMergeSearchRef.current);
+    if (!term.trim()) { setManualMergeResults([]); return; }
+    setManualMergeSearching(true);
+    manualMergeSearchRef.current = setTimeout(async () => {
+      try {
+        const results = await clientService.searchClients(term.trim(), 20);
+        // Fetch full client objects so we have all fields for merge
+        const fullClients = await Promise.all(
+          results.map((r) => clientService.getClientById(r.id))
+        );
+        setManualMergeResults(fullClients.filter(Boolean) as Client[]);
+      } catch {
+        setManualMergeResults([]);
+      } finally {
+        setManualMergeSearching(false);
+      }
+    }, 300);
+  }, []);
+
+  const toggleManualMergeClient = (client: Client) => {
+    setManualMergeSelected((prev) => {
+      const exists = prev.find((c) => c.id === client.id);
+      const next = exists ? prev.filter((c) => c.id !== client.id) : [...prev, client];
+      // Auto-assign primary if not yet set or removed
+      if (!manualMergePrimaryId || !next.find((c) => c.id === manualMergePrimaryId)) {
+        setManualMergePrimaryId(next[0]?.id ?? '');
+      }
+      return next;
+    });
+  };
+
+  const executeManualMerge = async () => {
+    if (manualMergeSelected.length < 2 || !manualMergePrimaryId) return;
+    const sourceIds = manualMergeSelected.filter((c) => c.id !== manualMergePrimaryId).map((c) => c.id);
+    if (sourceIds.length === 0) return;
+    setManualMergeLoading(true);
+    try {
+      await clientService.mergeClients(manualMergePrimaryId, sourceIds);
+      setShowManualMerge(false);
+      await loadClients();
+    } catch (err: any) {
+      alert(err?.message || 'Erro ao mesclar contatos');
+    } finally {
+      setManualMergeLoading(false);
+    }
   };
 
   const deleteSelectedClients = async () => {
@@ -546,7 +614,7 @@ const ClientsModule: React.FC<ClientsModuleProps> = ({
                     <div>
                       <p className="font-semibold text-sm">Aviso: {duplicateGroups.length} grupo(s) de contatos possivelmente duplicados</p>
                       <p className="text-xs mt-1">
-                        Encontramos {duplicateClientIds.size} contato(s) com indícios de se tratar da mesma pessoa. O sistema considera duplicado quando há <strong>CPF igual</strong> ou combinação de <strong>nome igual</strong> e <strong>telefone igual</strong>.
+                        Encontramos {duplicateClientIds.size} contato(s) com indícios de se tratar da mesma pessoa. O sistema detecta por <strong>CPF igual</strong>, <strong>e-mail igual</strong>, <strong>nome + telefone</strong> ou <strong>nome idêntico</strong>.
                       </p>
                     </div>
                   </div>
@@ -583,11 +651,20 @@ const ClientsModule: React.FC<ClientsModuleProps> = ({
                     const extraCount = group.clients.length - names.length;
                     return (
                       <div key={group.key} className="rounded-lg border border-red-200 bg-white/70 px-3 py-2">
-                        <p className="text-xs font-semibold text-red-900">
-                          {names.join(', ')}{extraCount > 0 ? ` +${extraCount}` : ''}
-                        </p>
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <p className="text-xs font-semibold text-red-900 flex-1 min-w-0 truncate">
+                            {names.join(', ')}{extraCount > 0 ? ` +${extraCount}` : ''}
+                          </p>
+                          <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded-full flex-shrink-0 ${
+                            group.confidence === 'alta' ? 'bg-red-100 text-red-700' :
+                            group.confidence === 'media' ? 'bg-amber-100 text-amber-700' :
+                            'bg-slate-100 text-slate-600'
+                          }`}>
+                            {group.confidence === 'alta' ? 'Alta' : group.confidence === 'media' ? 'Média' : 'Baixa'} confiança
+                          </span>
+                        </div>
                         <p className="text-[11px] text-red-700 mt-1">
-                          Motivo: {group.reasons.join(', ')}.
+                          {group.reasons.join(', ')}.
                         </p>
                       </div>
                     );
@@ -652,6 +729,16 @@ const ClientsModule: React.FC<ClientsModuleProps> = ({
               >
                 <Plus className="w-4 h-4" />
                 Novo Cliente
+              </button>
+
+              <button
+                type="button"
+                onClick={openManualMerge}
+                className="inline-flex items-center gap-1.5 bg-white border border-slate-200 hover:bg-slate-50 transition-colors px-3 py-1.5 rounded-lg text-xs font-medium text-slate-700 shadow-sm"
+                title="Mesclar contatos manualmente"
+              >
+                <Merge className="w-4 h-4" />
+                Mesclar
               </button>
 
               <button
@@ -866,6 +953,179 @@ const ClientsModule: React.FC<ClientsModuleProps> = ({
             />
           </div>
         </ClientModal>
+      )}
+
+      {/* Manual Merge Modal */}
+      {showManualMerge && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm">
+          <div className="bg-white rounded-xl shadow-2xl w-full max-w-2xl flex flex-col max-h-[90vh]">
+            {/* Header */}
+            <div className="flex items-center justify-between px-5 py-4 border-b border-slate-200">
+              <div>
+                <h2 className="text-base font-semibold text-slate-900 flex items-center gap-2">
+                  <Merge className="w-4 h-4 text-orange-500" />
+                  Mesclar Contatos Manualmente
+                </h2>
+                <p className="text-xs text-slate-500 mt-0.5">Busque e selecione os contatos a serem mesclados. O mais recente será o principal por padrão.</p>
+              </div>
+              <button
+                onClick={() => setShowManualMerge(false)}
+                className="text-slate-400 hover:text-slate-600 transition p-1 rounded-lg hover:bg-slate-100"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Search */}
+            <div className="px-5 pt-4 pb-2">
+              <div className="relative">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                {manualMergeSearching && (
+                  <Loader2 className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 animate-spin" />
+                )}
+                <input
+                  type="text"
+                  value={manualMergeSearch}
+                  onChange={(e) => handleManualMergeSearchChange(e.target.value)}
+                  placeholder="Digite o nome do contato para buscar..."
+                  className="w-full pl-9 pr-9 py-2 rounded-lg border border-slate-200 text-sm text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-orange-400 focus:border-transparent"
+                  autoFocus
+                />
+              </div>
+            </div>
+
+            {/* Results + Selected split */}
+            <div className="flex-1 overflow-hidden flex flex-col gap-0 px-5 pb-2">
+              {/* Search results */}
+              {manualMergeResults.length > 0 && (
+                <div className="mt-2">
+                  <p className="text-[11px] font-semibold text-slate-500 uppercase mb-1.5">Resultados da busca</p>
+                  <div className="border border-slate-200 rounded-lg overflow-hidden divide-y divide-slate-100 max-h-52 overflow-y-auto">
+                    {manualMergeResults.map((client) => {
+                      const isSelected = manualMergeSelected.some((c) => c.id === client.id);
+                      return (
+                        <button
+                          key={client.id}
+                          type="button"
+                          onClick={() => toggleManualMergeClient(client)}
+                          className={`w-full flex items-center gap-3 px-3 py-2.5 text-left transition ${
+                            isSelected ? 'bg-orange-50' : 'hover:bg-slate-50'
+                          }`}
+                        >
+                          <div className={`w-5 h-5 rounded border-2 flex items-center justify-center flex-shrink-0 transition ${
+                            isSelected ? 'border-orange-500 bg-orange-500' : 'border-slate-300'
+                          }`}>
+                            {isSelected && <CheckCircle2 className="w-3.5 h-3.5 text-white" />}
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <p className="text-sm font-medium text-slate-800 truncate">{client.full_name}</p>
+                            <p className="text-xs text-slate-500 truncate">
+                              {[client.cpf_cnpj, client.email, client.phone || client.mobile].filter(Boolean).join(' · ')}
+                            </p>
+                          </div>
+                          <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium flex-shrink-0 ${
+                            client.status === 'ativo' ? 'bg-emerald-50 text-emerald-700' :
+                            client.status === 'inativo' ? 'bg-slate-100 text-slate-500' :
+                            'bg-amber-50 text-amber-700'
+                          }`}>
+                            {client.status}
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
+              {/* Selected clients */}
+              {manualMergeSelected.length > 0 && (
+                <div className="mt-3">
+                  <p className="text-[11px] font-semibold text-slate-500 uppercase mb-1.5">
+                    Selecionados ({manualMergeSelected.length}) — marque quem será o contato principal
+                  </p>
+                  <div className="border border-slate-200 rounded-lg overflow-hidden divide-y divide-slate-100">
+                    {manualMergeSelected.map((client) => {
+                      const isPrimary = client.id === manualMergePrimaryId;
+                      return (
+                        <div key={client.id} className={`flex items-center gap-3 px-3 py-2.5 ${isPrimary ? 'bg-orange-50' : 'bg-white'}`}>
+                          <button
+                            type="button"
+                            onClick={() => setManualMergePrimaryId(client.id)}
+                            className={`w-5 h-5 rounded-full border-2 flex items-center justify-center flex-shrink-0 transition ${
+                              isPrimary ? 'border-orange-500 bg-orange-500' : 'border-slate-300 hover:border-orange-300'
+                            }`}
+                            title="Definir como contato principal"
+                          >
+                            {isPrimary && <div className="w-2 h-2 rounded-full bg-white" />}
+                          </button>
+                          <div className="flex-1 min-w-0">
+                            <p className="text-sm font-medium text-slate-800 truncate">
+                              {client.full_name}
+                              {isPrimary && <span className="ml-2 text-[10px] font-semibold text-orange-600 bg-orange-100 px-1.5 py-0.5 rounded-full">principal</span>}
+                            </p>
+                            <p className="text-xs text-slate-500 truncate">
+                              {[client.cpf_cnpj, client.email, client.phone || client.mobile].filter(Boolean).join(' · ') || 'Sem dados de contato'}
+                            </p>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => toggleManualMergeClient(client)}
+                            className="text-slate-400 hover:text-red-500 transition p-1 rounded"
+                            title="Remover da seleção"
+                          >
+                            <X className="w-4 h-4" />
+                          </button>
+                        </div>
+                      );
+                    })}
+                  </div>
+                  {manualMergeSelected.length >= 2 && (
+                    <p className="text-xs text-slate-500 mt-2 leading-relaxed">
+                      Os dados do contato principal serão complementados com informações dos demais (prioridade: mais recente). Os contatos secundários serão inativados.
+                    </p>
+                  )}
+                </div>
+              )}
+
+              {manualMergeResults.length === 0 && manualMergeSearch.trim() && !manualMergeSearching && (
+                <p className="text-sm text-slate-400 text-center py-6">Nenhum contato encontrado para "{manualMergeSearch}"</p>
+              )}
+              {!manualMergeSearch.trim() && manualMergeSelected.length === 0 && (
+                <p className="text-sm text-slate-400 text-center py-6">Digite o nome para buscar contatos a mesclar</p>
+              )}
+            </div>
+
+            {/* Footer */}
+            <div className="px-5 py-4 border-t border-slate-200 flex items-center justify-between gap-3">
+              <p className="text-xs text-slate-500">
+                {manualMergeSelected.length < 2
+                  ? 'Selecione ao menos 2 contatos'
+                  : `${manualMergeSelected.length} contatos selecionados`}
+              </p>
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => setShowManualMerge(false)}
+                  className="px-4 py-2 rounded-lg border border-slate-200 text-sm font-medium text-slate-600 hover:bg-slate-50 transition"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="button"
+                  onClick={executeManualMerge}
+                  disabled={manualMergeSelected.length < 2 || !manualMergePrimaryId || manualMergeLoading}
+                  className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-orange-500 hover:bg-orange-600 text-white text-sm font-semibold transition disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {manualMergeLoading ? (
+                    <><Loader2 className="w-4 h-4 animate-spin" /> Mesclando...</>
+                  ) : (
+                    <><Merge className="w-4 h-4" /> Mesclar contatos</>
+                  )}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
       )}
 
       {/* Details Modal */}

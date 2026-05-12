@@ -53,9 +53,9 @@ export class ClientService {
         query = query.eq('client_type', filters.client_type);
       }
 
-      // Ordenação
-      const sortAscending = filters?.sort_order === 'oldest';
-      query = query.order('full_name', { ascending: !sortAscending ? true : true });
+      // Busca sem ordenação no banco — vamos ordenar client-side para suportar
+      // prioridade de status (ativo > suspenso > inativo) + nome alfabético.
+      query = query.order('full_name', { ascending: true });
 
       const { data, error } = await query;
 
@@ -64,13 +64,30 @@ export class ClientService {
         throw new Error(`Erro ao listar clientes: ${error.message}`);
       }
 
-      const rows = (data as Client[]) || [];
-      if (!filters?.search) return rows;
+      let rows = (data as Client[]) || [];
 
-      const normalizedSearch = normalizeSearchText(filters.search);
-      if (!normalizedSearch) return rows;
+      // Filtro de texto client-side (accent-insensitive)
+      if (filters?.search) {
+        const normalizedSearch = normalizeSearchText(filters.search);
+        if (normalizedSearch) {
+          rows = rows.filter((client) =>
+            matchesNormalizedSearch(normalizedSearch, [client.full_name, client.cpf_cnpj, client.email])
+          );
+        }
+      }
 
-      return rows.filter((client) => matchesNormalizedSearch(normalizedSearch, [client.full_name, client.cpf_cnpj, client.email]));
+      // Ordenação: ativo > suspenso > inativo, depois nome A-Z (ou Z-A se oldest)
+      const statusOrder = (s: string) => (s === 'ativo' ? 0 : s === 'suspenso' ? 1 : 2);
+      const nameAsc = filters?.sort_order !== 'oldest';
+      rows.sort((a, b) => {
+        const statusDiff = statusOrder(a.status) - statusOrder(b.status);
+        if (statusDiff !== 0) return statusDiff;
+        const nameA = (a.full_name || '').toLowerCase();
+        const nameB = (b.full_name || '').toLowerCase();
+        return nameAsc ? nameA.localeCompare(nameB) : nameB.localeCompare(nameA);
+      });
+
+      return rows;
     } catch (error) {
       console.error('Erro ao listar clientes:', error);
       throw error;
@@ -183,23 +200,33 @@ export class ClientService {
         throw new Error('Nenhum contato duplicado encontrado para mesclagem');
       }
 
+      // Sort all clients by recency (most recently updated first).
+      // This means: for any field where multiple records have data, we pick
+      // the value from the most recently updated record (recency wins conflicts).
+      // For fields only one record has, it gets filled in regardless (complementary merge).
+      const allClients = [target, ...sources].sort(
+        (a, b) =>
+          new Date(b.updated_at || b.created_at || '0').getTime() -
+          new Date(a.updated_at || a.created_at || '0').getTime()
+      );
+
       const mergedPayload: Partial<CreateClientDTO> = {};
 
       for (const field of clientMergeFields) {
-        const currentValue = target[field];
-        if (!isBlankValue(currentValue)) continue;
-
-        for (const source of sources) {
-          const candidate = source[field];
+        // Skip notes — handled separately below
+        if (field === 'notes') continue;
+        for (const client of allClients) {
+          const candidate = client[field];
           if (!isBlankValue(candidate)) {
             mergedPayload[field] = candidate as any;
-            break;
+            break; // first non-blank from recency-sorted list wins
           }
         }
       }
 
-      const notes = [target.notes, ...sources.map((source) => source.notes).filter(Boolean)]
-        .map((value) => String(value || '').trim())
+      // Merge notes: concatenate all unique non-blank notes separated by " | "
+      const notes = allClients
+        .map((c) => String(c.notes || '').trim())
         .filter(Boolean);
       const uniqueNotes = Array.from(new Set(notes));
       if (uniqueNotes.length > 0) {
@@ -210,6 +237,29 @@ export class ClientService {
         mergedPayload.status = target.status || 'ativo';
       }
 
+      // ── Step 1: clear unique-constrained fields on ALL sources FIRST ──────────
+      // This must happen before we update the target, because the target may
+      // be receiving a cpf_cnpj / email that is currently held by a source.
+      // Postgres would throw a unique violation if both rows hold the same value
+      // even briefly.
+      for (const source of sources) {
+        const { error: clearError } = await supabase
+          .from(this.tableName)
+          .update({
+            cpf_cnpj: null,
+            email: null,
+            phone: null,
+            mobile: null,
+            updated_at: new Date().toISOString(),
+          })
+          .eq('id', source.id);
+
+        if (clearError) {
+          throw new Error(`Erro ao limpar campos do contato duplicado: ${clearError.message}`);
+        }
+      }
+
+      // ── Step 2: update the target with the merged data ────────────────────────
       const { data: updatedTarget, error: updateError } = await supabase
         .from(this.tableName)
         .update({
@@ -224,6 +274,7 @@ export class ClientService {
         throw new Error(`Erro ao atualizar cliente principal: ${updateError.message}`);
       }
 
+      // ── Step 3: inactivate sources and record the merge note ──────────────────
       for (const source of sources) {
         const mergeNote = `Mesclado com ${updatedTarget.full_name} (${updatedTarget.id}) em ${new Date().toLocaleString('pt-BR')}`;
         const sourceNotes = [source.notes, mergeNote]
@@ -235,10 +286,6 @@ export class ClientService {
           .from(this.tableName)
           .update({
             status: 'inativo',
-            cpf_cnpj: null,
-            email: null,
-            phone: null,
-            mobile: null,
             notes: sourceNotes,
             updated_at: new Date().toISOString(),
           })
@@ -269,6 +316,11 @@ export class ClientService {
    */
   async createClient(clientData: CreateClientDTO): Promise<Client> {
     try {
+      // Normalizar nome para maiúsculas
+      if (clientData.full_name) {
+        clientData = { ...clientData, full_name: clientData.full_name.toUpperCase() };
+      }
+
       // Validar se CPF/CNPJ já existe (se fornecido)
       if (clientData.cpf_cnpj) {
         const existing = await this.getClientByCpfCnpj(clientData.cpf_cnpj);
@@ -309,6 +361,11 @@ export class ClientService {
    */
   async updateClient(id: string, updates: Partial<CreateClientDTO>): Promise<Client> {
     try {
+      // Normalizar nome para maiúsculas
+      if (updates.full_name) {
+        updates = { ...updates, full_name: updates.full_name.toUpperCase() };
+      }
+
       // Verificar se o cliente existe
       const existing = await this.getClientById(id);
       if (!existing) {
@@ -403,6 +460,24 @@ export class ClientService {
     }
   }
 
+  /**
+   * Define ou remove a foto de perfil do cliente (path no Storage).
+   * Requer coluna photo_path na tabela clients.
+   */
+  async setClientPhoto(id: string, photoPath: string | null): Promise<void> {
+    const { error } = await supabase
+      .from(this.tableName)
+      .update({ photo_path: photoPath, updated_at: new Date().toISOString() })
+      .eq('id', id);
+
+    if (error) {
+      throw new Error(`Erro ao salvar foto do perfil: ${error.message}`);
+    }
+
+    localStorage.removeItem('crm-dashboard-cache');
+    events.emit(SYSTEM_EVENTS.CLIENTS_CHANGED, { action: 'update', id });
+  }
+
   async searchClients(
     query: string,
     limit: number = 8
@@ -413,12 +488,13 @@ export class ClientService {
     }
 
     try {
+      // Busca todos os clientes e filtra client-side com normalização de acentos.
+      // Não usamos ILIKE direto no Supabase porque PostgreSQL ILIKE é case-insensitive
+      // mas NÃO é accent-insensitive: "fabiola" não casa com "Fabíola" no banco.
       const { data, error } = await supabase
         .from(this.tableName)
         .select('id, full_name, email, phone, mobile, status, client_type')
-        .or(
-          `full_name.ilike.%${term}%,email.ilike.%${term}%,phone.ilike.%${term}%,mobile.ilike.%${term}%`
-        )
+        .neq('status', 'inativo')
         .order('full_name', { ascending: true });
 
       if (error) {

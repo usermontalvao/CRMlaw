@@ -205,6 +205,11 @@ const ClientForm: React.FC<ClientFormProps> = ({
       return;
     }
 
+    if (field === 'full_name') {
+      setFormData((prev) => ({ ...prev, full_name: (value as string).toUpperCase() }));
+      return;
+    }
+
     if (field === 'address_state') {
       const uf = (value as string).toUpperCase().slice(0, 2);
       setFormData((prev) => ({ ...prev, address_state: uf }));

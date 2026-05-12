@@ -286,18 +286,23 @@ class DjenLocalService {
         }
 
         console.log(`🔍 getClientMatch: não encontrado em cache, buscando no Supabase...`);
+        // Busca todos os clientes e filtra client-side com normalização de acentos.
+        // ILIKE do PostgreSQL não é accent-insensitive: "fabiola" ≠ "Fabíola".
         const { data, error } = await supabase
           .from('clients')
-          .select('id, full_name')
-          .ilike('full_name', `%${rawName.trim()}%`)
-          .limit(1);
+          .select('id, full_name');
 
         console.log(`👤 Supabase: data=${data?.length || 0} rows, error=${error || 'null'}`);
 
         if (!error && data && data.length > 0) {
-          clientMapByName.set(normalized, data[0] as Client);
-          console.log(`✅ getClientMatch: encontrado no Supabase (client_id=${data[0].id})`);
-          return data[0].id;
+          const match = (data as Array<{ id: string; full_name: string }>).find(
+            (c) => normalizeName(c.full_name) === normalized || normalizeName(c.full_name).includes(normalized)
+          );
+          if (match) {
+            clientMapByName.set(normalized, match as unknown as Client);
+            console.log(`✅ getClientMatch: encontrado no Supabase normalizado (client_id=${match.id})`);
+            return match.id;
+          }
         }
       }
 

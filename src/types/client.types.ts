@@ -38,7 +38,10 @@ export interface Client {
   // Informações Adicionais
   notes?: string;
   status: ClientStatus;
-  
+
+  // Foto de perfil (path no Supabase Storage, derivada da assinatura facial)
+  photo_path?: string | null;
+
   // Metadados
   created_at: string;
   updated_at: string;
@@ -67,6 +70,7 @@ export interface CreateClientDTO {
   address_zip_code?: string;
   notes?: string;
   status?: ClientStatus;
+  photo_path?: string | null;
 }
 
 export interface UpdateClientDTO extends Partial<CreateClientDTO> {

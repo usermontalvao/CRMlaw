@@ -14,6 +14,7 @@ import type { Agreement, Installment, PaymentMethod } from '../types/financial.t
 import type { Deadline } from '../types/deadline.types';
 import type { CalendarEvent } from '../types/calendar.types';
 import { signatureService } from '../services/signature.service';
+import { clientService } from '../services/client.service';
 import { pdfSignatureService } from '../services/pdfSignature.service';
 import { petitionEditorService } from '../services/petitionEditor.service';
 import { cloudService } from '../services/cloud.service';
@@ -344,6 +345,14 @@ const ClientDetails: React.FC<ClientDetailsProps> = ({
   const [signatureRequests, setSignatureRequests] = useState<SignatureRequestWithSigners[]>([]);
   const [signatureLoading, setSignatureLoading] = useState(false);
 
+  // ── Selfies from facial signatures
+  interface SelfieEntry { path: string; url: string; label: string; }
+  const [selfies, setSelfies] = useState<SelfieEntry[]>([]);
+  const [pinnedPath, setPinnedPath] = useState<string | null>(client.photo_path ?? null);
+  const [previewSelfie, setPreviewSelfie] = useState<SelfieEntry | null>(null);
+  const [selfiePickerOpen, setSelfiePickerOpen] = useState(false);
+  const [settingPhoto, setSettingPhoto] = useState(false);
+
   // ── Petitions
   const [clientPetitions, setClientPetitions] = useState<SavedPetition[]>([]);
   const [petitionsLoading, setPetitionsLoading] = useState(false);
@@ -384,7 +393,53 @@ const ClientDetails: React.FC<ClientDetailsProps> = ({
       setSignatureLoading(true);
       try {
         const r = await signatureService.listRequestsWithSigners({ client_id: client.id });
-        if (active) setSignatureRequests(r);
+        if (!active) return;
+        setSignatureRequests(r);
+
+        // Collect ALL unique facial image paths across signed requests + signers
+        const seen = new Set<string>();
+        const entries: Array<{ path: string; label: string }> = [];
+
+        const signedRequests = [...r]
+          .filter((req) => req.status === 'signed')
+          .sort((a, b) => new Date(b.signed_at || b.updated_at).getTime() - new Date(a.signed_at || a.updated_at).getTime());
+
+        for (const req of signedRequests) {
+          const dateLabel = req.signed_at
+            ? new Date(req.signed_at).toLocaleDateString('pt-BR')
+            : req.document_name || 'Documento';
+
+          // Signer-level photos first
+          for (const signer of req.signers ?? []) {
+            if (signer.facial_image_path && signer.status === 'signed' && !seen.has(signer.facial_image_path)) {
+              seen.add(signer.facial_image_path);
+              entries.push({ path: signer.facial_image_path, label: `${signer.name || 'Signatário'} · ${dateLabel}` });
+            }
+          }
+          // Request-level fallback
+          if (req.facial_image_path && !seen.has(req.facial_image_path)) {
+            seen.add(req.facial_image_path);
+            entries.push({ path: req.facial_image_path, label: `${req.document_name || 'Documento'} · ${dateLabel}` });
+          }
+        }
+
+        if (entries.length === 0) return;
+
+        // Generate signed URLs for all
+        const withUrls = await Promise.all(
+          entries.map(async (e) => {
+            try {
+              const url = await signatureService.getSignedImageUrl(e.path, 3600);
+              return { ...e, url };
+            } catch { return null; }
+          })
+        );
+        const valid = withUrls.filter(Boolean) as Array<{ path: string; url: string; label: string }>;
+        if (!active || valid.length === 0) return;
+
+        setSelfies(valid);
+        // Respect already-pinned photo; if none, default to first (most recent)
+        if (!client.photo_path) setPinnedPath(null);
       } catch { if (active) setSignatureRequests([]); }
       finally { if (active) setSignatureLoading(false); }
     };
@@ -585,6 +640,21 @@ const ClientDetails: React.FC<ClientDetailsProps> = ({
     const phone = client.phone || client.mobile || '';
     const now = new Date().toLocaleDateString('pt-BR', { day: '2-digit', month: 'long', year: 'numeric' });
 
+    // Foto de perfil para o PDF — converte para base64 para garantir impressão offline
+    const profileSelfie = (pinnedPath ? selfies.find((s) => s.path === pinnedPath) : null) ?? selfies[0] ?? null;
+    let photoBase64 = '';
+    if (profileSelfie?.url) {
+      try {
+        const resp = await fetch(profileSelfie.url);
+        const blob = await resp.blob();
+        photoBase64 = await new Promise<string>((resolve) => {
+          const reader = new FileReader();
+          reader.onloadend = () => resolve(reader.result as string);
+          reader.readAsDataURL(blob);
+        });
+      } catch { /* foto opcional — ignora se falhar */ }
+    }
+
     const processRows = processes.map((p) => `
       <tr>
         <td>${p.process_code || '—'}</td>
@@ -664,7 +734,10 @@ const ClientDetails: React.FC<ClientDetailsProps> = ({
   body { font-family: 'Segoe UI', Arial, sans-serif; font-size: 12px; color: #1e293b; background: #fff; padding: 32px 40px; }
   h1 { font-size: 22px; font-weight: 700; color: #1e293b; }
   .subtitle { font-size: 12px; color: #64748b; margin-top: 2px; }
-  .header { border-bottom: 2px solid #f97316; padding-bottom: 16px; margin-bottom: 24px; display: flex; justify-content: space-between; align-items: flex-end; }
+  .header { border-bottom: 2px solid #f97316; padding-bottom: 16px; margin-bottom: 24px; display: flex; justify-content: space-between; align-items: center; gap: 20px; }
+  .header-left { display: flex; align-items: center; gap: 16px; }
+  .header-photo { width: 80px; height: 100px; object-fit: cover; border-radius: 8px; border: 2px solid #f97316; flex-shrink: 0; }
+  .header-photo-placeholder { width: 80px; height: 100px; border-radius: 8px; border: 2px solid #e2e8f0; background: #f8fafc; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
   .header-logo { font-size: 11px; color: #94a3b8; text-align: right; }
   .badge { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 10px; font-weight: 700; }
   .badge-ativo { background: #d1fae5; color: #065f46; }
@@ -694,12 +767,18 @@ const ClientDetails: React.FC<ClientDetailsProps> = ({
 </head>
 <body>
   <div class="header">
-    <div>
-      <h1>${client.full_name}</h1>
-      <div class="subtitle">
-        <span class="badge badge-${client.status}">${client.status.charAt(0).toUpperCase() + client.status.slice(1)}</span>
-        &nbsp;·&nbsp; ${client.client_type === 'pessoa_fisica' ? 'Pessoa Física' : 'Pessoa Jurídica'}
-        &nbsp;·&nbsp; Cliente desde ${formatDate(client.created_at)}
+    <div class="header-left">
+      ${photoBase64
+        ? `<img class="header-photo" src="${photoBase64}" alt="${client.full_name}" />`
+        : ''}
+      <div>
+        <h1>${client.full_name}</h1>
+        <div class="subtitle">
+          <span class="badge badge-${client.status}">${client.status.charAt(0).toUpperCase() + client.status.slice(1)}</span>
+          &nbsp;·&nbsp; ${client.client_type === 'pessoa_fisica' ? 'Pessoa Física' : 'Pessoa Jurídica'}
+          &nbsp;·&nbsp; Cliente desde ${formatDate(client.created_at)}
+          ${photoBase64 ? '&nbsp;·&nbsp; <span style="color:#16a34a;font-weight:600">✓ ID verificada</span>' : ''}
+        </div>
       </div>
     </div>
     <div class="header-logo">Gerado em ${now}<br/><strong>jurius.com.br</strong></div>
@@ -829,8 +908,43 @@ const ClientDetails: React.FC<ClientDetailsProps> = ({
   return (
     <div className="w-full space-y-4 text-xs sm:text-sm">
 
-      {/* ── KPI Row ── */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+      {/* ── KPI Row + Selfie ── */}
+      <div className="flex gap-3 items-start">
+        {/* Foto de perfil */}
+        {selfies.length > 0 && (() => {
+          const profileSelfie = (pinnedPath ? selfies.find((s) => s.path === pinnedPath) : null) ?? selfies[0];
+          return (
+            <div className="flex-shrink-0 flex flex-col items-center gap-1">
+              <button
+                type="button"
+                onClick={() => setPreviewSelfie(profileSelfie)}
+                className="group relative w-[88px] h-[110px] rounded-xl overflow-hidden border-2 border-white shadow-md ring-1 ring-slate-200 hover:ring-orange-300 transition focus:outline-none block"
+                title="Ampliar foto"
+              >
+                <img src={profileSelfie.url} alt={client.full_name} className="w-full h-full object-cover" />
+                <div className="absolute inset-0 bg-black/0 group-hover:bg-black/30 transition flex items-center justify-center opacity-0 group-hover:opacity-100">
+                  <svg className="w-6 h-6 text-white drop-shadow" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-4.35-4.35M17 11A6 6 0 1 1 5 11a6 6 0 0 1 12 0z"/></svg>
+                </div>
+                <span className="absolute top-1.5 left-1.5 bg-emerald-500 text-white text-[8px] font-bold px-1 py-0.5 rounded shadow">ID</span>
+                {selfies.length > 1 && (
+                  <span className="absolute bottom-1.5 right-1.5 bg-black/60 text-white text-[9px] font-bold px-1.5 py-0.5 rounded-full">+{selfies.length - 1}</span>
+                )}
+              </button>
+              {selfies.length > 1 && (
+                <button
+                  type="button"
+                  onClick={() => setSelfiePickerOpen(true)}
+                  className="text-[10px] font-semibold text-orange-600 hover:text-orange-700 transition"
+                >
+                  Gerenciar
+                </button>
+              )}
+            </div>
+          );
+        })()}
+
+        {/* KPI cards */}
+        <div className="flex-1 grid grid-cols-2 lg:grid-cols-4 gap-3">
         <KpiCard
           label="Casos ativos"
           value={relationsLoading ? '…' : activeProcesses.length + activeRequirements.length}
@@ -859,7 +973,123 @@ const ClientDetails: React.FC<ClientDetailsProps> = ({
           color="border-violet-100 bg-violet-50 text-violet-800"
           icon={Gavel}
         />
-      </div>
+        </div>{/* end KPI grid */}
+      </div>{/* end flex row */}
+
+      {/* ── Preview modal (full-size) ── */}
+      {previewSelfie && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm" onClick={() => setPreviewSelfie(null)}>
+          <div className="relative max-w-xs w-full mx-4" onClick={(e) => e.stopPropagation()}>
+            <button onClick={() => setPreviewSelfie(null)} className="absolute -top-3 -right-3 z-10 bg-white rounded-full p-1.5 shadow-lg hover:bg-slate-100 transition">
+              <svg className="w-4 h-4 text-slate-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12"/></svg>
+            </button>
+            <img src={previewSelfie.url} alt={client.full_name} className="w-full rounded-2xl shadow-2xl object-cover" style={{ maxHeight: '80vh' }} />
+            <div className="mt-2 text-center">
+              <p className="text-sm font-semibold text-white">{client.full_name}</p>
+              <p className="text-xs text-white/60 mt-0.5">{previewSelfie.label}</p>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Foto manager modal ── */}
+      {selfiePickerOpen && selfies.length > 0 && (() => {
+        const handlePin = async (path: string) => {
+          setSettingPhoto(true);
+          try {
+            await clientService.setClientPhoto(client.id, path);
+            setPinnedPath(path);
+            (client as any).photo_path = path;
+          } catch (err: any) { alert(err?.message ?? 'Erro ao salvar foto'); }
+          finally { setSettingPhoto(false); }
+        };
+
+        const handleUnpin = async () => {
+          setSettingPhoto(true);
+          try {
+            await clientService.setClientPhoto(client.id, null);
+            setPinnedPath(null);
+            (client as any).photo_path = null;
+          } catch (err: any) { alert(err?.message ?? 'Erro ao remover foto'); }
+          finally { setSettingPhoto(false); }
+        };
+
+        return (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm" onClick={() => setSelfiePickerOpen(false)}>
+            <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm mx-4 flex flex-col overflow-hidden" style={{ maxHeight: '80vh' }} onClick={(e) => e.stopPropagation()}>
+
+              {/* Header */}
+              <div className="flex items-center justify-between px-4 py-3 border-b border-slate-100">
+                <p className="text-sm font-semibold text-slate-800">Fotos coletadas ({selfies.length})</p>
+                <button onClick={() => setSelfiePickerOpen(false)} className="text-slate-400 hover:text-slate-600 p-1 rounded-lg hover:bg-slate-100 transition">
+                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12"/></svg>
+                </button>
+              </div>
+
+              {/* List */}
+              <div className="flex-1 overflow-y-auto divide-y divide-slate-100">
+                {selfies.map((s) => {
+                  const isProfile = pinnedPath ? pinnedPath === s.path : s.path === selfies[0].path;
+                  return (
+                    <div key={s.path} className={`flex items-center gap-3 px-4 py-3 ${isProfile ? 'bg-orange-50' : 'hover:bg-slate-50'} transition`}>
+                      {/* Thumbnail — clique abre preview */}
+                      <button
+                        type="button"
+                        onClick={() => setPreviewSelfie(s)}
+                        className={`flex-shrink-0 w-12 h-14 rounded-lg overflow-hidden ring-2 ring-offset-1 transition hover:ring-orange-300 focus:outline-none ${isProfile ? 'ring-orange-400' : 'ring-slate-200'}`}
+                      >
+                        <img src={s.url} alt="" className="w-full h-full object-cover" />
+                      </button>
+
+                      {/* Info */}
+                      <div className="flex-1 min-w-0">
+                        <p className="text-xs font-medium text-slate-700 truncate leading-tight">{s.label}</p>
+                        {isProfile && (
+                          <span className="inline-flex items-center gap-0.5 text-[10px] font-semibold text-orange-600 mt-0.5">
+                            <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20"><path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z"/></svg>
+                            Foto do perfil
+                          </span>
+                        )}
+                      </div>
+
+                      {/* Action */}
+                      <div className="flex-shrink-0">
+                        {isProfile ? (
+                          <button
+                            onClick={() => void handleUnpin()}
+                            disabled={settingPhoto}
+                            className="text-[11px] font-semibold px-2.5 py-1.5 rounded-lg text-slate-400 hover:text-red-500 hover:bg-red-50 border border-slate-200 transition disabled:opacity-50"
+                          >
+                            {settingPhoto ? '…' : 'Remover'}
+                          </button>
+                        ) : (
+                          <button
+                            onClick={() => void handlePin(s.path)}
+                            disabled={settingPhoto}
+                            className="text-[11px] font-semibold px-2.5 py-1.5 rounded-lg text-orange-600 bg-orange-50 hover:bg-orange-100 border border-orange-200 transition disabled:opacity-50"
+                          >
+                            {settingPhoto ? '…' : 'Usar no perfil'}
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+
+              {/* Footer */}
+              <div className="px-4 py-2.5 border-t border-slate-100 flex items-center justify-between">
+                <p className="text-[11px] text-slate-400">Clique na miniatura para ampliar</p>
+                {pinnedPath && (
+                  <button onClick={() => void handleUnpin()} disabled={settingPhoto} className="text-[11px] font-semibold text-red-400 hover:text-red-600 transition disabled:opacity-50">
+                    Excluir do perfil
+                  </button>
+                )}
+              </div>
+            </div>
+          </div>
+        );
+      })()}
 
       {/* ── Quick Actions ── */}
       <div className="rounded-2xl border border-slate-200 bg-white shadow-sm p-4">

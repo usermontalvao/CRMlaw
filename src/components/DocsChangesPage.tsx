@@ -47,6 +47,7 @@ import { matchesNormalizedSearch } from '../utils/search';
    ============================================================================ */
 
 const VERSION_CODENAMES: Record<string, { name: string; emoji: string }> = {
+  '1.10.041': { name: 'Café Duplicata Inteligente', emoji: '🔍' },
   '1.10.040': { name: 'Café IA Sênior', emoji: '🧠' },
   '1.10.039': { name: 'Café Industrial', emoji: '⚙️' },
   '1.10.038': { name: 'Café IA Acionável', emoji: '🤖' },
@@ -755,6 +756,48 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
 };
 
 const releases: ReleaseNote[] = [
+  {
+    version: '1.10.041',
+    date: '12/05/2026',
+    summary: 'Clientes: detecção de duplicatas inteligente com e-mail, nível de confiança (alta/média/baixa), foto de perfil via assinatura facial, lógica de exclusão por CPF conflitante, seleção de registro primário por completude.',
+    modules: [
+      {
+        moduleId: 'clientes',
+        changes: [
+          {
+            type: 'feature',
+            title: 'Detecção de duplicatas por e-mail',
+            description: 'E-mail igual agora é um critério de agrupamento de duplicatas, além de CPF, telefone e nome. Comparação case-insensitive e com trim automático.',
+          },
+          {
+            type: 'feature',
+            title: 'Nível de confiança nos grupos de duplicatas',
+            description: 'Cada grupo de duplicatas agora exibe um nível de confiança: alta (CPF ou e-mail), média (telefone), baixa (somente nome). Grupos são ordenados por confiança decrescente.',
+          },
+          {
+            type: 'feature',
+            title: 'Foto de perfil do cliente via assinatura facial',
+            description: 'Novo campo photo_path no tipo Client, derivado automaticamente da assinatura facial do Supabase Storage. Exibido nos detalhes e formulário do cliente.',
+          },
+          {
+            type: 'improvement',
+            title: 'Seleção de registro primário por completude',
+            description: 'O algoritmo de seleção do registro primário em duplicatas agora prioriza completude dos dados antes do status. Um registro completo mas inativo é preferido sobre um vazio mas ativo.',
+          },
+          {
+            type: 'improvement',
+            title: 'Exclusão inteligente por CPF conflitante',
+            description: 'Quando dois clientes possuem CPFs diferentes (ambos com 11+ dígitos), eles nunca são agrupados como duplicatas, mesmo que compartilhem nome ou telefone.',
+          },
+          {
+            type: 'improvement',
+            title: 'Opção de incluir inativos na detecção de duplicatas',
+            description: 'A função buildDuplicateGroups agora aceita parâmetro includeInactive para considerar clientes inativos na análise de duplicatas.',
+          },
+        ],
+      },
+    ],
+  },
   {
     version: '1.10.040',
     date: '12/05/2026',
