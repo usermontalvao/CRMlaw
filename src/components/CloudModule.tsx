@@ -5261,7 +5261,7 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
                               <button
                                 key={chip.key}
                                 type="button"
-                                onClick={() => setQuickTypeFilter(chip.key)}
+                                onClick={(e) => { e.stopPropagation(); setQuickTypeFilter(chip.key); }}
                                 className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-semibold transition-all whitespace-nowrap ${quickTypeFilter === chip.key ? chip.activeColor : chip.color}`}
                               >
                                 {chip.label}
@@ -5632,6 +5632,11 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
                       const showFolderStatusBadge = shouldShowFolderLabelBadge(folder, folderLabel);
                       const isFavorite = favoriteFolderIds.includes(folder.id);
 
+                      // folder accent colors
+                      const folderAccent = folderColors[folder.id] || '#d97706';
+                      const folderBg = folderColors[folder.id] ? `${folderColors[folder.id]}18` : '#fef9ee';
+                      const folderBorder = folderColors[folder.id] ? `${folderColors[folder.id]}30` : 'rgba(251,191,36,0.25)';
+
                       return (
                         <div
                           key={folder.id}
@@ -5655,7 +5660,8 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
                             e.preventDefault();
                             void handleDropOnFolder(folder.id);
                           }}
-                          className={`group bg-white p-5 rounded-[24px] transition-all duration-200 border flex flex-col h-full cursor-pointer ${isDropTarget ? 'border-orange-400 bg-orange-50 shadow-[0_0_0_3px_rgba(251,146,60,0.25)]' : isSelected ? 'border-orange-400 bg-gradient-to-br from-orange-50/80 to-amber-50/40 shadow-[0_0_0_3px_rgba(249,115,22,0.18),0_8px_24px_-8px_rgba(249,115,22,0.3)] -translate-y-0.5' : 'border-slate-200/70 shadow-[0_4px_16px_rgba(44,47,48,0.06)] hover:-translate-y-1 hover:border-slate-200 hover:shadow-[0_12px_32px_-8px_rgba(25,28,29,0.1)]'}`}
+                          className={`group rounded-[20px] overflow-hidden flex flex-col cursor-pointer transition-all duration-200 border ${isDropTarget ? 'border-orange-400 shadow-[0_0_0_3px_rgba(251,146,60,0.22)]' : isSelected ? 'border-orange-400 shadow-[0_0_0_3px_rgba(249,115,22,0.16),0_12px_32px_-8px_rgba(249,115,22,0.22)] -translate-y-0.5' : 'border-slate-200/80 shadow-[0_2px_12px_rgba(15,23,42,0.06)] hover:-translate-y-0.5 hover:shadow-[0_8px_28px_-4px_rgba(15,23,42,0.12)] hover:border-slate-300/80'}`}
+                          style={{ height: 'fit-content', borderColor: isSelected ? undefined : folderBorder }}
                           onClick={(event) => {
                             event.stopPropagation();
                             event.preventDefault();
@@ -5674,7 +5680,6 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
                           }}
                           onContextMenu={(e) => {
                             e.preventDefault();
-                            // Se o item já não estiver selecionado, adicioná-lo à seleção
                             if (!selectedItemKeys.includes(itemKey)) {
                               applySelection(itemKey, { additive: true });
                             } else {
@@ -5682,106 +5687,121 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
                             }
                             setContextMenu({ x: e.clientX, y: e.clientY, type: 'folder', folderId: folder.id });
                           }}
-                          style={{ height: 'fit-content' }}
                         >
-                          {/* Header: ícone + status/vínculo */}
-                          <div className="flex justify-between items-start mb-4">
-                            <div className="relative">
-                              <div className="w-12 h-12 rounded-xl flex items-center justify-center" style={{ backgroundColor: folderColors[folder.id] ? `${folderColors[folder.id]}22` : '#fef3c7' }}>
-                                <Folder className="w-7 h-7" style={{ color: folderColors[folder.id] || '#d97706' }} />
-                              </div>
-                              {/* Selection indicator on icon */}
-                              <div
-                                onClick={e => { e.stopPropagation(); applySelection(itemKey, { additive: true }); }}
-                                className={`absolute -top-1.5 -left-1.5 w-5 h-5 rounded-full border-2 border-white flex items-center justify-center transition-all duration-150 ${isSelected ? 'bg-orange-500 opacity-100 scale-100 shadow-[0_2px_6px_rgba(249,115,22,0.4)]' : 'bg-white/90 border-slate-300 opacity-0 group-hover:opacity-100 hover:border-orange-400'}`}
-                              >
-                                {isSelected && <svg viewBox="0 0 10 8" className="w-2.5 h-2.5" fill="none" stroke="white" strokeWidth="2"><path d="M1 4l2.5 2.5L9 1"/></svg>}
+                          {/* ── Banner colorido ── */}
+                          <div
+                            className="relative flex items-end justify-between px-4 pt-4 pb-3"
+                            style={{ backgroundColor: isDropTarget ? '#fff7ed' : folderBg }}
+                          >
+                            {/* Seleção */}
+                            <div
+                              onClick={e => { e.stopPropagation(); applySelection(itemKey, { additive: true }); }}
+                              className={`absolute top-3 left-3 w-5 h-5 rounded-full border-2 border-white/80 flex items-center justify-center transition-all duration-150 z-10 cursor-pointer shadow-sm ${isSelected ? 'bg-orange-500 opacity-100 scale-100 shadow-[0_2px_6px_rgba(249,115,22,0.45)]' : 'bg-white/70 border-slate-300/80 opacity-0 group-hover:opacity-100 hover:border-orange-400'}`}
+                            >
+                              {isSelected && <svg viewBox="0 0 10 8" className="w-2.5 h-2.5" fill="none" stroke="white" strokeWidth="2.2"><path d="M1 4l2.5 2.5L9 1"/></svg>}
+                            </div>
+
+                            {/* Ícone da pasta */}
+                            <div className="flex-1 flex items-center justify-center py-3">
+                              <div className="relative">
+                                <div
+                                  className="w-14 h-14 rounded-2xl flex items-center justify-center shadow-[0_4px_16px_rgba(0,0,0,0.10)]"
+                                  style={{ backgroundColor: folderAccent }}
+                                >
+                                  <Folder className="w-7 h-7 text-white drop-shadow-sm" />
+                                </div>
+                                {isFavorite && (
+                                  <div className="absolute -top-1 -right-1 w-4 h-4 rounded-full bg-orange-500 flex items-center justify-center">
+                                    <Pin className="w-2.5 h-2.5 text-white" />
+                                  </div>
+                                )}
                               </div>
                             </div>
-                            <div className="flex items-center gap-2">
+
+                            {/* Badge status */}
+                            <div className="absolute top-3 right-3 flex flex-col items-end gap-1">
                               {showFolderIssueBadge ? (
-                                <div className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-semibold ${folderIssueClass}`}>
+                                <div className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold ${folderIssueClass}`}>
                                   {renderFolderIssueBadgeContent(folder)}
                                 </div>
                               ) : showFolderStatusBadge && folderLabel && folderLabel.name !== 'Sem status' ? (
-                                <div className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-semibold ${folderLabel.bgClass} ${folderLabel.textClass} ${folderLabel.borderClass}`}>
+                                <div className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold ${folderLabel.bgClass} ${folderLabel.textClass} ${folderLabel.borderClass}`}>
                                   {folderLabel.name}
                                 </div>
                               ) : null}
+                              {folder.archived_at ? (
+                                <div className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold bg-amber-100 text-amber-700">
+                                  Arquivada
+                                </div>
+                              ) : null}
+                              {showClientLinkBadge && !hasClientLink ? (
+                                <div className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-red-50 border border-red-200">
+                                  <XCircle className="w-3 h-3 text-red-500" />
+                                </div>
+                              ) : null}
                             </div>
+
+                            {/* Drag visual */}
+                            {dragVisualState?.folderId === folder.id && dragVisualState.mode ? (
+                              <div className="absolute inset-0 flex items-center justify-center bg-orange-500/10 rounded-t-[20px]">
+                                <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[11px] font-semibold bg-orange-500 text-white shadow">
+                                  {dragVisualState.mode === 'copy' ? 'Copiar aqui' : dragVisualState.mode === 'cut' ? 'Recortar aqui' : 'Mover aqui'}
+                                </span>
+                              </div>
+                            ) : null}
                           </div>
-                          {/* Conteúdo principal */}
-                          <div className="flex-1">
+
+                          {/* ── Corpo ── */}
+                          <div className="bg-white px-4 pt-3 pb-4 flex-1 flex flex-col">
                             {inlineRenameTarget?.type === 'folder' && inlineRenameTarget.id === folder.id ? (
                               <input
                                 value={inlineRenameValue}
                                 onChange={(e) => setInlineRenameValue(e.target.value)}
                                 onClick={(e) => e.stopPropagation()}
                                 onKeyDown={(e) => {
-                                  if (e.key === 'Enter') {
-                                    e.preventDefault();
-                                    void commitInlineRename();
-                                  }
-                                  if (e.key === 'Escape') {
-                                    e.preventDefault();
-                                    cancelInlineRename();
-                                  }
+                                  if (e.key === 'Enter') { e.preventDefault(); void commitInlineRename(); }
+                                  if (e.key === 'Escape') { e.preventDefault(); cancelInlineRename(); }
                                 }}
                                 onBlur={() => { void commitInlineRename(); }}
-                                className="w-full rounded-md border border-orange-300 bg-white px-2 py-1 text-sm font-medium text-slate-900 focus:outline-none focus:ring-2 focus:ring-orange-100"
+                                className="w-full rounded-lg border border-orange-300 bg-white px-2.5 py-1.5 text-sm font-semibold text-slate-900 focus:outline-none focus:ring-2 focus:ring-orange-100 mb-2"
                                 autoFocus
                               />
                             ) : (
-                              <>
-                                <h3 className="text-lg font-bold text-slate-900 leading-tight mb-1 group-hover:text-amber-600 transition-colors truncate">
-                                  {folder.name}
-                                </h3>
-                                <p className="text-xs font-medium text-slate-500 mb-4 truncate">
-                                  {client?.full_name || 'Pasta compartilhada'}
-                                </p>
-                              </>
+                              <h3 className="text-[13px] font-bold text-slate-900 leading-snug truncate mb-0.5 group-hover:text-amber-700 transition-colors">
+                                {folder.name}
+                              </h3>
                             )}
-                            
-                            {folder.archived_at ? (
-                              <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-semibold mb-4 bg-amber-100 text-amber-700">
-                                Arquivada
-                              </div>
-                            ) : null}
-                            
-                            {dragVisualState?.folderId === folder.id && dragVisualState.mode ? (
-                              <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-semibold mb-4 bg-orange-100 text-orange-700">
-                                {dragVisualState.mode === 'copy' ? 'Copiar para pasta' : dragVisualState.mode === 'cut' ? 'Recortar para pasta' : 'Mover para pasta'}
-                              </div>
-                            ) : null}
-                            
+                            {client?.full_name ? (
+                              <p className="text-[11px] text-slate-400 truncate mb-3">{client.full_name}</p>
+                            ) : (
+                              <p className="text-[11px] text-slate-400 truncate mb-3">Pasta compartilhada</p>
+                            )}
                             {folderIssueReason ? (
-                              <p className="text-[11px] text-red-600 font-medium line-clamp-2 mb-4">
-                                {folderIssueReason}
-                              </p>
+                              <p className="text-[10px] text-red-500 font-medium line-clamp-1 mb-2">{folderIssueReason}</p>
                             ) : null}
-                          </div>
-                          {/* Rodapé com data/hora */}
-                          <div className="pt-4 border-t border-slate-100 flex items-center justify-between gap-3 text-[10px] text-slate-400 font-medium">
-                            <div className="flex items-center gap-3 min-w-0">
-                              {folder.has_pending_issue ? (
-                                <span className="rounded-full bg-red-100 px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.14em] text-red-700">
-                                  {folder.alert_level === 'alerta' ? 'Alerta' : 'Pendência'}
+                            {/* Rodapé */}
+                            <div className="mt-auto pt-2.5 border-t border-slate-100 flex items-center justify-between gap-2">
+                              <div className="flex items-center gap-2 text-[10px] text-slate-400 font-medium min-w-0">
+                                {folder.has_pending_issue ? (
+                                  <span className="rounded-full bg-red-100 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-red-600 shrink-0">
+                                    {folder.alert_level === 'alerta' ? 'Alerta' : 'Pendência'}
+                                  </span>
+                                ) : null}
+                                <span className="flex items-center gap-1 whitespace-nowrap">
+                                  <Calendar className="w-3 h-3 shrink-0" />
+                                  {formatCompactDate(folder.updated_at)}
+                                </span>
+                                <span className="flex items-center gap-1 whitespace-nowrap text-slate-300">
+                                  <Clock className="w-3 h-3 shrink-0" />
+                                  {formatCompactTime(folder.updated_at)}
+                                </span>
+                              </div>
+                              {showClientLinkBadge && hasClientLink ? (
+                                <span className="inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-emerald-50 border border-emerald-200" title="Vinculada">
+                                  <CheckCircle2 className="h-3 h-3 text-emerald-500" />
                                 </span>
                               ) : null}
-                              <span className="flex items-center gap-1 whitespace-nowrap">
-                                <Calendar className="w-3 h-3" />
-                                {formatCompactDate(folder.updated_at)}
-                              </span>
-                              <span className="flex items-center gap-1 whitespace-nowrap">
-                                <Clock className="w-3 h-3" />
-                                {formatCompactTime(folder.updated_at)}
-                              </span>
                             </div>
-                            {showClientLinkBadge ? (
-                              <span className={`inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full border ${hasClientLink ? 'border-emerald-200 bg-emerald-50 text-emerald-700' : 'border-red-200 bg-red-50 text-red-600'}`} title={hasClientLink ? 'Vinculada' : 'Sem vínculo'}>
-                                {hasClientLink ? <CheckCircle2 className="h-4 w-4" /> : <XCircle className="h-4 w-4" />}
-                              </span>
-                            ) : null}
                           </div>
                         </div>
                       );
@@ -5795,6 +5815,36 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
                     const canQuickRotate = isImageFile(file.mime_type) || isPdfFile(file.mime_type, file.original_name);
                     const isQuickActionLoading = quickActionFileId === file.id;
 
+                    // file type colors
+                    const fileIsPdf = isPdfFile(file.mime_type, file.original_name);
+                    const fileIsImg = isImageFile(file.mime_type);
+                    const fileIsVid = isVideoFile(file.mime_type, file.original_name);
+                    const fileIsWord = isWordFile(file.mime_type, file.original_name);
+                    const fileBadgeStyle = fileIsPdf
+                      ? 'bg-red-500/90 text-white'
+                      : fileIsImg
+                      ? 'bg-emerald-500/90 text-white'
+                      : fileIsVid
+                      ? 'bg-purple-500/90 text-white'
+                      : fileIsWord
+                      ? 'bg-blue-500/90 text-white'
+                      : 'bg-slate-700/80 text-white';
+                    const fileIconBg = fileIsPdf
+                      ? 'bg-gradient-to-br from-red-50 to-red-100/60'
+                      : fileIsVid
+                      ? 'bg-gradient-to-br from-purple-50 to-purple-100/60'
+                      : fileIsWord
+                      ? 'bg-gradient-to-br from-blue-50 to-blue-100/60'
+                      : 'bg-gradient-to-br from-slate-100 to-slate-50';
+                    const fileIconEl = fileIsPdf
+                      ? <FileText className="w-9 h-9 text-red-400" />
+                      : fileIsVid
+                      ? <svg className="w-9 h-9 text-purple-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6"><rect x="2" y="6" width="14" height="12" rx="2"/><path d="M16 10l5-3v10l-5-3V10z"/></svg>
+                      : fileIsWord
+                      ? <FileText className="w-9 h-9 text-blue-400" />
+                      : <File className="w-9 h-9 text-slate-400" />;
+                    const fileTypeLabel = getFileTypeLabel(file);
+
                     return (
                       <div
                         key={file.id}
@@ -5803,7 +5853,7 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
                         draggable
                         onDragStart={(event) => handleItemDragStart(event, itemKey)}
                         onDragEnd={handleDragEnd}
-                        className={`group rounded-[24px] border p-4 bg-white cursor-pointer transition-all duration-200 ${isSelected ? 'border-orange-400 bg-gradient-to-br from-orange-50/80 to-amber-50/30 shadow-[0_0_0_3px_rgba(249,115,22,0.18),0_8px_24px_-8px_rgba(249,115,22,0.25)] -translate-y-0.5' : 'border-slate-200/70 shadow-[0_4px_16px_rgba(44,47,48,0.05)] hover:border-orange-200 hover:shadow-[0_12px_32px_-8px_rgba(25,28,29,0.1)] hover:-translate-y-0.5'}`}
+                        className={`group rounded-[20px] overflow-hidden border bg-white cursor-pointer transition-all duration-200 ${isSelected ? 'border-orange-400 shadow-[0_0_0_3px_rgba(249,115,22,0.16),0_12px_32px_-8px_rgba(249,115,22,0.22)] -translate-y-0.5' : 'border-slate-200/80 shadow-[0_2px_12px_rgba(15,23,42,0.06)] hover:border-slate-300/80 hover:shadow-[0_8px_28px_-4px_rgba(15,23,42,0.12)] hover:-translate-y-0.5'}`}
                         onClick={(event) => {
                           event.stopPropagation();
                           event.preventDefault();
@@ -5830,7 +5880,6 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
                         }}
                         onContextMenu={(e) => {
                           e.preventDefault();
-                          // Se o item já não estiver selecionado, adicioná-lo à seleção
                           if (!selectedItemKeys.includes(itemKey)) {
                             applySelection(itemKey, { additive: true });
                           } else {
@@ -5842,140 +5891,113 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
                           setContextMenu({ x: e.clientX, y: e.clientY, type: 'file', fileId: file.id });
                         }}
                       >
-                        <div className="mb-3 relative rounded-2xl border border-slate-200 bg-slate-50 overflow-hidden">
-                          {/* Selection checkmark overlay */}
+                        {/* ── Preview ── */}
+                        <div className={`relative overflow-hidden ${cardPreviewHeightClass}`}>
+                          {/* Selection */}
                           <div
                             onClick={e => { e.stopPropagation(); applySelection(itemKey, { additive: true }); }}
-                            className={`absolute top-2 left-2 z-20 w-5 h-5 rounded-full border-2 border-white flex items-center justify-center transition-all duration-150 cursor-pointer ${isSelected ? 'bg-orange-500 opacity-100 scale-100 shadow-[0_2px_6px_rgba(249,115,22,0.4)]' : 'bg-white/90 border-slate-300 opacity-0 group-hover:opacity-100 hover:border-orange-400'}`}
+                            className={`absolute top-2.5 left-2.5 z-20 w-5 h-5 rounded-full border-2 border-white/90 flex items-center justify-center transition-all duration-150 cursor-pointer shadow-sm ${isSelected ? 'bg-orange-500 opacity-100 scale-100 shadow-[0_2px_6px_rgba(249,115,22,0.45)]' : 'bg-white/80 border-slate-300/80 opacity-0 group-hover:opacity-100 hover:border-orange-400'}`}
                           >
-                            {isSelected && <svg viewBox="0 0 10 8" className="w-2.5 h-2.5" fill="none" stroke="white" strokeWidth="2"><path d="M1 4l2.5 2.5L9 1"/></svg>}
+                            {isSelected && <svg viewBox="0 0 10 8" className="w-2.5 h-2.5" fill="none" stroke="white" strokeWidth="2.2"><path d="M1 4l2.5 2.5L9 1"/></svg>}
                           </div>
-                          <div className="absolute right-2 top-2 z-10 flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity duration-150">
+
+                          {/* Type badge */}
+                          <div className={`absolute top-2.5 right-2.5 z-20 px-1.5 py-0.5 rounded-md text-[10px] font-bold tracking-wide backdrop-blur-sm shadow-sm ${fileBadgeStyle}`}>
+                            {fileTypeLabel}
+                          </div>
+
+                          {/* Quick actions hover */}
+                          <div className="absolute bottom-2 right-2 z-20 flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity duration-150">
                             {canQuickRotate ? (
-                              <button
-                                type="button"
-                                disabled={isQuickActionLoading}
-                                onClick={(event) => {
-                                  event.stopPropagation();
-                                  event.preventDefault();
-                                  void handleRotateFileQuick(file, 90);
-                                }}
-                                className="inline-flex h-7 w-7 items-center justify-center rounded-full border border-slate-200 bg-white/95 text-slate-600 shadow-sm hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-70"
+                              <button type="button" disabled={isQuickActionLoading}
+                                onClick={(e) => { e.stopPropagation(); e.preventDefault(); void handleRotateFileQuick(file, 90); }}
+                                className="inline-flex h-6 w-6 items-center justify-center rounded-lg bg-white/90 text-slate-600 shadow-sm border border-white/60 hover:bg-white backdrop-blur-sm"
                                 title="Girar 90°"
                               >
-                                {isQuickActionLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RotateCw className="w-3.5 h-3.5" />}
+                                {isQuickActionLoading ? <Loader2 className="w-3 h-3 animate-spin" /> : <RotateCw className="w-3 h-3" />}
                               </button>
                             ) : null}
-                            <button
-                              type="button"
-                              disabled={isQuickActionLoading}
-                              onClick={(event) => {
-                                event.stopPropagation();
-                                event.preventDefault();
-                                void handleDownloadFile(file);
-                              }}
-                              className="inline-flex h-7 w-7 items-center justify-center rounded-full border border-slate-200 bg-white/95 text-slate-600 shadow-sm hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-70"
+                            <button type="button" disabled={isQuickActionLoading}
+                              onClick={(e) => { e.stopPropagation(); e.preventDefault(); void handleDownloadFile(file); }}
+                              className="inline-flex h-6 w-6 items-center justify-center rounded-lg bg-white/90 text-slate-600 shadow-sm border border-white/60 hover:bg-white backdrop-blur-sm"
                               title="Baixar"
                             >
-                              <Download className="w-3.5 h-3.5" />
+                              <Download className="w-3 h-3" />
                             </button>
-                            <button
-                              type="button"
-                              onClick={(event) => {
-                                event.stopPropagation();
-                                event.preventDefault();
-                                handleToggleFavoriteFile(file.id);
-                              }}
-                              className={`inline-flex h-7 w-7 items-center justify-center rounded-full border border-slate-200 bg-white/95 shadow-sm hover:bg-slate-50 ${favoriteFileIds.includes(file.id) ? 'text-orange-500' : 'text-slate-600'}`}
+                            <button type="button"
+                              onClick={(e) => { e.stopPropagation(); e.preventDefault(); handleToggleFavoriteFile(file.id); }}
+                              className={`inline-flex h-6 w-6 items-center justify-center rounded-lg bg-white/90 shadow-sm border border-white/60 hover:bg-white backdrop-blur-sm ${favoriteFileIds.includes(file.id) ? 'text-orange-500' : 'text-slate-600'}`}
                               title={favoriteFileIds.includes(file.id) ? 'Desafixar' : 'Fixar'}
                             >
-                              <Pin className="w-3.5 h-3.5" />
+                              <Pin className="w-3 h-3" />
                             </button>
                           </div>
-                          {isImageFile(file.mime_type) && previewUrl ? (
-                            <div className={`${cardPreviewHeightClass} flex items-center justify-center bg-slate-100 p-2`}>
-                              <img src={previewUrl} alt={file.original_name} draggable={false} onDragStart={(event) => event.preventDefault()} className="h-full w-full rounded-xl object-contain bg-white" />
-                            </div>
-                          ) : isPdfFile(file.mime_type, file.original_name) ? (
-                            <div className={`${cardPreviewHeightClass} flex items-center justify-center overflow-hidden bg-slate-100 p-2`}>
+
+                          {/* Image preview */}
+                          {fileIsImg && previewUrl ? (
+                            <img src={previewUrl} alt={file.original_name} draggable={false} onDragStart={(e) => e.preventDefault()}
+                              className="w-full h-full object-cover bg-slate-100" />
+                          ) : fileIsPdf ? (
+                            <div className="w-full h-full flex items-center justify-center bg-[#fafafa] p-3">
                               {pdfThumbnailUrl ? (
-                                <img src={pdfThumbnailUrl} alt={file.original_name} draggable={false} onDragStart={(event) => event.preventDefault()} className="h-full w-full rounded-xl object-contain bg-white" />
+                                <img src={pdfThumbnailUrl} alt={file.original_name} draggable={false} onDragStart={(e) => e.preventDefault()}
+                                  className="h-full w-full object-contain rounded-lg shadow-sm bg-white" />
                               ) : (
-                                <div className="flex h-full w-full flex-col items-center justify-center gap-2 rounded-xl bg-white text-slate-500">
-                                  <Loader2 className="h-5 w-5 animate-spin" />
-                                  <span className="text-[11px] font-medium">Gerando preview</span>
+                                <div className="flex h-full w-full flex-col items-center justify-center gap-1.5 rounded-xl bg-white shadow-sm text-slate-400">
+                                  <Loader2 className="h-5 w-5 animate-spin text-red-400" />
+                                  <span className="text-[10px] font-medium">Gerando preview</span>
                                 </div>
                               )}
                             </div>
                           ) : (
-                            <div className={`${cardPreviewHeightClass} flex items-center justify-center bg-slate-50`}>
-                              {isPdfFile(file.mime_type, file.original_name) ? <FileText className="w-8 h-8 text-red-500" /> : isImageFile(file.mime_type) ? <ImageIcon className="w-8 h-8 text-emerald-500" /> : <File className="w-8 h-8 text-sky-500" />}
+                            <div className={`w-full h-full flex items-center justify-center ${fileIconBg}`}>
+                              {fileIconEl}
                             </div>
                           )}
                         </div>
-                        <div className="flex items-start justify-between gap-3">
-                          <div className="flex items-center gap-3 min-w-0">
-                            <div className="min-w-0">
-                              {inlineRenameTarget?.type === 'file' && inlineRenameTarget.id === file.id ? (
-                                file.original_name.toLowerCase().endsWith('.pdf') ? (
-                                  <div className="flex overflow-hidden rounded-md border border-orange-300 bg-white">
-                                    <input
-                                      value={inlineRenameValue}
-                                      onChange={(e) => setInlineRenameValue(e.target.value)}
-                                      onClick={(e) => e.stopPropagation()}
-                                      onKeyDown={(e) => {
-                                        if (e.key === 'Enter') {
-                                          e.preventDefault();
-                                          void commitInlineRename();
-                                        }
-                                        if (e.key === 'Escape') {
-                                          e.preventDefault();
-                                          cancelInlineRename();
-                                        }
-                                      }}
-                                      onBlur={() => { void commitInlineRename(); }}
-                                      className="flex-1 px-2 py-1 text-sm text-slate-900 focus:outline-none"
-                                      autoFocus
-                                    />
-                                    <span className="inline-flex items-center border-l border-slate-200 bg-slate-50 px-2 text-xs text-slate-500">.pdf</span>
-                                  </div>
-                                ) : (
-                                  <input
-                                    value={inlineRenameValue}
-                                    onChange={(e) => setInlineRenameValue(e.target.value)}
-                                    onClick={(e) => e.stopPropagation()}
-                                    onKeyDown={(e) => {
-                                      if (e.key === 'Enter') {
-                                        e.preventDefault();
-                                        void commitInlineRename();
-                                      }
-                                      if (e.key === 'Escape') {
-                                        e.preventDefault();
-                                        cancelInlineRename();
-                                      }
-                                    }}
-                                    onBlur={() => { void commitInlineRename(); }}
-                                    className="w-full rounded-md border border-orange-300 bg-white px-2 py-1 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-orange-100"
-                                    autoFocus
-                                  />
-                                )
-                              ) : (
-                                <p className="truncate font-medium text-slate-900">{file.original_name}</p>
-                              )}
-                            </div>
-                          </div>
-                          <span className="inline-flex items-center rounded-full border border-slate-200 bg-slate-50 px-2 py-0.5 text-[11px] font-medium text-slate-700">
-                            {getFileTypeLabel(file)}
-                          </span>
-                          {isImageFile(file.mime_type) ? (
-                            <input
-                              type="checkbox"
-                              checked={selectedItemKeys.includes(itemKey)}
-                              onChange={() => toggleImageSelection(file.id)}
-                              onClick={(e) => e.stopPropagation()}
-                              className="w-4 h-4 rounded border-slate-300 text-orange-600 focus:ring-orange-500 mt-1"
-                            />
-                          ) : null}
+
+                        {/* ── Footer ── */}
+                        <div className="px-3 py-2.5 bg-white border-t border-slate-100/80">
+                          {inlineRenameTarget?.type === 'file' && inlineRenameTarget.id === file.id ? (
+                            splitFileNameAndExtension(file.original_name).extension ? (
+                              <div className="flex overflow-hidden rounded-lg border border-orange-300 bg-white shadow-sm">
+                                <input
+                                  value={inlineRenameValue}
+                                  onChange={(e) => setInlineRenameValue(e.target.value)}
+                                  onClick={(e) => e.stopPropagation()}
+                                  onKeyDown={(e) => {
+                                    if (e.key === 'Enter') {
+                                      e.preventDefault();
+                                      void commitInlineRename();
+                                    }
+                                    if (e.key === 'Escape') {
+                                      e.preventDefault();
+                                      cancelInlineRename();
+                                    }
+                                  }}
+                                  onBlur={() => { void commitInlineRename(); }}
+                                  className="flex-1 px-2 py-1 text-sm text-slate-900 focus:outline-none"
+                                  autoFocus
+                                />
+                                <span className="inline-flex items-center border-l border-slate-200 bg-slate-50 px-2 text-xs text-slate-500">{splitFileNameAndExtension(file.original_name).extension}</span>
+                              </div>
+                            ) : (
+                              <input
+                                value={inlineRenameValue}
+                                onChange={(e) => setInlineRenameValue(e.target.value)}
+                                onClick={(e) => e.stopPropagation()}
+                                onKeyDown={(e) => {
+                                    if (e.key === 'Enter') { e.preventDefault(); void commitInlineRename(); }
+                                    if (e.key === 'Escape') { e.preventDefault(); cancelInlineRename(); }
+                                  }}
+                                  onBlur={() => { void commitInlineRename(); }}
+                                  className="w-full rounded-lg border border-orange-300 bg-white px-2.5 py-1 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-orange-100"
+                                  autoFocus
+                                />
+                            )
+                          ) : (
+                            <p className="truncate text-[13px] font-semibold text-slate-800 leading-tight">{file.original_name}</p>
+                          )}
                         </div>
                       </div>
                     );
@@ -7554,7 +7576,7 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule }) => {
                     const name = singleFile?.original_name ?? singleFolder?.name ?? '';
                     const type = singleFile ? 'file' : 'folder';
                     const id = singleFile?.id ?? singleFolder?.id ?? '';
-                    startInlineRename({ type, id, currentName: name });
+                    openRenameModal(type, id, name);
                     clearExplorerSelection();
                   }}
                   icon={<Tag className="w-3.5 h-3.5 text-violet-400" />}

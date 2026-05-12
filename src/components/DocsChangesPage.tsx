@@ -47,6 +47,7 @@ import { matchesNormalizedSearch } from '../utils/search';
    ============================================================================ */
 
 const VERSION_CODENAMES: Record<string, { name: string; emoji: string }> = {
+  '1.10.036': { name: 'Café Cards Refinados', emoji: '🗂️' },
   '1.10.035': { name: 'Café Hub Premium', emoji: '📄' },
   '1.10.034': { name: 'Café Loading Profissional', emoji: '⏳' },
   '1.10.030': { name: 'Café Seleção Premium', emoji: '✨' },
@@ -750,6 +751,48 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
 };
 
 const releases: ReleaseNote[] = [
+  {
+    version: '1.10.036',
+    date: '12/05/2026',
+    summary: 'Cloud: cards de pastas e arquivos completamente redesenhados — visual premium com banner colorido, preview full-bleed, badges por tipo e ações compactas. Correção de renomear, filtros de tipo e alinhamento do header.',
+    modules: [
+      {
+        moduleId: 'cloud',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Cards de pastas: design com banner colorido',
+            description: 'Cartão de pasta completamente redesenhado. A parte superior agora é um banner colorido (tintado com a cor da pasta) com o ícone da pasta centralizado e elevado com sombra. Abaixo, área branca limpa com nome, cliente e rodapé com data. Badge de favorito, vínculo e status integrados no banner.',
+          },
+          {
+            type: 'improvement',
+            title: 'Cards de arquivos: preview full-bleed com overlay',
+            description: 'Preview do arquivo agora ocupa toda a área superior do card sem padding interno. Badge de tipo (PDF/Imagem/Vídeo/Word) sobreposto no canto superior direito com cor específica por tipo. Ações rápidas (girar, baixar, fixar) aparecem no hover no canto inferior direito como botões compactos com backdrop-blur.',
+          },
+          {
+            type: 'improvement',
+            title: 'Ícones por tipo de arquivo no placeholder',
+            description: 'Quando não há preview disponível, cada tipo de arquivo exibe um ícone e gradiente de fundo específico: PDF com fundo vermelho suave, vídeo com gradiente roxo e ícone de câmera, Word com azul, outros com slate neutro.',
+          },
+          {
+            type: 'fix',
+            title: 'Renomear pelo toolbar de seleção corrigido',
+            description: 'O botão Renomear na barra de seleção flutuante chamava startInlineRename() seguido de clearExplorerSelection(), que por sua vez zerrava o inlineRenameTarget imediatamente. Corrigido usando openRenameModal() que abre o modal e não é afetado pelo clearExplorerSelection.',
+          },
+          {
+            type: 'fix',
+            title: 'Filtros de tipo (Todos/PDF/Imagens/Vídeos) corrigidos',
+            description: 'O clique em um chip de filtro propagava para o container do explorer cujo onClick chama clearExplorerSelection() → setQuickTypeFilter(\'all\'), resetando o filtro instantaneamente. Corrigido adicionando e.stopPropagation() nos chips de filtro.',
+          },
+          {
+            type: 'fix',
+            title: 'Header do Cloud alinhado (items-center)',
+            description: 'O container flex do header usava items-start, desalinhando os botões de ação do Cloud (Enviar/Nova pasta/Filtros/Lista/Cards) com o campo de busca de clientes. Corrigido para items-center.',
+          },
+        ],
+      },
+    ],
+  },
   {
     version: '1.10.035',
     date: '12/05/2026',

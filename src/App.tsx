@@ -1292,7 +1292,7 @@ useEffect(() => {
         {/* Regular header for non-Cloud modules or desktop */}
         <header className={`sticky top-0 z-30 ${activeModule === 'cloud' ? 'hidden md:block border-b border-slate-200/70 bg-slate-50/90 backdrop-blur-lg' : 'bg-white border-b border-gray-200'}`}>
           <div className={`px-3 sm:px-4 lg:px-8 ${activeModule === 'cloud' ? 'py-3 sm:py-4' : 'py-3 sm:py-4'}`}>
-            <div className="flex items-start justify-between gap-3 sm:gap-4">
+            <div className="flex items-center justify-between gap-3 sm:gap-4">
               <div className="flex items-center gap-2 sm:gap-3 min-w-0 flex-1">
                 <button
                   className="md:hidden inline-flex items-center justify-center p-2 rounded-lg text-slate-600 hover:text-white hover:bg-slate-800 transition flex-shrink-0"
