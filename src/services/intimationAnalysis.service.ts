@@ -29,6 +29,14 @@ class IntimationAnalysisService {
     analysis: IntimationAnalysis,
     userId?: string
   ): Promise<IntimationAIAnalysisDB> {
+    // We encode importantPassages into key_points with a sentinel prefix
+    // (§p§:) so we can round-trip them without a DB migration.
+    const PASSAGE_PREFIX = '§p§:';
+    const keyPointsWithPassages = [
+      ...(analysis.keyPoints || []),
+      ...(analysis.importantPassages || []).map(p => `${PASSAGE_PREFIX}${p}`),
+    ];
+
     const data = {
       intimation_id: intimationId,
       summary: analysis.summary,
@@ -39,7 +47,7 @@ class IntimationAnalysisService {
       deadline_description: analysis.deadline?.description || null,
       deadline_confidence: analysis.deadline?.confidence || null,
       suggested_actions: analysis.suggestedActions || [],
-      key_points: analysis.keyPoints || [],
+      key_points: keyPointsWithPassages,
       analyzed_by: userId || null,
       analyzed_at: new Date().toISOString(),
     };
@@ -152,6 +160,14 @@ class IntimationAnalysisService {
    * Converte análise do banco para formato usado pela aplicação
    */
   convertToIntimationAnalysis(dbAnalysis: IntimationAIAnalysisDB): IntimationAnalysis {
+    // Decode importantPassages that were encoded into key_points with a sentinel prefix
+    const PASSAGE_PREFIX = '§p§:';
+    const allKeyPoints = dbAnalysis.key_points || [];
+    const keyPoints = allKeyPoints.filter(kp => !kp.startsWith(PASSAGE_PREFIX));
+    const importantPassages = allKeyPoints
+      .filter(kp => kp.startsWith(PASSAGE_PREFIX))
+      .map(kp => kp.slice(PASSAGE_PREFIX.length));
+
     return {
       summary: dbAnalysis.summary || '',
       urgency: dbAnalysis.urgency,
@@ -165,7 +181,8 @@ class IntimationAnalysisService {
           }
         : null,
       suggestedActions: dbAnalysis.suggested_actions || [],
-      keyPoints: dbAnalysis.key_points || [],
+      keyPoints,
+      importantPassages,
     };
   }
 }

@@ -7,6 +7,7 @@ export interface IntimationAnalysis {
   suggestedActions: string[]; // Ações sugeridas
   keyPoints: string[]; // Pontos-chave
   documentType: string; // Tipo de documento identificado
+  importantPassages?: string[]; // Trechos verbatim mais relevantes (para highlight)
 }
 
 export interface DeadlineExtraction {

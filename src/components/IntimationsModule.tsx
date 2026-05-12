@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+﻿import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Bell,
   Search,
@@ -29,6 +29,9 @@ import {
   Info,
   FileCog,
   Unlink,
+  Layers,
+  Banknote,
+  ShieldAlert,
 } from 'lucide-react';
 import { djenService } from '../services/djen.service';
 import { djenLocalService } from '../services/djenLocal.service';
@@ -177,6 +180,7 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
 
   // IA Analysis
   const [aiAnalysis, setAiAnalysis] = useState<Map<string, IntimationAnalysis>>(new Map());
+  const [analyzingIds, setAnalyzingIds] = useState<Set<string>>(new Set());
 
   // Estados de navegação e interface
   const [showSettingsMenu, setShowSettingsMenu] = useState(false);
@@ -328,7 +332,7 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
     // Criar mapa de nomes de clientes (normalizado) -> client_id
     const clientNameMap = new Map<string, string>();
     clientsData.forEach(client => {
-      const normalizedName = client.full_name.trim().toUpperCase();
+      const normalizedName = (client.full_name || '').trim().toUpperCase();
       clientNameMap.set(normalizedName, client.id);
     });
     console.log(`👥 Mapa de clientes criado com ${clientNameMap.size} nomes`);
@@ -337,7 +341,7 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
     const processNumberMap = new Map<string, string>();
     if (processesData) {
       processesData.forEach(process => {
-        const normalizedNumber = process.process_code.trim().toUpperCase();
+        const normalizedNumber = (process.process_code || '').trim().toUpperCase();
         processNumberMap.set(normalizedNumber, process.id);
       });
       console.log(`⚖️ Mapa de processos criado com ${processNumberMap.size} números`);
@@ -747,6 +751,40 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
   const handleSync = useCallback(async () => {
     await performSync('manual');
   }, [performSync]);
+
+  // Analisar uma única intimação com IA (disparado manualmente)
+  const handleAnalyzeSingle = useCallback(async (intimation: DjenComunicacaoLocal) => {
+    if (!aiService.isEnabled()) {
+      toast.error('IA não configurada', 'Configure VITE_OPENAI_API_KEY para usar esta função.');
+      return;
+    }
+    if (analyzingIds.has(intimation.id)) return;
+    setAnalyzingIds(prev => new Set(prev).add(intimation.id));
+    try {
+      const result = await aiService.analyzeIntimation(
+        intimation.texto || '',
+        intimation.numero_processo || '',
+        intimation.data_disponibilizacao || new Date().toISOString(),
+        intimation.tipo_documento || undefined,
+        intimation.tipo_comunicacao || undefined,
+      );
+      await intimationAnalysisService.saveAnalysis(intimation.id, result, user?.id);
+      setAiAnalysis(prev => {
+        const next = new Map(prev);
+        next.set(intimation.id, result);
+        return next;
+      });
+      toast.success('Análise concluída', 'A IA analisou a intimação com sucesso.');
+    } catch (err: any) {
+      toast.error('Erro na análise', err.message || 'Falha ao analisar com IA.');
+    } finally {
+      setAnalyzingIds(prev => {
+        const next = new Set(prev);
+        next.delete(intimation.id);
+        return next;
+      });
+    }
+  }, [analyzingIds, user, toast]);
 
   // Handlers de exportação
   const handleExportCSV = () => {
@@ -1234,7 +1272,7 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
     if (!status) return 'bg-slate-100 text-slate-600';
     const normalized = status.toLowerCase();
     if (['success', 'completed', 'ok'].some((tag) => normalized.includes(tag))) {
-      return 'bg-emerald-100 text-emerald-700';
+      return 'bg-zinc-100 text-zinc-700 border border-zinc-300';
     }
     if (['error', 'failed'].some((tag) => normalized.includes(tag))) {
       return 'bg-red-100 text-red-700';
@@ -1359,1452 +1397,1327 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
     );
   }
 
+  // ── helpers de urgência ──────────────────────────────────────────────
+  // Detecta resultado do julgamento a partir do resumo da IA
+  const detectOutcome = (summary?: string): { label: string; cls: string } | null => {
+    if (!summary) return null;
+    const s = summary.toUpperCase();
+    if (/PROCEDENTE/.test(s) && !/IMPROCEDENTE/.test(s)) {
+      return { label: 'PROCEDENTE', cls: 'bg-emerald-50 text-emerald-700 border-emerald-300' };
+    }
+    if (/IMPROCEDENTE/.test(s)) {
+      return { label: 'IMPROCEDENTE', cls: 'bg-red-50 text-red-700 border-red-300' };
+    }
+    if (/PARCIALMENTE PROCEDENTE/.test(s)) {
+      return { label: 'PARCIAL', cls: 'bg-amber-50 text-amber-700 border-amber-300' };
+    }
+    if (/TUTELA\s+(DE URGÊNCIA|CONCEDIDA|DEFERIDA)|LIMINAR\s+(CONCEDIDA|DEFERIDA)/.test(s)) {
+      return { label: 'TUTELA CONCEDIDA', cls: 'bg-violet-50 text-violet-700 border-violet-300' };
+    }
+    if (/TUTELA\s+(NEGADA|INDEFERIDA)|LIMINAR\s+(NEGADA|INDEFERIDA)/.test(s)) {
+      return { label: 'TUTELA NEGADA', cls: 'bg-red-50 text-red-700 border-red-300' };
+    }
+    if (/CONDENADO|CONDENA[ÇC][ÃA]O/.test(s)) {
+      return { label: 'CONDENAÇÃO', cls: 'bg-red-50 text-red-700 border-red-300' };
+    }
+    return null;
+  };
+
+  // ── Classificação de ações sugeridas pela IA ────────────────────────
+  type ActionType = 'prazo' | 'audiencia' | 'pagamento' | 'vinculo' | 'prescricao' | 'info';
+
+  const parseAction = (raw: string): { type: ActionType; label: string } => {
+    // Estruturado: começa com [TAG]
+    const tagMatch = raw.match(/^\[([^\]]+)\]\s*/i);
+    if (tagMatch) {
+      const tag = tagMatch[1].toUpperCase();
+      const label = raw.slice(tagMatch[0].length).trim();
+      if (tag === 'PRAZO') return { type: 'prazo', label };
+      if (tag === 'AUDIÊNCIA' || tag === 'AUDIENCIA') return { type: 'audiencia', label };
+      if (tag === 'PAGAMENTO') return { type: 'pagamento', label };
+      if (tag === 'VÍNCULO' || tag === 'VINCULO') return { type: 'vinculo', label };
+      if (tag === 'PRESCRIÇÃO' || tag === 'PRESCRICAO') return { type: 'prescricao', label };
+      if (tag === 'INFO') return { type: 'info', label };
+    }
+    // Fallback: regex por palavras-chave (análises antigas sem tags)
+    const txt = raw.toLowerCase();
+    if (/audi[eê]ncia|audiencia|sess[aã]o.*instruc|julgamento.*oral/.test(txt)) return { type: 'audiencia', label: raw };
+    if (/pagar|pagamento|custar?|custas|depositar|recolher|honor[aá]rio|indeniza[cç]/.test(txt)) return { type: 'pagamento', label: raw };
+    if (/vincular|vincula[cç]/.test(txt)) return { type: 'vinculo', label: raw };
+    if (/prescri[cç]|decad[eê]ncia/.test(txt)) return { type: 'prescricao', label: raw };
+    if (/prazo|dias\s*[úu]teis|interpor|protocolar|contestar|embargar|contrarraz|recorrer/.test(txt)) return { type: 'prazo', label: raw };
+    return { type: 'info', label: raw };
+  };
+
+  const actionTypeConfig: Record<ActionType, {
+    icon: React.FC<any>;
+    cls: string;
+    badge: string;
+    onClick: (intimation: DjenComunicacaoLocal) => void;
+  }> = {
+    prazo:      { icon: Clock,         cls: 'bg-amber-50 text-amber-700 border-amber-200 hover:bg-amber-100',       badge: 'Prazo',       onClick: (i) => handleCreateDeadline(i) },
+    audiencia:  { icon: CalendarIcon,  cls: 'bg-indigo-50 text-indigo-700 border-indigo-200 hover:bg-indigo-100',   badge: 'Audiência',   onClick: (i) => handleCreateAppointment(i) },
+    pagamento:  { icon: Banknote,      cls: 'bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100', badge: 'Pagamento',  onClick: (_i) => onNavigateToModule?.('financeiro') },
+    vinculo:    { icon: Link2,         cls: 'bg-blue-50 text-blue-700 border-blue-200 hover:bg-blue-100',            badge: 'Vínculo',     onClick: (i) => handleOpenLinkModal(i) },
+    prescricao: { icon: ShieldAlert,   cls: 'bg-orange-50 text-orange-700 border-orange-200 hover:bg-orange-100',   badge: 'Prescrição',  onClick: (i) => handleOpenPrescriptionModal(i) },
+    info:       { icon: Lightbulb,     cls: 'bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100',       badge: '',            onClick: (_i) => {} },
+  };
+
+  const urgencyConfig = {
+    critica: { border: 'border-l-red-500',    dot: 'bg-red-500',    badge: 'bg-red-50 text-red-700 border-red-300',          label: 'Crítica' },
+    alta:    { border: 'border-l-orange-400', dot: 'bg-orange-400', badge: 'bg-orange-50 text-orange-700 border-orange-300', label: 'Alta' },
+    media:   { border: 'border-l-zinc-300',   dot: 'bg-zinc-400',   badge: 'bg-zinc-100 text-zinc-600 border-zinc-300',      label: 'Média' },
+    baixa:   { border: 'border-l-zinc-200',   dot: 'bg-zinc-300',   badge: 'bg-zinc-50 text-zinc-400 border-zinc-200',       label: 'Baixa' },
+  };
+
+  // ── highlight text using AI passages + light structural markers ──────
+  //
+  // Strategy: legal texts from DJEN often have \r\n, double spaces, tabs.
+  // The AI returns clean prose. We use two-pass matching:
+  //   Pass 1 — direct indexOf (fast path, works when text is clean)
+  //   Pass 2 — split passage into words, build regex with [\s]{0,25} between
+  //             each word so whitespace differences don't break the match.
+  const findPassageInText = (haystack: string, passage: string): { start: number; end: number } | null => {
+    if (!passage || passage.trim().length < 10) return null;
+    // Pass 1: direct
+    const direct = haystack.toLowerCase().indexOf(passage.toLowerCase());
+    if (direct !== -1) return { start: direct, end: direct + passage.length };
+    // Pass 2: whitespace-flexible regex
+    const words = passage.trim().split(/\s+/).filter(w => w.length >= 2);
+    if (words.length < 3) return null;
+    const esc = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    // [\s]{0,25} allows up to 25 whitespace chars (spaces, \n, \r\n, tabs) between words
+    const pattern = words.map(esc).join('[\\s]{0,25}');
+    try {
+      const rx = new RegExp(pattern, 'i');
+      const m = rx.exec(haystack);
+      if (m) return { start: m.index, end: m.index + m[0].length };
+    } catch { /* ignore malformed pattern */ }
+    return null;
+  };
+
+  const highlightText = (text: string, importantPassages?: string[]): React.ReactNode => {
+    if (!text) return null;
+    type MatchEntry = { start: number; end: number; cls: string };
+    const allMatches: MatchEntry[] = [];
+
+    // 1. AI-identified important passages — amber background highlight
+    if (importantPassages && importantPassages.length > 0) {
+      for (const passage of importantPassages) {
+        const found = findPassageInText(text, passage);
+        if (found) {
+          allMatches.push({ ...found, cls: 'bg-amber-100 text-zinc-900 rounded px-0.5' });
+        }
+      }
+    }
+
+    // 2. Structural markers always: R$ values and dates
+    const structuralPatterns: { regex: RegExp; cls: string }[] = [
+      { regex: /R\$\s?[\d.,]+/g,           cls: 'font-semibold text-zinc-900' },
+      { regex: /\b\d{2}\/\d{2}\/\d{4}\b/g, cls: 'font-semibold text-zinc-700' },
+    ];
+    for (const { regex, cls } of structuralPatterns) {
+      regex.lastIndex = 0;
+      let m: RegExpExecArray | null;
+      while ((m = regex.exec(text)) !== null) {
+        allMatches.push({ start: m.index, end: m.index + m[0].length, cls });
+      }
+    }
+
+    if (allMatches.length === 0) return text;
+    allMatches.sort((a, b) => a.start - b.start);
+    const filtered: MatchEntry[] = [];
+    let lastEnd = 0;
+    for (const entry of allMatches) {
+      if (entry.start >= lastEnd) { filtered.push(entry); lastEnd = entry.end; }
+    }
+    const nodes: React.ReactNode[] = [];
+    let pos = 0;
+    for (const entry of filtered) {
+      if (entry.start > pos) nodes.push(text.slice(pos, entry.start));
+      nodes.push(<mark key={entry.start} className={entry.cls}>{text.slice(entry.start, entry.end)}</mark>);
+      pos = entry.end;
+    }
+    if (pos < text.length) nodes.push(text.slice(pos));
+    return <>{nodes}</>;
+  };
+
   // Visualização de detalhes
   if (selectedIntimation) {
     const client = getClientName(selectedIntimation.client_id);
     const process = getProcessCode(selectedIntimation.process_id);
+    const detailAnalysis = aiAnalysis.get(selectedIntimation.id);
+    const detailUrgency = detailAnalysis?.urgency as keyof typeof urgencyConfig | undefined;
+    const detailUrgCfg = detailUrgency ? urgencyConfig[detailUrgency] : null;
 
     return (
-      <div className="space-y-6">
-        <div className="bg-white border border-gray-200 rounded-xl p-6">
-          <div className="flex items-center justify-between mb-6">
-            <div>
-              <h3 className="text-2xl font-bold text-slate-900">Detalhes da Intimação</h3>
-              <p className="text-sm text-slate-600 mt-1">
-                {selectedIntimation.sigla_tribunal} • {formatDate(selectedIntimation.data_disponibilizacao)}
-              </p>
-            </div>
+      <div className="flex flex-col rounded-2xl overflow-hidden border border-slate-200/80 shadow-sm">
+        {/* ── Header dark ── */}
+        <div className="bg-slate-900 px-5 py-4 flex items-start justify-between gap-4">
+          <div className="flex items-start gap-3 min-w-0">
             <button
               onClick={() => setSelectedIntimation(null)}
-              className="text-slate-600 hover:text-slate-900 transition"
+              className="mt-0.5 inline-flex items-center gap-1 text-slate-400 hover:text-white transition text-xs font-medium shrink-0"
             >
-              <X className="w-6 h-6" />
+              <ChevronRight className="w-3.5 h-3.5 rotate-180" />
+              Voltar
             </button>
-          </div>
-
-          <div className="space-y-6">
-            <div className="grid md:grid-cols-2 gap-6">
-              <div>
-                <label className="text-xs font-semibold text-slate-500 uppercase mb-2 block">
-                  Processo
-                </label>
-                <p className="text-base text-slate-900 font-mono">
-                  {selectedIntimation.numero_processo_mascara || selectedIntimation.numero_processo}
-                </p>
-              </div>
-
-              <div>
-                <label className="text-xs font-semibold text-slate-500 uppercase mb-2 block">Status</label>
-                <span
-                  className={`inline-flex items-center gap-2 px-3 py-1 rounded-full text-sm font-semibold ${
-                    selectedIntimation.lida
-                      ? 'bg-slate-100 text-slate-700'
-                      : 'bg-amber-100 text-amber-700'
-                  }`}
-                >
-                  {selectedIntimation.lida ? (
-                    <>
-                      <Eye className="w-4 h-4" /> Lida
-                    </>
-                  ) : (
-                    <>
-                      <EyeOff className="w-4 h-4" /> Não Lida
-                    </>
-                  )}
-                </span>
-              </div>
-            </div>
-
-            {selectedIntimation.tipo_comunicacao && (
-              <div>
-                <label className="text-xs font-semibold text-slate-500 uppercase mb-2 block">
-                  Tipo de Comunicação
-                </label>
-                <p className="text-base text-slate-900">{selectedIntimation.tipo_comunicacao}</p>
-              </div>
-            )}
-
-            {(client || process) && (
-              <div className="grid md:grid-cols-2 gap-6">
-                {client && (
-                  <div>
-                    <label className="text-xs font-semibold text-slate-500 uppercase mb-2 block">
-                      Cliente Vinculado
-                    </label>
-                    <p className="text-base text-slate-900">{client}</p>
-                  </div>
-                )}
-                {process && (
-                  <div>
-                    <label className="text-xs font-semibold text-slate-500 uppercase mb-2 block">
-                      Processo Vinculado
-                    </label>
-                    <p className="text-base text-slate-900 font-mono">{process}</p>
-                  </div>
-                )}
-              </div>
-            )}
-
-            {/* Partes (destinatários ou extraídas do texto) */}
-            {(() => {
-              const partes = selectedIntimation.djen_destinatarios && selectedIntimation.djen_destinatarios.length > 0
-                ? selectedIntimation.djen_destinatarios.map(d => ({ nome: d.nome, polo: d.polo || '' }))
-                : extractPartesFromTexto(selectedIntimation.texto || '');
-              
-              return partes.length > 0 ? (
-                <div>
-                  <label className="text-xs font-semibold text-slate-500 uppercase mb-2 block">Partes</label>
-                  <div className="flex flex-wrap gap-2">
-                    {partes.map((parte, idx) => (
-                      <span key={idx} className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-slate-50 text-slate-700 rounded-lg text-sm border border-slate-200">
-                        <span className="font-medium">{parte.nome}</span>
-                        {parte.polo && <span className="text-slate-500 text-xs">({parte.polo})</span>}
-                      </span>
-                    ))}
-                  </div>
-                </div>
-              ) : null;
-            })()}
-
-            <div>
-              <label className="text-xs font-semibold text-slate-500 uppercase mb-2 block">Conteúdo</label>
-              <div className="bg-slate-50 border border-slate-200 rounded-lg p-4">
-                <p className="text-sm text-slate-700 whitespace-pre-wrap leading-relaxed">
-                  {selectedIntimation.texto}
-                </p>
-              </div>
-            </div>
-
-            <div className="space-y-3 pt-6 border-t border-gray-200">
-              <div className="flex flex-wrap gap-2">
-                <button
-                  onClick={() => {
-                    handleCreateDeadline(selectedIntimation);
-                    setSelectedIntimation(null);
-                  }}
-                  className="inline-flex items-center justify-center gap-2 bg-white hover:bg-slate-50 text-slate-700 font-semibold px-3 py-2 rounded-lg transition text-xs border border-slate-200 flex-1 sm:flex-none min-w-[160px]"
-                >
-                  <Clock className="w-4 h-4 text-amber-600" />
-                  Novo Prazo
-                </button>
-                <button
-                  onClick={() => {
-                    handleCreateAppointment(selectedIntimation);
-                    setSelectedIntimation(null);
-                  }}
-                  className="inline-flex items-center justify-center gap-2 bg-white hover:bg-slate-50 text-slate-700 font-semibold px-3 py-2 rounded-lg transition text-xs border border-slate-200 flex-1 sm:flex-none min-w-[160px]"
-                >
-                  <CalendarIcon className="w-4 h-4 text-indigo-600" />
-                  Adicionar Compromisso
-                </button>
-                <button
-                  onClick={() => {
-                    handleOpenPrescriptionModal(selectedIntimation);
-                    setSelectedIntimation(null);
-                  }}
-                  className="inline-flex items-center justify-center gap-2 bg-white hover:bg-slate-50 text-slate-700 font-semibold px-3 py-2 rounded-lg transition text-xs border border-slate-200 flex-1 sm:flex-none min-w-[160px]"
-                >
-                  <AlertTriangle className="w-4 h-4 text-orange-600" />
-                  Prescrição
-                </button>
+            <div className="min-w-0">
+              <div className="flex items-center flex-wrap gap-1.5 mb-1">
+                <span className="text-[10px] font-bold uppercase tracking-widest text-slate-500">Intimação</span>
+                <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[11px] font-bold bg-blue-500/20 text-blue-300">{selectedIntimation.sigla_tribunal}</span>
                 {!selectedIntimation.lida && (
-                  <button
-                    onClick={() => {
-                      handleMarkAsRead(selectedIntimation.id);
-                      setSelectedIntimation(null);
-                    }}
-                    className="inline-flex items-center justify-center gap-2 bg-white hover:bg-slate-50 text-slate-700 font-semibold px-3 py-2 rounded-lg transition text-xs border border-slate-200 flex-1 sm:flex-none min-w-[160px]"
-                  >
-                    <CheckCircle className="w-4 h-4 text-emerald-600" />
-                    Marcar como Lida
-                  </button>
+                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-bold bg-amber-400/20 text-amber-300">
+                    <EyeOff className="w-3 h-3" /> Não lida
+                  </span>
+                )}
+                {detailUrgCfg && (
+                  <span className={`inline-flex items-center px-2 py-0.5 rounded-md text-[11px] font-bold border ${detailUrgCfg.badge}`}>
+                    {urgencyConfig[detailUrgency!].label}
+                  </span>
                 )}
               </div>
-              <div className="flex flex-wrap gap-2">
-                <button
-                  onClick={() => {
-                    handleOpenLinkModal(selectedIntimation);
-                    setSelectedIntimation(null);
-                  }}
-                  className="inline-flex items-center justify-center gap-2 bg-white hover:bg-slate-50 text-slate-700 font-semibold px-3 py-2 rounded-lg transition text-xs border border-slate-200 flex-1 sm:flex-none min-w-[160px]"
-                >
-                  <Link2 className="w-4 h-4 text-blue-600" />
-                  Vincular
-                </button>
-                {selectedIntimation.link && (
-                  <a
-                    href={selectedIntimation.link}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="inline-flex items-center justify-center gap-2 bg-white hover:bg-slate-50 text-slate-700 font-semibold px-3 py-2 rounded-lg transition text-xs border border-slate-200 flex-1 sm:flex-none min-w-[160px]"
-                  >
-                    <ExternalLink className="w-4 h-4 text-purple-600" />
-                    Ver Diário
-                  </a>
-                )}
+              <p className="text-base font-bold text-white font-mono leading-tight truncate">
+                {selectedIntimation.numero_processo_mascara || selectedIntimation.numero_processo}
+              </p>
+              <p className="text-[11px] text-slate-400 mt-0.5">
+                {formatDate(selectedIntimation.data_disponibilizacao)}
+                {selectedIntimation.nome_orgao && ` · ${selectedIntimation.nome_orgao}`}
+              </p>
+            </div>
+          </div>
+          <button onClick={() => setSelectedIntimation(null)} className="p-1.5 text-slate-500 hover:text-white hover:bg-white/10 rounded-lg transition shrink-0">
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+
+        {/* ── Corpo ── */}
+        <div className="bg-white p-5 space-y-4 flex-1">
+          {/* Cliente + Processo vinculados */}
+          {(client || process) && (
+            <div className="grid grid-cols-2 gap-3">
+              {client && (
+                <div className="bg-slate-50 rounded-xl p-3 border border-slate-100">
+                  <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400 mb-1">Cliente</p>
+                  <p className="text-sm font-semibold text-slate-900 truncate">{client}</p>
+                </div>
+              )}
+              {process && (
+                <div className="bg-slate-50 rounded-xl p-3 border border-slate-100">
+                  <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400 mb-1">Processo</p>
+                  <p className="text-sm font-mono font-semibold text-slate-900 truncate">{process}</p>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Tipo + Classe */}
+          {(selectedIntimation.tipo_comunicacao || selectedIntimation.nome_classe) && (
+            <div className="flex flex-wrap gap-2">
+              {selectedIntimation.tipo_comunicacao && (
+                <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium bg-blue-50 text-blue-700 border border-blue-100">
+                  {selectedIntimation.tipo_comunicacao}
+                </span>
+              )}
+              {selectedIntimation.nome_classe && (
+                <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium bg-slate-100 text-slate-700">
+                  {selectedIntimation.nome_classe}
+                </span>
+              )}
+            </div>
+          )}
+
+          {/* IA */}
+          {detailAnalysis && (
+            <div className={`rounded-xl p-4 border ${detailUrgCfg?.badge ?? 'bg-slate-50 border-slate-200'}`}>
+              <div className="flex items-center gap-2 mb-2">
+                <Sparkles className="w-3.5 h-3.5" />
+                <span className="text-xs font-bold uppercase tracking-wider">Análise IA</span>
               </div>
+              <p className="text-sm text-slate-800 mb-2">{detailAnalysis.summary}</p>
+              {detailAnalysis.deadline && (
+                <div className="bg-white/70 rounded-lg p-3 mt-2 border border-black/5">
+                  <p className="text-sm font-bold text-slate-900">{detailAnalysis.deadline.days} dias úteis</p>
+                  <p className="text-xs text-slate-700">{detailAnalysis.deadline.description}</p>
+                  {detailAnalysis.deadline.dueDate && (
+                    <p className="text-xs text-slate-600 mt-1">Vencimento: {new Date(detailAnalysis.deadline.dueDate).toLocaleDateString('pt-BR')}</p>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Partes */}
+          {(() => {
+            const partes = selectedIntimation.djen_destinatarios && selectedIntimation.djen_destinatarios.length > 0
+              ? selectedIntimation.djen_destinatarios.map(d => ({ nome: d.nome, polo: d.polo || '' }))
+              : extractPartesFromTexto(selectedIntimation.texto || '');
+            return partes.length > 0 ? (
+              <div>
+                <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400 mb-2">Partes</p>
+                <div className="flex flex-wrap gap-2">
+                  {partes.map((parte, idx) => (
+                    <span key={idx} className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-slate-50 text-slate-700 rounded-lg text-xs border border-slate-200">
+                      <span className="font-semibold">{parte.nome}</span>
+                      {parte.polo && <span className="text-slate-400">({parte.polo})</span>}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            ) : null;
+          })()}
+
+          {/* Texto */}
+          <div>
+            <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400 mb-2">Conteúdo</p>
+            <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 max-h-72 overflow-y-auto">
+              <p className="text-sm text-slate-700 whitespace-pre-wrap leading-relaxed">{highlightText(selectedIntimation.texto || '', detailAnalysis?.importantPassages)}</p>
             </div>
           </div>
         </div>
+
+        {/* ── Ações ── */}
+        <div className="bg-slate-50 border-t border-slate-200 px-5 py-3 flex flex-wrap gap-2">
+          {!selectedIntimation.lida && (
+            <button onClick={() => { handleMarkAsRead(selectedIntimation.id); setSelectedIntimation(null); }}
+              className="inline-flex items-center gap-1.5 bg-emerald-500 hover:bg-emerald-600 text-white font-semibold px-3 py-1.5 rounded-lg transition text-xs">
+              <CheckCircle className="w-3.5 h-3.5" /> Marcar lida
+            </button>
+          )}
+          <button onClick={() => { handleCreateDeadline(selectedIntimation); setSelectedIntimation(null); }}
+            className="inline-flex items-center gap-1.5 bg-white hover:bg-amber-50 text-slate-700 font-medium px-3 py-1.5 rounded-lg transition text-xs border border-slate-200">
+            <Clock className="w-3.5 h-3.5 text-amber-600" /> Novo Prazo
+          </button>
+          <button onClick={() => { handleCreateAppointment(selectedIntimation); setSelectedIntimation(null); }}
+            className="inline-flex items-center gap-1.5 bg-white hover:bg-indigo-50 text-slate-700 font-medium px-3 py-1.5 rounded-lg transition text-xs border border-slate-200">
+            <CalendarIcon className="w-3.5 h-3.5 text-indigo-600" /> Compromisso
+          </button>
+          <button onClick={() => { handleOpenPrescriptionModal(selectedIntimation); setSelectedIntimation(null); }}
+            className="inline-flex items-center gap-1.5 bg-white hover:bg-orange-50 text-slate-700 font-medium px-3 py-1.5 rounded-lg transition text-xs border border-slate-200">
+            <AlertTriangle className="w-3.5 h-3.5 text-orange-500" /> Prescrição
+          </button>
+          <button onClick={() => { handleOpenLinkModal(selectedIntimation); setSelectedIntimation(null); }}
+            className="inline-flex items-center gap-1.5 bg-white hover:bg-blue-50 text-slate-700 font-medium px-3 py-1.5 rounded-lg transition text-xs border border-slate-200">
+            <Link2 className="w-3.5 h-3.5 text-blue-600" /> Vincular
+          </button>
+          {selectedIntimation.link && (
+            <a href={selectedIntimation.link} target="_blank" rel="noopener noreferrer"
+              className="inline-flex items-center gap-1.5 bg-white hover:bg-purple-50 text-slate-700 font-medium px-3 py-1.5 rounded-lg transition text-xs border border-slate-200">
+              <ExternalLink className="w-3.5 h-3.5 text-purple-600" /> Ver Diário
+            </a>
+          )}
+        </div>
+
       </div>
     );
   }
 
   return (
-    <div className="space-y-4">
-      {loading && hasCompletedInitialLoad && (
-        <div className="flex items-center gap-2 text-xs font-medium text-blue-700 bg-blue-50 border border-blue-100 rounded-lg px-3 py-2">
-          <Loader2 className="w-4 h-4 animate-spin" />
-          Atualizando dados em segundo plano...
-        </div>
-      )}
-      {/* Barra única: Header + Filtros + Ações */}
-      <div className="bg-white border border-slate-100 rounded-lg p-2">
-        {/* Linha 1: Título, indicadores e sincronizar */}
-        <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
-          <div className="flex flex-wrap items-center gap-2 text-xs text-slate-500 flex-1 min-w-0">
-            <Bell className="w-4 h-4 text-amber-600" />
-            <span className="font-semibold text-slate-800 text-sm">Intimações</span>
-            <span className="hidden sm:inline-flex items-center gap-1">
-              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
-              Online
-            </span>
-            <span className="hidden sm:inline">•</span>
-            <span className="hidden sm:inline">{intimations.length} total</span>
-            <span className="font-medium text-amber-600">{unreadCount} não lidas</span>
-            {aiUrgencyStats.alta > 0 && (
-              <span className="font-medium text-red-600">{aiUrgencyStats.alta} Alta</span>
-            )}
-            {aiUrgencyStats.baixa > 0 && (
-              <span className="font-medium text-emerald-600">{aiUrgencyStats.baixa} Baixa</span>
-            )}
+    <div className="space-y-0">
+
+      {/* ═══════════════════════════════════════════
+          PREMIUM CARD WRAPPER
+      ═══════════════════════════════════════════ */}
+      {/* glass card wrapper */}
+      <div className="rounded-2xl overflow-hidden border border-slate-200/70 shadow-lg shadow-slate-200/60 bg-white/80 backdrop-blur-xl">
+
+        {/* 1px accent line at top */}
+        <div className="h-px bg-gradient-to-r from-slate-300 via-slate-400 to-slate-300" />
+
+        {/* ── COMPACT GLASS HEADER — single row ── */}
+        <div className="px-4 sm:px-5 py-3 flex items-center gap-3 border-b border-slate-100/80 bg-white/60 backdrop-blur-sm">
+
+          {/* Identity */}
+          <Bell className="w-4 h-4 text-slate-400 flex-shrink-0" />
+          <span className="font-semibold text-slate-800 text-sm tracking-tight whitespace-nowrap">Intimações</span>
+          <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse flex-shrink-0" />
+
+          {/* Stats — hidden on mobile */}
+          <div className="hidden sm:flex items-center gap-2 text-xs text-slate-400 border-l border-slate-200 pl-3">
+            {unreadCount > 0 && <span className="text-slate-700 font-semibold">{unreadCount} não lidas</span>}
+            {unreadCount > 0 && <span>·</span>}
+            <span>{intimations.length} total</span>
+            {aiUrgencyStats.alta > 0 && <><span>·</span><span className="text-red-500 font-medium">{aiUrgencyStats.alta} urgentes</span></>}
           </div>
-          <button
-            onClick={handleSync}
-            disabled={syncing}
-            className="inline-flex items-center gap-1.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-medium px-2.5 py-1 rounded-md transition disabled:opacity-50"
-          >
-            {syncing ? <Loader2 className="w-3 h-3 animate-spin" /> : <RefreshCw className="w-3 h-3" />}
+
+          {/* Spacer */}
+          <div className="flex-1" />
+
+          {/* Search */}
+          <div className="relative hidden sm:block">
+            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400" />
+            <input type="text" value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)}
+              placeholder="Buscar..."
+              className="w-48 bg-slate-50 border border-slate-200 rounded-lg pl-8 pr-3 py-1.5 text-xs text-slate-700 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-300 focus:bg-white transition" />
+          </div>
+
+          {/* Sync */}
+          <button onClick={handleSync} disabled={syncing}
+            className="inline-flex items-center gap-1.5 bg-slate-900 hover:bg-slate-700 text-white text-xs font-semibold px-3 py-1.5 rounded-lg shadow-sm transition disabled:opacity-50 flex-shrink-0">
+            {syncing ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5" />}
             <span className="hidden sm:inline">{syncing ? 'Sincronizando...' : 'Sincronizar'}</span>
           </button>
         </div>
 
-        {/* Linha 2: Busca, filtros e ações */}
-        <div className="flex flex-col gap-1.5">
-          <div className="relative w-full">
-            <Search className="absolute left-2 top-1/2 transform -translate-y-1/2 text-slate-400 w-3.5 h-3.5" />
-            <input
-              type="text"
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              placeholder="Pesquisar por cliente, OAB ou processo..."
-              className="w-full pl-7 pr-2.5 py-1 border border-gray-200 rounded-md focus:outline-none focus:ring-1 focus:ring-blue-500 text-xs sm:text-sm"
-            />
+        {/* Mobile search */}
+        <div className="sm:hidden px-4 py-2 border-b border-slate-100 bg-white/60">
+          <div className="relative">
+            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400" />
+            <input type="text" value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)}
+              placeholder="Buscar intimação..."
+              className="w-full pl-8 pr-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-xs text-slate-700 focus:outline-none focus:ring-2 focus:ring-slate-300 transition" />
           </div>
+        </div>
 
-          <div className="flex items-center justify-between gap-1.5">
-            <div className="flex flex-wrap items-center gap-2">
-              <div className="inline-flex rounded-lg border border-gray-200 bg-white p-0.5">
-                <button
-                  type="button"
-                  onClick={() => setStatusFilter('unread')}
-                  className={`px-2.5 py-1 rounded-md text-xs font-medium transition ${
-                    statusFilter === 'unread'
-                      ? 'bg-blue-600 text-white'
-                      : 'text-slate-700 hover:bg-slate-50'
+        {/* ── FILTER / TABS BAR ── */}
+        <div className="px-4 sm:px-5 border-b border-slate-100 bg-white/60 backdrop-blur-sm">
+          <div className="flex items-center justify-between gap-2">
+            {/* ── Left: status tabs ── */}
+            <div className="flex items-center gap-0 overflow-x-auto flex-1 min-w-0">
+              {([
+                { key: 'unread'   as const, label: 'Não lidas',   count: unreadCount },
+                { key: 'linked'   as const, label: 'Vinculadas',  count: intimations.filter(isLinked).length },
+                { key: 'unlinked' as const, label: 'Sem vínculo', count: intimations.filter(isUnlinked).length },
+                { key: 'read'     as const, label: 'Lidas',       count: readCount },
+                { key: 'all'      as const, label: 'Todas',       count: intimations.length },
+              ]).map((chip) => (
+                <button key={chip.key} onClick={() => setStatusFilter(chip.key)}
+                  className={`flex-shrink-0 inline-flex items-center gap-1.5 px-3 py-2.5 text-xs font-medium transition-colors border-b-2 ${
+                    statusFilter === chip.key
+                      ? 'border-slate-800 text-slate-900 font-semibold'
+                      : 'border-transparent text-slate-500 hover:text-slate-700 hover:border-slate-300'
                   }`}
                 >
-                  Não lidas ({unreadCount})
+                  {chip.label}
+                  <span className={`text-[10px] font-bold tabular-nums ${statusFilter === chip.key ? 'text-slate-700' : 'text-slate-400'}`}>
+                    {chip.count}
+                  </span>
                 </button>
-                <button
-                  type="button"
-                  onClick={() => setStatusFilter('read')}
-                  className={`px-2.5 py-1 rounded-md text-xs font-medium transition ${
-                    statusFilter === 'read'
-                      ? 'bg-blue-600 text-white'
-                      : 'text-slate-700 hover:bg-slate-50'
-                  }`}
-                >
-                  Lidas ({readCount})
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setStatusFilter('linked')}
-                  className={`px-2.5 py-1 rounded-md text-xs font-medium transition ${
-                    statusFilter === 'linked'
-                      ? 'bg-emerald-600 text-white'
-                      : 'text-slate-700 hover:bg-slate-50'
-                  }`}
-                >
-                  Vinculadas ({intimations.filter(isLinked).length})
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setStatusFilter('unlinked')}
-                  className={`px-2.5 py-1 rounded-md text-xs font-medium transition ${
-                    statusFilter === 'unlinked'
-                      ? 'bg-amber-600 text-white'
-                      : 'text-slate-700 hover:bg-slate-50'
-                  }`}
-                >
-                  Não Vinc ({intimations.filter(isUnlinked).length})
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setStatusFilter('all')}
-                  className={`px-2.5 py-1 rounded-md text-xs font-medium transition ${
-                    statusFilter === 'all'
-                      ? 'bg-blue-600 text-white'
-                      : 'text-slate-700 hover:bg-slate-50'
-                  }`}
-                >
-                  Todas ({intimations.length})
-                </button>
-              </div>
-
-              <div className="inline-flex rounded-lg border border-gray-200 bg-white p-0.5">
-                <button
-                  type="button"
-                  onClick={() => setUrgencyFilter('all')}
-                  className={`px-2.5 py-1 rounded-md text-xs font-medium transition ${
-                    urgencyFilter === 'all'
-                      ? 'bg-slate-900 text-white'
-                      : 'text-slate-700 hover:bg-slate-50'
-                  }`}
-                >
-                  Todas
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setUrgencyFilter('alta')}
-                  className={`px-2.5 py-1 rounded-md text-xs font-medium transition ${
-                    urgencyFilter === 'alta'
-                      ? 'bg-red-600 text-white'
-                      : 'text-slate-700 hover:bg-slate-50'
-                  }`}
-                >
-                  Alta
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setUrgencyFilter('media')}
-                  className={`px-2.5 py-1 rounded-md text-xs font-medium transition ${
-                    urgencyFilter === 'media'
-                      ? 'bg-amber-600 text-white'
-                      : 'text-slate-700 hover:bg-slate-50'
-                  }`}
-                >
-                  Média
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setUrgencyFilter('baixa')}
-                  className={`px-2.5 py-1 rounded-md text-xs font-medium transition ${
-                    urgencyFilter === 'baixa'
-                      ? 'bg-emerald-600 text-white'
-                      : 'text-slate-700 hover:bg-slate-50'
-                  }`}
-                >
-                  Baixa
-                </button>
-              </div>
-
-              <button
-                type="button"
-                onClick={() => {
-                  setMobileControlsExpanded((prev) => {
-                    const next = !prev;
-                    if (!next) {
-                      setShowClearMenu(false);
-                      setShowExportMenu(false);
-                      setShowSettingsMenu(false);
-                    }
-                    return next;
-                  });
-                }}
-                className={`inline-flex items-center gap-2 px-3 py-2 rounded-lg border text-xs font-medium transition ${
-                  mobileControlsExpanded
-                    ? 'bg-slate-100 text-slate-800 border-slate-300'
-                    : 'border-gray-200 text-slate-700 hover:bg-slate-50'
-                }`}
-              >
-                <Filter className="w-3.5 h-3.5" />
-                Mais filtros
-                <ChevronDown className={`w-3.5 h-3.5 text-slate-500 transition-transform ${mobileControlsExpanded ? 'rotate-180' : ''}`} />
-              </button>
-            </div>
-
-            <div className="flex items-center gap-2">
-              <button
-                type="button"
-                onClick={() => {
-                  setMobileControlsExpanded(true);
-                  setShowClearMenu((prev) => !prev);
-                }}
-                disabled={syncing}
-                className="inline-flex items-center justify-center gap-1.5 border border-gray-200 text-slate-700 hover:bg-slate-50 text-xs px-2.5 py-1.5 rounded-md transition disabled:opacity-50"
-              >
-                <Trash2 className="w-3.5 h-3.5" />
-                Limpar
-              </button>
-
-              <button
-                type="button"
-                onClick={() => {
-                  setMobileControlsExpanded(true);
-                  setShowExportMenu((prev) => !prev);
-                }}
-                disabled={filteredIntimations.length === 0}
-                className="inline-flex items-center justify-center gap-1.5 border border-gray-200 text-slate-700 hover:bg-slate-50 text-xs px-2.5 py-1.5 rounded-md transition disabled:opacity-50"
-              >
-                <Download className="w-3.5 h-3.5" />
-                Exportar
-              </button>
-
-              <button
-                type="button"
-                onClick={() => {
-                  setMobileControlsExpanded(true);
-                  setShowSettingsMenu((prev) => !prev);
-                }}
-                className="inline-flex items-center justify-center gap-1.5 border border-gray-200 text-slate-700 hover:bg-slate-50 text-xs px-2.5 py-1.5 rounded-md transition"
-              >
-                <Settings className="w-3.5 h-3.5" />
-                Config
-              </button>
-            </div>
-          </div>
-
-          <div
-            className={
-              mobileControlsExpanded
-                ? 'grid grid-cols-2 sm:flex sm:flex-wrap items-center gap-2'
-                : 'hidden'
-            }
-          >
-            <select
-              value={statusFilter}
-              onChange={(e) => setStatusFilter(e.target.value as any)}
-              className="w-full px-2 py-1 border border-gray-200 rounded-md focus:outline-none focus:ring-1 focus:ring-blue-500 text-xs"
-            >
-              <option value="all">Todas ({intimations.length})</option>
-              <option value="unread">Não Lidas ({unreadCount})</option>
-              <option value="read">Lidas ({readCount})</option>
-              <option value="linked">Vinculadas ({intimations.filter(isLinked).length})</option>
-              <option value="unlinked">Não Vinc ({intimations.filter(isUnlinked).length})</option>
-            </select>
-
-            <select
-              value={tribunalFilter}
-              onChange={(e) => setTribunalFilter(e.target.value)}
-              className="w-full px-2 py-1 border border-gray-200 rounded-md focus:outline-none focus:ring-1 focus:ring-blue-500 text-xs"
-            >
-              <option value="all">Todos os Tribunais</option>
-              {availableTribunals.map((tribunal) => (
-                <option key={tribunal} value={tribunal}>
-                  {tribunal}
-                </option>
               ))}
-            </select>
-
-            <select
-              value={dateFilter}
-              onChange={(e) => setDateFilter(e.target.value as any)}
-              className="w-full px-2 py-1 border border-gray-200 rounded-md focus:outline-none focus:ring-1 focus:ring-blue-500 text-xs"
-            >
-              <option value="30days">Últimos 30 dias</option>
-              <option value="60days">Últimos 60 dias</option>
-              <option value="90days">Últimos 90 dias</option>
-              <option value="all">Todas as datas</option>
-            </select>
-
-            <select
-              value={urgencyFilter}
-              onChange={(e) => setUrgencyFilter(e.target.value as any)}
-              className="w-full px-2 py-1 border border-gray-200 rounded-md focus:outline-none focus:ring-1 focus:ring-blue-500 text-xs"
-            >
-              <option value="all">Todas urgências</option>
-              <option value="alta">Alta</option>
-              <option value="media">Média</option>
-              <option value="baixa">Baixa</option>
-            </select>
-
-            <button
-              onClick={() => setShowFilters(!showFilters)}
-              className={`inline-flex items-center justify-center gap-1.5 px-2 py-1 rounded-md transition text-xs w-full sm:w-auto ${
-                showFilters
-                  ? 'bg-slate-100 text-slate-700 border border-slate-300'
-                  : 'border border-gray-200 text-slate-600 hover:bg-slate-50'
-              }`}
-            >
-              <Filter className="w-3 h-3" />
-              <span className="sm:hidden">Filtros</span>
-              <span className="hidden sm:inline">Filtros</span>
-            </button>
-
-            <div className="relative col-span-1 w-full sm:w-auto">
-              <button
-                onClick={() => setShowClearMenu((prev) => !prev)}
-                disabled={syncing}
-                className="inline-flex items-center justify-center gap-1.5 border border-gray-200 text-slate-600 hover:bg-slate-50 text-xs sm:text-sm px-2.5 py-1.5 rounded-lg transition disabled:opacity-50 w-full sm:w-auto"
-              >
-                <Trash2 className="w-3.5 h-3.5" />
-                <span className="sm:hidden">Limpar</span>
-              </button>
-              {showClearMenu && (
-                <div className="absolute left-0 sm:left-auto sm:right-0 mt-2 w-full sm:w-56 bg-white rounded-lg shadow-lg border border-gray-200 z-50 text-sm text-slate-700">
-                  <button
-                    onClick={handleDeleteSelected}
-                    className="w-full text-left px-4 py-2.5 hover:bg-gray-50 flex items-center gap-2 disabled:text-slate-400"
-                  >
-                    <CheckCircle className="w-4 h-4" /> Remover selecionadas
-                  </button>
-                  <button
-                    onClick={handleDeleteRead}
-                    className="w-full text-left px-4 py-2.5 hover:bg-gray-50 flex items-center gap-2"
-                  >
-                    <EyeOff className="w-4 h-4" /> Remover lidas
-                  </button>
-                  <button
-                    onClick={handleMarkAllAsRead}
-                    className="w-full text-left px-4 py-2.5 hover:bg-gray-50 flex items-center gap-2"
-                  >
-                    <CheckCircle className="w-4 h-4 text-emerald-600" /> Marcar todas como lidas
-                  </button>
-                  <button
-                    onClick={handleClearAllIntimations}
-                    disabled={clearingAll || intimations.length === 0}
-                    className="w-full text-left px-4 py-2.5 hover:bg-gray-50 flex items-center gap-2 text-red-600 disabled:text-red-300"
-                  >
-                    <Trash2 className="w-4 h-4" /> Remover tudo
-                  </button>
-                </div>
-              )}
             </div>
 
-            <div className="relative col-span-1 w-full sm:w-auto">
-              <button
-                onClick={() => setShowExportMenu((prev) => !prev)}
-                disabled={filteredIntimations.length === 0}
-                className="inline-flex items-center justify-center gap-1.5 border border-gray-200 text-slate-600 hover:bg-slate-50 text-xs sm:text-sm px-2.5 py-1.5 rounded-lg transition disabled:opacity-50 w-full sm:w-auto"
-              >
-                <Download className="w-3.5 h-3.5" />
-                <span className="sm:hidden">Exportar</span>
-              </button>
-              {showExportMenu && (
-                <div className="absolute left-0 sm:left-auto sm:right-0 mt-2 w-full sm:w-44 bg-white rounded-lg shadow-lg border border-gray-200 z-50">
-                  <div className="py-1 text-sm text-gray-700">
-                    <button
-                      onClick={handleExportCSV}
-                      className="w-full text-left px-4 py-2.5 hover:bg-gray-50 flex items-center gap-2"
-                    >
-                      <FileText className="w-4 h-4" /> CSV
-                    </button>
-                    <button
-                      onClick={handleExportExcel}
-                      className="w-full text-left px-4 py-2.5 hover:bg-gray-50 flex items-center gap-2"
-                    >
-                      <FileText className="w-4 h-4" /> Excel
-                    </button>
-                    <button
-                      onClick={handleExportPDF}
-                      className="w-full text-left px-4 py-2.5 hover:bg-gray-50 flex items-center gap-2"
-                    >
-                      <FileText className="w-4 h-4" /> PDF
-                    </button>
-                  </div>
-                </div>
-              )}
-            </div>
+            {/* ── Right: compact action buttons ── */}
+            <div className="flex items-center gap-1 flex-shrink-0">
 
-            <div className="relative col-span-2 sm:col-span-1 w-full sm:w-auto">
-              <button
-                onClick={() => setShowSettingsMenu((prev) => !prev)}
-                className="inline-flex items-center justify-center gap-1.5 border border-gray-200 text-slate-600 hover:bg-slate-50 text-xs sm:text-sm px-2.5 py-1.5 rounded-lg transition w-full sm:w-auto"
-              >
-                <UserCog className="w-3.5 h-3.5" />
-                <span className="sm:hidden">Configurações</span>
-              </button>
-              {showSettingsMenu && (
-                <div className="absolute left-0 sm:left-auto sm:right-0 mt-2 w-full sm:w-72 bg-white rounded-lg shadow-lg border border-gray-200 z-50 p-4">
-                  <div className="mb-3">
-                    <h3 className="text-sm font-semibold text-slate-900">Configurações</h3>
+              {/* Filtros dropdown */}
+              <div className="relative">
+                <button
+                  onClick={() => { setMobileControlsExpanded(!mobileControlsExpanded); setShowClearMenu(false); setShowExportMenu(false); setShowSettingsMenu(false); }}
+                  className={`inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium border transition ${
+                    mobileControlsExpanded || tribunalFilter !== 'all' || dateFilter !== '30days' || urgencyFilter !== 'all' || groupByProcess || showFilters || selectionMode
+                      ? 'bg-slate-900 text-white border-slate-900'
+                      : 'bg-white/70 text-slate-500 border-slate-200 hover:bg-white hover:border-slate-300'
+                  }`}
+                >
+                  <Filter className="w-3.5 h-3.5" />
+                  <span className="hidden sm:inline">Filtros</span>
+                  {(tribunalFilter !== 'all' || dateFilter !== '30days' || urgencyFilter !== 'all' || groupByProcess) && (
+                    <span className="w-1.5 h-1.5 rounded-full bg-amber-400 flex-shrink-0" />
+                  )}
+                </button>
+
+                {mobileControlsExpanded && (
+                  <div className="absolute right-0 mt-1.5 w-72 bg-white rounded-xl shadow-2xl border border-zinc-200 z-50 p-4 space-y-3">
+                    <p className="text-[10px] font-bold text-zinc-400 uppercase tracking-widest">Filtros avançados</p>
+
+                    <div className="grid grid-cols-2 gap-2">
+                      <div>
+                        <label className="block text-[10px] font-semibold text-zinc-500 uppercase mb-1">Tribunal</label>
+                        <select value={tribunalFilter} onChange={(e) => setTribunalFilter(e.target.value)}
+                          className="w-full px-2 py-1.5 border border-zinc-200 rounded-md text-xs text-zinc-700 focus:outline-none focus:ring-1 focus:ring-zinc-500 bg-white">
+                          <option value="all">Todos</option>
+                          {availableTribunals.map((t) => <option key={t} value={t}>{t}</option>)}
+                        </select>
+                      </div>
+                      <div>
+                        <label className="block text-[10px] font-semibold text-zinc-500 uppercase mb-1">Período</label>
+                        <select value={dateFilter} onChange={(e) => setDateFilter(e.target.value as any)}
+                          className="w-full px-2 py-1.5 border border-zinc-200 rounded-md text-xs text-zinc-700 focus:outline-none focus:ring-1 focus:ring-zinc-500 bg-white">
+                          <option value="30days">30 dias</option>
+                          <option value="60days">60 dias</option>
+                          <option value="90days">90 dias</option>
+                          <option value="all">Todos</option>
+                        </select>
+                      </div>
+                    </div>
+
+                    <div>
+                      <label className="block text-[10px] font-semibold text-zinc-500 uppercase mb-1">Urgência IA</label>
+                      <div className="flex gap-1 flex-wrap">
+                        {([
+                          { key: 'all'   as const, label: 'Todas' },
+                          { key: 'alta'  as const, label: 'Alta' },
+                          { key: 'media' as const, label: 'Média' },
+                          { key: 'baixa' as const, label: 'Baixa' },
+                        ]).map(c => (
+                          <button key={c.key} onClick={() => setUrgencyFilter(c.key)}
+                            className={`px-2.5 py-1 rounded-md text-xs font-semibold border transition ${
+                              urgencyFilter === c.key ? 'bg-zinc-900 text-white border-zinc-900' : 'bg-white text-zinc-600 border-zinc-300 hover:border-zinc-400'
+                            }`}>{c.label}</button>
+                        ))}
+                      </div>
+                    </div>
+
+                    <div className="flex flex-col gap-2 pt-2 border-t border-zinc-100">
+                      <label className="flex items-center gap-2 text-xs text-zinc-600 cursor-pointer">
+                        <input type="checkbox" checked={groupByProcess} onChange={(e) => setGroupByProcess(e.target.checked)}
+                          className="rounded border-zinc-300" />
+                        <Layers className="w-3.5 h-3.5 text-zinc-500" />
+                        Agrupar por processo
+                      </label>
+                      <label className="flex items-center gap-2 text-xs text-zinc-600 cursor-pointer">
+                        <input type="checkbox" checked={selectionMode}
+                          onChange={(e) => { setSelectionMode(e.target.checked); if (!e.target.checked) clearSelectedIds(); }}
+                          className="rounded border-zinc-300" />
+                        Modo seleção múltipla
+                      </label>
+                      <label className="flex items-center gap-2 text-xs text-zinc-600 cursor-pointer">
+                        <input type="checkbox" checked={showFilters} onChange={(e) => setShowFilters(e.target.checked)}
+                          className="rounded border-zinc-300" />
+                        Filtrar por data personalizada
+                      </label>
+                    </div>
+
+                    {showFilters && (
+                      <div className="grid grid-cols-2 gap-2 pt-2 border-t border-zinc-100">
+                        <div>
+                          <label className="block text-[10px] font-semibold text-zinc-500 uppercase mb-1">De</label>
+                          <input type="date" value={customDateStart} onChange={(e) => setCustomDateStart(e.target.value)}
+                            className="w-full px-2 py-1.5 border border-zinc-200 rounded-md text-xs focus:outline-none focus:ring-1 focus:ring-zinc-500" />
+                        </div>
+                        <div>
+                          <label className="block text-[10px] font-semibold text-zinc-500 uppercase mb-1">Até</label>
+                          <input type="date" value={customDateEnd} onChange={(e) => setCustomDateEnd(e.target.value)}
+                            className="w-full px-2 py-1.5 border border-zinc-200 rounded-md text-xs focus:outline-none focus:ring-1 focus:ring-zinc-500" />
+                        </div>
+                      </div>
+                    )}
+
+                    {(tribunalFilter !== 'all' || dateFilter !== '30days' || urgencyFilter !== 'all' || customDateStart || customDateEnd) && (
+                      <button
+                        onClick={() => { setTribunalFilter('all'); setDateFilter('30days'); setUrgencyFilter('all'); setCustomDateStart(''); setCustomDateEnd(''); }}
+                        className="text-xs text-red-500 hover:text-red-600 font-medium">
+                        ✕ Limpar filtros
+                      </button>
+                    )}
                   </div>
-                  <div className="space-y-3">
-                    <label className="flex items-center gap-2 text-sm text-slate-600 cursor-pointer">
-                      <input
-                        type="checkbox"
-                        checked={moduleSettings.defaultGroupByProcess}
-                        onChange={(e) => {
-                          setModuleSettings((prev) => ({
-                            ...prev,
-                            defaultGroupByProcess: e.target.checked,
-                          }));
-                          setGroupByProcess(e.target.checked);
-                        }}
-                        className="rounded border-slate-300 text-blue-600 focus:ring-blue-500"
-                      />
-                      Agrupar por processo
+                )}
+              </div>
+
+              {/* Limpar */}
+              <div className="relative">
+                <button onClick={() => { setShowClearMenu(!showClearMenu); setShowExportMenu(false); setShowSettingsMenu(false); setMobileControlsExpanded(false); }}
+                  disabled={syncing}
+                  className="p-1.5 rounded-lg border border-slate-200 text-slate-500 hover:bg-white hover:border-slate-300 bg-white/70 transition disabled:opacity-40" title="Limpar">
+                  <Trash2 className="w-3.5 h-3.5" />
+                </button>
+                {showClearMenu && (
+                  <div className="absolute right-0 mt-1.5 w-52 bg-white rounded-xl shadow-xl border border-zinc-200 z-50 py-1 text-sm text-zinc-700">
+                    <button onClick={handleDeleteSelected} className="w-full text-left px-4 py-2.5 hover:bg-zinc-50 flex items-center gap-2">
+                      <CheckCircle className="w-4 h-4 text-zinc-500" /> Remover selecionadas
+                    </button>
+                    <button onClick={handleDeleteRead} className="w-full text-left px-4 py-2.5 hover:bg-zinc-50 flex items-center gap-2">
+                      <EyeOff className="w-4 h-4 text-zinc-500" /> Remover lidas
+                    </button>
+                    <button onClick={handleMarkAllAsRead} className="w-full text-left px-4 py-2.5 hover:bg-zinc-50 flex items-center gap-2">
+                      <CheckCircle className="w-4 h-4 text-zinc-500" /> Marcar todas lidas
+                    </button>
+                    <div className="border-t border-zinc-100 my-1" />
+                    <button onClick={handleClearAllIntimations} disabled={clearingAll || intimations.length === 0}
+                      className="w-full text-left px-4 py-2.5 hover:bg-red-50 flex items-center gap-2 text-red-600 disabled:opacity-50">
+                      <Trash2 className="w-4 h-4" /> Remover tudo
+                    </button>
+                  </div>
+                )}
+              </div>
+
+              {/* Exportar */}
+              <div className="relative">
+                <button onClick={() => { setShowExportMenu(!showExportMenu); setShowClearMenu(false); setShowSettingsMenu(false); setMobileControlsExpanded(false); }}
+                  disabled={filteredIntimations.length === 0}
+                  className="p-1.5 rounded-lg border border-slate-200 text-slate-500 hover:bg-white hover:border-slate-300 bg-white/70 transition disabled:opacity-40" title="Exportar">
+                  <Download className="w-3.5 h-3.5" />
+                </button>
+                {showExportMenu && (
+                  <div className="absolute right-0 mt-1.5 w-36 bg-white rounded-xl shadow-xl border border-zinc-200 z-50 py-1 text-sm text-zinc-700">
+                    <button onClick={handleExportCSV} className="w-full text-left px-4 py-2.5 hover:bg-zinc-50 flex items-center gap-2"><FileText className="w-4 h-4" /> CSV</button>
+                    <button onClick={handleExportExcel} className="w-full text-left px-4 py-2.5 hover:bg-zinc-50 flex items-center gap-2"><FileText className="w-4 h-4" /> Excel</button>
+                    <button onClick={handleExportPDF} className="w-full text-left px-4 py-2.5 hover:bg-zinc-50 flex items-center gap-2"><FileText className="w-4 h-4" /> PDF</button>
+                  </div>
+                )}
+              </div>
+
+              {/* Config */}
+              <div className="relative">
+                <button onClick={() => { setShowSettingsMenu(!showSettingsMenu); setShowClearMenu(false); setShowExportMenu(false); setMobileControlsExpanded(false); }}
+                  className="p-1.5 rounded-lg border border-slate-200 text-slate-500 hover:bg-white hover:border-slate-300 bg-white/70 transition" title="Configurações">
+                  <Settings className="w-3.5 h-3.5" />
+                </button>
+                {showSettingsMenu && (
+                  <div className="absolute right-0 mt-1.5 w-64 bg-white rounded-xl shadow-xl border border-zinc-200 z-50 p-4 space-y-3">
+                    <p className="text-[10px] font-bold text-zinc-400 uppercase tracking-widest">Configurações</p>
+                    <label className="flex items-center gap-2 text-xs text-zinc-600 cursor-pointer">
+                      <input type="checkbox" checked={moduleSettings.defaultGroupByProcess}
+                        onChange={(e) => { setModuleSettings((prev) => ({ ...prev, defaultGroupByProcess: e.target.checked })); setGroupByProcess(e.target.checked); }}
+                        className="rounded border-zinc-300" />
+                      Agrupar por processo (padrão)
                     </label>
-                    <label className="flex items-center gap-2 text-sm text-slate-600 cursor-pointer">
-                      <input
-                        type="checkbox"
-                        checked={selectionMode}
-                        onChange={(e) => {
-                          setSelectionMode(e.target.checked);
-                          if (!e.target.checked) clearSelectedIds();
-                        }}
-                        className="rounded border-slate-300 text-slate-600 focus:ring-slate-500"
-                      />
-                      Selecionar múltiplas
-                    </label>
-                    <div className="pt-2 border-t border-gray-100">
-                      <label className="block text-xs font-medium text-slate-600 mb-1">Filtro padrão</label>
-                      <select
-                        value={moduleSettings.defaultStatusFilter}
-                        onChange={(e) => {
-                          const value = e.target.value as 'all' | 'unread' | 'read';
-                          setModuleSettings((prev) => ({
-                            ...prev,
-                            defaultStatusFilter: value,
-                          }));
-                        }}
-                        className="w-full px-2 py-1.5 border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-blue-500 text-sm"
-                      >
+                    <div className="pt-2 border-t border-zinc-100">
+                      <label className="block text-xs font-medium text-zinc-600 mb-1">Filtro padrão</label>
+                      <select value={moduleSettings.defaultStatusFilter}
+                        onChange={(e) => { const v = e.target.value as 'all' | 'unread' | 'read'; setModuleSettings((prev) => ({ ...prev, defaultStatusFilter: v })); }}
+                        className="w-full px-2 py-1.5 border border-zinc-200 rounded-md text-xs focus:outline-none focus:ring-1 focus:ring-zinc-500 bg-white">
                         <option value="all">Todas</option>
                         <option value="unread">Não lidas</option>
                         <option value="read">Lidas</option>
                       </select>
                     </div>
                   </div>
-                </div>
-              )}
+                )}
+              </div>
             </div>
           </div>
         </div>
 
-        <div className="mt-2 rounded-lg border border-slate-200 bg-slate-50/70 px-3 py-2">
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <div className="flex items-center gap-2 min-w-0">
-              <RefreshCw className="w-3.5 h-3.5 text-blue-500" />
-              <span className="text-xs font-semibold text-slate-700">Run DJEN Sync (07h e 19h)</span>
-              <span className="text-xs text-slate-600 truncate">
-                {lastRunDateObj
-                  ? `${lastRunRelative ?? 'agora'} — ${lastRunDateObj.toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}`
-                  : 'Nunca executado'}
-              </span>
-            </div>
 
-            <div className="flex items-center gap-2 text-xs">
-              {lastCronRun?.status ? (
-                <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full font-semibold ${getStatusBadgeClass(lastCronRun.status)}`}>
-                  {lastCronRun.status.toLowerCase().includes('success') ? (
-                    <><CheckCircle className="w-3 h-3" /> Sucesso</>
-                  ) : lastCronRun.status.toLowerCase().includes('error') ? (
-                    <><AlertCircle className="w-3 h-3" /> Erro</>
-                  ) : (
-                    <><Loader2 className="w-3 h-3 animate-spin" /> Executando</>
-                  )}
-                </span>
-              ) : (
-                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full font-semibold bg-slate-100 text-slate-600">
-                  Nunca executado
-                </span>
-              )}
-              <span className="text-slate-600">
-                <span className="font-semibold text-slate-800">{lastCronRun?.items_found ?? 0}</span> encontradas
-              </span>
-              <span className="text-slate-600">
-                <span className="font-semibold text-slate-800">{lastCronRun?.items_saved ?? 0}</span> salvas
-              </span>
-            </div>
-          </div>
-        </div>
-
-        {showFilters && (
-          <div className={`${mobileControlsExpanded ? 'block' : 'hidden'} sm:block mt-4 pt-4 border-t border-gray-200`}>
-            <h4 className="text-sm font-semibold text-slate-700 mb-3">Filtro por Data Personalizado</h4>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div>
-                <label className="block text-xs font-medium text-slate-600 mb-1">Data Início</label>
-                <input
-                  type="date"
-                  value={customDateStart}
-                  onChange={(e) => setCustomDateStart(e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
-                />
-              </div>
-              <div>
-                <label className="block text-xs font-medium text-slate-600 mb-1">Data Fim</label>
-                <input
-                  type="date"
-                  value={customDateEnd}
-                  onChange={(e) => setCustomDateEnd(e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
-                />
-              </div>
-            </div>
-            {(customDateStart || customDateEnd) && (
-              <button
-                onClick={() => {
-                  setCustomDateStart('');
-                  setCustomDateEnd('');
-                }}
-                className="mt-3 text-xs text-blue-600 hover:text-blue-700 font-medium"
-              >
-                Limpar filtro personalizado
-              </button>
-            )}
+        {/* ── LOADING BANNER ── */}
+        {loading && hasCompletedInitialLoad && (
+          <div className="flex items-center gap-2 text-xs font-medium text-indigo-700 bg-indigo-50 border-b border-indigo-100 px-4 sm:px-5 py-1.5">
+            <Loader2 className="w-3.5 h-3.5 animate-spin" />
+            Atualizando em segundo plano...
           </div>
         )}
 
+        {/* ── SELECTION TOOLBAR ── */}
         {selectionMode && selectedIds.size > 0 && (
-          <div className="mt-4 p-3 sm:p-4 border border-slate-200 bg-slate-50 rounded-xl flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-            <span className="text-sm text-slate-700">
-              <strong className="text-slate-900">{selectedIds.size}</strong> selecionada(s)
+          <div className="bg-indigo-50 border-b border-indigo-100 px-4 sm:px-5 py-2 flex flex-wrap items-center justify-between gap-3">
+            <span className="text-sm text-indigo-700">
+              <strong className="text-indigo-900">{selectedIds.size}</strong> selecionada(s)
             </span>
-            <div className="flex flex-wrap gap-2">
-              <button
-                onClick={handleMarkSelectedAsRead}
-                className="inline-flex items-center gap-2 bg-white hover:bg-slate-50 text-slate-700 font-semibold px-3 py-2 rounded-lg transition text-sm border border-slate-200"
-              >
-                <CheckCircle className="w-4 h-4 text-emerald-600" />
-                Marcar como lidas
+            <div className="flex flex-wrap items-center gap-2">
+              <button onClick={handleMarkSelectedAsRead}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-white hover:bg-zinc-50 text-zinc-700 text-xs font-semibold rounded-lg transition border border-zinc-300">
+                <CheckCircle className="w-3.5 h-3.5 text-zinc-500" /> Marcar lidas
               </button>
-              <button
-                onClick={handleBatchLink}
-                className="inline-flex items-center gap-2 bg-white hover:bg-slate-50 text-slate-700 font-semibold px-3 py-2 rounded-lg transition text-sm border border-slate-200"
-              >
-                <Link2 className="w-4 h-4 text-blue-600" />
-                Vincular em lote
+              <button onClick={handleBatchLink}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-white hover:bg-zinc-50 text-zinc-700 text-xs font-semibold rounded-lg transition border border-zinc-300">
+                <Link2 className="w-3.5 h-3.5 text-zinc-500" /> Vincular
               </button>
-              <button
-                onClick={handleExportSelected}
-                className="inline-flex items-center gap-2 bg-white hover:bg-slate-50 text-slate-700 font-semibold px-3 py-2 rounded-lg transition text-sm border border-slate-200"
-              >
-                <Download className="w-4 h-4 text-purple-600" />
-                Exportar selecionadas
+              <button onClick={handleExportSelected}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-white hover:bg-zinc-50 text-zinc-700 text-xs font-semibold rounded-lg transition border border-zinc-300">
+                <Download className="w-3.5 h-3.5 text-zinc-500" /> Exportar
               </button>
-              <button
-                onClick={handleDeleteSelected}
-                className="inline-flex items-center gap-2 bg-white hover:bg-slate-50 text-slate-700 font-semibold px-3 py-2 rounded-lg transition text-sm border border-slate-200"
-              >
-                <Trash2 className="w-4 h-4 text-red-600" />
-                Remover
+              <button onClick={handleDeleteSelected}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-white hover:bg-red-50 text-red-600 text-xs font-semibold rounded-lg transition border border-red-200">
+                <Trash2 className="w-3.5 h-3.5" /> Remover
               </button>
-              <button
-                onClick={() => {
-                  disableSelectionMode();
-                }}
-                className="inline-flex items-center gap-2 bg-transparent hover:bg-white text-slate-600 font-semibold px-3 py-2 rounded-lg transition text-sm border border-transparent"
-              >
-                <X className="w-4 h-4" />
-                Cancelar
+              <button onClick={disableSelectionMode}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-transparent hover:bg-zinc-200 text-zinc-500 text-xs font-semibold rounded-lg transition">
+                <X className="w-3.5 h-3.5" /> Cancelar
               </button>
             </div>
           </div>
         )}
-      </div>
 
-      {/* Lista de Intimações */}
-      <div className="space-y-3">
-        {filteredIntimations.length === 0 ? (
-          <div className="bg-slate-50 border border-slate-200 rounded-xl p-6 sm:p-12 text-center">
-            <FileText className="w-12 h-12 sm:w-16 sm:h-16 text-slate-300 mx-auto mb-4" />
-            <h4 className="text-base sm:text-lg font-semibold text-slate-900 mb-2">Nenhuma intimação encontrada</h4>
-            <p className="text-slate-600">
-              {statusFilter === 'unread'
-                ? 'Não há intimações não lidas no momento'
-                : statusFilter === 'read'
-                ? 'Não há intimações lidas'
-                : 'Clique em "Sincronizar" para buscar novas intimações'}
-            </p>
-          </div>
-        ) : groupByProcess && groupedByProcess ? (
-          // Visualização agrupada por processo
-          Array.from(groupedByProcess.entries()).map(([processNum, group]) => (
-            <div key={processNum} className="bg-white border border-gray-200 rounded-xl p-3 sm:p-5 space-y-2 sm:space-y-3">
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-2 sm:pb-3 border-b border-gray-200">
-                <div className="min-w-0">
-                  <h4 className="text-sm sm:text-lg font-bold text-slate-900 truncate">Processo: {processNum}</h4>
-                  <p className="text-xs sm:text-sm text-slate-600">
-                    {group.length} intimação(ões) • {group.filter((i) => !i.lida).length} não lida(s)
-                  </p>
-                  {group[0].client_id && (
-                    <p className="text-xs sm:text-sm text-blue-600 mt-1 truncate">
-                      <strong>Cliente:</strong> {getClientName(group[0].client_id)}
-                    </p>
-                  )}
-                </div>
-                {group.filter((i) => !i.lida).length > 0 && (
-                  <button
-                    onClick={async () => {
-                      for (const intimation of group.filter((i) => !i.lida)) {
-                        await handleMarkAsRead(intimation.id);
-                      }
-                    }}
-                    className="inline-flex items-center justify-center gap-1.5 sm:gap-2 px-3 sm:px-4 py-1.5 sm:py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-medium rounded-lg transition text-xs sm:text-sm w-full sm:w-auto"
-                  >
-                    <CheckCircle className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
-                    <span className="hidden sm:inline">Marcar Todas</span>
-                    <span className="sm:hidden">Marcar Lidas</span>
-                  </button>
-                )}
-              </div>
-              <div className="space-y-2">
-                {group.map((intimation) => {
-                  const isExpanded = expandedIntimationIds.has(intimation.id);
-                  return (
-                  <div
-                    key={intimation.id}
-                    className={`border rounded-lg overflow-hidden transition ${
-                      intimation.lida
-                        ? 'border-slate-200 hover:border-slate-300 bg-slate-50'
-                        : 'border-slate-200 hover:border-slate-300 bg-white border-l-4 border-l-amber-400'
-                    }`}
-                  >
-                    {/* Header clicável para expandir */}
-                    <div
-                      className="p-2.5 sm:p-4 cursor-pointer"
-                      onClick={() => {
-                        const newExpanded = new Set(expandedIntimationIds);
-                        if (isExpanded) {
-                          newExpanded.delete(intimation.id);
-                        } else {
-                          newExpanded.add(intimation.id);
-                        }
-                        setExpandedIntimationIds(newExpanded);
-                      }}
-                    >
-                      <div className="flex items-start gap-2 sm:gap-3">
-                        <div className="flex items-center flex-shrink-0">
-                          {isExpanded ? <ChevronDown className="w-4 h-4 text-slate-600" /> : <ChevronRight className="w-4 h-4 text-slate-600" />}
-                        </div>
-                        <div className="flex-1 min-w-0">
-                          {/* Mobile: Layout compacto */}
-                          <div className="flex items-center gap-1.5 sm:gap-2 mb-1.5 sm:mb-2 flex-wrap">
-                            <span className="inline-flex items-center px-1.5 sm:px-2 py-0.5 rounded-full text-[10px] sm:text-xs font-medium bg-blue-100 text-blue-800">
-                              {intimation.sigla_tribunal}
-                            </span>
-                            <span className="text-[10px] sm:text-xs text-slate-500">
-                              {formatDate(intimation.data_disponibilizacao)}
-                            </span>
-                            {/* Indicador de vinculação */}
-                            {isLinked(intimation) ? (
-                              <span className="inline-flex items-center px-1.5 sm:px-2 py-0.5 rounded-full text-[10px] sm:text-xs font-semibold bg-emerald-100 text-emerald-700 border border-emerald-200">
-                                <Link2 className="w-3 h-3 sm:w-3.5 sm:h-3.5 mr-1" />
-                                Vinc
-                              </span>
-                            ) : (
-                              <button
-                                onClick={() => {
-                                  setLinkingIntimation(intimation);
-                                  setLinkModalOpen(true);
-                                }}
-                                className="inline-flex items-center px-1.5 sm:px-2 py-0.5 rounded-full text-[10px] sm:text-xs font-semibold bg-blue-100 text-blue-700 border border-blue-200 hover:bg-blue-200 transition-colors cursor-pointer"
-                                title="Vincular a cliente/processo"
-                              >
-                                <Link2 className="w-3 h-3 sm:w-3.5 sm:h-3.5 mr-1" />
-                                Sem Vínc
-                              </button>
-                            )}
-                            {!intimation.lida && (
-                              <span className="inline-flex items-center px-1.5 sm:px-2 py-0.5 rounded-full text-[10px] sm:text-xs font-semibold bg-amber-100 text-amber-700">
-                                NÃO LIDA
-                              </span>
-                            )}
-                            {intimation.tipo_comunicacao && (
-                              <span className="hidden sm:inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-slate-100 text-slate-700 border border-slate-200">
-                                {intimation.tipo_comunicacao}
-                              </span>
-                            )}
-                          </div>
-                          {/* Partes (destinatários ou extraídas do texto) */}
-                          {(() => {
-                            const partes = intimation.djen_destinatarios && intimation.djen_destinatarios.length > 0
-                              ? intimation.djen_destinatarios.map(d => ({ nome: d.nome, polo: d.polo || '' }))
-                              : extractPartesFromTexto(intimation.texto || '');
-                            
-                            return partes.length > 0 ? (
-                              <div className="flex flex-wrap items-center gap-1.5 text-xs text-slate-600">
-                                <span className="font-medium text-slate-500">Partes:</span>
-                                {partes.map((parte, idx) => (
-                                  <span key={idx} className="inline-flex items-center gap-1 px-1.5 py-0.5 bg-slate-50 text-slate-700 rounded text-[11px] border border-slate-200">
-                                    {parte.nome}
-                                    {parte.polo && <span className="text-slate-500">({parte.polo})</span>}
-                                  </span>
-                                ))}
-                              </div>
-                            ) : null;
-                          })()}
-                          {/* Texto da intimação - compacto em mobile */}
-                          <p className={`text-xs sm:text-sm text-slate-700 ${!isExpanded ? 'line-clamp-1 sm:line-clamp-2' : ''}`}>
-                            {intimation.texto}
-                          </p>
+        {/* ── LIST AREA ── */}
+        <div className="bg-slate-50/60 p-4 sm:p-5 space-y-2.5">
+          {filteredIntimations.length === 0 ? (
 
-                          {/* Botões de ação (desktop) - abaixo do texto para largura total */}
-                          {!selectionMode && (
-                            <div className="hidden sm:flex items-center justify-end gap-2 mt-2">
-                              {!intimation.lida && (
-                                <button
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    handleMarkAsRead(intimation.id);
-                                  }}
-                                  className="inline-flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-semibold text-slate-700 bg-white hover:bg-slate-50 border border-slate-200 rounded-lg transition"
-                                >
-                                  <CheckCircle className="w-3.5 h-3.5 text-emerald-600" />
-                                  Marcar
-                                </button>
-                              )}
-                              {intimation.link && (
-                                <a
-                                  href={intimation.link}
-                                  target="_blank"
-                                  rel="noopener noreferrer"
-                                  onClick={(e) => e.stopPropagation()}
-                                  className="inline-flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-semibold text-slate-700 bg-white hover:bg-slate-50 border border-slate-200 rounded-lg transition"
-                                >
-                                  <ExternalLink className="w-3.5 h-3.5 text-purple-600" />
-                                  Diário
-                                </a>
-                              )}
-                              <button
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  setSelectedIntimation(intimation);
-                                }}
-                                className="inline-flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-semibold text-slate-700 bg-white hover:bg-slate-50 border border-slate-200 rounded-lg transition"
-                              >
-                                <Eye className="w-3.5 h-3.5 text-blue-600" />
-                                Detalhes
-                              </button>
-                            </div>
-                          )}
-                        </div>
-                      </div>
-                    </div>
-                    
-                    {/* Conteúdo Expandido - Visualização Agrupada */}
-                    {isExpanded && (
-                      <div className="px-4 pb-4 border-t border-slate-200">
-                        {aiAnalysis.has(intimation.id) && (
-                          <div className="mt-3 bg-slate-50 border border-slate-200 rounded-lg p-3 space-y-2">
-                            <div className="flex items-center justify-between gap-3">
-                              <div className="flex items-center gap-2 min-w-0">
-                                <Sparkles className="w-4 h-4 text-slate-700 flex-shrink-0" />
-                                <h6 className="text-xs font-bold text-slate-900 truncate">Análise IA</h6>
-                              </div>
-                              {(() => {
-                                const analysis = aiAnalysis.get(intimation.id)!;
-                                const urgencyColors = {
-                                  'critica': 'bg-red-50 text-red-700 border-red-200',
-                                  'alta': 'bg-orange-50 text-orange-700 border-orange-200',
-                                  'media': 'bg-amber-50 text-amber-700 border-amber-200',
-                                  'baixa': 'bg-emerald-50 text-emerald-700 border-emerald-200',
-                                };
-                                return (
-                                  <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-semibold border ${urgencyColors[analysis.urgency]}`}>
-                                    {analysis.urgency.toUpperCase()}
-                                  </span>
-                                );
-                              })()}
-                            </div>
-                            {(() => {
-                              const analysis = aiAnalysis.get(intimation.id)!;
-                              return (
-                                <>
-                                  <p className="text-xs text-slate-700 line-clamp-3"><strong>Resumo:</strong> {analysis.summary}</p>
-                                  {analysis.deadline && (
-                                    <div className="bg-white border border-slate-200 rounded-lg p-2 text-xs">
-                                      <p className="font-semibold text-slate-900">{analysis.deadline.days} dias úteis</p>
-                                      <p className="text-slate-700">{analysis.deadline.description}</p>
-                                      {analysis.deadline.dueDate && (
-                                        <p className="text-slate-600 mt-1">Vencimento: {new Date(analysis.deadline.dueDate).toLocaleDateString('pt-BR')}</p>
-                                      )}
-                                    </div>
-                                  )}
-                                </>
-                              );
-                            })()}
-                          </div>
-                        )}
-                        
-                        {/* Botões de Ação - Visualização Agrupada */}
-                        <div className="mt-3 flex flex-wrap gap-2">
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              setCurrentIntimationForAction(intimation);
-                              setDeadlineModalOpen(true);
-                            }}
-                            className="inline-flex items-center justify-center gap-2 px-3 py-2 text-xs font-semibold text-slate-700 bg-white hover:bg-slate-50 border border-slate-200 rounded-lg transition flex-1 sm:flex-none min-w-[140px]"
-                          >
-                            <Clock className="w-4 h-4 text-amber-600" />
-                            Novo Prazo
-                          </button>
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              setCurrentIntimationForAction(intimation);
-                              setAppointmentModalOpen(true);
-                            }}
-                            className="inline-flex items-center justify-center gap-2 px-3 py-2 text-xs font-semibold text-slate-700 bg-white hover:bg-slate-50 border border-slate-200 rounded-lg transition flex-1 sm:flex-none min-w-[140px]"
-                          >
-                            <CalendarIcon className="w-4 h-4 text-indigo-600" />
-                            Compromisso
-                          </button>
-                          {!intimation.lida && (
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                handleMarkAsRead(intimation.id);
-                              }}
-                              className="inline-flex items-center justify-center gap-2 px-3 py-2 text-xs font-semibold text-slate-700 bg-white hover:bg-slate-50 border border-slate-200 rounded-lg transition flex-1 sm:flex-none min-w-[140px]"
-                            >
-                              <CheckCircle className="w-4 h-4 text-emerald-600" />
-                              Marcar Lida
-                            </button>
-                          )}
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              setLinkingIntimation(intimation);
-                              setSelectedClientId(intimation.client_id || '');
-                              setSelectedProcessId(intimation.process_id || '');
-                              setLinkModalOpen(true);
-                            }}
-                            className="inline-flex items-center justify-center gap-2 px-3 py-2 text-xs font-semibold text-slate-700 bg-white hover:bg-slate-50 border border-slate-200 rounded-lg transition flex-1 sm:flex-none min-w-[140px]"
-                          >
-                            <Link2 className="w-4 h-4 text-blue-600" />
-                            Vincular
-                          </button>
-                          {intimation.link && (
-                            <a
-                              href={intimation.link}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              onClick={(e) => e.stopPropagation()}
-                              className="inline-flex items-center justify-center gap-2 px-3 py-2 text-xs font-semibold text-slate-700 bg-white hover:bg-slate-50 border border-slate-200 rounded-lg transition flex-1 sm:flex-none min-w-[140px]"
-                            >
-                              <ExternalLink className="w-4 h-4 text-purple-600" />
-                              Ver Diário
-                            </a>
-                          )}
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              setSelectedIntimation(intimation);
-                            }}
-                            className="inline-flex items-center justify-center gap-2 px-3 py-2 text-xs font-semibold text-slate-700 bg-white hover:bg-slate-50 border border-slate-200 rounded-lg transition flex-1 sm:flex-none min-w-[140px]"
-                          >
-                            <Eye className="w-4 h-4" />
-                            Detalhes
-                          </button>
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                  );
-                })}
+            /* Empty state */
+            <div className="bg-white border border-slate-200 rounded-2xl p-10 text-center">
+              <div className="w-16 h-16 rounded-2xl bg-slate-100 flex items-center justify-center mx-auto mb-4">
+                <Bell className="w-8 h-8 text-slate-300" />
               </div>
+              <h4 className="text-base font-semibold text-slate-900 mb-1">Nenhuma intimação encontrada</h4>
+              <p className="text-sm text-slate-500">
+                {statusFilter === 'unread'
+                  ? 'Não há intimações não lidas no momento'
+                  : statusFilter === 'read'
+                  ? 'Não há intimações lidas'
+                  : 'Clique em "Sincronizar" para buscar novas intimações'}
+              </p>
             </div>
-          ))
-        ) : (
-          // Visualização normal (lista) - Compacta em mobile
-          filteredIntimations.map((intimation) => {
-            const isExpanded = expandedIntimationIds.has(intimation.id);
-            return (
-            <div
-              key={intimation.id}
-              className={`bg-white border rounded-xl p-3 sm:p-5 transition ${
-                intimation.lida
-                  ? 'border-slate-200 hover:border-slate-300'
-                  : 'border-slate-200 hover:border-slate-300 border-l-4 border-l-amber-400'
-              } ${selectionMode && selectedIds.has(intimation.id) ? 'ring-2 ring-blue-500' : ''}`}
-            >
-              <div className="flex items-start gap-2 sm:gap-4">
-                {selectionMode && (
-                  <input
-                    type="checkbox"
-                    checked={selectedIds.has(intimation.id)}
-                    onChange={() => toggleSelectedId(intimation.id)}
-                    onClick={(e) => e.stopPropagation()}
-                    className="mt-1 w-4 h-4 sm:w-5 sm:h-5 text-blue-600 border-slate-300 rounded focus:ring-blue-500"
-                  />
-                )}
 
-                <button
-                  onClick={() => toggleExpanded(intimation.id)}
-                  className="flex-shrink-0 mt-0.5 sm:mt-1 p-0.5 sm:p-1 hover:bg-slate-100 rounded transition"
-                >
-                  {isExpanded ? (
-                    <ChevronDown className="w-4 h-4 sm:w-5 sm:h-5 text-slate-600" />
-                  ) : (
-                    <ChevronRight className="w-4 h-4 sm:w-5 sm:h-5 text-slate-600" />
-                  )}
-                </button>
+          ) : groupByProcess && groupedByProcess ? (
 
-                <div className="flex-1 min-w-0">
-                  {/* Mobile: Layout compacto | Desktop: Layout completo */}
-                  <div className="flex items-center gap-1.5 sm:gap-2 mb-1.5 sm:mb-3 flex-wrap">
-                    <span className="inline-flex items-center px-1.5 sm:px-2.5 py-0.5 rounded-full text-[10px] sm:text-xs font-medium bg-blue-100 text-blue-800">
-                      {intimation.sigla_tribunal}
-                    </span>
-                    <span className="text-[10px] sm:text-xs text-slate-500">
-                      {formatDate(intimation.data_disponibilizacao)}
-                    </span>
-                    {/* Indicador de vinculação */}
-                    {isLinked(intimation) ? (
-                      <span className="inline-flex items-center px-1.5 sm:px-2 py-0.5 rounded-full text-[10px] sm:text-xs font-semibold bg-emerald-100 text-emerald-700 border border-emerald-200">
-                        <Link2 className="w-3 h-3 sm:w-3.5 sm:h-3.5 mr-1" />
-                        Vinc
+            /* ── GROUPED VIEW ── */
+            Array.from(groupedByProcess.entries()).map(([processNum, group]) => (
+              <div key={processNum} className="bg-white border border-zinc-200 rounded-xl overflow-hidden shadow-sm">
+
+                {/* Group header */}
+                <div className="bg-zinc-50 border-b border-zinc-200 px-4 sm:px-5 py-3 flex items-center justify-between gap-3">
+                  <div className="flex items-center gap-3 min-w-0">
+                    <FileText className="w-4 h-4 text-zinc-400 flex-shrink-0" />
+                    <div className="min-w-0">
+                      <p className="text-zinc-900 font-mono font-bold text-sm truncate">{processNum}</p>
+                      {group[0].client_id && (
+                        <p className="text-zinc-500 text-xs truncate">{getClientName(group[0].client_id)}</p>
+                      )}
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2 flex-shrink-0">
+                    {group.filter((i) => !i.lida).length > 0 && (
+                      <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[10px] font-semibold bg-orange-50 text-orange-700 border border-orange-200">
+                        {group.filter((i) => !i.lida).length} não lida{group.filter((i) => !i.lida).length !== 1 ? 's' : ''}
                       </span>
-                    ) : (
+                    )}
+                    <span className="text-zinc-400 text-xs hidden sm:inline">{group.length} total</span>
+                    {group.filter((i) => !i.lida).length > 0 && (
                       <button
-                        onClick={() => {
-                          setLinkingIntimation(intimation);
-                          setLinkModalOpen(true);
+                        onClick={async () => {
+                          for (const int of group.filter((i) => !i.lida)) {
+                            await handleMarkAsRead(int.id);
+                          }
                         }}
-                        className="inline-flex items-center px-1.5 sm:px-2 py-0.5 rounded-full text-[10px] sm:text-xs font-semibold bg-blue-100 text-blue-700 border border-blue-200 hover:bg-blue-200 transition-colors cursor-pointer"
-                        title="Vincular a cliente/processo"
+                        className="inline-flex items-center gap-1 px-2.5 py-1 bg-white hover:bg-zinc-50 text-zinc-600 border border-zinc-300 rounded-lg text-xs font-medium transition"
                       >
-                        <Link2 className="w-3 h-3 sm:w-3.5 sm:h-3.5 mr-1" />
-                        Sem Vínc
+                        <CheckCircle className="w-3 h-3" />
+                        Marcar todas
                       </button>
                     )}
-                    {!intimation.lida && (
-                      <span className="inline-flex items-center px-1.5 sm:px-2 py-0.5 rounded-full text-[10px] sm:text-xs font-semibold bg-amber-100 text-amber-700">
-                        NÃO LIDA
-                      </span>
-                    )}
-                    {intimation.tipo_comunicacao && (
-                      <span className="hidden sm:inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-slate-100 text-slate-700 border border-slate-200">
-                        {intimation.tipo_comunicacao}
-                      </span>
-                    )}
-                    {aiAnalysis.has(intimation.id) && (
-                      <span className="hidden sm:inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-slate-50 text-slate-700 border border-slate-200">
-                        <Sparkles className="w-3 h-3 text-violet-600" />
-                        Analisado
-                      </span>
-                    )}
                   </div>
+                </div>
 
-                  <h4 className="text-sm sm:text-base font-semibold text-slate-900 mb-1 sm:mb-2 truncate sm:whitespace-normal">
-                    Processo: {intimation.numero_processo_mascara || intimation.numero_processo}
-                  </h4>
-
-                  {/* Polos das Partes - Ocultos em mobile quando não expandido */}
-                  <div className={`mb-2 sm:mb-3 space-y-1 ${!isExpanded ? 'hidden sm:block' : ''}`}>
-                    {intimation.polo_ativo && (
-                      <p className="text-xs sm:text-sm truncate sm:whitespace-normal">
-                        <span className="font-semibold text-emerald-700">Polo Ativo:</span>{' '}
-                        <span className="text-slate-700">{intimation.polo_ativo}</span>
-                      </p>
-                    )}
-                    {intimation.polo_passivo && (
-                      <p className="text-xs sm:text-sm truncate sm:whitespace-normal">
-                        <span className="font-semibold text-red-700">Polo Passivo:</span>{' '}
-                        <span className="text-slate-700">{intimation.polo_passivo}</span>
-                      </p>
-                    )}
-                  </div>
-
-                  {/* Partes (destinatários ou extraídas do texto) */}
-                  {(() => {
-                    const partes = intimation.djen_destinatarios && intimation.djen_destinatarios.length > 0
-                      ? intimation.djen_destinatarios.map(d => ({ nome: d.nome, polo: d.polo || '' }))
-                      : extractPartesFromTexto(intimation.texto || '');
-                    
-                    return partes.length > 0 ? (
-                      <div className="flex flex-wrap items-center gap-1.5 text-xs text-slate-600 mb-2">
-                        <span className="font-medium text-slate-500">Partes:</span>
-                        {partes.map((parte, idx) => (
-                          <span key={idx} className="inline-flex items-center gap-1 px-1.5 py-0.5 bg-blue-50 text-blue-700 rounded text-[11px]">
-                            {parte.nome}
-                            {parte.polo && <span className="text-blue-500">({parte.polo})</span>}
-                          </span>
-                        ))}
-                      </div>
-                    ) : null;
-                  })()}
-
-                  {intimation.client_id && (
-                    <p className={`text-xs sm:text-sm text-slate-600 mb-1 truncate sm:whitespace-normal ${!isExpanded ? 'hidden sm:block' : ''}`}>
-                      <strong>Cliente:</strong> {getClientName(intimation.client_id)}
-                    </p>
-                  )}
-
-                  {intimation.process_id && (
-                    <p className={`text-xs sm:text-sm text-slate-600 mb-2 truncate sm:whitespace-normal ${!isExpanded ? 'hidden sm:block' : ''}`}>
-                      <strong>Processo:</strong> {getProcessCode(intimation.process_id)}
-                    </p>
-                  )}
-
-                  {!isExpanded && (
-                    <p className="text-xs sm:text-sm text-slate-700 line-clamp-1 sm:line-clamp-2">{intimation.texto}</p>
-                  )}
-
-                  {/* Conteúdo Expandido */}
-                  {isExpanded && (
-                    <div className="mt-4 pt-4 border-t border-slate-200 space-y-4">
-                      {/* Análise de IA */}
-                      {aiAnalysis.has(intimation.id) && (
-                        <div className="bg-gradient-to-r from-purple-50 to-blue-50 border border-purple-200 rounded-lg p-4 space-y-3">
-                          <div className="flex items-center gap-2 mb-2">
-                            <Sparkles className="w-5 h-5 text-purple-600" />
-                            <h5 className="text-sm font-bold text-purple-900">Análise com IA</h5>
-                          </div>
-                          
-                          {(() => {
-                            const analysis = aiAnalysis.get(intimation.id)!;
-                            const urgencyColors = {
-                              'critica': 'bg-red-100 text-red-800 border-red-300',
-                              'alta': 'bg-orange-100 text-orange-800 border-orange-300',
-                              'media': 'bg-yellow-100 text-yellow-800 border-yellow-300',
-                              'baixa': 'bg-green-100 text-green-800 border-green-300',
-                            };
-                            
-                            return (
-                              <>
-                                {/* Urgência */}
-                                <div className="flex items-center gap-2">
-                                  <AlertTriangle className="w-4 h-4" />
-                                  <span className="text-xs font-medium text-slate-700">Urgência:</span>
-                                  <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold border ${urgencyColors[analysis.urgency]}`}>
-                                    {analysis.urgency.toUpperCase()}
+                {/* Group items */}
+                <div className="divide-y divide-slate-100">
+                  {group.map((intimation) => {
+                    const isExpanded = expandedIntimationIds.has(intimation.id);
+                    const analysis = aiAnalysis.get(intimation.id);
+                    const urg = analysis?.urgency ?? (intimation.lida ? null : 'media');
+                    const urgCfg = urg ? urgencyConfig[urg as keyof typeof urgencyConfig] : null;
+                    return (
+                      <div
+                        key={intimation.id}
+                        className={`border-l-4 transition ${urgCfg ? urgCfg.border : 'border-l-transparent'} ${
+                          selectionMode && selectedIds.has(intimation.id) ? 'bg-zinc-50' : 'bg-white'
+                        }`}
+                      >
+                        {/* Row header */}
+                        <div
+                          className="px-4 sm:px-5 py-3.5 cursor-pointer"
+                          onClick={() => {
+                            const next = new Set(expandedIntimationIds);
+                            if (isExpanded) next.delete(intimation.id); else next.add(intimation.id);
+                            setExpandedIntimationIds(next);
+                          }}
+                        >
+                          <div className="flex items-start gap-3">
+                            {selectionMode && (
+                              <input
+                                type="checkbox"
+                                checked={selectedIds.has(intimation.id)}
+                                onChange={() => toggleSelectedId(intimation.id)}
+                                onClick={(e) => e.stopPropagation()}
+                                className="mt-1 w-4 h-4 text-blue-600 border-slate-300 rounded flex-shrink-0"
+                              />
+                            )}
+                            <div className="flex-shrink-0 mt-1.5">
+                              {!intimation.lida && urgCfg && (
+                                <span className={`block w-2 h-2 rounded-full ${urgCfg.dot}`} />
+                              )}
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center gap-2 mb-1.5 flex-wrap">
+                                <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[10px] font-bold bg-zinc-100 text-zinc-600">
+                                  {intimation.sigla_tribunal}
+                                </span>
+                                <span className="text-xs text-slate-400">{formatDate(intimation.data_disponibilizacao)}</span>
+                                {!intimation.lida && (
+                                  <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[10px] font-bold bg-orange-50 text-orange-700 border border-orange-200">
+                                    NÃO LIDA
                                   </span>
+                                )}
+                                {isLinked(intimation) ? (
+                                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold bg-zinc-100 text-zinc-700 border border-zinc-300">
+                                    <Link2 className="w-3 h-3" /> Vinculada
+                                  </span>
+                                ) : (
+                                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-medium bg-transparent text-zinc-400 border border-zinc-200">
+                                    Sem vínculo
+                                  </span>
+                                )}
+                                {analysis && (
+                                  <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold border ${urgencyConfig[analysis.urgency].badge}`}>
+                                    <Sparkles className="w-2.5 h-2.5" />
+                                    {urgencyConfig[analysis.urgency].label}
+                                  </span>
+                                )}
+                                {intimation.tipo_comunicacao && (
+                                  <span className="hidden sm:inline-flex px-2 py-0.5 rounded-md text-[10px] font-medium bg-slate-100 text-slate-600">
+                                    {intimation.tipo_comunicacao}
+                                  </span>
+                                )}
+                              </div>
+                              {!isExpanded && (
+                                <div className="mt-1 space-y-1.5">
+                                  {(() => {
+                                    const outcome = detectOutcome(analysis?.summary);
+                                    return outcome ? (
+                                      <span className={`inline-flex items-center px-2 py-0.5 rounded-md text-[10px] font-bold border ${outcome.cls}`}>
+                                        {outcome.label}
+                                      </span>
+                                    ) : null;
+                                  })()}
+                                  <p className="text-sm text-slate-500 line-clamp-2">
+                                    {analysis?.summary ?? (intimation.texto || '').slice(0, 160)}
+                                  </p>
                                 </div>
-
-                                {/* Resumo */}
-                                <div>
-                                  <h6 className="text-xs font-semibold text-slate-900 mb-1">📋 Resumo:</h6>
-                                  <p className="text-sm text-slate-700">{analysis.summary}</p>
+                              )}
+                              {!isExpanded && analysis?.deadline && (
+                                <div className="mt-2 flex items-center gap-1.5 flex-wrap">
+                                  <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-amber-50 border border-amber-200 text-amber-700 rounded-lg text-[11px] font-semibold">
+                                    <Clock className="w-3 h-3" /> {analysis.deadline.days} dias úteis
+                                  </span>
+                                  <button
+                                    onClick={(e) => { e.stopPropagation(); handleCreateDeadline(intimation); }}
+                                    className="inline-flex items-center gap-1 px-2 py-0.5 bg-amber-500 hover:bg-amber-600 text-white rounded-lg text-[11px] font-bold transition">
+                                    + Criar prazo
+                                  </button>
                                 </div>
+                              )}
+                              {!isExpanded && !analysis && !analyzingIds.has(intimation.id) && aiService.isEnabled() && (
+                                <button
+                                  onClick={(e) => { e.stopPropagation(); handleAnalyzeSingle(intimation); }}
+                                  className="mt-2 inline-flex items-center gap-1 px-2 py-0.5 text-[11px] font-semibold text-violet-700 bg-violet-50 hover:bg-violet-100 border border-violet-200 rounded-lg transition">
+                                  <Sparkles className="w-3 h-3" /> Analisar com IA
+                                </button>
+                              )}
+                              {!isExpanded && analyzingIds.has(intimation.id) && (
+                                <span className="mt-2 inline-flex items-center gap-1 px-2 py-0.5 text-[11px] text-slate-500 bg-slate-50 border border-slate-200 rounded-lg">
+                                  <Loader2 className="w-3 h-3 animate-spin" /> Analisando...
+                                </span>
+                              )}
+                            </div>
+                            <div className="flex-shrink-0">
+                              {isExpanded ? <ChevronDown className="w-4 h-4 text-slate-400" /> : <ChevronRight className="w-4 h-4 text-slate-400" />}
+                            </div>
+                          </div>
+                        </div>
 
-                                {/* Prazo */}
+                        {/* Expanded content */}
+                        {isExpanded && (
+                          <div className="px-4 sm:px-5 pb-4 pt-3 border-t border-slate-100 space-y-3">
+                            {!analysis && (
+                              <div className="bg-violet-50 border border-violet-200 rounded-lg p-4 flex items-center justify-between gap-3">
+                                <div className="flex items-center gap-2.5">
+                                  <Sparkles className="w-4 h-4 text-violet-500 flex-shrink-0" />
+                                  <div>
+                                    <p className="text-sm font-semibold text-violet-900">Sem análise de IA</p>
+                                    <p className="text-xs text-violet-600">A IA pode resumir, detectar prazos e sugerir ações.</p>
+                                  </div>
+                                </div>
+                                {aiService.isEnabled() ? (
+                                  analyzingIds.has(intimation.id) ? (
+                                    <span className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs text-slate-500 bg-white border border-slate-200 rounded-lg">
+                                      <Loader2 className="w-3.5 h-3.5 animate-spin" /> Analisando...
+                                    </span>
+                                  ) : (
+                                    <button
+                                      onClick={(e) => { e.stopPropagation(); handleAnalyzeSingle(intimation); }}
+                                      className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-white bg-violet-600 hover:bg-violet-700 rounded-lg transition flex-shrink-0">
+                                      <Sparkles className="w-3.5 h-3.5" /> Analisar agora
+                                    </button>
+                                  )
+                                ) : (
+                                  <span className="text-xs text-violet-500">Configure a chave OpenAI</span>
+                                )}
+                              </div>
+                            )}
+                            {analysis && (
+                              <div className="bg-zinc-50 border border-zinc-200 rounded-lg p-4 space-y-3">
+                                <div className="flex items-center justify-between gap-3">
+                                  <div className="flex items-center gap-2">
+                                    <Sparkles className="w-4 h-4 text-violet-600" />
+                                    <span className="text-sm font-bold text-slate-900">Análise IA</span>
+                                  </div>
+                                  <div className="flex items-center gap-1.5">
+                                    {(() => {
+                                      const outcome = detectOutcome(analysis.summary);
+                                      return outcome ? (
+                                        <span className={`px-2 py-0.5 rounded-md text-[10px] font-bold border ${outcome.cls}`}>{outcome.label}</span>
+                                      ) : null;
+                                    })()}
+                                    <span className={`px-2.5 py-0.5 rounded-full text-xs font-bold border ${urgencyConfig[analysis.urgency].badge}`}>
+                                      {urgencyConfig[analysis.urgency].label}
+                                    </span>
+                                    <button
+                                      onClick={(e) => { e.stopPropagation(); handleAnalyzeSingle(intimation); }}
+                                      title="Re-analisar"
+                                      disabled={analyzingIds.has(intimation.id)}
+                                      className="p-1 text-slate-400 hover:text-violet-600 hover:bg-violet-50 rounded transition disabled:opacity-50">
+                                      {analyzingIds.has(intimation.id) ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5" />}
+                                    </button>
+                                  </div>
+                                </div>
+                                <p className="text-sm text-slate-700"><strong>Resumo:</strong> {analysis.summary}</p>
                                 {analysis.deadline && (
-                                  <div className="bg-white/70 border border-amber-200 rounded p-3 space-y-2">
-                                    <h6 className="text-xs font-semibold text-amber-900 mb-1 flex items-center gap-1">
-                                      <Clock className="w-3.5 h-3.5" />
-                                      Prazo Detectado:
-                                    </h6>
-                                    <p className="text-sm text-slate-700">
-                                      <strong>{analysis.deadline.days} dias úteis</strong> - {analysis.deadline.description}
+                                  <div className="bg-white border border-amber-200 rounded-lg p-3 text-xs space-y-1">
+                                    <p className="font-semibold text-amber-800 flex items-center gap-1.5">
+                                      <Clock className="w-3.5 h-3.5" /> Prazo detectado
                                     </p>
+                                    <p className="text-slate-700"><strong>{analysis.deadline.days} dias úteis</strong> — {analysis.deadline.description}</p>
                                     {analysis.deadline.dueDate && (
-                                      <>
-                                        <p className="text-xs text-slate-600">
-                                          📰 Publicado em: {new Date(intimation.data_disponibilizacao).toLocaleDateString('pt-BR', { weekday: 'short', day: '2-digit', month: '2-digit', year: 'numeric' })}
-                                        </p>
-                                        <p className="text-xs text-slate-700 font-medium">
-                                          📅 Vencimento estimado: {new Date(analysis.deadline.dueDate).toLocaleDateString('pt-BR', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
-                                        </p>
-                                        <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded px-2 py-1">
-                                          ⚠️ Cálculo a partir da data de publicação, considerando apenas dias úteis (seg-sex). Feriados não estão inclusos - confira o calendário oficial!
-                                        </p>
-                                      </>
+                                      <p className="text-slate-700 font-medium">Vencimento: {new Date(analysis.deadline.dueDate).toLocaleDateString('pt-BR', { weekday: 'long', day: '2-digit', month: 'long', year: 'numeric' })}</p>
                                     )}
                                   </div>
                                 )}
-
-                                {/* Ações Sugeridas */}
                                 {analysis.suggestedActions && analysis.suggestedActions.length > 0 && (
                                   <div>
-                                    <h6 className="text-xs font-semibold text-slate-900 mb-2 flex items-center gap-1">
-                                      <Lightbulb className="w-3.5 h-3.5 text-yellow-600" />
-                                      Ações Sugeridas:
-                                    </h6>
-                                    <ul className="space-y-1">
-                                      {analysis.suggestedActions.map((action, idx) => (
-                                        <li key={idx} className="text-sm text-slate-700 flex items-start gap-2">
-                                          <span className="text-purple-600 font-bold">•</span>
-                                          <span>{action}</span>
-                                        </li>
-                                      ))}
-                                    </ul>
+                                    <p className="text-xs font-semibold text-slate-700 mb-2 flex items-center gap-1">
+                                      <Lightbulb className="w-3.5 h-3.5 text-amber-500" /> Ações sugeridas pela IA:
+                                    </p>
+                                    <div className="flex flex-wrap gap-1.5">
+                                      {analysis.suggestedActions.map((a, i) => {
+                                        const { type, label } = parseAction(a);
+                                        const cfg = actionTypeConfig[type];
+                                        const Icon = cfg.icon;
+                                        return (
+                                          <button
+                                            key={i}
+                                            onClick={(e) => { e.stopPropagation(); cfg.onClick(intimation); }}
+                                            className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-semibold border transition ${cfg.cls}`}
+                                          >
+                                            <Icon className="w-3 h-3 flex-shrink-0" />
+                                            {label}
+                                          </button>
+                                        );
+                                      })}
+                                    </div>
                                   </div>
                                 )}
+                              </div>
+                            )}
+                            {/* Full text (highlighted) */}
+                            <div>
+                              <h5 className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-2">Conteúdo da Intimação</h5>
+                              <p className="text-sm text-zinc-700 whitespace-pre-wrap leading-relaxed">{highlightText(intimation.texto || '', analysis?.importantPassages)}</p>
+                            </div>
 
-                                {/* Pontos-chave */}
-                                {analysis.keyPoints && analysis.keyPoints.length > 0 && (
-                                  <div>
-                                    <h6 className="text-xs font-semibold text-slate-900 mb-2">🎯 Pontos-chave:</h6>
-                                    <ul className="space-y-1">
-                                      {analysis.keyPoints.map((point, idx) => (
-                                        <li key={idx} className="text-sm text-slate-700 flex items-start gap-2">
-                                          <span className="text-blue-600 font-bold">→</span>
-                                          <span>{point}</span>
-                                        </li>
-                                      ))}
-                                    </ul>
-                                  </div>
-                                )}
-                              </>
-                            );
-                          })()}
+                            {/* Actions */}
+                            <div className="flex flex-wrap gap-2">
+                              {!intimation.lida && (
+                                <button onClick={(e) => { e.stopPropagation(); handleMarkAsRead(intimation.id); }}
+                                  className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-semibold text-slate-700 bg-white hover:bg-slate-50 border border-slate-200 rounded-lg transition">
+                                  <CheckCircle className="w-3.5 h-3.5 text-emerald-600" /> Marcar lida
+                                </button>
+                              )}
+                              <button onClick={(e) => { e.stopPropagation(); handleCreateDeadline(intimation); }}
+                                className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-semibold text-slate-700 bg-white hover:bg-slate-50 border border-slate-200 rounded-lg transition">
+                                <Clock className="w-3.5 h-3.5 text-amber-600" /> Prazo
+                              </button>
+                              <button onClick={(e) => { e.stopPropagation(); handleCreateAppointment(intimation); }}
+                                className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-semibold text-slate-700 bg-white hover:bg-slate-50 border border-slate-200 rounded-lg transition">
+                                <CalendarIcon className="w-3.5 h-3.5 text-indigo-600" /> Compromisso
+                              </button>
+                              <button onClick={(e) => { e.stopPropagation(); setLinkingIntimation(intimation); setSelectedClientId(intimation.client_id || ''); setSelectedProcessId(intimation.process_id || ''); setLinkModalOpen(true); }}
+                                className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-semibold text-slate-700 bg-white hover:bg-slate-50 border border-slate-200 rounded-lg transition">
+                                <Link2 className="w-3.5 h-3.5 text-blue-600" /> Vincular
+                              </button>
+                              {intimation.link && (
+                                <a href={intimation.link} target="_blank" rel="noopener noreferrer"
+                                  onClick={(e) => e.stopPropagation()}
+                                  className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-semibold text-slate-700 bg-white hover:bg-slate-50 border border-slate-200 rounded-lg transition">
+                                  <ExternalLink className="w-3.5 h-3.5 text-purple-600" /> Ver Diário
+                                </a>
+                              )}
+                              <button onClick={(e) => { e.stopPropagation(); setSelectedIntimation(intimation); }}
+                                className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-semibold text-blue-700 bg-blue-50 hover:bg-blue-100 border border-blue-200 rounded-lg transition">
+                                <Eye className="w-3.5 h-3.5" /> Detalhes completos
+                              </button>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            ))
+
+          ) : (
+
+            /* ── LIST VIEW ── */
+            filteredIntimations.map((intimation) => {
+              const isExpanded = expandedIntimationIds.has(intimation.id);
+              const analysis = aiAnalysis.get(intimation.id);
+              const urg = analysis?.urgency ?? (intimation.lida ? null : 'media');
+              const urgCfg = urg ? urgencyConfig[urg as keyof typeof urgencyConfig] : null;
+              return (
+                <div
+                  key={intimation.id}
+                  className={`group bg-white border border-zinc-200 rounded-xl overflow-hidden shadow-sm border-l-4 transition hover:shadow-md ${
+                    urgCfg ? urgCfg.border : 'border-l-slate-200'
+                  } ${selectionMode && selectedIds.has(intimation.id) ? 'ring-2 ring-blue-500' : ''}`}
+                >
+                  {/* Card main row */}
+                  <div
+                    className="px-4 sm:px-5 py-4 flex items-start gap-3 cursor-pointer"
+                    onClick={() => toggleExpanded(intimation.id)}
+                  >
+                    {selectionMode && (
+                      <input
+                        type="checkbox"
+                        checked={selectedIds.has(intimation.id)}
+                        onChange={() => toggleSelectedId(intimation.id)}
+                        onClick={(e) => e.stopPropagation()}
+                        className="mt-1 w-4 h-4 text-blue-600 border-slate-300 rounded flex-shrink-0"
+                      />
+                    )}
+
+                    {/* Unread dot */}
+                    <div className="flex-shrink-0 mt-1.5">
+                      {!intimation.lida ? (
+                        <span className={`block w-2 h-2 rounded-full ${urgCfg ? urgCfg.dot : 'bg-zinc-400'}`} />
+                      ) : (
+                        <span className="block w-2.5 h-2.5" />
+                      )}
+                    </div>
+
+                    <div className="flex-1 min-w-0">
+                      {/* Badges row */}
+                      <div className="flex items-center gap-2 mb-2 flex-wrap">
+                        <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[10px] font-bold bg-zinc-100 text-zinc-600">
+                          {intimation.sigla_tribunal}
+                        </span>
+                        <span className="text-xs text-slate-400 font-mono">{formatDate(intimation.data_disponibilizacao)}</span>
+                        {!intimation.lida && (
+                          <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[10px] font-bold bg-orange-50 text-orange-700 border border-orange-200">
+                            NÃO LIDA
+                          </span>
+                        )}
+                        {isLinked(intimation) ? (
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold bg-zinc-100 text-zinc-700 border border-zinc-300">
+                            <Link2 className="w-3 h-3" /> Vinculada
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-medium bg-transparent text-zinc-400 border border-zinc-200">
+                            Sem vínculo
+                          </span>
+                        )}
+                        {analysis && (
+                          <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold border ${urgencyConfig[analysis.urgency].badge}`}>
+                            <Sparkles className="w-2.5 h-2.5" />
+                            {urgencyConfig[analysis.urgency].label}
+                          </span>
+                        )}
+                        {intimation.tipo_comunicacao && (
+                          <span className="hidden sm:inline-flex px-2 py-0.5 rounded-md text-[10px] font-medium bg-slate-100 text-slate-600">
+                            {intimation.tipo_comunicacao}
+                          </span>
+                        )}
+                      </div>
+
+                      {/* Process number */}
+                      <p className="text-sm font-bold text-slate-900 font-mono truncate mb-1.5">
+                        {intimation.numero_processo_mascara || intimation.numero_processo}
+                      </p>
+
+                      {/* Partes */}
+                      {(() => {
+                        const partes = intimation.djen_destinatarios && intimation.djen_destinatarios.length > 0
+                          ? intimation.djen_destinatarios.map(d => ({ nome: d.nome, polo: d.polo || '' }))
+                          : extractPartesFromTexto(intimation.texto || '');
+                        return partes.length > 0 ? (
+                          <div className="flex flex-wrap items-center gap-1 mb-2">
+                            {partes.slice(0, 2).map((parte, idx) => (
+                              <span key={idx} className="inline-flex items-center gap-1 px-2 py-0.5 bg-slate-50 text-slate-600 rounded-md text-[11px] border border-slate-200">
+                                {parte.nome}
+                                {parte.polo && <span className="text-slate-400">({parte.polo})</span>}
+                              </span>
+                            ))}
+                            {partes.length > 2 && (
+                              <span className="text-[11px] text-slate-400">+{partes.length - 2}</span>
+                            )}
+                          </div>
+                        ) : null;
+                      })()}
+
+                      {/* Client / process link */}
+                      {(intimation.client_id || intimation.process_id) && (
+                        <div className="flex flex-wrap items-center gap-3 mb-2">
+                          {intimation.client_id && (
+                            <span className="text-xs text-slate-500">
+                              <strong className="text-slate-700">Cliente:</strong> {getClientName(intimation.client_id)}
+                            </span>
+                          )}
+                          {intimation.process_id && (
+                            <span className="text-xs text-slate-500">
+                              <strong className="text-slate-700">Processo:</strong> {getProcessCode(intimation.process_id)}
+                            </span>
+                          )}
                         </div>
                       )}
 
-                      {/* Ações (Mobile/Expandido) */}
-                      {!selectionMode && (
-                        <div className="grid grid-cols-2 sm:hidden gap-2">
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              handleCreateDeadline(intimation);
-                            }}
-                            className="inline-flex items-center justify-center gap-2 px-3 py-2 text-xs font-semibold text-slate-700 bg-white hover:bg-slate-50 border border-slate-200 rounded-lg transition"
-                          >
-                            <Clock className="w-4 h-4 text-amber-600" />
-                            Novo Prazo
-                          </button>
+                      {/* Polo ativo/passivo */}
+                      {(intimation.polo_ativo || intimation.polo_passivo) && (
+                        <div className="flex flex-wrap gap-3 mb-2">
+                          {intimation.polo_ativo && (
+                            <span className="text-xs">
+                              <span className="font-semibold text-emerald-700">Ativo:</span>{' '}
+                              <span className="text-slate-600">{intimation.polo_ativo}</span>
+                            </span>
+                          )}
+                          {intimation.polo_passivo && (
+                            <span className="text-xs">
+                              <span className="font-semibold text-red-700">Passivo:</span>{' '}
+                              <span className="text-slate-600">{intimation.polo_passivo}</span>
+                            </span>
+                          )}
+                        </div>
+                      )}
 
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              handleCreateAppointment(intimation);
-                            }}
-                            className="inline-flex items-center justify-center gap-2 px-3 py-2 text-xs font-semibold text-slate-700 bg-white hover:bg-slate-50 border border-slate-200 rounded-lg transition"
-                          >
-                            <CalendarIcon className="w-4 h-4 text-indigo-600" />
-                            Compromisso
-                          </button>
+                      {/* Text snippet: AI summary when collapsed */}
+                      {!isExpanded && (
+                        <div className="mt-1 space-y-1.5">
+                          {/* Outcome badge */}
+                          {(() => {
+                            const outcome = detectOutcome(analysis?.summary);
+                            return outcome ? (
+                              <span className={`inline-flex items-center px-2 py-0.5 rounded-md text-[10px] font-bold border ${outcome.cls}`}>
+                                {outcome.label}
+                              </span>
+                            ) : null;
+                          })()}
+                          <p className="text-sm text-slate-500 line-clamp-2">
+                            {analysis?.summary ?? (intimation.texto || '').slice(0, 160)}
+                          </p>
+                        </div>
+                      )}
 
+                      {/* AI deadline quick-action chip */}
+                      {!isExpanded && analysis?.deadline && (
+                        <div className="mt-2 flex items-center gap-1.5 flex-wrap">
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-amber-50 border border-amber-200 text-amber-700 rounded-lg text-[11px] font-semibold">
+                            <Clock className="w-3 h-3" /> {analysis.deadline.days} dias úteis
+                          </span>
+                          <button
+                            onClick={(e) => { e.stopPropagation(); handleCreateDeadline(intimation); }}
+                            className="inline-flex items-center gap-1 px-2 py-0.5 bg-amber-500 hover:bg-amber-600 text-white rounded-lg text-[11px] font-bold transition">
+                            + Criar prazo
+                          </button>
+                        </div>
+                      )}
+
+                      {/* Analisar com IA — when no analysis exists */}
+                      {!isExpanded && !analysis && !analyzingIds.has(intimation.id) && aiService.isEnabled() && (
+                        <button
+                          onClick={(e) => { e.stopPropagation(); handleAnalyzeSingle(intimation); }}
+                          className="mt-2 inline-flex items-center gap-1 px-2 py-0.5 text-[11px] font-semibold text-violet-700 bg-violet-50 hover:bg-violet-100 border border-violet-200 rounded-lg transition">
+                          <Sparkles className="w-3 h-3" /> Analisar com IA
+                        </button>
+                      )}
+                      {!isExpanded && analyzingIds.has(intimation.id) && (
+                        <span className="mt-2 inline-flex items-center gap-1 px-2 py-0.5 text-[11px] font-medium text-slate-500 bg-slate-50 border border-slate-200 rounded-lg">
+                          <Loader2 className="w-3 h-3 animate-spin" /> Analisando...
+                        </span>
+                      )}
+
+                      {/* Hover quick-action buttons */}
+                      {!isExpanded && !selectionMode && (
+                        <div className="flex items-center gap-1.5 mt-2.5 opacity-0 group-hover:opacity-100 transition-opacity">
                           {!intimation.lida && (
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                handleMarkAsRead(intimation.id);
-                              }}
-                              className="inline-flex items-center justify-center gap-2 px-3 py-2 text-xs font-semibold text-slate-700 bg-white hover:bg-slate-50 border border-slate-200 rounded-lg transition"
-                            >
-                              <CheckCircle className="w-4 h-4 text-emerald-600" />
-                              Marcar Lida
+                            <button onClick={(e) => { e.stopPropagation(); handleMarkAsRead(intimation.id); }}
+                              className="inline-flex items-center gap-1 px-2 py-1 text-[11px] font-semibold text-emerald-700 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 rounded-lg transition">
+                              <CheckCircle className="w-3 h-3" /> Lida
                             </button>
                           )}
-
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              handleOpenLinkModal(intimation);
-                            }}
-                            className="inline-flex items-center justify-center gap-2 px-3 py-2 text-xs font-semibold text-slate-700 bg-white hover:bg-slate-50 border border-slate-200 rounded-lg transition"
-                          >
-                            <Link2 className="w-4 h-4 text-blue-600" />
-                            Vincular
+                          <button onClick={(e) => { e.stopPropagation(); handleCreateDeadline(intimation); }}
+                            className="inline-flex items-center gap-1 px-2 py-1 text-[11px] font-semibold text-amber-700 bg-amber-50 hover:bg-amber-100 border border-amber-200 rounded-lg transition">
+                            <Clock className="w-3 h-3" /> Prazo
                           </button>
-
+                          <button onClick={(e) => { e.stopPropagation(); handleOpenLinkModal(intimation); }}
+                            className="inline-flex items-center gap-1 px-2 py-1 text-[11px] font-semibold text-blue-700 bg-blue-50 hover:bg-blue-100 border border-blue-200 rounded-lg transition">
+                            <Link2 className="w-3 h-3" /> Vincular
+                          </button>
                           {intimation.link && (
-                            <a
-                              href={intimation.link}
-                              target="_blank"
-                              rel="noopener noreferrer"
+                            <a href={intimation.link} target="_blank" rel="noopener noreferrer"
                               onClick={(e) => e.stopPropagation()}
-                              className="col-span-2 inline-flex items-center justify-center gap-2 px-3 py-2 text-xs font-semibold text-slate-700 bg-white hover:bg-slate-50 border border-slate-200 rounded-lg transition"
-                            >
-                              <ExternalLink className="w-4 h-4 text-purple-600" />
-                              Ver Diário
+                              className="inline-flex items-center gap-1 px-2 py-1 text-[11px] font-semibold text-purple-700 bg-purple-50 hover:bg-purple-100 border border-purple-200 rounded-lg transition">
+                              <ExternalLink className="w-3 h-3" /> Diário
                             </a>
+                          )}
+                          <button onClick={(e) => { e.stopPropagation(); setSelectedIntimation(intimation); }}
+                            className="inline-flex items-center gap-1 px-2 py-1 text-[11px] font-semibold text-slate-700 bg-slate-100 hover:bg-slate-200 border border-slate-200 rounded-lg transition">
+                            <Eye className="w-3 h-3" /> Detalhes
+                          </button>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Expand chevron */}
+                    <div className="flex-shrink-0 mt-1">
+                      {isExpanded ? <ChevronDown className="w-4 h-4 text-slate-400" /> : <ChevronRight className="w-4 h-4 text-slate-400" />}
+                    </div>
+                  </div>
+
+                  {/* Expanded section */}
+                  {isExpanded && (
+                    <div className="border-t border-slate-100 px-4 sm:px-5 py-4 space-y-4">
+                      {/* AI analysis panel */}
+                      {!analysis && (
+                        <div className="bg-violet-50 border border-violet-200 rounded-lg p-4 flex items-center justify-between gap-3">
+                          <div className="flex items-center gap-2.5">
+                            <Sparkles className="w-4 h-4 text-violet-500 flex-shrink-0" />
+                            <div>
+                              <p className="text-sm font-semibold text-violet-900">Sem análise de IA</p>
+                              <p className="text-xs text-violet-600">A IA pode resumir, detectar prazos e sugerir ações.</p>
+                            </div>
+                          </div>
+                          {aiService.isEnabled() ? (
+                            analyzingIds.has(intimation.id) ? (
+                              <span className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-slate-500 bg-white border border-slate-200 rounded-lg">
+                                <Loader2 className="w-3.5 h-3.5 animate-spin" /> Analisando...
+                              </span>
+                            ) : (
+                              <button
+                                onClick={(e) => { e.stopPropagation(); handleAnalyzeSingle(intimation); }}
+                                className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-white bg-violet-600 hover:bg-violet-700 rounded-lg transition flex-shrink-0">
+                                <Sparkles className="w-3.5 h-3.5" /> Analisar agora
+                              </button>
+                            )
+                          ) : (
+                            <span className="text-xs text-violet-500">Configure a chave OpenAI</span>
+                          )}
+                        </div>
+                      )}
+                      {analysis && (
+                        <div className="bg-zinc-50 border border-zinc-200 rounded-lg p-4 space-y-3">
+                          <div className="flex items-center justify-between gap-3">
+                            <div className="flex items-center gap-2">
+                              <Sparkles className="w-4 h-4 text-violet-600" />
+                              <span className="text-sm font-bold text-slate-900">Análise com IA</span>
+                            </div>
+                            <div className="flex items-center gap-1.5">
+                              {(() => {
+                                const outcome = detectOutcome(analysis.summary);
+                                return outcome ? (
+                                  <span className={`px-2 py-0.5 rounded-md text-[10px] font-bold border ${outcome.cls}`}>{outcome.label}</span>
+                                ) : null;
+                              })()}
+                              <span className={`px-2.5 py-0.5 rounded-full text-xs font-bold border ${urgencyConfig[analysis.urgency].badge}`}>
+                                {urgencyConfig[analysis.urgency].label}
+                              </span>
+                              <button
+                                onClick={(e) => { e.stopPropagation(); handleAnalyzeSingle(intimation); }}
+                                title="Re-analisar com IA"
+                                disabled={analyzingIds.has(intimation.id)}
+                                className="p-1 text-slate-400 hover:text-violet-600 hover:bg-violet-50 rounded transition disabled:opacity-50">
+                                {analyzingIds.has(intimation.id) ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5" />}
+                              </button>
+                            </div>
+                          </div>
+                          <p className="text-sm text-slate-700"><strong>Resumo:</strong> {analysis.summary}</p>
+                          {analysis.deadline && (
+                            <div className="bg-white border border-amber-200 rounded-lg p-3 space-y-1 text-xs">
+                              <p className="font-semibold text-amber-800 flex items-center gap-1.5">
+                                <Clock className="w-3.5 h-3.5" /> Prazo detectado
+                              </p>
+                              <p className="text-slate-700"><strong>{analysis.deadline.days} dias úteis</strong> — {analysis.deadline.description}</p>
+                              {analysis.deadline.dueDate && (
+                                <>
+                                  <p className="text-slate-500">Publicado: {new Date(intimation.data_disponibilizacao).toLocaleDateString('pt-BR', { weekday: 'short', day: '2-digit', month: '2-digit', year: 'numeric' })}</p>
+                                  <p className="text-slate-700 font-medium">Vencimento: {new Date(analysis.deadline.dueDate).toLocaleDateString('pt-BR', { weekday: 'long', day: '2-digit', month: 'long', year: 'numeric' })}</p>
+                                  <p className="text-amber-700 bg-amber-50 border border-amber-200 rounded px-2 py-1 mt-1">
+                                    ⚠️ Cálculo sem feriados — confira o calendário oficial!
+                                  </p>
+                                </>
+                              )}
+                            </div>
+                          )}
+                          {analysis.suggestedActions && analysis.suggestedActions.length > 0 && (
+                            <div>
+                              <p className="text-xs font-semibold text-slate-700 mb-2 flex items-center gap-1">
+                                <Lightbulb className="w-3.5 h-3.5 text-amber-500" /> Ações sugeridas pela IA:
+                              </p>
+                              <div className="flex flex-wrap gap-1.5">
+                                {analysis.suggestedActions.map((a, i) => {
+                                  const { type, label } = parseAction(a);
+                                  const cfg = actionTypeConfig[type];
+                                  const Icon = cfg.icon;
+                                  return (
+                                    <button
+                                      key={i}
+                                      onClick={(e) => { e.stopPropagation(); cfg.onClick(intimation); }}
+                                      className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-semibold border transition ${cfg.cls}`}
+                                    >
+                                      <Icon className="w-3 h-3 flex-shrink-0" />
+                                      {label}
+                                    </button>
+                                  );
+                                })}
+                              </div>
+                            </div>
+                          )}
+                          {analysis.keyPoints && analysis.keyPoints.length > 0 && (
+                            <div>
+                              <p className="text-xs font-semibold text-slate-700 mb-1.5">🎯 Pontos-chave:</p>
+                              <div className="flex flex-wrap gap-1">
+                                {analysis.keyPoints.map((kp, i) => (
+                                  <span key={i} className="inline-flex items-center gap-1 px-2.5 py-0.5 bg-blue-50 text-blue-700 border border-blue-200 rounded-full text-xs">
+                                    <span className="text-blue-400">→</span> {kp}
+                                  </span>
+                                ))}
+                              </div>
+                            </div>
                           )}
                         </div>
                       )}
 
+                      {/* Full text (highlighted) */}
                       <div>
-                        <h5 className="text-sm font-semibold text-slate-900 mb-2">Conteúdo da Intimação:</h5>
-                        <p className="text-sm text-slate-700 whitespace-pre-wrap">{intimation.texto}</p>
+                        <h5 className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-2">Conteúdo da Intimação</h5>
+                        <p className="text-sm text-zinc-700 whitespace-pre-wrap leading-relaxed">{highlightText(intimation.texto || '', analysis?.importantPassages)}</p>
                       </div>
 
                       {intimation.nome_orgao && (
                         <div>
-                          <h5 className="text-sm font-semibold text-slate-900">Órgão:</h5>
+                          <h5 className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1">Órgão</h5>
                           <p className="text-sm text-slate-700">{intimation.nome_orgao}</p>
                         </div>
                       )}
 
-                      {intimation.link && (
-                        <div>
-                          <a
-                            href={intimation.link}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="inline-flex items-center gap-2 text-sm text-blue-600 hover:text-blue-700 font-medium"
-                          >
-                            <ExternalLink className="w-4 h-4" />
-                            Ver no Diário Oficial
+                      {/* Action buttons */}
+                      <div className="flex flex-wrap gap-2 pt-1 border-t border-slate-100">
+                        {!intimation.lida && (
+                          <button onClick={(e) => { e.stopPropagation(); handleMarkAsRead(intimation.id); }}
+                            className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-semibold text-slate-700 bg-white hover:bg-slate-50 border border-slate-200 rounded-lg transition">
+                            <CheckCircle className="w-3.5 h-3.5 text-emerald-600" /> Marcar lida
+                          </button>
+                        )}
+                        <button onClick={(e) => { e.stopPropagation(); handleCreateDeadline(intimation); }}
+                          className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-semibold text-slate-700 bg-white hover:bg-slate-50 border border-slate-200 rounded-lg transition">
+                          <Clock className="w-3.5 h-3.5 text-amber-600" /> Novo Prazo
+                        </button>
+                        <button onClick={(e) => { e.stopPropagation(); handleCreateAppointment(intimation); }}
+                          className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-semibold text-slate-700 bg-white hover:bg-slate-50 border border-slate-200 rounded-lg transition">
+                          <CalendarIcon className="w-3.5 h-3.5 text-indigo-600" /> Compromisso
+                        </button>
+                        <button onClick={(e) => { e.stopPropagation(); handleOpenLinkModal(intimation); }}
+                          className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-semibold text-slate-700 bg-white hover:bg-slate-50 border border-slate-200 rounded-lg transition">
+                          <Link2 className="w-3.5 h-3.5 text-blue-600" /> Vincular
+                        </button>
+                        {intimation.link && (
+                          <a href={intimation.link} target="_blank" rel="noopener noreferrer"
+                            onClick={(e) => e.stopPropagation()}
+                            className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-semibold text-slate-700 bg-white hover:bg-slate-50 border border-slate-200 rounded-lg transition">
+                            <ExternalLink className="w-3.5 h-3.5 text-purple-600" /> Ver Diário
                           </a>
-                        </div>
-                      )}
+                        )}
+                        <button onClick={(e) => { e.stopPropagation(); setSelectedIntimation(intimation); }}
+                          className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-semibold text-blue-700 bg-blue-50 hover:bg-blue-100 border border-blue-200 rounded-lg transition">
+                          <Eye className="w-3.5 h-3.5" /> Detalhes completos
+                        </button>
+                      </div>
                     </div>
                   )}
                 </div>
-
-                {/* Botões de ação - Ocultos em mobile quando não expandido */}
-                {!selectionMode && (
-                  <div className={`hidden sm:flex flex-col gap-1.5 sm:gap-2 ${isExpanded ? 'sm:hidden' : ''}`}>
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        handleCreateDeadline(intimation);
-                      }}
-                      className="inline-flex items-center justify-center gap-1 sm:gap-1.5 px-2 sm:px-3 py-1 sm:py-1.5 text-[10px] sm:text-xs font-medium text-amber-600 hover:text-amber-700 border border-amber-200 rounded-lg hover:bg-amber-50 transition"
-                    >
-                      <Clock className="w-3 h-3 sm:w-3.5 sm:h-3.5" />
-                      <span className="hidden sm:inline">Prazo</span>
-                    </button>
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        handleCreateAppointment(intimation);
-                      }}
-                      className="inline-flex items-center justify-center gap-1 sm:gap-1.5 px-2 sm:px-3 py-1 sm:py-1.5 text-[10px] sm:text-xs font-medium text-indigo-600 hover:text-indigo-700 border border-indigo-200 rounded-lg hover:bg-indigo-50 transition"
-                    >
-                      <CalendarIcon className="w-3 h-3 sm:w-3.5 sm:h-3.5" />
-                      <span className="hidden sm:inline">Agenda</span>
-                    </button>
-                    {!intimation.lida && (
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          handleMarkAsRead(intimation.id);
-                        }}
-                        className="inline-flex items-center justify-center gap-1 sm:gap-1.5 px-2 sm:px-3 py-1 sm:py-1.5 text-[10px] sm:text-xs font-medium text-emerald-600 hover:text-emerald-700 border border-emerald-200 rounded-lg hover:bg-emerald-50 transition"
-                      >
-                        <CheckCircle className="w-3 h-3 sm:w-3.5 sm:h-3.5" />
-                        <span className="hidden sm:inline">Lida</span>
-                      </button>
-                    )}
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        handleOpenLinkModal(intimation);
-                      }}
-                      className="inline-flex items-center justify-center gap-1 sm:gap-1.5 px-2 sm:px-3 py-1 sm:py-1.5 text-[10px] sm:text-xs font-medium text-purple-600 hover:text-purple-700 border border-purple-200 rounded-lg hover:bg-purple-50 transition"
-                    >
-                      <Link2 className="w-3 h-3 sm:w-3.5 sm:h-3.5" />
-                      <span className="hidden sm:inline">Vincular</span>
-                    </button>
-                    {intimation.link && (
-                      <a
-                        href={intimation.link}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        onClick={(e) => e.stopPropagation()}
-                        className="inline-flex items-center justify-center gap-1 sm:gap-1.5 px-2 sm:px-3 py-1 sm:py-1.5 text-[10px] sm:text-xs font-medium text-blue-600 hover:text-blue-700 border border-blue-200 rounded-lg hover:bg-blue-50 transition"
-                      >
-                        <ExternalLink className="w-3 h-3 sm:w-3.5 sm:h-3.5" />
-                        <span className="hidden sm:inline">Diário</span>
-                      </a>
-                    )}
-                  </div>
-                )}
-              </div>
-            </div>
-            );
-          })
-        )}
+              );
+            })
+          )}
+        </div>
+        {/* end list area */}
       </div>
+      {/* end premium card */}
 
       {/* Modal de Vínculo */}
       {linkModalOpen && linkingIntimation && (

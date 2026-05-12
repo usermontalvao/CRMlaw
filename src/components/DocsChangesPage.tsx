@@ -47,6 +47,10 @@ import { matchesNormalizedSearch } from '../utils/search';
    ============================================================================ */
 
 const VERSION_CODENAMES: Record<string, { name: string; emoji: string }> = {
+  '1.10.040': { name: 'Café IA Sênior', emoji: '🧠' },
+  '1.10.039': { name: 'Café Industrial', emoji: '⚙️' },
+  '1.10.038': { name: 'Café IA Acionável', emoji: '🤖' },
+  '1.10.037': { name: 'Café Intimações Premium', emoji: '🔔' },
   '1.10.036': { name: 'Café Cards Refinados', emoji: '🗂️' },
   '1.10.035': { name: 'Café Hub Premium', emoji: '📄' },
   '1.10.034': { name: 'Café Loading Profissional', emoji: '⏳' },
@@ -751,6 +755,179 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
 };
 
 const releases: ReleaseNote[] = [
+  {
+    version: '1.10.040',
+    date: '12/05/2026',
+    summary: 'Intimações: modelo gpt-4o para análises, prompt refatorado para resumos em linguagem simples + dispositivo obrigatório em importantPassages, botão "Analisar com IA" em cards sem análise, re-análise individual, badge de resultado (PROCEDENTE/IMPROCEDENTE/TUTELA), correção de crash null.trim().',
+    modules: [
+      {
+        moduleId: 'intimations',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Upgrade para gpt-4o na análise de intimações',
+            description: 'A análise de intimações agora usa gpt-4o (em vez de gpt-4o-mini), com temperatura reduzida para 0.2 e max_tokens aumentado para 1200. Respostas mais precisas e com melhor compreensão jurídica.',
+          },
+          {
+            type: 'improvement',
+            title: 'Prompt refatorado — resumo em linguagem simples',
+            description: 'O system prompt foi reescrito com instruções explícitas para começar o resumo pelo resultado concreto ("A ação foi JULGADA PROCEDENTE..."), usar linguagem de não-jurista, e obrigatoriamente incluir o dispositivo da sentença em importantPassages.',
+          },
+          {
+            type: 'feature',
+            title: 'Badge de resultado na intimação — PROCEDENTE/IMPROCEDENTE/TUTELA',
+            description: 'Detecção automática do resultado do julgamento a partir do resumo da IA. Badge colorido aparece no card colapsado e no painel expandido: verde (PROCEDENTE), vermelho (IMPROCEDENTE), violeta (TUTELA CONCEDIDA), âmbar (PARCIAL).',
+          },
+          {
+            type: 'feature',
+            title: 'Botão "Analisar com IA" em cards sem análise',
+            description: 'Cards sem análise de IA passam a exibir um botão "Analisar com IA" diretamente no modo colapsado e um painel de convite no expandido com botão "Analisar agora". A análise é salva no banco e atualiza a UI instantaneamente.',
+          },
+          {
+            type: 'feature',
+            title: 'Re-análise individual com um clique',
+            description: 'Cards com análise existente ganham um ícone de re-análise (RefreshCw) ao lado dos badges. Útil para atualizar a análise após o modelo ser melhorado ou corrigir resultados imprecisos.',
+          },
+          {
+            type: 'fix',
+            title: 'Crash null.trim() na vinculação automática',
+            description: 'Corrigido erro "Cannot read properties of null (reading \'trim\')" que ocorria quando client.full_name ou process.process_code eram null no momento da vinculação automática por nome/número.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.10.039',
+    date: '12/05/2026',
+    summary: 'Intimações: design industrial — paleta zinc monocromática, header ultra-compacto em linha única, tabs de status com underline, barra DJEN slim de 1 linha. IA retorna trechos importantes verbatim para highlight semântico com fundo âmbar. Badges monocromáticos.',
+    modules: [
+      {
+        moduleId: 'intimations',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Header ultra-compacto linha única',
+            description: 'Header reduzido para uma única linha densa: ícone Bell + título + dot online + stats de texto inline | busca + botão Sincronizar. Padding mínimo py-2.5. Cor de acento migrada de amber para orange para contraste industrial.',
+          },
+          {
+            type: 'improvement',
+            title: 'Paleta industrial zinc monocromática',
+            description: 'Substituídas todas as cores vibrantes (blue, emerald, amber) por tons zinc. Badges monochrome: tribunal em zinc-100, NÃO LIDA em zinc-900 sólido, Vinculada em zinc-100 com borda. Urgência crítica/alta mantém vermelho/laranja para sinalização de risco real.',
+          },
+          {
+            type: 'improvement',
+            title: 'Status tabs com underline em vez de chips coloridos',
+            description: 'Filtros de status substituídos por tabs estilo underline (border-b-2 zinc-800 no ativo, border-transparent nos demais) — mais limpo e sem poluição visual de múltiplos backgrounds coloridos.',
+          },
+          {
+            type: 'improvement',
+            title: 'Barra DJEN slim de 1 linha (11px)',
+            description: 'A barra de status do DJEN foi comprimida de ~40px para ~28px: fonte 11px, espaçamento mínimo, status como ✓/✗/… em vez de badges, sem molduras. Informação presente sem ocupar espaço.',
+          },
+          {
+            type: 'improvement',
+            title: 'Highlight semântico com IA — trechos verbatim',
+            description: 'O modelo agora retorna importantPassages: trechos verbatim de maior relevância jurídica (decisões, ordens, valores). O highlight usa fundo bg-amber-100 nesses trechos exatos. Regex genérica de palavras-chave foi removida. Apenas R$ e datas recebem bold estrutural.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.10.038',
+    date: '12/05/2026',
+    summary: 'Intimações: IA totalmente acionável — preview inteligente com resumo IA, chip de prazo com botão "Criar prazo", ações sugeridas como botões clicáveis, texto legal com highlight automático de termos críticos. Notificações popup: 10 s com countdown animado.',
+    modules: [
+      {
+        moduleId: 'intimations',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Preview inteligente com resumo IA',
+            description: 'Nos cards colapsados, o trecho de texto exibe o resumo gerado pela IA quando disponível, em vez do texto bruto. Texto truncado em 1 linha para máxima legibilidade no modo lista.',
+          },
+          {
+            type: 'improvement',
+            title: 'Chip de prazo detectado com ação imediata',
+            description: 'Quando a IA detecta um prazo, aparece diretamente no card colapsado um chip âmbar "X dias úteis" + botão "+ Criar prazo" que abre o modal de prazo sem precisar expandir o card.',
+          },
+          {
+            type: 'improvement',
+            title: 'Ações sugeridas pela IA como chips clicáveis',
+            description: 'No painel IA expandido, as ações sugeridas deixaram de ser uma lista passiva de texto e se tornaram botões interativos coloridos por tipo: âmbar para prazos, índigo para audiências/compromissos, azul para vínculos. Clicar dispara diretamente o modal correspondente.',
+          },
+          {
+            type: 'improvement',
+            title: 'Highlight automático de termos jurídicos críticos',
+            description: 'No conteúdo completo da intimação (expandido), termos críticos são automaticamente realçados: números de processo em bold slate, valores R$ em verde, datas em azul, e palavras-chave como PRAZO, AUDIÊNCIA, SENTENÇA, PENHORA, EXECUÇÃO em vermelho bold.',
+          },
+          {
+            type: 'improvement',
+            title: 'Pontos-chave IA em chips coloridos',
+            description: 'A seção "Pontos-chave" no painel IA passou de lista para tags/chips em estilo pill azul, mais legível e compacta.',
+          },
+        ],
+      },
+      {
+        moduleId: 'notifications',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Notificações popup com 10 s e countdown animado',
+            description: 'Popups de notificação agora duram 10 segundos. Uma barra de progresso animada na base do card conta regressivamente o tempo restante. Auto-dismiss suave com animação de saída.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.10.037',
+    date: '12/05/2026',
+    summary: 'Intimações: módulo completamente redesenhado com header escuro premium, filtros em chips horizontais com scroll, cards estilo inbox com borda colorida por urgência, dot de não-lido, ações rápidas no hover, painel IA expandível e view agrupada por processo.',
+    modules: [
+      {
+        moduleId: 'intimations',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Header dark premium com stats e busca integrada',
+            description: 'Novo header bg-slate-900 com ícone Bell âmbar, título, chips de "não lidas" e "urgentes" com glow colorido, indicador Online animado e barra de busca inline com fundo translúcido. Botão Sincronizar em âmbar bold.',
+          },
+          {
+            type: 'improvement',
+            title: 'Filtros em chips horizontais com scroll',
+            description: 'Substituídos os múltiplos grupos de botões por uma faixa horizontal com scroll suave: chips de status (Não lidas/Vinculadas/Sem vínculo/Lidas/Todas), selects de tribunal e data em formato pill, chips de urgência (Alta/Média/Baixa), e toggle "Por processo" com ícone Layers.',
+          },
+          {
+            type: 'improvement',
+            title: 'Cards estilo inbox com borda colorida por urgência',
+            description: 'Cada card tem borda esquerda grossa colorida conforme urgência IA: vermelho=crítica, laranja=alta, âmbar=média, verde=baixa. Dot colorido de não-lido no canto. Número do processo em fonte mono bold. Partes truncadas com badge compacto. Texto em 2 linhas com line-clamp.',
+          },
+          {
+            type: 'improvement',
+            title: 'Ações rápidas no hover sem expandir',
+            description: 'Ao passar o mouse sobre um card na view de lista, aparecem botões de ação compactos (Lida, Prazo, Vincular, Diário, Detalhes) com opacity-0 → opacity-100 transition, permitindo ação rápida sem abrir o painel expandido.',
+          },
+          {
+            type: 'improvement',
+            title: 'View agrupada por processo redesenhada',
+            description: 'Grupos com header bg-slate-800 mostrando número do processo em mono, nome do cliente, badge de não-lidas âmbar e botão "Marcar todas". Itens dentro do grupo com borda esquerda colorida por urgência e divisórias sutis.',
+          },
+          {
+            type: 'improvement',
+            title: 'Painel de detalhes IA expandível premium',
+            description: 'Ao expandir um card, o painel de análise IA aparece com background tintado pela urgência, badge de urgência, resumo, caixa de prazo detectado com data de vencimento formatada, lista de ações sugeridas e pontos-chave.',
+          },
+          {
+            type: 'improvement',
+            title: 'Toolbar de seleção dark inline',
+            description: 'Quando no modo seleção múltipla com itens selecionados, aparece uma faixa bg-slate-800 com contagem, botões de ação (Marcar lidas, Vincular, Exportar, Remover) em estilo ghosted com bordas brancas translúcidas.',
+          },
+        ],
+      },
+    ],
+  },
   {
     version: '1.10.036',
     date: '12/05/2026',

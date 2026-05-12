@@ -24,10 +24,10 @@ export const useToast = () => {
       const id = `toast-${++toastCounter}-${Date.now()}`;
       
       // Durações inteligentes por tipo
-      let defaultDuration = 4000;
+      let defaultDuration = 10000;
       if (type === 'loading') defaultDuration = 0;
-      else if (type === 'success') defaultDuration = 3000;
-      else if (type === 'error') defaultDuration = 5000;
+      else if (type === 'success') defaultDuration = 10000;
+      else if (type === 'error') defaultDuration = 10000;
       
       const newToast: Toast = {
         id,

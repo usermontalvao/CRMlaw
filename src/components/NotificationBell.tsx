@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useRef, useCallback } from 'react';
+import React, { useEffect, useState, useRef, useCallback, memo } from 'react';
 import { createPortal } from 'react-dom';
 import {
   Bell,
@@ -48,6 +48,189 @@ const playNotificationSound = () => {
     oscillator.stop(audioContext.currentTime + 0.3);
   } catch {}
 };
+
+/* ─────────────────────────────────────────────────────────────────────────
+   POPUP NOTIFICATION ITEM  (auto-dismiss 10 s + countdown bar)
+───────────────────────────────────────────────────────────────────────── */
+
+const POPUP_DURATION = 10000;
+
+interface PopupItemProps {
+  notification: UserNotification;
+  onDismiss: (id: string) => void;
+  onNavigate: (n: UserNotification) => void;
+  getIcon: (n: UserNotification) => React.ReactNode;
+  getIconBgColor: (n: UserNotification) => string;
+  isSignatureNotification: (n: UserNotification) => boolean;
+  getSignatureBadge: (n: UserNotification) => string;
+  getSignatureProgress: (n: UserNotification) => { signedCount: number; totalSigners: number; pct: number } | null;
+}
+
+const PopupItem = memo<PopupItemProps>(({
+  notification, onDismiss, onNavigate, getIcon, getIconBgColor,
+  isSignatureNotification, getSignatureBadge, getSignatureProgress,
+}) => {
+  const [exiting, setExiting] = useState(false);
+
+  const dismiss = useCallback(() => {
+    setExiting(true);
+    setTimeout(() => onDismiss(notification.id), 350);
+  }, [notification.id, onDismiss]);
+
+  // Auto-dismiss after 10 s
+  useEffect(() => {
+    const t = setTimeout(dismiss, POPUP_DURATION);
+    return () => clearTimeout(t);
+  }, [dismiss]);
+
+  const urgency = notification.metadata?.urgency as string | undefined;
+  const isSig = isSignatureNotification(notification);
+
+  // Accent color per type / urgency
+  const accentClass = urgency === 'critica'
+    ? 'border-l-red-500'
+    : urgency === 'alta'
+    ? 'border-l-orange-500'
+    : isSig
+    ? 'border-l-emerald-500'
+    : notification.type === 'deadline_assigned' || notification.type === 'deadline_reminder'
+    ? 'border-l-amber-500'
+    : notification.type === 'appointment_assigned' || notification.type === 'appointment_reminder'
+    ? 'border-l-blue-500'
+    : 'border-l-violet-500';
+
+  const barColor = urgency === 'critica' ? 'bg-red-500'
+    : urgency === 'alta' ? 'bg-orange-500'
+    : isSig ? 'bg-emerald-500'
+    : 'bg-blue-500';
+
+  return (
+    <div
+      className={`pointer-events-auto border-l-4 ${accentClass} bg-white rounded-xl shadow-2xl border border-slate-200/80 max-w-[calc(100vw-2rem)] sm:max-w-[340px] cursor-pointer select-none overflow-hidden transition-all duration-350 ${
+        exiting ? 'opacity-0 translate-x-4 scale-95' : 'opacity-100 translate-x-0 scale-100'
+      }`}
+      onClick={() => { if (!exiting) { setExiting(true); setTimeout(() => onNavigate(notification), 150); } }}
+    >
+      <div className="flex items-start gap-3 px-4 py-3">
+        {/* Icon */}
+        <div className={`flex-shrink-0 w-9 h-9 rounded-xl flex items-center justify-center ${getIconBgColor(notification)}`}>
+          {getIcon(notification)}
+        </div>
+
+        {/* Content */}
+        <div className="flex-1 min-w-0">
+          <p className="text-sm font-bold text-slate-900 line-clamp-2 leading-tight">{notification.title}</p>
+          <p className="text-xs text-slate-500 line-clamp-2 mt-0.5 leading-snug">{notification.message}</p>
+
+          {/* Badges row */}
+          <div className="flex items-center gap-1.5 mt-1.5 flex-wrap">
+            {urgency === 'critica' && (
+              <span className="inline-flex items-center px-1.5 py-0.5 text-[10px] font-bold bg-red-100 text-red-700 rounded-md animate-pulse">
+                🔴 CRÍTICA
+              </span>
+            )}
+            {urgency === 'alta' && (
+              <span className="inline-flex items-center px-1.5 py-0.5 text-[10px] font-bold bg-orange-100 text-orange-700 rounded-md">
+                🟠 URGENTE
+              </span>
+            )}
+            {isSig && (
+              <span className={`inline-flex items-center px-1.5 py-0.5 text-[10px] font-bold rounded-md ${
+                notification.metadata?.signature_type === 'completed' ? 'bg-emerald-100 text-emerald-700' : 'bg-teal-100 text-teal-700'
+              }`}>
+                {getSignatureBadge(notification)}
+              </span>
+            )}
+            {notification.metadata?.tribunal && (
+              <span className="px-1.5 py-0.5 text-[10px] font-medium bg-slate-100 text-slate-600 rounded-md">
+                {String(notification.metadata.tribunal)}
+              </span>
+            )}
+          </div>
+
+          {/* Signature progress */}
+          {isSig && (() => {
+            const p = getSignatureProgress(notification);
+            if (!p) return null;
+            return (
+              <div className="mt-1.5 h-1 bg-slate-100 rounded-full overflow-hidden">
+                <div className="h-full bg-emerald-500 rounded-full" style={{ width: `${p.pct}%` }} />
+              </div>
+            );
+          })()}
+
+          <p className="text-[10px] text-blue-600 font-semibold mt-1.5">Clique para ver detalhes →</p>
+        </div>
+
+        {/* Close button */}
+        <button
+          onClick={(e) => { e.stopPropagation(); dismiss(); }}
+          className="flex-shrink-0 p-1 rounded-full hover:bg-slate-100 transition mt-0.5"
+        >
+          <X className="w-3.5 h-3.5 text-slate-400" />
+        </button>
+      </div>
+
+      {/* Countdown progress bar */}
+      <div className="h-0.5 bg-slate-100 overflow-hidden">
+        <div
+          className={`h-full ${barColor} rounded-full`}
+          style={{
+            animation: `shrinkBar ${POPUP_DURATION}ms linear forwards`,
+          }}
+        />
+      </div>
+
+      <style>{`
+        @keyframes shrinkBar {
+          from { width: 100%; }
+          to   { width: 0%; }
+        }
+      `}</style>
+    </div>
+  );
+});
+PopupItem.displayName = 'PopupItem';
+
+interface PopupContainerProps {
+  notifications: UserNotification[];
+  onDismiss: (id: string) => void;
+  onNavigate: (n: UserNotification) => void;
+  getIcon: (n: UserNotification) => React.ReactNode;
+  getIconBgColor: (n: UserNotification) => string;
+  isSignatureNotification: (n: UserNotification) => boolean;
+  getSignatureBadge: (n: UserNotification) => string;
+  getSignatureProgress: (n: UserNotification) => { signedCount: number; totalSigners: number; pct: number } | null;
+}
+
+const PopupContainer: React.FC<PopupContainerProps> = (props) => (
+  <div className="fixed bottom-5 right-5 z-[2147483647] flex flex-col-reverse items-end gap-2.5 pointer-events-none">
+    <style>{`
+      @keyframes slideInRight {
+        from { transform: translateX(calc(100% + 24px)); opacity: 0; }
+        to   { transform: translateX(0); opacity: 1; }
+      }
+    `}</style>
+    {props.notifications.map((n) => (
+      <div key={n.id} style={{ animation: 'slideInRight 0.35s cubic-bezier(0.34,1.56,0.64,1) forwards' }}>
+        <PopupItem
+          notification={n}
+          onDismiss={props.onDismiss}
+          onNavigate={props.onNavigate}
+          getIcon={props.getIcon}
+          getIconBgColor={props.getIconBgColor}
+          isSignatureNotification={props.isSignatureNotification}
+          getSignatureBadge={props.getSignatureBadge}
+          getSignatureProgress={props.getSignatureProgress}
+        />
+      </div>
+    ))}
+  </div>
+);
+
+/* ─────────────────────────────────────────────────────────────────────────
+   MAIN NOTIFICATION BELL
+───────────────────────────────────────────────────────────────────────── */
 
 export const NotificationBell: React.FC<NotificationBellProps> = ({ onNavigateToModule }) => {
   const { user } = useAuth();
@@ -734,129 +917,21 @@ export const NotificationBell: React.FC<NotificationBellProps> = ({ onNavigateTo
           </div>
         </>
       )}
-      {/* Popup de notificações na tela (estilo Facebook/Instagram) */}
+      {/* Popup de notificações — auto-dismiss 10s */}
       {popupNotifications.length > 0 && createPortal(
-        <div className="fixed bottom-4 right-4 z-[2147483647] flex flex-col-reverse items-end gap-2 pointer-events-none">
-          <style>
-            {`
-              @keyframes slideInRight {
-                from {
-                  transform: translateX(100%);
-                  opacity: 0;
-                }
-                to {
-                  transform: translateX(0);
-                  opacity: 1;
-                }
-              }
-              
-              @keyframes shrink {
-                from {
-                  width: 100%;
-                }
-                to {
-                  width: 0%;
-                }
-              }
-              @keyframes fadeOut {
-                from {
-                  opacity: 1;
-                }
-                to {
-                  opacity: 0;
-                }
-              }
-            `}
-          </style>
-          {popupNotifications.map((notification) => (
-            <div
-              key={notification.id}
-              className="pointer-events-auto bg-white rounded-xl shadow-2xl border border-slate-200 p-3 sm:p-4 max-w-[calc(100vw-2rem)] sm:max-w-sm cursor-pointer hover:bg-slate-50 transition-colors"
-              style={{ animation: 'slideInRight 0.3s ease-out' }}
-              onClick={() => {
-                handleClick(notification);
-                setPopupNotifications(prev => prev.filter(n => n.id !== notification.id));
-              }}
-            >
-              <div className="flex items-start gap-3">
-                {/* Ícone */}
-                <div className={`flex-shrink-0 w-10 h-10 rounded-full flex items-center justify-center ${getIconBgColor(notification)}`}>
-                  {getIcon(notification)}
-                </div>
-                
-                {/* Conteúdo */}
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-start gap-2">
-                    <p className="text-sm font-semibold text-slate-900 line-clamp-2">{notification.title}</p>
-                  </div>
-                  {notification.metadata?.urgency === 'critica' && (
-                    <span className="inline-flex items-center gap-1 px-1.5 py-0.5 text-[10px] font-bold bg-red-100 text-red-700 rounded animate-pulse mt-1 w-fit">
-                      CRÍTICA
-                    </span>
-                  )}
-                  {notification.metadata?.urgency === 'alta' && (
-                    <span className="inline-flex items-center gap-1 px-1.5 py-0.5 text-[10px] font-bold bg-orange-100 text-orange-700 rounded mt-1 w-fit">
-                      ALTA
-                    </span>
-                  )}
-                  {isSignatureNotification(notification) && (
-                    <span
-                      className={`inline-flex items-center gap-1 px-1.5 py-0.5 text-[10px] font-bold rounded mt-1 w-fit ${
-                        notification.metadata?.signature_type === 'completed'
-                          ? 'bg-emerald-100 text-emerald-700'
-                          : 'bg-teal-100 text-teal-700'
-                      }`}
-                    >
-                      {getSignatureBadge(notification)}
-                    </span>
-                  )}
-                  <p className="text-xs text-slate-600 line-clamp-2 mt-1">{notification.message}</p>
-                  {isSignatureNotification(notification) && (
-                    <div className="mt-1">
-                      {(() => {
-                        const progress = getSignatureProgress(notification);
-                        if (!progress) return null;
-                        return (
-                          <>
-                            <div className="flex items-center justify-between text-[10px] text-slate-500">
-                              <span>{notification.metadata?.document_name ? String(notification.metadata.document_name) : 'Documento'}</span>
-                              <span className="font-semibold text-emerald-700">{progress.signedCount}/{progress.totalSigners}</span>
-                            </div>
-                            <div className="mt-1 h-1 bg-slate-100 rounded-full overflow-hidden">
-                              <div className="h-full bg-emerald-500 rounded-full" style={{ width: `${progress.pct}%` }} />
-                            </div>
-                          </>
-                        );
-                      })()}
-                    </div>
-                  )}
-                  <p className="text-[10px] text-blue-600 font-medium mt-1">
-                    Clique para ver detalhes
-                  </p>
-                </div>
-                
-                {/* Botão fechar */}
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    setPopupNotifications(prev => prev.filter(n => n.id !== notification.id));
-                  }}
-                  className="flex-shrink-0 p-1 rounded-full hover:bg-slate-200 transition"
-                >
-                  <X className="w-4 h-4 text-slate-400" />
-                </button>
-              </div>
-              
-              {/* Barra de progresso */}
-              <div className="mt-2 h-1 bg-slate-100 rounded-full overflow-hidden">
-                <div 
-                  className="h-full bg-blue-500/70 rounded-full"
-                  style={{ width: '100%' }}
-                />
-              </div>
-            </div>
-          ))}
-        </div>,
+        <PopupContainer
+          notifications={popupNotifications}
+          onDismiss={(id) => setPopupNotifications(prev => prev.filter(n => n.id !== id))}
+          onNavigate={(notification) => {
+            handleClick(notification);
+            setPopupNotifications(prev => prev.filter(n => n.id !== notification.id));
+          }}
+          getIcon={getIcon}
+          getIconBgColor={getIconBgColor}
+          isSignatureNotification={isSignatureNotification}
+          getSignatureBadge={getSignatureBadge}
+          getSignatureProgress={getSignatureProgress}
+        />,
         document.body
       )}
     </div>
