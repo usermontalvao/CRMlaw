@@ -758,6 +758,38 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
 
 const releases: ReleaseNote[] = [
   {
+    version: '1.10.043',
+    date: '13/05/2026',
+    summary: 'Assinatura Digital: correção de envio de múltiplos documentos, redesign do modal de detalhes, reordenação de arquivos no upload e animação de carregamento com todos os documentos.',
+    modules: [
+      {
+        moduleId: 'signature',
+        changes: [
+          {
+            type: 'fix',
+            description: 'Corrigido bug crítico onde apenas o documento principal era salvo — os anexos (attachment_paths) agora são enviados corretamente ao Supabase Storage e gravados no banco.',
+          },
+          {
+            type: 'improvement',
+            description: 'Modal de detalhes completamente redesenhado: mais compacto, botão X visível, scroll pelo overlay, seções organizadas (Documentos, Signatários, Histórico).',
+          },
+          {
+            type: 'feature',
+            description: 'Upload de múltiplos documentos: botões ▲/▼ para reordenar arquivos após seleção, com badge "Principal" no primeiro item.',
+          },
+          {
+            type: 'improvement',
+            description: 'Animação de carregamento da página de assinatura agora exibe chips para todos os documentos do envelope (principal + anexos), não apenas o principal.',
+          },
+          {
+            type: 'improvement',
+            description: 'Botões Ver/Baixar na lista de documentos redesenhados: menores, mais discretos, sem conflito com estilos globais.',
+          },
+        ],
+      },
+    ],
+  },
+  {
     version: '1.10.042',
     date: '12/05/2026',
     summary: 'Cloud: cor da pasta agora é salva no banco de dados (Supabase) em vez de localStorage. Persiste entre navegadores, dispositivos e sessões.',

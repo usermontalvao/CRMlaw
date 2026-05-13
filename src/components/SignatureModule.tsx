@@ -6,7 +6,7 @@ import {
   FileText, Upload, Plus, Trash2, X, Check, Clock, CheckCircle, Send, Copy,
   User, Mail, Loader2, ChevronLeft, Eye, EyeOff, Filter, Search, MousePointer2,
   Type, Hash, Calendar, PenTool, Users, Download, AlertTriangle, ExternalLink, ChevronRight, ZoomIn, ZoomOut, Shield, Lightbulb, Pencil, Maximize2, Minimize2, LayoutList, LayoutGrid, Globe, FolderOpen, Phone,
-  ArrowUpDown, FileSignature,
+  ArrowUpDown, FileSignature, ChevronUp, ChevronDown,
 } from 'lucide-react';
 import { useToastContext } from '../contexts/ToastContext';
 import { useAuth } from '../contexts/AuthContext';
@@ -1924,6 +1924,25 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
     });
   };
 
+  const moveUploadedFileAt = (index: number, direction: 'up' | 'down') => {
+    setUploadedFiles((prev) => {
+      const targetIndex = direction === 'up' ? index - 1 : index + 1;
+      if (targetIndex < 0 || targetIndex >= prev.length) return prev;
+      const next = [...prev];
+      [next[index], next[targetIndex]] = [next[targetIndex], next[index]];
+      setUploadedFile(next[0]);
+      setSelectedDocumentName(next[0].name);
+      cleanupLocalViewerUrls(viewerDocuments, pdfPreviewUrls);
+      const docs = buildViewerDocumentsFromUploads(next);
+      setViewerDocuments(docs);
+      setCurrentViewerDocIndex(0);
+      setPdfPreviewUrl(docs[0]?.previewUrl || null);
+      setPdfPreviewUrls([]);
+      setPdfNumPagesByDoc({});
+      return next;
+    });
+  };
+
   const removeUploadedFileAt = (index: number) => {
     setUploadedFiles((prev) => {
       const next = prev.filter((_, i) => i !== index);
@@ -2635,10 +2654,21 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
         setSelectedDocumentPath(docPath);
       }
 
+      // Upload attachment files (uploadedFiles[1+]) when coming from manual file upload
+      let attachPaths: string[] | null = selectedAttachmentPaths;
+      if (uploadedFiles.length > 1 && !selectedAttachmentPaths) {
+        const uploaded: string[] = [];
+        for (let i = 1; i < uploadedFiles.length; i++) {
+          const p = await signatureService.uploadSignatureDocumentPdf(uploadedFiles[i], `${docId}-attach-${i}`);
+          uploaded.push(p);
+        }
+        attachPaths = uploaded.length > 0 ? uploaded : null;
+      }
+
       const payload: CreateSignatureRequestDTO = {
         document_id: docId,
         document_name: selectedDocumentName, document_path: docPath,
-        attachment_paths: selectedAttachmentPaths,
+        attachment_paths: attachPaths,
         client_id: selectedClientId, client_name: selectedClientName, auth_method: 'signature_only' as SignerAuthMethod,
         expires_at: settings.expiresAt || null,
         signers: signers.map((s, i) => ({ name: s.name, email: s.email, cpf: s.cpf || null, phone: null, role: s.role || null, order: i + 1 })),
@@ -3419,7 +3449,7 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
                         {uploadedFiles.length > 1 && <p className="text-xs text-slate-500 mt-1">{uploadedFiles.length} arquivos selecionados</p>}
                       </div>
                       {uploadedFiles.length > 1 && (
-                        <div className="w-full max-w-sm text-left bg-white rounded border border-slate-200 p-3 mt-2 max-h-32 overflow-y-auto">
+                        <div className="w-full max-w-sm text-left bg-white rounded border border-slate-200 p-3 mt-2 max-h-48 overflow-y-auto">
                           <div className="flex items-center justify-between gap-2 pb-2 mb-2 border-b border-slate-100">
                             <div className="flex items-center gap-2">
                               <button
@@ -3457,16 +3487,38 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
                             </button>
                           </div>
                           {uploadedFiles.map((f, i) => (
-                            <div key={`${f.name}-${i}`} className="flex items-center justify-between text-xs py-1 gap-2">
-                              <label className="flex items-center gap-2 min-w-0 flex-1">
+                            <div key={`${f.name}-${i}`} className="flex items-center gap-1.5 text-xs py-1">
+                              {/* Reorder arrows */}
+                              <div className="flex flex-col gap-0.5 flex-shrink-0">
+                                <button
+                                  type="button"
+                                  onClick={() => moveUploadedFileAt(i, 'up')}
+                                  disabled={i === 0}
+                                  className="text-slate-400 hover:text-slate-600 disabled:opacity-20 disabled:cursor-not-allowed leading-none"
+                                  title="Mover para cima"
+                                >
+                                  <ChevronUp className="w-3 h-3" />
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => moveUploadedFileAt(i, 'down')}
+                                  disabled={i === uploadedFiles.length - 1}
+                                  className="text-slate-400 hover:text-slate-600 disabled:opacity-20 disabled:cursor-not-allowed leading-none"
+                                  title="Mover para baixo"
+                                >
+                                  <ChevronDown className="w-3 h-3" />
+                                </button>
+                              </div>
+                              <label className="flex items-center gap-1.5 min-w-0 flex-1 cursor-pointer">
                                 <input
                                   type="checkbox"
                                   checked={selectedUploadFileIndexes.has(i)}
                                   onChange={() => toggleSelectedUploadIndex(i)}
                                 />
                                 <span className="truncate text-slate-600">{f.name}</span>
+                                {i === 0 && <span className="flex-shrink-0 text-[10px] bg-emerald-100 text-emerald-700 px-1.5 py-0.5 rounded font-medium">Principal</span>}
                               </label>
-                              <button type="button" onClick={() => removeUploadedFileAt(i)} className="text-red-500 hover:text-red-600 ml-2"><X className="w-3 h-3" /></button>
+                              <button type="button" onClick={() => removeUploadedFileAt(i)} className="text-red-400 hover:text-red-600 flex-shrink-0"><X className="w-3 h-3" /></button>
                             </div>
                           ))}
                         </div>
@@ -5318,15 +5370,33 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
       )}
 
       {detailsRequest && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-6 bg-slate-50/80 dark:bg-slate-50/80 backdrop-blur-md">
-          <div className="bg-white dark:bg-white rounded-2xl shadow-[0_24px_60px_rgba(15,23,42,0.12)] border border-slate-200 dark:border-slate-200 w-full max-w-2xl max-h-[92vh] sm:max-h-[82vh] overflow-hidden flex flex-col mx-auto">
-            <div className="h-2 sm:h-3 w-full shrink-0 bg-gradient-to-r from-orange-500 to-orange-600" />
+        <div className="fixed inset-0 z-50 flex items-start justify-center pt-4 pb-6 px-3 sm:pt-10 sm:px-6 bg-black/50 backdrop-blur-sm overflow-y-auto">
+          <div className="bg-white rounded-xl shadow-2xl border border-slate-200 w-full max-w-2xl">
 
-            <div className="relative px-3 sm:px-6 py-3 sm:py-4 border-b border-slate-200 dark:border-slate-200 bg-white dark:bg-white flex flex-col gap-1.5 sm:gap-2">
-              <div className="min-w-0">
-                <div className="text-[10px] sm:text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400 dark:text-slate-400">Detalhes</div>
-                <h2 className="mt-1 text-base sm:text-lg font-semibold text-slate-900 dark:text-slate-900 truncate">{detailsRequest.document_name}</h2>
-                <p className="text-xs text-slate-500 dark:text-slate-500 mt-1">Criado em {formatDate(detailsRequest.created_at)}</p>
+            {/* ── Header ── */}
+            <div className="flex items-start gap-3 px-4 py-3 border-b border-slate-100">
+              {/* Orange accent */}
+              <div className="w-1 h-10 bg-orange-500 rounded-full flex-shrink-0 mt-0.5" />
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <p className="text-xs font-bold text-orange-500 uppercase tracking-widest">Assinatura Digital</p>
+                  {detailsRequest.signers.every(s => s.status === 'signed') ? (
+                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700 text-[10px] font-bold uppercase tracking-wide">
+                      <CheckCircle className="w-3 h-3" />Concluído
+                    </span>
+                  ) : (
+                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-amber-100 text-amber-700 text-[10px] font-bold uppercase tracking-wide">
+                      <Clock className="w-3 h-3" />{detailsRequest.signers.filter(s => s.status === 'pending').length} pendente(s)
+                    </span>
+                  )}
+                </div>
+                <h2 className="text-sm font-semibold text-slate-800 leading-snug mt-0.5 break-words">{detailsRequest.document_name}</h2>
+                <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5 mt-1">
+                  <span className="text-[11px] text-slate-400">{formatDate(detailsRequest.created_at)}</span>
+                  {detailsRequest.client_name && <span className="text-[11px] text-slate-500 flex items-center gap-1"><User className="w-3 h-3" />{detailsRequest.client_name}</span>}
+                  {detailsRequest.process_number && <span className="text-[11px] text-slate-500 flex items-center gap-1"><Hash className="w-3 h-3" />{detailsRequest.process_number}</span>}
+                  {cloudSyncStatusByRequestId[detailsRequest.id] && <span className="text-[11px] text-emerald-600 flex items-center gap-1"><FolderOpen className="w-3 h-3" />Pasta criada</span>}
+                </div>
               </div>
               <button
                 onClick={() => {
@@ -5337,38 +5407,19 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
                   setSignerImages({});
                   setDetailsRequest(null);
                 }}
-                className="absolute top-2 sm:top-3 right-2 sm:right-3 p-2 text-slate-400 hover:text-slate-600 rounded-lg disabled:opacity-50"
-                aria-label="Fechar detalhes"
+                style={{ background: '#f1f5f9', color: '#475569', border: '1px solid #e2e8f0', minWidth: 32, minHeight: 32 }}
+                className="w-8 h-8 flex items-center justify-center rounded-lg hover:opacity-80 transition flex-shrink-0"
+                aria-label="Fechar"
               >
-                <X className="w-5 h-5" />
+                <X style={{ width: 16, height: 16, color: '#475569', display: 'block' }} />
               </button>
             </div>
 
-            <div className="flex-1 overflow-y-auto p-3 sm:p-5 space-y-4 sm:space-y-5 bg-white dark:bg-white">
-              {/* Info compacta */}
-              <div className="flex flex-wrap gap-4 text-sm">
-                {detailsRequest.client_name && (
-                  <div><span className="text-slate-500">Cliente:</span> <span className="font-medium text-slate-700">{detailsRequest.client_name}</span></div>
-                )}
-                {detailsRequest.process_number && (
-                  <div><span className="text-slate-500">Processo:</span> <span className="font-medium text-slate-700">{detailsRequest.process_number}</span></div>
-                )}
-                {cloudSyncStatusByRequestId[detailsRequest.id] ? (
-                  <div><span className="text-slate-500">Cloud:</span> <span className="font-medium text-emerald-700">Pasta criada</span></div>
-                ) : null}
-                <div>
-                  <span className="text-slate-500">Status:</span>{' '}
-                  {detailsRequest.signers.every(s => s.status === 'signed') ? (
-                    <span className="text-emerald-600 font-medium">Todos assinaram</span>
-                  ) : (
-                    <span className="text-amber-600 font-medium">{detailsRequest.signers.filter(s => s.status === 'pending').length} pendente(s)</span>
-                  )}
-                </div>
-              </div>
+            <div className="bg-white rounded-b-xl overflow-hidden">
 
-              {/* Botões de ação */}
-              <div className="flex flex-col gap-2">
-                <div className="flex flex-col sm:flex-row gap-2 sm:gap-3">
+              {/* ── Ações principais ── */}
+              <div className="px-4 py-3 border-b border-slate-100">
+                <div className="flex gap-2">
                   {detailsRequest.document_path && (
                     <button
                       disabled={viewDocLoading}
@@ -5566,53 +5617,44 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
                           setViewDocLoading(false);
                         }
                       }}
-                      className="flex items-center justify-center gap-2 px-4 py-3 bg-orange-500 text-white rounded-xl text-sm font-semibold hover:bg-orange-600 transition shadow-sm disabled:opacity-70 disabled:cursor-wait w-full sm:flex-1"
+                      className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 bg-orange-500 text-white rounded-lg text-sm font-semibold hover:bg-orange-600 transition disabled:opacity-70 disabled:cursor-wait"
                     >
                       {viewDocLoading ? (
-                        <>
-                          <Loader2 className="w-4 h-4 animate-spin" />
-                          Abrindo...
-                        </>
+                        <><Loader2 className="w-3.5 h-3.5 animate-spin" />Abrindo...</>
                       ) : (
-                        <>
-                          <Eye className="w-4 h-4" />
-                          {detailsRequest.signers.some(s => s.status === 'signed') ? 'Ver assinado' : 'Visualizar'}
-                        </>
+                        <><Eye className="w-3.5 h-3.5" />{detailsRequest.signers.some(s => s.status === 'signed') ? 'Ver assinado' : 'Visualizar'}</>
                       )}
                     </button>
                   )}
                   <button
                     onClick={() => handleDownloadDocument(detailsRequest)}
-                    className="flex items-center justify-center gap-2 px-4 py-3 bg-orange-500 text-white rounded-xl text-sm font-semibold hover:bg-orange-600 transition shadow-sm w-full sm:flex-1"
+                    className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-sm font-semibold transition"
                   >
-                    <Download className="w-4 h-4" />
-                    Baixar documento
+                    <Download className="w-3.5 h-3.5" />
+                    Baixar
                   </button>
                   <button
                     onClick={() => handleDeleteRequest(detailsRequest.id)}
-                    className="flex items-center justify-center gap-2 px-4 py-3 bg-red-50 text-red-600 rounded-xl text-sm font-semibold hover:bg-red-100 transition shadow-sm w-full sm:w-auto sm:px-6"
+                    className="flex items-center justify-center gap-1.5 px-3 py-2 bg-red-50 hover:bg-red-100 text-red-600 rounded-lg text-sm font-semibold transition"
                   >
-                    <Trash2 className="w-4 h-4" />
-                    Excluir
+                    <Trash2 className="w-3.5 h-3.5" />
                   </button>
                 </div>
 
                 {detailsRequest.signers.every((s) => s.status === 'signed') && (
                   <div className="mt-2 pt-2 border-t border-slate-100">
-                    <div className="flex flex-wrap items-center justify-start gap-6 mt-2 pl-1">
+                    <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5">
                       <button
                         disabled={openProcessLoading}
                         onClick={async () => {
                           if (openProcessLoading) return;
                           try {
                             setOpenProcessLoading(true);
-
                             if (detailsRequest.process_id) {
                               setDetailsRequest(null);
                               navigateTo('processos', { mode: 'details', entityId: detailsRequest.process_id } as any);
                               return;
                             }
-
                             setShowCreateProcess((v) => !v);
                           } catch (e) {
                             console.error('Erro ao abrir processo:', e);
@@ -5621,27 +5663,12 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
                             setOpenProcessLoading(false);
                           }
                         }}
-                        className="group flex items-center gap-2 text-sm font-medium text-slate-600 hover:text-orange-500 transition-colors disabled:opacity-70"
+                        className="group flex items-center gap-1.5 text-sm text-slate-500 hover:text-orange-600 transition-colors disabled:opacity-60"
                       >
-                        {openProcessLoading ? (
-                          <>
-                            <Loader2 className="w-4 h-4 animate-spin" />
-                            <span>Abrindo...</span>
-                          </>
-                        ) : (
-                          <>
-                            {detailsRequest.process_id ? (
-                              <ExternalLink className="w-4 h-4 group-hover:scale-110 transition-transform" />
-                            ) : showCreateProcess ? (
-                              <EyeOff className="w-4 h-4 group-hover:scale-110 transition-transform" />
-                            ) : (
-                              <Plus className="w-4 h-4 group-hover:scale-110 transition-transform" />
-                            )}
-                            <span className="hover:underline underline-offset-4">
-                              {detailsRequest.process_id ? 'Abrir processo' : (showCreateProcess ? 'Ocultar processo' : 'Criar processo')}
-                            </span>
-                          </>
-                        )}
+                        {openProcessLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : detailsRequest.process_id ? <ExternalLink className="w-3.5 h-3.5" /> : showCreateProcess ? <EyeOff className="w-3.5 h-3.5" /> : <Plus className="w-3.5 h-3.5" />}
+                        <span className="group-hover:underline underline-offset-2">
+                          {detailsRequest.process_id ? 'Abrir processo' : (showCreateProcess ? 'Ocultar' : 'Criar processo')}
+                        </span>
                       </button>
                       <button
                         onClick={() => {
@@ -5650,46 +5677,27 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
                             return;
                           }
                           const cpf = detailsRequest.signers.find((s) => s.cpf)?.cpf || undefined;
-                          const beneficiary = detailsRequest.client_name || undefined;
                           setDetailsRequest(null);
-                          const prefillData = {
-                            client_id: detailsRequest.client_id,
-                            beneficiary,
-                            cpf,
-                            signature_id: detailsRequest.id,
-                          };
-                          
-                          navigateTo('requerimentos', {
-                            mode: 'create',
-                            prefill: prefillData,
-                          } as any);
+                          navigateTo('requerimentos', { mode: 'create', prefill: { client_id: detailsRequest.client_id, beneficiary: detailsRequest.client_name || undefined, cpf, signature_id: detailsRequest.id } } as any);
                         }}
-                        className="group flex items-center gap-2 text-sm font-medium text-slate-600 hover:text-orange-500 transition-colors"
+                        className="group flex items-center gap-1.5 text-sm text-slate-500 hover:text-orange-600 transition-colors"
                       >
-                        <FileText className="w-4 h-4 group-hover:scale-110 transition-transform" />
-                        <span className="hover:underline underline-offset-4">Requerimento</span>
+                        <FileText className="w-3.5 h-3.5" />
+                        <span className="group-hover:underline underline-offset-2">Requerimento</span>
                       </button>
                       <button
                         disabled={copyToCloudLoading}
                         onClick={() => handleCopySignedDocumentToCloud(detailsRequest)}
-                        className="group flex items-center gap-2 text-sm font-medium text-slate-600 hover:text-orange-500 transition-colors disabled:opacity-70"
+                        className="group flex items-center gap-1.5 text-sm text-slate-500 hover:text-orange-600 transition-colors disabled:opacity-60"
                       >
-                        {copyToCloudLoading ? (
-                          <>
-                            <Loader2 className="w-4 h-4 animate-spin" />
-                            <span>Copiando...</span>
-                          </>
-                        ) : (
-                          <>
-                            <FolderOpen className="w-4 h-4 group-hover:scale-110 transition-transform" />
-                            <span className="hover:underline underline-offset-4">Criar pasta</span>
-                          </>
-                        )}
+                        {copyToCloudLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <FolderOpen className="w-3.5 h-3.5" />}
+                        <span className="group-hover:underline underline-offset-2">{copyToCloudLoading ? 'Copiando...' : 'Criar pasta'}</span>
                       </button>
                     </div>
 
                     {showCreateProcess && !detailsRequest.process_id && (
-                      <div className="mt-3 p-3 rounded-xl bg-slate-50 border border-slate-100">
+                      <div className="mt-3 p-4 rounded-xl bg-slate-50 border border-slate-200">
+                        <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-3">Novo Processo</p>
                         <div className="flex flex-col sm:flex-row gap-2 sm:gap-3">
                           <select
                             value={createProcessArea}
@@ -5736,321 +5744,222 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
                                 setCreateProcessLoading(false);
                               }
                             }}
-                            className="inline-flex items-center justify-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold bg-emerald-600 text-white hover:bg-emerald-700 transition shadow-sm w-full sm:w-auto disabled:opacity-70 disabled:cursor-wait"
+                            className="flex items-center justify-center gap-2 px-5 py-2 rounded-lg text-sm font-semibold bg-emerald-600 text-white hover:bg-emerald-700 transition disabled:opacity-70 disabled:cursor-wait w-full sm:w-auto"
                           >
-                            {createProcessLoading ? (
-                              <>
-                                <Loader2 className="w-4 h-4 animate-spin" />
-                                Criando...
-                              </>
-                            ) : (
-                              <>
-                                <Plus className="w-4 h-4" />
-                                Criar
-                              </>
-                            )}
+                            {createProcessLoading ? <><Loader2 className="w-4 h-4 animate-spin" />Criando...</> : <><Plus className="w-4 h-4" />Criar</>}
                           </button>
                         </div>
-                        <div className="mt-4 p-3 rounded-xl bg-gradient-to-r from-red-50 to-orange-50 border border-red-200">
-                          <div className="flex items-start gap-3">
-                            <div className="relative">
-                              <input
-                                type="checkbox"
-                                id="urgent-process"
-                                checked={createProcessUrgent}
-                                onChange={(e) => setCreateProcessUrgent(e.target.checked)}
-                                className="w-5 h-5 rounded border-red-300 text-red-600 focus:ring-2 focus:ring-red-500 focus:ring-offset-0 cursor-pointer"
-                              />
-                              {createProcessUrgent && (
-                                <div className="absolute -top-1 -left-1 w-3 h-3 bg-red-500 rounded-full animate-pulse" />
-                              )}
-                            </div>
-                            <div className="flex-1">
-                              <label htmlFor="urgent-process" className="flex items-center gap-2 text-sm font-semibold text-red-800 cursor-pointer hover:text-red-900 transition-colors">
-                                <AlertTriangle className="w-4 h-4" />
-                                Marcar como urgente
-                              </label>
-                              <p className="text-xs text-red-600 mt-1">Processo será priorizado em todas as visualizações</p>
-                            </div>
-                          </div>
-                        </div>
+                        <label className="mt-3 flex items-center gap-2 cursor-pointer w-fit">
+                          <input
+                            type="checkbox"
+                            checked={createProcessUrgent}
+                            onChange={(e) => setCreateProcessUrgent(e.target.checked)}
+                            className="w-4 h-4 rounded border-red-300 text-red-600 focus:ring-red-500 cursor-pointer"
+                          />
+                          <span className="text-sm font-medium text-red-700 flex items-center gap-1.5">
+                            <AlertTriangle className="w-3.5 h-3.5" />
+                            Marcar como urgente
+                          </span>
+                        </label>
                       </div>
                     )}
                   </div>
                 )}
               </div>
 
+              {/* ── Content sections ── */}
+              <div className="px-4 py-3 space-y-4">
+
+              {/* Documentos */}
+              {(() => {
+                const mainDoc = detailsRequest.document_path
+                  ? [{ name: detailsRequest.document_name || 'Documento principal', path: detailsRequest.document_path, isMain: true }]
+                  : [];
+                const attachDocs = ((detailsRequest as any).attachment_paths as string[] | null | undefined ?? []).map((p, i) => ({
+                  name: p.split('/').pop()?.replace(/_\d+\./, '.') ?? `Anexo ${i + 1}`,
+                  path: p,
+                  isMain: false,
+                }));
+                const allDocs = [...mainDoc, ...attachDocs];
+                if (allDocs.length === 0) return null;
+                return (
+                  <section>
+                    <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1.5">Documentos ({allDocs.length})</p>
+                    <div className="space-y-1">
+                      {allDocs.map((doc) => (
+                        <div key={doc.path} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 10px', borderRadius: 8, background: '#f8fafc', border: '1px solid #e2e8f0' }}>
+                          <div style={{ flexShrink: 0, width: 26, height: 26, borderRadius: 6, background: doc.isMain ? '#fff7ed' : '#f1f5f9', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                            <FileText style={{ width: 13, height: 13, color: doc.isMain ? '#f97316' : '#94a3b8' }} />
+                          </div>
+                          <div style={{ flex: 1, minWidth: 0 }}>
+                            <p style={{ fontSize: 12, fontWeight: 500, color: '#334155', margin: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{doc.name}</p>
+                            <p style={{ fontSize: 10, color: '#94a3b8', margin: 0 }}>{doc.isMain ? 'Principal' : 'Anexo'}</p>
+                          </div>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 4, flexShrink: 0 }}>
+                            <button
+                              type="button"
+                              onClick={async () => { try { const url = await signatureService.getDocumentPreviewUrl(doc.path); if (url) window.open(url, '_blank'); else toast.error('Não foi possível abrir'); } catch { toast.error('Erro'); } }}
+                              style={{ display: 'inline-flex', alignItems: 'center', gap: 3, padding: '3px 8px', borderRadius: 6, fontSize: 11, fontWeight: 500, color: '#64748b', background: '#ffffff', border: '1px solid #e2e8f0', cursor: 'pointer' }}
+                            >
+                              <Eye style={{ width: 11, height: 11 }} />Ver
+                            </button>
+                            <button
+                              type="button"
+                              onClick={async () => { try { const url = await signatureService.getDocumentPreviewUrl(doc.path); if (url) await downloadOriginalPdf(url, doc.name); else toast.error('Não foi possível baixar'); } catch { toast.error('Erro'); } }}
+                              style={{ display: 'inline-flex', alignItems: 'center', gap: 3, padding: '3px 8px', borderRadius: 6, fontSize: 11, fontWeight: 500, color: '#ea580c', background: '#fff7ed', border: '1px solid #fed7aa', cursor: 'pointer' }}
+                            >
+                              <Download style={{ width: 11, height: 11 }} />Baixar
+                            </button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </section>
+                );
+              })()}
+
               {/* Signatários */}
-              <div>
-                <h3 className="font-semibold mb-4 flex items-center gap-2">
-                  <Users className="w-4 h-4" />
-                  Signatários ({detailsRequest.signers.length})
-                </h3>
+              <section>
+                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1.5">Signatários ({detailsRequest.signers.length})</p>
                 <div className="space-y-3">
                   {detailsRequest.signers.map((signer) => {
                     const facialUrl = signerImages[signer.id]?.facial || null;
                     const signatureUrl = signerImages[signer.id]?.signature || null;
                     const geoLocation = signer.geolocation || signer.signer_geolocation;
-                    
+                    const isSigned = signer.status === 'signed';
+
                     return (
-                    <div key={signer.id} className={`p-3 sm:p-5 rounded-xl border ${signer.status === 'signed' ? 'bg-emerald-50 border-emerald-200' : 'bg-slate-50 border-slate-200'}`}>
-                      <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3 sm:gap-4">
-                        <div className="flex items-start gap-3 sm:gap-4">
-                          {/* Foto facial do signatário - clicável para ampliar */}
-                          {signer.status === 'signed' && facialUrl ? (
-                            <button 
-                              onClick={() => setZoomImageUrl(facialUrl)}
-                              className="relative group flex-shrink-0"
-                              title="Clique para ampliar"
-                            >
-                              <img 
-                                src={facialUrl}
-                                alt="Foto facial"
-                                className="w-16 h-16 sm:w-20 sm:h-20 rounded-xl object-cover border-2 border-emerald-300 group-hover:border-emerald-500 transition-all"
-                                style={{ transform: 'scaleX(-1)' }}
-                              />
-                              <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 rounded-xl flex items-center justify-center transition-all">
-                                <ZoomIn className="w-5 h-5 text-white opacity-0 group-hover:opacity-100 transition-all" />
+                      <div key={signer.id} className={`rounded-xl border overflow-hidden ${isSigned ? 'border-emerald-200' : 'border-slate-200'}`}>
+                        {/* Card header */}
+                        <div className={`flex items-center gap-2.5 px-3 py-2.5 ${isSigned ? 'bg-emerald-50' : 'bg-slate-50'}`}>
+                          {isSigned && facialUrl ? (
+                            <button onClick={() => setZoomImageUrl(facialUrl)} className="relative group flex-shrink-0" title="Ampliar foto">
+                              <img src={facialUrl} alt="Foto facial" className="w-10 h-10 rounded-lg object-cover border-2 border-emerald-300 group-hover:border-emerald-500 transition-all" style={{ transform: 'scaleX(-1)' }} />
+                              <div className="absolute inset-0 bg-black/0 group-hover:bg-black/25 rounded-lg flex items-center justify-center transition-all">
+                                <ZoomIn className="w-3.5 h-3.5 text-white opacity-0 group-hover:opacity-100 transition-all" />
                               </div>
                             </button>
                           ) : (
-                            <div className={`w-16 h-16 sm:w-20 sm:h-20 rounded-xl flex items-center justify-center flex-shrink-0 ${signer.status === 'signed' ? 'bg-emerald-100' : 'bg-orange-100'}`}>
-                              <User className={`w-8 h-8 sm:w-10 sm:h-10 ${signer.status === 'signed' ? 'text-emerald-600' : 'text-orange-600'}`} />
+                            <div className={`w-10 h-10 rounded-lg flex items-center justify-center flex-shrink-0 ${isSigned ? 'bg-emerald-100' : 'bg-orange-100'}`}>
+                              <User className={`w-5 h-5 ${isSigned ? 'text-emerald-600' : 'text-orange-500'}`} />
                             </div>
                           )}
                           <div className="flex-1 min-w-0">
-                            <div className="flex flex-col sm:flex-row sm:items-center gap-2 mb-2">
-                              <p className="font-semibold text-slate-800 text-base sm:text-lg truncate">{signer.name}</p>
-                              <div className="sm:ml-auto">{getStatusBadge(signer.status)}</div>
-                            </div>
-                            
-                            {/* Grid de informações */}
-                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-2">
-                              {/* Método de autenticação */}
-                              {signer.auth_provider && (
-                                <div className="flex flex-col sm:flex-row items-start gap-2 col-span-2">
-                                  <div className="flex items-center gap-2">
-                                    <Shield className="w-4 h-4 text-emerald-500 flex-shrink-0" />
-                                    <p className="text-sm text-emerald-600 font-medium">
-                                      {signer.auth_provider === 'google' && `Autenticado via Google (${signer.auth_email || signer.email})`}
-                                      {signer.auth_provider === 'email_link' && `Autenticado via Link por E-mail (${signer.auth_email || signer.email})`}
-                                    </p>
-                                  </div>
-                                  {geoLocation && (
-                                    <a 
-                                      href={`https://www.google.com/maps?q=${geoLocation.replace(/\s/g, '')}`}
-                                      target="_blank"
-                                      rel="noopener noreferrer"
-                                      className="text-sm text-orange-600 hover:text-orange-800 hover:underline flex items-center gap-1 ml-0 sm:ml-auto"
-                                    >
-                                      {geoLocation}
-                                      <ExternalLink className="w-3 h-3" />
-                                    </a>
-                                  )}
+                            <p className="text-sm font-semibold text-slate-800 truncate">{signer.name}</p>
+                            {signer.email && <p className="text-[11px] text-slate-500 truncate">{signer.email}</p>}
+                          </div>
+                          <div className="flex-shrink-0">{getStatusBadge(signer.status)}</div>
+                        </div>
+
+                        {/* Signed — auth info + signature image */}
+                        {isSigned && (signer.auth_provider || signer.signer_user_agent || signer.device_info || signatureUrl) && (
+                          <div className="px-3 py-2 bg-white space-y-1.5 border-t border-slate-100">
+                            {signer.auth_provider && (
+                              <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5">
+                                <span className="flex items-center gap-1 text-[11px] text-emerald-700 font-medium">
+                                  <Shield className="w-3 h-3 flex-shrink-0" />
+                                  {signer.auth_provider === 'google' && `Google · ${signer.auth_email || signer.email}`}
+                                  {signer.auth_provider === 'email_link' && `Link E-mail · ${signer.auth_email || signer.email}`}
+                                </span>
+                                {geoLocation && (
+                                  <a href={`https://www.google.com/maps?q=${geoLocation.replace(/\s/g, '')}`} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1 text-[11px] text-orange-600 hover:underline">
+                                    {geoLocation}<ExternalLink className="w-2.5 h-2.5" />
+                                  </a>
+                                )}
+                              </div>
+                            )}
+                            {(signer.signer_user_agent || signer.device_info) && (
+                              <p className="text-[11px] text-slate-400 truncate" title={signer.signer_user_agent || signer.device_info || ''}>
+                                {(signer.signer_user_agent || signer.device_info || '').slice(0, 90)}
+                              </p>
+                            )}
+                            {signatureUrl && (
+                              <div className="flex items-center gap-2">
+                                <p className="text-[10px] font-medium text-slate-400 uppercase tracking-wide">Assinatura:</p>
+                                <div className="inline-block px-2 py-1 bg-slate-50 rounded border border-slate-100">
+                                  <img src={signatureUrl} alt="Assinatura" className="max-h-10 object-contain cursor-pointer hover:opacity-75 transition-opacity" onClick={() => setZoomImageUrl(signatureUrl)} title="Ampliar" />
                                 </div>
-                              )}
-                              
-                              {/* User Agent */}
-                              {signer.signer_user_agent && (
-                                <div className="flex items-start gap-2 col-span-2">
-                                  <FileText className="w-4 h-4 text-slate-400 flex-shrink-0 mt-0.5" />
-                                  <p className="text-sm text-slate-500 break-all" title={signer.signer_user_agent}>
-                                    User Agent: {signer.signer_user_agent.length > 80 ? signer.signer_user_agent.slice(0, 80) + '...' : signer.signer_user_agent}
-                                  </p>
-                                </div>
-                              )}
-                              
-                              {/* Device Info */}
-                              {signer.device_info && (
-                                <div className="flex items-start gap-2 col-span-2">
-                                  <FileText className="w-4 h-4 text-slate-400 flex-shrink-0 mt-0.5" />
-                                  <p className="text-sm text-slate-500 break-all" title={signer.device_info}>
-                                    Dispositivo: {signer.device_info.length > 80 ? signer.device_info.slice(0, 80) + '...' : signer.device_info}
-                                  </p>
-                                </div>
-                              )}
-                            </div>
-                            
-                            {/* Imagem da assinatura */}
-                            {signer.status === 'signed' && signatureUrl && (
-                              <div className="mt-4 p-3 bg-white rounded-lg border border-slate-200">
-                                <p className="text-xs text-slate-500 mb-2 font-medium">Assinatura:</p>
-                                <img 
-                                  src={signatureUrl}
-                                  alt="Assinatura"
-                                  className="max-h-20 object-contain cursor-pointer hover:opacity-80 transition-opacity"
-                                  onClick={() => setZoomImageUrl(signatureUrl)}
-                                  title="Clique para ampliar"
-                                />
                               </div>
                             )}
                           </div>
-                        </div>
-                      </div>
-                      {signer.status === 'pending' && (
-                        <div className="mt-3 pt-3 border-t border-slate-200 flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
-                          <input 
-                            type="text" 
-                            readOnly 
-                            value={signatureService.generatePublicSigningUrl(signer.public_token!)} 
-                            className="flex-1 px-3 py-2 bg-white border border-slate-200 rounded-lg text-xs font-mono" 
-                          />
-                          <div className="flex gap-2">
-                            <button 
-                              onClick={() => copyLink(signer.public_token!)} 
-                              className="flex items-center gap-1.5 px-3 py-2 text-orange-600 hover:bg-orange-50 rounded-lg text-sm font-medium"
-                            >
-                              <Copy className="w-4 h-4" />
-                              Copiar
-                            </button>
-                            <button 
-                              onClick={() => window.open(signatureService.generatePublicSigningUrl(signer.public_token!), '_blank')}
-                              className="flex items-center gap-1.5 px-3 py-2 text-slate-600 hover:bg-slate-100 rounded-lg text-sm font-medium"
-                            >
-                              <ExternalLink className="w-4 h-4" />
-                              Abrir
-                            </button>
-                            <button 
-                              onClick={() => openSignModal(signer)} 
-                              className="flex items-center gap-1.5 px-4 py-2 bg-orange-600 text-white rounded-lg text-sm font-medium hover:bg-orange-700"
-                            >
-                              <PenTool className="w-4 h-4" />
-                              Assinar
-                            </button>
-                          </div>
-                        </div>
-                      )}
-                      {signer.status === 'signed' && signer.verification_hash && (
-                        <div className="mt-3 pt-3 border-t border-emerald-200">
-                          <div className="flex items-center justify-between">
-                            <div>
-                              <p className="text-xs text-slate-500 mb-1">Hash de verificação:</p>
-                              <p className="text-xs font-mono text-slate-600 truncate">{signer.verification_hash}</p>
+                        )}
+
+                        {/* Pending — signing link */}
+                        {!isSigned && (
+                          <div className="px-3 py-2 bg-white border-t border-slate-100 flex flex-col sm:flex-row items-stretch sm:items-center gap-1.5">
+                            <input type="text" readOnly value={signatureService.generatePublicSigningUrl(signer.public_token!)} className="flex-1 px-2.5 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-[11px] font-mono text-slate-500 min-w-0" />
+                            <div className="flex gap-1 flex-shrink-0">
+                              <button onClick={() => copyLink(signer.public_token!)} className="flex items-center gap-1 px-2.5 py-1.5 text-slate-600 hover:bg-slate-100 rounded-lg text-[11px] font-medium transition">
+                                <Copy className="w-3 h-3" />Copiar
+                              </button>
+                              <button onClick={() => window.open(signatureService.generatePublicSigningUrl(signer.public_token!), '_blank')} className="flex items-center gap-1 px-2.5 py-1.5 text-slate-600 hover:bg-slate-100 rounded-lg text-[11px] font-medium transition">
+                                <ExternalLink className="w-3 h-3" />Abrir
+                              </button>
+                              <button onClick={() => openSignModal(signer)} className="flex items-center gap-1 px-2.5 py-1.5 bg-orange-500 text-white rounded-lg text-[11px] font-semibold hover:bg-orange-600 transition">
+                                <PenTool className="w-3 h-3" />Assinar
+                              </button>
                             </div>
-                            <a
-                              href={`${window.location.origin}/#/verificar/${signer.verification_hash}`}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-100 text-emerald-700 rounded-lg text-xs font-medium hover:bg-emerald-200 transition-colors"
-                            >
-                              <Shield className="w-3.5 h-3.5" />
-                              Verificar autenticidade
+                          </div>
+                        )}
+
+                        {/* Signed — verification hash */}
+                        {isSigned && signer.verification_hash && (
+                          <div className="px-3 py-2 bg-white border-t border-emerald-100 flex items-center justify-between gap-2">
+                            <div className="min-w-0">
+                              <p className="text-[10px] text-slate-400 uppercase tracking-wide">Hash</p>
+                              <p className="text-[11px] font-mono text-slate-500 truncate">{signer.verification_hash}</p>
+                            </div>
+                            <a href={`${window.location.origin}/#/verificar/${signer.verification_hash}`} target="_blank" rel="noopener noreferrer" className="flex-shrink-0 flex items-center gap-1 px-2.5 py-1.5 bg-emerald-50 text-emerald-700 rounded-lg text-[11px] font-semibold hover:bg-emerald-100 transition border border-emerald-200">
+                              <Shield className="w-3 h-3" />Verificar
                             </a>
                           </div>
-                        </div>
-                      )}
-                    </div>
-                  );
+                        )}
+                      </div>
+                    );
                   })}
                 </div>
-              </div>
+              </section>
 
-              {/* Histórico de Atividades (Audit Log) */}
-              <div className="mt-6">
-                <h3 className="font-semibold mb-4 flex items-center gap-2">
-                  <Clock className="w-4 h-4" />
-                  Histórico de Atividades
-                </h3>
+              {/* Histórico */}
+              <section>
+                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1.5">Histórico</p>
                 {auditLogLoading ? (
-                  <div className="flex items-center justify-center py-8">
-                    <Loader2 className="w-6 h-6 animate-spin text-slate-400" />
+                  <div className="flex items-center justify-center py-10">
+                    <Loader2 className="w-5 h-5 animate-spin text-slate-300" />
                   </div>
                 ) : auditLog.length === 0 ? (
-                  <div className="text-center py-8 text-slate-400">
-                    <Clock className="w-8 h-8 mx-auto mb-2 opacity-50" />
+                  <div className="text-center py-8 text-slate-300">
+                    <Clock className="w-7 h-7 mx-auto mb-2" />
                     <p className="text-sm">Nenhuma atividade registrada</p>
                   </div>
                 ) : (
-                  <div className="relative">
-                    {/* Linha vertical da timeline (mostra apenas em telas médias+) */}
-                    <div className="hidden sm:block absolute left-4 top-2 bottom-2 w-0.5 bg-slate-200" />
-                    
-                    <div className="space-y-4">
+                  <div className="relative pl-5">
+                    <div className="absolute left-2 top-2 bottom-2 w-px bg-slate-200" />
+                    <div className="space-y-3">
                       {auditLog.map((log, index) => {
-                        const isFirst = index === 0;
                         const isLast = index === auditLog.length - 1;
-                        
-                        // Ícone e cor baseado na ação
-                        let iconBg = 'bg-slate-100';
-                        let iconColor = 'text-slate-500';
-                        let Icon = Clock;
-                        
-                        if (log.action === 'created') {
-                          iconBg = 'bg-orange-100';
-                          iconColor = 'text-orange-600';
-                          Icon = FileText;
-                        } else if (log.action === 'sent') {
-                          iconBg = 'bg-purple-100';
-                          iconColor = 'text-purple-600';
-                          Icon = Send;
-                        } else if (log.action === 'viewed') {
-                          iconBg = 'bg-amber-100';
-                          iconColor = 'text-amber-600';
-                          Icon = Eye;
-                        } else if (log.action === 'signed') {
-                          iconBg = 'bg-emerald-100';
-                          iconColor = 'text-emerald-600';
-                          Icon = CheckCircle;
-                        } else if (log.action === 'cancelled') {
-                          iconBg = 'bg-red-100';
-                          iconColor = 'text-red-600';
-                          Icon = X;
-                        } else if (log.action === 'reminder_sent') {
-                          iconBg = 'bg-orange-100';
-                          iconColor = 'text-orange-600';
-                          Icon = Send;
-                        }
-                        
+                        let iconBg = 'bg-slate-100'; let iconColor = 'text-slate-500'; let Icon = Clock;
+                        if (log.action === 'created') { iconBg = 'bg-orange-100'; iconColor = 'text-orange-600'; Icon = FileText; }
+                        else if (log.action === 'sent') { iconBg = 'bg-purple-100'; iconColor = 'text-purple-600'; Icon = Send; }
+                        else if (log.action === 'viewed') { iconBg = 'bg-amber-100'; iconColor = 'text-amber-600'; Icon = Eye; }
+                        else if (log.action === 'signed') { iconBg = 'bg-emerald-100'; iconColor = 'text-emerald-600'; Icon = CheckCircle; }
+                        else if (log.action === 'cancelled') { iconBg = 'bg-red-100'; iconColor = 'text-red-600'; Icon = X; }
+                        else if (log.action === 'reminder_sent') { iconBg = 'bg-orange-100'; iconColor = 'text-orange-600'; Icon = Send; }
+                        const badgeCls = log.action === 'signed' ? 'bg-emerald-100 text-emerald-700' : log.action === 'viewed' ? 'bg-amber-100 text-amber-700' : log.action === 'created' ? 'bg-orange-100 text-orange-700' : log.action === 'sent' ? 'bg-purple-100 text-purple-700' : 'bg-slate-100 text-slate-600';
+                        const badgeLabel = log.action === 'created' ? 'Criado' : log.action === 'sent' ? 'Enviado' : log.action === 'viewed' ? 'Visualizado' : log.action === 'signed' ? 'Assinado' : log.action === 'cancelled' ? 'Cancelado' : log.action === 'expired' ? 'Expirado' : log.action === 'reminder_sent' ? 'Lembrete' : log.action;
                         return (
-                          <div key={log.id} className="relative flex flex-col sm:flex-row gap-3 sm:gap-4 sm:pl-2 border border-slate-100 sm:border-0 rounded-xl sm:rounded-none p-3 sm:p-0">
-                            {/* Ícone */}
-                            <div className={`relative z-10 w-9 h-9 sm:w-8 sm:h-8 rounded-full ${iconBg} flex items-center justify-center flex-shrink-0`}>
-                              <Icon className={`w-4 h-4 ${iconColor}`} />
+                          <div key={log.id} className="relative flex items-start gap-2">
+                            <div className={`absolute -left-5 top-0.5 w-4 h-4 rounded-full ${iconBg} flex items-center justify-center flex-shrink-0 ring-2 ring-white z-10`}>
+                              <Icon className={`w-2 h-2 ${iconColor}`} />
                             </div>
-                            
-                            {/* Conteúdo */}
-                            <div className={`flex-1 pb-0 sm:pb-4 ${!isLast ? 'sm:border-b sm:border-slate-100' : ''}`}>
-                              <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-2">
-                                <div className="text-sm text-slate-800">
-                                  <p className="font-medium">{log.description}</p>
-                                  <p className="text-xs text-slate-500 mt-1">
-                                    {new Date(log.created_at).toLocaleDateString('pt-BR', {
-                                      day: '2-digit',
-                                      month: 'short',
-                                      year: 'numeric',
-                                      hour: '2-digit',
-                                      minute: '2-digit',
-                                    })}
-                                  </p>
-                                </div>
-                                <span className={`text-xs px-2 py-0.5 rounded-full font-medium w-fit ${
-                                  log.action === 'signed' ? 'bg-emerald-100 text-emerald-700' :
-                                  log.action === 'viewed' ? 'bg-amber-100 text-amber-700' :
-                                  log.action === 'created' ? 'bg-orange-100 text-orange-700' :
-                                  log.action === 'sent' ? 'bg-purple-100 text-purple-700' :
-                                  'bg-slate-100 text-slate-600'
-                                }`}>
-                                  {log.action === 'created' && 'Criado'}
-                                  {log.action === 'sent' && 'Enviado'}
-                                  {log.action === 'viewed' && 'Visualizado'}
-                                  {log.action === 'signed' && 'Assinado'}
-                                  {log.action === 'cancelled' && 'Cancelado'}
-                                  {log.action === 'expired' && 'Expirado'}
-                                  {log.action === 'reminder_sent' && 'Lembrete'}
-                                </span>
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-start justify-between gap-2">
+                                <p className="text-xs text-slate-700 font-medium leading-snug">{log.description}</p>
+                                <span className={`flex-shrink-0 text-[10px] px-1.5 py-0.5 rounded-full font-medium ${badgeCls}`}>{badgeLabel}</span>
                               </div>
-                              
-                              {/* Detalhes extras */}
-                              {(log.ip_address || log.user_agent) && (
-                                <div className="mt-2 p-2 bg-slate-50 rounded-lg text-xs text-slate-500">
-                                  {log.ip_address && <p>IP: {log.ip_address}</p>}
-                                  {log.user_agent && (
-                                    <p className="truncate" title={log.user_agent}>
-                                      Dispositivo: {log.user_agent.slice(0, 60)}...
-                                    </p>
-                                  )}
-                                </div>
-                              )}
+                              <p className="text-[10px] text-slate-400 mt-0.5">
+                                {new Date(log.created_at).toLocaleDateString('pt-BR', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                              </p>
                             </div>
                           </div>
                         );
@@ -6058,8 +5967,10 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
                     </div>
                   </div>
                 )}
-              </div>
-            </div>
+              </section>
+
+              </div>{/* end content sections */}
+            </div>{/* end body */}
           </div>
         </div>
       )}

@@ -195,7 +195,7 @@ const FLOATING_DOCS = [
   { delay: '1.7s',  dur: '3.1s', tx: '158px', ty: '-12px', rot: '-4deg',  rotEnd: '3deg',  left: '-18px', top: '28px',  w: '56px' },
 ];
 
-const LoadingScreen: React.FC<{ docName?: string }> = ({ docName }) => {
+const LoadingScreen: React.FC<{ docName?: string; allDocNames?: string[] }> = ({ docName, allDocNames }) => {
   const [elapsed, setElapsed] = useState(0);
   const mountRef = useRef(Date.now());
 
@@ -258,17 +258,27 @@ const LoadingScreen: React.FC<{ docName?: string }> = ({ docName }) => {
           Carregando documento
         </h1>
 
-        {/* Document name chip — appears when request loads */}
+        {/* Document name chips — show all documents being loaded */}
         {docName ? (
           <div
-            className="flex items-center gap-2 mt-2 mb-5 px-3.5 py-1.5 bg-orange-50 border border-orange-100 rounded-full max-w-[280px]"
+            className="flex flex-col items-center gap-1.5 mt-2 mb-5 w-full max-w-[300px]"
             style={{ animation: 'fadeUp 0.35s ease-out both' }}
           >
-            <svg viewBox="0 0 24 24" className="w-3.5 h-3.5 flex-shrink-0 text-orange-500" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
-              <polyline points="14 2 14 8 20 8" />
-            </svg>
-            <span className="text-[11.5px] font-medium text-orange-700 truncate leading-tight">{docName}</span>
+            {(allDocNames && allDocNames.length > 0 ? allDocNames : [docName]).map((name, idx) => (
+              <div
+                key={idx}
+                className={`flex items-center gap-2 w-full px-3 py-1.5 rounded-lg border ${idx === 0 ? 'bg-orange-50 border-orange-200' : 'bg-slate-50 border-slate-200'}`}
+                style={{ animation: `fadeUp 0.35s ease-out ${idx * 0.08}s both` }}
+              >
+                <svg viewBox="0 0 24 24" className={`w-3 h-3 flex-shrink-0 ${idx === 0 ? 'text-orange-500' : 'text-slate-400'}`} fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+                  <polyline points="14 2 14 8 20 8" />
+                </svg>
+                <span className={`text-[11px] font-medium truncate leading-tight flex-1 ${idx === 0 ? 'text-orange-700' : 'text-slate-500'}`}>{name}</span>
+                {idx === 0 && <span className="text-[9px] font-bold text-orange-400 uppercase tracking-wide flex-shrink-0">Principal</span>}
+                {idx > 0 && <span className="text-[9px] font-semibold text-slate-400 uppercase tracking-wide flex-shrink-0">Anexo</span>}
+              </div>
+            ))}
           </div>
         ) : (
           <p
@@ -2031,7 +2041,14 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
             pointerEvents: overlayFading ? 'none' : 'auto',
           }}
         >
-          <LoadingScreen docName={request?.document_name} />
+          <LoadingScreen
+            docName={request?.document_name}
+            allDocNames={request ? [
+              request.document_name,
+              ...((request as any).attachment_paths as string[] | null | undefined ?? [])
+                .map((p: string) => p.split('/').pop()?.replace(/_\d+_/, ' ').replace(/_/g, ' ') ?? p)
+            ] : undefined}
+          />
         </div>,
         document.body
       )
