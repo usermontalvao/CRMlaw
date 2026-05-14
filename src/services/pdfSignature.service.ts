@@ -1656,9 +1656,6 @@ class PdfSignatureService {
         section.style.width    = `${A4_WIDTH_PX}px`;
         section.style.minWidth = `${A4_WIDTH_PX}px`;
         section.style.maxWidth = `${A4_WIDTH_PX}px`;
-        // 'hidden' evita que html2canvas capture conteúdo de overflow que pertence à
-        // próxima section do docx-preview — caso contrário o mesmo texto apareceria
-        // tanto no fim da página atual quanto no início da próxima (duplicação).
         section.style.overflow = 'hidden';
 
         // Dois frames de reflow para garantir que o layout re-calculou
@@ -1685,13 +1682,7 @@ class PdfSignatureService {
             }
           }
 
-          // Ler o min-height definido pelo docx-preview para este section.
-          // O docx-preview usa min-height (não height) para marcar a altura da página DOCX,
-          // permitindo que o section cresça se o conteúdo renderizar maior que o esperado.
-          // Guardamos esse valor ANTES do html2canvas para usar como teto de clip.
-          const cssMH = parseFloat(window.getComputedStyle(section).minHeight) || 0;
-
-          const rawCanvas = await html2canvas(section, {
+          const canvas = await html2canvas(section, {
             scale: 1.5,
             useCORS: true,
             allowTaint: true,
@@ -1701,77 +1692,21 @@ class PdfSignatureService {
             windowWidth: A4_WIDTH_PX,   // forçar viewport A4 no cálculo de CSS
           });
 
-          // ── CLIP DE SEGURANÇA (apenas para pequenos overflows) ────────────
-          // O docx-preview usa min-height nos sections. Diferenças de layout HTML
-          // vs DOCX podem fazer o section crescer ligeiramente além de uma página A4.
-          // Esse excesso inclui conteúdo que também aparece no início do próximo section,
-          // causando duplicação no PDF.
-          //
-          // REGRA: só clipamos se o overflow for PEQUENO (≤ 15% do min-height).
-          //   • Overflow pequeno → mismatch de renderização; o excesso é duplicado
-          //     no próximo section → clicar é seguro.
-          //   • Overflow grande → section genuinamente multi-página (ex: contrato
-          //     inteiro sem quebra explícita); o slicing existente já trata isso.
-          //     Clipar aqui apagaria páginas legítimas do documento.
-          const SCALE = 1.5;
-          const CLIP_OVERFLOW_MAX = 0.15; // até 15% de excesso → é mismatch, clipar
-          let canvas = rawCanvas;
-
-          if (cssMH > 0) {
-            const expectedH    = Math.round(cssMH * SCALE);
-            const overflowFrac = (rawCanvas.height - expectedH) / expectedH;
-            if (overflowFrac > 0 && overflowFrac <= CLIP_OVERFLOW_MAX) {
-              const clipped = document.createElement('canvas');
-              clipped.width  = rawCanvas.width;
-              clipped.height = expectedH;
-              const ctx = clipped.getContext('2d');
-              if (ctx) {
-                ctx.drawImage(rawCanvas, 0, 0, rawCanvas.width, expectedH,
-                                         0, 0, rawCanvas.width, expectedH);
-              }
-              canvas = clipped;
-              console.log(`[PDF] section ${sectionIdx + 1}: canvas clipado ${rawCanvas.height}px → ${expectedH}px (overflow=${(overflowFrac * 100).toFixed(1)}%)`);
-            } else if (overflowFrac > CLIP_OVERFLOW_MAX) {
-              console.log(`[PDF] section ${sectionIdx + 1}: overflow grande (${(overflowFrac * 100).toFixed(1)}%) → multi-página, slicing trata`);
-            }
-          }
-
-          // Escalar pela largura e verificar se cabe em uma página.
-          // Se o overflow for pequeno (< 20%), escalar pela altura em vez de fatiar —
-          // isso evita que as últimas linhas de uma seção A4 caiam em um slice minúsculo
-          // no topo da próxima página PDF, dando a impressão de conteúdo suprimido.
-          const scalePtPerPxByWidth  = contentWidthPt / canvas.width;
-          const scaledHeightByWidth  = canvas.height * scalePtPerPxByWidth;
-          const overflowRatio        = scaledHeightByWidth > contentHeightPt
-            ? (scaledHeightByWidth - contentHeightPt) / scaledHeightByWidth
-            : 0;
-          const OVERFLOW_FIT_THRESHOLD = 0.20; // até 20% de overflow → cabe numa página
-
-          // Se o conteúdo cabe (ou o overflow é pequeno), escala para caber em 1 página.
-          // Caso contrário (section muito longa), usa escala por largura + fatiamento.
-          let scalePtPerPx: number;
-          let drawWPt: number;
-          let scaledHeightPt: number;
-
-          if (overflowRatio > 0 && overflowRatio <= OVERFLOW_FIT_THRESHOLD) {
-            // Escalar pela altura: garante que cabe em uma única página
-            scalePtPerPx  = contentHeightPt / canvas.height;
-            drawWPt       = canvas.width * scalePtPerPx;
-            scaledHeightPt = contentHeightPt;
-          } else {
-            // Escala padrão por largura (para seções muito longas que precisam de fatiamento)
-            scalePtPerPx  = scalePtPerPxByWidth;
-            drawWPt       = contentWidthPt;
-            scaledHeightPt = scaledHeightByWidth;
-          }
+          // ── ESCALA ─────────────────────────────────────────────────────────
+          // Com breakPages: false, o docx-preview renderiza o documento inteiro
+          // como um bloco contínuo (um único canvas alto). Usamos escala por
+          // largura e fatiamos em páginas A4 — nunca há duplicação porque não
+          // existem seções sobrepostas.
+          const scalePtPerPx   = contentWidthPt / canvas.width;
+          const drawWPt        = contentWidthPt;
+          const scaledHeightPt = canvas.height * scalePtPerPx;
 
           const isSingleSection = pages.length === 1;
 
           const drawOnePage = async (sliceCanvas: HTMLCanvasElement, pageNumberForFields: number, sliceStartPt?: number, fullScaledHeightPt?: number) => {
             const sliceHeightPt = sliceCanvas.height * scalePtPerPx;
             const drawHPt = sliceHeightPt;
-            // Centralizar horizontalmente se drawWPt < contentWidthPt (escala por altura)
-            const drawX = CONTENT_MARGIN_X + (contentWidthPt - drawWPt) / 2;
+            const drawX = CONTENT_MARGIN_X;
             const drawY = contentBottomY + (contentHeightPt - drawHPt);
 
             const imgBytes = await this.canvasToPngBytes(sliceCanvas);

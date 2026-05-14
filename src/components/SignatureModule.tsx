@@ -2961,8 +2961,8 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
               className: 'docx-wrapper',
               inWrapper: true,
               ignoreWidth: false,
-              ignoreHeight: false,
-              breakPages: true,
+              ignoreHeight: true,   // permitir altura contínua (sem forçar altura da página DOCX)
+              breakPages: false,    // renderizar como bloco contínuo — nós fatiamos em páginas
               renderHeaders: true,
               renderFooters: true,
               renderFootnotes: true,
@@ -5594,8 +5594,8 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
                                     className: 'docx-wrapper',
                                     inWrapper: true,
                                     ignoreWidth: false,
-                                    ignoreHeight: false,
-                                    breakPages: true,
+                                    ignoreHeight: true,   // permitir altura contínua
+                                    breakPages: false,    // renderizar como bloco contínuo — nós fatiamos
                                     renderHeaders: true,
                                     renderFooters: true,
                                     renderFootnotes: true,

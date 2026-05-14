@@ -47,6 +47,7 @@ import { matchesNormalizedSearch } from '../utils/search';
    ============================================================================ */
 
 const VERSION_CODENAMES: Record<string, { name: string; emoji: string }> = {
+  '1.10.061': { name: 'Café Bloco Contínuo', emoji: '📜' },
   '1.10.060': { name: 'Café Clip Inteligente', emoji: '🎯' },
   '1.10.059': { name: 'Café Clip Cirúrgico', emoji: '✂️' },
   '1.10.058': { name: 'Café Sem Duplicata', emoji: '🚫' },
@@ -765,6 +766,28 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
 };
 
 const releases: ReleaseNote[] = [
+  {
+    version: '1.10.061',
+    date: '14/05/2026',
+    summary: 'Assinatura Digital: DOCX agora renderiza como bloco contínuo (breakPages:false) — elimina definitivamente duplicação de parágrafos entre páginas do PDF.',
+    modules: [
+      {
+        moduleId: 'signature',
+        changes: [
+          {
+            type: 'fix',
+            title: 'PDF DOCX: renderização contínua elimina duplicação',
+            description: 'O docx-preview com breakPages:true criava sections por página DOCX, mas a paginação CSS divergia do DOCX original → mesmo parágrafo aparecia no fim de uma página e início da próxima. Com breakPages:false + ignoreHeight:true, o documento inteiro renderiza como um bloco contínuo e o fatiamento em páginas A4 é feito pelo próprio código — cada fatia continua exatamente de onde a anterior parou, sem sobreposição.',
+          },
+          {
+            type: 'improvement',
+            title: 'Remoção de lógica de clip e smart-scale',
+            description: 'Removidos o clip de segurança por min-height e o smart-scale por overflow, que eram workarounds para o problema de duplicação entre sections do breakPages:true. Com renderização contínua, o fatiamento simples (escala por largura) é suficiente e mais confiável.',
+          },
+        ],
+      },
+    ],
+  },
   {
     version: '1.10.060',
     date: '14/05/2026',
