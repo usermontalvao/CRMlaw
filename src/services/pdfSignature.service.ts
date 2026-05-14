@@ -377,8 +377,9 @@ class PdfSignatureService {
       const stripMuted  = rgb(0.62, 0.67, 0.74);
       const stripOrange = rgb(0.91, 0.32, 0.04);
 
-      // White background
-      page.drawRectangle({ x, y, width: w, height: h, color: stripWhite });
+      // Semi-opaque white background — not fully opaque so underlying text stays
+      // readable if the original document has content near the page bottom edge
+      page.drawRectangle({ x, y, width: w, height: h, color: stripWhite, opacity: 0.92 });
 
       // Top border line
       page.drawLine({
@@ -1374,7 +1375,7 @@ class PdfSignatureService {
     const pdfPageWidth = 595.28; 
     const pdfPageHeight = 841.89;
     const A4_WIDTH_PX = 794; // A4 @ 96 DPI
-    const FOOTER_RESERVED_H = 100; // em pontos (pt) - deve ser >= boxY(10) + boxH(82)
+    const FOOTER_RESERVED_H = 106; // em pontos (pt) — card boxH=88 + 18pt de margem de segurança
     const CONTENT_MARGIN_X = 32;
     const CONTENT_MARGIN_TOP = 28;
     const contentTopY = pdfPageHeight - CONTENT_MARGIN_TOP;
@@ -1642,10 +1643,23 @@ class PdfSignatureService {
           boxShadow: section.style.boxShadow,
         };
 
-        // Evitar reflow: nÃ£o forÃ§ar largura/margens aqui.
-        // Apenas remover sombra (visual) para nÃ£o "sujar" o PDF.
+        // Remover sombra (visual) para não "sujar" o PDF.
         section.style.boxShadow = 'none';
-        await new Promise<void>((r) => requestAnimationFrame(() => r()));
+
+        // Forçar largura A4 para garantir renderização consistente em mobile.
+        // Em dispositivos com viewport estreita (< 794px) o texto refluiria de forma
+        // diferente do A4, gerando seções mais altas e corte de conteúdo.
+        const savedWidth      = section.style.width;
+        const savedMinWidth   = section.style.minWidth;
+        const savedMaxWidth   = section.style.maxWidth;
+        const savedOverflow   = section.style.overflow;
+        section.style.width    = `${A4_WIDTH_PX}px`;
+        section.style.minWidth = `${A4_WIDTH_PX}px`;
+        section.style.maxWidth = `${A4_WIDTH_PX}px`;
+        section.style.overflow = 'visible';
+
+        // Dois frames de reflow para garantir que o layout re-calculou
+        await new Promise<void>((r) => requestAnimationFrame(() => requestAnimationFrame(() => r())));
 
         try {
           // Detectar placeholders ANTES do html2canvas (e ocultar o texto)
@@ -1675,6 +1689,7 @@ class PdfSignatureService {
             backgroundColor: '#ffffff',
             logging: false,
             imageTimeout: 0,
+            windowWidth: A4_WIDTH_PX,   // forçar viewport A4 no cálculo de CSS
           });
 
           // Regra: sempre encaixar pela LARGURA (com recuo lateral).
@@ -1803,7 +1818,12 @@ class PdfSignatureService {
             await drawOnePage(sliceCanvas, pageNumberForFields, sliceStartPt, scaledHeightPt);
           }
         } finally {
+          // Restaurar estilos originais da section
           section.style.boxShadow = originalStyles.boxShadow;
+          section.style.width     = savedWidth;
+          section.style.minWidth  = savedMinWidth;
+          section.style.maxWidth  = savedMaxWidth;
+          section.style.overflow  = savedOverflow;
         }
       }
     };

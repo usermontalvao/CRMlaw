@@ -762,6 +762,33 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
 
 const releases: ReleaseNote[] = [
   {
+    version: '1.10.055',
+    date: '13/05/2026',
+    summary: 'Assinatura Digital: corrigido corte de conteúdo em PDFs assinados via mobile — DOCX agora renderiza em largura A4 independente do dispositivo.',
+    modules: [
+      {
+        moduleId: 'signature',
+        changes: [
+          {
+            type: 'fix',
+            title: 'DOCX: renderização forçada em largura A4 no mobile',
+            description: 'Em dispositivos mobile (viewport < 794px), o DOCX renderizava em largura reduzida causando reflow de texto e seções mais altas que o esperado, resultando em conteúdo cortado pelo rodapé. Agora a section é temporariamente forçada para 794px (A4) antes da captura com html2canvas e restaurada após — garantindo renderização consistente independente do dispositivo.',
+          },
+          {
+            type: 'fix',
+            title: 'DOCX: margem de segurança aumentada abaixo do conteúdo',
+            description: 'FOOTER_RESERVED_H aumentado de 100pt para 106pt, adicionando 18pt de margem entre o conteúdo e o bloco de certificado (88pt), evitando que as últimas linhas do texto fiquem muito próximas ao rodapé.',
+          },
+          {
+            type: 'fix',
+            title: 'Rodapé strip semi-transparente em documentos PDF',
+            description: 'O rodapé aplicado sobre páginas de documentos PDF originais agora usa fundo com opacidade 0.92 (em vez de sólido branco), preservando a legibilidade do texto caso o documento original tenha conteúdo na área do rodapé.',
+          },
+        ],
+      },
+    ],
+  },
+  {
     version: '1.10.054',
     date: '13/05/2026',
     summary: 'Navegação: módulo Assinaturas reposicionado abaixo de Documentos no menu lateral.',
