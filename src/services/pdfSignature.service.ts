@@ -1701,28 +1701,39 @@ class PdfSignatureService {
             windowWidth: A4_WIDTH_PX,   // forçar viewport A4 no cálculo de CSS
           });
 
-          // ── CLIP DE SEGURANÇA ──────────────────────────────────────────────
-          // Se o section cresceu além do min-height (devido a diferenças de layout
-          // HTML vs DOCX), o canvas conterá conteúdo da próxima seção, causando
-          // duplicação no PDF. Clipamos ao min-height × scale (ou à proporção A4
-          // caso o docx-preview não defina min-height).
+          // ── CLIP DE SEGURANÇA (apenas para pequenos overflows) ────────────
+          // O docx-preview usa min-height nos sections. Diferenças de layout HTML
+          // vs DOCX podem fazer o section crescer ligeiramente além de uma página A4.
+          // Esse excesso inclui conteúdo que também aparece no início do próximo section,
+          // causando duplicação no PDF.
+          //
+          // REGRA: só clipamos se o overflow for PEQUENO (≤ 15% do min-height).
+          //   • Overflow pequeno → mismatch de renderização; o excesso é duplicado
+          //     no próximo section → clicar é seguro.
+          //   • Overflow grande → section genuinamente multi-página (ex: contrato
+          //     inteiro sem quebra explícita); o slicing existente já trata isso.
+          //     Clipar aqui apagaria páginas legítimas do documento.
           const SCALE = 1.5;
-          const clipHeightPx = cssMH > 0
-            ? Math.round(cssMH * SCALE)
-            : Math.round(rawCanvas.width * (297 / 210)); // fallback: proporção A4
-
+          const CLIP_OVERFLOW_MAX = 0.15; // até 15% de excesso → é mismatch, clipar
           let canvas = rawCanvas;
-          if (rawCanvas.height > clipHeightPx + 4) { // 4px de tolerância
-            const clipped = document.createElement('canvas');
-            clipped.width  = rawCanvas.width;
-            clipped.height = clipHeightPx;
-            const ctx = clipped.getContext('2d');
-            if (ctx) {
-              ctx.drawImage(rawCanvas, 0, 0, rawCanvas.width, clipHeightPx,
-                                       0, 0, rawCanvas.width, clipHeightPx);
+
+          if (cssMH > 0) {
+            const expectedH    = Math.round(cssMH * SCALE);
+            const overflowFrac = (rawCanvas.height - expectedH) / expectedH;
+            if (overflowFrac > 0 && overflowFrac <= CLIP_OVERFLOW_MAX) {
+              const clipped = document.createElement('canvas');
+              clipped.width  = rawCanvas.width;
+              clipped.height = expectedH;
+              const ctx = clipped.getContext('2d');
+              if (ctx) {
+                ctx.drawImage(rawCanvas, 0, 0, rawCanvas.width, expectedH,
+                                         0, 0, rawCanvas.width, expectedH);
+              }
+              canvas = clipped;
+              console.log(`[PDF] section ${sectionIdx + 1}: canvas clipado ${rawCanvas.height}px → ${expectedH}px (overflow=${(overflowFrac * 100).toFixed(1)}%)`);
+            } else if (overflowFrac > CLIP_OVERFLOW_MAX) {
+              console.log(`[PDF] section ${sectionIdx + 1}: overflow grande (${(overflowFrac * 100).toFixed(1)}%) → multi-página, slicing trata`);
             }
-            canvas = clipped;
-            console.log(`[PDF] section ${sectionIdx + 1}: canvas clipado ${rawCanvas.height}px → ${clipHeightPx}px (min-height=${cssMH}px)`);
           }
 
           // Escalar pela largura e verificar se cabe em uma página.

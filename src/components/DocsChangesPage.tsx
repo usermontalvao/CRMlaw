@@ -47,6 +47,7 @@ import { matchesNormalizedSearch } from '../utils/search';
    ============================================================================ */
 
 const VERSION_CODENAMES: Record<string, { name: string; emoji: string }> = {
+  '1.10.060': { name: 'Café Clip Inteligente', emoji: '🎯' },
   '1.10.059': { name: 'Café Clip Cirúrgico', emoji: '✂️' },
   '1.10.058': { name: 'Café Sem Duplicata', emoji: '🚫' },
   '1.10.057': { name: 'Café Página Completa', emoji: '📄' },
@@ -764,6 +765,23 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
 };
 
 const releases: ReleaseNote[] = [
+  {
+    version: '1.10.060',
+    date: '14/05/2026',
+    summary: 'Assinatura Digital: clip de canvas agora só atua quando o overflow é pequeno (≤ 15%), preservando documentos com seção única multi-página.',
+    modules: [
+      {
+        moduleId: 'signature',
+        changes: [
+          {
+            type: 'fix',
+            title: 'PDF DOCX: clip com limiar inteligente evita perda de páginas',
+            description: 'O clip anterior era aplicado a qualquer overflow, o que apagava a segunda página de contratos com uma seção única multi-página. Agora o clip só é aplicado quando o overflow é pequeno (≤ 15% do min-height), que é o caso de mismatch de renderização HTML vs DOCX. Overflows grandes (> 15%) indicam seção multi-página legítima e o slicing existente trata o fatiamento corretamente.',
+          },
+        ],
+      },
+    ],
+  },
   {
     version: '1.10.059',
     date: '14/05/2026',
