@@ -47,6 +47,7 @@ import { matchesNormalizedSearch } from '../utils/search';
    ============================================================================ */
 
 const VERSION_CODENAMES: Record<string, { name: string; emoji: string }> = {
+  '1.10.064': { name: 'Café Chat no Lugar', emoji: '💬' },
   '1.10.063': { name: 'Café Rodapé ZapSign', emoji: '🧾' },
   '1.10.062': { name: 'Café Rodapé Transparente', emoji: '🪟' },
   '1.10.061': { name: 'Café Bloco Contínuo', emoji: '📜' },
@@ -768,6 +769,23 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
 };
 
 const releases: ReleaseNote[] = [
+  {
+    version: '1.10.064',
+    date: '14/05/2026',
+    summary: 'Mobile: botão flutuante do chat reposicionado para o canto inferior direito (bottom-5), corrigindo o posicionamento incorreto no mobile.',
+    modules: [
+      {
+        moduleId: 'chat',
+        changes: [
+          {
+            type: 'fix',
+            title: 'Botão chat flutuante: posição correta no mobile',
+            description: 'O botão flutuante do chat estava usando bottom-24 (96px) no mobile, ficando muito alto e sobrepondo o conteúdo da página. Corrigido para bottom-5 (20px) em todos os tamanhos de tela.',
+          },
+        ],
+      },
+    ],
+  },
   {
     version: '1.10.063',
     date: '14/05/2026',
