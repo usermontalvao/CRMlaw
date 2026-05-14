@@ -1375,7 +1375,7 @@ class PdfSignatureService {
     const pdfPageWidth = 595.28; 
     const pdfPageHeight = 841.89;
     const A4_WIDTH_PX = 794; // A4 @ 96 DPI
-    const FOOTER_RESERVED_H = 106; // em pontos (pt) — card boxH=88 + 18pt de margem de segurança
+    const FOOTER_RESERVED_H = 0; // strip overlay — não reservar espaço; conteúdo ocupa A4 inteiro
     const CONTENT_MARGIN_X = 32;
     const CONTENT_MARGIN_TOP = 28;
     const contentTopY = pdfPageHeight - CONTENT_MARGIN_TOP;
@@ -1727,7 +1727,7 @@ class PdfSignatureService {
               helveticaBold,
               docHash: '',
               integritySha256,
-              variant: 'card',
+              variant: 'strip',
             });
 
             for (const asset of docxSignerDrawAssets) {

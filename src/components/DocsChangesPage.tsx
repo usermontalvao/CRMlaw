@@ -47,6 +47,7 @@ import { matchesNormalizedSearch } from '../utils/search';
    ============================================================================ */
 
 const VERSION_CODENAMES: Record<string, { name: string; emoji: string }> = {
+  '1.10.062': { name: 'Café Rodapé Transparente', emoji: '🪟' },
   '1.10.061': { name: 'Café Bloco Contínuo', emoji: '📜' },
   '1.10.060': { name: 'Café Clip Inteligente', emoji: '🎯' },
   '1.10.059': { name: 'Café Clip Cirúrgico', emoji: '✂️' },
@@ -766,6 +767,23 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
 };
 
 const releases: ReleaseNote[] = [
+  {
+    version: '1.10.062',
+    date: '14/05/2026',
+    summary: 'Assinatura Digital: rodapé DOCX agora usa modo strip (overlay semi-transparente) em vez de reservar espaço fixo — conteúdo ocupa a página A4 inteira, sem cortes.',
+    modules: [
+      {
+        moduleId: 'signature',
+        changes: [
+          {
+            type: 'fix',
+            title: 'PDF DOCX: rodapé overlay em vez de espaço reservado',
+            description: 'O rodapé de certificação reservava 106pt na parte inferior de cada página (modo card), comprimindo o conteúdo do DOCX que foi desenhado para A4 completo. Como o rodapé só existe após a assinatura (não no documento original), agora usa o modo strip: overlay semi-transparente (opacidade 0.92) de 52pt sobre o conteúdo, idêntico ao que já funcionava para PDFs carregados. O conteúdo do DOCX ocupa a página inteira sem cortes.',
+          },
+        ],
+      },
+    ],
+  },
   {
     version: '1.10.061',
     date: '14/05/2026',
