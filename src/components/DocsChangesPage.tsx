@@ -47,6 +47,10 @@ import { matchesNormalizedSearch } from '../utils/search';
    ============================================================================ */
 
 const VERSION_CODENAMES: Record<string, { name: string; emoji: string }> = {
+  '1.10.051': { name: 'Café Corporativo', emoji: '🏢' },
+  '1.10.048': { name: 'Café Boas-Vindas', emoji: '👋' },
+  '1.10.047': { name: 'Café Relatório Premium', emoji: '📋' },
+  '1.10.046': { name: 'Café Bucket Certeiro', emoji: '🪣' },
   '1.10.042': { name: 'Café Cor Persistente', emoji: '🎨' },
   '1.10.041': { name: 'Café Duplicata Inteligente', emoji: '🔍' },
   '1.10.040': { name: 'Café IA Sênior', emoji: '🧠' },
@@ -758,6 +762,255 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
 
 const releases: ReleaseNote[] = [
   {
+    version: '1.10.052',
+    date: '13/05/2026',
+    summary: 'Assinatura Digital: PDF com design clean (sem azul escuro), selfie ampliada com watermark central, trilha de auditoria registra cada abertura do documento, verificação mascara nome do signatário.',
+    modules: [
+      {
+        moduleId: 'signature',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'PDF — rodapé e bloco de certificado em branco',
+            description: 'Rodapé "ASSINADO DIGITALMENTE" e bloco "CERTIFICADO DE ASSINATURA ELETRÔNICA" redesenhados no estilo ZapSign: fundo branco, faixa laranja de 3px no topo, texto escuro à esquerda e QR code à direita. Eliminado o fundo azul-marinho que dominava a base de todas as páginas.',
+          },
+          {
+            type: 'improvement',
+            title: 'PDF — cabeçalho das páginas de relatório em branco',
+            description: 'Cabeçalho das páginas CERTIFICADO DE ASSINATURA, BIOMETRIA & VERIFICAÇÃO e TRILHA DE AUDITORIA agora usa fundo branco com faixa laranja de 5px no topo e linhas separadoras cinza finas, em vez do banner navy escuro.',
+          },
+          {
+            type: 'improvement',
+            title: 'PDF — selfie ampliada com caption e watermark central',
+            description: 'Foto do signatário ampliada de 182×212 para 210×260 pt. Adicionado caption acima: "Foto do rosto (selfie) de [NOME]:". CONFIDENTIAL movido do rodapé para o centro da imagem com traços pontilhados acima e abaixo e opacidade reduzida, igual ao modelo de referência.',
+          },
+          {
+            type: 'improvement',
+            title: 'PDF — bloco de integridade em branco na página de biometria',
+            description: 'Bloco "CERTIFICADO DE INTEGRIDADE" na página de biometria redesenhado: fundo branco, faixa laranja, CODIGO e SHA-256 à esquerda, QR code à direita — sem fundo navy.',
+          },
+          {
+            type: 'improvement',
+            title: 'PDF — trilha de auditoria: cor de "Visualizado" ajustada',
+            description: 'Dot e badge de evento "Visualizado" na trilha de auditoria trocados de azul forte (#2463da) para cinza-slate neutro — sem conflito visual com os verdes (assinado) e laranjas (criado).',
+          },
+          {
+            type: 'feature',
+            title: 'Trilha de auditoria: registra cada abertura do documento',
+            description: 'Cada vez que o signatário abre o link em uma nova sessão, um evento "Visualizado" é registrado no signature_audit_log com IP e descrição rica. O PDF de relatório agora exibe todos os acessos (ex: abriu na segunda, voltou na quarta para assinar), com fallback para registros antigos. RPC public_log_viewed_event atualizado para armazenar descrição com nome do signatário e IP.',
+          },
+          {
+            type: 'improvement',
+            title: 'Página de verificação — nome do signatário mascarado',
+            description: 'Na página pública de verificação de documento, o nome do signatário é exibido mascarado (ex: "P**** R********* M*********") para preservar a privacidade de terceiros que acessam o link de verificação.',
+          },
+          {
+            type: 'fix',
+            title: 'Tela de carregamento — nome do signatário removido',
+            description: 'Removida a saudação "Olá, [NOME]" da tela de carregamento pública. Qualquer pessoa com o link via WhatsApp ou email poderia ver o nome do destinatário antes de autenticar. Agora exibe apenas "Carregando documento".',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.10.051',
+    date: '13/05/2026',
+    summary: 'Assinatura Digital: rodapé do PDF corrigido para largura total da folha; tela de carregamento redesenhada com paleta laranja corporativa; relatório de assinatura em grid 3 colunas.',
+    modules: [
+      {
+        moduleId: 'signature',
+        changes: [
+          {
+            type: 'fix',
+            title: 'Rodapé PDF ocupa largura total',
+            description: 'O banner "ASSINADO DIGITALMENTE · JURIUS CRM" com QR code agora se estende de ponta a ponta da folha (x=0, w=pageWidth), eliminando as margens laterais.',
+          },
+          {
+            type: 'improvement',
+            title: 'Tela de carregamento — paleta laranja profissional',
+            description: 'LoadingScreen redesenhado com paleta laranja escura (#9a3412 → #ea580c). Ícone de escudo, barra de progresso, steps e spinner em laranja corporativo. Faixa laranja no topo da página.',
+          },
+          {
+            type: 'improvement',
+            title: 'Tela de sucesso e "já assinado" redesenhadas',
+            description: 'Tela de sucesso com header gradiente laranja premium e tela "já assinado" com header gradiente emerald — grid 2 colunas, botões de ação, box de rodapé com cadeado.',
+          },
+          {
+            type: 'improvement',
+            title: 'Relatório de assinatura — grid desktop 3 colunas',
+            description: 'SignatureReport redesenhado com max-w-6xl e grid lg:grid-cols-3: coluna esquerda (2/3) com documento e signatário, coluna direita (1/3) com código de verificação, QR, SHA-256 e nota legal.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.10.048',
+    date: '13/05/2026',
+    summary: 'Assinatura Digital: tela de carregamento totalmente redesenhada — fundo escuro premium com partículas, saudação personalizada pelo nome do signatário, badges de segurança e identidade visual JURIUS.',
+    modules: [
+      {
+        moduleId: 'signature',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Saudação pelo nome do signatário',
+            description: 'Quando o token é validado e o nome do signatário está disponível, a tela exibe "Olá, [NOME]." com mensagem personalizada sobre o documento aguardando assinatura.',
+          },
+          {
+            type: 'improvement',
+            title: 'Design escuro premium na tela de carregamento',
+            description: 'Fundo navy/escuro com gradiente, partículas flutuantes laranja animadas, grid pontilhado sutil, glow radial atrás do shield. Identidade visual JURIUS reforçada.',
+          },
+          {
+            type: 'improvement',
+            title: 'Rodapé de confiança com selos legais',
+            description: 'Novo rodapé exibe AES-256, SSL/TLS e MP 2.200-2/2001 como selos visuais. Texto "JURIUS · Assinatura Digital Certificada" ao final.',
+          },
+          {
+            type: 'improvement',
+            title: 'Steps redesenhados para fundo escuro',
+            description: 'Indicadores de progresso com estilo dark — checkmarks esmeralda para concluído, dot laranja pulsante para ativo, texto branco/cinza para inativo.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.10.047',
+    date: '13/05/2026',
+    summary: 'Assinatura Digital: redesign completo das 3 páginas do relatório PDF — proporções da página de biometria corrigidas, badge ASSINADO refinado, textos em português sem abreviações feias.',
+    modules: [
+      {
+        moduleId: 'signature',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Página de biometria redesenhada',
+            description: 'Foto da selfie reduzida (182x212) liberando ~290pt para os dados do signatário. Campos exibidos com linhas alternadas, label + valor empilhados verticalmente. SHA-256 truncado visível no bloco de integridade.',
+          },
+          {
+            type: 'improvement',
+            title: 'Badge ASSINADO mais limpo',
+            description: 'Badge na página 1 removeu os retângulos hacky usados como "check" e adotou design limpo com bullet quadrado branco + texto ASSINADO com melhor espaçamento.',
+          },
+          {
+            type: 'fix',
+            title: 'Subtítulo "signatario(s)" corrigido',
+            description: 'Texto singular/plural agora usa "1 signatario" ou "N signatarios" sem o feio sufixo "(s)".',
+          },
+          {
+            type: 'fix',
+            title: 'String de dispositivo sem ponto solto',
+            description: 'Campos nulos de dispositivo/browser/OS são filtrados antes do join, eliminando "Navegador - Sistema" quando ausentes.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.10.046',
+    date: '13/05/2026',
+    summary: 'Assinatura Digital: corrige erro 400 ao abrir documentos — bucket de upload alinhado com bucket de leitura, fallback verifica existência real do arquivo antes de gerar URL assinada.',
+    modules: [
+      {
+        moduleId: 'signature',
+        changes: [
+          {
+            type: 'fix',
+            title: 'Erro 400 ao abrir documentos assinados',
+            description: 'Upload de PDFs (principal e anexos) agora usa o mesmo bucket que a leitura (document-templates). Antes os arquivos eram enviados para generated-documents mas a URL apontava para document-templates, causando 400 em todos os documentos.',
+          },
+          {
+            type: 'fix',
+            title: 'Fallback de bucket funcional',
+            description: 'getDocumentPreviewUrl agora verifica a existência real do arquivo via list() antes de gerar URL assinada, garantindo que o fallback para buckets alternativos funcione corretamente.',
+          },
+          {
+            type: 'fix',
+            title: 'Pasta de anexos unificada',
+            description: 'Anexos enviados junto com o documento principal agora ficam na mesma pasta signature-requests/{docId}/, eliminando as pastas {docId}-attach-N que causavam confusão.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.10.045',
+    date: '13/05/2026',
+    summary: 'Assinatura Digital: indicador "Visto mas não assinado" nos cards e modal, tempo relativo de visualização, histórico de auditoria com IP e dispositivo legível.',
+    modules: [
+      {
+        moduleId: 'signature',
+        changes: [
+          {
+            type: 'feature',
+            title: 'Badge "Visto" nos cards da lista',
+            description: 'Cards de solicitações pendentes exibem badge azul "Visto há Xh" quando pelo menos um signatário abriu o link mas ainda não assinou.',
+          },
+          {
+            type: 'feature',
+            title: 'Indicador por signatário no modal',
+            description: 'Cada signatário pendente que já visualizou o documento exibe "Visualizou o documento há X" com fundo azul claro e label "Não assinou".',
+          },
+          {
+            type: 'improvement',
+            title: 'Histórico com IP e dispositivo legível',
+            description: 'Eventos de visualização e assinatura no histórico agora exibem IP e dispositivo parseado (ex: Chrome · Android · Mobile) em vez do User Agent bruto.',
+          },
+          {
+            type: 'improvement',
+            title: 'Função de tempo relativo (timeAgo)',
+            description: 'Adicionada função timeAgo() para exibir tempos como "há 2h", "há 3 dias", "há 1 semana" em todo o módulo.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.10.044',
+    date: '13/05/2026',
+    summary: 'Assinatura Digital: filtro "Expirados", badge de expiração nos cards, WhatsApp direto no modal, "Copiar todos os links", limpeza de nomes de anexos e contador de anexos nos cards.',
+    modules: [
+      {
+        moduleId: 'signature',
+        changes: [
+          {
+            type: 'feature',
+            title: 'Filtro "Expirados"',
+            description: 'Nova aba "Expirados" na barra de filtros, visível quando há documentos vencidos. O filtro usa expires_at para identificar solicitações não assinadas com prazo expirado.',
+          },
+          {
+            type: 'feature',
+            title: 'Badge de expiração nos cards',
+            description: 'Cards na lista exibem badge vermelho "Expirado" ou badge âmbar "Expira em breve" (< 48h). A data de expiração também aparece no header do modal de detalhes.',
+          },
+          {
+            type: 'feature',
+            title: 'WhatsApp direto do modal',
+            description: 'Signatários pendentes agora exibem botão "WhatsApp" que abre conversa pré-preenchida com o link de assinatura, e botão "Copiar mensagem" para compartilhamento manual.',
+          },
+          {
+            type: 'feature',
+            title: 'Copiar todos os links pendentes',
+            description: 'Botão "Copiar todos os links" no cabeçalho da seção Signatários copia de uma vez todos os links de assinatura pendentes formatados por nome.',
+          },
+          {
+            type: 'improvement',
+            title: 'Nomes de anexos limpos',
+            description: 'Prefixos de timestamp (ex: 1778704291856_) são removidos automaticamente dos nomes de arquivos de anexo exibidos no modal.',
+          },
+          {
+            type: 'improvement',
+            title: 'Contador de anexos nos cards',
+            description: 'Cards com anexos exibem badge "📎 +N" indicando quantos arquivos extras foram enviados junto ao documento principal.',
+          },
+        ],
+      },
+    ],
+  },
+  {
     version: '1.10.043',
     date: '13/05/2026',
     summary: 'Assinatura Digital: correção de envio de múltiplos documentos, redesign do modal de detalhes, reordenação de arquivos no upload e animação de carregamento com todos os documentos.',
@@ -767,22 +1020,27 @@ const releases: ReleaseNote[] = [
         changes: [
           {
             type: 'fix',
+            title: 'Envio de múltiplos documentos corrigido',
             description: 'Corrigido bug crítico onde apenas o documento principal era salvo — os anexos (attachment_paths) agora são enviados corretamente ao Supabase Storage e gravados no banco.',
           },
           {
             type: 'improvement',
+            title: 'Modal de detalhes redesenhado',
             description: 'Modal de detalhes completamente redesenhado: mais compacto, botão X visível, scroll pelo overlay, seções organizadas (Documentos, Signatários, Histórico).',
           },
           {
             type: 'feature',
+            title: 'Reordenação de arquivos no upload',
             description: 'Upload de múltiplos documentos: botões ▲/▼ para reordenar arquivos após seleção, com badge "Principal" no primeiro item.',
           },
           {
             type: 'improvement',
+            title: 'Animação de carregamento com todos os documentos',
             description: 'Animação de carregamento da página de assinatura agora exibe chips para todos os documentos do envelope (principal + anexos), não apenas o principal.',
           },
           {
             type: 'improvement',
+            title: 'Botões Ver/Baixar compactos',
             description: 'Botões Ver/Baixar na lista de documentos redesenhados: menores, mais discretos, sem conflito com estilos globais.',
           },
         ],

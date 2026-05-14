@@ -155,12 +155,12 @@ const AttachmentsList: React.FC<AttachmentsListProps> = ({ attachments, attachme
   style.id = styleId;
   style.textContent = `
     @keyframes iconBreath {
-      0%, 100% { transform: scale(1);    box-shadow: 0 0 0 0   rgba(249,115,22,0.18), 0 16px 40px -8px rgba(249,115,22,0.35); }
-      50%       { transform: scale(1.05); box-shadow: 0 0 0 12px rgba(249,115,22,0),   0 20px 48px -8px rgba(249,115,22,0.45); }
+      0%, 100% { transform: scale(1);    box-shadow: 0 0 0 0   rgba(194,65,12,0.14), 0 16px 40px -8px rgba(194,65,12,0.30); }
+      50%       { transform: scale(1.04); box-shadow: 0 0 0 10px rgba(194,65,12,0),   0 20px 48px -8px rgba(194,65,12,0.40); }
     }
     @keyframes ringPulse {
-      0%   { transform: scale(1);   opacity: 0.5; }
-      100% { transform: scale(1.7); opacity: 0; }
+      0%   { transform: scale(1);   opacity: 0.45; }
+      100% { transform: scale(1.75); opacity: 0; }
     }
     @keyframes fadeUp {
       from { opacity: 0; transform: translateY(10px); }
@@ -173,8 +173,16 @@ const AttachmentsList: React.FC<AttachmentsListProps> = ({ attachments, attachme
     @keyframes docPass {
       0%   { transform: translateX(0) translateY(0) rotate(var(--doc-rot)); opacity: 0; }
       8%   { opacity: 1; }
-      88%  { opacity: 0.9; }
+      88%  { opacity: 0.85; }
       100% { transform: translateX(var(--doc-tx)) translateY(var(--doc-ty)) rotate(var(--doc-rot-end)); opacity: 0; }
+    }
+    @keyframes shimmerBar {
+      0%   { transform: translateX(-100%); }
+      100% { transform: translateX(600%);  }
+    }
+    @keyframes progressPulse {
+      0%, 100% { opacity: 1; }
+      50%       { opacity: 0.7; }
     }
   `;
   document.head.appendChild(style);
@@ -182,9 +190,9 @@ const AttachmentsList: React.FC<AttachmentsListProps> = ({ attachments, attachme
 
 // ─── LoadingScreen — defined at MODULE level so React never remounts it ────────
 const LOADING_STEPS = [
-  { label: 'Validando token de acesso',   doneAt: 1.8 },
-  { label: 'Carregando documento',        doneAt: 4.2 },
-  { label: 'Preparando interface segura', doneAt: 9.0 },
+  { label: 'Validando credenciais de acesso', doneAt: 1.8 },
+  { label: 'Carregando seu documento',        doneAt: 4.2 },
+  { label: 'Preparando ambiente seguro',      doneAt: 9.0 },
 ];
 
 const FLOATING_DOCS = [
@@ -195,9 +203,14 @@ const FLOATING_DOCS = [
   { delay: '1.7s',  dur: '3.1s', tx: '158px', ty: '-12px', rot: '-4deg',  rotEnd: '3deg',  left: '-18px', top: '28px',  w: '56px' },
 ];
 
-const LoadingScreen: React.FC<{ docName?: string; allDocNames?: string[] }> = ({ docName, allDocNames }) => {
+const LoadingScreen: React.FC<{ docName?: string; allDocNames?: string[]; signerName?: string }> = ({ docName, allDocNames, signerName }) => {
   const [elapsed, setElapsed] = useState(0);
   const mountRef = useRef(Date.now());
+  // Guarda o nome assim que chegar — nunca volta para vazio
+  const [resolvedName, setResolvedName] = useState(signerName || '');
+  useEffect(() => {
+    if (signerName && !resolvedName) setResolvedName(signerName);
+  }, [signerName, resolvedName]);
 
   useEffect(() => {
     const id = window.setInterval(() => {
@@ -206,150 +219,160 @@ const LoadingScreen: React.FC<{ docName?: string; allDocNames?: string[] }> = ({
     return () => window.clearInterval(id);
   }, []);
 
-  const pct = Math.min(96, (elapsed / 10) * 96);
+  const pct       = Math.min(96, (elapsed / 10) * 96);
+  const firstName = resolvedName ? resolvedName.split(' ')[0] : '';
 
   return (
-    <div className="min-h-[100dvh] bg-white flex flex-col select-none overflow-hidden">
+    <div className="min-h-[100dvh] flex flex-col select-none overflow-hidden" style={{ background: '#f8fafc' }}>
 
-      {/* ── Deterministic progress bar (fills in ~10 s) ── */}
-      <div className="h-[3px] w-full bg-slate-100 flex-shrink-0 relative overflow-hidden">
+      {/* ── Faixa laranja fixa no topo — identidade JURIUS ── */}
+      <div className="h-[4px] w-full flex-shrink-0" style={{ background: 'linear-gradient(90deg, #ea580c 0%, #f97316 45%, #fb923c 100%)' }} />
+
+      {/* ── Barra de progresso ── */}
+      <div className="h-[3px] w-full flex-shrink-0 relative overflow-hidden" style={{ background: '#e2e8f0' }}>
         <div
-          className="absolute left-0 top-0 h-full bg-gradient-to-r from-orange-500 via-amber-400 to-orange-500"
-          style={{ width: `${pct}%`, transition: 'width 180ms ease-out' }}
+          className="absolute left-0 top-0 h-full"
+          style={{ width: `${pct}%`, transition: 'width 200ms ease-out', background: 'linear-gradient(90deg, #c2410c 0%, #ea580c 60%, #f97316 100%)' }}
         />
-        {/* Moving shimmer on the bar */}
         <div
-          className="absolute top-0 h-full w-[60px] bg-gradient-to-r from-transparent via-white/50 to-transparent pointer-events-none"
-          style={{ left: `${Math.max(0, pct - 10)}%`, transition: 'left 180ms ease-out' }}
+          className="absolute top-0 h-full w-[80px] pointer-events-none"
+          style={{
+            left: `${Math.max(0, pct - 8)}%`,
+            background: 'linear-gradient(90deg, transparent, rgba(255,255,255,0.6), transparent)',
+            animation: 'shimmerBar 1.8s ease-in-out infinite',
+          }}
         />
       </div>
 
-      {/* ── Center content ── */}
-      <div className="flex-1 flex flex-col items-center justify-center px-6 py-10">
+      {/* ── Conteúdo central ── */}
+      <div className="flex-1 flex flex-col items-center justify-center px-6 py-8">
 
-        {/* Shield icon with ripple rings */}
-        <div className="relative flex items-center justify-center mb-8" style={{ animation: 'fadeUp 0.5s ease-out both' }}>
-          <div className="absolute w-[90px] h-[90px] rounded-full border border-orange-200/55" style={{ animation: 'ringPulse 2.4s ease-out infinite' }} />
-          <div className="absolute w-[90px] h-[90px] rounded-full border border-orange-100/40" style={{ animation: 'ringPulse 2.4s ease-out infinite 0.8s' }} />
+        {/* Logomarca / Ícone com ripple */}
+        <div className="relative flex items-center justify-center mb-5" style={{ animation: 'fadeUp 0.5s ease-out both' }}>
+          <div className="absolute w-[88px] h-[88px] rounded-full" style={{ border: '1.5px solid rgba(234,88,12,0.20)', animation: 'ringPulse 2.6s ease-out infinite' }} />
+          <div className="absolute w-[88px] h-[88px] rounded-full" style={{ border: '1.5px solid rgba(234,88,12,0.10)', animation: 'ringPulse 2.6s ease-out infinite 0.9s' }} />
           <div
-            className="relative w-[66px] h-[66px] rounded-full bg-gradient-to-br from-orange-500 to-amber-400 flex items-center justify-center"
-            style={{ animation: 'iconBreath 3s ease-in-out infinite', boxShadow: '0 12px 32px -8px rgba(249,115,22,0.40)' }}
+            className="relative w-[64px] h-[64px] rounded-2xl flex items-center justify-center"
+            style={{
+              background: 'linear-gradient(145deg, #9a3412 0%, #c2410c 50%, #ea580c 100%)',
+              boxShadow: '0 12px 32px -6px rgba(194,65,12,0.40), 0 0 0 1px rgba(234,88,12,0.12)',
+              animation: 'iconBreath 3.2s ease-in-out infinite',
+            }}
           >
-            <svg viewBox="0 0 24 24" className="w-7 h-7" fill="none" stroke="white" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+            <svg viewBox="0 0 24 24" className="w-7 h-7" fill="none" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
               <path d="M9 12l2 2 4-4" />
             </svg>
           </div>
         </div>
 
-        {/* Eyebrow */}
-        <p
-          className="text-[10px] font-bold tracking-[0.22em] uppercase text-orange-500 mb-2"
-          style={{ animation: 'fadeUp 0.5s ease-out 0.1s both' }}
-        >
-          Assinatura Digital
+        {/* Eyebrow — laranja da marca */}
+        <p className="text-[10px] font-bold tracking-[0.22em] uppercase mb-3" style={{ color: '#ea580c', animation: 'fadeUp 0.5s ease-out 0.10s both' }}>
+          Assinatura Digital · JURIUS
         </p>
 
-        {/* Title */}
-        <h1
-          className="text-slate-900 text-xl font-bold tracking-tight text-center mb-1"
-          style={{ animation: 'fadeUp 0.5s ease-out 0.18s both' }}
-        >
-          Carregando documento
-        </h1>
+        {/* Título */}
+        <div style={{ animation: 'fadeUp 0.45s ease-out both', textAlign: 'center' }}>
+          <h1 className="text-[23px] font-bold tracking-tight text-center mb-1.5" style={{ color: '#0f172a', letterSpacing: '-0.3px' }}>
+            Carregando documento
+          </h1>
+          <p className="text-[13px] text-center leading-relaxed" style={{ maxWidth: 270, color: '#94a3b8' }}>
+            Autenticando sessão e preparando<br />o ambiente seguro.
+          </p>
+        </div>
 
-        {/* Document name chips — show all documents being loaded */}
-        {docName ? (
-          <div
-            className="flex flex-col items-center gap-1.5 mt-2 mb-5 w-full max-w-[300px]"
-            style={{ animation: 'fadeUp 0.35s ease-out both' }}
-          >
+        {/* Chips de documentos */}
+        {docName && (
+          <div className="flex flex-col gap-1.5 w-full max-w-[300px] mt-4 mb-1" style={{ animation: 'fadeUp 0.4s ease-out 0.28s both' }}>
             {(allDocNames && allDocNames.length > 0 ? allDocNames : [docName]).map((name, idx) => (
               <div
                 key={idx}
-                className={`flex items-center gap-2 w-full px-3 py-1.5 rounded-lg border ${idx === 0 ? 'bg-orange-50 border-orange-200' : 'bg-slate-50 border-slate-200'}`}
-                style={{ animation: `fadeUp 0.35s ease-out ${idx * 0.08}s both` }}
+                className="flex items-center gap-2 w-full px-3 py-2 rounded-xl"
+                style={{
+                  background: idx === 0 ? '#fff7ed' : '#f8fafc',
+                  border: `1px solid ${idx === 0 ? '#fed7aa' : '#e2e8f0'}`,
+                  animation: `fadeUp 0.35s ease-out ${idx * 0.07}s both`,
+                }}
               >
-                <svg viewBox="0 0 24 24" className={`w-3 h-3 flex-shrink-0 ${idx === 0 ? 'text-orange-500' : 'text-slate-400'}`} fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <svg viewBox="0 0 24 24" style={{ flexShrink: 0, width: 13, height: 13, color: idx === 0 ? '#ea580c' : '#94a3b8' }} fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                   <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
                   <polyline points="14 2 14 8 20 8" />
                 </svg>
-                <span className={`text-[11px] font-medium truncate leading-tight flex-1 ${idx === 0 ? 'text-orange-700' : 'text-slate-500'}`}>{name}</span>
-                {idx === 0 && <span className="text-[9px] font-bold text-orange-400 uppercase tracking-wide flex-shrink-0">Principal</span>}
-                {idx > 0 && <span className="text-[9px] font-semibold text-slate-400 uppercase tracking-wide flex-shrink-0">Anexo</span>}
+                <span className="text-[11px] font-medium truncate leading-tight flex-1" style={{ color: idx === 0 ? '#c2410c' : '#64748b' }}>{name}</span>
+                {idx === 0 && <span className="text-[9px] font-bold uppercase tracking-wide flex-shrink-0" style={{ color: '#fb923c' }}>Principal</span>}
+                {idx > 0  && <span className="text-[9px] font-semibold uppercase tracking-wide flex-shrink-0" style={{ color: '#cbd5e1' }}>Anexo</span>}
               </div>
             ))}
           </div>
-        ) : (
-          <p
-            className="text-slate-400 text-sm text-center max-w-[240px] mt-1 mb-5"
-            style={{ animation: 'fadeUp 0.5s ease-out 0.26s both' }}
-          >
-            Verificando autenticidade e preparando o ambiente seguro.
-          </p>
         )}
 
-        {/* ── Floating documents strip ── */}
+        {/* ── Animação de documentos flutuando ── */}
         <div
-          className="relative w-[220px] h-[60px] mb-7"
-          style={{ animation: 'fadeUp 0.5s ease-out 0.3s both' }}
+          className="relative w-[220px] h-[58px] my-5"
+          style={{ animation: 'fadeUp 0.5s ease-out 0.32s both' }}
         >
           {FLOATING_DOCS.map((d, i) => (
             <div
               key={i}
-              className="absolute rounded-[5px] bg-white border border-slate-200/80 shadow-[0_2px_6px_rgba(15,23,42,0.09)] overflow-hidden"
+              className="absolute rounded-[5px] overflow-hidden"
               style={{
                 left: d.left, top: d.top, width: d.w, height: '40px',
+                background: '#ffffff',
+                border: '1px solid #e2e8f0',
+                boxShadow: '0 2px 8px rgba(15,23,42,0.07)',
                 '--doc-rot': d.rot, '--doc-rot-end': d.rotEnd, '--doc-tx': d.tx, '--doc-ty': d.ty,
                 animation: `docPass ${d.dur} ease-in-out ${d.delay} infinite`,
               } as React.CSSProperties}
             >
-              <div className="px-[6px] pt-[6px] space-y-[3.5px]">
-                <div className="h-[2.5px] w-[65%] rounded-full bg-slate-200" />
-                <div className="h-[2.5px] w-full rounded-full bg-slate-100" />
-                <div className="h-[2.5px] w-[80%] rounded-full bg-slate-100" />
-                <div className="h-[2.5px] w-[55%] rounded-full bg-orange-200/70" />
+              {/* Tarja laranja do documento — identidade JURIUS */}
+              <div className="h-[4px] w-full" style={{ background: 'linear-gradient(90deg, #ea580c, #f97316)' }} />
+              <div className="px-[6px] pt-[5px] space-y-[3px]">
+                <div className="h-[2px] w-[70%] rounded-full" style={{ background: '#e2e8f0' }} />
+                <div className="h-[2px] w-full  rounded-full" style={{ background: '#f1f5f9' }} />
+                <div className="h-[2px] w-[50%] rounded-full" style={{ background: '#dbeafe' }} />
               </div>
             </div>
           ))}
+          {/* Seta central */}
           <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-            <svg width="32" height="10" viewBox="0 0 36 12" fill="none" className="opacity-15">
-              <path d="M0 6h28M24 2l6 4-6 4" stroke="#f97316" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+            <svg width="28" height="10" viewBox="0 0 32 12" fill="none" style={{ opacity: 0.15 }}>
+              <path d="M0 6h24M20 2l6 4-6 4" stroke="#2563eb" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
             </svg>
           </div>
         </div>
 
-        {/* ── Loading steps ── */}
-        <div
-          className="w-full max-w-[258px] space-y-2.5 mb-7"
-          style={{ animation: 'fadeUp 0.5s ease-out 0.38s both' }}
-        >
+        {/* ── Steps de carregamento ── */}
+        <div className="w-full max-w-[260px] space-y-2.5 mb-6" style={{ animation: 'fadeUp 0.5s ease-out 0.38s both' }}>
           {LOADING_STEPS.map((s, i) => {
             const done   = elapsed >= s.doneAt;
             const active = !done && (i === 0 ? true : elapsed >= LOADING_STEPS[i - 1].doneAt);
             return (
               <div key={i} className="flex items-center gap-3">
-                {/* Circle indicator */}
-                <div className={`flex-shrink-0 w-[18px] h-[18px] rounded-full flex items-center justify-center transition-all duration-300 ${
-                  done   ? 'bg-emerald-500' :
-                  active ? 'border-2 border-orange-400 bg-white' :
-                           'border-2 border-slate-200 bg-transparent'
-                }`}>
+                <div
+                  className="flex-shrink-0 w-[18px] h-[18px] rounded-full flex items-center justify-center transition-all duration-300"
+                  style={{
+                    background:   done   ? '#10b981' : 'transparent',
+                    border:       done   ? 'none' : active ? '2px solid #ea580c' : '2px solid #e2e8f0',
+                  }}
+                >
                   {done && (
-                    <svg viewBox="0 0 10 10" className="w-2.5 h-2.5" fill="none" stroke="white" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                    <svg viewBox="0 0 10 10" className="w-2.5 h-2.5" fill="none" stroke="white" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round">
                       <path d="M1.5 5l2.5 2.5 4.5-4.5" />
                     </svg>
                   )}
                   {active && (
-                    <div className="w-[6px] h-[6px] rounded-full bg-orange-500" style={{ animation: 'iconBreath 0.8s ease-in-out infinite' }} />
+                    <div className="w-[6px] h-[6px] rounded-full" style={{ background: '#ea580c', animation: 'progressPulse 1s ease-in-out infinite' }} />
                   )}
                 </div>
-                {/* Label */}
-                <span className={`text-[12.5px] transition-colors duration-300 ${
-                  done   ? 'text-slate-400 line-through decoration-slate-300' :
-                  active ? 'text-slate-800 font-medium' :
-                           'text-slate-300'
-                }`}>
+                <span
+                  className="text-[12.5px] transition-colors duration-300"
+                  style={{
+                    color:       done   ? '#cbd5e1' : active ? '#0f172a' : '#cbd5e1',
+                    fontWeight:  active ? 600 : 400,
+                    textDecoration: done ? 'line-through' : 'none',
+                    textDecorationColor: '#e2e8f0',
+                  }}
+                >
                   {s.label}
                 </span>
               </div>
@@ -357,27 +380,42 @@ const LoadingScreen: React.FC<{ docName?: string; allDocNames?: string[] }> = ({
           })}
         </div>
 
-        {/* Spinner + percentage */}
+        {/* Spinner + porcentagem */}
         <div className="flex items-center gap-2.5" style={{ animation: 'fadeUp 0.5s ease-out 0.46s both' }}>
-          <svg width="20" height="20" viewBox="0 0 32 32" style={{ animation: 'arcSpin 0.9s linear infinite' }}>
+          <svg width="20" height="20" viewBox="0 0 32 32" style={{ animation: 'arcSpin 1s linear infinite' }}>
             <circle cx="16" cy="16" r="13" fill="none" stroke="#f1f5f9" strokeWidth="3" />
-            <circle cx="16" cy="16" r="13" fill="none" stroke="#f97316" strokeWidth="3" strokeLinecap="round" strokeDasharray="26 56" />
+            <circle cx="16" cy="16" r="13" fill="none" stroke="#ea580c" strokeWidth="3" strokeLinecap="round" strokeDasharray="26 56" />
           </svg>
-          <span className="text-[11px] tabular-nums font-medium text-slate-400">{Math.round(pct)}%</span>
+          <span className="text-[11px] tabular-nums font-medium" style={{ color: '#94a3b8' }}>{Math.round(pct)}%</span>
         </div>
+
       </div>
 
-      {/* ── Bottom trust strip ── */}
-      <div
-        className="flex-shrink-0 pb-8 pt-2 flex items-center justify-center gap-3"
-        style={{ animation: 'fadeUp 0.5s ease-out 0.54s both' }}
-      >
-        <div className="flex items-center gap-1.5 text-slate-400">
-          <Lock className="w-3 h-3" />
-          <span className="text-[11px]">Conexão segura</span>
+      {/* ── Rodapé de confiança ── */}
+      <div className="flex-shrink-0 pb-7 pt-2 flex flex-col items-center gap-2" style={{ animation: 'fadeUp 0.5s ease-out 0.54s both' }}>
+        <div className="flex items-center gap-4" style={{ color: '#94a3b8' }}>
+          <div className="flex items-center gap-1.5">
+            <Lock className="w-[11px] h-[11px]" />
+            <span className="text-[10.5px]">AES-256</span>
+          </div>
+          <span className="w-[3px] h-[3px] rounded-full flex-shrink-0" style={{ background: '#e2e8f0' }} />
+          <div className="flex items-center gap-1.5">
+            <svg viewBox="0 0 24 24" className="w-[11px] h-[11px]" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
+            </svg>
+            <span className="text-[10.5px]">SSL / TLS</span>
+          </div>
+          <span className="w-[3px] h-[3px] rounded-full bg-slate-200 flex-shrink-0" />
+          <div className="flex items-center gap-1.5">
+            <svg viewBox="0 0 24 24" className="w-[11px] h-[11px]" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <circle cx="12" cy="12" r="10" /><path d="M12 8v4l3 3" />
+            </svg>
+            <span className="text-[10.5px]">MP 2.200-2/2001</span>
+          </div>
         </div>
-        <span className="w-[3px] h-[3px] rounded-full bg-slate-200 flex-shrink-0" />
-        <span className="text-[11px] text-slate-400">SSL / TLS</span>
+        <p className="text-[9px] font-semibold tracking-[0.18em] uppercase text-slate-300">
+          JURIUS · Assinatura Digital Certificada
+        </p>
       </div>
     </div>
   );
@@ -405,17 +443,21 @@ const SigningScreen: React.FC<{ docName?: string }> = ({ docName }) => {
   const pct = Math.min(96, (elapsed / 8) * 96);
 
   return (
-    <div className="min-h-[100dvh] bg-white flex flex-col select-none overflow-hidden">
+    <div className="min-h-[100dvh] flex flex-col select-none overflow-hidden" style={{ background: '#f8fafc' }}>
 
       {/* Barra de progresso determinista */}
-      <div className="h-[3px] w-full bg-slate-100 flex-shrink-0 relative overflow-hidden">
+      <div className="h-[3px] w-full flex-shrink-0 relative overflow-hidden" style={{ background: '#e2e8f0' }}>
         <div
-          className="absolute left-0 top-0 h-full bg-gradient-to-r from-orange-500 via-amber-400 to-orange-500"
-          style={{ width: `${pct}%`, transition: 'width 180ms ease-out' }}
+          className="absolute left-0 top-0 h-full"
+          style={{ width: `${pct}%`, transition: 'width 200ms ease-out', background: 'linear-gradient(90deg, #c2410c 0%, #ea580c 60%, #f97316 100%)' }}
         />
         <div
-          className="absolute top-0 h-full w-[60px] bg-gradient-to-r from-transparent via-white/50 to-transparent pointer-events-none"
-          style={{ left: `${Math.max(0, pct - 10)}%`, transition: 'left 180ms ease-out' }}
+          className="absolute top-0 h-full w-[60px] pointer-events-none"
+          style={{
+            left: `${Math.max(0, pct - 10)}%`,
+            background: 'linear-gradient(90deg, transparent, rgba(255,255,255,0.5), transparent)',
+            animation: 'shimmerBar 1.8s ease-in-out infinite',
+          }}
         />
       </div>
 
@@ -423,13 +465,16 @@ const SigningScreen: React.FC<{ docName?: string }> = ({ docName }) => {
 
         {/* Ícone de envio */}
         <div className="relative flex items-center justify-center mb-8" style={{ animation: 'fadeUp 0.5s ease-out both' }}>
-          <div className="absolute w-[90px] h-[90px] rounded-full border border-orange-200/55" style={{ animation: 'ringPulse 2.4s ease-out infinite' }} />
-          <div className="absolute w-[90px] h-[90px] rounded-full border border-orange-100/40" style={{ animation: 'ringPulse 2.4s ease-out infinite 0.8s' }} />
+          <div className="absolute w-[88px] h-[88px] rounded-full" style={{ border: '1.5px solid rgba(234,88,12,0.20)', animation: 'ringPulse 2.6s ease-out infinite' }} />
+          <div className="absolute w-[88px] h-[88px] rounded-full" style={{ border: '1.5px solid rgba(234,88,12,0.10)', animation: 'ringPulse 2.6s ease-out infinite 0.9s' }} />
           <div
-            className="relative w-[66px] h-[66px] rounded-full bg-gradient-to-br from-orange-500 to-amber-400 flex items-center justify-center"
-            style={{ animation: 'iconBreath 3s ease-in-out infinite', boxShadow: '0 12px 32px -8px rgba(249,115,22,0.40)' }}
+            className="relative w-[64px] h-[64px] rounded-full flex items-center justify-center"
+            style={{
+              background: 'linear-gradient(145deg, #9a3412 0%, #c2410c 50%, #ea580c 100%)',
+              boxShadow: '0 12px 32px -8px rgba(194,65,12,0.40)',
+              animation: 'iconBreath 3s ease-in-out infinite',
+            }}
           >
-            {/* Ícone de upload / envio */}
             <svg viewBox="0 0 24 24" className="w-7 h-7" fill="none" stroke="white" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
               <path d="M12 19V5" />
               <polyline points="5 12 12 5 19 12" />
@@ -440,16 +485,16 @@ const SigningScreen: React.FC<{ docName?: string }> = ({ docName }) => {
 
         {/* Eyebrow */}
         <p
-          className="text-[10px] font-bold tracking-[0.22em] uppercase text-orange-500 mb-2"
-          style={{ animation: 'fadeUp 0.5s ease-out 0.1s both' }}
+          className="text-[10px] font-bold tracking-[0.22em] uppercase mb-2"
+          style={{ color: '#ea580c', animation: 'fadeUp 0.5s ease-out 0.1s both' }}
         >
-          Assinatura Digital
+          Assinatura Digital · JURIUS
         </p>
 
         {/* Título */}
         <h1
-          className="text-slate-900 text-xl font-bold tracking-tight text-center mb-1"
-          style={{ animation: 'fadeUp 0.5s ease-out 0.18s both' }}
+          className="text-[21px] font-bold tracking-tight text-center mb-1"
+          style={{ color: '#0f172a', letterSpacing: '-0.3px', animation: 'fadeUp 0.5s ease-out 0.18s both' }}
         >
           Enviando assinatura
         </h1>
@@ -457,19 +502,19 @@ const SigningScreen: React.FC<{ docName?: string }> = ({ docName }) => {
         {/* Nome do documento */}
         {docName ? (
           <div
-            className="flex items-center gap-2 mt-2 mb-6 px-3.5 py-1.5 bg-orange-50 border border-orange-100 rounded-full max-w-[280px]"
-            style={{ animation: 'fadeUp 0.35s ease-out both' }}
+            className="flex items-center gap-2 mt-2 mb-6 px-3.5 py-1.5 rounded-full max-w-[280px]"
+            style={{ background: '#fff7ed', border: '1px solid #fed7aa', animation: 'fadeUp 0.35s ease-out both' }}
           >
-            <svg viewBox="0 0 24 24" className="w-3.5 h-3.5 flex-shrink-0 text-orange-500" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <svg viewBox="0 0 24 24" style={{ width: 14, height: 14, flexShrink: 0, color: '#ea580c' }} fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
               <polyline points="14 2 14 8 20 8" />
             </svg>
-            <span className="text-[11.5px] font-medium text-orange-700 truncate leading-tight">{docName}</span>
+            <span className="text-[11.5px] font-medium truncate leading-tight" style={{ color: '#c2410c' }}>{docName}</span>
           </div>
         ) : (
           <p
-            className="text-slate-400 text-sm text-center max-w-[240px] mt-1 mb-6"
-            style={{ animation: 'fadeUp 0.5s ease-out 0.26s both' }}
+            className="text-sm text-center max-w-[240px] mt-1 mb-6"
+            style={{ color: '#94a3b8', animation: 'fadeUp 0.5s ease-out 0.26s both' }}
           >
             Não feche esta janela. Processando com segurança.
           </p>
@@ -485,25 +530,30 @@ const SigningScreen: React.FC<{ docName?: string }> = ({ docName }) => {
             const active = !done && (i === 0 ? true : elapsed >= SIGNING_STEPS[i - 1].doneAt);
             return (
               <div key={i} className="flex items-center gap-3">
-                <div className={`flex-shrink-0 w-[18px] h-[18px] rounded-full flex items-center justify-center transition-all duration-300 ${
-                  done   ? 'bg-emerald-500' :
-                  active ? 'border-2 border-orange-400 bg-white' :
-                           'border-2 border-slate-200 bg-transparent'
-                }`}>
+                <div
+                  className="flex-shrink-0 w-[18px] h-[18px] rounded-full flex items-center justify-center transition-all duration-300"
+                  style={{
+                    background: done ? '#10b981' : 'transparent',
+                    border:     done ? 'none' : active ? '2px solid #ea580c' : '2px solid #e2e8f0',
+                  }}
+                >
                   {done && (
                     <svg viewBox="0 0 10 10" className="w-2.5 h-2.5" fill="none" stroke="white" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
                       <path d="M1.5 5l2.5 2.5 4.5-4.5" />
                     </svg>
                   )}
                   {active && (
-                    <div className="w-[6px] h-[6px] rounded-full bg-orange-500" style={{ animation: 'iconBreath 0.8s ease-in-out infinite' }} />
+                    <div className="w-[6px] h-[6px] rounded-full" style={{ background: '#ea580c', animation: 'progressPulse 1s ease-in-out infinite' }} />
                   )}
                 </div>
-                <span className={`text-[12.5px] transition-colors duration-300 ${
-                  done   ? 'text-slate-400 line-through decoration-slate-300' :
-                  active ? 'text-slate-800 font-medium' :
-                           'text-slate-300'
-                }`}>
+                <span
+                  className="text-[12.5px] transition-colors duration-300"
+                  style={{
+                    color:      done ? '#cbd5e1' : active ? '#0f172a' : '#cbd5e1',
+                    fontWeight: active ? 600 : 400,
+                    textDecoration: done ? 'line-through' : 'none',
+                  }}
+                >
                   {s.label}
                 </span>
               </div>
@@ -513,11 +563,11 @@ const SigningScreen: React.FC<{ docName?: string }> = ({ docName }) => {
 
         {/* Spinner + percentagem */}
         <div className="flex items-center gap-2.5" style={{ animation: 'fadeUp 0.5s ease-out 0.42s both' }}>
-          <svg width="20" height="20" viewBox="0 0 32 32" style={{ animation: 'arcSpin 0.9s linear infinite' }}>
+          <svg width="20" height="20" viewBox="0 0 32 32" style={{ animation: 'arcSpin 1s linear infinite' }}>
             <circle cx="16" cy="16" r="13" fill="none" stroke="#f1f5f9" strokeWidth="3" />
-            <circle cx="16" cy="16" r="13" fill="none" stroke="#f97316" strokeWidth="3" strokeLinecap="round" strokeDasharray="26 56" />
+            <circle cx="16" cy="16" r="13" fill="none" stroke="#ea580c" strokeWidth="3" strokeLinecap="round" strokeDasharray="26 56" />
           </svg>
-          <span className="text-[11px] tabular-nums font-medium text-slate-400">{Math.round(pct)}%</span>
+          <span className="text-[11px] tabular-nums font-medium" style={{ color: '#94a3b8' }}>{Math.round(pct)}%</span>
         </div>
       </div>
 
@@ -2043,6 +2093,7 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
         >
           <LoadingScreen
             docName={request?.document_name}
+            signerName={signer?.name}
             allDocNames={request ? [
               request.document_name,
               ...((request as any).attachment_paths as string[] | null | undefined ?? [])
@@ -2247,157 +2298,172 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
     return (
       <>
         {loadingPortal}
-        <div className="min-h-[100dvh] bg-slate-50">
-        <header className="bg-white border-b border-slate-200">
-          <div className="max-w-3xl mx-auto px-5 py-5 flex items-center justify-between gap-4">
-            <div className="flex items-center gap-3 min-w-0">
-              <div className="w-10 h-10 rounded-xl bg-orange-500 flex items-center justify-center flex-shrink-0">
-                <Scale className="w-5 h-5 text-white" />
-              </div>
-              <div className="min-w-0">
-                <div className="text-sm font-semibold leading-tight text-slate-900">Jurius</div>
-                <div className="text-[11px] text-slate-500 truncate">Assinatura · Documento finalizado</div>
-              </div>
-            </div>
-            <div className="hidden sm:flex items-center gap-2 text-xs text-slate-500 flex-shrink-0">
-              <Clock className="w-4 h-4" />
-              {signer?.signed_at ? formatDate(signer.signed_at) : ''}
-            </div>
-          </div>
-        </header>
+        <div className="min-h-[100dvh] flex flex-col items-center justify-center p-4" style={{ background: '#f8fafc' }}>
+        <div className="w-full max-w-md">
 
-        <main className="max-w-3xl mx-auto px-5 py-8">
-          <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
-            <div className="h-2 w-full bg-orange-500" />
+          <div className="bg-white rounded-3xl overflow-hidden" style={{ boxShadow: '0 20px 60px -12px rgba(15,23,42,0.14), 0 0 0 1px rgba(15,23,42,0.05)' }}>
 
-            <div className="px-6 pt-6 pb-5 border-b border-slate-100">
-              <div className="flex items-start gap-4">
-                <div className="w-12 h-12 rounded-xl bg-emerald-50 border border-emerald-200 flex items-center justify-center flex-shrink-0">
-                  <CheckCircle className="w-7 h-7 text-emerald-600" />
-                </div>
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <h1 className="text-lg font-semibold text-slate-900">Documento já assinado</h1>
-                    <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold bg-emerald-100 text-emerald-800 border border-emerald-200">
-                      Assinado
-                    </span>
-                  </div>
-                  <p className="mt-1 text-sm text-slate-600">
-                    Uma cópia assinada está disponível para abertura e compartilhamento.
-                  </p>
-                </div>
+            {/* Cabeçalho esmeralda — documento já processado */}
+            <div className="relative px-6 pt-10 pb-8 flex flex-col items-center overflow-hidden"
+              style={{ background: 'linear-gradient(145deg, #064e3b 0%, #065f46 35%, #047857 70%, #059669 100%)' }}>
+              <div className="absolute top-0 left-0 right-0 h-[1px]" style={{ background: 'linear-gradient(90deg, transparent, rgba(255,255,255,0.20), transparent)' }} />
+              <div className="absolute -top-10 -right-10 w-40 h-40 rounded-full" style={{ background: 'rgba(255,255,255,0.04)' }} />
+              <div className="absolute -bottom-8 -left-8 w-32 h-32 rounded-full" style={{ background: 'rgba(0,0,0,0.07)' }} />
+
+              {/* Ícone */}
+              <div className="relative w-[72px] h-[72px] rounded-2xl flex items-center justify-center mb-5"
+                style={{ background: 'rgba(255,255,255,0.15)', backdropFilter: 'blur(8px)', border: '1.5px solid rgba(255,255,255,0.25)', boxShadow: '0 8px 24px rgba(0,0,0,0.15)' }}>
+                <svg viewBox="0 0 24 24" className="w-9 h-9" fill="none" stroke="white" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14" />
+                  <polyline points="22 4 12 14.01 9 11.01" />
+                </svg>
+              </div>
+
+              <h1 className="text-[22px] font-bold text-white text-center leading-tight mb-1.5" style={{ textShadow: '0 1px 3px rgba(0,0,0,0.2)' }}>
+                Documento já assinado
+              </h1>
+              <p className="text-[13px] text-center" style={{ color: 'rgba(255,255,255,0.78)' }}>
+                Uma cópia assinada está disponível para você.
+              </p>
+
+              <div className="mt-4 px-3 py-1 rounded-full flex items-center gap-1.5"
+                style={{ background: 'rgba(255,255,255,0.12)', border: '1px solid rgba(255,255,255,0.20)' }}>
+                <div className="w-[5px] h-[5px] rounded-full bg-emerald-300 flex-shrink-0" style={{ boxShadow: '0 0 5px rgba(110,231,183,0.8)' }} />
+                <span className="text-[10px] font-semibold tracking-[0.18em] uppercase" style={{ color: 'rgba(255,255,255,0.90)' }}>
+                  Assinado · JURIUS
+                </span>
               </div>
             </div>
 
-            <div className="px-6 py-6 space-y-4">
-              <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
-                <div className="flex items-start gap-3">
-                  <div className="w-10 h-10 rounded-lg bg-orange-50 border border-orange-200 flex items-center justify-center flex-shrink-0">
-                    <FileText className="w-5 h-5 text-orange-700" />
+            {/* Corpo */}
+            <div className="px-5 pt-5 pb-2 space-y-3">
+
+              {/* Card do documento */}
+              <div className="rounded-2xl overflow-hidden" style={{ border: '1px solid #f1f5f9', background: '#fafafa' }}>
+                <div className="h-[3px]" style={{ background: 'linear-gradient(90deg, #047857, #10b981)' }} />
+                <div className="p-4 flex items-start gap-3">
+                  <div className="w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0"
+                    style={{ background: '#fff7ed', border: '1px solid #fed7aa' }}>
+                    <FileText className="w-[18px] h-[18px]" style={{ color: '#ea580c' }} />
                   </div>
                   <div className="flex-1 min-w-0">
-                    <div className="font-semibold text-slate-900 truncate">{request?.document_name}</div>
-                    <div className="text-sm text-slate-500 mt-0.5">Documento nº <span className="font-mono">{request?.id}</span></div>
-                    <div className="text-sm text-slate-500 mt-1">Assinado por <span className="font-medium text-slate-800">{signer?.name || 'Signatário'}</span></div>
+                    <div className="font-semibold text-[13.5px] text-slate-900 truncate">{request?.document_name}</div>
+                    <div className="text-[12px] text-slate-400 mt-0.5">
+                      Assinado por <span className="font-medium text-slate-600">{signer?.name || 'Signatário'}</span>
+                    </div>
+                    {signer?.signed_at && (
+                      <div className="text-[11px] text-slate-400 mt-0.5">{formatDate(signer.signed_at)}</div>
+                    )}
                   </div>
                 </div>
               </div>
 
+              {/* Código de autenticação */}
               {signer?.verification_hash && (
-                <div className="rounded-xl border border-slate-200 bg-white p-4">
+                <div className="rounded-2xl p-4" style={{ background: '#f8fafc', border: '1px solid #e2e8f0' }}>
                   <div className="flex items-start justify-between gap-3">
-                    <div className="min-w-0">
-                      <div className="text-xs text-slate-500 font-semibold">CÓDIGO DE AUTENTICAÇÃO</div>
-                      <div className="mt-2 font-mono text-xs tracking-wide break-all text-slate-900">{signer.verification_hash}</div>
+                    <div className="min-w-0 flex-1">
+                      <div className="text-[10px] font-bold uppercase tracking-[0.14em] text-slate-400 mb-1.5">
+                        Código de autenticação
+                      </div>
+                      <div className="font-mono text-[12.5px] font-semibold tracking-wider text-slate-700 break-all">
+                        {signer.verification_hash}
+                      </div>
                     </div>
                     <button
                       type="button"
                       onClick={handleCopyVerificationCode}
-                      className="flex items-center gap-2 px-3 py-2 rounded-lg bg-slate-900 text-white hover:bg-slate-800 transition text-sm font-medium"
-                      title="Copiar código"
+                      className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-[12px] font-semibold transition flex-shrink-0"
+                      style={{ background: '#0f172a', color: 'white' }}
                     >
-                      <Copy className="w-4 h-4" />
+                      <Copy className="w-3.5 h-3.5" />
                       Copiar
                     </button>
                   </div>
 
                   {verificationUrl && (
-                    <div className="mt-3">
-                      <button
-                        type="button"
-                        onClick={() => window.open(verificationUrl, '_blank')}
-                        className="inline-flex items-center gap-2 text-sm font-semibold text-orange-600 hover:text-orange-700"
-                      >
-                        <ExternalLink className="w-4 h-4" />
-                        Verificar autenticidade
-                      </button>
-                    </div>
+                    <button
+                      type="button"
+                      onClick={() => window.open(verificationUrl, '_blank')}
+                      className="mt-3 inline-flex items-center gap-1.5 text-[12px] font-semibold"
+                      style={{ color: '#ea580c' }}
+                    >
+                      <ExternalLink className="w-3.5 h-3.5" />
+                      Verificar autenticidade
+                    </button>
                   )}
                 </div>
               )}
             </div>
 
-            <div className="px-6 pb-6 space-y-3">
+            {/* Botões */}
+            <div className="px-5 pt-3 pb-5 space-y-2.5">
               <button
                 onClick={handleDownloadAlreadySigned}
                 disabled={downloadingAlreadySigned}
-                className="w-full flex items-center justify-center gap-2 px-5 py-3 bg-orange-600 text-white rounded-xl font-semibold hover:bg-orange-700 transition disabled:opacity-70 disabled:cursor-wait"
+                className="w-full flex items-center justify-center gap-2.5 px-5 py-3.5 text-white rounded-2xl font-semibold text-[14px] transition-all disabled:opacity-70"
+                style={{ background: 'linear-gradient(135deg, #c2410c 0%, #ea580c 100%)', boxShadow: '0 6px 20px -4px rgba(194,65,12,0.45)' }}
               >
                 {downloadingAlreadySigned ? (
-                  <>
-                    <Loader2 className="w-5 h-5 animate-spin" />
-                    Preparando...
-                  </>
+                  <><Loader2 className="w-4 h-4 animate-spin" />Preparando...</>
                 ) : (
-                  <>
-                    <Download className="w-5 h-5" />
-                    Abrir documento assinado
-                  </>
+                  <><Download className="w-4 h-4" />Abrir documento assinado</>
                 )}
               </button>
 
-              <button
-                type="button"
-                onClick={() => setShowReport(true)}
-                className="w-full flex items-center justify-center gap-2 px-5 py-3 bg-white border border-slate-200 text-slate-800 rounded-xl font-semibold hover:bg-slate-50 transition"
-              >
-                <FileText className="w-5 h-5 text-slate-700" />
-                Ver relatório de assinatura
-              </button>
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  type="button"
+                  onClick={() => setShowReport(true)}
+                  className="flex items-center justify-center gap-1.5 px-3 py-3 rounded-2xl text-[12.5px] font-medium transition-all"
+                  style={{ background: '#f8fafc', border: '1px solid #e2e8f0', color: '#475569' }}
+                >
+                  <FileText className="w-3.5 h-3.5 flex-shrink-0" />
+                  Ver relatório
+                </button>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 {signer?.signed_document_path && (
                   <button
                     type="button"
                     onClick={handleCopySignedLink}
-                    className="w-full flex items-center justify-center gap-2 px-5 py-3 bg-white border border-slate-200 text-slate-800 rounded-xl font-medium hover:bg-slate-50 transition"
+                    className="flex items-center justify-center gap-1.5 px-3 py-3 rounded-2xl text-[12.5px] font-medium transition-all"
+                    style={{ background: '#f8fafc', border: '1px solid #e2e8f0', color: '#475569' }}
                   >
-                    <Share2 className="w-5 h-5 text-slate-700" />
+                    <Share2 className="w-3.5 h-3.5 flex-shrink-0" />
                     Copiar link
                   </button>
                 )}
+              </div>
 
-                {signer?.public_token && (
-                  <button
-                    type="button"
-                    onClick={handleCopySignerToken}
-                    className="w-full flex items-center justify-center gap-2 px-5 py-3 bg-white border border-slate-200 text-slate-800 rounded-xl font-medium hover:bg-slate-50 transition"
-                  >
-                    <Shield className="w-5 h-5 text-slate-700" />
-                    Copiar token
-                  </button>
-                )}
+              {signer?.public_token && (
+                <button
+                  type="button"
+                  onClick={handleCopySignerToken}
+                  className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-2xl text-[12px] font-medium transition-all"
+                  style={{ background: '#f8fafc', border: '1px solid #e2e8f0', color: '#64748b' }}
+                >
+                  <Shield className="w-3.5 h-3.5" />
+                  Copiar token de acesso
+                </button>
+              )}
+            </div>
+
+            {/* Rodapé */}
+            <div className="px-5 pb-5">
+              <div className="rounded-xl px-4 py-3 flex items-center gap-2" style={{ background: '#f8fafc', border: '1px solid #f1f5f9' }}>
+                <Lock className="w-3 h-3 flex-shrink-0" style={{ color: '#94a3b8' }} />
+                <p className="text-[10.5px] leading-relaxed" style={{ color: '#94a3b8' }}>
+                  Guarde o código de autenticação para conferência futura.
+                </p>
               </div>
             </div>
-
-            <div className="px-6 pb-6 border-t border-slate-100">
-              <p className="pt-4 text-xs text-slate-500 text-center">
-                Guarde o código de autenticação para conferência futura.
-              </p>
-            </div>
           </div>
-        </main>
-      </div>
+
+          <p className="text-center mt-4 text-[10px] font-semibold tracking-[0.18em] uppercase" style={{ color: '#cbd5e1' }}>
+            JURIUS · Assinatura Digital Certificada
+          </p>
+        </div>
+        </div>
       </>
     );
   }
@@ -2505,93 +2571,146 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
     return (
       <>
         {loadingPortal}
-        <div className="min-h-[100dvh] bg-gradient-to-b from-orange-50 via-white to-amber-50 flex items-center justify-center p-4">
-        <div className="w-full max-w-lg">
-          <div className="bg-white rounded-2xl border border-orange-100 shadow-[0_10px_30px_rgba(15,23,42,0.08)] overflow-hidden">
-            {/* Animação de sucesso */}
-            <div className="px-6 pt-8 pb-6">
-              <div className="w-16 h-16 rounded-2xl bg-orange-50 border border-orange-100 flex items-center justify-center mx-auto">
-                <CheckCircle className="w-9 h-9 text-orange-600" />
+        <div className="min-h-[100dvh] flex flex-col items-center justify-center p-4" style={{ background: '#f8fafc' }}>
+        <div className="w-full max-w-md">
+
+          {/* ── Card principal ── */}
+          <div className="bg-white rounded-3xl overflow-hidden" style={{ boxShadow: '0 20px 60px -12px rgba(15,23,42,0.14), 0 0 0 1px rgba(15,23,42,0.05)' }}>
+
+            {/* Cabeçalho em gradiente laranja */}
+            <div className="relative px-6 pt-10 pb-8 flex flex-col items-center overflow-hidden"
+              style={{ background: 'linear-gradient(145deg, #7c2d12 0%, #9a3412 30%, #c2410c 70%, #ea580c 100%)' }}>
+
+              {/* Reflexo decorativo */}
+              <div className="absolute top-0 left-0 right-0 h-[1px]" style={{ background: 'linear-gradient(90deg, transparent, rgba(255,255,255,0.25), transparent)' }} />
+              <div className="absolute -top-10 -right-10 w-40 h-40 rounded-full" style={{ background: 'rgba(255,255,255,0.05)' }} />
+              <div className="absolute -bottom-8 -left-8 w-32 h-32 rounded-full" style={{ background: 'rgba(0,0,0,0.08)' }} />
+
+              {/* Ícone de sucesso */}
+              <div className="relative w-[72px] h-[72px] rounded-2xl flex items-center justify-center mb-5"
+                style={{ background: 'rgba(255,255,255,0.15)', backdropFilter: 'blur(8px)', border: '1.5px solid rgba(255,255,255,0.25)', boxShadow: '0 8px 24px rgba(0,0,0,0.15)' }}>
+                <svg viewBox="0 0 24 24" className="w-9 h-9" fill="none" stroke="white" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14" />
+                  <polyline points="22 4 12 14.01 9 11.01" />
+                </svg>
               </div>
 
-              <h1 className="mt-5 text-xl font-semibold text-slate-900 text-center">Documento assinado com sucesso!</h1>
-              <p className="mt-1 text-sm text-slate-600 text-center">Sua assinatura foi registrada e validada.</p>
+              <h1 className="text-[22px] font-bold text-white text-center leading-tight mb-1.5" style={{ textShadow: '0 1px 3px rgba(0,0,0,0.2)' }}>
+                Documento assinado!
+              </h1>
+              <p className="text-[13px] text-center" style={{ color: 'rgba(255,255,255,0.80)' }}>
+                Assinatura registrada e validada com sucesso.
+              </p>
+
+              {/* Eyebrow / badge */}
+              <div className="mt-4 px-3 py-1 rounded-full flex items-center gap-1.5"
+                style={{ background: 'rgba(255,255,255,0.12)', border: '1px solid rgba(255,255,255,0.20)' }}>
+                <div className="w-[5px] h-[5px] rounded-full bg-emerald-300 flex-shrink-0" style={{ boxShadow: '0 0 5px rgba(110,231,183,0.8)' }} />
+                <span className="text-[10px] font-semibold tracking-[0.18em] uppercase" style={{ color: 'rgba(255,255,255,0.90)' }}>
+                  JURIUS · Assinatura Digital
+                </span>
+              </div>
             </div>
 
-            {/* Card do documento */}
-            <div className="px-6 pb-6">
-              <div className="rounded-xl border border-slate-200 bg-white shadow-sm p-4">
-                <div className="flex items-start gap-3">
-                  <div className="w-10 h-10 rounded-lg bg-orange-50 flex items-center justify-center flex-shrink-0">
-                    <FileText className="w-5 h-5 text-orange-600" />
+            {/* Corpo */}
+            <div className="px-5 pt-5 pb-2">
+
+              {/* Card do documento */}
+              <div className="rounded-2xl overflow-hidden" style={{ border: '1px solid #f1f5f9', background: '#fafafa' }}>
+                {/* Tarja laranja topo */}
+                <div className="h-[3px]" style={{ background: 'linear-gradient(90deg, #c2410c, #ea580c, #f97316)' }} />
+                <div className="p-4 flex items-start gap-3">
+                  <div className="w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0"
+                    style={{ background: '#fff7ed', border: '1px solid #fed7aa' }}>
+                    <FileText className="w-[18px] h-[18px]" style={{ color: '#ea580c' }} />
                   </div>
                   <div className="flex-1 min-w-0">
-                    <div className="font-semibold text-slate-900 truncate">{request?.document_name}</div>
-                    <div className="text-sm text-slate-600 mt-0.5">Assinado em {signer?.signed_at ? formatDate(signer.signed_at) : ''}</div>
-                    {signer?.verification_hash && (
-                      <div className="mt-3">
-                        <div className="text-xs text-slate-600 font-medium">Código de autenticação</div>
-                        <div className="mt-1 font-mono text-xs tracking-wide break-all bg-orange-50/40 border border-orange-100 rounded-lg p-2">
-                          {signer.verification_hash}
-                        </div>
-                      </div>
-                    )}
+                    <div className="font-semibold text-[13.5px] text-slate-900 truncate">{request?.document_name}</div>
+                    <div className="text-[12px] text-slate-400 mt-0.5">
+                      {signer?.signed_at ? formatDate(signer.signed_at) : ''}
+                    </div>
                   </div>
                 </div>
+
+                {/* Código de autenticação */}
+                {signer?.verification_hash && (
+                  <div className="px-4 pb-4">
+                    <div className="rounded-xl p-3" style={{ background: '#f8fafc', border: '1px solid #e2e8f0' }}>
+                      <div className="text-[10px] font-bold uppercase tracking-[0.14em] text-slate-400 mb-1.5">
+                        Código de autenticação
+                      </div>
+                      <div className="font-mono text-[12.5px] font-semibold tracking-wider text-slate-700 break-all">
+                        {signer.verification_hash}
+                      </div>
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
 
             {/* Botões de ação */}
-            <div className="px-6 pb-8 space-y-3">
+            <div className="px-5 pt-4 pb-5 space-y-2.5">
               {signer?.signed_document_path && (
                 <button
                   onClick={handleDownload}
                   disabled={downloading}
-                  className="w-full flex items-center justify-center gap-2 px-5 py-3 bg-orange-600 text-white rounded-xl font-medium hover:bg-orange-700 transition shadow-lg shadow-orange-500/20 disabled:opacity-70"
+                  className="w-full flex items-center justify-center gap-2.5 px-5 py-3.5 text-white rounded-2xl font-semibold text-[14px] transition-all disabled:opacity-70"
+                  style={{
+                    background: 'linear-gradient(135deg, #c2410c 0%, #ea580c 100%)',
+                    boxShadow: '0 6px 20px -4px rgba(194,65,12,0.45)',
+                  }}
                 >
                   {downloading ? (
-                    <>
-                      <Loader2 className="w-5 h-5 animate-spin" />
-                      Abrindo documento...
-                    </>
+                    <><Loader2 className="w-4 h-4 animate-spin" />Abrindo documento...</>
                   ) : (
-                    <>
-                      <Download className="w-5 h-5" />
-                      Abrir documento assinado
-                    </>
+                    <><Download className="w-4 h-4" />Abrir documento assinado</>
                   )}
                 </button>
               )}
 
-              <button
-                onClick={() => setShowReport(true)}
-                className="w-full flex items-center justify-center gap-2 px-5 py-3 bg-white border border-slate-200 text-slate-800 rounded-xl font-medium hover:bg-slate-50 transition"
-              >
-                <FileText className="w-5 h-5 text-slate-700" />
-                Ver relatório de assinatura
-              </button>
-
-              {signer?.signed_document_path && (
+              <div className="grid grid-cols-2 gap-2">
                 <button
-                  onClick={handleShare}
-                  className="w-full flex items-center justify-center gap-2 px-5 py-3 bg-white border border-slate-200 text-slate-800 rounded-xl font-medium hover:bg-slate-50 transition"
+                  onClick={() => setShowReport(true)}
+                  className="flex items-center justify-center gap-1.5 px-3 py-3 rounded-2xl text-[12.5px] font-medium transition-all"
+                  style={{ background: '#f8fafc', border: '1px solid #e2e8f0', color: '#475569' }}
+                  onMouseEnter={e => (e.currentTarget.style.background = '#f1f5f9')}
+                  onMouseLeave={e => (e.currentTarget.style.background = '#f8fafc')}
                 >
-                  <Share2 className="w-5 h-5 text-slate-700" />
-                  Compartilhar documento assinado
+                  <FileText className="w-3.5 h-3.5 flex-shrink-0" />
+                  Ver relatório
                 </button>
-              )}
+
+                {signer?.signed_document_path && (
+                  <button
+                    onClick={handleShare}
+                    className="flex items-center justify-center gap-1.5 px-3 py-3 rounded-2xl text-[12.5px] font-medium transition-all"
+                    style={{ background: '#f8fafc', border: '1px solid #e2e8f0', color: '#475569' }}
+                    onMouseEnter={e => (e.currentTarget.style.background = '#f1f5f9')}
+                    onMouseLeave={e => (e.currentTarget.style.background = '#f8fafc')}
+                  >
+                    <Share2 className="w-3.5 h-3.5 flex-shrink-0" />
+                    Compartilhar
+                  </button>
+                )}
+              </div>
             </div>
 
-            {/* Informação adicional */}
-            <div className="px-6 pb-6 border-t border-slate-100">
-              <p className="pt-4 text-xs text-slate-500 text-center">
-                Uma cópia do documento assinado ficará disponível para download.
-                {signer?.verification_hash && (
-                  <> Você pode verificar a autenticidade a qualquer momento na página de verificação.</>
-                )}
-              </p>
+            {/* Rodapé */}
+            <div className="px-5 pb-5">
+              <div className="rounded-xl px-4 py-3 flex items-center gap-2" style={{ background: '#f8fafc', border: '1px solid #f1f5f9' }}>
+                <Lock className="w-3 h-3 flex-shrink-0" style={{ color: '#94a3b8' }} />
+                <p className="text-[10.5px] leading-relaxed" style={{ color: '#94a3b8' }}>
+                  Uma cópia ficará disponível para download.
+                  {signer?.verification_hash && <> Verifique a autenticidade a qualquer momento.</>}
+                </p>
+              </div>
             </div>
           </div>
+
+          {/* JURIUS branding abaixo do card */}
+          <p className="text-center mt-4 text-[10px] font-semibold tracking-[0.18em] uppercase" style={{ color: '#cbd5e1' }}>
+            JURIUS · Assinatura Digital Certificada
+          </p>
         </div>
         </div>
       </>

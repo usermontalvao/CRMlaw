@@ -12,6 +12,13 @@ interface VerificationResult {
   message: string;
 }
 
+/** Mascara nome: "Pedro Rodrigues Montalvao" → "P***** R********* M*********" */
+const maskName = (name: string): string => {
+  return (name || '').trim().split(/\s+/).map(word =>
+    word.length <= 1 ? word : word[0] + '*'.repeat(word.length - 1)
+  ).join(' ');
+};
+
 const isInternalPlaceholderEmail = (email: string | null | undefined): boolean => {
   const e = String(email || '').trim().toLowerCase();
   if (!e) return false;
@@ -236,18 +243,10 @@ const PublicVerificationPage: React.FC = () => {
 
                       <div>
                         <p className="text-xs font-medium text-slate-400 uppercase tracking-wide mb-1">Signatário</p>
-                        <p className="text-sm text-slate-900 font-medium">{result.signer.name}</p>
-                        {(() => {
-                          const authEmail = String(result.signer!.auth_email || '').trim();
-                          const phone = String(result.signer!.phone || '').trim();
-                          const rawEmail = String(result.signer!.email || '').trim();
-                          const displayContact =
-                            authEmail ||
-                            (result.signer!.auth_provider === 'phone' ? phone : '') ||
-                            (!isInternalPlaceholderEmail(rawEmail) ? rawEmail : '');
-                          if (!displayContact) return null;
-                          return <p className="text-xs text-slate-500">{displayContact}</p>;
-                        })()}
+                        <p className="text-sm text-slate-900 font-medium font-mono tracking-wide">{maskName(result.signer.name)}</p>
+                        {result.signer.role && (
+                          <p className="text-xs text-slate-500 mt-0.5">{result.signer.role}</p>
+                        )}
                       </div>
 
                       <div>

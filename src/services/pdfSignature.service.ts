@@ -192,13 +192,12 @@ class PdfSignatureService {
       try {
         const { data, error } = await supabase.storage.from(bucket).createSignedUrl(path, 3600);
         if (!error && data?.signedUrl) {
-          console.log(`[PDF] URL assinada obtida do bucket ${bucket}:`, data.signedUrl);
+          console.log(`[PDF] Imagem localizada no bucket ${bucket}`);
           signedUrl = data.signedUrl;
           break;
         }
-        console.log(`[PDF] Bucket ${bucket}: nÃ£o encontrado ou erro:`, error?.message);
-      } catch (e) {
-        console.log(`[PDF] Bucket ${bucket}: exceÃ§Ã£o:`, e);
+      } catch {
+        // silencioso — tenta próximo bucket
       }
     }
     
@@ -354,119 +353,164 @@ class PdfSignatureService {
     integritySha256?: string | null;
     variant?: 'card' | 'strip';
   }) {
-    const { page, pageWidth, pageHeight, signer, verificationUrl, qrImage, helvetica, helveticaBold, docHash, integritySha256, variant } = params;
-
+    const { page, pageWidth, pageHeight, signer, verificationUrl, qrImage, helvetica, helveticaBold, integritySha256, variant } = params;
     void pageHeight;
-    void docHash;
 
-    const mode: 'card' | 'strip' = variant ?? 'strip';
     const integrityFull = this.formatIntegrityHash(integritySha256, false);
-
-    const versionLabel = `Jurius v${__APP_VERSION__}`;
+    const code = (signer.verification_hash || '').toUpperCase() || 'N/A';
+    const mode: 'card' | 'strip' = variant ?? 'strip';
 
     if (mode === 'strip') {
       const h = 52;
-      const x = 24;
-      const y = 10;
-      const w = pageWidth - 48;
-      const qrSize = 44;
-      const qrX = x + w - qrSize - 6;
-      const qrY = y + (h - qrSize) / 2;
+      const x = 0;
+      const y = 0;
+      const w = pageWidth;
+      const qrPad = 5;
+      const qrSize = h - qrPad * 2;
+      const qrX = x + w - qrSize - qrPad - 2;
+      const qrY = y + qrPad;
 
-      page.drawRectangle({ x, y, width: w, height: h, color: rgb(0.98, 0.99, 1), borderColor: rgb(0.85, 0.88, 0.95), borderWidth: 1 });
+      const stripWhite  = rgb(1, 1, 1);
+      const stripBorder = rgb(0.86, 0.89, 0.93);
+      const stripDark   = rgb(0.09, 0.12, 0.18);
+      const stripSoft   = rgb(0.45, 0.50, 0.58);
+      const stripMuted  = rgb(0.62, 0.67, 0.74);
+      const stripOrange = rgb(0.91, 0.32, 0.04);
 
+      // White background
+      page.drawRectangle({ x, y, width: w, height: h, color: stripWhite });
+
+      // Top border line
+      page.drawLine({
+        start: { x, y: y + h }, end: { x: x + w, y: y + h },
+        thickness: 0.6, color: stripBorder,
+      });
+
+      // Thin orange top stripe (3px)
+      page.drawRectangle({ x, y: y + h - 3, width: w, height: 3, color: stripOrange });
+
+      // QR code
       if (qrImage) {
+        page.drawRectangle({ x: qrX - 3, y: qrY - 3, width: qrSize + 6, height: qrSize + 6, color: stripWhite });
         page.drawImage(qrImage, { x: qrX, y: qrY, width: qrSize, height: qrSize });
       }
 
-      const textMaxX = qrImage ? qrX - 10 : x + w - 80;
-      void textMaxX;
+      const tx = x + 12;
 
-      page.drawText(`Hash SHA-256: ${integrityFull}`, { x: x + 10, y: y + h - 14, size: 5.5, font: helvetica, color: rgb(0.35, 0.35, 0.35) });
-      if (signer.verification_hash) {
-        page.drawText(`Código: ${(signer.verification_hash || '').toUpperCase()}`, { x: x + 10, y: y + h - 26, size: 6, font: helveticaBold, color: rgb(0.15, 0.25, 0.25) });
-      }
+      // Brand + label
+      page.drawText('JURIUS', { x: tx, y: y + h - 16, size: 7, font: helveticaBold, color: stripDark });
+      page.drawText('·', { x: tx + 30, y: y + h - 16, size: 7, font: helvetica, color: stripOrange });
+      page.drawText('Assinatura Eletrônica', { x: tx + 38, y: y + h - 16, size: 6.5, font: helvetica, color: stripSoft });
 
-      if (verificationUrl) {
-        const urlToDraw = verificationUrl.length > 70 ? `${verificationUrl.slice(0, 67)}...` : verificationUrl;
-        page.drawText(`Verificar: ${urlToDraw}`, { x: x + 10, y: y + 6, size: 5.2, font: helvetica, color: rgb(0.12, 0.35, 0.7) });
-      }
-
-      const versionSize = 6;
-      const versionTextWidth = typeof helveticaBold?.widthOfTextAtSize === 'function'
-        ? helveticaBold.widthOfTextAtSize(versionLabel, versionSize)
-        : 70;
-      page.drawText(versionLabel, {
-        x: qrImage ? qrX - versionTextWidth - 10 : x + w - versionTextWidth - 10,
-        y: y + h - 26,
-        size: versionSize,
-        font: helveticaBold,
-        color: rgb(0.15, 0.25, 0.25),
+      // Thin separator
+      page.drawLine({
+        start: { x: tx, y: y + h - 23 }, end: { x: qrX - 8, y: y + h - 23 },
+        thickness: 0.4, color: stripBorder,
       });
+
+      // Code row
+      if (signer.verification_hash) {
+        page.drawText('CODIGO:', { x: tx, y: y + h - 34, size: 5.5, font: helvetica, color: stripMuted });
+        page.drawText(code, { x: tx + 38, y: y + h - 34, size: 6.5, font: helveticaBold, color: stripDark });
+      }
+
+      // Hash
+      const hashDisplay = integrityFull.length > 64 ? `${integrityFull.slice(0, 61)}...` : integrityFull;
+      page.drawText(`SHA-256: ${hashDisplay}`, {
+        x: tx, y: y + 9, size: 5, font: helvetica, color: stripMuted,
+      });
+
       return;
     }
 
-    const boxH = 80;
-    const boxX = 24;
-    const boxY = 10;
-    const boxW = pageWidth - 48;
+    // ── CARD MODE ──────────────────────────────────────────────────────
+    // ZapSign-inspired: white background, thin lines, text left, QR right
+    const boxH = 88;
+    const boxX = 0;
+    const boxY = 0;
+    const boxW = pageWidth;
 
-    // Card
-    page.drawRectangle({
-      x: boxX,
-      y: boxY,
-      width: boxW,
-      height: boxH,
-      color: rgb(0.98, 0.99, 1),
-      borderColor: rgb(0.2, 0.45, 0.9),
-      borderWidth: 1,
+    const cardWhite  = rgb(1, 1, 1);
+    const cardBorder = rgb(0.86, 0.89, 0.93);   // #dbe2ee
+    const cardDark   = rgb(0.09, 0.12, 0.18);   // #171e2e
+    const cardSoft   = rgb(0.45, 0.50, 0.58);   // mid gray
+    const cardMuted  = rgb(0.62, 0.67, 0.74);   // light gray
+    const cardOrange = rgb(0.91, 0.32, 0.04);   // #e85208
+
+    // White background
+    page.drawRectangle({ x: boxX, y: boxY, width: boxW, height: boxH, color: cardWhite });
+
+    // Top thin border line
+    page.drawLine({
+      start: { x: boxX, y: boxY + boxH },
+      end: { x: boxX + boxW, y: boxY + boxH },
+      thickness: 0.6, color: cardBorder,
     });
 
-    // Accent line
-    page.drawRectangle({
-      x: boxX,
-      y: boxY + boxH - 3,
-      width: boxW,
-      height: 3,
-      color: rgb(0.2, 0.45, 0.9),
-    });
+    // Thin orange top stripe (3px)
+    page.drawRectangle({ x: boxX, y: boxY + boxH - 3, width: boxW, height: 3, color: cardOrange });
 
-    const qrSize = 58;
-    const qrX = boxX + boxW - qrSize - 8;
-    const qrY = boxY + (boxH - qrSize) / 2 - 1;
+    // QR code — right side, vertically centered
+    const qrSize = 62;
+    const qrX = boxX + boxW - qrSize - 14;
+    const qrY = boxY + (boxH - qrSize) / 2;
     if (qrImage) {
+      // White padding behind QR
+      page.drawRectangle({ x: qrX - 3, y: qrY - 3, width: qrSize + 6, height: qrSize + 6, color: cardWhite });
       page.drawImage(qrImage, { x: qrX, y: qrY, width: qrSize, height: qrSize });
     }
 
-    const textX = boxX + 10;
-    const textMaxW = qrX - textX - 8;
-    void textMaxW;
+    // Left text area
+    const tx = boxX + 14;
+    const textW = qrX - tx - 12;
+    void textW;
 
-    const title = 'Escaneie o QR Code para verificar a autenticidade do documento';
-    page.drawText(title, { x: textX, y: boxY + boxH - 14, size: 8, font: helveticaBold, color: rgb(0.12, 0.12, 0.12) });
-
-    const versionSize = 5.5;
-    const versionTextWidth = typeof helveticaBold?.widthOfTextAtSize === 'function'
-      ? helveticaBold.widthOfTextAtSize(versionLabel, versionSize)
-      : 70;
-    page.drawText(versionLabel, {
-      x: boxX + boxW - versionTextWidth - 10,
-      y: boxY + boxH - 14,
-      size: versionSize,
-      font: helveticaBold,
-      color: rgb(0.12, 0.12, 0.12),
+    // Brand + title line
+    page.drawText('JURIUS', {
+      x: tx, y: boxY + boxH - 19, size: 8, font: helveticaBold, color: cardDark,
+    });
+    page.drawText('·', {
+      x: tx + 34, y: boxY + boxH - 19, size: 8, font: helvetica, color: cardOrange,
+    });
+    page.drawText('Certificado de Assinatura Eletrônica', {
+      x: tx + 42, y: boxY + boxH - 19, size: 7.5, font: helvetica, color: cardSoft,
     });
 
-    const codeLabel = 'Código de autenticação:';
-    const code = (signer.verification_hash || '').toUpperCase() || 'N/A';
-    page.drawText(codeLabel, { x: textX, y: boxY + boxH - 28, size: 7, font: helvetica, color: rgb(0.35, 0.35, 0.35) });
-    page.drawText(code, { x: textX + 88, y: boxY + boxH - 28, size: 7, font: helveticaBold, color: rgb(0.15, 0.25, 0.25) });
+    // Thin separator
+    page.drawLine({
+      start: { x: tx, y: boxY + boxH - 27 },
+      end: { x: qrX - 8, y: boxY + boxH - 27 },
+      thickness: 0.4, color: cardBorder,
+    });
 
-    page.drawText(`Hash SHA-256: ${integrityFull}`, { x: textX, y: boxY + boxH - 42, size: 5.2, font: helvetica, color: rgb(0.35, 0.35, 0.35) });
+    // Verification code row
+    page.drawText('CODIGO:', {
+      x: tx, y: boxY + boxH - 39, size: 6, font: helvetica, color: cardMuted,
+    });
+    page.drawText(code, {
+      x: tx + 42, y: boxY + boxH - 39, size: 7, font: helveticaBold, color: cardDark,
+    });
 
+    // SHA-256 row
+    const hashDisplay = integrityFull.length > 74 ? `${integrityFull.slice(0, 71)}...` : integrityFull;
+    page.drawText('SHA-256:', {
+      x: tx, y: boxY + boxH - 52, size: 6, font: helvetica, color: cardMuted,
+    });
+    page.drawText(hashDisplay, {
+      x: tx + 42, y: boxY + boxH - 52, size: 5.5, font: helvetica, color: cardSoft,
+    });
+
+    // Verification URL
     if (verificationUrl) {
-      const urlToDraw = verificationUrl.length > 85 ? `${verificationUrl.slice(0, 82)}...` : verificationUrl;
-      page.drawText(urlToDraw, { x: textX, y: boxY + 6, size: 5.5, font: helvetica, color: rgb(0.12, 0.35, 0.7) });
+      const urlDisplay = verificationUrl.length > 90 ? `${verificationUrl.slice(0, 87)}...` : verificationUrl;
+      page.drawLine({
+        start: { x: tx, y: boxY + boxH - 60 },
+        end: { x: qrX - 8, y: boxY + boxH - 60 },
+        thickness: 0.4, color: cardBorder,
+      });
+      page.drawText(urlDisplay, {
+        x: tx, y: boxY + 12, size: 5.5, font: helvetica, color: cardOrange,
+      });
     }
   }
   private async addReportPages(params: {
@@ -499,6 +543,29 @@ class PdfSignatureService {
         return signed.length > 0 ? signed : [signer];
       } catch {
         return [signer];
+      }
+    })();
+
+    // Fetch all audit log entries for the full history (multiple view events per signer)
+    type AuditEntry = {
+      id: string;
+      signer_id: string | null;
+      action: string;
+      description: string;
+      ip_address: string | null;
+      user_agent: string | null;
+      created_at: string;
+    };
+    const auditLogEntries: AuditEntry[] = await (async () => {
+      try {
+        const { data } = await supabase
+          .from('signature_audit_log')
+          .select('id, signer_id, action, description, ip_address, user_agent, created_at')
+          .eq('signature_request_id', request.id)
+          .order('created_at', { ascending: true });
+        return (data as AuditEntry[] | null) ?? [];
+      } catch {
+        return [];
       }
     })();
 
@@ -540,20 +607,49 @@ class PdfSignatureService {
       return lines;
     };
 
+    // Design tokens
+    const navy    = rgb(0.06, 0.09, 0.18);
+    const navyMid = rgb(0.12, 0.16, 0.25);
+    const orange  = rgb(0.91, 0.32, 0.04);
+    const emerald = rgb(0.06, 0.47, 0.25);
+    const white   = rgb(1, 1, 1);
+    const bgLight = rgb(0.96, 0.97, 0.98);
+    const border  = rgb(0.86, 0.89, 0.93);
+    const txtDark = rgb(0.09, 0.12, 0.18);
+    const txtMid  = rgb(0.35, 0.40, 0.48);
+    const txtSoft = rgb(0.55, 0.60, 0.68);
+    const silver  = rgb(0.78, 0.82, 0.87);
+
     const createReportHeader = (page: PDFPage, title: string, subtitle?: string) => {
-      const rightColW = 170;
-      const rightColX = pageWidth - lm - rightColW;
-      page.drawText('Juris CRM', { x: lm, y: pageHeight - 45, size: 20, font: helveticaBold, color: rgb(0.2, 0.4, 0.8) });
-      page.drawText(title, { x: lm + 112, y: pageHeight - 44, size: 15, font: helvetica, color: rgb(0.35, 0.35, 0.35) });
-      page.drawText('Datas e horarios em UTC-0400 (America/Manaus)', { x: rightColX, y: pageHeight - 30, size: 7, font: helvetica, color: rgb(0.5, 0.5, 0.5) });
-      page.drawText(`Ultima atualizacao em ${nowStr}`, { x: rightColX, y: pageHeight - 42, size: 7, font: helvetica, color: rgb(0.5, 0.5, 0.5) });
-      page.drawLine({ start: { x: lm, y: pageHeight - 60 }, end: { x: pageWidth - lm, y: pageHeight - 60 }, thickness: 1, color: rgb(0.85, 0.85, 0.85) });
-      page.drawText(request.document_name.toUpperCase(), { x: lm, y: pageHeight - 96, size: 16, font: helveticaBold, color: rgb(0.1, 0.1, 0.1) });
-      page.drawText(`Documento numero ${request.id}`, { x: lm, y: pageHeight - 114, size: 8, font: helvetica, color: rgb(0.5, 0.5, 0.5) });
-      if (subtitle) {
-        page.drawText(subtitle, { x: lm, y: pageHeight - 132, size: 9, font: helvetica, color: rgb(0.35, 0.35, 0.35) });
-      }
-      page.drawLine({ start: { x: lm, y: pageHeight - 150 }, end: { x: pageWidth - lm, y: pageHeight - 150 }, thickness: 1, color: rgb(0.85, 0.85, 0.85) });
+      // Thin orange top stripe only — page background stays white
+      page.drawRectangle({ x: 0, y: pageHeight - 5, width: pageWidth, height: 5, color: orange });
+
+      // Top separator line
+      page.drawLine({ start: { x: lm, y: pageHeight - 20 }, end: { x: pageWidth - lm, y: pageHeight - 20 }, thickness: 0.4, color: border });
+
+      // "JURIUS" logotype in dark
+      page.drawText('JURIUS', { x: lm, y: pageHeight - 38, size: 16, font: helveticaBold, color: txtDark });
+      // Separator dot
+      page.drawText('·', { x: lm + 68, y: pageHeight - 38, size: 12, font: helvetica, color: orange });
+      // Page title in soft gray
+      page.drawText(title, { x: lm + 78, y: pageHeight - 37, size: 10, font: helvetica, color: txtSoft });
+
+      // Right: date
+      page.drawText(nowStr, { x: pageWidth - lm - 118, y: pageHeight - 37, size: 7, font: helvetica, color: silver });
+
+      // Bottom separator
+      page.drawLine({ start: { x: lm, y: pageHeight - 50 }, end: { x: pageWidth - lm, y: pageHeight - 50 }, thickness: 0.4, color: border });
+
+      // Document name
+      const docName = request.document_name.length > 72 ? `${request.document_name.slice(0, 69)}...` : request.document_name;
+      page.drawText(docName, { x: lm, y: pageHeight - 74, size: 13, font: helveticaBold, color: txtDark });
+
+      // Subtitle / protocol line
+      const protocolLine = subtitle ? subtitle : `Protocolo: ${request.id}`;
+      page.drawText(protocolLine, { x: lm, y: pageHeight - 90, size: 7.5, font: helvetica, color: txtSoft });
+
+      // Section divider
+      page.drawLine({ start: { x: lm, y: pageHeight - 104 }, end: { x: pageWidth - lm, y: pageHeight - 104 }, thickness: 0.4, color: border });
     };
 
     const buildAuthPoints = (item: Signer) => {
@@ -571,156 +667,305 @@ class PdfSignatureService {
       if (item.signer_ip) points.push(`Endereço IP: ${item.signer_ip}`);
       if (geo.coordinates) points.push(`Geolocalização: ${geo.coordinates}`);
       if (item.facial_image_path) points.push('Verificação facial (selfie)');
-      if (ua.device) points.push(`Dispositivo: ${ua.device} - ${ua.browser || 'Navegador'} - ${ua.os || 'Sistema'}`);
+      const deviceParts = [ua.device, ua.browser, ua.os].filter(Boolean);
+      if (deviceParts.length > 0) points.push(`Dispositivo: ${deviceParts.join(' - ')}`);
       return points;
     };
 
     const page1 = pdfDoc.addPage([pageWidth, pageHeight]);
-    createReportHeader(page1, 'Relatorio de Assinaturas', `${signedRequestSigners.length} signatario(s) com assinatura registrada`);
+    const sigCount1 = signedRequestSigners.length;
+    createReportHeader(page1, 'CERTIFICADO DE ASSINATURA', `${sigCount1} ${sigCount1 === 1 ? 'signatario' : 'signatarios'} · Emitido em ${nowStr}`);
 
-    // Título da seção com linha decorativa
-    page1.drawRectangle({ x: lm, y: pageHeight - 176, width: 4, height: 18, color: rgb(0.15, 0.55, 0.3) });
-    page1.drawText('Assinaturas', { x: lm + 12, y: pageHeight - 172, size: 14, font: helveticaBold, color: rgb(0.15, 0.15, 0.15) });
+    // Section title
+    const sectionY1 = pageHeight - 136;
+    page1.drawRectangle({ x: lm, y: sectionY1 - 2, width: 3, height: 16, color: orange });
+    page1.drawText('ASSINATURAS', { x: lm + 10, y: sectionY1, size: 9, font: helveticaBold, color: txtDark });
+    page1.drawLine({ start: { x: lm + 10, y: sectionY1 - 6 }, end: { x: pageWidth - lm, y: sectionY1 - 6 }, thickness: 0.4, color: border });
 
-    let yCards = pageHeight - 205;
+    let yCards = pageHeight - 162;
     for (const asset of signerAssets) {
       const item = asset.signer;
       const signedAtStr = this.formatManausDateTime(item.signed_at, { withSeconds: true });
       const authPoints = buildAuthPoints(item);
-      const infoColW = 260;
-      const rightColW = 180;
+      const rightColW = 175;
       const rightStartX = pageWidth - lm - rightColW;
-      const cardHeight = Math.max(200, 70 + (authPoints.length * 12));
-      if (yCards - cardHeight < 80) break;
+      const cardHeight = Math.max(185, 80 + (authPoints.length * 13));
+      if (yCards - cardHeight < 90) break;
 
-      // Card principal com sombra sutil
-      page1.drawRectangle({
-        x: lm + 2,
-        y: yCards - cardHeight - 2,
-        width: pageWidth - (lm * 2),
-        height: cardHeight,
-        color: rgb(0.92, 0.93, 0.94),
-      });
-      page1.drawRectangle({
-        x: lm,
-        y: yCards - cardHeight,
-        width: pageWidth - (lm * 2),
-        height: cardHeight,
-        borderColor: rgb(0.85, 0.88, 0.9),
-        borderWidth: 1,
-        color: rgb(1, 1, 1),
-      });
+      const cw = pageWidth - lm * 2;
+      const cx = lm;
+      const cy = yCards - cardHeight;
 
-      // Barra superior verde
-      page1.drawRectangle({
-        x: lm,
-        y: yCards - 4,
-        width: pageWidth - (lm * 2),
-        height: 4,
-        color: rgb(0.15, 0.6, 0.35),
-      });
+      // Card shadow
+      page1.drawRectangle({ x: cx + 2, y: cy - 2, width: cw, height: cardHeight, color: rgb(0.88, 0.90, 0.93) });
+      // Card body
+      page1.drawRectangle({ x: cx, y: cy, width: cw, height: cardHeight, color: white, borderColor: border, borderWidth: 0.8 });
 
-      // Badge de status
-      page1.drawRectangle({ x: lm + 12, y: yCards - 28, width: 70, height: 18, color: rgb(0.15, 0.6, 0.35) });
-      page1.drawText('ASSINADO', { x: lm + 18, y: yCards - 24, size: 8, font: helveticaBold, color: rgb(1, 1, 1) });
+      // Left orange accent bar
+      page1.drawRectangle({ x: cx, y: cy, width: 4, height: cardHeight, color: orange });
 
-      // Nome do signatário
-      page1.drawText(item.name.toUpperCase(), { x: lm + 90, y: yCards - 24, size: 12, font: helveticaBold, color: rgb(0.1, 0.1, 0.1) });
+      // Dark header band inside card
+      const hdrH = 32;
+      page1.drawRectangle({ x: cx, y: yCards - hdrH, width: cw, height: hdrH, color: navy });
 
-      // Data e hora
-      page1.drawText(`Assinado em: ${signedAtStr}`, { x: lm + 12, y: yCards - 46, size: 9, font: helvetica, color: rgb(0.4, 0.4, 0.4) });
+      // Signed badge — clean design, no fake tick (WinAnsi limitation)
+      page1.drawRectangle({ x: cx + 12, y: yCards - hdrH + 7, width: 68, height: 18, color: emerald });
+      // Small white square bullet
+      page1.drawRectangle({ x: cx + 18, y: yCards - hdrH + 13, width: 5, height: 5, color: white });
+      page1.drawText('ASSINADO', { x: cx + 26, y: yCards - hdrH + 13, size: 7.5, font: helveticaBold, color: white });
 
-      // Linha separadora
-      page1.drawLine({ start: { x: lm + 12, y: yCards - 56 }, end: { x: rightStartX - 10, y: yCards - 56 }, thickness: 0.5, color: rgb(0.9, 0.9, 0.9) });
+      // Signer name in header
+      const nameDisplay = item.name.length > 32 ? `${item.name.slice(0, 30)}...` : item.name;
+      page1.drawText(nameDisplay.toUpperCase(), { x: cx + 84, y: yCards - hdrH + 12, size: 11, font: helveticaBold, color: white });
+      if (item.role) {
+        page1.drawText(item.role, { x: cx + 84, y: yCards - hdrH + 2, size: 7, font: helvetica, color: silver });
+      }
 
-      // Pontos de autenticação
-      let pointY = yCards - 72;
+      // Timestamp
+      page1.drawText(`Assinado em:`, { x: cx + 12, y: yCards - hdrH - 16, size: 7.5, font: helvetica, color: txtSoft });
+      page1.drawText(signedAtStr, { x: cx + 65, y: yCards - hdrH - 16, size: 7.5, font: helveticaBold, color: txtDark });
+
+      // Thin divider
+      page1.drawLine({ start: { x: cx + 12, y: yCards - hdrH - 26 }, end: { x: rightStartX - 8, y: yCards - hdrH - 26 }, thickness: 0.4, color: border });
+
+      // Auth factors label
+      page1.drawText('FATORES DE AUTENTICAÇÃO:', { x: cx + 12, y: yCards - hdrH - 40, size: 6.5, font: helveticaBold, color: txtSoft });
+
+      // Auth points — small navy squares as bullets
+      let pointY = yCards - hdrH - 54;
       for (const point of authPoints.slice(0, 8)) {
-        page1.drawText('•', { x: lm + 12, y: pointY, size: 8, font: helvetica, color: rgb(0.15, 0.6, 0.35) });
-        page1.drawText(point, { x: lm + 22, y: pointY, size: 7.5, font: helvetica, color: rgb(0.3, 0.3, 0.3), maxWidth: infoColW });
-        pointY -= 12;
+        page1.drawRectangle({ x: cx + 14, y: pointY, width: 4, height: 4, color: emerald });
+        page1.drawText(point, { x: cx + 24, y: pointY, size: 7.5, font: helvetica, color: txtMid, maxWidth: rightStartX - cx - 36 });
+        pointY -= 13;
       }
 
-      // Coluna direita - Assinatura
-      const sigBoxW = rightColW - 20;
-      const sigBoxH = 126;
-      const sigX = rightStartX + 10;
-      const sigY = yCards - 20;
+      // Right column — signature box
+      // In pdf-lib: y = bottom-left corner, coordinates go UP from bottom of page
+      const sigBoxW = rightColW - 16;
+      const sigX = rightStartX + 8;
+      const sigLabelY = yCards - hdrH - 12;          // y of the label text (baseline)
+      const sigBoxTop = sigLabelY - 6;               // top edge of box (just below label)
+      const sigBoxBottom = yCards - cardHeight + 12; // bottom edge of box (12px above card bottom)
+      const sigBoxH = Math.max(30, sigBoxTop - sigBoxBottom);
 
-      page1.drawText('ASSINATURA', { x: sigX, y: sigY - 6, size: 7, font: helveticaBold, color: rgb(0.5, 0.5, 0.5) });
-      page1.drawRectangle({ x: sigX, y: sigY - sigBoxH - 10, width: sigBoxW, height: sigBoxH, borderColor: rgb(0.85, 0.88, 0.9), borderWidth: 1, color: rgb(0.99, 0.99, 1) });
+      page1.drawText('ASSINATURA MANUSCRITA', { x: sigX, y: sigLabelY, size: 6, font: helveticaBold, color: txtSoft });
+
+      // Signature frame — drawn from bottom-left
+      page1.drawRectangle({ x: sigX, y: sigBoxBottom, width: sigBoxW, height: sigBoxH, color: bgLight, borderColor: border, borderWidth: 0.8 });
+
+      // Baseline hint line — 16px above box bottom
+      page1.drawLine({
+        start: { x: sigX + 10, y: sigBoxBottom + 16 },
+        end:   { x: sigX + sigBoxW - 10, y: sigBoxBottom + 16 },
+        thickness: 0.5, color: border,
+      });
+
+      // Signature image — strictly inside box with fixed padding
       if (asset.signature) {
-        page1.drawImage(asset.signature, { x: sigX + 6, y: sigY - sigBoxH - 4, width: sigBoxW - 12, height: sigBoxH - 12 });
+        const imgPad = 8;
+        const imgX = sigX + imgPad;
+        const imgY = sigBoxBottom + imgPad;           // starts imgPad above box bottom
+        const imgW = sigBoxW - imgPad * 2;
+        const imgH = Math.max(10, sigBoxH - imgPad * 2); // never overflows box
+        page1.drawImage(asset.signature, { x: imgX, y: imgY, width: imgW, height: imgH });
       }
 
-      yCards -= cardHeight + 20;
+      yCards -= cardHeight + 18;
     }
 
     for (const asset of signerAssets) {
       const item = asset.signer;
       const page = pdfDoc.addPage([pageWidth, pageHeight]);
       const signedAtStr = this.formatManausDateTime(item.signed_at, { withSeconds: true });
+      const geoP2 = this.parseGeolocation(item.signer_geolocation);
+      const uaP2  = this.parseUserAgent(item.signer_user_agent);
 
-      createReportHeader(page, 'Relatorio de Assinaturas', `Detalhes do signatario ${item.name}`);
-      page.drawText(`Foto do rosto (selfie) de ${item.name.toUpperCase()}:`, { x: lm, y: pageHeight - 168, size: 10, font: helvetica, color: rgb(0.3, 0.3, 0.3) });
+      createReportHeader(page, 'BIOMETRIA & VERIFICAÇÃO', `Signatario: ${item.name}`);
 
-      const photoW = 350;
-      const photoH = 350;
+      // ── Section label ─────────────────────────────────────────
+      const sectionLabelY = pageHeight - 132;
+      page.drawRectangle({ x: lm, y: sectionLabelY - 2, width: 3, height: 14, color: orange });
+      page.drawText('BIOMETRIA FACIAL', { x: lm + 10, y: sectionLabelY, size: 8, font: helveticaBold, color: txtDark });
+      page.drawLine({ start: { x: lm + 10, y: sectionLabelY - 6 }, end: { x: pageWidth - lm, y: sectionLabelY - 6 }, thickness: 0.4, color: border });
+
+      // ── Photo — large, portrait ────────────────────────────────
+      const photoW = 210;
+      const photoH = 260;
       const photoX = lm;
-      const photoY = pageHeight - 180 - photoH;
-      for (let i = 0; i < photoW; i += 8) {
-        page.drawLine({ start: { x: photoX + i, y: photoY + photoH }, end: { x: photoX + i + 4, y: photoY + photoH }, thickness: 1, color: rgb(0.6, 0.6, 0.6) });
-        page.drawLine({ start: { x: photoX + i, y: photoY }, end: { x: photoX + i + 4, y: photoY }, thickness: 1, color: rgb(0.6, 0.6, 0.6) });
-      }
-      for (let i = 0; i < photoH; i += 8) {
-        page.drawLine({ start: { x: photoX, y: photoY + i }, end: { x: photoX, y: photoY + i + 4 }, thickness: 1, color: rgb(0.6, 0.6, 0.6) });
-        page.drawLine({ start: { x: photoX + photoW, y: photoY + i }, end: { x: photoX + photoW, y: photoY + i + 4 }, thickness: 1, color: rgb(0.6, 0.6, 0.6) });
-      }
+      const photoY = pageHeight - 168 - photoH; // bottom-left Y of photo
+
+      // Caption above photo: "Foto do rosto (selfie) de NAME:"
+      const photoCaption = `Foto do rosto (selfie) de ${item.name}:`;
+      page.drawText(photoCaption, { x: photoX, y: photoY + photoH + 10, size: 6.5, font: helvetica, color: txtSoft });
+
       if (asset.facial) {
-        page.drawImage(asset.facial, { x: photoX + 5, y: photoY + 5, width: photoW - 10, height: photoH - 10 });
-        const wmY = photoY + photoH / 2;
-        page.drawText('- - - - - - - - - - - - - - - - - - - - - - - -', { x: photoX + 40, y: wmY + 30, size: 10, font: helvetica, color: rgb(0.25, 0.25, 0.25), opacity: 0.42 });
-        page.drawText('C O N F I D E N T I A L', { x: photoX + 80, y: wmY + 10, size: 14, font: helveticaBold, color: rgb(0.25, 0.25, 0.25), opacity: 0.42 });
-        page.drawText(signedAtStr, { x: photoX + 115, y: wmY - 10, size: 9, font: helvetica, color: rgb(0.25, 0.25, 0.25), opacity: 0.42 });
-        page.drawRectangle({ x: photoX, y: photoY, width: photoW, height: photoH, borderColor: rgb(0.6, 0.6, 0.6), borderWidth: 1, borderDashArray: [4, 4] });
+        // Subtle drop shadow
+        page.drawRectangle({ x: photoX + 3, y: photoY - 3, width: photoW, height: photoH, color: rgb(0.82, 0.86, 0.90) });
+        // White frame
+        page.drawRectangle({ x: photoX, y: photoY, width: photoW, height: photoH, color: white, borderColor: border, borderWidth: 1.2 });
+        // Image inside frame
+        const imgPad = 3;
+        page.drawImage(asset.facial, { x: photoX + imgPad, y: photoY + imgPad, width: photoW - imgPad * 2, height: photoH - imgPad * 2 });
+
+        // ── CONFIDENTIAL watermark — centered with dashed lines ──
+        const wmCenterX = photoX + imgPad + (photoW - imgPad * 2) / 2;
+        const wmCenterY = photoY + imgPad + (photoH - imgPad * 2) / 2;
+
+        // Dashed line above
+        const dashW = 5; const dashGap = 4;
+        const dLineY1 = wmCenterY + 14;
+        const dLineY2 = wmCenterY - 16;
+        const dLineX1 = photoX + imgPad + 16;
+        const dLineX2 = photoX + photoW - imgPad - 16;
+        for (let cx = dLineX1; cx < dLineX2; cx += dashW + dashGap) {
+          const ex = Math.min(cx + dashW, dLineX2);
+          page.drawLine({ start: { x: cx, y: dLineY1 }, end: { x: ex, y: dLineY1 }, thickness: 0.6, color: rgb(0.38, 0.38, 0.38), opacity: 0.22 });
+        }
+
+        // "CONFIDENTIAL" text centered
+        const confSize = 10;
+        const confText = 'CONFIDENTIAL';
+        const confW = helveticaBold.widthOfTextAtSize(confText, confSize);
+        page.drawText(confText, {
+          x: wmCenterX - confW / 2, y: wmCenterY + 2,
+          size: confSize, font: helveticaBold, color: rgb(0.30, 0.30, 0.30), opacity: 0.28,
+        });
+
+        // Date below text
+        const dtSize = 6;
+        const dtW = helvetica.widthOfTextAtSize(signedAtStr, dtSize);
+        page.drawText(signedAtStr, {
+          x: wmCenterX - dtW / 2, y: wmCenterY - 9,
+          size: dtSize, font: helvetica, color: rgb(0.30, 0.30, 0.30), opacity: 0.22,
+        });
+
+        // Dashed line below
+        for (let cx = dLineX1; cx < dLineX2; cx += dashW + dashGap) {
+          const ex = Math.min(cx + dashW, dLineX2);
+          page.drawLine({ start: { x: cx, y: dLineY2 }, end: { x: ex, y: dLineY2 }, thickness: 0.6, color: rgb(0.38, 0.38, 0.38), opacity: 0.22 });
+        }
       } else {
-        page.drawText('Selfie não coletada', { x: photoX + 100, y: photoY + photoH / 2, size: 14, font: helveticaBold, color: rgb(0.6, 0.6, 0.6) });
+        page.drawRectangle({ x: photoX, y: photoY, width: photoW, height: photoH, color: bgLight, borderColor: border, borderWidth: 1 });
+        page.drawText('Selfie nao', { x: photoX + 70, y: photoY + photoH / 2 + 8, size: 9, font: helveticaBold, color: rgb(0.70, 0.72, 0.75) });
+        page.drawText('coletada', { x: photoX + 76, y: photoY + photoH / 2 - 6, size: 9, font: helveticaBold, color: rgb(0.70, 0.72, 0.75) });
       }
 
-      let legalY = photoY - 30;
-      page.drawText('VALIDADE JURIDICA (MP 2.200-2/2001)', { x: lm, y: legalY, size: 11, font: helveticaBold, color: rgb(0.15, 0.4, 0.85) });
-      legalY -= 18;
-      page.drawText('A Medida Provisoria n 2.200-2 reconhece a validade juridica das assinaturas', { x: lm, y: legalY, size: 7.5, font: helvetica, color: rgb(0.3, 0.3, 0.3) });
-      legalY -= 11;
-      page.drawText('eletronicas e de outros meios de comprovacao da autoria e integridade documental,', { x: lm, y: legalY, size: 7.5, font: helvetica, color: rgb(0.3, 0.3, 0.3) });
-      legalY -= 11;
-      page.drawText('desde que admitidos pelas partes como validos.', { x: lm, y: legalY, size: 7.5, font: helvetica, color: rgb(0.3, 0.3, 0.3) });
-      legalY -= 18;
-      page.drawText('CÓDIGO DE AUTENTICAÇÃO:', { x: lm, y: legalY, size: 9, font: helveticaBold, color: rgb(0.2, 0.2, 0.2) });
-      legalY -= 14;
-      page.drawText(item.verification_hash || 'N/A', { x: lm, y: legalY, size: 12, font: helveticaBold, color: rgb(0.15, 0.2, 0.2) });
-      legalY -= 22;
-      page.drawText('VERIFICAR AUTENTICIDADE:', { x: lm, y: legalY, size: 9, font: helveticaBold, color: rgb(0.2, 0.2, 0.2) });
-      legalY -= 14;
-      if (asset.verificationUrl) {
-        page.drawText(asset.verificationUrl, { x: lm, y: legalY, size: 8, font: helvetica, color: rgb(0.2, 0.4, 0.7) });
+      // ── Signer data — right column ─────────────────────────────
+      const detX = photoX + photoW + 20;
+      const detW = pageWidth - lm - detX;
+      let detY = pageHeight - 148;
+
+      // Data section label
+      page.drawRectangle({ x: detX, y: detY - 2, width: 3, height: 14, color: emerald });
+      page.drawText('DADOS DO SIGNATARIO', { x: detX + 10, y: detY, size: 8, font: helveticaBold, color: txtDark });
+      detY -= 18;
+
+      const deviceStrP2 = (() => {
+        const parts = [uaP2.browser, uaP2.os, uaP2.device].filter(Boolean);
+        return parts.join(' · ') || '—';
+      })();
+      const contactStrP2 = (() => {
+        const ae = String(item.auth_email || '').trim();
+        const ph = String(item.phone || '').trim();
+        const re = String(item.email || '').trim();
+        return ae || (item.auth_provider === 'phone' ? ph : '') || (!this.isInternalPlaceholderEmail(re) ? re : '') || '—';
+      })();
+      const authStrP2 = item.auth_provider === 'google'
+        ? `Google (${item.auth_email || ''})`
+        : item.auth_provider === 'email_link' ? `E-mail (${item.auth_email || ''})`
+        : item.auth_provider === 'phone'      ? `SMS (${item.phone || ''})`
+        : 'Assinatura direta';
+
+      const dataFieldsP2: [string, string][] = [
+        ['Nome', item.name],
+        ['Papel', item.role || '—'],
+        ['Contato', contactStrP2],
+        ['CPF', item.cpf || '—'],
+        ['Endereco IP', item.signer_ip || '—'],
+        ['Localizacao', geoP2.coordinates || '—'],
+        ['Dispositivo', deviceStrP2],
+        ['Autenticacao', authStrP2],
+        ['Assinado em', signedAtStr],
+      ];
+
+      for (let fi = 0; fi < dataFieldsP2.length; fi++) {
+        if (detY < photoY + 4) break;
+        const [label, rawVal] = dataFieldsP2[fi];
+        const value = rawVal.length > 42 ? `${rawVal.slice(0, 40)}...` : rawVal;
+        const rowH = 24;
+        if (fi % 2 === 0) {
+          page.drawRectangle({ x: detX - 4, y: detY - rowH + 4, width: detW + 4, height: rowH, color: bgLight });
+        }
+        page.drawText(label.toUpperCase() + ':', { x: detX, y: detY - 3, size: 5.5, font: helveticaBold, color: txtSoft });
+        page.drawText(value, { x: detX, y: detY - 14, size: 7.5, font: helvetica, color: txtDark, maxWidth: detW });
+        detY -= rowH;
       }
+
+      // ── Certificate / integrity block — white, ZapSign-style ──
+      const legalTopY  = photoY - 18;
+      const verBlockH  = 96;
+      const verBlockW  = pageWidth - lm * 2;
+      const verBlockY  = legalTopY - verBlockH;
+
+      const cbWhite  = rgb(1, 1, 1);
+      const cbBorder = rgb(0.86, 0.89, 0.93);
+      const cbDark   = rgb(0.09, 0.12, 0.18);
+      const cbSoft   = rgb(0.45, 0.50, 0.58);
+      const cbMuted  = rgb(0.62, 0.67, 0.74);
+      const cbOrange = rgb(0.91, 0.32, 0.04);
+
+      // White background
+      page.drawRectangle({ x: lm, y: verBlockY, width: verBlockW, height: verBlockH, color: cbWhite });
+      // Top border
+      page.drawLine({ start: { x: lm, y: legalTopY }, end: { x: lm + verBlockW, y: legalTopY }, thickness: 0.6, color: cbBorder });
+      // Orange stripe
+      page.drawRectangle({ x: lm, y: legalTopY - 3, width: verBlockW, height: 3, color: cbOrange });
+      // Bottom border
+      page.drawLine({ start: { x: lm, y: verBlockY }, end: { x: lm + verBlockW, y: verBlockY }, thickness: 0.5, color: cbBorder });
+
+      // QR code — right side
+      const cbQrSize = 72;
+      const cbQrX    = lm + verBlockW - cbQrSize - 14;
+      const cbQrY    = verBlockY + (verBlockH - cbQrSize) / 2;
       if (asset.qr) {
-        page.drawImage(asset.qr, { x: pageWidth - lm - 100, y: legalY + 20, width: 90, height: 90 });
+        page.drawRectangle({ x: cbQrX - 3, y: cbQrY - 3, width: cbQrSize + 6, height: cbQrSize + 6, color: cbWhite });
+        page.drawImage(asset.qr, { x: cbQrX, y: cbQrY, width: cbQrSize, height: cbQrSize });
       }
-      legalY -= 30;
-      page.drawLine({ start: { x: lm, y: legalY }, end: { x: pageWidth - lm, y: legalY }, thickness: 0.5, color: rgb(0.85, 0.85, 0.85) });
-      legalY -= 18;
-      page.drawText(`Este registro e parte integrante do documento ID: ${request.id}`, { x: lm, y: legalY, size: 7, font: helvetica, color: rgb(0.4, 0.4, 0.4) });
-      legalY -= 10;
-      page.drawText(`Signatario: ${item.name}`, { x: lm, y: legalY, size: 7, font: helvetica, color: rgb(0.4, 0.4, 0.4) });
-      legalY -= 25;
-      page.drawRectangle({ x: lm, y: legalY, width: pageWidth - (lm * 2), height: 20, color: rgb(0.15, 0.4, 0.85) });
-      page.drawText('DOCUMENTO ASSINADO DIGITALMENTE', { x: lm + 130, y: legalY + 5, size: 12, font: helveticaBold, color: rgb(1, 1, 1) });
+
+      const vtx = lm + 14;
+
+      // Brand + title
+      page.drawText('JURIUS', { x: vtx, y: legalTopY - 18, size: 8, font: helveticaBold, color: cbDark });
+      page.drawText('·', { x: vtx + 34, y: legalTopY - 18, size: 8, font: helvetica, color: cbOrange });
+      page.drawText('Certificado de Assinatura Eletrônica', { x: vtx + 42, y: legalTopY - 18, size: 7.5, font: helvetica, color: cbSoft });
+
+      // Thin separator
+      page.drawLine({ start: { x: vtx, y: legalTopY - 26 }, end: { x: cbQrX - 8, y: legalTopY - 26 }, thickness: 0.4, color: cbBorder });
+
+      // Code row
+      page.drawText('CODIGO:', { x: vtx, y: legalTopY - 38, size: 6, font: helvetica, color: cbMuted });
+      page.drawText((item.verification_hash || 'N/A').toUpperCase(), { x: vtx + 42, y: legalTopY - 38, size: 7.5, font: helveticaBold, color: cbDark });
+
+      // SHA-256
+      const cbHash = item.verification_hash ? `${item.verification_hash.slice(0, 52)}...` : 'N/A';
+      page.drawText('SHA-256:', { x: vtx, y: legalTopY - 52, size: 6, font: helvetica, color: cbMuted });
+      page.drawText(cbHash, { x: vtx + 42, y: legalTopY - 52, size: 5.5, font: helvetica, color: cbSoft });
+
+      // Separator
+      page.drawLine({ start: { x: vtx, y: legalTopY - 60 }, end: { x: cbQrX - 8, y: legalTopY - 60 }, thickness: 0.4, color: cbBorder });
+
+      // Verification URL
+      if (asset.verificationUrl) {
+        const urlD = asset.verificationUrl.length > 80 ? `${asset.verificationUrl.slice(0, 77)}...` : asset.verificationUrl;
+        page.drawText(urlD, { x: vtx, y: verBlockY + 14, size: 5.5, font: helvetica, color: cbOrange });
+      }
+
+      // Signer note
+      page.drawText(`Signatario: ${item.name}  ·  Documento: ${request.id}`, { x: vtx, y: verBlockY + 5, size: 5, font: helvetica, color: cbMuted });
     }
 
     const historyPage = pdfDoc.addPage([pageWidth, pageHeight]);
-    createReportHeader(historyPage, 'HISTORICO');
+    createReportHeader(historyPage, 'TRILHA DE AUDITORIA');
     const createdAtDate = this.toDateValue(request.created_at) ?? new Date();
     const createdAtStr = this.formatManausDateTime(createdAtDate);
     type HistoryItem = { label: string; when: string; detail: string; sortAt: number };
@@ -739,7 +984,26 @@ class PdfSignatureService {
       const signerContact = displayContact ? ` (${displayContactLabel}: ${displayContact})` : '';
       const signerCpf = item.cpf ? `, CPF: ${item.cpf}` : '';
       const locationInfo = geo.coordinates ? ` localizado em ${geo.coordinates}${geo.address ? ` - ${geo.address}` : ''}` : '';
-      if (item.viewed_at) {
+
+      // ── View events: use audit log to capture ALL visits (multiple opens) ──
+      const viewAuditEntries = auditLogEntries.filter(
+        (e) => e.action === 'viewed' && e.signer_id === item.id
+      );
+
+      if (viewAuditEntries.length > 0) {
+        // Use audit log entries — each visit is a separate card in the timeline
+        for (const ve of viewAuditEntries) {
+          const ts = this.toDateValue(ve.created_at);
+          const ipInfo = ve.ip_address ? ` por meio do IP ${ve.ip_address}` : '';
+          history.push({
+            label: 'Visualizado',
+            when: this.formatManausDateTime(ve.created_at),
+            detail: `${item.name}${signerContact}${signerCpf} abriu o documento${ipInfo}`,
+            sortAt: ts?.getTime() ?? 0,
+          });
+        }
+      } else if (item.viewed_at) {
+        // Fallback for older records without audit log entries
         const viewedAtDate = this.toDateValue(item.viewed_at);
         history.push({
           label: 'Visualizado',
@@ -748,6 +1012,7 @@ class PdfSignatureService {
           sortAt: viewedAtDate?.getTime() ?? 0,
         });
       }
+
       if (item.signed_at) {
         const signedAtDate = this.toDateValue(item.signed_at);
         const authSummary = item.auth_provider === 'phone'
@@ -767,48 +1032,63 @@ class PdfSignatureService {
     }
 
     history.sort((a, b) => a.sortAt - b.sortAt);
-    let y = pageHeight - 120;
-    const eventGap = 18;
+
+    // Section label
+    const histSectionY = pageHeight - 132;
+    historyPage.drawRectangle({ x: lm, y: histSectionY - 2, width: 3, height: 14, color: orange });
+    historyPage.drawText('REGISTRO DE EVENTOS', { x: lm + 10, y: histSectionY, size: 8, font: helveticaBold, color: txtDark });
+    historyPage.drawLine({ start: { x: lm + 10, y: histSectionY - 6 }, end: { x: pageWidth - lm, y: histSectionY - 6 }, thickness: 0.4, color: border });
+
+    let y = pageHeight - 160;
+    const timelineX = lm + 14; // vertical line x
+    const eventGap = 10;
+
+    // Draw vertical timeline line (approximate)
+    historyPage.drawLine({ start: { x: timelineX, y: y + 8 }, end: { x: timelineX, y: 100 }, thickness: 1, color: border });
 
     for (const histItem of history) {
-      const detailLines = wrapText(histItem.detail, helvetica, 8, pageWidth - lm * 2 - 20);
-      const blockHeight = 32 + detailLines.length * 13;
-      if (y - blockHeight < 70) break;
+      const detailLines = wrapText(histItem.detail, helvetica, 7.5, pageWidth - lm * 2 - 46);
+      const blockHeight = 36 + detailLines.length * 12;
+      if (y - blockHeight < 90) break;
 
-      // Card do evento
-      historyPage.drawRectangle({
-        x: lm,
-        y: y - blockHeight,
-        width: pageWidth - lm * 2,
-        height: blockHeight,
-        color: rgb(0.98, 0.98, 0.99),
-        borderColor: rgb(0.88, 0.9, 0.92),
-        borderWidth: 1,
-      });
+      const isCreated    = histItem.label === 'Criado';
+      const isViewed     = histItem.label === 'Visualizado';
+      const isSigned     = histItem.label === 'Assinado';
 
-      // Badge de label (Criado, Visualizado, Assinado)
-      const labelColor = histItem.label === 'Assinado' ? rgb(0.15, 0.6, 0.3) : histItem.label === 'Visualizado' ? rgb(0.2, 0.45, 0.8) : rgb(0.4, 0.4, 0.5);
-      historyPage.drawRectangle({
-        x: lm + 8,
-        y: y - 20,
-        width: 58,
-        height: 14,
-        color: labelColor,
-      });
-      historyPage.drawText(histItem.label.toUpperCase(), { x: lm + 12, y: y - 17, size: 7, font: helveticaBold, color: rgb(1, 1, 1) });
+      // Accent color for this event
+      const viewedColor = rgb(0.35, 0.40, 0.52);   // slate — neutral, no strong blue
+      const dotColor  = isSigned ? emerald : isViewed ? viewedColor : isCreated ? orange : txtSoft;
+      const badgeBg   = isSigned ? emerald : isViewed ? viewedColor : isCreated ? orange : navyMid;
 
-      // Data/hora ao lado do badge
-      historyPage.drawText(histItem.when, { x: lm + 74, y: y - 17, size: 8, font: helvetica, color: rgb(0.35, 0.35, 0.35) });
+      // Timeline dot (circle via rectangle, approximate)
+      historyPage.drawRectangle({ x: timelineX - 5, y: y - 5, width: 10, height: 10, color: dotColor, borderColor: white, borderWidth: 1.5 });
 
-      // Detalhes abaixo
-      let detailY = y - 34;
-      for (const line of detailLines.slice(0, 6)) {
-        historyPage.drawText(line, { x: lm + 12, y: detailY, size: 8, font: helvetica, color: rgb(0.25, 0.25, 0.25) });
-        detailY -= 13;
+      // Event card
+      const cardX = timelineX + 16;
+      const cardW = pageWidth - lm - cardX - lm + lm;
+      historyPage.drawRectangle({ x: cardX, y: y - blockHeight, width: cardW, height: blockHeight, color: bgLight, borderColor: border, borderWidth: 0.6 });
+      // Left color accent per event type
+      historyPage.drawRectangle({ x: cardX, y: y - blockHeight, width: 3, height: blockHeight, color: dotColor });
+
+      // Badge + timestamp on same line
+      historyPage.drawRectangle({ x: cardX + 8, y: y - 20, width: 62, height: 14, color: badgeBg });
+      historyPage.drawText(histItem.label.toUpperCase(), { x: cardX + 11, y: y - 16, size: 6.5, font: helveticaBold, color: white });
+      historyPage.drawText(histItem.when, { x: cardX + 78, y: y - 16, size: 7.5, font: helvetica, color: txtMid });
+
+      // Detail lines
+      let detailY = y - 33;
+      for (const line of detailLines.slice(0, 5)) {
+        historyPage.drawText(line, { x: cardX + 8, y: detailY, size: 7.5, font: helvetica, color: txtDark });
+        detailY -= 12;
       }
 
       y -= blockHeight + eventGap;
     }
+
+    // Footer note on history page
+    historyPage.drawLine({ start: { x: lm, y: 88 }, end: { x: pageWidth - lm, y: 88 }, thickness: 0.4, color: border });
+    historyPage.drawText('Este registro de auditoria e parte integrante do certificado de assinatura. Todas as datas em UTC-0400 (America/Manaus).', { x: lm, y: 76, size: 6.5, font: helvetica, color: txtSoft });
+    historyPage.drawText(`Documento: ${request.id}  ·  Jurius CRM`, { x: lm, y: 64, size: 6, font: helvetica, color: silver });
   }
 
   async generateSignedPdf(options: SignedPdfOptions): Promise<Uint8Array> {

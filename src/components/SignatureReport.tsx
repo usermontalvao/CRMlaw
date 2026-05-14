@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { CheckCircle, Download, FileText, MapPin, Monitor, Scale, Shield, User } from 'lucide-react';
+import { CheckCircle, Download, FileText, Shield, User, Clock, Hash, X } from 'lucide-react';
 import QRCode from 'qrcode';
 import type { Signer, SignatureRequest } from '../types/signature.types';
 import { supabase } from '../config/supabase';
@@ -11,516 +11,385 @@ interface SignatureReportProps {
   onClose?: () => void;
 }
 
-// Formatar data no padrão brasileiro com timezone
-const formatDateTime = (dateStr: string): string => {
-  const date = new Date(dateStr);
-  return date.toLocaleString('pt-BR', {
-    timeZone: 'America/Manaus',
-    day: '2-digit',
-    month: 'long',
-    year: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-    second: '2-digit',
-  });
+const fmtFull = (d: string) =>
+  new Date(d).toLocaleString('pt-BR', { timeZone: 'America/Manaus', day: '2-digit', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit', second: '2-digit' });
+
+const fmtShort = (d: string) =>
+  new Date(d).toLocaleString('pt-BR', { timeZone: 'America/Manaus', day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+
+const parseUA = (ua: string) => ({
+  device:  /iPad|Tablet/i.test(ua) ? 'Tablet' : /Mobile|Android|iPhone/i.test(ua) ? 'Mobile' : 'Desktop',
+  browser: /Edg\//i.test(ua) ? 'Edge' : /OPR\//i.test(ua) ? 'Opera' : /Firefox\//i.test(ua) ? 'Firefox' : /Chrome\//i.test(ua) ? 'Chrome' : /Safari\//i.test(ua) ? 'Safari' : 'Navegador',
+  os:      /Windows/i.test(ua) ? 'Windows' : /Mac OS X/i.test(ua) && !/iPhone|iPad/i.test(ua) ? 'macOS' : /Android/i.test(ua) ? 'Android' : /iPhone/i.test(ua) ? 'iOS' : /iPad/i.test(ua) ? 'iPadOS' : /Linux/i.test(ua) ? 'Linux' : 'SO',
+});
+
+const isPlaceholder = (e?: string | null) => {
+  const s = (e || '').trim().toLowerCase();
+  return s.startsWith('public+') && s.endsWith('@crm.local');
 };
 
-const formatDateTimeShort = (dateStr: string): string => {
-  const date = new Date(dateStr);
-  return date.toLocaleString('pt-BR', {
-    timeZone: 'America/Manaus',
-    day: '2-digit',
-    month: '2-digit',
-    year: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-    second: '2-digit',
-  });
-};
+/* ── Linha de dado da tabela ── */
+const DataRow: React.FC<{ label: string; value: React.ReactNode; mono?: boolean; last?: boolean }> = ({ label, value, mono, last }) => (
+  <div className="flex items-start gap-3 py-2" style={{ borderBottom: last ? 'none' : '1px solid #f1f5f9' }}>
+    <span className="flex-shrink-0 text-[11px] font-semibold" style={{ color: '#94a3b8', minWidth: 108 }}>{label}</span>
+    <span className={`flex-1 text-right text-[11.5px] break-all leading-snug ${mono ? 'font-mono' : 'font-medium'}`} style={{ color: '#1e293b' }}>
+      {value}
+    </span>
+  </div>
+);
 
-// Parsear User Agent
-const parseUserAgent = (ua: string): { device: string; browser: string; os: string } => {
-  let device = 'Desktop';
-  let browser = 'Navegador';
-  let os = 'Sistema';
-
-  if (ua.includes('Mobile') || ua.includes('Android')) device = 'Mobile';
-  if (ua.includes('Tablet') || ua.includes('iPad')) device = 'Tablet';
-
-  if (ua.includes('Chrome')) browser = 'Chrome';
-  else if (ua.includes('Firefox')) browser = 'Firefox';
-  else if (ua.includes('Safari')) browser = 'Safari';
-  else if (ua.includes('Edge')) browser = 'Edge';
-  else if (ua.includes('SamsungBrowser')) browser = 'Samsung Browser';
-
-  if (ua.includes('Windows')) os = 'Windows';
-  else if (ua.includes('Mac')) os = 'macOS';
-  else if (ua.includes('Linux')) os = 'Linux';
-  else if (ua.includes('Android')) os = 'Android';
-  else if (ua.includes('iOS') || ua.includes('iPhone')) os = 'iOS';
-
-  return { device, browser, os };
-};
-
-// Formatar token para exibição (ocultar parte do meio se tiver hífen)
-const formatToken = (token: string | null | undefined): string | null => {
-  if (!token) return null;
-  // Se não tiver hífen, não exibir
-  if (!token.includes('-')) return null;
-  // Exibir apenas início e fim
-  return `${token.slice(0, 8)}****${token.slice(-4)}`;
-};
-
-const isInternalPlaceholderEmail = (email: string | null | undefined): boolean => {
-  const e = String(email || '').trim().toLowerCase();
-  if (!e) return false;
-  return e.startsWith('public+') && e.endsWith('@crm.local');
-};
+/* ── Label de seção ── */
+const SectionLabel: React.FC<{ children: React.ReactNode }> = ({ children }) => (
+  <div className="flex items-center gap-2 mb-3">
+    <div className="w-[3px] h-[13px] rounded-full flex-shrink-0" style={{ background: '#ea580c' }} />
+    <span className="text-[10px] font-bold uppercase tracking-[0.18em]" style={{ color: '#94a3b8' }}>{children}</span>
+  </div>
+);
 
 const SignatureReport: React.FC<SignatureReportProps> = ({ signer, request, creator, onClose }) => {
-  const [signatureImageUrl, setSignatureImageUrl] = useState<string | null>(null);
-  const [facialImageUrl, setFacialImageUrl] = useState<string | null>(null);
-  const [qrCodeDataUrl, setQrCodeDataUrl] = useState<string | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [sigUrl,    setSigUrl]    = useState<string | null>(null);
+  const [faceUrl,   setFaceUrl]   = useState<string | null>(null);
+  const [qrDataUrl, setQrDataUrl] = useState<string | null>(null);
+  const [loading,   setLoading]   = useState(true);
 
-  const verificationUrl = signer.verification_hash 
+  const verificationUrl = signer.verification_hash
     ? `${window.location.origin}/#/verificar/${signer.verification_hash}`
     : null;
 
   useEffect(() => {
-    const loadData = async () => {
+    (async () => {
       try {
-        // Função para tentar múltiplos buckets
-        const tryGetSignedUrl = async (path: string): Promise<string | null> => {
-          const buckets = ['document-templates', 'generated-documents', 'signatures'];
-          for (const bucket of buckets) {
+        const getUrl = async (path: string) => {
+          for (const b of ['document-templates', 'generated-documents', 'signatures']) {
             try {
-              const { data, error } = await supabase.storage.from(bucket).createSignedUrl(path, 3600);
+              const { data, error } = await supabase.storage.from(b).createSignedUrl(path, 3600);
               if (!error && data?.signedUrl) return data.signedUrl;
-            } catch { /* continuar */ }
+            } catch { /* skip */ }
           }
           return null;
         };
-        
-        // Carregar imagem da assinatura
-        if (signer.signature_image_path) {
-          const url = await tryGetSignedUrl(signer.signature_image_path);
-          if (url) setSignatureImageUrl(url);
-        }
-        // Carregar foto facial
-        if (signer.facial_image_path) {
-          const url = await tryGetSignedUrl(signer.facial_image_path);
-          if (url) setFacialImageUrl(url);
-        }
-        // Gerar QR Code
+        if (signer.signature_image_path) setSigUrl(await getUrl(signer.signature_image_path));
+        if (signer.facial_image_path)    setFaceUrl(await getUrl(signer.facial_image_path));
         if (verificationUrl) {
-          const qrDataUrl = await QRCode.toDataURL(verificationUrl, {
-            width: 150,
-            margin: 1,
-            color: { dark: '#000000', light: '#ffffff' }
-          });
-          setQrCodeDataUrl(qrDataUrl);
+          setQrDataUrl(await QRCode.toDataURL(verificationUrl, { width: 200, margin: 1, color: { dark: '#0f172a', light: '#ffffff' } }));
         }
-      } catch (e) {
-        console.error('Erro ao carregar dados:', e);
-      } finally {
-        setLoading(false);
-      }
-    };
-    loadData();
-  }, [signer, verificationUrl]);
+      } finally { setLoading(false); }
+    })();
+  }, []);
 
-  const uaInfo = signer.signer_user_agent ? parseUserAgent(signer.signer_user_agent) : null;
-  
-  const geoCoords = signer.signer_geolocation?.split(',').map(s => s.trim());
-  const latitude = geoCoords?.[0] || null;
-  const longitude = geoCoords?.[1] || null;
+  const ua      = signer.signer_user_agent ? parseUA(signer.signer_user_agent) : null;
+  const geo     = signer.signer_geolocation?.split(',').map(s => s.trim());
+  const contact = (() => {
+    const ae = (signer.auth_email || '').trim();
+    const ph = (signer.phone || '').trim();
+    const re = (signer.email || '').trim();
+    return ae || (signer.auth_provider === 'phone' ? ph : '') || (!isPlaceholder(re) ? re : '') || '';
+  })();
 
-  const formattedToken = formatToken(signer.public_token);
+  const authItems: string[] = [];
+  if (signer.signature_image_path)  authItems.push('Assinatura manuscrita');
+  if (signer.facial_image_path)     authItems.push('Biometria facial');
+  if (signer.auth_provider === 'google')      authItems.push(`Google OAuth 2.0`);
+  if (signer.auth_provider === 'email_link')  authItems.push(`E-mail OTP`);
+  if (signer.auth_provider === 'phone')       authItems.push(`SMS OTP`);
+  if (signer.signer_geolocation)    authItems.push('Geolocalização GPS');
+  if (signer.signer_ip)             authItems.push('IP registrado');
 
-  const handlePrint = () => {
-    window.print();
-  };
-
-  const handleDownloadPDF = () => {
-    // Abre janela de impressão que permite salvar como PDF
-    window.print();
-  };
-
-  if (loading) {
-    return (
-      <div className="min-h-screen bg-white flex items-center justify-center">
-        <div className="animate-spin w-8 h-8 border-4 border-orange-600 border-t-transparent rounded-full" />
+  if (loading) return (
+    <div className="min-h-screen flex items-center justify-center" style={{ background: '#f1f5f9' }}>
+      <div className="flex flex-col items-center gap-3">
+        <div className="w-8 h-8 rounded-full border-[3px] border-t-transparent animate-spin"
+          style={{ borderColor: '#ea580c', borderTopColor: 'transparent' }} />
+        <p className="text-[13px]" style={{ color: '#94a3b8' }}>Carregando certificado…</p>
       </div>
-    );
-  }
+    </div>
+  );
 
   return (
-    <div className="min-h-screen bg-gray-100 print:bg-white">
-      {/* Header com ações (não imprime) */}
-      <div className="bg-white border-b border-gray-200 px-4 sm:px-6 py-3 sm:py-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 print:hidden sticky top-0 z-10">
-        <div className="flex items-center gap-3 min-w-0">
-          <Scale className="w-6 h-6 text-orange-600" />
-          <span className="font-bold text-lg text-gray-800 truncate">Relatório de Assinatura</span>
-        </div>
-        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 sm:gap-3 w-full sm:w-auto">
-          <button
-            onClick={handleDownloadPDF}
-            className="w-full sm:w-auto flex items-center justify-center gap-2 px-4 py-2 bg-orange-600 text-white rounded-lg hover:bg-orange-700 transition"
-          >
-            <Download className="w-4 h-4" />
-            Baixar PDF
-          </button>
-          {onClose && (
-            <button
-              onClick={onClose}
-              className="w-full sm:w-auto px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition"
-            >
-              Fechar
+    <div className="min-h-screen print:bg-white" style={{ background: '#e8edf2' }}>
+
+      {/* ── Toolbar ── */}
+      <div className="print:hidden sticky top-0 z-20"
+        style={{ background: 'white', borderBottom: '1px solid #e2e8f0', boxShadow: '0 1px 4px rgba(15,23,42,0.07)' }}>
+        <div className="max-w-6xl mx-auto px-5 h-[52px] flex items-center justify-between gap-3">
+          <div className="flex items-center gap-2">
+            <div className="w-[5px] h-[5px] rounded-full" style={{ background: '#ea580c' }} />
+            <span className="text-[13px] font-bold" style={{ color: '#0f172a' }}>JURIUS</span>
+            <span className="text-[12px]" style={{ color: '#94a3b8' }}>· Certificado de Assinatura</span>
+            <span className="hidden sm:inline text-[12px] truncate max-w-[300px]" style={{ color: '#cbd5e1' }}>
+              · {request.document_name}
+            </span>
+          </div>
+          <div className="flex items-center gap-2">
+            <button onClick={() => window.print()}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-white text-[12px] font-semibold transition"
+              style={{ background: '#ea580c' }}>
+              <Download className="w-3.5 h-3.5" />
+              <span className="hidden sm:inline">Imprimir / PDF</span>
+              <span className="sm:hidden">PDF</span>
             </button>
-          )}
+            {onClose && (
+              <button onClick={onClose} className="w-[30px] h-[30px] rounded-lg flex items-center justify-center transition"
+                style={{ border: '1px solid #e2e8f0', color: '#94a3b8' }}>
+                <X className="w-4 h-4" />
+              </button>
+            )}
+          </div>
         </div>
       </div>
 
-      {/* Conteúdo do relatório */}
-      <div className="max-w-4xl mx-auto p-4 sm:p-8 print:p-0 print:max-w-none">
-        <div className="bg-white shadow-lg print:shadow-none rounded-lg print:rounded-none overflow-hidden">
-          
-          {/* Cabeçalho do relatório */}
-          <div className="bg-gradient-to-r from-orange-600 to-amber-600 text-white p-4 sm:p-6 print:bg-orange-600">
-            <div className="flex flex-col sm:flex-row items-start sm:items-start justify-between gap-4">
-              <div className="min-w-0">
-                <div className="flex items-center gap-3 mb-2">
-                  <Scale className="w-8 h-8" />
-                  <span className="text-2xl font-bold">Jurius CRM</span>
-                </div>
-                <h1 className="text-xl font-semibold">Relatório de Assinaturas</h1>
-                <p className="text-orange-100 text-sm mt-1">
-                  Datas e horários em UTC-0400 (America/Manaus)
+      <div className="max-w-6xl mx-auto px-4 sm:px-6 py-6 print:p-0 print:max-w-none">
+
+        {/* ════ CABEÇALHO ════ */}
+        <div className="rounded-2xl overflow-hidden mb-4 print:rounded-none"
+          style={{ background: '#0f172a', boxShadow: '0 2px 12px rgba(15,23,42,0.18)' }}>
+          {/* Faixa laranja */}
+          <div className="h-[4px]" style={{ background: 'linear-gradient(90deg, #9a3412, #ea580c, #f97316)' }} />
+          <div className="px-6 sm:px-8 py-5 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+            <div className="flex items-center gap-3">
+              <div className="w-[4px] h-[40px] rounded-full flex-shrink-0" style={{ background: '#ea580c' }} />
+              <div>
+                <p className="text-[10px] font-bold uppercase tracking-[0.22em] mb-0.5" style={{ color: '#ea580c' }}>JURIUS CRM</p>
+                <h1 className="text-[17px] font-bold leading-tight" style={{ color: 'white' }}>
+                  Certificado de Assinatura Eletrônica
+                </h1>
+                <p className="text-[10.5px] mt-0.5" style={{ color: '#475569' }}>
+                  MP 2.200-2/2001 · Lei 14.063/2020 · ICP-Brasil
                 </p>
               </div>
-              <div className="text-left sm:text-right text-sm">
-                <p className="text-orange-100">Última atualização em</p>
-                <p className="font-semibold">{formatDateTime(new Date().toISOString())}</p>
+            </div>
+            <div className="flex items-center gap-3">
+              <div className="text-right hidden sm:block">
+                <p className="text-[10px] font-bold uppercase tracking-wider mb-0.5" style={{ color: '#475569' }}>Emitido em</p>
+                <p className="text-[12px] font-medium" style={{ color: '#94a3b8' }}>{fmtShort(new Date().toISOString())}</p>
+              </div>
+              <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-full flex-shrink-0"
+                style={{ background: 'rgba(16,185,129,0.12)', border: '1px solid rgba(16,185,129,0.25)' }}>
+                <div className="w-[6px] h-[6px] rounded-full" style={{ background: '#10b981' }} />
+                <span className="text-[10px] font-bold uppercase tracking-wider" style={{ color: '#34d399' }}>
+                  Assinado · Válido
+                </span>
               </div>
             </div>
           </div>
+        </div>
 
-          {/* Informações do documento */}
-          <div className="p-4 sm:p-6 border-b border-gray-200">
-            <div className="flex flex-col sm:flex-row items-start gap-4">
-              <div className="w-12 h-12 bg-orange-100 rounded-xl flex items-center justify-center flex-shrink-0">
-                <FileText className="w-6 h-6 text-orange-700" />
+        {/* ════ GRID PRINCIPAL — 2 colunas no desktop ════ */}
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+
+          {/* ── COLUNA ESQUERDA (2/3) ── */}
+          <div className="lg:col-span-2 flex flex-col gap-4">
+
+            {/* Card: Documento */}
+            <div className="bg-white rounded-2xl print:rounded-none overflow-hidden"
+              style={{ border: '1px solid #e8edf2', boxShadow: '0 1px 4px rgba(15,23,42,0.05)' }}>
+              <div className="px-5 py-4 flex items-center gap-2" style={{ borderBottom: '1px solid #f1f5f9' }}>
+                <SectionLabel>Documento</SectionLabel>
               </div>
-              <div className="flex-1 min-w-0">
-                <h2 className="text-xl font-bold text-gray-800 break-words">{request.document_name}</h2>
-                <p className="text-sm text-gray-500 mt-1 font-mono">
-                  Documento número {request.id}
-                </p>
-                {creator && (
-                  <p className="text-sm text-gray-500 mt-1">
-                    Criado por: <span className="font-medium">{creator.name}</span> ({creator.email})
+              <div className="px-5 py-4 flex items-start gap-3">
+                <div className="w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0 mt-0.5"
+                  style={{ background: '#fff7ed', border: '1px solid #fed7aa' }}>
+                  <FileText className="w-[17px] h-[17px]" style={{ color: '#ea580c' }} />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="font-bold text-[15px] break-words leading-snug" style={{ color: '#0f172a' }}>
+                    {request.document_name}
                   </p>
-                )}
+                  <p className="text-[11px] font-mono mt-1" style={{ color: '#94a3b8' }}>ID: {request.id}</p>
+                  {creator && (
+                    <p className="text-[12px] mt-0.5" style={{ color: '#64748b' }}>
+                      Solicitado por <strong style={{ color: '#334155' }}>{creator.name}</strong>
+                    </p>
+                  )}
+                </div>
               </div>
             </div>
-          </div>
 
-          {/* Seção de Assinaturas */}
-          <div className="p-4 sm:p-6">
-            <h3 className="text-lg font-bold text-gray-800 mb-6 flex items-center gap-2">
-              <Shield className="w-5 h-5 text-orange-600" />
-              Assinaturas
-            </h3>
-
-            {/* Card do signatário */}
-            <div className="border border-gray-200 rounded-xl overflow-hidden">
-              {/* Header do signatário */}
-              <div className="bg-gray-50 px-4 sm:px-6 py-4 border-b border-gray-200">
-                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-                  <div className="flex items-center gap-3 min-w-0">
-                    <div className="w-10 h-10 bg-orange-100 rounded-full flex items-center justify-center">
-                      <User className="w-5 h-5 text-orange-700" />
-                    </div>
-                    <div className="min-w-0">
-                      <h4 className="font-bold text-gray-800 break-words">{signer.name}</h4>
-                      {signer.role && <p className="text-sm text-gray-500">{signer.role}</p>}
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-2 px-3 py-1.5 bg-orange-100 text-orange-800 rounded-full text-sm font-medium self-start sm:self-auto">
-                    <CheckCircle className="w-4 h-4" />
-                    Assinou
-                  </div>
-                </div>
+            {/* Card: Signatário */}
+            <div className="bg-white rounded-2xl print:rounded-none overflow-hidden"
+              style={{ border: '1px solid #e8edf2', boxShadow: '0 1px 4px rgba(15,23,42,0.05)' }}>
+              <div className="px-5 py-4" style={{ borderBottom: '1px solid #f1f5f9' }}>
+                <SectionLabel>Signatário</SectionLabel>
               </div>
 
-              {/* Detalhes da assinatura */}
-              <div className="p-4 sm:p-6 space-y-6">
-                {/* Métodos de Autenticação */}
-                <div className="bg-slate-50 rounded-xl p-4 border border-slate-200">
-                  <h5 className="text-sm font-bold text-gray-800 mb-4 flex items-center gap-2">
-                    <Shield className="w-4 h-4 text-orange-600" />
-                    Métodos de Autenticação Utilizados
-                  </h5>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                    {/* Assinatura Manual */}
-                    {signer.signature_image_path && (
-                      <div className="flex items-start gap-3 p-3 bg-white rounded-lg border border-orange-200">
-                        <CheckCircle className="w-5 h-5 text-orange-600 flex-shrink-0 mt-0.5" />
-                        <div>
-                          <p className="font-medium text-gray-800 text-sm">Assinatura Manual</p>
-                          <p className="text-xs text-gray-500">Assinatura digital desenhada na tela</p>
-                        </div>
-                      </div>
-                    )}
-
-                    {/* Selfie / Verificação Facial */}
-                    {signer.facial_image_path && (
-                      <div className="flex items-start gap-3 p-3 bg-white rounded-lg border border-orange-200">
-                        <CheckCircle className="w-5 h-5 text-orange-600 flex-shrink-0 mt-0.5" />
-                        <div>
-                          <p className="font-medium text-gray-800 text-sm">Selfie</p>
-                          <p className="text-xs text-gray-500">Foto do rosto capturada para verificação</p>
-                        </div>
-                      </div>
-                    )}
-
-                    {/* Email autenticado (quando existir) */}
-                    {signer.auth_email && (
-                      <div className="flex items-start gap-3 p-3 bg-white rounded-lg border border-orange-200">
-                        <CheckCircle className="w-5 h-5 text-orange-600 flex-shrink-0 mt-0.5" />
-                        <div>
-                          <p className="font-medium text-gray-800 text-sm">E-mail</p>
-                          <p className="text-xs text-gray-500">Autenticado: <span className="font-mono">{signer.auth_email}</span></p>
-                        </div>
-                      </div>
-                    )}
-
-                    {/* Telefone */}
-                    {signer.auth_provider === 'phone' && signer.phone && (
-                      <div className="flex items-start gap-3 p-3 bg-white rounded-lg border border-orange-200">
-                        <CheckCircle className="w-5 h-5 text-orange-600 flex-shrink-0 mt-0.5" />
-                        <div>
-                          <p className="font-medium text-gray-800 text-sm">Telefone</p>
-                          <p className="text-xs text-gray-500">Autenticado: <span className="font-mono">{signer.phone}</span></p>
-                        </div>
-                      </div>
-                    )}
-
-                    {/* Geolocalização */}
-                    {signer.signer_geolocation && (
-                      <div className="flex items-start gap-3 p-3 bg-white rounded-lg border border-amber-200">
-                        <CheckCircle className="w-5 h-5 text-amber-500 flex-shrink-0 mt-0.5" />
-                        <div>
-                          <p className="font-medium text-gray-800 text-sm">Geolocalização</p>
-                          <p className="text-xs text-gray-500">Coordenadas capturadas automaticamente</p>
-                        </div>
-                      </div>
-                    )}
-
-                    {/* IP */}
-                    {signer.signer_ip && (
-                      <div className="flex items-start gap-3 p-3 bg-white rounded-lg border border-slate-200">
-                        <CheckCircle className="w-5 h-5 text-slate-500 flex-shrink-0 mt-0.5" />
-                        <div>
-                          <p className="font-medium text-gray-800 text-sm">Endereço IP</p>
-                          <p className="text-xs text-gray-500">Registrado: <span className="font-mono">{signer.signer_ip}</span></p>
-                        </div>
-                      </div>
-                    )}
+              {/* Perfil */}
+              <div className="px-5 py-4 flex items-center gap-3" style={{ borderBottom: '1px solid #f8fafc' }}>
+                {faceUrl ? (
+                  <div className="relative w-12 h-12 flex-shrink-0">
+                    <img src={faceUrl} alt="Foto" className="w-12 h-12 rounded-xl object-cover"
+                      style={{ border: '2px solid #f1f5f9', transform: 'scaleX(-1)' }} />
+                    <div className="absolute -bottom-1 -right-1 w-[18px] h-[18px] rounded-full flex items-center justify-center"
+                      style={{ background: '#10b981', border: '2px solid white' }}>
+                      <CheckCircle className="w-2.5 h-2.5 text-white" />
+                    </div>
                   </div>
+                ) : (
+                  <div className="relative w-12 h-12 rounded-xl flex items-center justify-center flex-shrink-0"
+                    style={{ background: '#f1f5f9', border: '1px solid #e2e8f0' }}>
+                    <User className="w-5 h-5" style={{ color: '#94a3b8' }} />
+                    <div className="absolute -bottom-1 -right-1 w-[18px] h-[18px] rounded-full flex items-center justify-center"
+                      style={{ background: '#10b981', border: '2px solid white' }}>
+                      <CheckCircle className="w-2.5 h-2.5 text-white" />
+                    </div>
+                  </div>
+                )}
+                <div className="flex-1 min-w-0">
+                  <p className="font-bold text-[15px]" style={{ color: '#0f172a' }}>{signer.name}</p>
+                  {signer.role && <p className="text-[12px]" style={{ color: '#64748b' }}>{signer.role}</p>}
+                  {contact && <p className="text-[12px]" style={{ color: '#94a3b8' }}>{contact}</p>}
                 </div>
-
-                {/* Grid de informações */}
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  {/* IP e Geolocalização */}
-                  <div className="bg-gray-50 rounded-lg p-4">
-                    <div className="flex items-center gap-2 text-gray-700 mb-2">
-                      <MapPin className="w-4 h-4" />
-                      <span className="font-medium text-sm">Localização</span>
-                    </div>
-                    <div className="space-y-1 text-sm">
-                      {signer.signer_ip && (
-                        <p><span className="text-gray-500">IP:</span> <span className="font-mono">{signer.signer_ip}</span></p>
-                      )}
-                      {latitude && longitude && (
-                        <p><span className="text-gray-500">Coordenadas:</span> <span className="font-mono">{latitude}, {longitude}</span></p>
-                      )}
-                    </div>
-                  </div>
-
-                  {/* Dispositivo */}
-                  <div className="bg-gray-50 rounded-lg p-4">
-                    <div className="flex items-center gap-2 text-gray-700 mb-2">
-                      <Monitor className="w-4 h-4" />
-                      <span className="font-medium text-sm">Dispositivo</span>
-                    </div>
-                    {uaInfo && (
-                      <div className="space-y-1 text-sm">
-                        <p><span className="text-gray-500">Tipo:</span> {uaInfo.device}</p>
-                        <p><span className="text-gray-500">Navegador:</span> {uaInfo.browser}</p>
-                        <p><span className="text-gray-500">Sistema:</span> {uaInfo.os}</p>
-                      </div>
-                    )}
-                    {signer.signer_user_agent && (
-                      <p className="text-xs text-gray-400 mt-2 break-all">{signer.signer_user_agent}</p>
-                    )}
-                  </div>
-                </div>
-
-                {/* Data e hora */}
-                <div className="bg-orange-50 rounded-lg p-4">
-                  <p className="text-sm">
-                    <span className="text-gray-600">Data e hora:</span>{' '}
-                    <span className="font-semibold text-gray-800">
-                      {signer.signed_at ? formatDateTime(signer.signed_at) : 'N/A'}
-                    </span>
+                <div className="flex-shrink-0 text-right">
+                  <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-bold"
+                    style={{ background: '#f0fdf4', border: '1px solid #bbf7d0', color: '#15803d' }}>
+                    <CheckCircle className="w-3 h-3" />
+                    Assinado
+                  </span>
+                  <p className="text-[11px] mt-1" style={{ color: '#94a3b8' }}>
+                    {signer.signed_at ? fmtShort(signer.signed_at) : '—'}
                   </p>
                 </div>
-
-                {/* Contatos */}
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
-                  <div>
-                    <span className="text-gray-500">Contato do signatário:</span>{' '}
-                    <span className="text-gray-800">
-                      {(() => {
-                        const authEmail = String(signer.auth_email || '').trim();
-                        const phone = String(signer.phone || '').trim();
-                        const rawEmail = String(signer.email || '').trim();
-                        const displayContact =
-                          authEmail ||
-                          (signer.auth_provider === 'phone' ? phone : '') ||
-                          (!isInternalPlaceholderEmail(rawEmail) ? rawEmail : '');
-                        return displayContact || '—';
-                      })()}
-                    </span>
-                  </div>
-                  {signer.auth_email && signer.auth_email !== signer.email && (
-                    <div>
-                      <span className="text-gray-500">E-mail autenticado:</span>{' '}
-                      <span className="text-gray-800">{signer.auth_email}</span>
-                    </div>
-                  )}
-                  {signer.auth_provider === 'phone' && signer.phone && (
-                    <div>
-                      <span className="text-gray-500">Telefone:</span>{' '}
-                      <span className="text-gray-800">{signer.phone}</span>
-                    </div>
-                  )}
-                  {signer.cpf && (
-                    <div>
-                      <span className="text-gray-500">CPF:</span>{' '}
-                      <span className="text-gray-800">{signer.cpf}</span>
-                    </div>
-                  )}
-                  {formattedToken && (
-                    <div>
-                      <span className="text-gray-500">Token:</span>{' '}
-                      <span className="font-mono text-gray-800 break-all">{formattedToken}</span>
-                    </div>
-                  )}
-                </div>
-
-                {/* Imagem da assinatura */}
-                {signatureImageUrl && (
-                  <div className="border border-gray-200 rounded-lg p-4">
-                    <p className="text-sm font-medium text-gray-700 mb-3">Assinatura de {signer.name}</p>
-                    <div className="bg-white border border-gray-100 rounded-lg p-4 inline-block max-w-full">
-                      <img 
-                        src={signatureImageUrl} 
-                        alt="Assinatura" 
-                        className="max-h-24 max-w-full object-contain"
-                      />
-                    </div>
-                  </div>
-                )}
-
-                {/* Foto facial com marca d'água */}
-                {facialImageUrl && (
-                  <div className="border border-gray-200 rounded-lg p-4">
-                    <p className="text-sm font-medium text-gray-700 mb-3">Foto do rosto (selfie) de {signer.name}:</p>
-                    <div className="relative inline-block">
-                      <img 
-                        src={facialImageUrl} 
-                        alt="Foto facial" 
-                        className="w-40 h-40 sm:w-48 sm:h-48 object-cover rounded-lg"
-                        style={{ transform: 'scaleX(-1)' }}
-                      />
-                      {/* Marca d'água CONFIDENTIAL */}
-                      <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/30 rounded-lg">
-                        <div className="text-white text-center font-mono text-xs leading-relaxed">
-                          <p>— — — — — — — — — — — —</p>
-                          <p className="font-bold text-sm tracking-widest my-1">C O N F I D E N T I A L</p>
-                          <p>{signer.signed_at ? formatDateTimeShort(signer.signed_at) : ''}</p>
-                          <p>— — — — — — — — — — — —</p>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                )}
               </div>
-            </div>
 
-          </div>
+              {/* Tabela de dados técnicos */}
+              <div className="px-5 py-3">
+                {[
+                  signer.cpf                        && { k: 'CPF',         v: signer.cpf,                                   mono: true  },
+                  signer.signed_at                  && { k: 'Data/Hora',   v: fmtFull(signer.signed_at),                    mono: false },
+                  signer.signer_ip                  && { k: 'IP',          v: signer.signer_ip,                             mono: true  },
+                  geo?.[0] && geo?.[1]              && { k: 'Coordenadas', v: `${geo[0]}, ${geo[1]}`,                       mono: true  },
+                  ua                                && { k: 'Dispositivo', v: `${ua.device} · ${ua.browser} · ${ua.os}`,   mono: false },
+                ].filter(Boolean).map((row: any, i, arr) => (
+                  <DataRow key={i} label={row.k} value={row.v} mono={row.mono} last={i === arr.length - 1} />
+                ))}
+              </div>
 
-          {/* Rodapé com verificação */}
-          <div className="bg-gray-50 p-4 sm:p-6 border-t border-gray-200">
-            <div className="flex flex-col md:flex-row items-start md:items-center gap-6">
-              {/* QR Code */}
-              {qrCodeDataUrl && (
-                <div className="flex-shrink-0">
-                  <img 
-                    src={qrCodeDataUrl} 
-                    alt="QR Code de verificação"
-                    className="w-28 h-28 sm:w-32 sm:h-32 bg-white p-2 rounded-lg border border-gray-200"
-                  />
+              {/* Fatores de autenticação */}
+              {authItems.length > 0 && (
+                <div className="px-5 pb-4" style={{ borderTop: '1px solid #f8fafc' }}>
+                  <p className="text-[10px] font-bold uppercase tracking-[0.14em] mt-3 mb-2" style={{ color: '#94a3b8' }}>
+                    Fatores de autenticação
+                  </p>
+                  <div className="flex flex-wrap gap-1.5">
+                    {authItems.map((a, i) => (
+                      <span key={i} className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10.5px] font-medium"
+                        style={{ background: '#f0fdf4', border: '1px solid #bbf7d0', color: '#15803d' }}>
+                        <CheckCircle className="w-2.5 h-2.5 flex-shrink-0" />
+                        {a}
+                      </span>
+                    ))}
+                  </div>
                 </div>
               )}
 
-              {/* Informações de verificação */}
-              <div className="flex-1 space-y-3 text-sm">
-                <p className="text-gray-600">
-                  <span className="font-semibold text-gray-800">Jurius CRM</span> {request.id}.{' '}
-                  Documento assinado eletronicamente, conforme MP 2.200-2/2001 e Lei 14.063/2020.
-                </p>
-
-                {verificationUrl && (
-                  <div>
-                    <p className="text-gray-500 text-xs mb-1">Código de Verificação:</p>
-                    <p className="font-mono text-xs sm:text-sm font-bold text-gray-800 break-all">{signer.verification_hash}</p>
-                    <a 
-                      href={verificationUrl} 
-                      target="_blank" 
-                      rel="noopener noreferrer"
-                      className="text-orange-700 hover:underline text-xs break-all mt-1 block"
-                    >
-                      {verificationUrl}
-                    </a>
+              {/* Assinatura manuscrita */}
+              {sigUrl && (
+                <div className="px-5 pb-4" style={{ borderTop: '1px solid #f8fafc' }}>
+                  <p className="text-[10px] font-bold uppercase tracking-[0.14em] mt-3 mb-2" style={{ color: '#94a3b8' }}>
+                    Assinatura manuscrita
+                  </p>
+                  <div className="inline-flex items-center justify-center px-6 py-3 rounded-xl"
+                    style={{ background: '#fafafa', border: '1.5px dashed #e2e8f0' }}>
+                    <img src={sigUrl} alt="Assinatura" className="max-h-14 max-w-[220px] object-contain" />
                   </div>
-                )}
-
-                <p className="text-xs text-gray-400 pt-2 border-t border-gray-200">
-                  Este Log é exclusivo e parte integrante do documento de identificação {request.id},
-                  conforme os Termos de Uso do Jurius CRM.
-                </p>
-              </div>
+                </div>
+              )}
             </div>
+
           </div>
 
+          {/* ── COLUNA DIREITA (1/3) ── */}
+          <div className="flex flex-col gap-4">
+
+            {/* Card: Código de verificação */}
+            {signer.verification_hash && (
+              <div className="bg-white rounded-2xl print:rounded-none overflow-hidden"
+                style={{ border: '1px solid #e8edf2', boxShadow: '0 1px 4px rgba(15,23,42,0.05)' }}>
+                <div className="px-5 py-4" style={{ borderBottom: '1px solid #f1f5f9' }}>
+                  <SectionLabel>Código de verificação</SectionLabel>
+                </div>
+                <div className="px-5 py-4">
+                  <p className="font-mono text-[18px] font-bold tracking-[0.08em] break-all leading-relaxed" style={{ color: '#0f172a' }}>
+                    {signer.verification_hash}
+                  </p>
+                  <p className="text-[11px] mt-2" style={{ color: '#94a3b8' }}>
+                    Use este código para verificar a autenticidade do documento a qualquer momento.
+                  </p>
+                </div>
+              </div>
+            )}
+
+            {/* Card: QR Code */}
+            {qrDataUrl && verificationUrl && (
+              <div className="bg-white rounded-2xl print:rounded-none overflow-hidden"
+                style={{ border: '1px solid #e8edf2', boxShadow: '0 1px 4px rgba(15,23,42,0.05)' }}>
+                <div className="px-5 py-4" style={{ borderBottom: '1px solid #f1f5f9' }}>
+                  <SectionLabel>QR de verificação</SectionLabel>
+                </div>
+                <div className="px-5 py-4 flex flex-col items-center gap-3">
+                  <div className="p-2 rounded-xl bg-white" style={{ border: '1px solid #e2e8f0' }}>
+                    <img src={qrDataUrl} alt="QR Code" className="w-[120px] h-[120px] block" />
+                  </div>
+                  <a href={verificationUrl} target="_blank" rel="noopener noreferrer"
+                    className="text-[10.5px] font-mono text-center break-all underline underline-offset-2"
+                    style={{ color: '#ea580c' }}>
+                    {verificationUrl}
+                  </a>
+                </div>
+              </div>
+            )}
+
+            {/* Card: Hash SHA-256 */}
+            {signer.signed_pdf_sha256 && (
+              <div className="bg-white rounded-2xl print:rounded-none overflow-hidden"
+                style={{ border: '1px solid #e8edf2', boxShadow: '0 1px 4px rgba(15,23,42,0.05)' }}>
+                <div className="px-5 py-4" style={{ borderBottom: '1px solid #f1f5f9' }}>
+                  <SectionLabel>Integridade · SHA-256</SectionLabel>
+                </div>
+                <div className="px-5 py-4">
+                  <p className="font-mono text-[10px] break-all leading-relaxed" style={{ color: '#475569' }}>
+                    {signer.signed_pdf_sha256}
+                  </p>
+                  <p className="text-[10.5px] mt-2" style={{ color: '#94a3b8' }}>
+                    Garante que o documento não foi alterado após a assinatura.
+                  </p>
+                </div>
+              </div>
+            )}
+
+            {/* Card: Aviso legal */}
+            <div className="rounded-2xl px-5 py-4" style={{ background: '#fafafa', border: '1px solid #f1f5f9' }}>
+              <p className="text-[10.5px] leading-relaxed" style={{ color: '#94a3b8' }}>
+                Assinatura eletrônica com validade jurídica conforme a{' '}
+                <strong style={{ color: '#64748b' }}>MP 2.200-2/2001</strong> e a{' '}
+                <strong style={{ color: '#64748b' }}>Lei 14.063/2020</strong>.
+              </p>
+              <p className="text-[10px] mt-2 font-mono" style={{ color: '#cbd5e1' }}>
+                {request.id}
+              </p>
+            </div>
+
+          </div>
+        </div>
+
+        {/* ── Rodapé ── */}
+        <div className="mt-4 flex items-center justify-between px-1">
+          <div className="flex items-center gap-2">
+            <div className="w-[5px] h-[5px] rounded-full" style={{ background: '#ea580c' }} />
+            <span className="text-[11px] font-semibold" style={{ color: '#64748b' }}>JURIUS · Assinatura Digital Certificada</span>
+          </div>
+          <span className="text-[11px]" style={{ color: '#94a3b8' }}>
+            Emitido em {fmtShort(new Date().toISOString())} · UTC-4 (Manaus)
+          </span>
         </div>
       </div>
 
-      {/* Estilos de impressão */}
       <style>{`
         @media print {
           body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
           .print\\:hidden { display: none !important; }
-          .print\\:bg-white { background-color: white !important; }
-          .print\\:shadow-none { box-shadow: none !important; }
           .print\\:rounded-none { border-radius: 0 !important; }
           .print\\:p-0 { padding: 0 !important; }
           .print\\:max-w-none { max-width: none !important; }
-          .print\\:bg-orange-600 { background-color: #ea580c !important; }
         }
       `}</style>
     </div>

@@ -778,9 +778,7 @@ class SignatureService {
     const filePath = `${prefix}_${Date.now()}.${extension}`;
     const contentType = `image/${extension === 'jpg' ? 'jpeg' : extension}`;
 
-    console.log('[UPLOAD] Tentando upload:', filePath, 'tamanho:', buffer.length, 'bytes', 'bucket:', STORAGE_BUCKET);
-
-    const { data, error } = await supabase.storage
+    const { error } = await supabase.storage
       .from(STORAGE_BUCKET)
       .upload(filePath, buffer, {
         contentType,
@@ -788,17 +786,10 @@ class SignatureService {
       });
 
     if (error) {
-      console.error('[UPLOAD] Erro no upload:', error);
-      console.error('[UPLOAD] Bucket:', STORAGE_BUCKET, 'Path:', filePath);
+      console.error('[UPLOAD] Erro no upload:', error.message);
       throw new Error(`Erro ao fazer upload: ${error.message}`);
     }
 
-    console.log('[UPLOAD] Upload bem sucedido:', data, 'bucket:', STORAGE_BUCKET, 'path:', filePath);
-    
-    // Verificar se o arquivo foi realmente salvo
-    const { data: checkData } = await supabase.storage.from(STORAGE_BUCKET).list('', { search: filePath.split('/').pop() });
-    console.log('[UPLOAD] Verificação do arquivo:', checkData);
-    
     return filePath;
   }
 
@@ -973,7 +964,7 @@ class SignatureService {
     const blob = new Blob([file], { type: 'application/pdf' });
 
     const { error } = await supabase.storage
-      .from('generated-documents')
+      .from(STORAGE_BUCKET)
       .upload(filePath, blob, {
         upsert: false,
       });
@@ -988,34 +979,40 @@ class SignatureService {
   }
 
   async getDocumentPreviewUrl(documentPath: string): Promise<string | null> {
-    // Ir direto para URL assinada (mais rápido, evita verificação HEAD)
-    const { data, error } = await supabase.storage
-      .from(STORAGE_BUCKET)
-      .createSignedUrl(documentPath, 3600);
+    // createSignedUrl always succeeds even for non-existent files, so we
+    // must verify the file actually lives in the bucket before signing.
+    const bucketsToTry = [STORAGE_BUCKET, 'generated-documents', 'cloud-files'];
 
-    if (!error && data?.signedUrl) {
-      return data.signedUrl;
+    // Helper: check if a file exists in a given bucket using list()
+    const fileExistsInBucket = async (bucket: string, path: string): Promise<boolean> => {
+      try {
+        const lastSlash = path.lastIndexOf('/');
+        const folder   = lastSlash >= 0 ? path.slice(0, lastSlash)  : '';
+        const filename = lastSlash >= 0 ? path.slice(lastSlash + 1) : path;
+        const { data, error } = await supabase.storage
+          .from(bucket)
+          .list(folder, { search: filename, limit: 1 });
+        if (error || !data) return false;
+        return data.some((f) => f.name === filename);
+      } catch {
+        return false;
+      }
+    };
+
+    for (const bucket of bucketsToTry) {
+      const exists = await fileExistsInBucket(bucket, documentPath);
+      if (!exists) continue;
+
+      const { data, error } = await supabase.storage
+        .from(bucket)
+        .createSignedUrl(documentPath, 3600);
+
+      if (!error && data?.signedUrl) {
+        return data.signedUrl;
+      }
     }
 
-    // Fallback: tentar do bucket generated-documents
-    const { data: data2, error: error2 } = await supabase.storage
-      .from('generated-documents')
-      .createSignedUrl(documentPath, 3600);
-
-    if (!error2 && data2?.signedUrl) {
-      return data2.signedUrl;
-    }
-
-    // Fallback: tentar do bucket cloud-files (documentos enviados do módulo Cloud)
-    const { data: data3, error: error3 } = await supabase.storage
-      .from('cloud-files')
-      .createSignedUrl(documentPath, 3600);
-
-    if (!error3 && data3?.signedUrl) {
-      return data3.signedUrl;
-    }
-
-    console.warn('Não foi possível gerar URL do documento:', error?.message || error2?.message || error3?.message);
+    console.warn('Não foi possível localizar o documento em nenhum bucket:', documentPath);
     return null;
   }
 

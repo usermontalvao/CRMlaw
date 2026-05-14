@@ -4,7 +4,7 @@ import { matchesNormalizedSearch } from './search';
 
 export interface SignatureFilterState {
   searchTerm: string;
-  filterStatus: 'all' | 'pending' | 'signed';
+  filterStatus: 'all' | 'pending' | 'signed' | 'expired';
   filterPeriod: 'all' | '7d' | '30d' | '90d';
   filterMonth: string;
   filterDateFrom: string;
@@ -30,7 +30,16 @@ export const filterSignatureRequests = (
 
   const out = requests.filter((req) => {
     const matchesSearch = matchesNormalizedSearch(filters.searchTerm, [req.document_name, req.client_name]);
-    const matchesStatus = filters.filterStatus === 'all' || req.status === filters.filterStatus;
+    const expiresAt = (req as any).expires_at as string | null | undefined;
+    const isExpired = expiresAt && new Date(expiresAt).getTime() < now && req.status !== 'signed';
+    let matchesStatus: boolean;
+    if (filters.filterStatus === 'all') {
+      matchesStatus = true;
+    } else if (filters.filterStatus === 'expired') {
+      matchesStatus = Boolean(isExpired);
+    } else {
+      matchesStatus = req.status === filters.filterStatus && !isExpired;
+    }
     const matchesPeriod = periodMs === 0 || (now - new Date(req.created_at).getTime() <= periodMs);
 
     const createdAt = new Date(req.created_at);
