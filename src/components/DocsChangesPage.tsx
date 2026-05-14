@@ -762,6 +762,23 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
 
 const releases: ReleaseNote[] = [
   {
+    version: '1.10.054',
+    date: '13/05/2026',
+    summary: 'Navegação: módulo Assinaturas reposicionado abaixo de Documentos no menu lateral.',
+    modules: [
+      {
+        moduleId: 'signature',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Assinaturas abaixo de Documentos no menu',
+            description: 'Módulo Assinaturas movido para imediatamente abaixo de Documentos na barra lateral, agrupando os módulos relacionados a documentos e contratos.',
+          },
+        ],
+      },
+    ],
+  },
+  {
     version: '1.10.053',
     date: '13/05/2026',
     summary: 'Assinatura Digital: correção no upload de anexos e filtro de expirados.',
