@@ -1692,18 +1692,42 @@ class PdfSignatureService {
             windowWidth: A4_WIDTH_PX,   // forçar viewport A4 no cálculo de CSS
           });
 
-          // Regra: sempre encaixar pela LARGURA (com recuo lateral).
-          // Se a altura ficar maior que a área de conteúdo, fatiar em múltiplas páginas.
-          const scalePtPerPx = contentWidthPt / canvas.width;
-          const scaledHeightPt = canvas.height * scalePtPerPx;
-          const drawWPt = contentWidthPt;
+          // Escalar pela largura e verificar se cabe em uma página.
+          // Se o overflow for pequeno (< 20%), escalar pela altura em vez de fatiar —
+          // isso evita que as últimas linhas de uma seção A4 caiam em um slice minúsculo
+          // no topo da próxima página PDF, dando a impressão de conteúdo suprimido.
+          const scalePtPerPxByWidth  = contentWidthPt / canvas.width;
+          const scaledHeightByWidth  = canvas.height * scalePtPerPxByWidth;
+          const overflowRatio        = scaledHeightByWidth > contentHeightPt
+            ? (scaledHeightByWidth - contentHeightPt) / scaledHeightByWidth
+            : 0;
+          const OVERFLOW_FIT_THRESHOLD = 0.20; // até 20% de overflow → cabe numa página
+
+          // Se o conteúdo cabe (ou o overflow é pequeno), escala para caber em 1 página.
+          // Caso contrário (section muito longa), usa escala por largura + fatiamento.
+          let scalePtPerPx: number;
+          let drawWPt: number;
+          let scaledHeightPt: number;
+
+          if (overflowRatio > 0 && overflowRatio <= OVERFLOW_FIT_THRESHOLD) {
+            // Escalar pela altura: garante que cabe em uma única página
+            scalePtPerPx  = contentHeightPt / canvas.height;
+            drawWPt       = canvas.width * scalePtPerPx;
+            scaledHeightPt = contentHeightPt;
+          } else {
+            // Escala padrão por largura (para seções muito longas que precisam de fatiamento)
+            scalePtPerPx  = scalePtPerPxByWidth;
+            drawWPt       = contentWidthPt;
+            scaledHeightPt = scaledHeightByWidth;
+          }
 
           const isSingleSection = pages.length === 1;
 
           const drawOnePage = async (sliceCanvas: HTMLCanvasElement, pageNumberForFields: number, sliceStartPt?: number, fullScaledHeightPt?: number) => {
             const sliceHeightPt = sliceCanvas.height * scalePtPerPx;
             const drawHPt = sliceHeightPt;
-            const drawX = CONTENT_MARGIN_X;
+            // Centralizar horizontalmente se drawWPt < contentWidthPt (escala por altura)
+            const drawX = CONTENT_MARGIN_X + (contentWidthPt - drawWPt) / 2;
             const drawY = contentBottomY + (contentHeightPt - drawHPt);
 
             const imgBytes = await this.canvasToPngBytes(sliceCanvas);

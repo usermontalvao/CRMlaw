@@ -47,6 +47,7 @@ import { matchesNormalizedSearch } from '../utils/search';
    ============================================================================ */
 
 const VERSION_CODENAMES: Record<string, { name: string; emoji: string }> = {
+  '1.10.057': { name: 'Café Página Completa', emoji: '📄' },
   '1.10.051': { name: 'Café Corporativo', emoji: '🏢' },
   '1.10.048': { name: 'Café Boas-Vindas', emoji: '👋' },
   '1.10.047': { name: 'Café Relatório Premium', emoji: '📋' },
@@ -761,6 +762,23 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
 };
 
 const releases: ReleaseNote[] = [
+  {
+    version: '1.10.057',
+    date: '14/05/2026',
+    summary: 'Assinatura Digital: corrigido overflow de ~43pt em páginas A4 de DOCX — conteúdo que transbordava ligeiramente era cortado para uma segunda folha, suprimindo as últimas linhas visíveis.',
+    modules: [
+      {
+        moduleId: 'signature',
+        changes: [
+          {
+            type: 'fix',
+            title: 'PDF gerado sem suprimir conteúdo do DOCX',
+            description: 'Páginas A4 de DOCX renderizadas em 794px de largura produziam canvas ~43pt (≈5,7%) mais altos que a área útil do PDF. Esse excedente era fatiado para o topo da página seguinte, deslocando as últimas linhas do contrato. Agora, quando o overflow é ≤ 20%, o sistema escala o conteúdo pela altura disponível em vez da largura, fazendo toda a seção caber em uma única página — ligeiramente menor e centralizada horizontalmente.',
+          },
+        ],
+      },
+    ],
+  },
   {
     version: '1.10.056',
     date: '13/05/2026',
