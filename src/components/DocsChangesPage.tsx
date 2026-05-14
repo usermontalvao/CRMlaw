@@ -762,6 +762,23 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
 
 const releases: ReleaseNote[] = [
   {
+    version: '1.10.056',
+    date: '13/05/2026',
+    summary: 'Navegação: Assinaturas reposicionado abaixo de Documentos em todos os componentes de menu (Sidebar, MobileSidebar e AppLayout).',
+    modules: [
+      {
+        moduleId: 'signature',
+        changes: [
+          {
+            type: 'fix',
+            title: 'Ordem do menu corrigida em todos os layouts',
+            description: 'A reordenação de Assinaturas para abaixo de Documentos foi aplicada nos três componentes de navegação: Sidebar.tsx (desktop), MobileSidebar.tsx (mobile/tablet) e AppLayout.tsx. Também adicionados Assinaturas e Cloud ao AppLayout que não os tinha.',
+          },
+        ],
+      },
+    ],
+  },
+  {
     version: '1.10.055',
     date: '13/05/2026',
     summary: 'Assinatura Digital: corrigido corte de conteúdo em PDFs assinados via mobile — DOCX agora renderiza em largura A4 independente do dispositivo.',

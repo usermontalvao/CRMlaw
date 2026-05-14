@@ -16,6 +16,8 @@ import {
   CheckSquare,
   PiggyBank,
   Search,
+  FileSignature,
+  Cloud,
 } from 'lucide-react';
 import type { ModuleName } from '../../contexts/NavigationContext';
 import { BrandLogo } from '../ui/BrandLogo';
@@ -69,6 +71,8 @@ const navItems: NavItem[] = [
   { id: 'leads', label: 'Leads', icon: <Target className="w-5 h-5 mb-1.5" /> },
   { id: 'clientes', label: 'Clientes', icon: <Users className="w-5 h-5 mb-1.5" /> },
   { id: 'documentos', label: 'Documentos', icon: <Library className="w-5 h-5 mb-1.5" /> },
+  { id: 'assinaturas', label: 'Assinaturas', icon: <FileSignature className="w-5 h-5 mb-1.5" /> },
+  { id: 'cloud', label: 'Cloud', icon: <Cloud className="w-5 h-5 mb-1.5" /> },
   { id: 'processos', label: 'Processos', icon: <Scale className="w-5 h-5 mb-1.5" /> },
   { id: 'requerimentos', label: 'Requerimentos', icon: <Briefcase className="w-5 h-5 mb-1.5" /> },
   { id: 'prazos', label: 'Prazos', icon: <AlarmClock className="w-5 h-5 mb-1.5" /> },
