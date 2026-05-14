@@ -47,6 +47,7 @@ import { matchesNormalizedSearch } from '../utils/search';
    ============================================================================ */
 
 const VERSION_CODENAMES: Record<string, { name: string; emoji: string }> = {
+  '1.10.066': { name: 'Café Sem Overflow', emoji: '📐' },
   '1.10.065': { name: 'Café Header Compacto', emoji: '📱' },
   '1.10.064': { name: 'Café Chat no Lugar', emoji: '💬' },
   '1.10.063': { name: 'Café Rodapé ZapSign', emoji: '🧾' },
@@ -770,6 +771,23 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
 };
 
 const releases: ReleaseNote[] = [
+  {
+    version: '1.10.066',
+    date: '14/05/2026',
+    summary: 'Dashboard mobile: corrigido overflow horizontal que causava scrollbar duplo e instabilidade do nav/botão ao rolar a página.',
+    modules: [
+      {
+        moduleId: 'dashboard',
+        changes: [
+          {
+            type: 'fix',
+            title: 'Dashboard: margens negativas responsivas eliminam overflow horizontal',
+            description: 'O container do dashboard usava -m-6 fixo (24px), mas o main no mobile tem apenas px-3 (12px) de padding. A diferença de 12px gerava overflow horizontal, scrollbar duplo visível e instabilidade do layout (nav e botão piscando) ao rolar no mobile. Corrigido com margens negativas responsivas que casam exatamente com o padding do main em cada breakpoint.',
+          },
+        ],
+      },
+    ],
+  },
   {
     version: '1.10.065',
     date: '14/05/2026',

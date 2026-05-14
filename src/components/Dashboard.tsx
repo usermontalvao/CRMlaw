@@ -728,7 +728,7 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToModule }) => {
   }
 
   return (
-    <div className="space-y-4 sm:space-y-6 bg-slate-50/50 -m-6 p-3 sm:p-6 min-h-screen">
+    <div className="space-y-4 sm:space-y-6 bg-slate-50/50 -mx-3 -my-4 sm:-mx-4 sm:-my-6 lg:-mx-6 xl:-mx-8 px-3 sm:px-4 lg:px-6 xl:px-8 py-4 sm:py-6 min-h-screen">
 
       {/* Header */}
       <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
