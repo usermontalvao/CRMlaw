@@ -730,10 +730,11 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToModule }) => {
   return (
     <div className="space-y-4 sm:space-y-6 bg-slate-50/50 -m-6 p-3 sm:p-6 min-h-screen">
 
-      {/* Header - Tudo em uma linha */}
-      <div className="flex flex-wrap items-center justify-between gap-3 sm:gap-4">
-        {/* Esquerda: Saudação e Estatísticas */}
-        <div className="flex flex-wrap items-center gap-3 sm:gap-4">
+      {/* Header */}
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
+
+        {/* Linha 1 mobile: Saudação (esq) + Botão Novo Cliente (dir) */}
+        <div className="flex items-center justify-between sm:gap-4">
           {/* Saudação e Nome */}
           <div className="flex items-center gap-2">
             <p className="text-[10px] sm:text-xs font-medium text-slate-400 uppercase tracking-wider">{getGreeting()}</p>
@@ -755,6 +756,20 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToModule }) => {
             )}
           </div>
 
+          {/* Botão Novo Cliente — inline com a saudação no mobile */}
+          {canView('clientes') && canCreate('clientes') && (
+            <button
+              onClick={() => handleNavigate('clientes?mode=create')}
+              className="sm:hidden inline-flex items-center gap-1.5 px-2.5 py-1.5 bg-slate-900 hover:bg-slate-800 text-white text-xs font-medium rounded-lg transition-all shrink-0"
+            >
+              <Plus className="w-3.5 h-3.5" />
+              <span>Novo Cliente</span>
+            </button>
+          )}
+        </div>
+
+        {/* Linha 2 mobile: Estatísticas (esq) + Alertas+Botão desktop (dir) */}
+        <div className="flex items-center justify-between sm:justify-start sm:gap-4">
           {/* Estatísticas */}
           <div className="flex items-center gap-2 sm:gap-3">
             {canView('clientes') && (
@@ -801,49 +816,46 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToModule }) => {
               </button>
             )}
           </div>
-        </div>
 
-        {/* Direita: Botão Novo Cliente e Badges de Alerta */}
-        <div className="flex items-center gap-2">
-          {/* Badges de Alerta */}
-          {urgentAlerts.length > 0 && (
-            <div className="flex items-center gap-2">
-              {urgentAlerts.filter((a) => canView(a.action)).map((alert, index) => (
-                <button
-                  key={index}
-                  onClick={() => handleNavigate(alert.action)}
-                  className={`inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border text-xs font-semibold transition-colors ${
-                    alert.action === 'prazos'
-                      ? 'border-red-200 bg-red-50/70 text-red-700 hover:bg-red-100'
-                      : alert.action === 'intimacoes'
-                        ? 'border-orange-200 bg-orange-50/70 text-orange-700 hover:bg-orange-100'
-                        : 'border-amber-200 bg-amber-50/70 text-amber-700 hover:bg-amber-100'
-                  }`}
-                >
-                  {alert.icon}
-                  <span>
-                    {alert.action === 'prazos'
-                      ? 'Prazos'
-                      : alert.action === 'intimacoes'
-                        ? 'Intimações'
-                        : 'Financeiro'}
-                  </span>
-                  <span className="font-bold">{alert.count}</span>
-                </button>
-              ))}
-            </div>
-          )}
-
-          {/* Botão Novo Cliente */}
-          {canView('clientes') && canCreate('clientes') && (
-            <button
-              onClick={() => handleNavigate('clientes?mode=create')}
-              className="inline-flex items-center gap-1.5 px-2.5 py-1.5 sm:px-3 sm:py-2 bg-slate-900 hover:bg-slate-800 text-white text-xs sm:text-sm font-medium rounded-lg transition-all"
-            >
-              <Plus className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
-              <span>Novo Cliente</span>
-            </button>
-          )}
+          {/* Alertas + Botão Novo Cliente — desktop apenas */}
+          <div className="hidden sm:flex items-center gap-2">
+            {urgentAlerts.length > 0 && (
+              <div className="flex items-center gap-2">
+                {urgentAlerts.filter((a) => canView(a.action)).map((alert, index) => (
+                  <button
+                    key={index}
+                    onClick={() => handleNavigate(alert.action)}
+                    className={`inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border text-xs font-semibold transition-colors ${
+                      alert.action === 'prazos'
+                        ? 'border-red-200 bg-red-50/70 text-red-700 hover:bg-red-100'
+                        : alert.action === 'intimacoes'
+                          ? 'border-orange-200 bg-orange-50/70 text-orange-700 hover:bg-orange-100'
+                          : 'border-amber-200 bg-amber-50/70 text-amber-700 hover:bg-amber-100'
+                    }`}
+                  >
+                    {alert.icon}
+                    <span>
+                      {alert.action === 'prazos'
+                        ? 'Prazos'
+                        : alert.action === 'intimacoes'
+                          ? 'Intimações'
+                          : 'Financeiro'}
+                    </span>
+                    <span className="font-bold">{alert.count}</span>
+                  </button>
+                ))}
+              </div>
+            )}
+            {canView('clientes') && canCreate('clientes') && (
+              <button
+                onClick={() => handleNavigate('clientes?mode=create')}
+                className="inline-flex items-center gap-1.5 px-3 py-2 bg-slate-900 hover:bg-slate-800 text-white text-sm font-medium rounded-lg transition-all"
+              >
+                <Plus className="w-4 h-4" />
+                <span>Novo Cliente</span>
+              </button>
+            )}
+          </div>
         </div>
       </div>
 

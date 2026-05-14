@@ -47,6 +47,7 @@ import { matchesNormalizedSearch } from '../utils/search';
    ============================================================================ */
 
 const VERSION_CODENAMES: Record<string, { name: string; emoji: string }> = {
+  '1.10.065': { name: 'Café Header Compacto', emoji: '📱' },
   '1.10.064': { name: 'Café Chat no Lugar', emoji: '💬' },
   '1.10.063': { name: 'Café Rodapé ZapSign', emoji: '🧾' },
   '1.10.062': { name: 'Café Rodapé Transparente', emoji: '🪟' },
@@ -769,6 +770,23 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
 };
 
 const releases: ReleaseNote[] = [
+  {
+    version: '1.10.065',
+    date: '14/05/2026',
+    summary: 'Dashboard mobile: botão "Novo Cliente" reposicionado para a linha da saudação (inline, canto direito), eliminando a quebra de linha que o deixava muito abaixo.',
+    modules: [
+      {
+        moduleId: 'dashboard',
+        changes: [
+          {
+            type: 'fix',
+            title: 'Header mobile: botão "Novo Cliente" inline com a saudação',
+            description: 'No mobile, o flex-wrap empurrava o botão para uma terceira linha abaixo dos stats. Reestruturado em 2 linhas: linha 1 = saudação (esq) + "Novo Cliente" (dir); linha 2 = estatísticas. No desktop o layout continua em uma única linha horizontal.',
+          },
+        ],
+      },
+    ],
+  },
   {
     version: '1.10.064',
     date: '14/05/2026',
