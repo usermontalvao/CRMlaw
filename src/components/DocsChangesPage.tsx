@@ -47,6 +47,7 @@ import { matchesNormalizedSearch } from '../utils/search';
    ============================================================================ */
 
 const VERSION_CODENAMES: Record<string, { name: string; emoji: string }> = {
+  '1.10.058': { name: 'Café Sem Duplicata', emoji: '🚫' },
   '1.10.057': { name: 'Café Página Completa', emoji: '📄' },
   '1.10.051': { name: 'Café Corporativo', emoji: '🏢' },
   '1.10.048': { name: 'Café Boas-Vindas', emoji: '👋' },
@@ -762,6 +763,23 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
 };
 
 const releases: ReleaseNote[] = [
+  {
+    version: '1.10.058',
+    date: '14/05/2026',
+    summary: 'Assinatura Digital: corrigida duplicação de conteúdo no PDF — o mesmo parágrafo aparecia no fim de uma página e no início da próxima.',
+    modules: [
+      {
+        moduleId: 'signature',
+        changes: [
+          {
+            type: 'fix',
+            title: 'PDF: conteúdo não duplica mais entre páginas do DOCX',
+            description: 'O html2canvas capturava conteúdo de overflow das sections do docx-preview (texto que visualmente "vazava" para além da altura fixa da section). Esse mesmo texto também aparecia no início da próxima section, gerando duplicação. Corrigido definindo overflow:hidden antes da captura — cada section agora exporta apenas o conteúdo que lhe pertence.',
+          },
+        ],
+      },
+    ],
+  },
   {
     version: '1.10.057',
     date: '14/05/2026',

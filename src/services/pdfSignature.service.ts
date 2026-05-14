@@ -1656,7 +1656,10 @@ class PdfSignatureService {
         section.style.width    = `${A4_WIDTH_PX}px`;
         section.style.minWidth = `${A4_WIDTH_PX}px`;
         section.style.maxWidth = `${A4_WIDTH_PX}px`;
-        section.style.overflow = 'visible';
+        // 'hidden' evita que html2canvas capture conteúdo de overflow que pertence à
+        // próxima section do docx-preview — caso contrário o mesmo texto apareceria
+        // tanto no fim da página atual quanto no início da próxima (duplicação).
+        section.style.overflow = 'hidden';
 
         // Dois frames de reflow para garantir que o layout re-calculou
         await new Promise<void>((r) => requestAnimationFrame(() => requestAnimationFrame(() => r())));
