@@ -47,6 +47,7 @@ import { matchesNormalizedSearch } from '../utils/search';
    ============================================================================ */
 
 const VERSION_CODENAMES: Record<string, { name: string; emoji: string }> = {
+  '1.10.063': { name: 'Café Rodapé ZapSign', emoji: '🧾' },
   '1.10.062': { name: 'Café Rodapé Transparente', emoji: '🪟' },
   '1.10.061': { name: 'Café Bloco Contínuo', emoji: '📜' },
   '1.10.060': { name: 'Café Clip Inteligente', emoji: '🎯' },
@@ -767,6 +768,23 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
 };
 
 const releases: ReleaseNote[] = [
+  {
+    version: '1.10.063',
+    date: '14/05/2026',
+    summary: 'Assinatura Digital: rodapé DOCX estilo ZapSign — conteúdo comprime ~6% para reservar 56pt limpos na base; fundo branco opaco sem vazamento de texto.',
+    modules: [
+      {
+        moduleId: 'signature',
+        changes: [
+          {
+            type: 'fix',
+            title: 'PDF DOCX: rodapé limpo com espaço reservado (estilo ZapSign)',
+            description: 'O modo strip anterior (opacidade 0.92) deixava o texto do documento vazar pelo fundo do rodapé. Agora reserva-se 56pt na base da página (strip 52pt + 4pt margem): o conteúdo é escalonado para caber no espaço acima (~6% menor, imperceptível), e o rodapé assenta abaixo com fundo branco puro (opacidade 1.0). QR code mantido em todas as páginas.',
+          },
+        ],
+      },
+    ],
+  },
   {
     version: '1.10.062',
     date: '14/05/2026',

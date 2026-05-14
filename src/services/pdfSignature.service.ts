@@ -352,8 +352,10 @@ class PdfSignatureService {
     docHash: string;
     integritySha256?: string | null;
     variant?: 'card' | 'strip';
+    /** Quando true o fundo do strip é totalmente opaco (espaço reservado, nada por baixo) */
+    opaqueStrip?: boolean;
   }) {
-    const { page, pageWidth, pageHeight, signer, verificationUrl, qrImage, helvetica, helveticaBold, integritySha256, variant } = params;
+    const { page, pageWidth, pageHeight, signer, verificationUrl, qrImage, helvetica, helveticaBold, integritySha256, variant, opaqueStrip } = params;
     void pageHeight;
 
     const integrityFull = this.formatIntegrityHash(integritySha256, false);
@@ -377,9 +379,8 @@ class PdfSignatureService {
       const stripMuted  = rgb(0.62, 0.67, 0.74);
       const stripOrange = rgb(0.91, 0.32, 0.04);
 
-      // Semi-opaque white background — not fully opaque so underlying text stays
-      // readable if the original document has content near the page bottom edge
-      page.drawRectangle({ x, y, width: w, height: h, color: stripWhite, opacity: 0.92 });
+      // White background: opaque when space is reserved (nothing behind), semi-opaque as overlay
+      page.drawRectangle({ x, y, width: w, height: h, color: stripWhite, opacity: opaqueStrip ? 1 : 0.92 });
 
       // Top border line
       page.drawLine({
@@ -1375,7 +1376,7 @@ class PdfSignatureService {
     const pdfPageWidth = 595.28; 
     const pdfPageHeight = 841.89;
     const A4_WIDTH_PX = 794; // A4 @ 96 DPI
-    const FOOTER_RESERVED_H = 0; // strip overlay — não reservar espaço; conteúdo ocupa A4 inteiro
+    const FOOTER_RESERVED_H = 56; // strip height=52 + 4pt margem — conteúdo escala ~6% p/ rodapé limpo
     const CONTENT_MARGIN_X = 32;
     const CONTENT_MARGIN_TOP = 28;
     const contentTopY = pdfPageHeight - CONTENT_MARGIN_TOP;
@@ -1728,6 +1729,7 @@ class PdfSignatureService {
               docHash: '',
               integritySha256,
               variant: 'strip',
+              opaqueStrip: true, // espaço reservado → fundo branco puro
             });
 
             for (const asset of docxSignerDrawAssets) {
