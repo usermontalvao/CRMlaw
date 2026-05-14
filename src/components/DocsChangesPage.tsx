@@ -47,6 +47,7 @@ import { matchesNormalizedSearch } from '../utils/search';
    ============================================================================ */
 
 const VERSION_CODENAMES: Record<string, { name: string; emoji: string }> = {
+  '1.10.059': { name: 'Café Clip Cirúrgico', emoji: '✂️' },
   '1.10.058': { name: 'Café Sem Duplicata', emoji: '🚫' },
   '1.10.057': { name: 'Café Página Completa', emoji: '📄' },
   '1.10.051': { name: 'Café Corporativo', emoji: '🏢' },
@@ -763,6 +764,23 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
 };
 
 const releases: ReleaseNote[] = [
+  {
+    version: '1.10.059',
+    date: '14/05/2026',
+    summary: 'Assinatura Digital: corrigida duplicação de conteúdo em PDFs gerados a partir de DOCX — canvas agora é clipado ao min-height do docx-preview antes de qualquer escalonamento.',
+    modules: [
+      {
+        moduleId: 'signature',
+        changes: [
+          {
+            type: 'fix',
+            title: 'PDF DOCX: clip de canvas elimina duplicação entre páginas',
+            description: 'O docx-preview usa min-height (não height fixa) nos sections. Diferenças de layout HTML vs DOCX podem fazer o section crescer além de uma página A4, incluindo conteúdo da próxima seção no canvas — resultando em texto duplicado no PDF. Agora o canvas é clipado ao min-height × escala (ou proporção A4 como fallback) logo após o html2canvas, eliminando o conteúdo excedente antes do escalonamento.',
+          },
+        ],
+      },
+    ],
+  },
   {
     version: '1.10.058',
     date: '14/05/2026',

@@ -1685,7 +1685,13 @@ class PdfSignatureService {
             }
           }
 
-          const canvas = await html2canvas(section, {
+          // Ler o min-height definido pelo docx-preview para este section.
+          // O docx-preview usa min-height (não height) para marcar a altura da página DOCX,
+          // permitindo que o section cresça se o conteúdo renderizar maior que o esperado.
+          // Guardamos esse valor ANTES do html2canvas para usar como teto de clip.
+          const cssMH = parseFloat(window.getComputedStyle(section).minHeight) || 0;
+
+          const rawCanvas = await html2canvas(section, {
             scale: 1.5,
             useCORS: true,
             allowTaint: true,
@@ -1694,6 +1700,30 @@ class PdfSignatureService {
             imageTimeout: 0,
             windowWidth: A4_WIDTH_PX,   // forçar viewport A4 no cálculo de CSS
           });
+
+          // ── CLIP DE SEGURANÇA ──────────────────────────────────────────────
+          // Se o section cresceu além do min-height (devido a diferenças de layout
+          // HTML vs DOCX), o canvas conterá conteúdo da próxima seção, causando
+          // duplicação no PDF. Clipamos ao min-height × scale (ou à proporção A4
+          // caso o docx-preview não defina min-height).
+          const SCALE = 1.5;
+          const clipHeightPx = cssMH > 0
+            ? Math.round(cssMH * SCALE)
+            : Math.round(rawCanvas.width * (297 / 210)); // fallback: proporção A4
+
+          let canvas = rawCanvas;
+          if (rawCanvas.height > clipHeightPx + 4) { // 4px de tolerância
+            const clipped = document.createElement('canvas');
+            clipped.width  = rawCanvas.width;
+            clipped.height = clipHeightPx;
+            const ctx = clipped.getContext('2d');
+            if (ctx) {
+              ctx.drawImage(rawCanvas, 0, 0, rawCanvas.width, clipHeightPx,
+                                       0, 0, rawCanvas.width, clipHeightPx);
+            }
+            canvas = clipped;
+            console.log(`[PDF] section ${sectionIdx + 1}: canvas clipado ${rawCanvas.height}px → ${clipHeightPx}px (min-height=${cssMH}px)`);
+          }
 
           // Escalar pela largura e verificar se cabe em uma página.
           // Se o overflow for pequeno (< 20%), escalar pela altura em vez de fatiar —
