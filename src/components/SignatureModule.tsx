@@ -237,7 +237,7 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
   const [deleteFolderSaving, setDeleteFolderSaving] = useState<'move_root' | 'delete_all' | null>(null);
 
   const [searchTerm, setSearchTerm] = useState('');
-  const [filterStatus, setFilterStatus] = useState<'all' | 'pending' | 'signed'>('all');
+  const [filterStatus, setFilterStatus] = useState<'all' | 'pending' | 'signed' | 'expired'>('all');
   const [showFilters, setShowFilters] = useState(false);
   const [filterPeriod, setFilterPeriod] = useState<'all' | '7d' | '30d' | '90d'>('all');
   const [filterMonth, setFilterMonth] = useState(''); // yyyy-mm
@@ -2659,7 +2659,7 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
       if (uploadedFiles.length > 1 && !selectedAttachmentPaths) {
         const uploaded: string[] = [];
         for (let i = 1; i < uploadedFiles.length; i++) {
-          const p = await signatureService.uploadSignatureDocumentPdf(uploadedFiles[i], `${docId}-attach-${i}`);
+          const p = await signatureService.uploadSignatureDocumentPdf(uploadedFiles[i], docId);
           uploaded.push(p);
         }
         attachPaths = uploaded.length > 0 ? uploaded : null;
@@ -3285,6 +3285,20 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
   };
 
   const formatDate = (d: string) => new Date(d).toLocaleDateString('pt-BR', { day: '2-digit', month: 'short', year: 'numeric' });
+  const timeAgo = (d: string): string => {
+    const diff = Date.now() - new Date(d).getTime();
+    const mins = Math.floor(diff / 60000);
+    if (mins < 1) return 'agora mesmo';
+    if (mins < 60) return `há ${mins} min`;
+    const hours = Math.floor(mins / 60);
+    if (hours < 24) return `há ${hours}h`;
+    const days = Math.floor(hours / 24);
+    if (days === 1) return 'há 1 dia';
+    if (days < 7) return `há ${days} dias`;
+    const weeks = Math.floor(days / 7);
+    if (weeks === 1) return 'há 1 semana';
+    return `há ${weeks} semanas`;
+  };
 
   if (loading && wizardStep === 'list') return <div className="flex items-center justify-center h-64"><Loader2 className="w-8 h-8 animate-spin text-orange-600" /></div>;
 
@@ -4191,7 +4205,16 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
 
   // LIST
   const totalRequestsCount = requests.length;
-  const pendingRequestsCount = requests.filter((r) => r.status === 'pending').length;
+  const nowTs = Date.now();
+  const expiredRequestsCount = requests.filter((r) => {
+    const exp = (r as any).expires_at as string | null | undefined;
+    return exp && new Date(exp).getTime() < nowTs && r.status !== 'signed';
+  }).length;
+  const pendingRequestsCount = requests.filter((r) => {
+    const exp = (r as any).expires_at as string | null | undefined;
+    const isExp = exp && new Date(exp).getTime() < nowTs;
+    return r.status === 'pending' && !isExp;
+  }).length;
   const signedRequestsCount = requests.filter((r) => r.status === 'signed').length;
 
   return (
@@ -4376,6 +4399,19 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
             >
               Concluídos <span className="text-emerald-500">{requests.filter(r => r.status === 'signed').length}</span>
             </button>
+            {expiredRequestsCount > 0 && (
+              <button
+                type="button"
+                onClick={() => setFilterStatus('expired')}
+                className={`shrink-0 whitespace-nowrap rounded-md px-3 py-1.5 text-xs font-medium transition ${
+                  filterStatus === 'expired'
+                    ? 'bg-white text-slate-900 shadow-sm'
+                    : 'text-slate-600 hover:text-slate-900'
+                }`}
+              >
+                Expirados <span className="text-red-500">{expiredRequestsCount}</span>
+              </button>
+            )}
             <button
               type="button"
               className="shrink-0 whitespace-nowrap rounded-md px-3 py-1.5 text-xs font-medium text-slate-600 border-l border-slate-300 pl-2 ml-1"
@@ -4699,6 +4735,22 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
               const clientLabel = req.client_name || req.signers?.[0]?.name || 'Cliente não informado';
               const pct = totalSigners > 0 ? Math.round((signedCount / totalSigners) * 100) : 0;
               const isInCloud = Boolean(cloudSyncStatusByRequestId[req.id]);
+              const reqExpiresAt = (req as any).expires_at as string | null | undefined;
+              const isExpiredCard = reqExpiresAt && new Date(reqExpiresAt).getTime() < Date.now() && !allSigned;
+              const expiresWithin48h = reqExpiresAt && !isExpiredCard && !allSigned &&
+                (new Date(reqExpiresAt).getTime() - Date.now()) < 48 * 3600 * 1000;
+              const attachmentCount = ((req as any).attachment_paths as string[] | null | undefined)?.length ?? 0;
+              // "Visto mas não assinado"
+              const viewedPendingSigners = !allSigned
+                ? req.signers?.filter((s: Signer) => s.status === 'pending' && s.viewed_at) ?? []
+                : [];
+              const hasViewedPending = viewedPendingSigners.length > 0;
+              // Tempo relativo da visualização mais recente
+              const lastViewedAt = viewedPendingSigners.length > 0
+                ? viewedPendingSigners.reduce((latest: Signer, s: Signer) =>
+                    new Date(s.viewed_at!).getTime() > new Date(latest.viewed_at!).getTime() ? s : latest
+                  ).viewed_at
+                : null;
               const isDraggingThisItem =
                 draggingExplorer?.type === 'item'
                 && draggingExplorer.itemType === 'signature_request'
@@ -4782,6 +4834,32 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
                             <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium border border-emerald-200 bg-emerald-50 text-emerald-700">
                               <FolderOpen className="w-3 h-3" />
                               Pasta criada
+                            </span>
+                          )}
+                          {isExpiredCard && (
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium border border-red-200 bg-red-50 text-red-600">
+                              <AlertTriangle className="w-3 h-3" />
+                              Expirado
+                            </span>
+                          )}
+                          {expiresWithin48h && (
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium border border-amber-200 bg-amber-50 text-amber-700">
+                              <Clock className="w-3 h-3" />
+                              Expira em breve
+                            </span>
+                          )}
+                          {hasViewedPending && (
+                            <span
+                              className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium border border-sky-200 bg-sky-50 text-sky-700"
+                              title={lastViewedAt ? `Visualizado ${timeAgo(lastViewedAt)}` : 'Visualizado'}
+                            >
+                              <Eye className="w-3 h-3" />
+                              Visto {lastViewedAt ? timeAgo(lastViewedAt) : ''}
+                            </span>
+                          )}
+                          {attachmentCount > 0 && (
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium border border-slate-200 bg-slate-50 text-slate-500">
+                              📎 +{attachmentCount}
                             </span>
                           )}
                         </div>
@@ -5396,6 +5474,16 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
                   {detailsRequest.client_name && <span className="text-[11px] text-slate-500 flex items-center gap-1"><User className="w-3 h-3" />{detailsRequest.client_name}</span>}
                   {detailsRequest.process_number && <span className="text-[11px] text-slate-500 flex items-center gap-1"><Hash className="w-3 h-3" />{detailsRequest.process_number}</span>}
                   {cloudSyncStatusByRequestId[detailsRequest.id] && <span className="text-[11px] text-emerald-600 flex items-center gap-1"><FolderOpen className="w-3 h-3" />Pasta criada</span>}
+                  {(() => {
+                    const exp = (detailsRequest as any).expires_at as string | null | undefined;
+                    if (!exp) return null;
+                    const expMs = new Date(exp).getTime();
+                    const isExp = expMs < Date.now() && !detailsRequest.signers.every(s => s.status === 'signed');
+                    const within48h = !isExp && (expMs - Date.now()) < 48 * 3600 * 1000;
+                    if (isExp) return <span className="text-[11px] text-red-600 flex items-center gap-1"><AlertTriangle className="w-3 h-3" />Expirado em {new Date(exp).toLocaleDateString('pt-BR')}</span>;
+                    if (within48h) return <span className="text-[11px] text-amber-600 flex items-center gap-1"><AlertTriangle className="w-3 h-3" />Expira {new Date(exp).toLocaleDateString('pt-BR')}</span>;
+                    return <span className="text-[11px] text-slate-400 flex items-center gap-1"><Clock className="w-3 h-3" />Expira {new Date(exp).toLocaleDateString('pt-BR')}</span>;
+                  })()}
                 </div>
               </div>
               <button
@@ -5775,11 +5863,12 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
                 const mainDoc = detailsRequest.document_path
                   ? [{ name: detailsRequest.document_name || 'Documento principal', path: detailsRequest.document_path, isMain: true }]
                   : [];
-                const attachDocs = ((detailsRequest as any).attachment_paths as string[] | null | undefined ?? []).map((p, i) => ({
-                  name: p.split('/').pop()?.replace(/_\d+\./, '.') ?? `Anexo ${i + 1}`,
-                  path: p,
-                  isMain: false,
-                }));
+                const attachDocs = ((detailsRequest as any).attachment_paths as string[] | null | undefined ?? []).map((p, i) => {
+                  const raw = p.split('/').pop() ?? `Anexo ${i + 1}`;
+                  // Strip leading timestamp prefix like "1778704291856_" and internal ones like "_1778704291856_"
+                  const cleaned = raw.replace(/^\d{10,}_/, '').replace(/_\d{10,}_/g, '_').replace(/_\d{10,}\./, '.');
+                  return { name: cleaned || raw, path: p, isMain: false };
+                });
                 const allDocs = [...mainDoc, ...attachDocs];
                 if (allDocs.length === 0) return null;
                 return (
@@ -5820,7 +5909,26 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
 
               {/* Signatários */}
               <section>
-                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1.5">Signatários ({detailsRequest.signers.length})</p>
+                <div className="flex items-center justify-between mb-1.5">
+                  <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Signatários ({detailsRequest.signers.length})</p>
+                  {detailsRequest.signers.some(s => s.status === 'pending' && s.public_token) && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const pendingLinks = detailsRequest.signers
+                          .filter(s => s.status === 'pending' && s.public_token)
+                          .map(s => `${s.name}: ${signatureService.generatePublicSigningUrl(s.public_token!)}`)
+                          .join('\n');
+                        void navigator.clipboard.writeText(pendingLinks);
+                        toast.success('Links copiados!');
+                      }}
+                      style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '3px 8px', borderRadius: 6, fontSize: 10, fontWeight: 500, color: '#64748b', background: '#f8fafc', border: '1px solid #e2e8f0', cursor: 'pointer' }}
+                    >
+                      <Copy style={{ width: 10, height: 10 }} />
+                      Copiar todos os links
+                    </button>
+                  )}
+                </div>
                 <div className="space-y-3">
                   {detailsRequest.signers.map((signer) => {
                     const facialUrl = signerImages[signer.id]?.facial || null;
@@ -5831,7 +5939,7 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
                     return (
                       <div key={signer.id} className={`rounded-xl border overflow-hidden ${isSigned ? 'border-emerald-200' : 'border-slate-200'}`}>
                         {/* Card header */}
-                        <div className={`flex items-center gap-2.5 px-3 py-2.5 ${isSigned ? 'bg-emerald-50' : 'bg-slate-50'}`}>
+                        <div className={`flex items-center gap-2.5 px-3 py-2.5 ${isSigned ? 'bg-emerald-50' : signer.viewed_at ? 'bg-sky-50/60' : 'bg-slate-50'}`}>
                           {isSigned && facialUrl ? (
                             <button onClick={() => setZoomImageUrl(facialUrl)} className="relative group flex-shrink-0" title="Ampliar foto">
                               <img src={facialUrl} alt="Foto facial" className="w-10 h-10 rounded-lg object-cover border-2 border-emerald-300 group-hover:border-emerald-500 transition-all" style={{ transform: 'scaleX(-1)' }} />
@@ -5840,15 +5948,26 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
                               </div>
                             </button>
                           ) : (
-                            <div className={`w-10 h-10 rounded-lg flex items-center justify-center flex-shrink-0 ${isSigned ? 'bg-emerald-100' : 'bg-orange-100'}`}>
-                              <User className={`w-5 h-5 ${isSigned ? 'text-emerald-600' : 'text-orange-500'}`} />
+                            <div className={`w-10 h-10 rounded-lg flex items-center justify-center flex-shrink-0 ${isSigned ? 'bg-emerald-100' : signer.viewed_at ? 'bg-sky-100' : 'bg-orange-100'}`}>
+                              <User className={`w-5 h-5 ${isSigned ? 'text-emerald-600' : signer.viewed_at ? 'text-sky-600' : 'text-orange-500'}`} />
                             </div>
                           )}
                           <div className="flex-1 min-w-0">
                             <p className="text-sm font-semibold text-slate-800 truncate">{signer.name}</p>
                             {signer.email && <p className="text-[11px] text-slate-500 truncate">{signer.email}</p>}
+                            {!isSigned && signer.viewed_at && (
+                              <p className="text-[10px] text-sky-600 flex items-center gap-1 mt-0.5">
+                                <Eye className="w-3 h-3" />
+                                Visualizou o documento {timeAgo(signer.viewed_at)}
+                              </p>
+                            )}
                           </div>
-                          <div className="flex-shrink-0">{getStatusBadge(signer.status)}</div>
+                          <div className="flex-shrink-0 flex flex-col items-end gap-1">
+                            {getStatusBadge(signer.status)}
+                            {!isSigned && signer.viewed_at && (
+                              <span className="text-[9px] text-sky-500 font-medium uppercase tracking-wide">Não assinou</span>
+                            )}
+                          </div>
                         </div>
 
                         {/* Signed — auth info + signature image */}
@@ -5886,19 +6005,53 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
 
                         {/* Pending — signing link */}
                         {!isSigned && (
-                          <div className="px-3 py-2 bg-white border-t border-slate-100 flex flex-col sm:flex-row items-stretch sm:items-center gap-1.5">
-                            <input type="text" readOnly value={signatureService.generatePublicSigningUrl(signer.public_token!)} className="flex-1 px-2.5 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-[11px] font-mono text-slate-500 min-w-0" />
-                            <div className="flex gap-1 flex-shrink-0">
-                              <button onClick={() => copyLink(signer.public_token!)} className="flex items-center gap-1 px-2.5 py-1.5 text-slate-600 hover:bg-slate-100 rounded-lg text-[11px] font-medium transition">
-                                <Copy className="w-3 h-3" />Copiar
-                              </button>
-                              <button onClick={() => window.open(signatureService.generatePublicSigningUrl(signer.public_token!), '_blank')} className="flex items-center gap-1 px-2.5 py-1.5 text-slate-600 hover:bg-slate-100 rounded-lg text-[11px] font-medium transition">
-                                <ExternalLink className="w-3 h-3" />Abrir
-                              </button>
-                              <button onClick={() => openSignModal(signer)} className="flex items-center gap-1 px-2.5 py-1.5 bg-orange-500 text-white rounded-lg text-[11px] font-semibold hover:bg-orange-600 transition">
-                                <PenTool className="w-3 h-3" />Assinar
-                              </button>
+                          <div className="px-3 py-2 bg-white border-t border-slate-100 flex flex-col gap-1.5">
+                            <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-1.5">
+                              <input type="text" readOnly value={signatureService.generatePublicSigningUrl(signer.public_token!)} className="flex-1 px-2.5 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-[11px] font-mono text-slate-500 min-w-0" />
+                              <div className="flex gap-1 flex-shrink-0">
+                                <button onClick={() => copyLink(signer.public_token!)} className="flex items-center gap-1 px-2.5 py-1.5 text-slate-600 hover:bg-slate-100 rounded-lg text-[11px] font-medium transition">
+                                  <Copy className="w-3 h-3" />Copiar
+                                </button>
+                                <button onClick={() => window.open(signatureService.generatePublicSigningUrl(signer.public_token!), '_blank')} className="flex items-center gap-1 px-2.5 py-1.5 text-slate-600 hover:bg-slate-100 rounded-lg text-[11px] font-medium transition">
+                                  <ExternalLink className="w-3 h-3" />Abrir
+                                </button>
+                                <button onClick={() => openSignModal(signer)} className="flex items-center gap-1 px-2.5 py-1.5 bg-orange-500 text-white rounded-lg text-[11px] font-semibold hover:bg-orange-600 transition">
+                                  <PenTool className="w-3 h-3" />Assinar
+                                </button>
+                              </div>
                             </div>
+                            {/* WhatsApp quick-send */}
+                            {(signer.phone || signer.email) && (
+                              <div className="flex items-center gap-1.5">
+                                {signer.phone && (
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      const phone = signer.phone!.replace(/\D/g, '');
+                                      const signingUrl = signatureService.generatePublicSigningUrl(signer.public_token!);
+                                      const msg = encodeURIComponent(`Olá ${signer.name}, segue o link para assinar o documento "${detailsRequest.document_name}": ${signingUrl}`);
+                                      window.open(`https://wa.me/${phone}?text=${msg}`, '_blank');
+                                    }}
+                                    style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '3px 10px', borderRadius: 6, fontSize: 11, fontWeight: 500, color: '#16a34a', background: '#f0fdf4', border: '1px solid #bbf7d0', cursor: 'pointer' }}
+                                  >
+                                    <svg viewBox="0 0 24 24" style={{ width: 12, height: 12, fill: '#16a34a' }}><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"/></svg>
+                                    WhatsApp
+                                  </button>
+                                )}
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    const signingUrl = signatureService.generatePublicSigningUrl(signer.public_token!);
+                                    void navigator.clipboard.writeText(`Olá ${signer.name}, segue o link para assinar o documento "${detailsRequest.document_name}": ${signingUrl}`);
+                                    toast.success('Mensagem copiada!');
+                                  }}
+                                  style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '3px 10px', borderRadius: 6, fontSize: 11, fontWeight: 500, color: '#64748b', background: '#f8fafc', border: '1px solid #e2e8f0', cursor: 'pointer' }}
+                                >
+                                  <Copy style={{ width: 11, height: 11 }} />
+                                  Copiar mensagem
+                                </button>
+                              </div>
+                            )}
                           </div>
                         )}
 
@@ -5941,12 +6094,24 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
                         let iconBg = 'bg-slate-100'; let iconColor = 'text-slate-500'; let Icon = Clock;
                         if (log.action === 'created') { iconBg = 'bg-orange-100'; iconColor = 'text-orange-600'; Icon = FileText; }
                         else if (log.action === 'sent') { iconBg = 'bg-purple-100'; iconColor = 'text-purple-600'; Icon = Send; }
-                        else if (log.action === 'viewed') { iconBg = 'bg-amber-100'; iconColor = 'text-amber-600'; Icon = Eye; }
+                        else if (log.action === 'viewed') { iconBg = 'bg-sky-100'; iconColor = 'text-sky-600'; Icon = Eye; }
                         else if (log.action === 'signed') { iconBg = 'bg-emerald-100'; iconColor = 'text-emerald-600'; Icon = CheckCircle; }
                         else if (log.action === 'cancelled') { iconBg = 'bg-red-100'; iconColor = 'text-red-600'; Icon = X; }
                         else if (log.action === 'reminder_sent') { iconBg = 'bg-orange-100'; iconColor = 'text-orange-600'; Icon = Send; }
-                        const badgeCls = log.action === 'signed' ? 'bg-emerald-100 text-emerald-700' : log.action === 'viewed' ? 'bg-amber-100 text-amber-700' : log.action === 'created' ? 'bg-orange-100 text-orange-700' : log.action === 'sent' ? 'bg-purple-100 text-purple-700' : 'bg-slate-100 text-slate-600';
+                        const badgeCls = log.action === 'signed' ? 'bg-emerald-100 text-emerald-700' : log.action === 'viewed' ? 'bg-sky-100 text-sky-700' : log.action === 'created' ? 'bg-orange-100 text-orange-700' : log.action === 'sent' ? 'bg-purple-100 text-purple-700' : 'bg-slate-100 text-slate-600';
                         const badgeLabel = log.action === 'created' ? 'Criado' : log.action === 'sent' ? 'Enviado' : log.action === 'viewed' ? 'Visualizado' : log.action === 'signed' ? 'Assinado' : log.action === 'cancelled' ? 'Cancelado' : log.action === 'expired' ? 'Expirado' : log.action === 'reminder_sent' ? 'Lembrete' : log.action;
+                        // Parse user agent into readable device label
+                        const parseDevice = (ua: string | null | undefined): string | null => {
+                          if (!ua) return null;
+                          const isMobile = /Mobile|Android|iPhone|iPad/i.test(ua);
+                          const isTablet = /iPad|Tablet/i.test(ua);
+                          const browser = /Edg\//i.test(ua) ? 'Edge' : /OPR\//i.test(ua) ? 'Opera' : /Firefox\//i.test(ua) ? 'Firefox' : /Chrome\//i.test(ua) ? 'Chrome' : /Safari\//i.test(ua) ? 'Safari' : 'Navegador';
+                          const os = /Windows/i.test(ua) ? 'Windows' : /Mac OS X/i.test(ua) && !/iPhone|iPad/i.test(ua) ? 'macOS' : /Android/i.test(ua) ? 'Android' : /iPhone/i.test(ua) ? 'iPhone' : /iPad/i.test(ua) ? 'iPad' : /Linux/i.test(ua) ? 'Linux' : '';
+                          const device = isTablet ? 'Tablet' : isMobile ? 'Mobile' : 'Desktop';
+                          return [browser, os, device].filter(Boolean).join(' · ');
+                        };
+                        const deviceLabel = parseDevice((log as any).user_agent);
+                        const ipAddress = (log as any).ip_address as string | null | undefined;
                         return (
                           <div key={log.id} className="relative flex items-start gap-2">
                             <div className={`absolute -left-5 top-0.5 w-4 h-4 rounded-full ${iconBg} flex items-center justify-center flex-shrink-0 ring-2 ring-white z-10`}>
@@ -5960,6 +6125,22 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
                               <p className="text-[10px] text-slate-400 mt-0.5">
                                 {new Date(log.created_at).toLocaleDateString('pt-BR', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
                               </p>
+                              {(ipAddress || deviceLabel) && (
+                                <div className="flex flex-wrap gap-x-3 gap-y-0.5 mt-1">
+                                  {ipAddress && (
+                                    <span className="text-[10px] text-slate-400 flex items-center gap-1">
+                                      <span className="w-1.5 h-1.5 rounded-full bg-slate-300 inline-block" />
+                                      IP: {ipAddress}
+                                    </span>
+                                  )}
+                                  {deviceLabel && (
+                                    <span className="text-[10px] text-slate-400 flex items-center gap-1">
+                                      <span className="w-1.5 h-1.5 rounded-full bg-slate-300 inline-block" />
+                                      {deviceLabel}
+                                    </span>
+                                  )}
+                                </div>
+                              )}
                             </div>
                           </div>
                         );

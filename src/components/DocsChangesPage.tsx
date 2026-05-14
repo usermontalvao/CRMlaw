@@ -762,6 +762,28 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
 
 const releases: ReleaseNote[] = [
   {
+    version: '1.10.053',
+    date: '13/05/2026',
+    summary: 'Assinatura Digital: correção no upload de anexos e filtro de expirados.',
+    modules: [
+      {
+        moduleId: 'signature',
+        changes: [
+          {
+            type: 'fix',
+            title: 'Upload de anexos com docId correto',
+            description: 'Upload de documentos anexos agora usa o docId simples em vez de um template string com índice, corrigindo o path de armazenamento no Storage.',
+          },
+          {
+            type: 'fix',
+            title: 'Tipo filterStatus inclui "expired"',
+            description: 'Estado "expired" adicionado ao tipo do filterStatus no SignatureModule, alinhando o filtro de expirados com o tipo correto.',
+          },
+        ],
+      },
+    ],
+  },
+  {
     version: '1.10.052',
     date: '13/05/2026',
     summary: 'Assinatura Digital: PDF com design clean (sem azul escuro), selfie ampliada com watermark central, trilha de auditoria registra cada abertura do documento, verificação mascara nome do signatário.',
