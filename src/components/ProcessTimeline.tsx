@@ -489,59 +489,65 @@ export const ProcessTimeline: React.FC<ProcessTimelineProps> = ({
 
   return (
     <div className="bg-white dark:bg-zinc-900 rounded-2xl shadow-2xl ring-1 ring-black/5 overflow-hidden w-[92vw] max-w-5xl max-h-[90vh] min-h-[520px] flex flex-col">
-      {/* Barra laranja do topo */}
-      <div className="h-1 w-full bg-gradient-to-r from-orange-500 via-amber-500 to-orange-500" />
-      
-      {/* Header compacto */}
-      <div className="px-5 py-3 border-b border-slate-200 dark:border-zinc-800 flex items-center justify-between">
-        <div className="flex items-center gap-2">
-          <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-orange-500 to-amber-500 flex items-center justify-center">
+      {/* Header */}
+      <div className="px-6 py-4 border-b border-slate-200 dark:border-zinc-800 flex items-center justify-between bg-white dark:bg-zinc-900">
+        <div className="flex items-center gap-3">
+          <div className="w-9 h-9 rounded-xl bg-[#f97316] flex items-center justify-center">
             <Clock className="w-4 h-4 text-white" />
           </div>
           <div>
-            <h2 className="text-sm font-bold text-slate-900 dark:text-white">Linha do Tempo</h2>
-            <p className="text-xs text-slate-500 truncate max-w-[400px]">{clientName} • <span className="font-mono">{processCode}</span></p>
+            <div className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Andamento processual</div>
+            <h2 className="text-base font-bold text-slate-900 dark:text-white leading-tight">Linha do Tempo</h2>
+            <p className="text-[11px] text-slate-500 truncate max-w-[420px]">{clientName} <span className="text-slate-300">·</span> <span className="font-mono tabular-nums">{processCode}</span></p>
           </div>
         </div>
         <div className="flex items-center gap-2">
           <button
             onClick={refreshTimeline}
             disabled={loading}
-            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium text-slate-600 dark:text-slate-200 bg-slate-100/70 dark:bg-zinc-800 hover:bg-slate-100 dark:hover:bg-zinc-700 border border-slate-200 dark:border-zinc-700 transition disabled:opacity-60"
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold text-white bg-orange-600 hover:bg-orange-700 transition disabled:opacity-60"
           >
             <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
             {analyzing ? `${analyzeProgress.current}/${analyzeProgress.total}` : 'Atualizar'}
           </button>
-          <button onClick={onClose} className="p-2 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-lg transition">
+          <button onClick={onClose} className="p-2 text-slate-400 hover:text-slate-600 hover:bg-slate-100 dark:hover:bg-zinc-800 rounded-lg transition">
             <X className="w-4 h-4" />
           </button>
         </div>
       </div>
 
-      {/* Estágios - Linha completa abaixo do header */}
-      <div className="px-5 py-4 bg-slate-50 dark:bg-zinc-800/50 border-b border-slate-200 dark:border-zinc-700">
-        <div className="flex items-center justify-between mb-2">
-          <p className="text-xs font-semibold text-slate-600 dark:text-slate-300">Estágio do Processo</p>
-          <span className="text-xs font-bold px-2 py-0.5 rounded-lg bg-orange-100 text-orange-700">{currentStage + 1}/{PROCESS_STAGES.length} • {PROCESS_STAGES[currentStage]?.label}</span>
+      {/* Estágios — stepper enterprise com conectores */}
+      <div className="px-6 py-5 bg-slate-50/70 dark:bg-zinc-800/50 border-b border-slate-200 dark:border-zinc-700">
+        <div className="flex items-center justify-between mb-4">
+          <span className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Estágio do Processo</span>
+          <span className="inline-flex items-center gap-1.5 text-[11px] font-bold px-2.5 py-1 rounded-full bg-[#f97316] text-white">
+            <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
+            {currentStage + 1}/{PROCESS_STAGES.length} · {PROCESS_STAGES[currentStage]?.label}
+          </span>
         </div>
-        <div className="flex items-center justify-between gap-2">
+        <div className="flex items-start">
           {PROCESS_STAGES.map((stage, index) => {
             const Icon = stage.icon;
-            const isActive = index <= currentStage;
+            const isDone = index < currentStage;
             const isCurrent = index === currentStage;
+            const isLast = index === PROCESS_STAGES.length - 1;
             return (
-              <div key={stage.key} className="flex-1 flex flex-col items-center" title={stage.label}>
-                <div className={`w-10 h-10 rounded-xl flex items-center justify-center transition-all ${
-                  isCurrent 
-                    ? 'bg-orange-500 text-white ring-2 ring-orange-300 shadow-lg shadow-orange-500/30' 
-                    : isActive 
-                    ? 'bg-emerald-500 text-white' 
-                    : 'bg-white dark:bg-zinc-700 text-slate-400 border border-slate-200 dark:border-zinc-600'
+              <div key={stage.key} className="flex-1 flex flex-col items-center relative" title={stage.label}>
+                {/* Connector */}
+                {!isLast && (
+                  <div className={`absolute top-[18px] left-1/2 w-full h-0.5 ${index < currentStage ? 'bg-emerald-400' : 'bg-slate-200 dark:bg-zinc-700'}`} />
+                )}
+                <div className={`relative z-10 w-9 h-9 rounded-full flex items-center justify-center transition-all ${
+                  isCurrent
+                    ? 'bg-[#f97316] text-white ring-4 ring-[#f97316]/15'
+                    : isDone
+                    ? 'bg-emerald-500 text-white'
+                    : 'bg-white dark:bg-zinc-800 text-slate-300 border border-slate-200 dark:border-zinc-600'
                 }`}>
-                  <Icon className="w-5 h-5" />
+                  {isDone ? <CheckCircle2 className="w-4 h-4" /> : <Icon className="w-4 h-4" />}
                 </div>
-                <span className={`mt-1.5 text-[10px] font-semibold text-center ${
-                  isCurrent ? 'text-orange-600' : isActive ? 'text-emerald-600' : 'text-slate-400'
+                <span className={`mt-2 text-[10px] font-semibold text-center leading-tight ${
+                  isCurrent ? 'text-[#f97316] dark:text-white' : isDone ? 'text-emerald-600' : 'text-slate-400'
                 }`}>
                   {stage.label}
                 </span>
@@ -593,7 +599,7 @@ export const ProcessTimeline: React.FC<ProcessTimelineProps> = ({
               <div className="relative">
                 <Search className="absolute left-2 top-1/2 -translate-y-1/2 w-3 h-3 text-slate-400" />
                 <input type="text" value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} placeholder="Buscar..."
-                  className="w-full pl-7 pr-2 py-2 bg-white/70 dark:bg-zinc-900/50 border border-slate-200 dark:border-zinc-700 rounded-xl text-xs focus:outline-none focus:ring-2 focus:ring-orange-500/40" />
+                  className="w-full pl-7 pr-2 py-2 bg-white dark:bg-zinc-900/50 border border-slate-200 dark:border-zinc-700 rounded-lg text-xs focus:outline-none focus:ring-2 focus:ring-[#f97316]/20 focus:border-[#f97316]/40" />
               </div>
               <select value={filterGrau} onChange={(e) => setFilterGrau(e.target.value)}
                 className="w-full px-2 py-2 bg-white/70 dark:bg-zinc-900/50 border border-slate-200 dark:border-zinc-700 rounded-xl text-xs">
@@ -768,7 +774,7 @@ export const ProcessTimeline: React.FC<ProcessTimelineProps> = ({
         <div className="flex-1 overflow-y-auto p-5 bg-slate-50 dark:bg-zinc-950">
         {loading ? (
           <div className="flex flex-col items-center justify-center py-16">
-            <Loader2 className="w-10 h-10 text-orange-500 animate-spin mb-4" />
+            <Loader2 className="w-10 h-10 text-[#f97316] animate-spin mb-4" />
             <p className="text-slate-600 font-medium">
               {analyzing ? 'Analisando movimentações com IA...' : 'Carregando movimentações...'}
             </p>
@@ -784,7 +790,7 @@ export const ProcessTimeline: React.FC<ProcessTimelineProps> = ({
             <p className="text-slate-600 font-medium">{error}</p>
             <button
               onClick={fetchAndAnalyze}
-              className="mt-4 px-4 py-2 bg-orange-500 hover:bg-orange-600 text-white rounded-lg text-sm font-medium transition"
+              className="mt-4 px-4 py-2 bg-orange-600 hover:bg-orange-700 text-white rounded-lg text-sm font-semibold transition"
             >
               Tentar novamente
             </button>
@@ -801,7 +807,7 @@ export const ProcessTimeline: React.FC<ProcessTimelineProps> = ({
             <p className="text-slate-500">Nenhum resultado para o filtro</p>
             <button
               onClick={() => { setFilterType('todos'); setFilterGrau('todos'); setSearchTerm(''); }}
-              className="mt-3 text-orange-600 hover:text-orange-700 text-sm font-medium"
+              className="mt-3 text-[#f97316] hover:underline text-sm font-semibold"
             >
               Limpar filtros
             </button>
@@ -809,7 +815,7 @@ export const ProcessTimeline: React.FC<ProcessTimelineProps> = ({
         ) : (
           <div className="relative">
             {/* Timeline line */}
-            <div className="absolute left-6 top-0 bottom-0 w-px bg-gradient-to-b from-orange-400 via-slate-300 to-transparent" />
+            <div className="absolute left-6 top-0 bottom-0 w-px bg-gradient-to-b from-[#f97316]/30 via-slate-200 to-transparent" />
 
             {/* Events */}
             <div className="space-y-3">
@@ -821,17 +827,17 @@ export const ProcessTimeline: React.FC<ProcessTimelineProps> = ({
                 const isLatest = index === 0; // Primeiro evento é o mais recente
 
                 const getBgColor = () => {
-                  if (isLatest) return 'bg-gradient-to-r from-orange-50 to-amber-50 border-orange-300 ring-2 ring-orange-200';
-                  if (hasAI && event.aiAnalysis?.urgency === 'critica') return 'bg-red-50 border-red-200';
-                  if (hasAI && event.aiAnalysis?.urgency === 'alta') return 'bg-orange-50 border-orange-200';
-                  if (event.type === 'sentenca') return 'bg-emerald-50 border-emerald-200';
+                  if (isLatest) return 'bg-white border-[#f97316]/30 ring-1 ring-[#f97316]/15 shadow-sm';
+                  if (hasAI && event.aiAnalysis?.urgency === 'critica') return 'bg-red-50/60 border-red-200';
+                  if (hasAI && event.aiAnalysis?.urgency === 'alta') return 'bg-amber-50/60 border-amber-200';
+                  if (event.type === 'sentenca') return 'bg-emerald-50/50 border-emerald-200';
                   return 'bg-white border-slate-200';
                 };
 
                 const getDotColor = () => {
-                  if (isLatest) return 'bg-orange-500 ring-4 ring-orange-200 animate-pulse';
+                  if (isLatest) return 'bg-[#f97316] ring-4 ring-[#f97316]/15';
                   if (hasAI && event.aiAnalysis?.urgency === 'critica') return 'bg-red-500';
-                  if (hasAI && event.aiAnalysis?.urgency === 'alta') return 'bg-orange-500';
+                  if (hasAI && event.aiAnalysis?.urgency === 'alta') return 'bg-amber-500';
                   if (event.type === 'intimacao') return 'bg-blue-500';
                   if (event.type === 'citacao') return 'bg-purple-500';
                   if (event.type === 'sentenca') return 'bg-emerald-500';
@@ -843,7 +849,7 @@ export const ProcessTimeline: React.FC<ProcessTimelineProps> = ({
                   <div key={event.id} className="relative pl-10">
                     {/* Timeline dot */}
                     <div
-                      className={`absolute left-0 w-2.5 h-2.5 rounded-full ${isLatest ? 'bg-orange-500' : 'bg-slate-300 dark:bg-zinc-600'}`}
+                      className={`absolute left-0 w-2.5 h-2.5 rounded-full ${isLatest ? 'bg-[#f97316]' : 'bg-slate-300 dark:bg-zinc-600'}`}
                       style={{ top: '1.05rem' }}
                     />
 

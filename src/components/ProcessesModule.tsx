@@ -49,6 +49,8 @@ import type { Client } from '../types/client.types';
 import type { Profile } from '../services/profile.service';
 import { events, SYSTEM_EVENTS } from '../utils/events';
 import { normalizeSearchText } from '../utils/search';
+import { ClientAvatar } from './shared/ClientAvatar';
+import { useClientPhotos } from '../hooks/useClientPhotos';
 
 const STATUS_OPTIONS: { key: ProcessStatus; label: string; badge: string }[] = [
   { key: 'nao_protocolado', label: 'Não Protocolado', badge: 'bg-slate-100 text-slate-700' },
@@ -184,32 +186,69 @@ const generateId = () => {
   return Math.random().toString(36).slice(2, 10);
 };
 
-const parseNotes = (value?: string | null): ProcessNote[] => {
-  if (!value) return [];
+// Detecta se uma string é, na verdade, um array de notas serializado (bug de
+// dupla-serialização vindo da conversão Requerimento→Processo).
+const looksLikeSerializedNotes = (s: string): boolean => {
+  const t = s.trim();
+  if (!(t.startsWith('[') && t.endsWith(']'))) return false;
+  try {
+    const arr = JSON.parse(t);
+    return Array.isArray(arr) && arr.some(
+      (i) => i && typeof i === 'object' && typeof i.text === 'string' && ('id' in i || 'created_at' in i),
+    );
+  } catch {
+    return false;
+  }
+};
+
+const normalizeNoteItem = (item: any): ProcessNote => ({
+  id: typeof item.id === 'string' ? item.id : generateId(),
+  text: String(item.text),
+  created_at: typeof item.created_at === 'string' ? item.created_at : new Date().toISOString(),
+  author: typeof item.author === 'string' ? item.author : undefined,
+  author_id: typeof item.author_id === 'string' ? item.author_id : undefined,
+  author_name:
+    typeof item.author_name === 'string'
+      ? item.author_name
+      : typeof item.author === 'string'
+      ? item.author
+      : undefined,
+  author_avatar: typeof item.author_avatar === 'string' ? item.author_avatar : undefined,
+  parent_id: typeof item.parent_id === 'string' ? item.parent_id : null,
+});
+
+const parseNotes = (value?: string | null, depth = 0): ProcessNote[] => {
+  if (!value || depth > 5) return [];
 
   try {
     const parsed = JSON.parse(value);
     if (Array.isArray(parsed)) {
-      return parsed
-        .filter((item) => typeof item === 'object' && item !== null && typeof item.text === 'string')
-        .map((item) => ({
-          id: typeof item.id === 'string' ? item.id : generateId(),
-          text: String(item.text),
-          created_at: typeof item.created_at === 'string' ? item.created_at : new Date().toISOString(),
-          author: typeof item.author === 'string' ? item.author : undefined,
-          author_id: typeof item.author_id === 'string' ? item.author_id : undefined,
-          author_name:
-            typeof item.author_name === 'string'
-              ? item.author_name
-              : typeof item.author === 'string'
-              ? item.author
-              : undefined,
-          author_avatar: typeof item.author_avatar === 'string' ? item.author_avatar : undefined,
-          parent_id: typeof item.parent_id === 'string' ? item.parent_id : null,
-        }));
+      const out: ProcessNote[] = [];
+      for (const raw of parsed) {
+        if (typeof raw !== 'object' || raw === null || typeof raw.text !== 'string') continue;
+        // Caso corrompido: o text é um array de notas serializado → desembrulha
+        if (looksLikeSerializedNotes(raw.text)) {
+          out.push(...parseNotes(raw.text, depth + 1));
+          continue;
+        }
+        out.push(normalizeNoteItem(raw));
+      }
+      // Dedup por id (a dupla-serialização gera duplicatas)
+      const seen = new Set<string>();
+      return out.filter((n) => {
+        const key = `${n.id}|${n.created_at}|${n.text.slice(0, 40)}`;
+        if (seen.has(key)) return false;
+        seen.add(key);
+        return true;
+      });
     }
   } catch {
-    // compatibilidade com notas antigas
+    // compatibilidade com notas antigas (texto puro)
+  }
+
+  // Texto puro legado: ainda pode ser um array serializado solto
+  if (looksLikeSerializedNotes(value)) {
+    return parseNotes(value, depth + 1);
   }
 
   return [
@@ -348,6 +387,8 @@ const ProcessesModule: React.FC<ProcessesModuleProps> = ({ forceCreate, entityId
   const [currentProfile, setCurrentProfile] = useState<Profile | null>(null);
   const [djenCronLogs, setDjenCronLogs] = useState<DjenSyncLog[]>([]);
   const [djenCronLoading, setDjenCronLoading] = useState(false);
+  const [syncingDjen, setSyncingDjen] = useState(false);
+  const [djenSyncResult, setDjenSyncResult] = useState<{ total: number; synced: number; updated: number; errors: number } | null>(null);
 
   // Quick add form for Aguardando Confecção
   const [quickAddClientId, setQuickAddClientId] = useState('');
@@ -405,6 +446,25 @@ const ProcessesModule: React.FC<ProcessesModuleProps> = ({ forceCreate, entityId
   const clientMap = useMemo(() => new Map(clients.map((client) => [client.id, client])), [clients]);
 
   const allClientsMap = useMemo(() => new Map(allClients.map((client) => [client.id, client])), [allClients]);
+
+  // Fotos dos clientes vinculados aos processos (reutiliza hook compartilhado)
+  const clientsForPhotos = useMemo(() => {
+    const seen = new Set<string>();
+    const list: { id: string; photo_path?: string | null; excluded_photo_paths?: string[] | null }[] = [];
+    for (const p of processes) {
+      if (p.client_id && !seen.has(p.client_id)) {
+        seen.add(p.client_id);
+        const c = clientMap.get(p.client_id) || allClientsMap.get(p.client_id);
+        list.push({
+          id: p.client_id,
+          photo_path: (c as any)?.photo_path ?? null,
+          excluded_photo_paths: (c as any)?.excluded_photo_paths ?? null,
+        });
+      }
+    }
+    return list;
+  }, [processes, clientMap, allClientsMap]);
+  const clientPhotoUrls = useClientPhotos(clientsForPhotos);
 
   const memberMap = useMemo(() => new Map(members.map((member) => [member.id, member])), [members]);
 
@@ -551,6 +611,43 @@ const ProcessesModule: React.FC<ProcessesModuleProps> = ({ forceCreate, entityId
       setDjenCronLoading(false);
     }
   }, []);
+
+  const handleManualDjenSync = useCallback(async () => {
+    if (syncingDjen) return;
+    setSyncingDjen(true);
+    setDjenSyncResult(null);
+    try {
+      const result = await processDjenSyncService.syncPendingProcesses();
+      setDjenSyncResult(result);
+      // Recarrega a lista pra refletir novos andamentos
+      processService.invalidateCache();
+      const data = await processService.listProcesses();
+      setProcesses(data);
+      fetchDjenCronLogs();
+    } catch (err) {
+      console.error('Erro na sincronização manual DJEN:', err);
+      setDjenSyncResult({ total: 0, synced: 0, updated: 0, errors: 1 });
+    } finally {
+      setSyncingDjen(false);
+    }
+  }, [syncingDjen, fetchDjenCronLogs]);
+
+  // Stats de sincronização DJEN derivados dos processos carregados
+  const djenStats = useMemo(() => {
+    const tracked = processes.filter((p) => p.status !== 'arquivado' && p.status !== 'nao_protocolado');
+    const synced = tracked.filter((p) => p.djen_synced);
+    const withData = tracked.filter((p) => p.djen_has_data);
+    let lastSync: string | null = null;
+    for (const p of processes) {
+      if (p.djen_last_sync && (!lastSync || p.djen_last_sync > lastSync)) lastSync = p.djen_last_sync;
+    }
+    return {
+      tracked: tracked.length,
+      synced: synced.length,
+      withData: withData.length,
+      lastSync,
+    };
+  }, [processes]);
 
   const processStatusCronLog = useMemo(() => {
     return (
@@ -1697,72 +1794,129 @@ const ProcessesModule: React.FC<ProcessesModuleProps> = ({ forceCreate, entityId
     }
   };
 
-  const renderNote = (note: ProcessNote, depth: number = 0) => {
+  const renderNote = (note: ProcessNote, depth: number = 0, isLast: boolean = true) => {
     const isReplying = replyingTo === note.id;
     const canDelete = note.author_id === user?.id || user?.user_metadata?.role === 'admin';
+    const authorName = getNoteAuthorDisplay(note);
+    const hasReplies = !!(note.replies && note.replies.length > 0);
+
+    // Avatar: imagem se houver, senão iniciais coloridas determinísticas
+    const initials = (() => {
+      const parts = String(authorName).trim().split(/\s+/).filter(Boolean);
+      if (!parts.length) return '?';
+      if (parts.length === 1) return (parts[0][0] || '?').toUpperCase();
+      return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
+    })();
+    const hue = (() => {
+      let h = 0;
+      for (let i = 0; i < authorName.length; i++) h = ((h << 5) - h) + authorName.charCodeAt(i);
+      return Math.abs(h) % 360;
+    })();
+    const isSystem = authorName === 'Equipe do escritório';
 
     return (
-      <div key={note.id} className={`${depth > 0 ? 'ml-8 border-l-2 border-slate-200 pl-4' : ''}`}>
-        <div className="bg-slate-50 border border-slate-100 rounded-lg p-4 text-sm text-slate-700">
-          <div className="flex items-center justify-between text-xs text-slate-500 mb-2">
-            <span>{getNoteAuthorDisplay(note)}</span>
-            <div className="flex items-center gap-2">
-              <span>{formatDateTime(note.created_at)}</span>
-              {canDelete && (
-                <button
-                  onClick={() => handleDeleteNote(note.id)}
-                  className="text-red-500 hover:text-red-700 transition-colors"
-                  title="Excluir nota"
-                >
-                  <Trash2 className="w-3 h-3" />
-                </button>
-              )}
-            </div>
-          </div>
-          <p className="whitespace-pre-wrap">{note.text}</p>
-          <div className="flex items-center gap-2 mt-3">
-            <button
-              onClick={() => setReplyingTo(isReplying ? null : note.id)}
-              className="text-blue-600 hover:text-blue-700 text-xs flex items-center gap-1 transition-colors"
-            >
-              <Reply className="w-3 h-3" />
-              Responder
-            </button>
-          </div>
-        </div>
-
-        {isReplying && (
-          <div className="mt-3 ml-8">
-            <div className="bg-white border border-slate-200 rounded-lg p-4">
-              {replyError && <p className="text-sm text-red-600 mb-2">{replyError}</p>}
-              <textarea
-                value={replyDraft}
-                onChange={(e) => setReplyDraft(e.target.value)}
-                rows={3}
-                className="input-field w-full text-sm"
-                placeholder="Digite sua resposta..."
+      <div key={note.id} className="relative">
+        <div className="flex gap-3">
+          {/* Coluna do avatar + linha conectora */}
+          <div className="flex flex-col items-center flex-shrink-0">
+            {note.author_avatar ? (
+              <img
+                src={note.author_avatar}
+                alt={authorName}
+                className="w-8 h-8 rounded-full object-cover ring-2 ring-white shadow-sm"
               />
-              <div className="flex justify-end gap-2 mt-2">
+            ) : (
+              <div
+                className="w-8 h-8 rounded-full flex items-center justify-center text-[11px] font-bold ring-2 ring-white shadow-sm"
+                style={isSystem
+                  ? { background: '#f1f5f9', color: '#64748b' }
+                  : { background: `hsl(${hue},55%,93%)`, color: `hsl(${hue},50%,32%)` }}
+              >
+                {isSystem ? <FileText className="w-3.5 h-3.5" /> : initials}
+              </div>
+            )}
+            {/* Linha vertical do thread */}
+            {(!isLast || hasReplies || isReplying) && (
+              <div className="w-px flex-1 bg-slate-200 mt-1 min-h-[12px]" />
+            )}
+          </div>
+
+          {/* Conteúdo */}
+          <div className="flex-1 min-w-0 pb-4">
+            <div className="group rounded-xl border border-slate-200 bg-white hover:border-slate-300 transition shadow-sm">
+              <div className="flex items-center justify-between gap-2 px-3.5 pt-2.5">
+                <div className="flex items-center gap-2 min-w-0">
+                  <span className="text-xs font-semibold text-slate-900 truncate">{authorName}</span>
+                  <span className="text-slate-300">·</span>
+                  <span className="text-[11px] text-slate-400 whitespace-nowrap" title={formatDateTime(note.created_at)}>
+                    {formatLastSync(note.created_at) ?? formatDateTime(note.created_at)}
+                  </span>
+                </div>
+                {canDelete && (
+                  <button
+                    onClick={() => handleDeleteNote(note.id)}
+                    className="text-slate-300 hover:text-red-600 transition opacity-0 group-hover:opacity-100 flex-shrink-0"
+                    title="Excluir nota"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                  </button>
+                )}
+              </div>
+              <p className="px-3.5 py-2 text-sm text-slate-700 whitespace-pre-wrap break-words leading-relaxed">
+                {note.text}
+              </p>
+              <div className="px-3.5 pb-2.5">
                 <button
-                  onClick={() => setReplyingTo(null)}
-                  className="px-3 py-1 text-xs text-slate-600 hover:text-slate-800 transition-colors"
+                  onClick={() => setReplyingTo(isReplying ? null : note.id)}
+                  className={`inline-flex items-center gap-1 text-[11px] font-semibold transition ${
+                    isReplying ? 'text-slate-500' : 'text-blue-600 hover:text-blue-700'
+                  }`}
                 >
-                  Cancelar
-                </button>
-                <button
-                  onClick={handleAddReply}
-                  disabled={addingReply}
-                  className="px-3 py-1 text-xs bg-blue-600 hover:bg-blue-700 text-white rounded transition-colors flex items-center gap-1 disabled:opacity-60"
-                >
-                  {addingReply && <Loader2 className="w-3 h-3 animate-spin" />}
-                  {addingReply ? 'Enviando...' : 'Responder'}
+                  <Reply className="w-3 h-3" />
+                  {isReplying ? 'Cancelar resposta' : 'Responder'}
                 </button>
               </div>
             </div>
-          </div>
-        )}
 
-        {note.replies && note.replies.map((reply) => renderNote(reply, depth + 1))}
+            {isReplying && (
+              <div className="mt-2 rounded-xl border border-blue-200 bg-blue-50/40 p-3">
+                {replyError && <p className="text-xs text-red-600 mb-2">{replyError}</p>}
+                <textarea
+                  value={replyDraft}
+                  onChange={(e) => setReplyDraft(e.target.value)}
+                  rows={3}
+                  autoFocus
+                  className="w-full text-sm rounded-lg border border-slate-200 bg-white px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-400 resize-none transition"
+                  placeholder="Escreva uma resposta…"
+                />
+                <div className="flex justify-end gap-2 mt-2">
+                  <button
+                    onClick={() => setReplyingTo(null)}
+                    className="px-3 py-1.5 text-xs font-medium text-slate-600 hover:text-slate-900 hover:bg-slate-100 rounded-lg transition"
+                  >
+                    Cancelar
+                  </button>
+                  <button
+                    onClick={handleAddReply}
+                    disabled={addingReply}
+                    className="px-3 py-1.5 text-xs font-semibold bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition flex items-center gap-1.5 disabled:opacity-60"
+                  >
+                    {addingReply ? <Loader2 className="w-3 h-3 animate-spin" /> : <Reply className="w-3 h-3" />}
+                    {addingReply ? 'Enviando…' : 'Responder'}
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {hasReplies && (
+              <div className="mt-1 space-y-0">
+                {note.replies!.map((reply, idx) =>
+                  renderNote(reply, depth + 1, idx === note.replies!.length - 1),
+                )}
+              </div>
+            )}
+          </div>
+        </div>
       </div>
     );
   };
@@ -2093,101 +2247,122 @@ const ProcessesModule: React.FC<ProcessesModuleProps> = ({ forceCreate, entityId
           aria-hidden="true"
         />
         <div className="relative w-full max-w-4xl max-h-[92vh] bg-white dark:bg-zinc-900 rounded-2xl shadow-2xl ring-1 ring-black/5 flex flex-col overflow-hidden">
-          <div className="h-2 w-full bg-orange-500" />
-          <div className="px-5 sm:px-8 py-5 border-b border-slate-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 flex items-start justify-between gap-4">
-            <div>
-              <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400 dark:text-slate-500">Detalhes</p>
-              <h2 className="text-xl font-semibold text-slate-900 dark:text-white">Detalhes do Processo</h2>
+          {/* Header */}
+          <div className="px-6 sm:px-8 py-5 border-b border-slate-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 flex items-start justify-between gap-4">
+            <div className="flex items-center gap-3 min-w-0">
+              <div className="w-10 h-10 rounded-xl bg-[#f97316] flex items-center justify-center flex-shrink-0">
+                <FileText className="w-5 h-5 text-white" />
+              </div>
+              <div className="min-w-0">
+                <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Processo</p>
+                <h2 className="text-lg font-bold text-slate-900 dark:text-white font-mono tabular-nums truncate">
+                  {selectedProcessForView.process_code || 'Sem número'}
+                </h2>
+              </div>
             </div>
             <button
               type="button"
               onClick={handleBackToList}
-              className="p-2 text-slate-400 hover:text-slate-600 dark:text-slate-300 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-white/10 rounded-xl transition"
+              className="p-2 text-slate-400 hover:text-slate-600 dark:text-slate-300 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-white/10 rounded-xl transition flex-shrink-0"
               aria-label="Fechar modal"
             >
               <X className="w-5 h-5" />
             </button>
           </div>
-          <div className="flex-1 overflow-y-auto bg-white dark:bg-zinc-900 p-6">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              <div>
-                <label className="text-xs font-semibold text-slate-500 uppercase">Cliente</label>
-                <p className="text-base text-slate-900 mt-1 flex items-center gap-2">
-                  {client?.client_type === 'pessoa_juridica' ? <Building2 className="w-4 h-4 text-purple-500" /> : <User className="w-4 h-4 text-blue-500" />}
+
+          {/* Identity strip — cliente + status + sync (com integração) */}
+          <div className="px-6 sm:px-8 py-4 border-b border-slate-200 dark:border-zinc-800 flex flex-wrap items-center gap-x-5 gap-y-3 bg-white dark:bg-zinc-900">
+            <button
+              type="button"
+              onClick={() => {
+                if (selectedProcessForView.client_id) {
+                  events.emit(SYSTEM_EVENTS.NAVIGATE_REQUEST, {
+                    module: 'clientes',
+                    params: { mode: 'details', entityId: selectedProcessForView.client_id },
+                  });
+                }
+              }}
+              className="group flex items-center gap-3 min-w-0"
+              title="Abrir ficha do cliente"
+            >
+              <div className="ring-2 ring-slate-100 rounded-full group-hover:ring-orange-200 transition">
+                <ClientAvatar client={client} photoUrl={client ? clientPhotoUrls.get(client.id) : undefined} size={48} />
+              </div>
+              <div className="text-left min-w-0">
+                <div className="text-[9px] font-bold uppercase tracking-widest text-slate-400">Cliente</div>
+                <div className="text-base font-bold text-slate-900 dark:text-white truncate group-hover:text-[#f97316] transition">
                   {client?.full_name || 'Cliente removido'}
-                </p>
-              </div>
-              <div>
-                <label className="text-xs font-semibold text-slate-500 uppercase">Código do Processo</label>
-                <div className="flex items-center gap-2 mt-1">
-                  <p className="text-base text-slate-900 font-mono">{selectedProcessForView.process_code}</p>
-                  {selectedProcessForView.djen_has_data ? (
-                    <div className="flex items-center gap-2">
-                      <span className="px-2 py-1 text-xs font-medium bg-green-100 text-green-800 rounded-full">✓ Sincronizado</span>
-                      {formatLastSync(selectedProcessForView.djen_last_sync) && (
-                        <span className="text-xs text-slate-500">
-                          {formatLastSync(selectedProcessForView.djen_last_sync)}
-                        </span>
-                      )}
-                    </div>
-                  ) : null}
                 </div>
-                {/* Timer de última atualização do registro */}
-                <div className="flex items-center gap-1.5 mt-1.5">
-                  <Clock className="w-3 h-3 text-slate-400" />
-                  <span className="text-xs text-slate-400">
-                    Atualizado {formatLastSync(selectedProcessForView.updated_at) ?? formatDate(selectedProcessForView.updated_at)}
-                  </span>
+                <div className="text-[10px] text-slate-400 group-hover:text-[#f97316] transition flex items-center gap-1">
+                  Ver ficha do cliente
+                  <ChevronRight className="w-3 h-3 opacity-0 group-hover:opacity-100 transition" />
                 </div>
               </div>
-              <div>
-                <label className="text-xs font-semibold text-slate-500 uppercase">Distribuído em</label>
-                <p className="text-base text-slate-900 mt-1">{formatDate(selectedProcessForView.distributed_at)}</p>
+            </button>
+            <span className="hidden sm:block w-px h-10 bg-slate-200" />
+            <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider ${getStatusBadge(selectedProcessForView.status)}`}>
+              {getStatusLabel(selectedProcessForView.status)}
+            </span>
+            {selectedProcessForView.djen_has_data && (
+              <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200">
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                DJEN {formatLastSync(selectedProcessForView.djen_last_sync) ?? 'sincronizado'}
+              </span>
+            )}
+            <span className="ml-auto text-[10px] text-slate-400 inline-flex items-center gap-1">
+              <Clock className="w-3 h-3" />
+              Atualizado {formatLastSync(selectedProcessForView.updated_at) ?? formatDate(selectedProcessForView.updated_at)}
+            </span>
+          </div>
+
+          <div className="flex-1 overflow-y-auto bg-white dark:bg-zinc-900 p-6 sm:p-8">
+            {/* Grid de dados — card unificado com células divididas */}
+            <div className="rounded-2xl border border-slate-200 dark:border-zinc-800 overflow-hidden mb-8">
+              <div className="grid grid-cols-2 lg:grid-cols-3 divide-x divide-y divide-slate-100 dark:divide-zinc-800">
+                {[
+                  { label: 'Distribuído em', value: formatDate(selectedProcessForView.distributed_at) },
+                  { label: 'Vara / Comarca', value: selectedProcessForView.court || 'Não informado' },
+                  { label: 'Área', value: practiceAreaInfo ? practiceAreaInfo.label : selectedProcessForView.practice_area },
+                  { label: 'Advogado responsável', value: selectedProcessForView.responsible_lawyer || 'Não informado' },
+                  {
+                    label: 'Audiência',
+                    value: selectedProcessForView.hearing_scheduled
+                      ? `${selectedProcessForView.hearing_date ? formatDate(selectedProcessForView.hearing_date) : 'Data n/d'}${selectedProcessForView.hearing_time ? ` · ${selectedProcessForView.hearing_time.slice(0, 5)}` : ''}${selectedProcessForView.hearing_mode ? ` · ${selectedProcessForView.hearing_mode === 'presencial' ? 'Presencial' : 'Online'}` : ''}`
+                      : 'Não agendada',
+                  },
+                  { label: 'Criado em', value: formatDate(selectedProcessForView.created_at) },
+                ].map((f, i) => (
+                  <div key={i} className="px-5 py-4">
+                    <div className="text-[9px] font-bold uppercase tracking-widest text-slate-400 mb-1.5">{f.label}</div>
+                    <div className="text-sm font-medium text-slate-900 dark:text-white">{f.value}</div>
+                  </div>
+                ))}
               </div>
-              <div>
-                <label className="text-xs font-semibold text-slate-500 uppercase">Vara / Comarca</label>
-                <p className="text-base text-slate-900 mt-1">{selectedProcessForView.court || 'Não informado'}</p>
-              </div>
-              <div>
-                <label className="text-xs font-semibold text-slate-500 uppercase">Status</label>
-                <p className="mt-1">
-                  <span className={`inline-flex px-3 py-1 rounded-full text-xs font-semibold ${getStatusBadge(selectedProcessForView.status)}`}>
-                    {getStatusLabel(selectedProcessForView.status)}
-                  </span>
-                </p>
-              </div>
-              <div>
-                <label className="text-xs font-semibold text-slate-500 uppercase">Área</label>
-                <p className="text-base text-slate-900 mt-1">{practiceAreaInfo ? practiceAreaInfo.label : selectedProcessForView.practice_area}</p>
-              </div>
-              <div>
-                <label className="text-xs font-semibold text-slate-500 uppercase">Advogado responsável</label>
-                <p className="text-base text-slate-900 mt-1">{selectedProcessForView.responsible_lawyer || 'Não informado'}</p>
-              </div>
-              <div>
-                <label className="text-xs font-semibold text-slate-500 uppercase">Audiência</label>
-                <p className="text-base text-slate-900 mt-1">
-                  {selectedProcessForView.hearing_scheduled ? (
-                    <span>
-                      {selectedProcessForView.hearing_date ? formatDate(selectedProcessForView.hearing_date) : 'Data não informada'}
-                      {selectedProcessForView.hearing_time && ` às ${selectedProcessForView.hearing_time.slice(0, 5)}`}
-                      {selectedProcessForView.hearing_mode && (
-                        <span className="ml-2 text-xs px-2 py-1 rounded bg-blue-100 text-blue-700">
-                          {selectedProcessForView.hearing_mode === 'presencial' ? 'Presencial' : 'Online'}
-                        </span>
-                      )}
-                    </span>
-                  ) : (
-                    'Não agendada'
-                  )}
-                </p>
-              </div>
+            </div>
+
+            <div className="grid grid-cols-1 gap-6">
               <div className="md:col-span-2">
-                <label className="text-xs font-semibold text-slate-500 uppercase">Histórico de notas</label>
+                <div className="flex items-center justify-between mb-3">
+                  <div className="flex items-center gap-2">
+                    <span className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Linha do tempo</span>
+                    {noteThreads.length > 0 && (
+                      <span className="px-1.5 py-0.5 rounded text-[10px] font-bold tabular-nums bg-slate-100 text-slate-500">
+                        {noteThreads.length}
+                      </span>
+                    )}
+                  </div>
+                </div>
                 {noteThreads.length === 0 ? (
-                  <p className="text-sm text-slate-500 mt-2">Nenhuma nota registrada no momento.</p>
+                  <div className="rounded-xl border border-dashed border-slate-200 py-8 text-center">
+                    <Clock className="w-8 h-8 text-slate-300 mx-auto mb-2" />
+                    <p className="text-sm text-slate-400">Nenhum registro na linha do tempo ainda.</p>
+                  </div>
                 ) : (
-                  <div className="mt-2 space-y-4">{noteThreads.map((thread) => renderNote(thread))}</div>
+                  <div className="relative">
+                    {noteThreads.map((thread, idx) =>
+                      renderNote(thread, 0, idx === noteThreads.length - 1),
+                    )}
+                  </div>
                 )}
               </div>
             </div>
@@ -2245,7 +2420,7 @@ const ProcessesModule: React.FC<ProcessesModuleProps> = ({ forceCreate, entityId
                         type="button"
                         onClick={scheduleStayWithAI}
                         disabled={schedulingStay}
-                        className="h-10 px-4 rounded-lg bg-slate-900 hover:bg-slate-800 text-white text-sm font-medium transition disabled:opacity-60"
+                        className="h-10 px-4 rounded-lg bg-orange-600 hover:bg-orange-700 text-white text-sm font-medium transition disabled:opacity-60"
                       >
                         {schedulingStay ? 'Analisando...' : 'IA identificar'}
                       </button>
@@ -2528,86 +2703,98 @@ const ProcessesModule: React.FC<ProcessesModuleProps> = ({ forceCreate, entityId
         </div>
       )}
 
-      {/* Cards de Estatísticas - Design Compacto */}
-      <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
-        <button
-          onClick={() => setStatusFilter('todos')}
-          className={`bg-white p-3 rounded-xl shadow-sm flex items-center gap-3 transition-all hover:shadow-md ${statusFilter === 'todos' ? 'border-2 border-primary' : 'border border-slate-200 hover:border-slate-300'}`}
-        >
-          <div className="w-10 h-10 bg-orange-100 text-primary rounded-lg flex items-center justify-center">
-            <Building2 className="w-5 h-5" />
-          </div>
-          <div>
-            <div className="text-xl font-bold">{statusCounts.todos}</div>
-            <div className="text-[10px] font-semibold text-slate-500 uppercase tracking-tighter">Processos Total</div>
-          </div>
-        </button>
+      {/* KPI Strip — enterprise, clicável p/ filtrar */}
+      <div className="bg-white border border-slate-200 rounded-2xl shadow-sm overflow-hidden">
+        <div className="grid grid-cols-2 md:grid-cols-5 divide-x divide-slate-100">
+          {[
+            { key: 'todos' as const, label: 'Total', value: statusCounts.todos, icon: Building2, accent: 'text-slate-900', ring: 'ring-slate-300', bg: 'bg-slate-50/60' },
+            { key: 'aguardando_confeccao' as const, label: 'Aguardando', value: statusCounts.aguardando_confeccao || 0, icon: FileText, accent: 'text-orange-600', ring: 'ring-orange-300', bg: 'bg-orange-50/50' },
+            { key: 'andamento' as const, label: 'Em Andamento', value: statusCounts.andamento || 0, icon: Clock, accent: 'text-emerald-600', ring: 'ring-emerald-300', bg: 'bg-emerald-50/50' },
+            { key: 'distribuido' as const, label: 'Distribuídos', value: statusCounts.distribuido || 0, icon: FileText, accent: 'text-slate-900', ring: 'ring-slate-300', bg: 'bg-slate-50/60' },
+            { key: 'arquivado' as const, label: 'Arquivados', value: statusCounts.arquivado || 0, icon: CheckCircle2, accent: 'text-slate-900', ring: 'ring-slate-300', bg: 'bg-slate-50/60' },
+          ].map((card) => {
+            const active = statusFilter === card.key;
+            const Icon = card.icon;
+            const pct = statusCounts.todos > 0 && card.key !== 'todos'
+              ? Math.round((Number(card.value) / statusCounts.todos) * 100)
+              : null;
+            return (
+              <button
+                key={card.key}
+                onClick={() => setStatusFilter(card.key)}
+                className={`px-4 py-4 sm:px-5 sm:py-5 text-left transition relative ${active ? card.bg : 'hover:bg-slate-50/60'}`}
+                title={active ? 'Mostrar todos' : `Filtrar: ${card.label}`}
+              >
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-[9px] font-bold uppercase tracking-widest text-slate-400">{card.label}</span>
+                  <Icon className={`w-3.5 h-3.5 ${active ? card.accent : 'text-slate-300'}`} />
+                </div>
+                <div className={`text-2xl sm:text-3xl font-bold tabular-nums leading-none ${card.accent}`}>{card.value}</div>
+                <div className="mt-1.5 text-[10px] text-slate-400">
+                  {card.key === 'todos' ? 'processos no sistema' : pct !== null ? `${pct}% do total` : '—'}
+                </div>
+                {active && <span className={`absolute top-2 right-2 w-1.5 h-1.5 rounded-full ${card.accent.replace('text-', 'bg-')}`} />}
+              </button>
+            );
+          })}
+        </div>
+      </div>
 
+      {/* Barra de Sincronização DJEN — visível e acionável */}
+      <div className="bg-white border border-slate-200 rounded-2xl shadow-sm px-4 py-3 flex flex-col sm:flex-row sm:items-center gap-3">
+        <div className="flex items-center gap-3 flex-1 min-w-0">
+          <div className={`w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0 ${syncingDjen ? 'bg-blue-100 text-blue-600' : djenStats.withData > 0 ? 'bg-emerald-100 text-emerald-600' : 'bg-slate-100 text-slate-500'}`}>
+            <RefreshCw className={`w-4 h-4 ${syncingDjen ? 'animate-spin' : ''}`} />
+          </div>
+          <div className="min-w-0">
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="text-sm font-semibold text-slate-900">Sincronização DJEN</span>
+              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200">
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" /> Automático
+              </span>
+            </div>
+            <p className="text-[11px] text-slate-500 mt-0.5 truncate">
+              {syncingDjen ? (
+                'Consultando o Diário de Justiça Eletrônico Nacional…'
+              ) : djenSyncResult ? (
+                <span className="text-emerald-700 font-medium">
+                  {djenSyncResult.updated} com novidades · {djenSyncResult.synced} sincronizados de {djenSyncResult.total}
+                </span>
+              ) : (
+                <>
+                  <strong className="text-slate-700 tabular-nums">{djenStats.synced}</strong>/{djenStats.tracked} sincronizados
+                  {djenStats.withData > 0 && <> · <strong className="text-emerald-700 tabular-nums">{djenStats.withData}</strong> com andamentos</>}
+                  {djenStats.lastSync && <> · última: {formatLastSync(djenStats.lastSync) ?? '—'}</>}
+                  {' · '}auto a cada 1h + cron 03h
+                </>
+              )}
+            </p>
+          </div>
+        </div>
         <button
-          onClick={() => setStatusFilter('aguardando_confeccao')}
-          className={`bg-white p-3 rounded-xl shadow-sm flex items-center gap-3 transition-all hover:shadow-md ${statusFilter === 'aguardando_confeccao' ? 'border-2 border-orange-500' : 'border border-slate-200 hover:border-slate-300'}`}
+          onClick={handleManualDjenSync}
+          disabled={syncingDjen}
+          className="flex-shrink-0 inline-flex items-center justify-center gap-2 px-4 py-2 rounded-lg bg-orange-600 hover:bg-orange-700 disabled:bg-orange-300 text-white text-xs font-semibold transition shadow-sm"
         >
-          <div className="w-10 h-10 bg-orange-100 text-orange-600 rounded-lg flex items-center justify-center">
-            <FileText className="w-5 h-5" />
-          </div>
-          <div>
-            <div className="text-xl font-bold">{statusCounts.aguardando_confeccao || 0}</div>
-            <div className="text-[10px] font-semibold text-slate-500 uppercase tracking-tighter">Aguardando</div>
-          </div>
-        </button>
-
-        <button
-          onClick={() => setStatusFilter('andamento')}
-          className={`bg-white p-3 rounded-xl shadow-sm flex items-center gap-3 transition-all hover:shadow-md ${statusFilter === 'andamento' ? 'border-2 border-blue-500' : 'border border-slate-200 hover:border-slate-300'}`}
-        >
-          <div className="w-10 h-10 bg-blue-100 text-blue-600 rounded-lg flex items-center justify-center">
-            <Clock className="w-5 h-5" />
-          </div>
-          <div>
-            <div className="text-xl font-bold">{statusCounts.andamento || 0}</div>
-            <div className="text-[10px] font-semibold text-slate-500 uppercase tracking-tighter">Em Andamento</div>
-          </div>
-        </button>
-
-        <button
-          onClick={() => setStatusFilter('distribuido')}
-          className={`bg-white p-3 rounded-xl shadow-sm flex items-center gap-3 transition-all hover:shadow-md ${statusFilter === 'distribuido' ? 'border-2 border-purple-500' : 'border border-slate-200 hover:border-slate-300'}`}
-        >
-          <div className="w-10 h-10 bg-purple-100 text-purple-600 rounded-lg flex items-center justify-center">
-            <FileText className="w-5 h-5" />
-          </div>
-          <div>
-            <div className="text-xl font-bold">{statusCounts.distribuido || 0}</div>
-            <div className="text-[10px] font-semibold text-slate-500 uppercase tracking-tighter">Distribuídos</div>
-          </div>
-        </button>
-
-        <button
-          onClick={() => setStatusFilter('arquivado')}
-          className={`bg-white p-3 rounded-xl shadow-sm flex items-center gap-3 transition-all hover:shadow-md ${statusFilter === 'arquivado' ? 'border-2 border-green-500' : 'border border-slate-200 hover:border-slate-300'}`}
-        >
-          <div className="w-10 h-10 bg-green-100 text-green-600 rounded-lg flex items-center justify-center">
-            <CheckCircle2 className="w-5 h-5" />
-          </div>
-          <div>
-            <div className="text-xl font-bold">{statusCounts.arquivado || 0}</div>
-            <div className="text-[10px] font-semibold text-slate-500 uppercase tracking-tighter">Arquivados</div>
-          </div>
+          {syncingDjen ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5" />}
+          {syncingDjen ? 'Sincronizando…' : 'Sincronizar agora'}
         </button>
       </div>
 
       {/* Seção Aguardando Confecção - Compacta */}
       {statusFilter === 'todos' && (
-        <div className="bg-white rounded-xl border border-orange-200 shadow-sm overflow-hidden">
+        <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
           {/* Header com botão de adicionar inline */}
-          <div className="flex items-center justify-between px-4 py-3 bg-gradient-to-r from-orange-50 to-amber-50 border-b border-orange-100">
-            <div className="flex items-center gap-2">
-              <div className="w-7 h-7 rounded-lg bg-orange-500 flex items-center justify-center">
-                <FileText className="w-3.5 h-3.5 text-white" />
+          <div className="flex items-center justify-between px-4 py-3 border-b border-slate-100">
+            <div className="flex items-center gap-2.5">
+              <div className="w-8 h-8 rounded-lg bg-orange-100 text-orange-600 flex items-center justify-center">
+                <FileText className="w-4 h-4" />
               </div>
               <div>
-                <h3 className="text-sm font-semibold text-orange-900">Aguardando Confecção</h3>
-                <p className="text-[11px] text-orange-600">{processesByStatus.aguardando_confeccao.length} no fluxo</p>
+                <h3 className="text-sm font-semibold text-slate-900">Aguardando Confecção</h3>
+                <p className="text-[11px] text-slate-500">
+                  <strong className="text-orange-600 font-semibold tabular-nums">{processesByStatus.aguardando_confeccao.length}</strong> no fluxo de protocolo
+                </p>
               </div>
             </div>
             <div className="flex items-center gap-2">
@@ -2719,9 +2906,7 @@ const ProcessesModule: React.FC<ProcessesModuleProps> = ({ forceCreate, entityId
                     onClick={() => setSelectedProcessForView(process)}
                     className="flex items-center gap-3 px-4 py-2.5 hover:bg-orange-50/50 cursor-pointer transition-all group"
                   >
-                    <div className="w-7 h-7 rounded-full bg-orange-100 flex items-center justify-center flex-shrink-0">
-                      <User className="w-3.5 h-3.5 text-orange-600" />
-                    </div>
+                    <ClientAvatar client={client} photoUrl={client ? clientPhotoUrls.get(client.id) : undefined} size={32} />
                     <div className="flex-1 min-w-0">
                       <p className="text-sm font-medium text-slate-900 truncate">{client?.full_name || 'Cliente não informado'}</p>
                       <div className="flex items-center gap-2">
@@ -2919,11 +3104,7 @@ const ProcessesModule: React.FC<ProcessesModuleProps> = ({ forceCreate, entityId
                           >
                             <div className="flex items-start justify-between gap-2 mb-2">
                               <div className="flex items-center gap-2 flex-1 min-w-0">
-                                <div
-                                  className={`flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center text-xs ${client?.client_type === 'pessoa_fisica' ? 'bg-blue-100 text-blue-600' : 'bg-purple-100 text-purple-600'}`}
-                                >
-                                  {client?.client_type === 'pessoa_fisica' ? <User className="w-4 h-4" /> : <Building2 className="w-4 h-4" />}
-                                </div>
+                                <ClientAvatar client={client} photoUrl={client ? clientPhotoUrls.get(client.id) : undefined} size={32} />
                                 <div className="flex-1 min-w-0">
                                   <p className="text-xs font-semibold text-slate-900 truncate">{client?.full_name || 'Cliente removido'}</p>
                                   <p className="text-xs text-slate-500 font-mono truncate">{process.process_code}</p>
@@ -2994,11 +3175,7 @@ const ProcessesModule: React.FC<ProcessesModuleProps> = ({ forceCreate, entityId
                   return (
                     <div key={process.id} className="p-3 sm:p-4 hover:bg-gray-50 transition-colors">
                       <div className="flex items-start gap-2 sm:gap-3 mb-2 sm:mb-3">
-                        <div
-                          className={`flex-shrink-0 h-8 w-8 sm:h-10 sm:w-10 rounded-full flex items-center justify-center ${client?.client_type === 'pessoa_fisica' ? 'bg-blue-100 text-blue-600' : 'bg-purple-100 text-purple-600'}`}
-                        >
-                          {client?.client_type === 'pessoa_fisica' ? <User className="w-4 h-4 sm:w-5 sm:h-5" /> : <Building2 className="w-4 h-4 sm:w-5 sm:h-5" />}
-                        </div>
+                        <ClientAvatar client={client} photoUrl={client ? clientPhotoUrls.get(client.id) : undefined} size={40} />
                         <div className="flex-1 min-w-0">
                           <div className="text-xs sm:text-sm font-medium text-gray-900 mb-1 truncate">{client?.full_name || 'Cliente removido'}</div>
                           <div className="text-[10px] sm:text-xs font-mono text-gray-700 break-all">{process.process_code}</div>
@@ -3050,14 +3227,14 @@ const ProcessesModule: React.FC<ProcessesModuleProps> = ({ forceCreate, entityId
                 })}
               </div>
               <div className="hidden lg:block overflow-x-auto">
-                <table className="min-w-full divide-y divide-gray-200">
-                  <thead className="bg-slate-50">
+                <table className="min-w-full divide-y divide-slate-100">
+                  <thead className="bg-slate-50/60 border-b border-slate-200">
                     <tr>
-                      <th className="px-6 py-4 text-left text-xs font-semibold text-slate-700 uppercase tracking-wider">Nome do Cliente</th>
-                      <th className="px-6 py-4 text-left text-xs font-semibold text-slate-700 uppercase tracking-wider">Código do Processo</th>
-                      <th className="px-6 py-4 text-left text-xs font-semibold text-slate-700 uppercase tracking-wider">Distribuído</th>
-                      <th className="px-6 py-4 text-left text-xs font-semibold text-slate-700 uppercase tracking-wider">Status</th>
-                      <th className="px-6 py-4 text-right text-xs font-semibold text-slate-700 uppercase tracking-wider">Ações</th>
+                      <th className="px-6 py-3.5 text-left text-[10px] font-bold text-slate-400 uppercase tracking-widest">Cliente</th>
+                      <th className="px-6 py-3.5 text-left text-[10px] font-bold text-slate-400 uppercase tracking-widest">Código do Processo</th>
+                      <th className="px-6 py-3.5 text-left text-[10px] font-bold text-slate-400 uppercase tracking-widest">Distribuído</th>
+                      <th className="px-6 py-3.5 text-left text-[10px] font-bold text-slate-400 uppercase tracking-widest">Status</th>
+                      <th className="px-6 py-3.5 text-right text-[10px] font-bold text-slate-400 uppercase tracking-widest">Ações</th>
                     </tr>
                   </thead>
                   <tbody className="bg-white divide-y divide-gray-200">
@@ -3067,7 +3244,7 @@ const ProcessesModule: React.FC<ProcessesModuleProps> = ({ forceCreate, entityId
                       return (
                         <React.Fragment key={process.id}>
                           <tr 
-                            className={`hover:bg-gray-50 transition-colors cursor-pointer ${isTimelineExpanded ? 'bg-orange-50/50' : ''}`} 
+                            className={`hover:bg-slate-50/70 transition-colors cursor-pointer ${isTimelineExpanded ? 'bg-slate-50' : ''}`}
                             onClick={() => {
                               if (process.process_code) {
                                 setExpandedTimelineProcessId(isTimelineExpanded ? null : process.id);
@@ -3076,11 +3253,7 @@ const ProcessesModule: React.FC<ProcessesModuleProps> = ({ forceCreate, entityId
                           >
                             <td className="px-6 py-4 whitespace-nowrap">
                               <div className="flex items-center gap-3">
-                                <div
-                                  className={`flex-shrink-0 h-10 w-10 rounded-full flex items-center justify-center ${client?.client_type === 'pessoa_fisica' ? 'bg-blue-100 text-blue-600' : 'bg-purple-100 text-purple-600'}`}
-                                >
-                                  {client?.client_type === 'pessoa_fisica' ? <User className="w-5 h-5" /> : <Building2 className="w-5 h-5" />}
-                                </div>
+                                <ClientAvatar client={client} photoUrl={client ? clientPhotoUrls.get(client.id) : undefined} size={40} />
                                 <div>
                                   <div className="text-sm font-medium text-gray-900">{client?.full_name || 'Cliente removido'}</div>
                                   <div className="flex flex-wrap gap-2 mt-1 text-xs text-gray-500">
@@ -3123,7 +3296,7 @@ const ProcessesModule: React.FC<ProcessesModuleProps> = ({ forceCreate, entityId
                                 {process.process_code && (
                                   <button 
                                     onClick={() => setExpandedTimelineProcessId(isTimelineExpanded ? null : process.id)} 
-                                    className={`transition-colors ${isTimelineExpanded ? 'text-orange-600' : 'text-orange-400 hover:text-orange-600'}`} 
+                                    className={`transition-colors ${isTimelineExpanded ? 'text-[#f97316]' : 'text-slate-400 hover:text-[#f97316]'}`}
                                     title={isTimelineExpanded ? 'Recolher Timeline' : 'Expandir Timeline'}
                                   >
                                     {isTimelineExpanded ? <ChevronUp className="w-5 h-5" /> : <ChevronDown className="w-5 h-5" />}
@@ -3143,7 +3316,7 @@ const ProcessesModule: React.FC<ProcessesModuleProps> = ({ forceCreate, entityId
                           </tr>
                           {/* Timeline Inline Expansível - Desktop */}
                           {isTimelineExpanded && process.process_code && (
-                            <tr className="bg-gradient-to-r from-orange-50 to-amber-50">
+                            <tr className="bg-slate-50">
                               <td colSpan={5} className="px-6 py-4">
                                 <ProcessTimelineInline
                                   processCode={process.process_code}
@@ -3178,14 +3351,15 @@ const ProcessesModule: React.FC<ProcessesModuleProps> = ({ forceCreate, entityId
           />
           <div className="relative z-10 w-full max-w-5xl">
             <div className="bg-white rounded-2xl shadow-2xl border border-slate-200 overflow-hidden">
-              <div className="flex items-center justify-between px-5 py-4 bg-gradient-to-r from-slate-50 to-slate-100 border-b border-slate-200">
+              <div className="flex items-center justify-between px-6 py-4 border-b border-slate-200 bg-white">
                 <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-orange-500 to-amber-500 flex items-center justify-center">
-                    <Clock className="w-5 h-5 text-white" />
+                  <div className="w-9 h-9 rounded-xl bg-[#f97316] flex items-center justify-center">
+                    <Clock className="w-4 h-4 text-white" />
                   </div>
                   <div>
-                    <div className="text-lg font-bold text-slate-900">Mapa de Fases</div>
-                    <div className="text-xs text-slate-600">Clique em uma fase para ver os processos</div>
+                    <div className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Visão geral</div>
+                    <div className="text-base font-bold text-slate-900 leading-tight">Mapa de Fases</div>
+                    <div className="text-[11px] text-slate-500">Clique em uma fase para ver os processos</div>
                   </div>
                 </div>
                 <button

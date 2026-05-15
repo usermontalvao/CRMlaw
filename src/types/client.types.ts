@@ -41,6 +41,8 @@ export interface Client {
 
   // Foto de perfil (path no Supabase Storage, derivada da assinatura facial)
   photo_path?: string | null;
+  // Paths de fotos coletadas excluídas/ocultas do perfil (não apaga a prova)
+  excluded_photo_paths?: string[] | null;
 
   // Metadados
   created_at: string;

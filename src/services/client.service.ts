@@ -475,7 +475,63 @@ export class ClientService {
     }
 
     localStorage.removeItem('crm-dashboard-cache');
+    this.clearClientPhotoCache(id);
     events.emit(SYSTEM_EVENTS.CLIENTS_CHANGED, { action: 'update', id });
+  }
+
+  /**
+   * Remove a entrada de foto de um cliente do cache compartilhado
+   * (usado por useClientPhotos), forçando re-resolução em todos os módulos.
+   */
+  private clearClientPhotoCache(id: string): void {
+    try {
+      const KEY = 'jurius.clientPhotoCache.v1';
+      const raw = localStorage.getItem(KEY);
+      if (!raw) return;
+      const cache = JSON.parse(raw);
+      if (cache && typeof cache === 'object' && id in cache) {
+        delete cache[id];
+        localStorage.setItem(KEY, JSON.stringify(cache));
+      }
+    } catch {
+      /* ignora */
+    }
+  }
+
+  /**
+   * Exclui (oculta) uma foto coletada em assinatura do perfil/galeria do
+   * cliente — NÃO apaga a prova jurídica da assinatura, apenas marca o path
+   * como excluído para que não apareça em nenhum módulo.
+   */
+  async excludeClientPhoto(id: string, photoPath: string): Promise<string[]> {
+    const { data, error: fetchErr } = await supabase
+      .from(this.tableName)
+      .select('excluded_photo_paths, photo_path')
+      .eq('id', id)
+      .single();
+    if (fetchErr) {
+      throw new Error(`Erro ao carregar fotos excluídas: ${fetchErr.message}`);
+    }
+    const current: string[] = Array.isArray((data as any)?.excluded_photo_paths)
+      ? (data as any).excluded_photo_paths
+      : [];
+    const nextExcluded = current.includes(photoPath) ? current : [...current, photoPath];
+    const update: Record<string, any> = {
+      excluded_photo_paths: nextExcluded,
+      updated_at: new Date().toISOString(),
+    };
+    // Se a foto excluída era a de perfil, desvincula
+    if ((data as any)?.photo_path === photoPath) {
+      update.photo_path = null;
+    }
+    const { error } = await supabase.from(this.tableName).update(update).eq('id', id);
+    if (error) {
+      throw new Error(`Erro ao excluir foto: ${error.message}`);
+    }
+    localStorage.removeItem('crm-dashboard-cache');
+    this.clearClientPhotoCache(id);
+    events.emit(SYSTEM_EVENTS.CLIENTS_CHANGED, { action: 'update', id });
+    return nextExcluded;
   }
 
   async searchClients(

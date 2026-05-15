@@ -47,6 +47,7 @@ import { matchesNormalizedSearch } from '../utils/search';
    ============================================================================ */
 
 const VERSION_CODENAMES: Record<string, { name: string; emoji: string }> = {
+  '1.10.068': { name: 'Café Galeria', emoji: '🖼️' },
   '1.10.067': { name: 'Café Enterprise', emoji: '🏛️' },
   '1.10.066': { name: 'Café Sem Overflow', emoji: '📐' },
   '1.10.065': { name: 'Café Header Compacto', emoji: '📱' },
@@ -772,6 +773,33 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
 };
 
 const releases: ReleaseNote[] = [
+  {
+    version: '1.10.068',
+    date: '15/05/2026',
+    summary: 'Redesign completo do modal de fotos do cliente — galeria em grid, preview tela cheia, botão fechar visível e UX refinada.',
+    modules: [
+      {
+        moduleId: 'clients',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Galeria de fotos em grid 2 colunas com thumbnails grandes',
+            description: 'Modal de fotos redesenhado: grid 2 colunas com proporção 3:4, badge "Perfil" sobreposto, gradiente na base com ações integradas, zoom suave ao hover e borda laranja na foto ativa.',
+          },
+          {
+            type: 'improvement',
+            title: 'Preview de foto fullscreen redesenhado',
+            description: 'Preview centralizado com fundo escuro, X flutuante sobre a imagem, nome e label em gradiente na base da foto. Sem elementos desconexos flutuando abaixo.',
+          },
+          {
+            type: 'fix',
+            title: 'Botão fechar (X) sempre visível no modal',
+            description: 'Botão X com fundo branco e borda cinza — impossível de sumir ou ser espremido pelo layout.',
+          },
+        ],
+      },
+    ],
+  },
   {
     version: '1.10.067',
     date: '14/05/2026',

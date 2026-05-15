@@ -191,9 +191,9 @@ export const ProcessTimelineInline: React.FC<ProcessTimelineInlineProps> = ({
           e.stopPropagation();
           onToggle();
         }}
-        className="w-full flex items-center justify-center gap-2 px-3 py-2 mt-2 bg-gradient-to-r from-orange-50 to-amber-50 hover:from-orange-100 hover:to-amber-100 border border-orange-200 rounded-xl text-xs font-semibold text-orange-700 transition-all"
+        className="w-full flex items-center justify-center gap-2 px-3 py-2 mt-2 bg-slate-50 hover:bg-slate-100 border border-slate-200 rounded-lg text-xs font-semibold text-slate-600 hover:text-slate-900 transition"
       >
-        <Clock className="w-3.5 h-3.5" />
+        <Clock className="w-3.5 h-3.5 text-slate-400" />
         Ver Linha do Tempo
         <ChevronDown className="w-3.5 h-3.5" />
       </button>
@@ -201,19 +201,19 @@ export const ProcessTimelineInline: React.FC<ProcessTimelineInlineProps> = ({
   }
 
   return (
-    <div className="mt-3 border-t border-orange-100 pt-3" onClick={(e) => e.stopPropagation()}>
+    <div className="mt-3 rounded-xl border border-slate-200 bg-white" onClick={(e) => e.stopPropagation()}>
       {/* Header */}
-      <div className="flex items-center justify-between mb-3">
-        <div className="flex items-center gap-2">
-          <div className="w-7 h-7 rounded-xl bg-gradient-to-br from-orange-500 to-amber-500 flex items-center justify-center shadow-sm">
+      <div className="flex items-center justify-between px-3.5 py-2.5 border-b border-slate-100">
+        <div className="flex items-center gap-2.5">
+          <div className="w-7 h-7 rounded-lg bg-[#f97316] flex items-center justify-center">
             <Clock className="w-3.5 h-3.5 text-white" />
           </div>
           <div className="leading-tight">
-            <div className="text-xs font-bold text-slate-800">Linha do Tempo</div>
-            <div className="text-[10px] text-slate-500 font-mono truncate max-w-[180px]">{processCode}</div>
+            <div className="text-xs font-bold text-slate-900">Linha do Tempo</div>
+            <div className="text-[10px] text-slate-400 font-mono truncate max-w-[180px] tabular-nums">{processCode}</div>
           </div>
           {events.length > 0 && (
-            <span className="px-1.5 py-0.5 bg-slate-100 text-slate-600 text-[10px] font-medium rounded">
+            <span className="px-1.5 py-0.5 bg-slate-100 text-slate-500 text-[10px] font-bold rounded tabular-nums">
               {events.length} mov.
             </span>
           )}
@@ -222,7 +222,7 @@ export const ProcessTimelineInline: React.FC<ProcessTimelineInlineProps> = ({
           <button
             onClick={() => loadTimeline(true)}
             disabled={loading}
-            className="p-1.5 text-slate-500 hover:bg-white/60 rounded-lg transition disabled:opacity-50"
+            className="p-1.5 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-lg transition disabled:opacity-50"
             title="Atualizar"
           >
             <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
@@ -230,7 +230,7 @@ export const ProcessTimelineInline: React.FC<ProcessTimelineInlineProps> = ({
           {onOpenFullTimeline && events.length > 0 && (
             <button
               onClick={onOpenFullTimeline}
-              className="p-1.5 text-orange-600 hover:bg-orange-50 rounded-lg transition"
+              className="p-1.5 text-slate-400 hover:text-[#f97316] hover:bg-slate-100 rounded-lg transition"
               title="Ver timeline completa"
             >
               <ExternalLink className="w-3.5 h-3.5" />
@@ -244,6 +244,7 @@ export const ProcessTimelineInline: React.FC<ProcessTimelineInlineProps> = ({
           </button>
         </div>
       </div>
+      <div className="p-3.5">{/* corpo */}
 
       {/* Content */}
       {loading ? (
@@ -346,7 +347,7 @@ export const ProcessTimelineInline: React.FC<ProcessTimelineInlineProps> = ({
           {onOpenFullTimeline && (
             <button
               onClick={onOpenFullTimeline}
-              className="w-full flex items-center justify-center gap-2 py-2 text-xs font-medium text-orange-600 hover:text-orange-700 hover:bg-orange-50 rounded-lg transition"
+              className="w-full flex items-center justify-center gap-2 py-2 mt-1 text-xs font-semibold text-[#f97316] hover:bg-slate-50 rounded-lg transition border border-slate-200"
             >
               <Sparkles className="w-3.5 h-3.5" />
               Ver timeline completa com IA
@@ -354,6 +355,7 @@ export const ProcessTimelineInline: React.FC<ProcessTimelineInlineProps> = ({
           )}
         </div>
       )}
+      </div>
     </div>
   );
 };

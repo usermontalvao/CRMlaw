@@ -206,6 +206,7 @@ const ClientsModule: React.FC<ClientsModuleProps> = ({
   const [missingFieldsMap, setMissingFieldsMap] = useState<Map<string, string[]>>(new Map());
   const [outdatedSet, setOutdatedSet] = useState<Set<string>>(new Set());
   const [showIncompleteOnly, setShowIncompleteOnly] = useState(false);
+  const [showOutdatedOnly, setShowOutdatedOnly] = useState(false);
   const [showMissingBanner, setShowMissingBanner] = useState(true);
   const [showDuplicateBanner, setShowDuplicateBanner] = useState(true);
   const [showFilters, setShowFilters] = useState<boolean>(false);
@@ -270,7 +271,9 @@ const ClientsModule: React.FC<ClientsModuleProps> = ({
       const pessoaFisica = await clientService.countClients({ client_type: 'pessoa_fisica' });
       const pessoaJuridica = await clientService.countClients({ client_type: 'pessoa_juridica' });
 
-      const visibleClients = showIncompleteOnly ? data.filter((client) => missing.has(client.id)) : data;
+      let visibleClients = data;
+      if (showIncompleteOnly) visibleClients = visibleClients.filter((client) => missing.has(client.id));
+      if (showOutdatedOnly) visibleClients = visibleClients.filter((client) => outdated.has(client.id));
       setClients(visibleClients);
 
       setMissingFieldsMap(missing);
@@ -293,7 +296,7 @@ const ClientsModule: React.FC<ClientsModuleProps> = ({
 
   useEffect(() => {
     loadClients();
-  }, [filters, showIncompleteOnly]);
+  }, [filters, showIncompleteOnly, showOutdatedOnly]);
 
   // Escutar eventos globais de mudança de clientes
   useEffect(() => {
@@ -670,7 +673,7 @@ const ClientsModule: React.FC<ClientsModuleProps> = ({
     }
   };
 
-  const hasActiveFilters = Boolean(filters.status || filters.client_type || filters.search) || filters.sort_order === 'oldest' || showIncompleteOnly;
+  const hasActiveFilters = Boolean(filters.status || filters.client_type || filters.search) || filters.sort_order === 'oldest' || showIncompleteOnly || showOutdatedOnly;
 
   const isFormModalOpen = modalState.type === 'create' || modalState.type === 'edit';
   const isDetailsModalOpen = modalState.type === 'details' && Boolean(selectedClient);
@@ -851,44 +854,72 @@ const ClientsModule: React.FC<ClientsModuleProps> = ({
                 </div>
               </div>
             )}
-            {((missingFieldsMap.size > 0 && showMissingBanner) || outdatedSet.size > 0) && (
-              <div className="flex items-center gap-3 flex-wrap px-3 py-2 rounded-lg bg-slate-50 border border-slate-200 text-xs">
+            {((missingFieldsMap.size > 0 && showMissingBanner) || outdatedSet.size > 0 || hasActiveFilters) && (
+              <div className="flex items-center gap-2 flex-wrap px-3 py-2 rounded-lg bg-slate-50 border border-slate-200 text-xs">
+                {/* Chip: Incompletos (toggle) */}
                 {missingFieldsMap.size > 0 && showMissingBanner && (
-                  <div className="inline-flex items-center gap-2">
-                    <AlertTriangle className="w-3.5 h-3.5 text-amber-500 flex-shrink-0" />
-                    <span className="text-slate-600">
-                      <strong className="text-amber-700 font-semibold">{missingFieldsMap.size}</strong> incompletos
-                    </span>
-                    {!showIncompleteOnly && (
-                      <button
-                        onClick={() => setShowIncompleteOnly(true)}
-                        className="text-amber-700 hover:text-amber-900 hover:underline font-medium decoration-dotted underline-offset-2"
-                      >
-                        mostrar
-                      </button>
-                    )}
-                    <button
-                      type="button"
-                      onClick={() => setShowMissingBanner(false)}
-                      className="text-slate-300 hover:text-slate-500 text-sm leading-none px-1"
-                      aria-label="Fechar aviso de cadastros incompletos"
-                      title="Dispensar"
-                    >
-                      ×
-                    </button>
-                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setShowIncompleteOnly((v) => !v)}
+                    className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 font-medium transition ${
+                      showIncompleteOnly
+                        ? 'bg-amber-100 text-amber-800 ring-1 ring-amber-300'
+                        : 'bg-white text-slate-600 ring-1 ring-slate-200 hover:ring-amber-300 hover:text-amber-700'
+                    }`}
+                    title={showIncompleteOnly ? 'Remover filtro de incompletos' : 'Filtrar somente incompletos'}
+                  >
+                    <AlertTriangle className="w-3 h-3 text-amber-500 flex-shrink-0" />
+                    <strong className="font-semibold">{missingFieldsMap.size}</strong> incompletos
+                    {showIncompleteOnly && <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse ml-0.5" />}
+                  </button>
                 )}
-                {missingFieldsMap.size > 0 && showMissingBanner && outdatedSet.size > 0 && (
-                  <span className="text-slate-300">·</span>
-                )}
+
+                {/* Chip: Desatualizados (toggle) */}
                 {outdatedSet.size > 0 && (
-                  <div className="inline-flex items-center gap-2">
-                    <Clock className="w-3.5 h-3.5 text-sky-500 flex-shrink-0" />
-                    <span className="text-slate-600">
-                      <strong className="text-sky-700 font-semibold">{outdatedSet.size}</strong> desatualizados
-                    </span>
-                    <span className="text-slate-400">(&gt; {OUTDATED_THRESHOLD_DAYS} dias)</span>
-                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setShowOutdatedOnly((v) => !v)}
+                    className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 font-medium transition ${
+                      showOutdatedOnly
+                        ? 'bg-sky-100 text-sky-800 ring-1 ring-sky-300'
+                        : 'bg-white text-slate-600 ring-1 ring-slate-200 hover:ring-sky-300 hover:text-sky-700'
+                    }`}
+                    title={showOutdatedOnly ? 'Remover filtro de desatualizados' : `Filtrar cadastros com > ${OUTDATED_THRESHOLD_DAYS} dias sem atualização`}
+                  >
+                    <Clock className="w-3 h-3 text-sky-500 flex-shrink-0" />
+                    <strong className="font-semibold">{outdatedSet.size}</strong> desatualizados
+                    <span className="text-slate-400 font-normal">(&gt; {OUTDATED_THRESHOLD_DAYS}d)</span>
+                    {showOutdatedOnly && <span className="w-1.5 h-1.5 rounded-full bg-sky-500 animate-pulse ml-0.5" />}
+                  </button>
+                )}
+
+                {/* Limpar filtros */}
+                {hasActiveFilters && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowIncompleteOnly(false);
+                      setShowOutdatedOnly(false);
+                      setSearchTerm('');
+                      setFilters({ sort_order: 'newest' });
+                    }}
+                    className="inline-flex items-center gap-1 ml-auto text-slate-500 hover:text-slate-800 font-medium hover:underline decoration-dotted underline-offset-2"
+                  >
+                    <X className="w-3 h-3" /> Limpar filtros
+                  </button>
+                )}
+
+                {/* Dispensar avisos */}
+                {missingFieldsMap.size > 0 && showMissingBanner && !hasActiveFilters && (
+                  <button
+                    type="button"
+                    onClick={() => setShowMissingBanner(false)}
+                    className="ml-auto text-slate-300 hover:text-slate-500 text-sm leading-none px-1"
+                    aria-label="Dispensar avisos"
+                    title="Dispensar"
+                  >
+                    ×
+                  </button>
                 )}
               </div>
             )}
@@ -995,7 +1026,7 @@ const ClientsModule: React.FC<ClientsModuleProps> = ({
                 </select>
               </div>
 
-              <div className="sm:col-span-2 lg:col-span-2 flex items-end gap-2">
+              <div className="sm:col-span-2 lg:col-span-3 flex items-end gap-2">
                 <label className="flex-1 inline-flex items-center gap-1.5 text-xs font-medium text-slate-700 border border-slate-200 hover:bg-slate-50 rounded-lg px-3 py-1.5 bg-white cursor-pointer transition">
                   <input
                     type="checkbox"
@@ -1004,6 +1035,15 @@ const ClientsModule: React.FC<ClientsModuleProps> = ({
                     onChange={(e) => setShowIncompleteOnly(e.target.checked)}
                   />
                   <span className="text-xs">Incompletos</span>
+                </label>
+                <label className="flex-1 inline-flex items-center gap-1.5 text-xs font-medium text-slate-700 border border-slate-200 hover:bg-slate-50 rounded-lg px-3 py-1.5 bg-white cursor-pointer transition">
+                  <input
+                    type="checkbox"
+                    className="rounded border-slate-300 text-sky-600 focus:ring-sky-500 w-3.5 h-3.5"
+                    checked={showOutdatedOnly}
+                    onChange={(e) => setShowOutdatedOnly(e.target.checked)}
+                  />
+                  <span className="text-xs">Desatualizados</span>
                 </label>
 
                 <button
@@ -1090,6 +1130,22 @@ const ClientsModule: React.FC<ClientsModuleProps> = ({
                 </button>
               </div>
             </div>
+          </div>
+        )}
+
+        {/* Results count */}
+        {!loading && (
+          <div className="flex items-center justify-between px-1 -mb-1">
+            <p className="text-xs text-slate-500">
+              {hasActiveFilters ? (
+                <>Exibindo <strong className="text-slate-700 font-semibold tabular-nums">{clients.length}</strong> de <strong className="text-slate-700 font-semibold tabular-nums">{stats.total}</strong> {stats.total === 1 ? 'cliente' : 'clientes'} <span className="text-slate-400">· filtros ativos</span></>
+              ) : (
+                <><strong className="text-slate-700 font-semibold tabular-nums">{clients.length}</strong> {clients.length === 1 ? 'cliente' : 'clientes'}</>
+              )}
+            </p>
+            {selectionMode && selectedClientIds.size > 0 && (
+              <p className="text-xs text-indigo-600 font-semibold tabular-nums">{selectedClientIds.size} selecionado{selectedClientIds.size !== 1 ? 's' : ''}</p>
+            )}
           </div>
         )}
 
