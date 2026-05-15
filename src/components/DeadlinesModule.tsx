@@ -32,6 +32,10 @@ import {
   Filter,
   Users,
   FileText,
+  Copy,
+  MessageSquare,
+  Send,
+  SquareCheck,
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { saveAs } from 'file-saver';
@@ -358,7 +362,7 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
   const [filterPriority, setFilterPriority] = useState<DeadlinePriority | ''>('');
   const [filterResponsible, setFilterResponsible] = useState('');
   const [activeStatusTab, setActiveStatusTab] = useState<DeadlineStatus | 'todos'>('todos');
-  const [viewMode, setViewMode] = useState<'list' | 'kanban' | 'map' | 'details'>('list');
+  const [viewMode, setViewMode] = useState<'list' | 'kanban' | 'map' | 'details' | 'workload'>('list');
   const [selectedDeadlineForView, setSelectedDeadlineForView] = useState<Deadline | null>(null);
   const [showViewDeadlineModal, setShowViewDeadlineModal] = useState(false);
   const [statusUpdatingId, setStatusUpdatingId] = useState<string | null>(null);
@@ -403,6 +407,18 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
   const [reportPeriod, setReportPeriod] = useState<'week' | 'month' | 'quarter' | 'year' | 'custom'>('month');
   const [reportStartDate, setReportStartDate] = useState('');
   const [reportEndDate, setReportEndDate] = useState('');
+
+  // Estados para operações em lote
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [bulkActionLoading, setBulkActionLoading] = useState(false);
+
+  // Estados para comentários
+  type DeadlineComment = { id: string; content: string; user_name: string; created_at: string };
+  const [comments, setComments] = useState<DeadlineComment[]>([]);
+  const [commentsLoading, setCommentsLoading] = useState(false);
+  const [commentText, setCommentText] = useState('');
+  const [savingComment, setSavingComment] = useState(false);
+  const [showCommentsFor, setShowCommentsFor] = useState<string | null>(null);
 
   const applyFilterPreset = useCallback(
     (preset: {
@@ -471,6 +487,142 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
     },
     [selectedSavedFilterId, savedFilters, confirmDelete],
   );
+
+  // ── Operações em lote ─────────────────────────────────────────────────────
+  const handleToggleSelect = useCallback((id: string) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  }, []);
+
+  const handleSelectAll = useCallback((ids: string[]) => {
+    setSelectedIds((prev) => prev.size === ids.length ? new Set() : new Set(ids));
+  }, []);
+
+  const handleBulkDelete = useCallback(async () => {
+    if (!selectedIds.size) return;
+    const confirmed = await confirmDelete({
+      title: `Excluir ${selectedIds.size} prazo(s)`,
+      message: `Deseja realmente excluir ${selectedIds.size} prazo(s) selecionado(s)? Essa ação é irreversível.`,
+      confirmLabel: 'Excluir todos',
+    });
+    if (!confirmed) return;
+    setBulkActionLoading(true);
+    try {
+      await Promise.all([...selectedIds].map((id) => deadlineService.deleteDeadline(id)));
+      setDeadlines((prev) => prev.filter((d) => !selectedIds.has(d.id)));
+      setSelectedIds(new Set());
+    } catch (err: any) {
+      setError(err.message || 'Erro ao excluir prazos.');
+    } finally {
+      setBulkActionLoading(false);
+    }
+  }, [selectedIds, confirmDelete]);
+
+  const handleBulkStatusChange = useCallback(async (status: DeadlineStatus) => {
+    if (!selectedIds.size) return;
+    setBulkActionLoading(true);
+    try {
+      await Promise.all([...selectedIds].map((id) => deadlineService.updateStatus(id, status)));
+      setDeadlines((prev) => prev.map((d) => selectedIds.has(d.id) ? { ...d, status } : d));
+      setSelectedIds(new Set());
+    } catch (err: any) {
+      setError(err.message || 'Erro ao atualizar status em lote.');
+    } finally {
+      setBulkActionLoading(false);
+    }
+  }, [selectedIds]);
+
+  const handleBulkResponsibleChange = useCallback(async (responsibleId: string) => {
+    if (!selectedIds.size || !responsibleId) return;
+    setBulkActionLoading(true);
+    try {
+      await Promise.all([...selectedIds].map((id) => deadlineService.updateDeadline(id, { responsible_id: responsibleId })));
+      setDeadlines((prev) => prev.map((d) => selectedIds.has(d.id) ? { ...d, responsible_id: responsibleId } : d));
+      setSelectedIds(new Set());
+    } catch (err: any) {
+      setError(err.message || 'Erro ao atualizar responsável em lote.');
+    } finally {
+      setBulkActionLoading(false);
+    }
+  }, [selectedIds]);
+
+  // ── Duplicar prazo ────────────────────────────────────────────────────────
+  const handleCloneDeadline = useCallback(async (deadline: Deadline) => {
+    try {
+      setSaving(true);
+      const clone = await deadlineService.createDeadline({
+        title: `[CÓPIA] ${deadline.title}`,
+        description: deadline.description,
+        due_date: deadline.due_date,
+        status: 'pendente',
+        priority: deadline.priority,
+        type: deadline.type,
+        process_id: deadline.process_id,
+        requirement_id: deadline.requirement_id,
+        client_id: deadline.client_id,
+        responsible_id: deadline.responsible_id,
+        notify_days_before: deadline.notify_days_before,
+      });
+      setDeadlines((prev) => [clone, ...prev]);
+    } catch (err: any) {
+      setError(err.message || 'Erro ao duplicar prazo.');
+    } finally {
+      setSaving(false);
+    }
+  }, []);
+
+
+  // ── Comentários ───────────────────────────────────────────────────────────
+  const loadComments = useCallback(async (deadlineId: string) => {
+    setCommentsLoading(true);
+    setComments([]);
+    try {
+      const { data, error: err } = await supabase
+        .from('deadline_comments')
+        .select('id, content, created_at, profiles(name)')
+        .eq('deadline_id', deadlineId)
+        .order('created_at', { ascending: true });
+      if (err) throw err;
+      setComments((data || []).map((c: any) => ({
+        id: c.id,
+        content: c.content,
+        user_name: c.profiles?.name || 'Usuário',
+        created_at: c.created_at,
+      })));
+    } catch {
+      // Tabela pode não existir ainda — silencia o erro
+      setComments([]);
+    } finally {
+      setCommentsLoading(false);
+    }
+  }, []);
+
+  const handleAddComment = useCallback(async (deadlineId: string) => {
+    if (!commentText.trim()) return;
+    setSavingComment(true);
+    try {
+      const { data, error: err } = await supabase
+        .from('deadline_comments')
+        .insert({ deadline_id: deadlineId, content: commentText.trim(), user_id: user?.id })
+        .select('id, content, created_at, profiles(name)')
+        .single();
+      if (err) throw err;
+      setComments((prev) => [...prev, {
+        id: data.id,
+        content: data.content,
+        user_name: (data as any).profiles?.name || currentUser?.name || 'Você',
+        created_at: data.created_at,
+      }]);
+      setCommentText('');
+    } catch (err: any) {
+      setError(err.message || 'Erro ao salvar comentário.');
+    } finally {
+      setSavingComment(false);
+    }
+  }, [commentText, user?.id, currentUser?.name]);
 
   const filteredDeadlines = useMemo(() => {
     let filtered = deadlines;
@@ -695,6 +847,29 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
 
   const memberMap = useMemo(() => new Map(members.map((member) => [member.id, member])), [members]);
   const clientMap = useMemo(() => new Map(clients.map((client) => [client.id, client])), [clients]);
+
+  // ── Exportar lista filtrada ───────────────────────────────────────────────
+  const handleExportFiltered = useCallback(() => {
+    if (!filteredDeadlines.length) {
+      alert('Nenhum prazo na lista filtrada para exportar.');
+      return;
+    }
+    const data = filteredDeadlines.map((d) => ({
+      'Título': d.title,
+      'Vencimento': formatDate(d.due_date),
+      'Status': getStatusLabel(d.status),
+      'Prioridade': getPriorityLabel(d.priority),
+      'Tipo': getTypeLabel(d.type),
+      'Cliente': d.client_id ? (clientMap.get(d.client_id)?.full_name || '-') : '-',
+      'Responsável': d.responsible_id ? (memberMap.get(d.responsible_id)?.name || '-') : '-',
+      'Dias p/ vencimento': getDaysUntilDue(d.due_date),
+    }));
+    const wb = XLSX.utils.book_new();
+    const ws = XLSX.utils.json_to_sheet(data);
+    ws['!cols'] = [{ wch: 35 }, { wch: 15 }, { wch: 12 }, { wch: 12 }, { wch: 15 }, { wch: 30 }, { wch: 20 }, { wch: 18 }];
+    XLSX.utils.book_append_sheet(wb, ws, 'Prazos Filtrados');
+    XLSX.writeFile(wb, `prazos_filtrados_${new Date().toISOString().split('T')[0]}.xlsx`);
+  }, [filteredDeadlines, clientMap, memberMap]);
 
   // Estatísticas para relatórios
   const reportStats = useMemo(() => {
@@ -2685,6 +2860,13 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
               </button>
             )}
             <button
+              onClick={() => void handleCloneDeadline(selectedDeadlineForView)}
+              className="inline-flex items-center gap-2 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 font-medium px-4 py-2.5 rounded-lg transition"
+            >
+              <Copy className="w-4 h-4" />
+              Duplicar Prazo
+            </button>
+            <button
               onClick={() => {
                 handleDeleteDeadline(selectedDeadlineForView.id);
                 handleBackToList();
@@ -2694,6 +2876,68 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
               <Trash2 className="w-4 h-4" />
               Excluir Prazo
             </button>
+          </div>
+
+          {/* ── Comentários ─────────────────────────────────────────────── */}
+          <div className="mt-8 pt-6 border-t border-gray-200">
+            <button
+              onClick={() => {
+                if (showCommentsFor === selectedDeadlineForView.id) {
+                  setShowCommentsFor(null);
+                } else {
+                  setShowCommentsFor(selectedDeadlineForView.id);
+                  void loadComments(selectedDeadlineForView.id);
+                }
+              }}
+              className="inline-flex items-center gap-2 text-sm font-semibold text-slate-700 hover:text-blue-600 transition"
+            >
+              <MessageSquare className="w-4 h-4" />
+              Comentários
+              {showCommentsFor === selectedDeadlineForView.id ? (
+                <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 15l7-7 7 7" /></svg>
+              ) : (
+                <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" /></svg>
+              )}
+            </button>
+
+            {showCommentsFor === selectedDeadlineForView.id && (
+              <div className="mt-4 space-y-3">
+                {commentsLoading ? (
+                  <div className="flex items-center gap-2 text-sm text-slate-400"><Loader2 className="w-4 h-4 animate-spin" /> Carregando...</div>
+                ) : comments.length === 0 ? (
+                  <p className="text-sm text-slate-400 italic">Nenhum comentário ainda. Seja o primeiro!</p>
+                ) : (
+                  <div className="space-y-2 max-h-60 overflow-y-auto pr-1">
+                    {comments.map((c) => (
+                      <div key={c.id} className="bg-slate-50 rounded-xl px-4 py-3">
+                        <div className="flex items-center justify-between mb-1">
+                          <span className="text-xs font-semibold text-slate-700">{c.user_name}</span>
+                          <span className="text-[10px] text-slate-400">{formatDateTime(c.created_at)}</span>
+                        </div>
+                        <p className="text-sm text-slate-800 whitespace-pre-wrap">{c.content}</p>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                <div className="flex gap-2 mt-2">
+                  <input
+                    type="text"
+                    value={commentText}
+                    onChange={(e) => setCommentText(e.target.value)}
+                    onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); void handleAddComment(selectedDeadlineForView.id); } }}
+                    placeholder="Escreva um comentário..."
+                    className="flex-1 px-3 py-2 text-sm border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
+                  />
+                  <button
+                    onClick={() => void handleAddComment(selectedDeadlineForView.id)}
+                    disabled={savingComment || !commentText.trim()}
+                    className="inline-flex items-center justify-center w-10 h-10 rounded-xl bg-blue-600 hover:bg-blue-700 text-white transition disabled:opacity-40"
+                  >
+                    {savingComment ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
         </div>
         {deadlineModal}
@@ -2815,6 +3059,15 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
             >
               <Calendar className="w-4 h-4" />
             </button>
+            <button
+              onClick={() => setViewMode(viewMode === 'workload' ? 'list' : 'workload')}
+              className={`flex items-center justify-center w-8 h-8 rounded-md text-xs font-medium transition-all ${
+                viewMode === 'workload' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-700'
+              }`}
+              title="Carga por responsável"
+            >
+              <Users className="w-4 h-4" />
+            </button>
           </div>
 
           <div className="h-6 w-px bg-slate-200"></div>
@@ -2924,6 +3177,14 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
 
           {/* Botões de Ação */}
           <div className="flex items-center gap-2">
+            <button
+              onClick={handleExportFiltered}
+              className="flex items-center gap-2 h-9 px-3 text-sm font-medium text-slate-600 hover:bg-slate-100 rounded-lg transition-colors"
+              title="Exportar lista filtrada"
+            >
+              <Download className="w-4 h-4" />
+              <span className="hidden lg:inline">Exportar</span>
+            </button>
             <button
               onClick={() => setShowReportModal(true)}
               className="flex items-center gap-2 h-9 px-3 text-sm font-medium text-slate-600 hover:bg-slate-100 rounded-lg transition-colors"
@@ -3076,20 +3337,25 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
                   cells.push(
                     <div
                       key={day}
-                      className={`relative h-8 flex items-center justify-center rounded-lg text-xs font-medium transition-all ${
+                      onClick={() => {
+                        setFormData((prev) => ({ ...emptyForm, due_date: dateStr, responsible_id: prev.responsible_id }));
+                        setSelectedDeadline(null);
+                        setIsModalOpen(true);
+                      }}
+                      className={`relative h-8 flex items-center justify-center rounded-lg text-xs font-medium transition-all cursor-pointer ${
                         isToday
                           ? 'bg-blue-600 text-white ring-2 ring-blue-300'
                           : count > 0 && hasUrgent
-                          ? 'bg-red-100 text-red-700 hover:bg-red-200 cursor-pointer'
+                          ? 'bg-red-100 text-red-700 hover:bg-red-200'
                           : count > 0
-                          ? 'bg-amber-100 text-amber-700 hover:bg-amber-200 cursor-pointer'
+                          ? 'bg-amber-100 text-amber-700 hover:bg-amber-200'
                           : isWeekend
-                          ? 'text-red-300 bg-red-50/50'
+                          ? 'text-red-300 bg-red-50/50 hover:bg-red-100'
                           : isPast
-                          ? 'text-slate-300'
-                          : 'text-slate-600 hover:bg-slate-100'
+                          ? 'text-slate-300 hover:bg-slate-50'
+                          : 'text-slate-600 hover:bg-blue-50 hover:text-blue-700'
                       }`}
-                      title={count > 0 ? `${count} prazo(s)` : ''}
+                      title={count > 0 ? `${count} prazo(s) · clique para criar novo` : 'Clique para criar prazo neste dia'}
                     >
                       {day}
                       {count > 0 && (
@@ -3496,8 +3762,56 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
           {/* Desktop Table - Layout conforme imagem */}
           <div className="hidden lg:block">
             <table className="w-full">
+              {selectedIds.size > 0 && (
+                <thead>
+                  <tr>
+                    <td colSpan={7} className="px-4 py-2 bg-blue-50 border-b border-blue-200">
+                      <div className="flex items-center gap-3 flex-wrap">
+                        <span className="text-sm font-semibold text-blue-700">{selectedIds.size} selecionado(s)</span>
+                        <div className="flex items-center gap-2">
+                          <select
+                            disabled={bulkActionLoading}
+                            defaultValue=""
+                            onChange={(e) => { if (e.target.value) void handleBulkStatusChange(e.target.value as DeadlineStatus); e.target.value = ''; }}
+                            className="h-8 px-2 text-xs border border-blue-200 rounded-lg bg-white text-slate-700 focus:outline-none cursor-pointer"
+                          >
+                            <option value="" disabled>Alterar status...</option>
+                            {STATUS_OPTIONS.map((s) => <option key={s.key} value={s.key}>{s.label}</option>)}
+                          </select>
+                          <select
+                            disabled={bulkActionLoading}
+                            defaultValue=""
+                            onChange={(e) => { if (e.target.value) void handleBulkResponsibleChange(e.target.value); e.target.value = ''; }}
+                            className="h-8 px-2 text-xs border border-blue-200 rounded-lg bg-white text-slate-700 focus:outline-none cursor-pointer"
+                          >
+                            <option value="" disabled>Alterar responsável...</option>
+                            {members.map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
+                          </select>
+                          <button
+                            onClick={() => void handleBulkDelete()}
+                            disabled={bulkActionLoading}
+                            className="inline-flex items-center gap-1 h-8 px-3 text-xs font-semibold text-red-600 bg-red-50 hover:bg-red-100 border border-red-200 rounded-lg transition disabled:opacity-50"
+                          >
+                            {bulkActionLoading ? <Loader2 className="w-3 h-3 animate-spin" /> : <Trash2 className="w-3 h-3" />}
+                            Excluir
+                          </button>
+                          <button onClick={() => setSelectedIds(new Set())} className="text-xs text-slate-500 hover:text-slate-700 underline">Limpar</button>
+                        </div>
+                      </div>
+                    </td>
+                  </tr>
+                </thead>
+              )}
               <thead className="border-b border-slate-200">
                 <tr>
+                  <th className="pl-4 pr-2 py-3 w-8">
+                    <input
+                      type="checkbox"
+                      checked={paginatedDeadlines.length > 0 && paginatedDeadlines.every((d) => selectedIds.has(d.id))}
+                      onChange={() => handleSelectAll(paginatedDeadlines.map((d) => d.id))}
+                      className="rounded border-slate-300 text-blue-600 focus:ring-blue-500 cursor-pointer"
+                    />
+                  </th>
                   <th className="px-4 py-3 text-left text-[11px] font-semibold text-slate-500 uppercase tracking-wide">Prazo</th>
                   <th className="px-4 py-3 text-left text-[11px] font-semibold text-slate-500 uppercase tracking-wide">Vencimento</th>
                   <th className="px-4 py-3 text-left text-[11px] font-semibold text-slate-500 uppercase tracking-wide">Dias</th>
@@ -3519,9 +3833,19 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
                     <tr
                       key={deadline.id}
                       className={`hover:bg-slate-50 transition-colors ${
+                        selectedIds.has(deadline.id) ? 'bg-blue-50/50' :
                         dueSoon && deadline.status === 'pendente' ? 'bg-red-50/30' : ''
                       }`}
                     >
+                      {/* Checkbox */}
+                      <td className="pl-4 pr-2 py-3">
+                        <input
+                          type="checkbox"
+                          checked={selectedIds.has(deadline.id)}
+                          onChange={() => handleToggleSelect(deadline.id)}
+                          className="rounded border-slate-300 text-blue-600 focus:ring-blue-500 cursor-pointer"
+                        />
+                      </td>
                       {/* Coluna PRAZO */}
                       <td className="px-4 py-3">
                         <div>
@@ -3610,6 +3934,13 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
                             <Edit2 className="w-4 h-4" />
                           </button>
                           <button
+                            onClick={() => void handleCloneDeadline(deadline)}
+                            className="p-2 text-slate-400 hover:text-emerald-600 hover:bg-emerald-50 rounded-lg transition-colors"
+                            title="Duplicar prazo"
+                          >
+                            <Copy className="w-4 h-4" />
+                          </button>
+                          <button
                             onClick={() => handleDeleteDeadline(deadline.id)}
                             className="p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
                             title="Excluir"
@@ -3626,6 +3957,68 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
           </div>
         </div>
       ) : null}
+
+      {/* ── Visão de carga por responsável ─────────────────────────────── */}
+      {viewMode === 'workload' && (
+        <div className="bg-white border border-slate-200 rounded-xl overflow-hidden">
+          <div className="flex items-center gap-3 px-6 py-4 border-b border-slate-100">
+            <Users className="w-5 h-5 text-blue-500" />
+            <h4 className="text-base font-semibold text-slate-900">Carga por Responsável</h4>
+            <span className="text-xs text-slate-400">— prazos pendentes e vencidos</span>
+          </div>
+          <div className="divide-y divide-slate-100">
+            {members.length === 0 ? (
+              <p className="text-sm text-slate-400 text-center py-8">Nenhum membro encontrado.</p>
+            ) : (() => {
+              const workloadRows = members.map((member) => {
+                const memberDeadlines = deadlines.filter((d) =>
+                  d.responsible_id === member.id && (d.status === 'pendente' || d.status === 'vencido')
+                );
+                const overdue = memberDeadlines.filter((d) => d.status === 'vencido' || getDaysUntilDue(d.due_date) < 0).length;
+                const urgent = memberDeadlines.filter((d) => d.priority === 'urgente' || d.priority === 'alta').length;
+                const total = memberDeadlines.length;
+                return { member, total, overdue, urgent };
+              }).sort((a, b) => b.total - a.total);
+
+              const maxTotal = Math.max(...workloadRows.map((r) => r.total), 1);
+
+              return workloadRows.map(({ member, total, overdue, urgent }) => (
+                <div key={member.id} className="px-6 py-4 hover:bg-slate-50 transition">
+                  <div className="flex items-center justify-between gap-4 mb-2">
+                    <div className="flex items-center gap-3 min-w-0">
+                      <div className="w-8 h-8 rounded-full bg-blue-100 flex items-center justify-center flex-shrink-0">
+                        <span className="text-xs font-bold text-blue-700">
+                          {member.name?.split(' ').map((n: string) => n[0]).slice(0, 2).join('').toUpperCase()}
+                        </span>
+                      </div>
+                      <span className="text-sm font-semibold text-slate-800 truncate">{member.name}</span>
+                    </div>
+                    <div className="flex items-center gap-3 flex-shrink-0 text-xs">
+                      <span className="font-bold text-slate-700">{total} prazo{total !== 1 ? 's' : ''}</span>
+                      {overdue > 0 && (
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-red-100 text-red-700 font-semibold">
+                          <AlertTriangle className="w-3 h-3" /> {overdue} vencido{overdue !== 1 ? 's' : ''}
+                        </span>
+                      )}
+                      {urgent > 0 && (
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-orange-100 text-orange-700 font-semibold">
+                          {urgent} urgente{urgent !== 1 ? 's' : ''}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                  <div className="w-full bg-slate-100 rounded-full h-2">
+                    <div
+                      className={`h-2 rounded-full transition-all ${overdue > 0 ? 'bg-red-500' : urgent > 0 ? 'bg-orange-400' : 'bg-blue-500'}`}
+                      style={{ width: `${(total / maxTotal) * 100}%` }}
+                    />
+                  </div>
+                </div>
+              ));
+            })()}
+          </div>
+        </div>
+      )}
 
       {!isPastMonth && filteredDeadlines.length > pageSize && (
         <div className="bg-white border border-gray-200 rounded-xl p-4 flex items-center justify-between">

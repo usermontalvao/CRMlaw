@@ -47,6 +47,7 @@ import { matchesNormalizedSearch } from '../utils/search';
    ============================================================================ */
 
 const VERSION_CODENAMES: Record<string, { name: string; emoji: string }> = {
+  '1.10.069': { name: 'Café Prazos Pro', emoji: '⚡' },
   '1.10.068': { name: 'Café Galeria', emoji: '🖼️' },
   '1.10.067': { name: 'Café Enterprise', emoji: '🏛️' },
   '1.10.066': { name: 'Café Sem Overflow', emoji: '📐' },
@@ -773,6 +774,24 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
 };
 
 const releases: ReleaseNote[] = [
+  {
+    version: '1.10.069',
+    date: '15/05/2026',
+    summary: 'Módulo de Prazos Pro — operações em lote, duplicar prazo, comentários com histórico, visão de carga por responsável, exportar lista filtrada e criação de prazo pelo calendário.',
+    modules: [
+      {
+        moduleId: 'deadlines',
+        changes: [
+          { type: 'feature', title: 'Operações em lote', description: 'Selecione múltiplos prazos com checkbox e execute ações em bloco: alterar status, alterar responsável ou excluir todos de uma vez.' },
+          { type: 'feature', title: 'Duplicar prazo', description: 'Botão de clonar em cada linha da tabela e no modal de visualização. Cria cópia com status pendente e prefixo [CÓPIA].' },
+          { type: 'feature', title: 'Comentários por prazo', description: 'Painel de comentários no modal de visualização do prazo. Histórico cronológico com nome do usuário, data/hora e envio com Enter. Tabela deadline_comments com RLS no Supabase.' },
+          { type: 'feature', title: 'Visão de carga por responsável', description: 'Novo modo de visualização (botão Users na toolbar) com barra de progresso por membro, destacando vencidos e urgentes.' },
+          { type: 'feature', title: 'Exportar lista filtrada', description: 'Botão Exportar na toolbar gera Excel com exatamente os prazos visíveis na tela (respeitando todos os filtros ativos).' },
+          { type: 'feature', title: 'Criar prazo pelo calendário', description: 'Clicar em qualquer dia do calendário abre o modal de criação com a data pré-preenchida.' },
+        ],
+      },
+    ],
+  },
   {
     version: '1.10.068',
     date: '15/05/2026',
