@@ -47,6 +47,7 @@ import { matchesNormalizedSearch } from '../utils/search';
    ============================================================================ */
 
 const VERSION_CODENAMES: Record<string, { name: string; emoji: string }> = {
+  '1.10.070': { name: 'Café Histórico Vivo', emoji: '📜' },
   '1.10.069': { name: 'Café Prazos Pro', emoji: '⚡' },
   '1.10.068': { name: 'Café Galeria', emoji: '🖼️' },
   '1.10.067': { name: 'Café Enterprise', emoji: '🏛️' },
@@ -774,6 +775,21 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
 };
 
 const releases: ReleaseNote[] = [
+  {
+    version: '1.10.070',
+    date: '15/05/2026',
+    summary: 'Histórico de prazos com filtros completos, cards de estatísticas redesenhados e melhorias visuais no módulo de prazos.',
+    modules: [
+      {
+        moduleId: 'deadlines',
+        changes: [
+          { type: 'feature', title: 'Histórico com filtros e paginação completa', description: 'O histórico de prazos cumpridos agora exibe todos os registros (sem limite de 10). Filtros por busca, mês, ano, tipo e prioridade com limpeza em um clique. Paginação de 10 em 10 com navegador de páginas.' },
+          { type: 'improvement', title: 'Cards de estatísticas redesenhados', description: 'Cards com gradiente, número em destaque, ícone em bloco arredondado e animação de pulse para atenção. Melhor hierarquia visual.' },
+          { type: 'improvement', title: 'Histórico com design compacto e hover', description: 'Cada linha do histórico exibe dot de prioridade colorido, ações que aparecem no hover e datas em colunas organizadas.' },
+        ],
+      },
+    ],
+  },
   {
     version: '1.10.069',
     date: '15/05/2026',

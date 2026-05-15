@@ -420,6 +420,16 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
   const [savingComment, setSavingComment] = useState(false);
   const [showCommentsFor, setShowCommentsFor] = useState<string | null>(null);
 
+  // Estados do histórico
+  const [historySearch, setHistorySearch] = useState('');
+  const [historyMonth, setHistoryMonth] = useState<number | ''>('');
+  const [historyYear, setHistoryYear] = useState<number | ''>('');
+  const [historyType, setHistoryType] = useState<DeadlineType | ''>('');
+  const [historyPriority, setHistoryPriority] = useState<DeadlinePriority | ''>('');
+  const [historyPage, setHistoryPage] = useState(1);
+  const [historyFiltersExpanded, setHistoryFiltersExpanded] = useState(false);
+  const HISTORY_PAGE_SIZE = 10;
+
   const applyFilterPreset = useCallback(
     (preset: {
       search?: string;
@@ -760,8 +770,7 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
   const completedDeadlines = useMemo(() => {
     return deadlines
       .filter((d) => d.status === 'cumprido')
-      .sort((a, b) => new Date(b.completed_at || b.updated_at).getTime() - new Date(a.completed_at || a.updated_at).getTime())
-      .slice(0, 10);
+      .sort((a, b) => new Date(b.completed_at || b.updated_at).getTime() - new Date(a.completed_at || a.updated_at).getTime());
   }, [deadlines]);
 
   const dueTodayDeadlines = useMemo(() => {
@@ -847,6 +856,43 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
 
   const memberMap = useMemo(() => new Map(members.map((member) => [member.id, member])), [members]);
   const clientMap = useMemo(() => new Map(clients.map((client) => [client.id, client])), [clients]);
+
+  // ── Histórico filtrado ────────────────────────────────────────────────────
+  const filteredHistory = useMemo(() => {
+    let base = isPastMonth ? monthlyCompleted : completedDeadlines;
+
+    if (historySearch.trim()) {
+      const term = historySearch.trim().toLowerCase();
+      base = base.filter((d) =>
+        d.title.toLowerCase().includes(term) ||
+        (d.description || '').toLowerCase().includes(term) ||
+        (d.client_id ? (clientMap.get(d.client_id)?.full_name || '').toLowerCase().includes(term) : false)
+      );
+    }
+    if (historyMonth !== '') {
+      base = base.filter((d) => {
+        const dt = new Date(d.completed_at || d.updated_at);
+        return dt.getMonth() === historyMonth;
+      });
+    }
+    if (historyYear !== '') {
+      base = base.filter((d) => {
+        const dt = new Date(d.completed_at || d.updated_at);
+        return dt.getFullYear() === historyYear;
+      });
+    }
+    if (historyType) base = base.filter((d) => d.type === historyType);
+    if (historyPriority) base = base.filter((d) => d.priority === historyPriority);
+    return base;
+  }, [isPastMonth, monthlyCompleted, completedDeadlines, historySearch, historyMonth, historyYear, historyType, historyPriority, clientMap]);
+
+  const historyTotalPages = Math.max(1, Math.ceil(filteredHistory.length / HISTORY_PAGE_SIZE));
+  const paginatedHistory = filteredHistory.slice((historyPage - 1) * HISTORY_PAGE_SIZE, historyPage * HISTORY_PAGE_SIZE);
+
+  const historyYears = useMemo(() => {
+    const years = new Set(completedDeadlines.map((d) => new Date(d.completed_at || d.updated_at).getFullYear()));
+    return Array.from(years).sort((a, b) => b - a);
+  }, [completedDeadlines]);
 
   // ── Exportar lista filtrada ───────────────────────────────────────────────
   const handleExportFiltered = useCallback(() => {
@@ -2948,64 +2994,77 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
   return (
     <div className="space-y-4">
       
-      {/* Cards de Estatísticas - Layout Horizontal */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 sm:gap-3">
-        <button
-          onClick={() => setActiveStatusTab('todos')}
-          className={`flex items-center gap-2 sm:gap-3 p-3 sm:p-4 rounded-xl transition-all hover:shadow-md border ${
-            activeStatusTab === 'todos' ? 'ring-2 ring-blue-500 bg-blue-50 border-blue-200' : 'bg-white border-slate-200'
-          }`}
-        >
-          <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-full bg-blue-500 flex items-center justify-center flex-shrink-0">
-            <Calendar className="w-4 h-4 sm:w-5 sm:h-5 text-white" />
-          </div>
-          <div className="text-left min-w-0">
-            <p className="text-lg sm:text-2xl font-bold text-slate-900">{monthlyDeadlines.length}</p>
-            <p className="text-[10px] sm:text-xs text-slate-500 truncate">Total</p>
-          </div>
-        </button>
-
-        <button
-          onClick={() => setActiveStatusTab('pendente')}
-          className={`flex items-center gap-2 sm:gap-3 p-3 sm:p-4 rounded-xl transition-all hover:shadow-md border ${
-            activeStatusTab === 'pendente' ? 'ring-2 ring-amber-500 bg-amber-50 border-amber-200' : 'bg-white border-slate-200'
-          }`}
-        >
-          <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-full bg-amber-500 flex items-center justify-center flex-shrink-0">
-            <Clock className="w-4 h-4 sm:w-5 sm:h-5 text-white" />
-          </div>
-          <div className="text-left min-w-0">
-            <p className="text-lg sm:text-2xl font-bold text-slate-900">{monthlyPending.length}</p>
-            <p className="text-[10px] sm:text-xs text-slate-500 truncate">Pendentes</p>
-          </div>
-        </button>
-
-        <button
-          onClick={() => setActiveStatusTab('vencido')}
-          className={`flex items-center gap-2 sm:gap-3 p-3 sm:p-4 rounded-xl transition-all hover:shadow-md border ${
-            activeStatusTab === 'vencido' ? 'ring-2 ring-red-500 bg-red-50 border-red-200' : 'bg-white border-slate-200'
-          }`}
-        >
-          <div className={`w-8 h-8 sm:w-10 sm:h-10 rounded-full flex items-center justify-center flex-shrink-0 ${
-            monthlyAttentionCount > 0 ? 'bg-red-500' : 'bg-slate-300'
-          }`}>
-            <AlertCircle className="w-4 h-4 sm:w-5 sm:h-5 text-white" />
-          </div>
-          <div className="text-left min-w-0">
-            <p className="text-lg sm:text-2xl font-bold text-slate-900">{monthlyAttentionCount}</p>
-            <p className="text-[10px] sm:text-xs text-slate-500 truncate">Atenção</p>
-          </div>
-        </button>
-
-        <div className="flex items-center gap-2 sm:gap-3 p-3 sm:p-4 rounded-xl bg-white border border-slate-200">
-          <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-full bg-emerald-500 flex items-center justify-center flex-shrink-0">
-            <CheckCircle className="w-4 h-4 sm:w-5 sm:h-5 text-white" />
-          </div>
-          <div className="text-left min-w-0">
-            <p className="text-lg sm:text-2xl font-bold text-slate-900">{monthlyCompleted.length}</p>
-            <p className="text-[10px] sm:text-xs text-slate-500 truncate">Concluídos</p>
-          </div>
-        </div>
+      {/* Cards de Estatísticas */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+        {[
+          {
+            label: 'Total do mês',
+            value: monthlyDeadlines.length,
+            icon: Calendar,
+            color: 'blue',
+            active: activeStatusTab === 'todos',
+            onClick: () => setActiveStatusTab('todos'),
+            gradient: 'from-blue-500 to-blue-600',
+            ring: 'ring-blue-400',
+            bg: 'bg-blue-50',
+          },
+          {
+            label: 'Pendentes',
+            value: monthlyPending.length,
+            icon: Clock,
+            color: 'amber',
+            active: activeStatusTab === 'pendente',
+            onClick: () => setActiveStatusTab('pendente'),
+            gradient: 'from-amber-400 to-amber-500',
+            ring: 'ring-amber-400',
+            bg: 'bg-amber-50',
+          },
+          {
+            label: 'Atenção',
+            value: monthlyAttentionCount,
+            icon: AlertCircle,
+            color: 'red',
+            active: activeStatusTab === 'vencido',
+            onClick: () => setActiveStatusTab('vencido'),
+            gradient: monthlyAttentionCount > 0 ? 'from-red-500 to-red-600' : 'from-slate-300 to-slate-400',
+            ring: 'ring-red-400',
+            bg: 'bg-red-50',
+            pulse: monthlyAttentionCount > 0,
+          },
+          {
+            label: 'Concluídos',
+            value: monthlyCompleted.length,
+            icon: CheckCircle,
+            color: 'emerald',
+            active: false,
+            onClick: undefined,
+            gradient: 'from-emerald-500 to-emerald-600',
+            ring: '',
+            bg: '',
+          },
+        ].map(({ label, value, icon: Icon, active, onClick, gradient, ring, bg, pulse }) => (
+          <button
+            key={label}
+            type="button"
+            onClick={onClick}
+            disabled={!onClick}
+            className={`group relative flex flex-col gap-3 p-4 rounded-2xl border transition-all text-left overflow-hidden ${
+              active
+                ? `${bg} border-transparent ring-2 ${ring} shadow-sm`
+                : onClick
+                ? 'bg-white border-slate-200 hover:shadow-md hover:border-slate-300'
+                : 'bg-white border-slate-200 cursor-default'
+            }`}
+          >
+            <div className="flex items-center justify-between">
+              <div className={`w-10 h-10 rounded-xl bg-gradient-to-br ${gradient} flex items-center justify-center shadow-sm ${pulse ? 'animate-pulse' : ''}`}>
+                <Icon className="w-5 h-5 text-white" />
+              </div>
+              <p className="text-3xl font-black text-slate-900">{value}</p>
+            </div>
+            <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide">{label}</p>
+          </button>
+        ))}
       </div>
 
       {/* Alertas inteligentes - Compacto */}
@@ -4046,77 +4105,162 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
       {viewDeadlineModal}
       {reportModal}
 
-      {/* Histórico de Prazos Cumpridos */}
-      <div className="bg-white border border-slate-200 rounded-xl overflow-hidden">
-        <div className="flex items-center gap-2 px-6 py-4 border-b border-slate-100">
-          <CheckCircle2 className="w-5 h-5 text-emerald-500" />
-          <h4 className="text-base font-semibold text-slate-900">Histórico - Últimos Prazos Cumpridos</h4>
+      {/* ── Histórico de Prazos Cumpridos ───────────────────────────────── */}
+      <div className="bg-white border border-slate-200 rounded-2xl overflow-hidden shadow-sm">
+
+        {/* Header */}
+        <div className="px-6 py-4 border-b border-slate-100">
+          <div className="flex items-center justify-between gap-3 flex-wrap">
+            <div className="flex items-center gap-3">
+              <div className="w-9 h-9 rounded-xl bg-emerald-100 flex items-center justify-center">
+                <CheckCircle2 className="w-5 h-5 text-emerald-600" />
+              </div>
+              <div>
+                <h4 className="text-base font-bold text-slate-900">Histórico de Prazos Cumpridos</h4>
+                <p className="text-xs text-slate-400 mt-0.5">{filteredHistory.length} prazo{filteredHistory.length !== 1 ? 's' : ''} encontrado{filteredHistory.length !== 1 ? 's' : ''}</p>
+              </div>
+            </div>
+            <button
+              onClick={() => setHistoryFiltersExpanded(!historyFiltersExpanded)}
+              className={`inline-flex items-center gap-2 h-9 px-3 rounded-xl border text-sm font-medium transition-all ${
+                historyFiltersExpanded ? 'bg-emerald-50 border-emerald-200 text-emerald-700' : 'border-slate-200 text-slate-600 hover:bg-slate-50'
+              }`}
+            >
+              <Filter className="w-4 h-4" />
+              Filtros
+              {(historySearch || historyMonth !== '' || historyYear !== '' || historyType || historyPriority) && (
+                <span className="w-2 h-2 rounded-full bg-emerald-500" />
+              )}
+            </button>
+          </div>
+
+          {/* Filtros */}
+          {historyFiltersExpanded && (
+            <div className="mt-4 pt-4 border-t border-slate-100 flex flex-wrap items-center gap-2">
+              <div className="relative">
+                <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400 pointer-events-none" />
+                <input
+                  type="text"
+                  value={historySearch}
+                  onChange={(e) => { setHistorySearch(e.target.value); setHistoryPage(1); }}
+                  placeholder="Buscar..."
+                  className="h-8 pl-8 pr-3 text-xs border border-slate-200 rounded-lg bg-white focus:outline-none focus:ring-1 focus:ring-emerald-500/30 w-44"
+                />
+              </div>
+              <select
+                value={historyMonth === '' ? '' : String(historyMonth)}
+                onChange={(e) => { setHistoryMonth(e.target.value === '' ? '' : Number(e.target.value)); setHistoryPage(1); }}
+                className="h-8 px-2 text-xs border border-slate-200 rounded-lg bg-white focus:outline-none cursor-pointer"
+              >
+                <option value="">Mês</option>
+                {['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'].map((m, i) => (
+                  <option key={i} value={i}>{m}</option>
+                ))}
+              </select>
+              <select
+                value={historyYear === '' ? '' : String(historyYear)}
+                onChange={(e) => { setHistoryYear(e.target.value === '' ? '' : Number(e.target.value)); setHistoryPage(1); }}
+                className="h-8 px-2 text-xs border border-slate-200 rounded-lg bg-white focus:outline-none cursor-pointer"
+              >
+                <option value="">Ano</option>
+                {historyYears.map((y) => <option key={y} value={y}>{y}</option>)}
+              </select>
+              <select
+                value={historyType}
+                onChange={(e) => { setHistoryType(e.target.value as DeadlineType | ''); setHistoryPage(1); }}
+                className="h-8 px-2 text-xs border border-slate-200 rounded-lg bg-white focus:outline-none cursor-pointer"
+              >
+                <option value="">Tipo</option>
+                <option value="processo">Processo</option>
+                <option value="requerimento">Requerimento</option>
+                <option value="geral">Geral</option>
+              </select>
+              <select
+                value={historyPriority}
+                onChange={(e) => { setHistoryPriority(e.target.value as DeadlinePriority | ''); setHistoryPage(1); }}
+                className="h-8 px-2 text-xs border border-slate-200 rounded-lg bg-white focus:outline-none cursor-pointer"
+              >
+                <option value="">Prioridade</option>
+                <option value="urgente">Urgente</option>
+                <option value="alta">Alta</option>
+                <option value="media">Média</option>
+                <option value="baixa">Baixa</option>
+              </select>
+              {(historySearch || historyMonth !== '' || historyYear !== '' || historyType || historyPriority) && (
+                <button
+                  onClick={() => { setHistorySearch(''); setHistoryMonth(''); setHistoryYear(''); setHistoryType(''); setHistoryPriority(''); setHistoryPage(1); }}
+                  className="h-8 px-3 text-xs text-red-600 border border-red-200 rounded-lg hover:bg-red-50 transition"
+                >
+                  Limpar
+                </button>
+              )}
+            </div>
+          )}
         </div>
 
-        {(isPastMonth ? monthlyCompleted : completedDeadlines).length === 0 ? (
-          <p className="text-sm text-slate-500 text-center py-8">Nenhum prazo cumprido ainda.</p>
+        {/* Lista */}
+        {filteredHistory.length === 0 ? (
+          <div className="py-14 text-center">
+            <CheckCircle2 className="w-10 h-10 text-slate-200 mx-auto mb-3" />
+            <p className="text-sm text-slate-400">Nenhum prazo cumprido encontrado.</p>
+          </div>
         ) : (
           <div className="divide-y divide-slate-100">
-            {(isPastMonth ? monthlyCompleted : completedDeadlines).map((deadline) => {
+            {paginatedHistory.map((deadline) => {
               const clientItem = deadline.client_id ? clientMap.get(deadline.client_id) : null;
               const responsibleItem = deadline.responsible_id ? memberMap.get(deadline.responsible_id) : null;
-              const priorityConfig = getPriorityConfig(deadline.priority);
+              const priorityColors: Record<string, string> = {
+                urgente: 'bg-red-500', alta: 'bg-orange-400', media: 'bg-amber-400', baixa: 'bg-slate-300',
+              };
               return (
                 <div
                   key={deadline.id}
-                  className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between px-6 py-4 hover:bg-slate-50 transition"
+                  className="flex items-center gap-4 px-5 py-3.5 hover:bg-slate-50/70 transition group"
                 >
-                  {/* Info do prazo */}
-                  <div className="flex-1 min-w-[200px]">
-                    <div className="flex items-center gap-2 mb-1">
-                      <h5 className="text-sm font-semibold text-slate-900">{deadline.title}</h5>
-                      {priorityConfig && (
-                        <span className={`px-2 py-0.5 rounded text-[10px] font-semibold ${
-                          deadline.priority === 'media' ? 'bg-amber-100 text-amber-700' :
-                          deadline.priority === 'alta' ? 'bg-red-100 text-red-700' :
-                          deadline.priority === 'urgente' ? 'bg-red-500 text-white' :
-                          'bg-slate-100 text-slate-600'
-                        }`}>
-                          {priorityConfig.label}
-                        </span>
+                  {/* Prioridade dot */}
+                  <div className={`w-2 h-2 rounded-full flex-shrink-0 ${priorityColors[deadline.priority] || 'bg-slate-300'}`} />
+
+                  {/* Info */}
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-semibold text-slate-800 truncate">{deadline.title}</p>
+                    <div className="flex items-center gap-3 mt-0.5 flex-wrap">
+                      {clientItem && <span className="text-xs text-slate-400 truncate max-w-[160px]">{clientItem.full_name}</span>}
+                      <span className="text-xs text-slate-300">·</span>
+                      <span className="text-xs text-slate-400">{getTypeLabel(deadline.type)}</span>
+                      {responsibleItem && (
+                        <>
+                          <span className="text-xs text-slate-300">·</span>
+                          <span className="text-xs text-slate-400">{responsibleItem.name}</span>
+                        </>
                       )}
                     </div>
-                    <p className="text-xs text-slate-500">
-                      {clientItem ? `Cliente ${clientItem.full_name}` : 'Sem cliente'}
-                    </p>
                   </div>
-                  
+
                   {/* Datas */}
-                  <div className="flex flex-wrap items-center gap-4 text-sm min-w-[240px]">
-                    <div>
-                      <p className="text-slate-500 text-xs uppercase tracking-wide">Vencimento</p>
-                      <p className="text-slate-800 font-medium">{formatDate(deadline.due_date)}</p>
+                  <div className="hidden sm:flex items-center gap-6 text-xs flex-shrink-0">
+                    <div className="text-center">
+                      <p className="text-[10px] text-slate-400 uppercase tracking-wide mb-0.5">Vencimento</p>
+                      <p className="font-medium text-slate-700">{formatDate(deadline.due_date)}</p>
                     </div>
-                    <div>
-                      <p className="text-slate-500 text-xs uppercase tracking-wide">Cumprido</p>
-                      <p className="text-slate-800 font-medium">{deadline.completed_at ? formatDate(deadline.completed_at) : '-'}</p>
-                    </div>
-                    <div>
-                      <p className="text-slate-500 text-xs uppercase tracking-wide">Responsável</p>
-                      <p className="text-slate-800 font-medium">{responsibleItem ? responsibleItem.name : '—'}</p>
+                    <div className="text-center">
+                      <p className="text-[10px] text-slate-400 uppercase tracking-wide mb-0.5">Cumprido em</p>
+                      <p className="font-medium text-emerald-600">{deadline.completed_at ? formatDate(deadline.completed_at) : '—'}</p>
                     </div>
                   </div>
-                  
-                  {/* Badge e Ações */}
-                  <div className="flex items-center gap-3 md:ml-6">
-                    <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-semibold bg-emerald-100 text-emerald-700">
-                      <CheckCircle className="w-3 h-3" />
-                      CONCLUÍDO
-                    </span>
+
+                  {/* Ações */}
+                  <div className="flex items-center gap-1.5 flex-shrink-0 opacity-0 group-hover:opacity-100 transition">
                     <button
                       onClick={() => handleViewDeadline(deadline)}
-                      className="px-3 py-1.5 text-xs font-medium text-slate-600 border border-slate-200 hover:bg-slate-50 rounded-lg transition"
+                      className="p-1.5 rounded-lg text-slate-400 hover:text-blue-600 hover:bg-blue-50 transition"
+                      title="Ver detalhes"
                     >
-                      Ver
+                      <Eye className="w-4 h-4" />
                     </button>
                     <button
                       onClick={() => handleStatusChange(deadline.id, 'pendente')}
-                      className="px-3 py-1.5 text-xs font-medium text-blue-600 border border-blue-200 hover:bg-blue-50 rounded-lg transition"
+                      className="inline-flex items-center gap-1 h-7 px-2.5 text-[11px] font-semibold text-blue-600 border border-blue-200 hover:bg-blue-50 rounded-lg transition"
+                      title="Reabrir prazo"
                     >
                       Reabrir
                     </button>
@@ -4124,6 +4268,28 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
                 </div>
               );
             })}
+          </div>
+        )}
+
+        {/* Paginação do histórico */}
+        {historyTotalPages > 1 && (
+          <div className="px-5 py-3 border-t border-slate-100 flex items-center justify-between">
+            <p className="text-xs text-slate-400">
+              {(historyPage - 1) * HISTORY_PAGE_SIZE + 1}–{Math.min(historyPage * HISTORY_PAGE_SIZE, filteredHistory.length)} de {filteredHistory.length}
+            </p>
+            <div className="flex items-center gap-1">
+              <button
+                onClick={() => setHistoryPage((p) => Math.max(1, p - 1))}
+                disabled={historyPage === 1}
+                className="h-7 px-3 text-xs font-medium bg-slate-100 hover:bg-slate-200 rounded-lg disabled:opacity-40 transition"
+              >Anterior</button>
+              <span className="text-xs text-slate-500 px-2">{historyPage}/{historyTotalPages}</span>
+              <button
+                onClick={() => setHistoryPage((p) => Math.min(historyTotalPages, p + 1))}
+                disabled={historyPage === historyTotalPages}
+                className="h-7 px-3 text-xs font-medium bg-slate-100 hover:bg-slate-200 rounded-lg disabled:opacity-40 transition"
+              >Próxima</button>
+            </div>
           </div>
         )}
       </div>
