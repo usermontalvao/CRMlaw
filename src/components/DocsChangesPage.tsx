@@ -47,6 +47,7 @@ import { matchesNormalizedSearch } from '../utils/search';
    ============================================================================ */
 
 const VERSION_CODENAMES: Record<string, { name: string; emoji: string }> = {
+  '1.10.073': { name: 'Café Formulário Premium', emoji: '📋' },
   '1.10.072': { name: 'Café Modal Refinado', emoji: '✨' },
   '1.10.071': { name: 'Café Barra Limpa', emoji: '🧹' },
   '1.10.070': { name: 'Café Histórico Vivo', emoji: '📜' },
@@ -777,6 +778,21 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
 };
 
 const releases: ReleaseNote[] = [
+  {
+    version: '1.10.073',
+    date: '15/05/2026',
+    summary: 'Modal de criação/edição de prazos completamente reformulado com seletor visual de advogados e correção do fundo escuro no modal de visualização.',
+    modules: [
+      {
+        moduleId: 'deadlines',
+        changes: [
+          { type: 'improvement', title: 'Modal Novo/Editar Prazo reformulado', description: 'Layout em seções visuais (Identificação, Responsável, Calculadora, Configurações). Design mais limpo com cards brancos, labels em uppercase e inputs refinados.' },
+          { type: 'feature', title: 'Seletor visual de advogado com avatares', description: 'O campo Responsável agora exibe todos os advogados como cards clicáveis com avatar de iniciais coloridas. O selecionado fica destacado com borda laranja e indicador de ponto.' },
+          { type: 'fix', title: 'Fundo escuro corrigido no modal de visualização', description: 'Header e corpo do modal de visualização agora têm background branco explícito, corrigindo aparência escura em modo claro.' },
+        ],
+      },
+    ],
+  },
   {
     version: '1.10.072',
     date: '15/05/2026',
